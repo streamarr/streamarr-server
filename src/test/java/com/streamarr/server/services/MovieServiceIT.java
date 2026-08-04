@@ -697,7 +697,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     @Test
     @DisplayName("Should not report previous page when start letter is Z and sort is DESC")
-    void shouldNotReportPreviousPageWhenStartLetterIsZDesc() {
+    void shouldNotReportPreviousPageWhenStartLetterIsZAndSortIsDesc() {
 
       var filter =
           MediaFilter.builder()

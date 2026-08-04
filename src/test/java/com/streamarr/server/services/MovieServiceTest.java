@@ -323,8 +323,8 @@ class MovieServiceTest {
     }
 
     @Test
-    @DisplayName("Should paginate backward from DESC maintaining canonical order")
-    void shouldPaginateBackwardFromDescMaintainingCanonicalOrder() {
+    @DisplayName("Should maintain canonical order when paginating backward from TITLE DESC")
+    void shouldMaintainCanonicalOrderWhenPaginatingBackwardFromTitleDesc() {
       movieRepository.save(movieBuilder("Apple").build());
       movieRepository.save(movieBuilder("Banana").build());
       movieRepository.save(movieBuilder("Cherry").build());
@@ -404,8 +404,8 @@ class MovieServiceTest {
     }
 
     @Test
-    @DisplayName("Should retain title sort letter bucket on non-title cursor pages")
-    void shouldRetainTitleSortLetterBucketOnNonTitleCursorPages() {
+    @DisplayName("Should retain title sort letter bucket when continuing non-title pagination")
+    void shouldRetainTitleSortLetterBucketWhenContinuingNonTitlePagination() {
       movieRepository.save(
           Movie.builder()
               .title("Alpha First")

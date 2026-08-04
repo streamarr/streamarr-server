@@ -259,8 +259,8 @@ class SeriesServiceTest {
     }
 
     @Test
-    @DisplayName("Should retain title sort letter bucket on non-title cursor pages")
-    void shouldRetainTitleSortLetterBucketOnNonTitleCursorPages() {
+    @DisplayName("Should retain title sort letter bucket when continuing non-title pagination")
+    void shouldRetainTitleSortLetterBucketWhenContinuingNonTitlePagination() {
       seriesRepository.save(
           Series.builder()
               .title("Alpha First")
