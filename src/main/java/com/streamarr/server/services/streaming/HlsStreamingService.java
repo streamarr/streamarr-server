@@ -114,8 +114,7 @@ public class HlsStreamingService implements StreamingService {
       return Optional.empty();
     }
 
-    session.get().setLastAccessedAt(Instant.now());
-    runtimeRegistry.save(session.get());
+    runtimeRegistry.touch(request.streamSessionId(), Instant.now());
     return session;
   }
 

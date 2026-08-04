@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
@@ -16,6 +17,16 @@ public class FakeRuntimeStreamSessionRegistry implements RuntimeStreamSessionReg
   @Override
   public void save(StreamSession session) {
     sessions.put(session.getSessionId(), session);
+  }
+
+  @Override
+  public void touch(UUID sessionId, Instant accessedAt) {
+    sessions.computeIfPresent(
+        sessionId,
+        (_, session) -> {
+          session.setLastAccessedAt(accessedAt);
+          return session;
+        });
   }
 
   @Override

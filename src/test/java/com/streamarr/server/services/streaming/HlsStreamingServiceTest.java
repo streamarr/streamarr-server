@@ -327,6 +327,21 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName("Should not resurrect a session destroyed while a segment request is in flight")
+  void shouldNotResurrectSessionDestroyedWhileSegmentRequestIsInFlight() {
+    var file = seedMediaFile();
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var sessionId = session.getSessionId();
+    // The gate runs between accessSession's registry read and its write-back, so destroying here
+    // lands inside the check-then-act window a concurrent destroy would occupy.
+    authorityGate.onNextCheck(() -> service.destroySession(sessionId));
+
+    accessSession(session);
+
+    assertThat(runtimeRegistry.findById(sessionId)).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should remove session and stop transcode when session is destroyed")
   void shouldRemoveSessionAndStopTranscodeWhenSessionIsDestroyed() {
     var file = seedMediaFile();
