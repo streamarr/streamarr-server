@@ -43,7 +43,9 @@ public class ImageService {
       var images = new ArrayList<Image>();
 
       for (var variant : variants) {
-        var relativePath = buildRelativePath(entityType, entityId, imageType, variant.variant());
+        var imageId = UUID.randomUUID();
+        var relativePath =
+            buildRelativePath(entityType, entityId, imageType, variant.variant(), imageId);
         var absolutePath = resolveAbsolutePath(relativePath);
 
         Files.createDirectories(absolutePath.getParent());
@@ -52,6 +54,7 @@ public class ImageService {
 
         images.add(
             Image.builder()
+                .id(imageId)
                 .entityId(entityId)
                 .entityType(entityType)
                 .imageType(imageType)
@@ -72,7 +75,15 @@ public class ImageService {
 
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public void saveImages(List<Image> images) {
-    imageRepository.insertAllIfAbsent(images);
+    var insertedImageIds = imageRepository.insertAllIfAbsent(images);
+
+    for (var image : images) {
+      if (insertedImageIds.contains(image.getId()) || imageRepository.existsById(image.getId())) {
+        continue;
+      }
+
+      deleteFile(resolveAbsolutePath(image.getPath()));
+    }
   }
 
   public Optional<Image> findById(UUID imageId) {
@@ -100,13 +111,17 @@ public class ImageService {
   }
 
   private String buildRelativePath(
-      ImageEntityType entityType, UUID entityId, ImageType imageType, ImageSize variant) {
+      ImageEntityType entityType,
+      UUID entityId,
+      ImageType imageType,
+      ImageSize variant,
+      UUID imageId) {
     return String.join(
         "/",
         entityType.name().toLowerCase(),
         entityId.toString(),
         imageType.name().toLowerCase(),
-        variant.name().toLowerCase() + ".jpg");
+        variant.name().toLowerCase() + "-" + imageId + ".jpg");
   }
 
   private Path resolveAbsolutePath(String relativePath) {

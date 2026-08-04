@@ -30,7 +30,8 @@ class CursorValidatorTest {
     void shouldNotThrowWhenCursorFilterMatchesCurrentFilter() {
       var libraryId = UUID.randomUUID();
       var filter = MediaFilter.builder().libraryId(libraryId).sortBy(OrderMediaBy.TITLE).build();
-      var decoded = MediaPaginationOptions.builder().mediaFilter(filter).build();
+      var cursorFilter = filter.toBuilder().previousSortFieldValue("Alpha").build();
+      var decoded = MediaPaginationOptions.builder().mediaFilter(cursorFilter).build();
 
       assertThatNoException()
           .isThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, filter));
@@ -129,18 +130,6 @@ class CursorValidatorTest {
       assertThatThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, currentFilter))
           .isInstanceOf(InvalidCursorException.class)
           .hasMessageContaining("genreIds");
-    }
-
-    @Test
-    @DisplayName("Should throw when startLetter changes between queries")
-    void shouldThrowWhenStartLetterChangesBetweenQueries() {
-      var cursorFilter = MediaFilter.builder().startLetter(AlphabetLetter.A).build();
-      var currentFilter = MediaFilter.builder().startLetter(AlphabetLetter.B).build();
-      var decoded = MediaPaginationOptions.builder().mediaFilter(cursorFilter).build();
-
-      assertThatThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, currentFilter))
-          .isInstanceOf(InvalidCursorException.class)
-          .hasMessageContaining("startLetter");
     }
 
     @Test

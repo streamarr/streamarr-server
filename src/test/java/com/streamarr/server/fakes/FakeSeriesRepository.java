@@ -39,7 +39,7 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     var filter = options.getMediaFilter();
     var limit = options.getPaginationOptions().getLimit();
 
-    return filterByLibrary(filter)
+    return filterByStartLetter(filterByLibrary(filter), filter)
         .sorted(comparatorFor(filter, filter.getSortDirection()))
         .limit(limit + 1L)
         .toList();
@@ -55,7 +55,7 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     var effectiveFilter = shouldReverse ? FakeFilterHelper.reverseFilter(filter) : filter;
 
     var sorted =
-        filterByLibrary(effectiveFilter)
+        filterByCursorPageStartLetter(filterByLibrary(effectiveFilter), effectiveFilter)
             .sorted(comparatorFor(effectiveFilter, effectiveFilter.getSortDirection()))
             .toList();
 
@@ -88,6 +88,18 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
   }
 
+  @Override
+  public Optional<Series> findLetterJumpPredecessor(MediaFilter filter) {
+    var reversed = FakeFilterHelper.reverseFilter(filter);
+    return filterByLibrary(filter)
+        .filter(
+            s ->
+                FakeFilterHelper.isAboveLetterAnchor(
+                    s.getTitleSort(), filter.getStartLetter(), filter.getSortDirection()))
+        .sorted(comparatorFor(reversed, reversed.getSortDirection()))
+        .findFirst();
+  }
+
   private Stream<Series> filterByLibrary(MediaFilter filter) {
     var libraryId = filter.getLibraryId();
 
@@ -97,7 +109,18 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
             : database.values().stream()
                 .filter(s -> s.getLibrary() != null && libraryId.equals(s.getLibrary().getId()));
 
-    return applyFilters(filterByStartLetter(stream, filter), filter);
+    return applyFilters(stream, filter);
+  }
+
+  // Mirrors production seekWithFilter: under TITLE sort the letter was consumed as the landing
+  // page's seek anchor, so cursor pages only re-apply it as an equality restriction for other
+  // sorts.
+  private Stream<Series> filterByCursorPageStartLetter(Stream<Series> stream, MediaFilter filter) {
+    var letter = filter.getStartLetter();
+    if (letter == null || filter.getSortBy() == OrderMediaBy.TITLE) {
+      return stream;
+    }
+    return stream.filter(s -> FakeFilterHelper.matchesLetterEquality(s.getTitleSort(), letter));
   }
 
   private Stream<Series> applyFilters(Stream<Series> stream, MediaFilter filter) {
@@ -156,14 +179,14 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     }
 
     if (filter.getSortBy() != OrderMediaBy.TITLE) {
-      return stream.filter(s -> FakeFilterHelper.matchesLetterEquality(s.getTitle(), letter));
+      return stream.filter(s -> FakeFilterHelper.matchesLetterEquality(s.getTitleSort(), letter));
     }
 
     if (filter.getSortDirection() == SortOrder.DESC) {
-      return stream.filter(s -> FakeFilterHelper.matchesLetterDescRange(s.getTitle(), letter));
+      return stream.filter(s -> FakeFilterHelper.matchesLetterDescRange(s.getTitleSort(), letter));
     }
 
-    return stream.filter(s -> FakeFilterHelper.matchesLetterAscRange(s.getTitle(), letter));
+    return stream.filter(s -> FakeFilterHelper.matchesLetterAscRange(s.getTitleSort(), letter));
   }
 
   private Comparator<Series> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
@@ -176,9 +199,9 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
               Comparator.comparing(Series::getFirstAirDate, nullsLastDirectional(isDesc));
           case RUNTIME -> Comparator.comparing(Series::getRuntime, nullsLastDirectional(isDesc));
           case TITLE ->
-              isDesc
-                  ? Comparator.comparing(Series::getTitle, Comparator.reverseOrder())
-                  : Comparator.comparing(Series::getTitle);
+              Comparator.comparing(
+                  Series::getTitleSort,
+                  FakeFilterHelper.titleSortComparator(filter.getSortDirection()));
           case LAST_WATCHED ->
               throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
         };

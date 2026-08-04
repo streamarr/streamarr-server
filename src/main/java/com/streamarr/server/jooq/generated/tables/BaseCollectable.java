@@ -181,7 +181,7 @@ public class BaseCollectable extends TableImpl<BaseCollectableRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_BASE_COLLECTABLE_LIBRARY_CREATED_ID, Indexes.IDX_BASE_COLLECTABLE_LIBRARY_ID, Indexes.IDX_BASE_COLLECTABLE_LIBRARY_TITLE_ID, Indexes.IDX_BASE_COLLECTABLE_LIBRARY_TITLESORT_ID);
+        return Arrays.asList(Indexes.IDX_BASE_COLLECTABLE_LIBRARY_CREATED_ID, Indexes.IDX_BASE_COLLECTABLE_LIBRARY_ID, Indexes.IDX_BASE_COLLECTABLE_LIBRARY_TITLE_ID);
     }
 
     @Override
