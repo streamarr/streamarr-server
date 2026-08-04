@@ -4,7 +4,10 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 
 import com.streamarr.server.services.library.LibraryManagementService;
+import com.streamarr.server.services.library.MovieFileProcessor;
+import com.streamarr.server.services.library.SeriesFileProcessor;
 import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -142,4 +145,19 @@ class ArchitectureTest {
                           && call.getTargetOwner().isEquivalentTo(Path.class)
                           && call.getName().equals("getFileName")))
           .as("Persisted filenames must derive from the filepath URI, not Path display text");
+
+  @ArchTest
+  @DisplayName("Should avoid Path display text when processing media metadata")
+  static void shouldAvoidPathDisplayTextWhenProcessingMediaMetadata(JavaClasses classes) {
+    noClasses()
+        .that()
+        .areAssignableTo(MovieFileProcessor.class)
+        .or()
+        .areAssignableTo(SeriesFileProcessor.class)
+        .should()
+        .dependOnClassesThat()
+        .areAssignableTo(Path.class)
+        .as("Media metadata must derive text from the filepath URI, not Path display text")
+        .check(classes);
+  }
 }

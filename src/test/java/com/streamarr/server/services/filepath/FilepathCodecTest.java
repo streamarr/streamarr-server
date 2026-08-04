@@ -14,6 +14,8 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Filepath Codec Tests")
@@ -225,6 +227,20 @@ class FilepathCodecTest {
     assertThatThrownBy(() -> FilepathCodec.decode("file:///media/My Movies/movie.mkv"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("file:///media/My Movies/movie.mkv");
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "file:///media/movie.mkv?download=true",
+        "file:///media/movie#1.mkv",
+        "file:movie.mkv"
+      })
+  @DisplayName("Should reject structurally invalid file URI when decoding to path")
+  void shouldRejectStructurallyInvalidFileUriWhenDecodingToPath(String filepathUri) {
+    assertThatThrownBy(() -> FilepathCodec.decode(filepathUri))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(filepathUri);
   }
 
   @Test

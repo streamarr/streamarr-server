@@ -75,6 +75,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -177,17 +178,52 @@ class LibraryManagementServiceTest {
     var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
     assertThat(library.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
     assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
+        .as("Media file should have been created before scanLibrary returned")
+        .isPresent();
+  }
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var mediaFile =
-                  fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
-              assertThat(mediaFile)
-                  .as("Media file should have been created during scan")
-                  .isPresent();
+  @Test
+  @DisplayName(
+      "Should restore interrupt flag and become unhealthy when scan is interrupted during file processing")
+  void shouldRestoreInterruptFlagAndBecomeUnhealthyWhenScanIsInterruptedDuringFileProcessing()
+      throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "Interrupted Movie", "Interrupted Movie (2024).mkv");
+    var processingStarted = new CountDownLatch(1);
+    var releaseProcessing = new CountDownLatch(1);
+    var interruptRestored = new AtomicBoolean();
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenAnswer(
+            _ -> {
+              processingStarted.countDown();
+              releaseProcessing.await();
+              return Optional.empty();
             });
+
+    var scanThread =
+        Thread.ofPlatform()
+            .unstarted(
+                () -> {
+                  libraryManagementService.scanLibrary(savedLibraryId);
+                  interruptRestored.set(Thread.currentThread().isInterrupted());
+                });
+    scanThread.start();
+
+    try {
+      assertThat(processingStarted.await(5, TimeUnit.SECONDS)).isTrue();
+      scanThread.interrupt();
+    } finally {
+      releaseProcessing.countDown();
+    }
+
+    assertThat(scanThread.join(Duration.ofSeconds(5))).isTrue();
+    assertThat(interruptRestored).isTrue();
+    assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
   }
 
   @Test

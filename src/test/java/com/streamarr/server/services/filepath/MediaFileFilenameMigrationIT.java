@@ -2,6 +2,10 @@ package com.streamarr.server.services.filepath;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -11,6 +15,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import db.migration.V049__Derive_Media_File_Filename_From_Filepath_Uri;
 import jakarta.persistence.EntityManager;
 import java.sql.Connection;
+import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.flywaydb.core.api.configuration.Configuration;
@@ -20,6 +25,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
 @Tag("IntegrationTest")
@@ -75,8 +81,10 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should migrate valid rows when another filepath URI cannot be decoded")
-  void shouldMigrateValidRowsWhenAnotherFilepathUriCannotBeDecoded() throws Exception {
+  @DisplayName(
+      "Should migrate valid rows and report skipped rows when another filepath URI cannot be decoded")
+  void shouldMigrateValidRowsAndReportSkippedRowsWhenAnotherFilepathUriCannotBeDecoded()
+      throws Exception {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     libraryId = library.getId();
     var undecodableMediaFile =
@@ -98,16 +106,62 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
                 .build());
     additionalMediaFileId = validMediaFile.getId();
 
-    try (var connection = dataSource.getConnection()) {
-      new V049__Derive_Media_File_Filename_From_Filepath_Uri()
-          .migrate(new MigrationContext(connection));
-    }
+    var expectedCounts = expectedMigrationCounts();
+    var migrationLogs = migrateAndCaptureLogs();
     entityManager.clear();
 
     assertThat(mediaFileRepository.findById(mediaFileId).orElseThrow().getFilename())
         .isEqualTo("legacy-undecodable-name.mkv");
     assertThat(mediaFileRepository.findById(additionalMediaFileId).orElseThrow().getFilename())
         .isEqualTo("Amélie (2001).mkv");
+    assertThat(migrationLogs)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .anySatisfy(
+            event -> {
+              assertThat(event.getFormattedMessage())
+                  .contains(mediaFileId.toString())
+                  .contains("file:///media/caf%E9.mkv");
+            });
+    assertThat(migrationLogs)
+        .filteredOn(event -> event.getLevel() == Level.INFO)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .contains(
+            "Media file filename migration completed: updated=%d, skipped=%d"
+                .formatted(expectedCounts.updated(), expectedCounts.skipped()));
+  }
+
+  private MigrationCounts expectedMigrationCounts() {
+    var updated = 0;
+    var skipped = 0;
+
+    for (var mediaFile : mediaFileRepository.findAll()) {
+      try {
+        if (!FilepathCodec.filenameOf(mediaFile.getFilepathUri()).equals(mediaFile.getFilename())) {
+          updated++;
+        }
+      } catch (IllegalArgumentException _) {
+        skipped++;
+      }
+    }
+
+    return new MigrationCounts(updated, skipped);
+  }
+
+  private List<ILoggingEvent> migrateAndCaptureLogs() throws Exception {
+    var logger =
+        (Logger) LoggerFactory.getLogger(V049__Derive_Media_File_Filename_From_Filepath_Uri.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+
+    try (var connection = dataSource.getConnection()) {
+      new V049__Derive_Media_File_Filename_From_Filepath_Uri()
+          .migrate(new MigrationContext(connection));
+    } finally {
+      logger.detachAppender(appender);
+    }
+
+    return List.copyOf(appender.list);
   }
 
   private record MigrationContext(Connection connection) implements Context {
@@ -122,4 +176,6 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
       return connection;
     }
   }
+
+  private record MigrationCounts(int updated, int skipped) {}
 }

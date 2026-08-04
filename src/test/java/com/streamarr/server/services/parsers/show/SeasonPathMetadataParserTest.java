@@ -27,13 +27,14 @@ class SeasonPathMetadataParserTest {
   }
 
   @Nested
-  @DisplayName("Should successfully extract season number")
+  @DisplayName("Successful Season Extraction Tests")
   class SuccessfulExtractionTests {
 
     record TestCase(String folderName, int seasonNumber, boolean isSeasonDirectory) {}
 
     @TestFactory
-    Stream<DynamicNode> tests() {
+    @DisplayName("Should extract season number when folder name matches a supported pattern")
+    Stream<DynamicNode> shouldExtractSeasonNumberWhenFolderNameMatchesSupportedPattern() {
       return Stream.of(
               new TestCase("Season 1", 1, true),
               new TestCase("Season 2", 2, true),
@@ -72,13 +73,14 @@ class SeasonPathMetadataParserTest {
   }
 
   @Nested
-  @DisplayName("Should fail to extract season number")
+  @DisplayName("Unsuccessful Season Extraction Tests")
   class UnsuccessfulExtractionTests {
 
     record TestCase(String folderName, boolean isSeasonDirectory) {}
 
     @TestFactory
-    Stream<DynamicNode> tests() {
+    @DisplayName("Should return no season number when folder name does not match")
+    Stream<DynamicNode> shouldReturnNoSeasonNumberWhenFolderNameDoesNotMatch() {
       return Stream.of(
               new TestCase("Season (8)", false),
               new TestCase("s06e05", false),

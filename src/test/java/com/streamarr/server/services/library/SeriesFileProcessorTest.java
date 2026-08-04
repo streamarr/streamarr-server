@@ -3,7 +3,6 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -18,6 +17,7 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
+import com.streamarr.server.fakes.RecordingSeriesMetadataProvider;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -227,6 +227,16 @@ class SeriesFileProcessorTest {
   @DisplayName("Should search with the accented series folder title when path has a season folder")
   void shouldSearchWithAccentedSeriesFolderTitleWhenPathHasSeasonFolder() {
     var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+    var expectedSearch = VideoFileParserResult.builder().title("Amélie Chronicles").build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("Amélie Chronicles")
+            .externalId("777")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingSeriesMetadataProvider();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    var processor = seriesFileProcessorWith(metadataProvider);
 
     var mediaFile =
         fakeMediaFileRepository.save(
@@ -239,24 +249,11 @@ class SeriesFileProcessorTest {
                 .status(MediaFileStatus.UNMATCHED)
                 .build());
 
-    when(seriesMetadataProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-
-    when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(Optional.empty());
-
-    when(seriesMetadataProvider.search(argThat(r -> "Amélie Chronicles".equals(r.title()))))
-        .thenReturn(
-            Optional.of(
-                RemoteSearchResult.builder()
-                    .title("Amélie Chronicles")
-                    .externalId("777")
-                    .externalSourceType(ExternalSourceType.TMDB)
-                    .build()));
-
     when(seriesService.findByTmdbId("777")).thenReturn(Optional.empty());
 
-    seriesFileProcessor.process(library, mediaFile);
+    processor.process(library, mediaFile);
 
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
   }
@@ -265,6 +262,16 @@ class SeriesFileProcessorTest {
   @DisplayName("Should use filename title when root season folder has no series parent")
   void shouldUseFilenameTitleWhenRootSeasonFolderHasNoSeriesParent() {
     var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+    var expectedSearch = VideoFileParserResult.builder().title("The Simpsons").build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("The Simpsons")
+            .externalId("456")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingSeriesMetadataProvider();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    var processor = seriesFileProcessorWith(metadataProvider);
     var mediaFile =
         fakeMediaFileRepository.save(
             MediaFile.builder()
@@ -274,23 +281,11 @@ class SeriesFileProcessorTest {
                 .status(MediaFileStatus.UNMATCHED)
                 .build());
 
-    when(seriesMetadataProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(Optional.empty());
-    when(seriesMetadataProvider.search(argThat(r -> "The Simpsons".equals(r.title()))))
-        .thenReturn(
-            Optional.of(
-                RemoteSearchResult.builder()
-                    .title("The Simpsons")
-                    .externalId("456")
-                    .externalSourceType(ExternalSourceType.TMDB)
-                    .build()));
     when(seriesService.findByTmdbId("456")).thenReturn(Optional.empty());
-    when(seriesMetadataProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(Optional.empty());
 
-    seriesFileProcessor.process(library, mediaFile);
+    processor.process(library, mediaFile);
 
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
   }
@@ -337,5 +332,20 @@ class SeriesFileProcessorTest {
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+  }
+
+  private SeriesFileProcessor seriesFileProcessorWith(SeriesMetadataProvider metadataProvider) {
+    var metadataProviderResolver = new SeriesMetadataProviderResolver(List.of(metadataProvider));
+    return new SeriesFileProcessor(
+        new EpisodePathMetadataParser(new EpisodeRegexFixtures()),
+        new SeasonPathMetadataParser(),
+        new SeriesFolderNameParser(),
+        metadataProviderResolver,
+        new DateBasedEpisodeResolver(metadataProviderResolver),
+        seriesService,
+        fakeMediaFileRepository,
+        fakeSeasonRepository,
+        fakeEpisodeRepository,
+        new MutexFactoryProvider());
   }
 }
