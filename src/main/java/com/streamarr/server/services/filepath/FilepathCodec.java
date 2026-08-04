@@ -17,7 +17,8 @@ import java.util.Optional;
  * Encodes filesystem paths for persistence and recovers paths or display text from those values.
  *
  * <p>New values are absolute {@code file:} URIs. Their percent-encoded path bytes are decoded
- * strictly as UTF-8; malformed file URIs and invalid UTF-8 are rejected. Scheme-less strings remain
+ * strictly as UTF-8 when requested as text; malformed file URIs and invalid UTF-8 text are
+ * rejected. Path decoding preserves percent-encoded filesystem bytes. Scheme-less strings remain
  * supported as legacy persisted paths. See ADR 0012 for the storage contract.
  */
 public final class FilepathCodec {
@@ -94,10 +95,7 @@ public final class FilepathCodec {
   private static String decodedPathComponentOf(String filepathUri) {
     try {
       var uri = URI.create(filepathUri);
-      if (hasFileScheme(filepathUri)
-          && (uri.isOpaque() || uri.getQuery() != null || uri.getFragment() != null)) {
-        throw invalidFilepathUri(filepathUri);
-      }
+      validateFileUriStructure(uri, filepathUri);
       if (uri.getScheme() != null && uri.getPath() != null) {
         return decodeUtf8Path(uri, filepathUri);
       }
@@ -113,6 +111,13 @@ public final class FilepathCodec {
 
   private static boolean hasFileScheme(String value) {
     return value.regionMatches(true, 0, "file:", 0, "file:".length());
+  }
+
+  private static void validateFileUriStructure(URI uri, String filepathUri) {
+    if (hasFileScheme(filepathUri)
+        && (uri.isOpaque() || uri.getQuery() != null || uri.getFragment() != null)) {
+      throw invalidFilepathUri(filepathUri);
+    }
   }
 
   private static IllegalArgumentException invalidFilepathUri(String filepathUri) {
@@ -165,7 +170,7 @@ public final class FilepathCodec {
       var uri = URI.create(filepathUri);
       if (uri.getScheme() != null) {
         if (hasFileScheme(filepathUri)) {
-          decodedPathComponentOf(filepathUri);
+          validateFileUriStructure(uri, filepathUri);
         }
         return decodeUri(fileSystem, uri);
       }

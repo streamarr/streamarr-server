@@ -27,6 +27,8 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import java.net.URI;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -134,6 +136,24 @@ class HlsStreamingServiceTest {
 
     assertThat(transcodeExecutor.getStarted()).contains(session.getSessionId());
     assertThat(transcodeExecutor.isRunning(session.getSessionId())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should preserve non-UTF-8 filepath bytes when creating session")
+  void shouldPreserveNonUtf8FilepathBytesWhenCreatingSession() {
+    var filepathUri = "file:///media/movies/caf%E9.mkv";
+    var file =
+        mediaFileRepository.save(
+            MediaFile.builder()
+                .filepathUri(filepathUri)
+                .filename("legacy-name.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .size(1_000_000L)
+                .build());
+
+    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getSourcePath()).isEqualTo(Path.of(URI.create(filepathUri)));
   }
 
   @Test

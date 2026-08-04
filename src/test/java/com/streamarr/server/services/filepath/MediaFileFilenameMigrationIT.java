@@ -19,9 +19,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
 
 @Tag("IntegrationTest")
+@Isolated
 @DisplayName("Media File Filename Migration Integration Tests")
 class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
 
@@ -31,6 +33,7 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
   @Autowired private MediaFileRepository mediaFileRepository;
 
   private UUID mediaFileId;
+  private UUID additionalMediaFileId;
   private UUID libraryId;
 
   @AfterEach
@@ -39,6 +42,9 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
       return;
     }
 
+    if (additionalMediaFileId != null) {
+      mediaFileRepository.deleteById(additionalMediaFileId);
+    }
     mediaFileRepository.deleteById(mediaFileId);
     libraryRepository.deleteById(libraryId);
   }
@@ -66,6 +72,42 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
 
     assertThat(mediaFileRepository.findById(mediaFileId).orElseThrow().getFilename())
         .isEqualTo("Déjà Vu (2006).mkv");
+  }
+
+  @Test
+  @DisplayName("Should migrate valid rows when another filepath URI cannot be decoded")
+  void shouldMigrateValidRowsWhenAnotherFilepathUriCannotBeDecoded() throws Exception {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    libraryId = library.getId();
+    var undecodableMediaFile =
+        mediaFileRepository.saveAndFlush(
+            MediaFile.builder()
+                .libraryId(libraryId)
+                .filepathUri("file:///media/caf%E9.mkv")
+                .filename("legacy-undecodable-name.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+    mediaFileId = undecodableMediaFile.getId();
+    var validMediaFile =
+        mediaFileRepository.saveAndFlush(
+            MediaFile.builder()
+                .libraryId(libraryId)
+                .filepathUri("file:///media/Am%C3%A9lie%20(2001).mkv")
+                .filename("Am��lie (2001).mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+    additionalMediaFileId = validMediaFile.getId();
+
+    try (var connection = dataSource.getConnection()) {
+      new V049__Derive_Media_File_Filename_From_Filepath_Uri()
+          .migrate(new MigrationContext(connection));
+    }
+    entityManager.clear();
+
+    assertThat(mediaFileRepository.findById(mediaFileId).orElseThrow().getFilename())
+        .isEqualTo("legacy-undecodable-name.mkv");
+    assertThat(mediaFileRepository.findById(additionalMediaFileId).orElseThrow().getFilename())
+        .isEqualTo("Amélie (2001).mkv");
   }
 
   private record MigrationContext(Connection connection) implements Context {

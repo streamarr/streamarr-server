@@ -163,8 +163,8 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should remain healthy when file processing task fails during scan")
-  void shouldRemainHealthyWhenFileProcessingTaskFailsDuringScan() throws Exception {
+  @DisplayName("Should become unhealthy when file processing task fails during scan")
+  void shouldBecomeUnhealthyWhenFileProcessingTaskFailsDuringScan() throws Exception {
     var rootPath = createRootLibraryDirectory();
     var moviePath = createMovieFile(rootPath, "Failing Movie", "Failing Movie (2024).mkv");
 
@@ -175,7 +175,8 @@ class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-    assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    assertThat(library.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
 
     await()
         .atMost(Duration.ofSeconds(5))

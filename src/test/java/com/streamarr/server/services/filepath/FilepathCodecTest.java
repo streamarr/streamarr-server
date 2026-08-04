@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -235,11 +236,13 @@ class FilepathCodecTest {
   }
 
   @Test
-  @DisplayName("Should reject invalid UTF-8 when decoding filepath URI to a path")
-  void shouldRejectInvalidUtf8WhenDecodingFilepathUriToPath() {
-    assertThatThrownBy(() -> FilepathCodec.decode("file:///media/caf%E9.mkv"))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("file:///media/caf%E9.mkv");
+  @DisplayName("Should preserve non-UTF-8 bytes when decoding filepath URI to a path")
+  void shouldPreserveNonUtf8BytesWhenDecodingFilepathUriToPath() {
+    var filepathUri = "file:///media/caf%E9.mkv";
+
+    var path = FilepathCodec.decode(filepathUri);
+
+    assertThat(path).isEqualTo(Path.of(URI.create(filepathUri)));
   }
 
   @Test

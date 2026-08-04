@@ -40,7 +40,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
@@ -323,13 +325,29 @@ public class LibraryManagementService implements ActiveScanChecker {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
         var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
 
-      stream
-          .filter(Files::isRegularFile)
-          .filter(file -> !ignoredFileValidator.shouldIgnore(file))
-          .forEach(file -> executor.submit(() -> processFile(library, file)));
+      var tasks =
+          stream
+              .filter(Files::isRegularFile)
+              .filter(file -> !ignoredFileValidator.shouldIgnore(file))
+              .map(file -> executor.submit(() -> processFile(library, file)))
+              .toList();
+      awaitFileProcessing(library, tasks);
 
     } catch (IOException | UncheckedIOException | SecurityException | InvalidPathException e) {
       throw new LibraryScanFailedException(library.getName(), e);
+    }
+  }
+
+  private static void awaitFileProcessing(Library library, List<? extends Future<?>> tasks) {
+    for (var task : tasks) {
+      try {
+        task.get();
+      } catch (InterruptedException exception) {
+        Thread.currentThread().interrupt();
+        throw new LibraryScanFailedException(library.getName(), exception);
+      } catch (ExecutionException exception) {
+        throw new LibraryScanFailedException(library.getName(), exception.getCause());
+      }
     }
   }
 
@@ -351,7 +369,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     library.setScanCompletedOn(Instant.now());
     libraryRepository.save(library);
 
-    log.error("Failed to access {} library during scan attempt.", library.getName(), cause);
+    log.error("Failed {} library scan.", library.getName(), cause);
   }
 
   private Library transitionToScanning(UUID libraryId) {
