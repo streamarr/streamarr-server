@@ -36,6 +36,7 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -313,7 +314,7 @@ public class LibraryManagementService implements ActiveScanChecker {
         walkAndProcessFiles(library);
         completeScanSuccessfully(library, startTime);
       } catch (LibraryScanFailedException e) {
-        completeScanWithFailure(library, e.getCause());
+        completeScanWithFailure(library, e);
       }
     } finally {
       eventPublisher.publishEvent(new ScanEndedEvent(libraryId));
@@ -339,6 +340,8 @@ public class LibraryManagementService implements ActiveScanChecker {
   }
 
   private static void awaitFileProcessing(Library library, List<? extends Future<?>> tasks) {
+    var failures = new ArrayList<Throwable>();
+
     for (var task : tasks) {
       try {
         task.get();
@@ -346,9 +349,18 @@ public class LibraryManagementService implements ActiveScanChecker {
         Thread.currentThread().interrupt();
         throw new LibraryScanFailedException(library.getName(), exception);
       } catch (ExecutionException exception) {
-        throw new LibraryScanFailedException(library.getName(), exception.getCause());
+        failures.add(exception.getCause());
       }
     }
+
+    if (failures.isEmpty()) {
+      return;
+    }
+
+    var scanFailure =
+        new LibraryScanFailedException(library.getName(), failures.size(), failures.getFirst());
+    failures.stream().skip(1).forEach(scanFailure::addSuppressed);
+    throw scanFailure;
   }
 
   private void completeScanSuccessfully(Library library, Instant startTime) {

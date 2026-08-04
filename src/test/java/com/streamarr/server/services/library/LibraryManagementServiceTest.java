@@ -9,6 +9,11 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.ThrowableProxyUtil;
+import ch.qos.logback.core.read.ListAppender;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.LibraryScanProperties;
@@ -84,6 +89,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @ExtendWith(MockitoExtension.class)
@@ -184,6 +190,105 @@ class LibraryManagementServiceTest {
   }
 
   @Test
+  @DisplayName("Should report every file processing failure when multiple tasks fail")
+  void shouldReportEveryFileProcessingFailureWhenMultipleTasksFail() throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "First Movie", "First Movie (2024).mkv");
+    createMovieFile(rootPath, "Second Movie", "Second Movie (2024).mkv");
+    var failuresReady = new CountDownLatch(2);
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenAnswer(
+            invocation -> {
+              var parsedFile = invocation.getArgument(0, VideoFileParserResult.class);
+              failuresReady.countDown();
+              assertThat(failuresReady.await(5, TimeUnit.SECONDS)).isTrue();
+              throw new RuntimeException("simulated failure: " + parsedFile.title());
+            });
+
+    var logger = (Logger) LoggerFactory.getLogger(LibraryManagementService.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      libraryManagementService.scanLibrary(savedLibraryId);
+    } finally {
+      logger.detachAppender(appender);
+      appender.stop();
+    }
+
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.ERROR)
+        .singleElement()
+        .satisfies(
+            event -> {
+              assertThat(event.getFormattedMessage())
+                  .isEqualTo("Failed Test Library library scan.");
+              assertThat(ThrowableProxyUtil.asString(event.getThrowableProxy()))
+                  .contains(
+                      "2 file processing tasks failed",
+                      "simulated failure: First Movie",
+                      "simulated failure: Second Movie");
+            });
+  }
+
+  @Test
+  @DisplayName("Should finish submitted files when a file processing task fails")
+  void shouldFinishSubmittedFilesWhenFileProcessingTaskFails() throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    var failingMoviePath =
+        createMovieFile(rootPath, "00 Failing Movie", "Failing Movie (2024).mkv");
+    var completingMoviePath =
+        createMovieFile(rootPath, "99 Completing Movie", "Completing Movie (2024).mkv");
+    var completingTaskStarted = new CountDownLatch(1);
+    var releaseCompletingTask = new CountDownLatch(1);
+    var failingTaskFinished = new CountDownLatch(1);
+
+    try (var paths = Files.walk(rootPath)) {
+      assertThat(paths.filter(Files::isRegularFile).toList())
+          .as("fixture requires the failing future to be awaited first")
+          .containsExactly(failingMoviePath, completingMoviePath);
+    }
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenAnswer(
+            invocation -> {
+              var parsedFile = invocation.getArgument(0, VideoFileParserResult.class);
+              if (parsedFile.title().equals("Completing Movie")) {
+                completingTaskStarted.countDown();
+                releaseCompletingTask.await();
+                return Optional.empty();
+              }
+
+              assertThat(completingTaskStarted.await(5, TimeUnit.SECONDS)).isTrue();
+              failingTaskFinished.countDown();
+              throw new RuntimeException("simulated search failure");
+            });
+
+    var scanThread =
+        Thread.ofPlatform().start(() -> libraryManagementService.scanLibrary(savedLibraryId));
+
+    try {
+      assertThat(failingTaskFinished.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(scanThread.isAlive())
+          .as("scan should still be waiting for the completing task")
+          .isTrue();
+    } finally {
+      releaseCompletingTask.countDown();
+    }
+
+    assertThat(scanThread.join(Duration.ofSeconds(5))).isTrue();
+    assertThat(
+            fakeMediaFileRepository
+                .findFirstByFilepathUri(FilepathCodec.encode(completingMoviePath))
+                .orElseThrow()
+                .getStatus())
+        .isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+  }
+
+  @Test
   @DisplayName(
       "Should restore interrupt flag and become unhealthy when scan is interrupted during file processing")
   void shouldRestoreInterruptFlagAndBecomeUnhealthyWhenScanIsInterruptedDuringFileProcessing()
@@ -193,13 +298,19 @@ class LibraryManagementServiceTest {
     var processingStarted = new CountDownLatch(1);
     var releaseProcessing = new CountDownLatch(1);
     var interruptRestored = new AtomicBoolean();
+    var workerInterrupted = new AtomicBoolean();
 
     when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
     when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
         .thenAnswer(
             _ -> {
               processingStarted.countDown();
-              releaseProcessing.await();
+              try {
+                releaseProcessing.await();
+              } catch (InterruptedException exception) {
+                workerInterrupted.set(true);
+                throw exception;
+              }
               return Optional.empty();
             });
 
@@ -215,12 +326,13 @@ class LibraryManagementServiceTest {
     try {
       assertThat(processingStarted.await(5, TimeUnit.SECONDS)).isTrue();
       scanThread.interrupt();
+      assertThat(scanThread.join(Duration.ofSeconds(5))).isTrue();
     } finally {
       releaseProcessing.countDown();
     }
 
-    assertThat(scanThread.join(Duration.ofSeconds(5))).isTrue();
     assertThat(interruptRestored).isTrue();
+    assertThat(workerInterrupted).isTrue();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
     assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
