@@ -20,8 +20,6 @@ import org.springframework.web.util.WebUtils;
  */
 final class StreamarrCookieCsrfTokenRepository implements CsrfTokenRepository {
 
-  static final String HEADER_NAME = AuthCookies.CSRF_HEADER;
-
   private static final String PARAMETER_NAME = "_csrf";
   private static final String TOKEN_REMOVED_ATTRIBUTE =
       StreamarrCookieCsrfTokenRepository.class.getName() + ".TOKEN_REMOVED";
@@ -29,6 +27,9 @@ final class StreamarrCookieCsrfTokenRepository implements CsrfTokenRepository {
   private final Duration cookieLifetime;
 
   StreamarrCookieCsrfTokenRepository(Duration cookieLifetime) {
+    if (cookieLifetime == null || cookieLifetime.isZero() || cookieLifetime.isNegative()) {
+      throw new IllegalArgumentException("cookieLifetime must be positive");
+    }
     this.cookieLifetime = cookieLifetime;
   }
 

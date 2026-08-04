@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.services.auth.TokenScope;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.Filter;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
@@ -33,6 +35,8 @@ import org.springframework.web.context.support.AnnotationConfigWebApplicationCon
 @Tag("UnitTest")
 @DisplayName("Security Configuration Tests")
 class SecurityConfigTest {
+
+  private static final Duration TEST_REFRESH_TOKEN_TTL = Duration.ofHours(7);
 
   private AnnotationConfigWebApplicationContext context;
   private MockMvc mockMvc;
@@ -140,8 +144,22 @@ class SecurityConfigTest {
         .perform(
             post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"), tokenCookie)
-                .header(StreamarrCookieCsrfTokenRepository.HEADER_NAME, tokenCookie.getValue()))
+                .header(AuthCookies.CSRF_HEADER, tokenCookie.getValue()))
         .andExpect(status().isNoContent());
+  }
+
+  @Test
+  @DisplayName("Should wire refresh token lifetime into csrf cookie")
+  void shouldWireRefreshTokenLifetimeIntoCsrfCookie() throws Exception {
+    var tokenCookie =
+        mockMvc
+            .perform(get("/api/auth/login"))
+            .andReturn()
+            .getResponse()
+            .getCookie(AuthCookies.CSRF_COOKIE);
+
+    assertThat(tokenCookie).isNotNull();
+    assertThat(tokenCookie.getMaxAge()).isEqualTo(TEST_REFRESH_TOKEN_TTL.toSeconds());
   }
 
   @Test
@@ -159,7 +177,7 @@ class SecurityConfigTest {
         .perform(
             post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"), tokenCookie)
-                .header(StreamarrCookieCsrfTokenRepository.HEADER_NAME, "wrong-token"))
+                .header(AuthCookies.CSRF_HEADER, "wrong-token"))
         .andExpect(status().isForbidden());
   }
 
@@ -205,9 +223,14 @@ class SecurityConfigTest {
     AuthTokenProperties authTokenProperties() {
       return AuthTokenProperties.builder()
           .accessTokenTtl(Duration.ofMinutes(10))
-          .refreshTokenTtl(Duration.ofDays(30))
+          .refreshTokenTtl(TEST_REFRESH_TOKEN_TTL)
           .rotationGrace(Duration.ofSeconds(30))
           .build();
+    }
+
+    @Bean
+    MeterRegistry meterRegistry() {
+      return new SimpleMeterRegistry();
     }
   }
 

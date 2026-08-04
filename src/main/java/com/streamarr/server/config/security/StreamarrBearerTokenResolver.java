@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.Set;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
+import org.springframework.web.util.UrlPathHelper;
 
 /**
  * Path-aware token resolution. The permitAll auth, health, and public-key endpoints resolve
@@ -47,7 +48,7 @@ public final class StreamarrBearerTokenResolver implements BearerTokenResolver {
   }
 
   private static String pathWithinApplication(HttpServletRequest request) {
-    return request.getRequestURI().substring(request.getContextPath().length());
+    return UrlPathHelper.defaultInstance.getPathWithinApplication(request);
   }
 
   private static boolean isHealthPath(String path) {

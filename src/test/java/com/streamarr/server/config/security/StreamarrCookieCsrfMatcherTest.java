@@ -6,6 +6,8 @@ import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 
@@ -88,9 +90,30 @@ class StreamarrCookieCsrfMatcherTest {
   }
 
   @Test
+  @DisplayName(
+      "Should not require csrf when an accepted bearer credential uses a differently cased scheme")
+  void shouldNotRequireCsrfWhenAcceptedBearerCredentialUsesDifferentlyCasedScheme() {
+    var request = new MockHttpServletRequest("POST", "/graphql");
+    request.addHeader(HttpHeaders.AUTHORIZATION, "bearer a-real-looking-token");
+    request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "access-value"));
+
+    assertThat(matcher.matches(request)).isFalse();
+  }
+
+  @Test
   @DisplayName("Should require csrf when a bearer header is ignored on login")
   void shouldRequireCsrfWhenBearerHeaderIsIgnoredOnLogin() {
     var request = new MockHttpServletRequest("POST", "/api/auth/login");
+    request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer ignored-token");
+    request.setCookies(new Cookie(AuthCookies.CSRF_COOKIE, "csrf-value"));
+
+    assertThat(matcher.matches(request)).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should require csrf when bearer header rides login with matrix parameters")
+  void shouldRequireCsrfWhenBearerHeaderRidesLoginWithMatrixParameters() {
+    var request = new MockHttpServletRequest("POST", "/api/auth/login;source=test");
     request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer ignored-token");
     request.setCookies(new Cookie(AuthCookies.CSRF_COOKIE, "csrf-value"));
 
@@ -102,6 +125,24 @@ class StreamarrCookieCsrfMatcherTest {
   void shouldNotRequireCsrfWhenMethodIsSafeDespiteStreamarrCookies() {
     var request = new MockHttpServletRequest("GET", "/api/auth/status");
     request.setCookies(new Cookie(AuthCookies.CSRF_COOKIE, "csrf-value"));
+
+    assertThat(matcher.matches(request)).isFalse();
+  }
+
+  @ParameterizedTest(name = "Should require csrf for unsafe method {0}")
+  @ValueSource(strings = {"POST", "PUT", "PATCH", "DELETE"})
+  void shouldRequireCsrfForUnsafeMethod(String method) {
+    var request = new MockHttpServletRequest(method, "/graphql");
+    request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "access-value"));
+
+    assertThat(matcher.matches(request)).isTrue();
+  }
+
+  @ParameterizedTest(name = "Should not require csrf for safe method {0}")
+  @ValueSource(strings = {"GET", "HEAD", "OPTIONS", "TRACE"})
+  void shouldNotRequireCsrfForSafeMethod(String method) {
+    var request = new MockHttpServletRequest(method, "/graphql");
+    request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "access-value"));
 
     assertThat(matcher.matches(request)).isFalse();
   }

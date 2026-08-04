@@ -40,7 +40,7 @@ import org.springframework.test.web.servlet.MockMvc;
 class SecurityFilterChainIT extends AbstractIntegrationTest {
 
   private static final String ACCOUNT_QUERY = "{\"query\": \"{ me { accountId } }\"}";
-  private static final String CSRF_HEADER = StreamarrCookieCsrfTokenRepository.HEADER_NAME;
+  private static final String CSRF_HEADER = AuthCookies.CSRF_HEADER;
 
   @Autowired private MockMvc mockMvc;
 
@@ -272,23 +272,29 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginBody("nobody-" + UUID.randomUUID() + "@example.com", true)))
         .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        .andExpect(jsonPath("$.code").value("CSRF_TOKEN_REQUIRED"));
   }
 
   @Test
-  @DisplayName("Should reject cookie authenticated graphql when no csrf token accompanies it")
-  void shouldRejectCookieAuthenticatedGraphQlWhenNoCsrfTokenAccompaniesIt() throws Exception {
+  @DisplayName("Should reject cookie authenticated graphql and remint its missing csrf token")
+  void shouldRejectCookieAuthenticatedGraphQlAndRemintItsMissingCsrfToken() throws Exception {
     identity = authTestSupport.createIdentity();
 
-    mockMvc
-        .perform(
-            post("/graphql")
-                .cookie(
-                    new Cookie(AuthCookies.ACCESS_COOKIE, authTestSupport.accountBearer(identity)))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(ACCOUNT_QUERY))
-        .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    var response =
+        mockMvc
+            .perform(
+                post("/graphql")
+                    .cookie(
+                        new Cookie(
+                            AuthCookies.ACCESS_COOKIE, authTestSupport.accountBearer(identity)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(ACCOUNT_QUERY))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.code").value("CSRF_TOKEN_REQUIRED"))
+            .andReturn()
+            .getResponse();
+
+    assertThat(response.getCookie(AuthCookies.CSRF_COOKIE)).isNotNull();
   }
 
   @Test
@@ -307,7 +313,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(ACCOUNT_QUERY))
         .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        .andExpect(jsonPath("$.code").value("CSRF_TOKEN_REQUIRED"));
   }
 
   @Test
@@ -325,7 +331,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
                     "profileName": "Admin", "cookieMode": true} \
                     """))
         .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        .andExpect(jsonPath("$.code").value("CSRF_TOKEN_REQUIRED"));
   }
 
   @Test
@@ -506,10 +512,13 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
     return Stream.of(
         Arguments.of("/api/auth/setup", MediaType.TEXT_PLAIN, "not-json"),
         Arguments.of("/api/auth/setup", MediaType.APPLICATION_FORM_URLENCODED, "email=a"),
+        Arguments.of("/api/auth/setup", MediaType.MULTIPART_FORM_DATA, "not-a-multipart-body"),
         Arguments.of("/api/auth/login", MediaType.TEXT_PLAIN, "not-json"),
         Arguments.of("/api/auth/login", MediaType.APPLICATION_FORM_URLENCODED, "email=a"),
+        Arguments.of("/api/auth/login", MediaType.MULTIPART_FORM_DATA, "not-a-multipart-body"),
         Arguments.of("/api/auth/refresh", MediaType.TEXT_PLAIN, "not-json"),
-        Arguments.of("/api/auth/refresh", MediaType.APPLICATION_FORM_URLENCODED, "token=a"));
+        Arguments.of("/api/auth/refresh", MediaType.APPLICATION_FORM_URLENCODED, "token=a"),
+        Arguments.of("/api/auth/refresh", MediaType.MULTIPART_FORM_DATA, "not-a-multipart-body"));
   }
 
   private String playbackBearer(UUID streamSessionId) {
