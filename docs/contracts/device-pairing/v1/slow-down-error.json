@@ -1,4 +1,0 @@
-{
-  "code": "slow_down",
-  "message": "Polling too frequently; increase the interval by five seconds."
-}

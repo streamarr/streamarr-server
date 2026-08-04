@@ -9,10 +9,10 @@ import java.util.Locale;
  * the server runs, reports {@code devicePairingEnabled: false}, and refuses to invent an address it
  * cannot know.
  *
- * <p>Validation here is deliberately light. Clients re-normalize every URL they receive against the
- * shared endpoint table in {@code docs/contracts/server-endpoint/v1}, so implementing that table
- * again on the server would be a second implementation with no consumer. What this check must catch
- * is operator error in the one value every client contract hangs off.
+ * <p>Validation here is deliberately light. Clients re-normalize every URL they receive before
+ * binding credentials, so duplicating their full connection policy on the server would add a second
+ * implementation with no consumer. What this check must catch is operator error in the one value
+ * every client contract hangs off.
  */
 public final class CanonicalBaseUrl {
 

@@ -108,5 +108,5 @@ Contract endpoints never redirect: `/api/auth/**` and `/api/stream/**` return fi
 
 * link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015: Authorization, Profiles, and Content Controls]
 * link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016: Authentication Mechanisms and Session Security]
-* `docs/device-pairing-contract.adoc`, `docs/discovery-contract.adoc`, and the fixtures under `docs/contracts/`
+* `docs/device-pairing-contract.adoc` and `docs/discovery-contract.adoc`
 * https://datatracker.ietf.org/doc/html/rfc8628[RFC 8628: OAuth 2.0 Device Authorization Grant]

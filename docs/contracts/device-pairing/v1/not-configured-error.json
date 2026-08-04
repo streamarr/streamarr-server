@@ -1,4 +1,0 @@
-{
-  "code": "DEVICE_PAIRING_NOT_CONFIGURED",
-  "message": "Device pairing requires a configured canonical base URL."
-}

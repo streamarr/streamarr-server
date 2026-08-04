@@ -15,8 +15,6 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.TokenContext;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,16 +37,10 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * Pins {@code /api/auth/device/**} and the status extension against the golden fixtures in {@code
- * docs/contracts/device-pairing/v1}. Poll-state bodies are asserted byte-for-byte: clients branch
- * on those exact lowercase codes.
- */
+/** Pins {@code /api/auth/device/**} and the status extension as an executable client contract. */
 @Tag("IntegrationTest")
 @DisplayName("Device Auth Contract Integration Tests")
 class DeviceAuthContractIT extends AbstractIntegrationTest {
-
-  private static final Path FIXTURES = Path.of("docs/contracts/device-pairing/v1");
 
   @Autowired private MockMvc mockMvc;
 
@@ -81,7 +73,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(uncacheable()));
 
-    assertThat(fieldNamesOf(body)).isEqualTo(fieldNamesOf(fixture("status.json")));
+    assertThat(fieldNamesOf(body))
+        .containsExactlyInAnyOrder("setupComplete", "devicePairingEnabled");
     assertThat(body.get("devicePairingEnabled").asBoolean()).isTrue();
   }
 
@@ -90,7 +83,9 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   void shouldIssueAbsoluteVerificationUriAndServersOwnTimings() throws Exception {
     var body = issueCode("Apple TV");
 
-    assertThat(fieldNamesOf(body)).isEqualTo(fieldNamesOf(fixture("code-success.json")));
+    assertThat(fieldNamesOf(body))
+        .containsExactlyInAnyOrder(
+            "deviceCode", "userCode", "verificationUri", "interval", "expiresIn");
     assertThat(body.get("verificationUri").asString()).isEqualTo("https://home.example.test/link");
     assertThat(body.get("userCode").asString())
         .matches("[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}");
@@ -146,9 +141,11 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(uncacheable()));
 
-    var expected = fixture("invalid-request-error.json");
     assertThat(List.of(tokenBody, lookupBody, decisionBody))
-        .allSatisfy(body -> assertThat(body).isEqualTo(expected));
+        .allSatisfy(
+            body ->
+                assertErrorBody(
+                    body, "INVALID_REQUEST", "The request body is missing or malformed."));
   }
 
   @Test
@@ -157,8 +154,10 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     var deviceCode = issueCode("Apple TV").get("deviceCode").asString();
 
     // RFC 8628 §3.2: the interval is the wait between polls, so the first one is never too soon.
-    assertThat(pollExpectingBadRequest(deviceCode))
-        .isEqualTo(fixture("authorization-pending-error.json"));
+    assertErrorBody(
+        pollExpectingBadRequest(deviceCode),
+        "authorization_pending",
+        "The device authorization has not been approved yet.");
   }
 
   @Test
@@ -168,14 +167,19 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     pollExpectingBadRequest(deviceCode);
 
     // The second poll lands well inside the interval the first one started.
-    assertThat(pollExpectingBadRequest(deviceCode)).isEqualTo(fixture("slow-down-error.json"));
+    assertErrorBody(
+        pollExpectingBadRequest(deviceCode),
+        "slow_down",
+        "Polling too frequently; increase the interval by five seconds.");
   }
 
   @Test
   @DisplayName("Should answer an unknown device code with the pinned expired body")
   void shouldAnswerUnknownDeviceCodeWithPinnedExpiredBody() throws Exception {
-    assertThat(pollExpectingBadRequest("not-a-device-code"))
-        .isEqualTo(fixture("expired-token-error.json"));
+    assertErrorBody(
+        pollExpectingBadRequest("not-a-device-code"),
+        "expired_token",
+        "The device code is unknown or no longer usable.");
   }
 
   @Test
@@ -185,8 +189,10 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     var approver = seedAccount();
     decide(approver, issued.get("userCode").asString(), "DENY");
 
-    assertThat(pollExpectingBadRequest(issued.get("deviceCode").asString()))
-        .isEqualTo(fixture("access-denied-error.json"));
+    assertErrorBody(
+        pollExpectingBadRequest(issued.get("deviceCode").asString()),
+        "access_denied",
+        "The device authorization request was denied.");
   }
 
   @Test
@@ -203,7 +209,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(uncacheable()));
 
-    assertThat(fieldNamesOf(body)).isEqualTo(fieldNamesOf(fixture("token-success.json")));
+    assertThat(fieldNamesOf(body))
+        .containsExactlyInAnyOrder("accessToken", "accessTokenExpiresAt", "scope", "refreshToken");
     assertThat(body.get("scope").asString()).isEqualTo("account");
     assertThat(body.get("accessToken").asString()).isNotBlank();
     assertThat(body.get("refreshToken").asString()).isNotBlank();
@@ -226,9 +233,12 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(uncacheable()));
 
-    assertThat(fieldNamesOf(body)).isEqualTo(fieldNamesOf(fixture("lookup-success.json")));
+    assertThat(fieldNamesOf(body))
+        .containsExactlyInAnyOrder("userCode", "deviceName", "status", "requestedAt");
+    assertThat(body.get("userCode").asString()).isEqualTo(issued.get("userCode").asString());
     assertThat(body.get("deviceName").asString()).isEqualTo("Living Room Apple TV");
     assertThat(body.get("status").asString()).isEqualTo("PENDING");
+    assertThat(Instant.parse(body.get("requestedAt").asString())).isBeforeOrEqualTo(Instant.now());
   }
 
   @Test
@@ -283,8 +293,9 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
 
     var body = decide(approver, issued.get("userCode").asString(), decision);
 
-    assertThat(fieldNamesOf(body)).isEqualTo(fieldNamesOf(fixture("decision-success.json")));
+    assertThat(fieldNamesOf(body)).containsExactlyInAnyOrder("status", "deviceName");
     assertThat(body.get("status").asString()).isEqualTo(expectedStatus);
+    assertThat(body.get("deviceName").asString()).isEqualTo("Apple TV");
   }
 
   @Test
@@ -301,7 +312,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                         .content("{\"userCode\": \"BCDF-GHJK\", \"decision\": \"MAYBE\"}"))
                 .andExpect(status().isBadRequest()));
 
-    assertThat(body).isEqualTo(fixture("invalid-decision-error.json"));
+    assertErrorBody(body, "INVALID_DECISION", "The decision must be APPROVE or DENY.");
   }
 
   @Test
@@ -319,7 +330,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(uncacheable()));
 
-    assertThat(body).isEqualTo(fixture("invalid-decision-error.json"));
+    assertErrorBody(body, "INVALID_DECISION", "The decision must be APPROVE or DENY.");
   }
 
   @Test
@@ -336,7 +347,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                         .content(userCodeBody("NOPE")))
                 .andExpect(status().isBadRequest()));
 
-    assertThat(body).isEqualTo(fixture("invalid-user-code-error.json"));
+    assertErrorBody(body, "INVALID_USER_CODE", "The user code is not a valid pairing code.");
   }
 
   @Test
@@ -354,7 +365,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(uncacheable()));
 
-    assertThat(body).isEqualTo(fixture("invalid-user-code-error.json"));
+    assertErrorBody(body, "INVALID_USER_CODE", "The user code is not a valid pairing code.");
   }
 
   @Test
@@ -372,7 +383,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(uncacheable()));
 
-    assertThat(body).isEqualTo(fixture("not-found-error.json"));
+    assertErrorBody(body, "DEVICE_CODE_NOT_FOUND", "No pairing request matches that code.");
   }
 
   @Test
@@ -390,7 +401,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(uncacheable()));
 
-    assertThat(body).isEqualTo(fixture("not-found-error.json"));
+    assertErrorBody(body, "DEVICE_CODE_NOT_FOUND", "No pairing request matches that code.");
   }
 
   @Test
@@ -409,7 +420,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                         .content(decisionBody(issued.get("userCode").asString(), "DENY")))
                 .andExpect(status().isConflict()));
 
-    assertThat(body).isEqualTo(fixture("not-pending-error.json"));
+    assertErrorBody(
+        body, "DEVICE_CODE_NOT_PENDING", "That pairing request has already been decided.");
   }
 
   @Test
@@ -434,7 +446,10 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(uncacheable()));
 
-    assertThat(body).isEqualTo(fixture("expired-error.json"));
+    assertErrorBody(
+        body,
+        "DEVICE_CODE_EXPIRED",
+        "That pairing code has expired; start a new one on the device.");
   }
 
   @Test
@@ -555,11 +570,9 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     return Set.copyOf(node.propertyNames());
   }
 
-  private JsonNode fixture(String fixtureName) {
-    try {
-      return objectMapper.readTree(Files.readString(FIXTURES.resolve(fixtureName)));
-    } catch (java.io.IOException e) {
-      throw new IllegalStateException("Missing contract fixture: " + fixtureName, e);
-    }
+  private static void assertErrorBody(JsonNode body, String code, String message) {
+    assertThat(fieldNamesOf(body)).containsExactlyInAnyOrder("code", "message");
+    assertThat(body.get("code").asString()).isEqualTo(code);
+    assertThat(body.get("message").asString()).isEqualTo(message);
   }
 }

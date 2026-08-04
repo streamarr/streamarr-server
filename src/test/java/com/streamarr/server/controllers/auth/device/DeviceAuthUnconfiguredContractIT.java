@@ -6,8 +6,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -15,7 +13,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @Tag("IntegrationTest")
@@ -23,14 +20,12 @@ import tools.jackson.databind.ObjectMapper;
 @DisplayName("Unconfigured Device Auth Contract Integration Tests")
 class DeviceAuthUnconfiguredContractIT extends AbstractIntegrationTest {
 
-  private static final Path FIXTURES = Path.of("docs/contracts/device-pairing/v1");
-
   @Autowired private MockMvc mockMvc;
 
   @Autowired private ObjectMapper objectMapper;
 
   @Test
-  @DisplayName("Should advertise disabled pairing and reject issuance with the pinned body")
+  @DisplayName("Should advertise disabled pairing and reject issuance with the expected body")
   void shouldAdvertiseDisabledPairingAndRejectIssuanceWithPinnedBody() throws Exception {
     var statusBody =
         objectMapper.readTree(
@@ -54,14 +49,9 @@ class DeviceAuthUnconfiguredContractIT extends AbstractIntegrationTest {
                 .getResponse()
                 .getContentAsString());
 
-    assertThat(errorBody).isEqualTo(fixture("not-configured-error.json"));
-  }
-
-  private JsonNode fixture(String fixtureName) {
-    try {
-      return objectMapper.readTree(Files.readString(FIXTURES.resolve(fixtureName)));
-    } catch (java.io.IOException e) {
-      throw new IllegalStateException("Missing contract fixture: " + fixtureName, e);
-    }
+    assertThat(errorBody.size()).isEqualTo(2);
+    assertThat(errorBody.get("code").asString()).isEqualTo("DEVICE_PAIRING_NOT_CONFIGURED");
+    assertThat(errorBody.get("message").asString())
+        .isEqualTo("Device pairing requires a configured canonical base URL.");
   }
 }

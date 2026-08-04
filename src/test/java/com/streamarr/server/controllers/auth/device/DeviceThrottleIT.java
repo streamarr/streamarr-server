@@ -1,6 +1,7 @@
 package com.streamarr.server.controllers.auth.device;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -15,8 +16,6 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.TokenContext;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -29,14 +28,10 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
 @Tag("IntegrationTest")
 @DisplayName("Device Pairing Throttle Integration Tests")
 class DeviceThrottleIT extends AbstractIntegrationTest {
-
-  private static final Path FIXTURES = Path.of("docs/contracts/device-pairing/v1");
 
   @Autowired private MockMvc mockMvc;
 
@@ -49,8 +44,6 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   @Autowired private RefreshTokenService refreshTokenService;
 
   @Autowired private DeviceAuthProperties properties;
-
-  @Autowired private ObjectMapper objectMapper;
 
   private final List<UUID> accountIds = new ArrayList<>();
 
@@ -114,6 +107,9 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
             .perform(issueCode())
             .andExpect(status().isTooManyRequests())
             .andExpect(header().exists(HttpHeaders.RETRY_AFTER))
+            .andExpect(jsonPath("$.*", hasSize(2)))
+            .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"))
+            .andExpect(jsonPath("$.message").value("Too many attempts; try again later."))
             .andReturn()
             .getResponse();
     var retryAfter = response.getHeader(HttpHeaders.RETRY_AFTER);
@@ -122,8 +118,6 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
     assertThat(Long.parseLong(retryAfter))
         .isPositive()
         .isLessThanOrEqualTo(properties.codeTtl().toSeconds());
-    assertThat(objectMapper.readTree(response.getContentAsString()))
-        .isEqualTo(fixture("too-many-attempts-error.json"));
   }
 
   private static MockHttpServletRequestBuilder issueCode() {
@@ -154,13 +148,5 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     accountIds.add(account.getId());
     return account;
-  }
-
-  private JsonNode fixture(String fixtureName) {
-    try {
-      return objectMapper.readTree(Files.readString(FIXTURES.resolve(fixtureName)));
-    } catch (java.io.IOException e) {
-      throw new IllegalStateException("Missing contract fixture: " + fixtureName, e);
-    }
   }
 }

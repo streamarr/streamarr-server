@@ -160,35 +160,26 @@ implementation passed the stronger behavior test.
 
 | Claim | Temporary probe and result | Impact if later regressed |
 | --- | --- | --- |
-| F1 unconfigured response | `PR261UnconfiguredContractProbeIT` asserted `devicePairingEnabled: false`, HTTP 503, and exact `not-configured-error.json`; GREEN | Clients cannot reliably discover or handle disabled pairing |
-| F1 expired response | `PR261ExpiredContractProbeIT` seeded an expired row and asserted the authenticated decision response byte-for-byte against `expired-error.json`; GREEN | Approver clients branch on the pinned error code/message |
-| F1 capacity response | `PR261TooManyAttemptsContractProbeIT` filled the cap and asserted HTTP 429, `Retry-After`, and exact `too-many-attempts-error.json`; GREEN | Anonymous clients lose the retry contract |
+| F1 unconfigured response | `PR261UnconfiguredContractProbeIT` asserted `devicePairingEnabled: false`, HTTP 503, and the exact error code/message; GREEN | Clients cannot reliably discover or handle disabled pairing |
+| F1 expired response | `PR261ExpiredContractProbeIT` seeded an expired row and asserted the authenticated decision response's exact error code/message; GREEN | Approver clients branch on the documented error response |
+| F1 capacity response | `PR261TooManyAttemptsContractProbeIT` filled the cap and asserted HTTP 429, `Retry-After`, and the exact error code/message; GREEN | Anonymous clients lose the retry contract |
 | F4 rollback | `PR261RedemptionRollbackProbeIT` replaced `AccessTokenIssuer` with a throwing primary bean after session creation; PostgreSQL showed no session/token committed and the grant remained APPROVED; GREEN | A transient post-session failure could burn a grant or leave an orphan session |
 | F7 live APPROVED sweep | `PR261ReviewCoverageProbeTest.shouldRetainLiveApprovedGrantDuringSweeping`; GREEN | An approved device waiting to poll becomes `expired_token` |
 | F8 decision releases cap | Parameterized APPROVE/DENY probe issued at cap 1, decided, then issued again; GREEN for both | Repeated successful/denied pairings can starve all new issuance until TTL |
 | F9 finish after disable | Probe issued while configured, then used an unconfigured service to lookup and approve; GREEN | A code already displayed on a TV becomes stranded |
 | F11 refusal types | `PR261IssuanceCapProbeIT` raced eight issuers against one free slot and required every loser to be `TooManyDeviceAttemptsException`; GREEN on PostgreSQL | The committed test can otherwise pass when SQL/transaction failures replace expected refusals |
 
-Static fixture-reference audit:
-
-```text
-expired-error.json
-not-configured-error.json
-too-many-attempts-error.json
-```
-
-Those are the three normative fixtures with no filename reference in `DeviceAuthContractIT`, despite
-`docs/contracts/device-pairing/v1/README.adoc` claiming every literal value is asserted
-byte-for-byte.
+The three responses above originally lacked direct field assertions in their committed contract
+tests. They are now covered inline without a separate golden-fixture convention.
 
 ### Static, policy, and optional findings
 
 - **F5 warning behavior:** filling a cap of 50 emitted one warning for every count from 25 through
   50, then one per refusal. This is real log volume and the post-insert count can race with decisions,
   but no contract requires edge-triggering. Treat as observability/performance work, not correctness.
-- **Dot-segment finding:** withdrawn. `docs/contracts/server-endpoint/v1/README.adoc` explicitly says
-  the server does not implement the client normalization table and lists the deliberately light
-  startup checks. Expanding server validation would revisit that settled division of responsibility.
+- **Dot-segment finding:** withdrawn. `docs/discovery-contract.adoc` explicitly assigns endpoint
+  normalization to clients, while the server performs deliberately light startup checks. Expanding
+  server validation would revisit that settled division of responsibility.
 - **Throttle-before-normalize:** policy is unspecified. Decide whether malformed authenticated
   guesses spend budget, document it, then test the chosen behavior.
 - **Row-lock timeout:** a timeout/SLO could limit connection-pool damage from a wedged transaction,

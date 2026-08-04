@@ -4,8 +4,7 @@ Normative wire contract for `/api/auth/device/**` and the `devicePairingEnabled`
 Rationale lives in link:adr/0021-device-pairing-over-streamarr-transport.adoc[ADR 0021]; this document defines what clients encode.
 RFC 8628 is authoritative for the adopted code, cadence, terminal-state, and security semantics. This document is authoritative for the deliberate Streamarr JSON transport and extensions; it is not an RFC 8628 wire-compatible OAuth grant.
 
-Golden fixtures under `contracts/device-pairing/v1/` are part of the contract: server protocol tests assert against those exact files.
-If this prose and a fixture disagree, the fixture is fixed first and this document follows.
+Server protocol tests enforce this contract with explicit response-field, status, and header assertions.
 
 == Flow
 
@@ -29,7 +28,10 @@ TV  branches on scope → picker or library
 
 [source,json]
 ----
-include::contracts/device-pairing/v1/status.json[]
+{
+  "setupComplete": true,
+  "devicePairingEnabled": true
+}
 ----
 
 Both booleans are *required* in v1; later versions may add fields.
@@ -70,7 +72,13 @@ Request `{"deviceName": "Apple TV"}`. Success `200`:
 
 [source,json]
 ----
-include::contracts/device-pairing/v1/code-success.json[]
+{
+  "deviceCode": "<opaque 256-bit base64url, 43 chars>",
+  "userCode": "BCDF-GHJK",
+  "verificationUri": "https://home.example.com/link",
+  "interval": 5,
+  "expiresIn": 600
+}
 ----
 
 `verificationUri` is always absolute, joined beneath the configured base URL.
@@ -80,7 +88,10 @@ Errors: `503 DEVICE_PAIRING_NOT_CONFIGURED` when no canonical base URL is config
 
 [source,json]
 ----
-include::contracts/device-pairing/v1/not-configured-error.json[]
+{
+  "code": "DEVICE_PAIRING_NOT_CONFIGURED",
+  "message": "Device pairing requires a configured canonical base URL."
+}
 ----
 
 == Poll — `POST /api/auth/device/token` (permitAll)
@@ -91,7 +102,12 @@ Success `200` is the standard tokens response — for a newly paired session alw
 
 [source,json]
 ----
-include::contracts/device-pairing/v1/token-success.json[]
+{
+  "accessToken": "<signed ES256 JWT>",
+  "accessTokenExpiresAt": "<ISO-8601 instant>",
+  "scope": "<account | household | profile>",
+  "refreshToken": "<opaque refresh token>"
+}
 ----
 
 Every grant-state non-success is *HTTP 400* with a lowercase code:
@@ -107,7 +123,10 @@ Every grant-state non-success is *HTTP 400* with a lowercase code:
 
 [source,json]
 ----
-include::contracts/device-pairing/v1/authorization-pending-error.json[]
+{
+  "code": "authorization_pending",
+  "message": "The device authorization has not been approved yet."
+}
 ----
 
 Uniform `400` is deliberate: no poll state uses `401` or `403`, so a generic networking layer can never mistake a pairing state for an auth failure.
@@ -122,7 +141,12 @@ A pure read that *never* returns `409`.
 
 [source,json]
 ----
-include::contracts/device-pairing/v1/lookup-success.json[]
+{
+  "userCode": "BCDF-GHJK",
+  "deviceName": "Apple TV",
+  "status": "PENDING",
+  "requestedAt": "<ISO-8601 instant>"
+}
 ----
 
 `status` is one of `PENDING`, `APPROVED`, `DENIED`, `CONSUMED`. The response never reveals `deviceCode`.
@@ -136,7 +160,10 @@ Request `{"userCode": "BCDF-GHJK", "decision": "APPROVE"}`. `decision` is requir
 
 [source,json]
 ----
-include::contracts/device-pairing/v1/decision-success.json[]
+{
+  "status": "APPROVED",
+  "deviceName": "Apple TV"
+}
 ----
 
 Errors: `400 INVALID_DECISION` (missing or unknown value — validated *before* any code lookup, so a malformed request never spends guessing budget or reveals whether a code exists) · `400 INVALID_USER_CODE` · `404 DEVICE_CODE_NOT_FOUND` · `400 DEVICE_CODE_EXPIRED` · `409 DEVICE_CODE_NOT_PENDING` (already decided or consumed) · `429 TOO_MANY_ATTEMPTS`.
