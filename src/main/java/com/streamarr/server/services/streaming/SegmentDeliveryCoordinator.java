@@ -27,13 +27,16 @@ import lombok.extern.slf4j.Slf4j;
  * Owns the segment wait loop and producer recovery (ADR 0019, issue #252). A request for an
  * advertised-but-missing segment waits on producer liveness and publication progress — never a wall
  * clock — and a dead or stalled producer is replaced at the requested segment's offset, trying each
- * currently eligible execution target at most once since the last publication progress. Only when
- * no eligible target remains untried does the variant become terminally {@code FAILED}; a target
- * never attempted in the failed window, or a genuine seek, revives it.
+ * currently eligible execution target at most once per recovery window. The window resets on
+ * publication progress and whenever the eligible-target set gains a never-attempted member, so a
+ * target that accepts and immediately dies again may consume more than one attempt overall. Only
+ * when no eligible target remains untried does the variant become terminally {@code FAILED}; a
+ * target never attempted in the failed window, or a genuine seek, revives it.
  *
- * <p>Coordinator state is bookkeeping only, guarded by each variant state's own monitor. Producer
- * mutation is serialized by {@link ProducerLifecycleService}'s per-session mutex, whose atomic
- * predicate guarantees at most one producer start per death regardless of concurrent waiters.
+ * <p>Coordinator state is the per-variant {@code states} map, each entry guarded by its own
+ * monitor. Producer mutation is serialized by {@link ProducerLifecycleService}'s per-session mutex,
+ * whose atomic predicate guarantees at most one producer start per death regardless of concurrent
+ * waiters.
  */
 @Slf4j
 @Builder
@@ -97,8 +100,8 @@ public class SegmentDeliveryCoordinator {
       return new SegmentDelivery.SessionEnded();
     }
 
-    // Bookkeeping is created only for validated requests, so post-destroy retries cannot
-    // re-grow state that forgetSession already dropped.
+    // A variant's delivery state is created only for validated requests, so post-destroy retries
+    // cannot re-grow entries that forgetSession already dropped.
     var state =
         states.computeIfAbsent(
             new VariantKey(sessionId, variantLabel), _ -> new VariantDeliveryState());
@@ -145,7 +148,7 @@ public class SegmentDeliveryCoordinator {
         sessionId, variantLabel, segmentName, requestedIndex(segmentName, handle));
   }
 
-  /** Drops all delivery bookkeeping for a destroyed session. */
+  /** Drops every per-variant delivery state for a destroyed session. */
   public void forgetSession(UUID sessionId) {
     states.keySet().removeIf(key -> key.sessionId().equals(sessionId));
   }
@@ -404,8 +407,8 @@ public class SegmentDeliveryCoordinator {
   private record ReplacementTicket(UUID expectedAttemptId, ExecutionTargetId target) {}
 
   /**
-   * Bookkeeping for one variant's deliveries. The instance owns its monitor: every read or write of
-   * the tracked attempt, frontier, stall clock, or attempted-target log goes through a synchronized
+   * State for one variant's deliveries. The instance owns its monitor: every read or write of the
+   * tracked attempt, frontier, stall clock, or attempted-target log goes through a synchronized
    * method here.
    *
    * <p>{@code attemptedSinceProgress} is a log of this coordinator's own replacement actions since
