@@ -3,6 +3,7 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.services.pagination.MediaFilter;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,6 +60,13 @@ public class FakeFilterHelper {
       return !matchesLetterDescRange(title, letter);
     }
     return !matchesLetterAscRange(title, letter);
+  }
+
+  public Comparator<String> titleSortComparator(SortOrder direction) {
+    var comparator = String.CASE_INSENSITIVE_ORDER;
+    return direction == SortOrder.DESC
+        ? Comparator.nullsFirst(comparator.reversed())
+        : Comparator.nullsLast(comparator);
   }
 
   public MediaFilter reverseFilter(MediaFilter filter) {

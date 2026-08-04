@@ -77,7 +77,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
         .filter(
             m ->
                 FakeFilterHelper.isAboveLetterAnchor(
-                    m.getTitle(), filter.getStartLetter(), filter.getSortDirection()))
+                    m.getTitleSort(), filter.getStartLetter(), filter.getSortDirection()))
         .sorted(comparatorFor(reversed, reversed.getSortDirection()))
         .findFirst();
   }
@@ -102,7 +102,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     if (letter == null || filter.getSortBy() == OrderMediaBy.TITLE) {
       return stream;
     }
-    return stream.filter(m -> FakeFilterHelper.matchesLetterEquality(m.getTitle(), letter));
+    return stream.filter(m -> FakeFilterHelper.matchesLetterEquality(m.getTitleSort(), letter));
   }
 
   private Stream<Movie> applyFilters(Stream<Movie> stream, MediaFilter filter) {
@@ -161,14 +161,14 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     }
 
     if (filter.getSortBy() != OrderMediaBy.TITLE) {
-      return stream.filter(m -> FakeFilterHelper.matchesLetterEquality(m.getTitle(), letter));
+      return stream.filter(m -> FakeFilterHelper.matchesLetterEquality(m.getTitleSort(), letter));
     }
 
     if (filter.getSortDirection() == SortOrder.DESC) {
-      return stream.filter(m -> FakeFilterHelper.matchesLetterDescRange(m.getTitle(), letter));
+      return stream.filter(m -> FakeFilterHelper.matchesLetterDescRange(m.getTitleSort(), letter));
     }
 
-    return stream.filter(m -> FakeFilterHelper.matchesLetterAscRange(m.getTitle(), letter));
+    return stream.filter(m -> FakeFilterHelper.matchesLetterAscRange(m.getTitleSort(), letter));
   }
 
   private Comparator<Movie> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
@@ -181,9 +181,9 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
               Comparator.comparing(Movie::getReleaseDate, nullsLastDirectional(isDesc));
           case RUNTIME -> Comparator.comparing(Movie::getRuntime, nullsLastDirectional(isDesc));
           case TITLE ->
-              isDesc
-                  ? Comparator.comparing(Movie::getTitle, Comparator.reverseOrder())
-                  : Comparator.comparing(Movie::getTitle);
+              Comparator.comparing(
+                  Movie::getTitleSort,
+                  FakeFilterHelper.titleSortComparator(filter.getSortDirection()));
           case LAST_WATCHED ->
               throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
         };

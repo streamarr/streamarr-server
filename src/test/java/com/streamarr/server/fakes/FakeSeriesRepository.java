@@ -95,7 +95,7 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
         .filter(
             s ->
                 FakeFilterHelper.isAboveLetterAnchor(
-                    s.getTitle(), filter.getStartLetter(), filter.getSortDirection()))
+                    s.getTitleSort(), filter.getStartLetter(), filter.getSortDirection()))
         .sorted(comparatorFor(reversed, reversed.getSortDirection()))
         .findFirst();
   }
@@ -120,7 +120,7 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     if (letter == null || filter.getSortBy() == OrderMediaBy.TITLE) {
       return stream;
     }
-    return stream.filter(s -> FakeFilterHelper.matchesLetterEquality(s.getTitle(), letter));
+    return stream.filter(s -> FakeFilterHelper.matchesLetterEquality(s.getTitleSort(), letter));
   }
 
   private Stream<Series> applyFilters(Stream<Series> stream, MediaFilter filter) {
@@ -179,14 +179,14 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     }
 
     if (filter.getSortBy() != OrderMediaBy.TITLE) {
-      return stream.filter(s -> FakeFilterHelper.matchesLetterEquality(s.getTitle(), letter));
+      return stream.filter(s -> FakeFilterHelper.matchesLetterEquality(s.getTitleSort(), letter));
     }
 
     if (filter.getSortDirection() == SortOrder.DESC) {
-      return stream.filter(s -> FakeFilterHelper.matchesLetterDescRange(s.getTitle(), letter));
+      return stream.filter(s -> FakeFilterHelper.matchesLetterDescRange(s.getTitleSort(), letter));
     }
 
-    return stream.filter(s -> FakeFilterHelper.matchesLetterAscRange(s.getTitle(), letter));
+    return stream.filter(s -> FakeFilterHelper.matchesLetterAscRange(s.getTitleSort(), letter));
   }
 
   private Comparator<Series> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
@@ -199,9 +199,9 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
               Comparator.comparing(Series::getFirstAirDate, nullsLastDirectional(isDesc));
           case RUNTIME -> Comparator.comparing(Series::getRuntime, nullsLastDirectional(isDesc));
           case TITLE ->
-              isDesc
-                  ? Comparator.comparing(Series::getTitle, Comparator.reverseOrder())
-                  : Comparator.comparing(Series::getTitle);
+              Comparator.comparing(
+                  Series::getTitleSort,
+                  FakeFilterHelper.titleSortComparator(filter.getSortDirection()));
           case LAST_WATCHED ->
               throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
         };
