@@ -1,19 +1,24 @@
 package com.streamarr.server.controllers.auth.device;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.TokenContext;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -52,15 +57,25 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
 
   @Autowired private RefreshTokenService refreshTokenService;
 
+  @Autowired private AuthSessionRepository sessionRepository;
+
+  @Autowired private AuthTestSupport authTestSupport;
+
   @Autowired private ObjectMapper objectMapper;
 
   private final List<UUID> accountIds = new ArrayList<>();
+
+  private TestIdentity identity;
 
   @AfterEach
   void deleteSeededRows() {
     authorizationRepository.deleteAll();
     accountIds.forEach(userAccountRepository::deleteById);
     accountIds.clear();
+    if (identity != null) {
+      authTestSupport.deleteIdentity(identity);
+      identity = null;
+    }
   }
 
   @Test
@@ -135,6 +150,34 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     assertThat(fieldNamesOf(body)).isEqualTo(fieldNamesOf(fixture("token-success.json")));
     assertThat(body.get("scope").asString()).isEqualTo("account");
     assertThat(body.get("refreshToken").asString()).isNotBlank();
+  }
+
+  /**
+   * The approver device pairing actually meets: one household, one profile. Auto-selection returns
+   * early for anyone else, so a bare account never reaches the session's scope write and cannot
+   * prove the poll completes.
+   */
+  @Test
+  @DisplayName("Should sign the device in when the approver has one household and one profile")
+  void shouldSignDeviceInWhenApproverHasOneHouseholdAndOneProfile() throws Exception {
+    var issued = issueCode("Apple TV");
+    identity = authTestSupport.createIdentity();
+    decide(identity.account(), issued.get("userCode").asString(), "APPROVE");
+
+    var body =
+        readJson(
+            mockMvc
+                .perform(pollRequest(issued.get("deviceCode").asString()))
+                .andExpect(status().isOk()));
+
+    assertThat(body.get("scope").asString()).isEqualTo("profile");
+    assertThat(body.get("accessToken").asString()).isNotBlank();
+    assertThat(body.get("refreshToken").asString()).isNotBlank();
+    assertThat(pairedSession()).satisfies(this::carriesTheAutoSelectedScope);
+
+    // The grant is spent: a device that already has tokens must never be able to mint a second set.
+    assertThat(pollExpectingBadRequest(issued.get("deviceCode").asString()))
+        .isEqualTo(fixture("expired-token-error.json"));
   }
 
   @Test
@@ -315,6 +358,18 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     var accessToken =
         accessTokenIssuer.issue(TokenContext.builder().account(account).session(session).build());
     return request.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken.value());
+  }
+
+  private AuthSession pairedSession() {
+    return sessionRepository.findByAccountId(identity.account().getId()).stream()
+        .filter(session -> "Apple TV".equals(session.getDeviceName()))
+        .reduce((first, second) -> fail("The poll minted more than one session"))
+        .orElseGet(() -> fail("The poll minted no session"));
+  }
+
+  private void carriesTheAutoSelectedScope(AuthSession session) {
+    assertThat(session.getActiveHouseholdId()).isEqualTo(identity.household().getId());
+    assertThat(session.getActiveProfileId()).isEqualTo(identity.profile().getId());
   }
 
   private UserAccount seedAccount() {
