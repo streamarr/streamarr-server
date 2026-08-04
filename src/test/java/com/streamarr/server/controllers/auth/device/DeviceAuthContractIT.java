@@ -2,6 +2,7 @@ package com.streamarr.server.controllers.auth.device;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -32,6 +33,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultMatcher;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -86,7 +88,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
             mockMvc
                 .perform(get("/api/auth/status"))
                 .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store")));
+                .andExpect(uncacheable()));
 
     assertThat(fieldNamesOf(body)).isEqualTo(fieldNamesOf(fixture("status.json")));
     assertThat(body.get("devicePairingEnabled").asBoolean()).isTrue();
@@ -156,8 +158,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
             mockMvc
                 .perform(pollRequest(issued.get("deviceCode").asString()))
                 .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
-                .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache")));
+                .andExpect(uncacheable()));
 
     assertThat(fieldNamesOf(body)).isEqualTo(fieldNamesOf(fixture("token-success.json")));
     assertThat(body.get("scope").asString()).isEqualTo("account");
@@ -206,8 +207,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(userCodeBody(issued.get("userCode").asString())))
                 .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
-                .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache")));
+                .andExpect(uncacheable()));
 
     assertThat(fieldNamesOf(body)).isEqualTo(fieldNamesOf(fixture("lookup-success.json")));
     assertThat(body.get("deviceName").asString()).isEqualTo("Living Room Apple TV");
@@ -289,8 +289,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(userCodeBody("BCDF-GHJK")))
                 .andExpect(status().isNotFound())
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
-                .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache")));
+                .andExpect(uncacheable()));
 
     assertThat(body).isEqualTo(fixture("not-found-error.json"));
   }
@@ -340,8 +339,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("{\"deviceName\": \"%s\"}".formatted(deviceName)))
             .andExpect(status().isOk())
-            .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
-            .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache")));
+            .andExpect(uncacheable()));
   }
 
   private JsonNode pollExpectingBadRequest(String deviceCode) throws Exception {
@@ -349,8 +347,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
         mockMvc
             .perform(pollRequest(deviceCode))
             .andExpect(status().isBadRequest())
-            .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
-            .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache")));
+            .andExpect(uncacheable()));
   }
 
   private static MockHttpServletRequestBuilder pollRequest(String deviceCode) {
@@ -393,6 +390,19 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     accountIds.add(account.getId());
     return account;
+  }
+
+  /**
+   * Spring Security's CacheControlHeadersWriter writes this whole set or none of it — it backs off
+   * the moment a handler has set any cache header itself. Asserting all three fails loudly if a
+   * handler-level header ever downgrades a credential-bearing response to a weaker single one.
+   */
+  private static ResultMatcher uncacheable() {
+    return result -> {
+      header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")).match(result);
+      header().string(HttpHeaders.PRAGMA, "no-cache").match(result);
+      header().string(HttpHeaders.EXPIRES, "0").match(result);
+    };
   }
 
   private static String userCodeBody(String userCode) {

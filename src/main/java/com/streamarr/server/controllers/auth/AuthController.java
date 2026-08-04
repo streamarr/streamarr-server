@@ -22,7 +22,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Arrays;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -54,7 +53,7 @@ public class AuthController {
    */
   @GetMapping("/status")
   public ResponseEntity<StatusResponse> status() {
-    return noStore(ResponseEntity.ok())
+    return ResponseEntity.ok()
         .body(
             new StatusResponse(
                 setupService.isSetupComplete(), deviceAuthorizationService.isPairingEnabled()));
@@ -196,12 +195,6 @@ public class AuthController {
 
   private static String deviceNameOf(HttpServletRequest httpRequest) {
     return httpRequest.getHeader(HttpHeaders.USER_AGENT);
-  }
-
-  // Bootstrap state changes with configuration; a cached copy would tell a client pairing is
-  // unavailable long after it was switched on.
-  private static ResponseEntity.BodyBuilder noStore(ResponseEntity.BodyBuilder builder) {
-    return builder.cacheControl(CacheControl.noStore());
   }
 
   private ResponseEntity<AuthTokensResponse> respond(

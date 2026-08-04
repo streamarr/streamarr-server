@@ -38,7 +38,7 @@ public class DeviceAuthController {
       @Valid @RequestBody(required = false) DeviceCodeRequest request) {
     var issued = deviceAuthorizationService.issue(request == null ? null : request.deviceName());
 
-    return CredentialCacheHeaders.nonCacheable(ResponseEntity.ok())
+    return ResponseEntity.ok()
         .body(
             DeviceCodeResponse.builder()
                 .deviceCode(issued.deviceCode())
@@ -58,7 +58,7 @@ public class DeviceAuthController {
   public ResponseEntity<Object> poll(@Valid @RequestBody DeviceTokenRequest request) {
     return switch (deviceAuthorizationService.redeem(request.deviceCode())) {
       case DevicePollResult.Success(var accessToken, var rawRefreshToken) ->
-          CredentialCacheHeaders.nonCacheable(ResponseEntity.ok())
+          ResponseEntity.ok()
               .<Object>body(
                   AuthTokensResponse.builder()
                       .accessToken(accessToken.value())
@@ -84,7 +84,7 @@ public class DeviceAuthController {
         deviceAuthorizationService.lookup(
             request.userCode(), authorizationService.currentIdentity().accountId());
 
-    return CredentialCacheHeaders.nonCacheable(ResponseEntity.ok())
+    return ResponseEntity.ok()
         .body(
             DeviceAuthorizationResponse.builder()
                 .userCode(view.userCode())
@@ -105,7 +105,7 @@ public class DeviceAuthController {
                 .decidedByAccountId(authorizationService.currentIdentity().accountId())
                 .build());
 
-    return CredentialCacheHeaders.nonCacheable(ResponseEntity.ok()).body(decisionResponseOf(view));
+    return ResponseEntity.ok().body(decisionResponseOf(view));
   }
 
   /**
@@ -128,7 +128,6 @@ public class DeviceAuthController {
   }
 
   private static ResponseEntity<Object> pollState(String code, String message) {
-    return CredentialCacheHeaders.nonCacheable(ResponseEntity.status(HttpStatus.BAD_REQUEST))
-        .body(new AuthErrorResponse(code, message));
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new AuthErrorResponse(code, message));
   }
 }

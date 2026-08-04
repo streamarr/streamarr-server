@@ -56,7 +56,7 @@ public class DeviceAuthExceptionHandler {
 
   @ExceptionHandler(TooManyDeviceAttemptsException.class)
   public ResponseEntity<AuthErrorResponse> handleTooManyAttempts(TooManyDeviceAttemptsException e) {
-    return CredentialCacheHeaders.nonCacheable(ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS))
+    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
         .header(HttpHeaders.RETRY_AFTER, Long.toString(retryAfterSeconds(e.getRetryAfter())))
         .body(new AuthErrorResponse("TOO_MANY_ATTEMPTS", e.getMessage()));
   }
@@ -71,7 +71,6 @@ public class DeviceAuthExceptionHandler {
 
   private static ResponseEntity<AuthErrorResponse> respond(
       HttpStatus status, String code, RuntimeException e) {
-    return CredentialCacheHeaders.nonCacheable(ResponseEntity.status(status))
-        .body(new AuthErrorResponse(code, e.getMessage()));
+    return ResponseEntity.status(status).body(new AuthErrorResponse(code, e.getMessage()));
   }
 }

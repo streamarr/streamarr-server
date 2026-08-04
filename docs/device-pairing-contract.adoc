@@ -24,7 +24,7 @@ TV  branches on scope → picker or library
 
 == Status bootstrap
 
-`GET /api/auth/status` (permitAll, `Cache-Control: no-store`).
+`GET /api/auth/status` (permitAll, uncacheable).
 
 [source,json]
 ----
@@ -147,6 +147,6 @@ Clients render guidance ("no households yet — finish setup on the web", "no pr
 
 == Response headers
 
-* Every device endpoint response carries `Cache-Control: no-store`.
+* Every `/api/auth/**` response is uncacheable: `Cache-Control: no-cache, no-store, max-age=0, must-revalidate` alongside `Pragma: no-cache` and `Expires: 0`. The security filter chain writes that set, and it writes all of it or none — a handler that sets any cache header of its own silently downgrades the response, so handlers set none.
 * `429` responses carry `Retry-After` as integer delta-seconds, the ceiling of the remaining wait.
 * `/api/auth/**` never redirects. Deployments must not rewrite these paths.
