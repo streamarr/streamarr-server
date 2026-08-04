@@ -75,6 +75,8 @@ public class SecurityConfig {
                 exceptions
                     .authenticationEntryPoint(authenticationEntryPoint)
                     .accessDeniedHandler(accessDeniedHandler))
+        // Streamarr revokes refresh families through POST /api/auth/logout; expose no framework
+        // logout endpoint that could imply revocation without performing it.
         .logout(AbstractHttpConfigurer::disable)
         .build();
   }

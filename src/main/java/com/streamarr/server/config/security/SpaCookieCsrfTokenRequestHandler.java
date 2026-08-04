@@ -13,7 +13,7 @@ import org.springframework.util.StringUtils;
  * __Host-XSRF-TOKEN cookie is always written, and header-only resolution — the page reads the
  * cookie and echoes it as X-XSRF-TOKEN.
  */
-public class SpaCookieCsrfTokenRequestHandler implements CsrfTokenRequestHandler {
+final class SpaCookieCsrfTokenRequestHandler implements CsrfTokenRequestHandler {
 
   private final XorCsrfTokenRequestAttributeHandler xorHandler =
       new XorCsrfTokenRequestAttributeHandler();

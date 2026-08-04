@@ -13,7 +13,7 @@ import org.springframework.security.oauth2.server.resource.web.DefaultBearerToke
  * otherwise 401 before the public endpoint runs. Everywhere else the Authorization header wins,
  * falling back to the access cookie.
  */
-public class StreamarrBearerTokenResolver implements BearerTokenResolver {
+public final class StreamarrBearerTokenResolver implements BearerTokenResolver {
 
   private static final String CARRIER_ATTRIBUTE =
       StreamarrBearerTokenResolver.class.getName() + ".carrier";
@@ -31,29 +31,11 @@ public class StreamarrBearerTokenResolver implements BearerTokenResolver {
 
   @Override
   public String resolve(HttpServletRequest request) {
-    var path = pathWithinApplication(request);
-    if (UNAUTHENTICATED_PATHS.contains(path) || isHealthPath(path)) {
-      return null;
-    }
-
-    // Stream paths resolve ONLY the ?t= parameter: a stale Path=/ access cookie must never 401
-    // playback mid-movie, and even a valid one fails there (streams demand SCOPE_PLAYBACK).
-    if (SecurityRequestMatchers.STREAM_PATHS.matches(request)) {
-      var queryToken = request.getParameter("t");
-      return queryToken != null && !queryToken.isBlank() ? queryToken : null;
-    }
-
-    var headerToken = headerResolver.resolve(request);
-    if (headerToken != null) {
-      request.setAttribute(CARRIER_ATTRIBUTE, CredentialCarrier.HEADER);
-      return headerToken;
-    }
-
-    var cookieToken = accessCookieValue(request);
-    if (cookieToken != null) {
-      request.setAttribute(CARRIER_ATTRIBUTE, CredentialCarrier.COOKIE);
-    }
-    return cookieToken;
+    return switch (credentialRoute(request)) {
+      case NONE -> null;
+      case PLAYBACK_QUERY -> playbackQueryToken(request);
+      case HEADER_OR_COOKIE -> headerOrCookieToken(request);
+    };
   }
 
   public static boolean usedAccessCookie(HttpServletRequest request) {
@@ -61,10 +43,7 @@ public class StreamarrBearerTokenResolver implements BearerTokenResolver {
   }
 
   static boolean acceptsAuthorizationHeader(HttpServletRequest request) {
-    var path = pathWithinApplication(request);
-    return !UNAUTHENTICATED_PATHS.contains(path)
-        && !isHealthPath(path)
-        && !SecurityRequestMatchers.STREAM_PATHS.matches(request);
+    return credentialRoute(request) == CredentialRoute.HEADER_OR_COOKIE;
   }
 
   private static String pathWithinApplication(HttpServletRequest request) {
@@ -87,6 +66,43 @@ public class StreamarrBearerTokenResolver implements BearerTokenResolver {
         .filter(value -> !value.isBlank())
         .findFirst()
         .orElse(null);
+  }
+
+  private static CredentialRoute credentialRoute(HttpServletRequest request) {
+    var path = pathWithinApplication(request);
+    if (UNAUTHENTICATED_PATHS.contains(path) || isHealthPath(path)) {
+      return CredentialRoute.NONE;
+    }
+    return SecurityRequestMatchers.STREAM_PATHS.matches(request)
+        ? CredentialRoute.PLAYBACK_QUERY
+        : CredentialRoute.HEADER_OR_COOKIE;
+  }
+
+  private static String playbackQueryToken(HttpServletRequest request) {
+    // Stream paths resolve ONLY the ?t= parameter: a stale Path=/ access cookie must never 401
+    // playback mid-movie, and even a valid one fails there (streams demand SCOPE_PLAYBACK).
+    var queryToken = request.getParameter("t");
+    return queryToken != null && !queryToken.isBlank() ? queryToken : null;
+  }
+
+  private String headerOrCookieToken(HttpServletRequest request) {
+    var headerToken = headerResolver.resolve(request);
+    if (headerToken != null) {
+      request.setAttribute(CARRIER_ATTRIBUTE, CredentialCarrier.HEADER);
+      return headerToken;
+    }
+
+    var cookieToken = accessCookieValue(request);
+    if (cookieToken != null) {
+      request.setAttribute(CARRIER_ATTRIBUTE, CredentialCarrier.COOKIE);
+    }
+    return cookieToken;
+  }
+
+  private enum CredentialRoute {
+    NONE,
+    PLAYBACK_QUERY,
+    HEADER_OR_COOKIE
   }
 
   private enum CredentialCarrier {

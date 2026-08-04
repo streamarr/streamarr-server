@@ -22,12 +22,9 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
  * storage — so bearer-mode login and the planned device-pairing flow stay reachable with no CSRF
  * token. An unrecognised cookie-keeping client fails closed with a CSRF 403.
  */
-public class StreamarrCookieCsrfMatcher implements RequestMatcher {
+final class StreamarrCookieCsrfMatcher implements RequestMatcher {
 
   private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "TRACE", "OPTIONS");
-
-  private static final Set<String> STREAMARR_COOKIES =
-      Set.of(AuthCookies.ACCESS_COOKIE, AuthCookies.REFRESH_COOKIE, AuthCookies.CSRF_COOKIE);
 
   @Override
   public boolean matches(HttpServletRequest request) {
@@ -55,6 +52,6 @@ public class StreamarrCookieCsrfMatcher implements RequestMatcher {
       return false;
     }
 
-    return Arrays.stream(cookies).anyMatch(cookie -> STREAMARR_COOKIES.contains(cookie.getName()));
+    return Arrays.stream(cookies).anyMatch(cookie -> AuthCookies.ALL.contains(cookie.getName()));
   }
 }

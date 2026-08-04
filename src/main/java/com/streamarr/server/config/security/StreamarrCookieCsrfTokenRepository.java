@@ -13,9 +13,14 @@ import org.springframework.security.web.csrf.DeferredCsrfToken;
 import org.springframework.util.StringUtils;
 import org.springframework.web.util.WebUtils;
 
+/**
+ * Cookie-backed CSRF repository with explicit host-only attributes and sliding expiry. Spring's
+ * final cookie repository cannot express this lifecycle without a response-cookie customizer whose
+ * deletion path is easy to break.
+ */
 final class StreamarrCookieCsrfTokenRepository implements CsrfTokenRepository {
 
-  static final String HEADER_NAME = "X-XSRF-TOKEN";
+  static final String HEADER_NAME = AuthCookies.CSRF_HEADER;
 
   private static final String PARAMETER_NAME = "_csrf";
   private static final String TOKEN_REMOVED_ATTRIBUTE =
@@ -29,7 +34,8 @@ final class StreamarrCookieCsrfTokenRepository implements CsrfTokenRepository {
 
   @Override
   public CsrfToken generateToken(HttpServletRequest request) {
-    return new DefaultCsrfToken(HEADER_NAME, PARAMETER_NAME, UUID.randomUUID().toString());
+    return new DefaultCsrfToken(
+        AuthCookies.CSRF_HEADER, PARAMETER_NAME, UUID.randomUUID().toString());
   }
 
   // The anti-CSRF nonce must be script-readable so the SPA can echo it in X-XSRF-TOKEN. It is not
@@ -52,6 +58,7 @@ final class StreamarrCookieCsrfTokenRepository implements CsrfTokenRepository {
 
   @Override
   public CsrfToken loadToken(HttpServletRequest request) {
+    // A deletion in this request must not be undone by loading the request's now-stale cookie.
     if (Boolean.TRUE.equals(request.getAttribute(TOKEN_REMOVED_ATTRIBUTE))) {
       return null;
     }
@@ -59,7 +66,7 @@ final class StreamarrCookieCsrfTokenRepository implements CsrfTokenRepository {
     if (cookie == null || !StringUtils.hasText(cookie.getValue())) {
       return null;
     }
-    return new DefaultCsrfToken(HEADER_NAME, PARAMETER_NAME, cookie.getValue());
+    return new DefaultCsrfToken(AuthCookies.CSRF_HEADER, PARAMETER_NAME, cookie.getValue());
   }
 
   @Override
@@ -90,6 +97,7 @@ final class StreamarrCookieCsrfTokenRepository implements CsrfTokenRepository {
         if (generated) {
           token = generateToken(request);
         }
+        // Re-saving loaded tokens renews their Max-Age alongside the rotating auth-cookie family.
         saveToken(token, request, response);
       }
     };
