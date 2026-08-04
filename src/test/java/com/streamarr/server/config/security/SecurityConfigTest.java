@@ -150,8 +150,8 @@ class SecurityConfigTest {
   }
 
   @Test
-  @DisplayName("Should wire refresh token lifetime into csrf cookie")
-  void shouldWireRefreshTokenLifetimeIntoCsrfCookie() throws Exception {
+  @DisplayName("Should use refresh token lifetime when issuing csrf cookie")
+  void shouldUseRefreshTokenLifetimeWhenIssuingCsrfCookie() throws Exception {
     var tokenCookie =
         mockMvc
             .perform(get("/api/auth/login"))
@@ -184,8 +184,8 @@ class SecurityConfigTest {
   }
 
   @Test
-  @DisplayName("Should reject csrf before decoding an access cookie on a protected route")
-  void shouldRejectCsrfBeforeDecodingAccessCookieOnProtectedRoute() throws Exception {
+  @DisplayName("Should reject csrf before decoding when an access cookie rides a protected route")
+  void shouldRejectCsrfBeforeDecodingWhenAccessCookieRidesProtectedRoute() throws Exception {
     mockMvc
         .perform(
             post("/graphql").cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential")))
@@ -193,8 +193,8 @@ class SecurityConfigTest {
   }
 
   @Test
-  @DisplayName("Should not expose the framework default logout endpoint")
-  void shouldNotExposeFrameworkDefaultLogoutEndpoint() throws Exception {
+  @DisplayName("Should not expose framework default logout when the security chain is built")
+  void shouldNotExposeFrameworkDefaultLogoutWhenSecurityChainIsBuilt() throws Exception {
     mockMvc
         .perform(
             get("/logout")

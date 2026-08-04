@@ -18,8 +18,8 @@ class SpaCookieCsrfTokenRequestHandlerTest {
   private final SpaCookieCsrfTokenRequestHandler handler = new SpaCookieCsrfTokenRequestHandler();
 
   @Test
-  @DisplayName("Should ignore a csrf token supplied only as a request parameter")
-  void shouldIgnoreCsrfTokenSuppliedOnlyAsRequestParameter() {
+  @DisplayName("Should ignore a csrf token when supplied only as a request parameter")
+  void shouldIgnoreCsrfTokenWhenSuppliedOnlyAsRequestParameter() {
     var token = new DefaultCsrfToken(AuthCookies.CSRF_HEADER, "_csrf", "raw-token");
     var request = new MockHttpServletRequest();
     new XorCsrfTokenRequestAttributeHandler()

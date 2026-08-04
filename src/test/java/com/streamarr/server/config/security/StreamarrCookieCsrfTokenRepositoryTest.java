@@ -8,6 +8,8 @@ import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -20,16 +22,20 @@ class StreamarrCookieCsrfTokenRepositoryTest {
       new StreamarrCookieCsrfTokenRepository(Duration.ofDays(30));
 
   @Test
-  @DisplayName("Should reject a missing or non-positive cookie lifetime")
-  void shouldRejectMissingOrNonPositiveCookieLifetime() {
+  @DisplayName("Should reject a cookie lifetime when it is missing")
+  void shouldRejectCookieLifetimeWhenMissing() {
     assertThatIllegalArgumentException()
         .isThrownBy(() -> new StreamarrCookieCsrfTokenRepository(null))
         .withMessage("cookieLifetime must be positive");
+  }
+
+  @ParameterizedTest(
+      name = "Should reject a cookie lifetime of {0} seconds when it is non-positive")
+  @DisplayName("Should reject a cookie lifetime when it is non-positive")
+  @ValueSource(longs = {0, -1})
+  void shouldRejectCookieLifetimeWhenNonPositive(long seconds) {
     assertThatIllegalArgumentException()
-        .isThrownBy(() -> new StreamarrCookieCsrfTokenRepository(Duration.ZERO))
-        .withMessage("cookieLifetime must be positive");
-    assertThatIllegalArgumentException()
-        .isThrownBy(() -> new StreamarrCookieCsrfTokenRepository(Duration.ofSeconds(-1)))
+        .isThrownBy(() -> new StreamarrCookieCsrfTokenRepository(Duration.ofSeconds(seconds)))
         .withMessage("cookieLifetime must be positive");
   }
 

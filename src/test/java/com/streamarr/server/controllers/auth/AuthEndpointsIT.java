@@ -633,8 +633,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should never expose access token body to cookie authenticated browser")
-  void shouldNeverExposeAccessTokenBodyToCookieAuthenticatedBrowser() throws Exception {
+  @DisplayName("Should never expose an access token body when a browser is cookie authenticated")
+  void shouldNeverExposeAccessTokenBodyWhenBrowserIsCookieAuthenticated() throws Exception {
     seedSingleProfileIdentity();
     var secondProfile =
         profileRepository.save(
@@ -772,8 +772,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep cookie authenticated household selection in cookie response")
-  void shouldKeepCookieAuthenticatedHouseholdSelectionInCookieResponse() throws Exception {
+  @DisplayName("Should keep household selection in the cookie response when cookie authenticated")
+  void shouldKeepHouseholdSelectionInCookieResponseWhenCookieAuthenticated() throws Exception {
     seedSingleProfileIdentity();
     var loginResponse = cookieModeLogin();
     var accessCookie = loginResponse.getCookie("streamarr_access");
@@ -916,8 +916,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep cookie authenticated password change in cookie response")
-  void shouldKeepCookieAuthenticatedPasswordChangeInCookieResponse() throws Exception {
+  @DisplayName("Should keep password change in the cookie response when cookie authenticated")
+  void shouldKeepPasswordChangeInCookieResponseWhenCookieAuthenticated() throws Exception {
     seedSingleProfileIdentity();
     var loginResponse = cookieModeLogin();
     var accessCookie = loginResponse.getCookie("streamarr_access");

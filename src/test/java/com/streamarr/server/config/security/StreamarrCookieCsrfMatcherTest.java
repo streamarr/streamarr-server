@@ -129,18 +129,20 @@ class StreamarrCookieCsrfMatcherTest {
     assertThat(matcher.matches(request)).isFalse();
   }
 
-  @ParameterizedTest(name = "Should require csrf for unsafe method {0}")
+  @ParameterizedTest(name = "Should require csrf when method {0} is unsafe")
+  @DisplayName("Should require csrf when the method is unsafe")
   @ValueSource(strings = {"POST", "PUT", "PATCH", "DELETE"})
-  void shouldRequireCsrfForUnsafeMethod(String method) {
+  void shouldRequireCsrfWhenMethodIsUnsafe(String method) {
     var request = new MockHttpServletRequest(method, "/graphql");
     request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "access-value"));
 
     assertThat(matcher.matches(request)).isTrue();
   }
 
-  @ParameterizedTest(name = "Should not require csrf for safe method {0}")
+  @ParameterizedTest(name = "Should not require csrf when method {0} is safe")
+  @DisplayName("Should not require csrf when the method is safe")
   @ValueSource(strings = {"GET", "HEAD", "OPTIONS", "TRACE"})
-  void shouldNotRequireCsrfForSafeMethod(String method) {
+  void shouldNotRequireCsrfWhenMethodIsSafe(String method) {
     var request = new MockHttpServletRequest(method, "/graphql");
     request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "access-value"));
 

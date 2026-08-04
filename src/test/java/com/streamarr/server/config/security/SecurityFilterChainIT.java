@@ -154,8 +154,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should not grant a cross-origin json login preflight")
-  void shouldNotGrantCrossOriginJsonLoginPreflight() throws Exception {
+  @DisplayName("Should not grant cross-origin json preflight when the origin is hostile")
+  void shouldNotGrantCrossOriginJsonPreflightWhenOriginIsHostile() throws Exception {
     mockMvc
         .perform(
             options("/api/auth/login")
@@ -231,8 +231,10 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should issue a host-bound script-readable csrf cookie on an unauthenticated get")
-  void shouldIssueHostBoundScriptReadableCsrfCookieOnUnauthenticatedGet() throws Exception {
+  @DisplayName(
+      "Should issue a host-bound script-readable csrf cookie when status is requested unauthenticated")
+  void shouldIssueHostBoundScriptReadableCsrfCookieWhenStatusRequestedUnauthenticated()
+      throws Exception {
     // The SPA's boot request. Everything below depends on this: a browser holds the host-bound
     // anti-CSRF nonce before it can ever POST a login, and a native client never asks for one.
     var cookie =
@@ -248,8 +250,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should issue the csrf cookie with the host prefix contract")
-  void shouldIssueCsrfCookieWithHostPrefixContract() throws Exception {
+  @DisplayName("Should issue a host-prefixed csrf cookie when a token is requested")
+  void shouldIssueHostPrefixedCsrfCookieWhenTokenIsRequested() throws Exception {
     var cookie = freshCsrfCookie();
 
     assertAll(
@@ -276,8 +278,9 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject cookie authenticated graphql and remint its missing csrf token")
-  void shouldRejectCookieAuthenticatedGraphQlAndRemintItsMissingCsrfToken() throws Exception {
+  @DisplayName(
+      "Should reject graphql and remint its csrf cookie when cookie authentication lacks a token")
+  void shouldRejectGraphQlAndRemintCsrfCookieWhenCookieAuthenticationLacksToken() throws Exception {
     identity = authTestSupport.createIdentity();
 
     var response =
@@ -298,8 +301,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject an unprefixed csrf cookie as the production token")
-  void shouldRejectUnprefixedCsrfCookieAsProductionToken() throws Exception {
+  @DisplayName("Should reject a request when only an unprefixed csrf cookie is echoed")
+  void shouldRejectRequestWhenOnlyUnprefixedCsrfCookieIsEchoed() throws Exception {
     identity = authTestSupport.createIdentity();
     var attackerChosenToken = "attacker-chosen-token";
 
@@ -335,8 +338,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should permit a cookie-mode login carrying csrf beside a stale access cookie")
-  void shouldPermitCookieModeLoginCarryingCsrfTokenBesideStaleAccessCookie() throws Exception {
+  @DisplayName("Should permit cookie-mode login when csrf accompanies a stale access cookie")
+  void shouldPermitCookieModeLoginWhenCsrfAccompaniesStaleAccessCookie() throws Exception {
     identity = authTestSupport.createIdentity();
     var csrfCookie = freshCsrfCookie();
 
@@ -417,8 +420,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
 
   @ParameterizedTest(name = "Should reject {1} on {0}")
   @MethodSource("nonJsonAuthRequests")
-  @DisplayName("Should reject simple cross-origin content types on auth mutations")
-  void shouldRejectSimpleCrossOriginContentTypesOnAuthMutations(
+  @DisplayName("Should reject an auth mutation when its content type is simple cross-origin")
+  void shouldRejectAuthMutationWhenContentTypeIsSimpleCrossOrigin(
       String path, MediaType contentType, String body) throws Exception {
     mockMvc
         .perform(post(path).contentType(contentType).content(body))
@@ -426,8 +429,9 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should not expire the csrf cookie before the auth cookies it guards")
-  void shouldNotExpireCsrfCookieBeforeAuthCookiesItGuards() throws Exception {
+  @DisplayName(
+      "Should not expire the csrf cookie before auth cookies when cookie-mode login succeeds")
+  void shouldNotExpireCsrfCookieBeforeAuthCookiesWhenCookieModeLoginSucceeds() throws Exception {
     identity = authTestSupport.createIdentity();
     var csrfCookie = freshCsrfCookie();
 

@@ -51,8 +51,8 @@ class RestAccessDeniedHandlerTest {
   }
 
   @Test
-  @DisplayName("Should count csrf denials for operational visibility")
-  void shouldCountCsrfDenialsForOperationalVisibility() {
+  @DisplayName("Should count csrf denials when csrf is denied")
+  void shouldCountCsrfDenialsWhenCsrfIsDenied() {
     handler.handle(
         new MockHttpServletRequest(),
         new MockHttpServletResponse(),
