@@ -265,23 +265,6 @@ class CursorValidatorTest {
   class IgnoredFields {
 
     @Test
-    @DisplayName(
-        "Should not throw when startLetter is dropped after a letter jump under TITLE sort")
-    void shouldNotThrowWhenStartLetterIsDroppedAfterLetterJumpUnderTitleSort() {
-      var cursorFilter =
-          MediaFilter.builder()
-              .sortBy(OrderMediaBy.TITLE)
-              .startLetter(AlphabetLetter.Q)
-              .previousSortFieldValue("Quartz")
-              .build();
-      var currentFilter = MediaFilter.builder().sortBy(OrderMediaBy.TITLE).build();
-      var decoded = MediaPaginationOptions.builder().mediaFilter(cursorFilter).build();
-
-      assertThatNoException()
-          .isThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, currentFilter));
-    }
-
-    @Test
     @DisplayName("Should ignore previousSortFieldValue when comparing filters")
     void shouldIgnorePreviousSortFieldValueWhenComparingFilters() {
       var cursorFilter = MediaFilter.builder().previousSortFieldValue("Alpha").build();

@@ -705,6 +705,30 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("Should page backward past the start letter when sort is TITLE DESC")
+    void shouldPageBackwardPastStartLetterWhenSortIsTitleDesc() {
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .sortDirection(SortOrder.DESC)
+              .build();
+
+      var landing = seriesService.getSeriesWithFilter(buildForwardOptions(2, filter));
+      assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("Beta Show");
+      assertThat(landing.hasPreviousPage()).isTrue();
+
+      var backfill =
+          seriesService.getSeriesWithFilter(
+              buildBackwardContinuation(2, filter, landing.items().getFirst()));
+
+      var titles = backfill.items().stream().map(pageItem -> pageItem.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Zorro Show", "Gamma Show");
+      assertThat(backfill.hasNextPage()).isTrue();
+      assertThat(backfill.hasPreviousPage()).isFalse();
+    }
+
+    @Test
     @DisplayName("Should return only Z series when start letter is Z")
     void shouldReturnOnlyZSeriesWhenStartLetterIsZ() {
       var filter =

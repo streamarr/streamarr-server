@@ -661,6 +661,22 @@ class MovieServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("Should not report previous page when start letter is HASH and sort is DESC")
+    void shouldNotReportPreviousPageWhenStartLetterIsHashAndSortIsDesc() {
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.HASH)
+              .sortDirection(SortOrder.DESC)
+              .build();
+
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+
+      assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("123 Movie");
+      assertThat(landing.hasPreviousPage()).isFalse();
+    }
+
+    @Test
     @DisplayName("Should report previous page when letter jump has titles above and sort is DESC")
     void shouldReportPreviousPageWhenLetterJumpHasTitlesAboveAndSortIsDesc() {
 
@@ -759,6 +775,29 @@ class MovieServiceIT extends AbstractIntegrationTest {
       assertThat(titles).containsExactly("Zorro", "Gamma");
       assertThat(backfill.hasNextPage()).isTrue();
       assertThat(backfill.hasPreviousPage()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Should keep start letter equality when continuing under non-TITLE sort")
+    void shouldKeepStartLetterEqualityWhenContinuingUnderNonTitleSort() {
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .sortBy(OrderMediaBy.ADDED)
+              .build();
+
+      var firstPage = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
+      var secondPage =
+          movieService.getMoviesWithFilter(
+              buildForwardContinuation(1, filter, firstPage.items().getFirst()));
+
+      var titles =
+          Stream.concat(firstPage.items().stream(), secondPage.items().stream())
+              .map(pageItem -> pageItem.item().getTitle())
+              .toList();
+      assertThat(titles).containsExactlyInAnyOrder("Batman", "Beta");
+      assertThat(secondPage.hasNextPage()).isFalse();
     }
 
     @Test

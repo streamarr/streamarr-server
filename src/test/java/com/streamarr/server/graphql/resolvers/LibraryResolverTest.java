@@ -364,6 +364,80 @@ class LibraryResolverTest {
     }
 
     @Test
+    @DisplayName("Should return GraphQL error when TITLE cursor is missing sort value")
+    void shouldReturnGraphQLErrorWhenTitleCursorIsMissingSortValue() {
+      var libraryId = UUID.randomUUID();
+      var library = buildMovieLibrary(libraryId);
+
+      var movie = Movie.builder().title("Batman").titleSort("Batman").build();
+      movie.setId(UUID.randomUUID());
+      var page = new MediaPage<>(List.of(new PageItem<>(movie, null)), false, true);
+
+      when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+      when(movieService.getMoviesWithFilter(any(MediaPaginationOptions.class))).thenReturn(page);
+
+      String cursor =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              String.format(
+                  """
+                  { library(id: "%s") { items(first: 1) { edges { cursor } } } }
+                  """,
+                  libraryId),
+              "data.library.items.edges[0].cursor");
+
+      var result =
+          dgsQueryExecutor.execute(
+              String.format(
+                  """
+                  { library(id: "%s") { items(first: 1, after: "%s") { edges { node { ... on Movie { title } } } } } }
+                  """,
+                  libraryId, cursor));
+
+      assertThat(result.getErrors()).hasSize(1);
+      assertThat(result.getErrors().getFirst().getMessage())
+          .contains("Cursor sort value is required for TITLE sort");
+    }
+
+    @Test
+    @DisplayName("Should page backward with jump cursor when later request drops start letter")
+    void shouldPageBackwardWithJumpCursorWhenLaterRequestDropsStartLetter() {
+      var libraryId = UUID.randomUUID();
+      var library = buildMovieLibrary(libraryId);
+
+      var batman = Movie.builder().title("Batman").titleSort("Batman").build();
+      batman.setId(UUID.randomUUID());
+      var alpha = Movie.builder().title("Alpha").titleSort("Alpha").build();
+      alpha.setId(UUID.randomUUID());
+
+      var landingPage = new MediaPage<>(List.of(new PageItem<>(batman, "Batman")), true, true);
+      var backwardPage = new MediaPage<>(List.of(new PageItem<>(alpha, "Alpha")), false, true);
+
+      when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+      when(movieService.getMoviesWithFilter(any(MediaPaginationOptions.class)))
+          .thenReturn(landingPage, backwardPage);
+
+      String cursor =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              String.format(
+                  """
+                  { library(id: "%s") { items(first: 1, filter: {startLetter: B}) { edges { cursor } } } }
+                  """,
+                  libraryId),
+              "data.library.items.edges[0].cursor");
+
+      String title =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              String.format(
+                  """
+                  { library(id: "%s") { items(last: 1, before: "%s", filter: {}) { edges { node { ... on Movie { title } } } } } }
+                  """,
+                  libraryId, cursor),
+              "data.library.items.edges[0].node.title");
+
+      assertThat(title).isEqualTo("Alpha");
+    }
+
+    @Test
     @DisplayName("Should delegate sort options to movie service when sort input provided")
     void shouldDelegateSortOptionsToMovieServiceWhenSortInputProvided() {
       var libraryId = UUID.randomUUID();
