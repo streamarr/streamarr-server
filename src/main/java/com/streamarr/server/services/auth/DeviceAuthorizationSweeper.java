@@ -20,7 +20,7 @@ public class DeviceAuthorizationSweeper {
   private final DeviceAuthorizationRepository authorizationRepository;
   private final Clock clock;
 
-  @Scheduled(fixedDelayString = "${auth.device.sweep-interval-ms:900000}")
+  @Scheduled(fixedDelayString = "${auth.device.sweep-interval:15m}")
   public void sweep() {
     var deleted = authorizationRepository.deleteExpired(clock.instant());
     if (deleted > 0) {

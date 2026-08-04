@@ -57,6 +57,9 @@ public final class CanonicalBaseUrl {
   /** Joins an absolute path beneath the configured base, preserving any base path. */
   public String resolve(String absolutePath) {
     requireConfigured();
+    if (absolutePath == null || !absolutePath.startsWith("/")) {
+      throw new IllegalArgumentException("The resolved path must be absolute.");
+    }
     return baseUri + absolutePath;
   }
 

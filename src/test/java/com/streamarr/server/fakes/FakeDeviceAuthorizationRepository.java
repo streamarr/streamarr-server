@@ -4,13 +4,16 @@ import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertResult;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Stream;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 
 public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceAuthorization>
@@ -83,9 +86,11 @@ public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceA
 
   /** Mirrors the advisory-locked count-and-insert: the cap is checked and taken indivisibly. */
   @Override
-  public synchronized boolean tryInsertWithinCap(DeviceAuthorizationInsertCommand command) {
-    if (countOutstanding(command.now()) >= command.maxOutstanding()) {
-      return false;
+  public synchronized DeviceAuthorizationInsertResult tryInsertWithinCap(
+      DeviceAuthorizationInsertCommand command) {
+    var outstanding = countOutstanding(command.now());
+    if (outstanding >= command.maxOutstanding()) {
+      return new DeviceAuthorizationInsertResult(false, outstanding);
     }
 
     save(
@@ -98,7 +103,7 @@ public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceA
             .nextPollAt(command.nextPollAt())
             .pollIntervalSeconds(command.pollIntervalSeconds())
             .build());
-    return true;
+    return new DeviceAuthorizationInsertResult(true, outstanding + 1);
   }
 
   @Override
@@ -146,7 +151,11 @@ public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceA
                     !existing.getId().equals(authorization.getId())
                         && value.equals(column.apply(existing)));
     if (conflicts) {
-      throw new DataIntegrityViolationException(constraint);
+      var message = "duplicate key value violates unique constraint \"%s\"".formatted(constraint);
+      throw new DataIntegrityViolationException(
+          message,
+          new ConstraintViolationException(
+              message, new SQLException(message, "23505"), constraint));
     }
   }
 }

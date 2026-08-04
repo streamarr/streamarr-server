@@ -32,15 +32,17 @@ class DeviceAuthorizationSweeperTest {
   @DisplayName("Should delete every row past its lifetime regardless of terminal status")
   void shouldDeleteEveryRowPastItsLifetimeRegardlessOfTerminalStatus() {
     save(DeviceAuthorizationStatus.PENDING, Duration.ofMinutes(-1));
+    save(DeviceAuthorizationStatus.APPROVED, Duration.ofMinutes(-1));
     save(DeviceAuthorizationStatus.DENIED, Duration.ofMinutes(-1));
     save(DeviceAuthorizationStatus.CONSUMED, Duration.ofMinutes(-1));
-    var live = save(DeviceAuthorizationStatus.PENDING, Duration.ofMinutes(10));
+    var livePending = save(DeviceAuthorizationStatus.PENDING, Duration.ofMinutes(10));
+    var liveApproved = save(DeviceAuthorizationStatus.APPROVED, Duration.ofMinutes(10));
 
     sweeper.sweep();
 
     assertThat(repository.findAll())
-        .singleElement()
-        .satisfies(row -> assertThat(row.getId()).isEqualTo(live));
+        .extracting(DeviceAuthorization::getId)
+        .containsExactlyInAnyOrder(livePending, liveApproved);
   }
 
   @Test

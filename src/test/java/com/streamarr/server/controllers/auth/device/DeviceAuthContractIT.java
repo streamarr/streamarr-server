@@ -22,8 +22,10 @@ import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -106,6 +108,22 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     assertThat(body.get("deviceCode").asString()).hasSize(43);
     assertThat(body.get("interval").asInt()).isEqualTo(5);
     assertThat(body.get("expiresIn").asLong()).isEqualTo(600);
+  }
+
+  @Test
+  @DisplayName("Should issue with the fallback device name when the body is absent")
+  void shouldIssueWithFallbackDeviceNameWhenBodyAbsent() throws Exception {
+    var body =
+        readJson(
+            mockMvc
+                .perform(post("/api/auth/device/code"))
+                .andExpect(status().isOk())
+                .andExpect(uncacheable()));
+
+    assertThat(body.get("deviceCode").asString()).hasSize(43);
+    assertThat(authorizationRepository.findAll())
+        .singleElement()
+        .satisfies(row -> assertThat(row.getDeviceName()).isEqualTo("Unknown device"));
   }
 
   @Test
@@ -314,6 +332,31 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should answer an expired decision with its exact approver-facing body")
+  void shouldAnswerExpiredDecisionWithExactApproverFacingBody() throws Exception {
+    var issued = issueCode("Apple TV");
+    var authorization =
+        authorizationRepository
+            .findByUserCode(issued.get("userCode").asString().replace("-", ""))
+            .orElseThrow();
+    authorization.setExpiresAt(Instant.EPOCH);
+    authorizationRepository.saveAndFlush(authorization);
+    var approver = seedAccount();
+
+    var body =
+        readJson(
+            mockMvc
+                .perform(
+                    authenticated(approver, post("/api/auth/device/authorizations/decision"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(decisionBody(issued.get("userCode").asString(), "APPROVE")))
+                .andExpect(status().isBadRequest())
+                .andExpect(uncacheable()));
+
+    assertThat(body).isEqualTo(fixture("expired-error.json"));
+  }
+
+  @Test
   @DisplayName("Should refuse lookup and decision to an unauthenticated caller")
   void shouldRefuseLookupAndDecisionToUnauthenticatedCaller() throws Exception {
     mockMvc
@@ -363,7 +406,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                 authenticated(approver, post("/api/auth/device/authorizations/decision"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(decisionBody(userCode, decision)))
-            .andExpect(status().isOk()));
+            .andExpect(status().isOk())
+            .andExpect(uncacheable()));
   }
 
   private MockHttpServletRequestBuilder authenticated(
@@ -418,8 +462,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     return objectMapper.readTree(actions.andReturn().getResponse().getContentAsString());
   }
 
-  private static List<String> fieldNamesOf(JsonNode node) {
-    return new ArrayList<>(node.propertyNames());
+  private static Set<String> fieldNamesOf(JsonNode node) {
+    return Set.copyOf(node.propertyNames());
   }
 
   private JsonNode fixture(String fixtureName) {

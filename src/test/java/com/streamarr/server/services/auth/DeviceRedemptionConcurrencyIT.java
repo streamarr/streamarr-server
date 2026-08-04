@@ -1,26 +1,37 @@
 package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
 
 @Tag("IntegrationTest")
 @DisplayName("Device Redemption Concurrency Integration Tests")
@@ -36,15 +47,77 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   @Autowired private AuthSessionRepository sessionRepository;
 
+  @Autowired private GatedAccessTokenIssuer gatedIssuer;
+
   private UUID accountId;
 
   @AfterEach
   void deleteSeededRows() {
+    gatedIssuer.reset();
     authorizationRepository.deleteAll();
     if (accountId != null) {
       // FK cascades sweep auth_session and refresh_token rows.
       userAccountRepository.deleteById(accountId);
       accountId = null;
+    }
+  }
+
+  @TestConfiguration
+  static class GatedIssuerConfig {
+
+    @Bean
+    @Primary
+    GatedAccessTokenIssuer gatedAccessTokenIssuer(
+        JwtEncoder jwtEncoder,
+        AuthTokenProperties properties,
+        Clock clock,
+        HouseholdMembershipRepository membershipRepository,
+        ProfileRepository profileRepository,
+        AccountProfileRepository accountProfileRepository) {
+      return new GatedAccessTokenIssuer(
+          jwtEncoder,
+          properties,
+          clock,
+          membershipRepository,
+          profileRepository,
+          accountProfileRepository);
+    }
+  }
+
+  static class GatedAccessTokenIssuer extends AccessTokenIssuer {
+
+    private final AtomicBoolean failNextIssue = new AtomicBoolean();
+
+    GatedAccessTokenIssuer(
+        JwtEncoder jwtEncoder,
+        AuthTokenProperties properties,
+        Clock clock,
+        HouseholdMembershipRepository membershipRepository,
+        ProfileRepository profileRepository,
+        AccountProfileRepository accountProfileRepository) {
+      super(
+          jwtEncoder,
+          properties,
+          clock,
+          membershipRepository,
+          profileRepository,
+          accountProfileRepository);
+    }
+
+    @Override
+    public AccessToken issue(TokenContext context) {
+      if (failNextIssue.getAndSet(false)) {
+        throw new IllegalStateException("Injected issuance failure");
+      }
+      return super.issue(context);
+    }
+
+    void failNextIssuance() {
+      failNextIssue.set(true);
+    }
+
+    void reset() {
+      failNextIssue.set(false);
     }
   }
 
@@ -99,20 +172,39 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should leave the grant approved when a poll wins but its transaction rolls back")
-  void shouldLeaveGrantApprovedWhenPollWinsButTransactionRollsBack() {
+  @DisplayName("Should refuse an approved grant when its approver has been deleted")
+  void shouldRefuseApprovedGrantWhenApproverDeleted() {
     var approver = seedApprover();
     var issued = deviceAuthorizationService.issue("Apple TV");
     approve(issued.userCode(), approver);
 
-    // Deleting the approver mid-flow makes consumption fail; the row must stay retryable rather
-    // than burn the person's only code.
+    // A deleted approver no longer authorizes consumption. No write is attempted, so this is a
+    // refusal path rather than transaction-rollback evidence.
     userAccountRepository.deleteById(approver.getId());
     accountId = null;
 
     assertThat(deviceAuthorizationService.redeem(issued.deviceCode()))
         .isInstanceOf(DevicePollResult.Expired.class);
     assertThat(statusOf(issued.userCode())).isEqualTo(DeviceAuthorizationStatus.APPROVED);
+  }
+
+  @Test
+  @DisplayName("Should roll back session creation when access-token issuance fails")
+  void shouldRollBackSessionCreationWhenAccessTokenIssuanceFails() {
+    var approver = seedApprover();
+    var issued = deviceAuthorizationService.issue("Apple TV");
+    approve(issued.userCode(), approver);
+    gatedIssuer.failNextIssuance();
+
+    assertThatThrownBy(() -> deviceAuthorizationService.redeem(issued.deviceCode()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("Injected issuance failure");
+
+    assertThat(sessionsOf(approver)).isEmpty();
+    assertThat(statusOf(issued.userCode())).isEqualTo(DeviceAuthorizationStatus.APPROVED);
+    assertThat(deviceAuthorizationService.redeem(issued.deviceCode()))
+        .isInstanceOf(DevicePollResult.Success.class);
+    assertThat(sessionsOf(approver)).hasSize(1);
   }
 
   @Test

@@ -1,5 +1,7 @@
 package com.streamarr.server.services.auth;
 
+import java.util.Objects;
+
 /**
  * The outcome of one poll. Only {@link Success} is an HTTP success; the rest are grant states, not
  * failures, which is why they are modelled as results rather than exceptions — {@code
@@ -8,6 +10,11 @@ package com.streamarr.server.services.auth;
 public sealed interface DevicePollResult {
 
   record Success(AccessToken accessToken, String rawRefreshToken) implements DevicePollResult {
+
+    public Success {
+      Objects.requireNonNull(accessToken, "accessToken");
+      Objects.requireNonNull(rawRefreshToken, "rawRefreshToken");
+    }
 
     @Override
     public String toString() {

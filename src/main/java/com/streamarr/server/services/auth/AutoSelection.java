@@ -10,6 +10,12 @@ public record AutoSelection(UUID householdId, UUID profileId) {
 
   private static final AutoSelection NONE = new AutoSelection(null, null);
 
+  public AutoSelection {
+    if (profileId != null && householdId == null) {
+      throw new IllegalArgumentException("A selected profile requires its household.");
+    }
+  }
+
   public static AutoSelection none() {
     return NONE;
   }

@@ -35,15 +35,16 @@ class DeviceAuthorizationSweeperIT extends AbstractIntegrationTest {
     save(DeviceAuthorizationStatus.APPROVED, Duration.ofMinutes(-5));
     save(DeviceAuthorizationStatus.DENIED, Duration.ofMinutes(-5));
     save(DeviceAuthorizationStatus.CONSUMED, Duration.ofMinutes(-5));
-    var live = save(DeviceAuthorizationStatus.PENDING, Duration.ofMinutes(10));
+    var livePending = save(DeviceAuthorizationStatus.PENDING, Duration.ofMinutes(10));
+    var liveApproved = save(DeviceAuthorizationStatus.APPROVED, Duration.ofMinutes(10));
 
     sweeper.sweep();
 
     // Nothing reads a terminal row after the flow ends; retention would only grow the table and
     // the guessable-code surface.
     assertThat(authorizationRepository.findAll())
-        .singleElement()
-        .satisfies(row -> assertThat(row.getId()).isEqualTo(live));
+        .extracting(DeviceAuthorization::getId)
+        .containsExactlyInAnyOrder(livePending, liveApproved);
   }
 
   @Test

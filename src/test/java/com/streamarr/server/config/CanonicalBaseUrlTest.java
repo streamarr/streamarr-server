@@ -74,4 +74,14 @@ class CanonicalBaseUrlTest {
 
     assertThatThrownBy(() -> absent.resolve("/link")).isInstanceOf(IllegalStateException.class);
   }
+
+  @Test
+  @DisplayName("Should refuse to resolve a path that is not absolute")
+  void shouldRefuseToResolvePathThatIsNotAbsolute() {
+    var baseUrl = CanonicalBaseUrl.of("https://home.example.com", false);
+
+    assertThatThrownBy(() -> baseUrl.resolve("link"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("absolute");
+  }
 }

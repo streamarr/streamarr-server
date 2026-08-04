@@ -53,6 +53,14 @@ class DeviceAuthPropertiesTest {
         .hasMessageContaining("verification-path");
   }
 
+  @Test
+  @DisplayName("Should require a positive typed sweep interval")
+  void shouldRequirePositiveTypedSweepInterval() {
+    var properties = defaultProperties().sweepInterval(Duration.ZERO).build();
+
+    assertThat(validator.validate(properties)).isNotEmpty();
+  }
+
   private static DeviceAuthProperties.DeviceAuthPropertiesBuilder defaultProperties() {
     return DeviceAuthProperties.builder()
         .codeTtl(Duration.ofMinutes(10))
@@ -60,6 +68,7 @@ class DeviceAuthPropertiesTest {
         .verificationPath("/link")
         .maxOutstandingCodes(50)
         .maxGuessAttempts(5)
-        .guessWindow(Duration.ofMinutes(15));
+        .guessWindow(Duration.ofMinutes(15))
+        .sweepInterval(Duration.ofMinutes(15));
   }
 }

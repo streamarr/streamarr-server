@@ -88,13 +88,15 @@ public class DeviceAuthorizationRepositoryCustomImpl
 
   @Override
   @Transactional(propagation = Propagation.REQUIRES_NEW)
-  public boolean tryInsertWithinCap(DeviceAuthorizationInsertCommand command) {
+  public DeviceAuthorizationInsertResult tryInsertWithinCap(
+      DeviceAuthorizationInsertCommand command) {
     // Held until this transaction ends, and shared across instances because it lives in the
     // database. Every issuance passes through here, so the count below cannot go stale under it.
     dsl.execute("SELECT pg_advisory_xact_lock(?)", ISSUANCE_LOCK_KEY);
 
-    if (countOutstanding(command.now()) >= command.maxOutstanding()) {
-      return false;
+    var outstanding = countOutstanding(command.now());
+    if (outstanding >= command.maxOutstanding()) {
+      return new DeviceAuthorizationInsertResult(false, outstanding);
     }
 
     var nowOffset = offsetOf(command.now());
@@ -112,7 +114,7 @@ public class DeviceAuthorizationRepositoryCustomImpl
         .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_BY, currentAuditor())
         .execute();
 
-    return true;
+    return new DeviceAuthorizationInsertResult(true, outstanding + 1);
   }
 
   @Override

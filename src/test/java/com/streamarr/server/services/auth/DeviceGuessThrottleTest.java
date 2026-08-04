@@ -32,6 +32,7 @@ class DeviceGuessThrottleTest {
           .maxOutstandingCodes(50)
           .maxGuessAttempts(3)
           .guessWindow(Duration.ofMinutes(15))
+          .sweepInterval(Duration.ofMinutes(15))
           .build();
 
   private final DeviceGuessThrottle throttle = new DeviceGuessThrottle(properties, clock);

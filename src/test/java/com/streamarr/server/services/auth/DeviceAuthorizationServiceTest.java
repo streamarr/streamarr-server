@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.CanonicalBaseUrl;
@@ -24,16 +25,31 @@ import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertResult;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @Tag("UnitTest")
+@ExtendWith(OutputCaptureExtension.class)
 @DisplayName("Device Authorization Service Tests")
 class DeviceAuthorizationServiceTest {
 
@@ -63,6 +79,7 @@ class DeviceAuthorizationServiceTest {
           .maxOutstandingCodes(3)
           .maxGuessAttempts(5)
           .guessWindow(Duration.ofMinutes(15))
+          .sweepInterval(Duration.ofMinutes(15))
           .build();
 
   private static final String TEST_KEY_BASE64 =
@@ -154,10 +171,12 @@ class DeviceAuthorizationServiceTest {
   @DisplayName("Should let an already-issued grant finish after issuance is disabled")
   void shouldLetAlreadyIssuedGrantFinishAfterIssuanceDisabled() {
     var issued = service.issue("Apple TV");
-    approve(issued.userCode());
 
     // Only new issuance is gated; a code already shown to a person must never be stranded.
     var unconfigured = serviceWith(CanonicalBaseUrl.absent());
+    assertThat(unconfigured.lookup(issued.userCode(), approver.getId()).status())
+        .isEqualTo(DeviceAuthorizationStatus.PENDING);
+    unconfigured.decide(decisionCommand(issued.userCode()));
 
     assertThat(unconfigured.redeem(issued.deviceCode()))
         .isInstanceOf(DevicePollResult.Success.class);
@@ -400,6 +419,180 @@ class DeviceAuthorizationServiceTest {
     assertThat(service.issue("Four").deviceCode()).isNotBlank();
   }
 
+  @ParameterizedTest
+  @EnumSource(DeviceDecision.class)
+  @DisplayName("Should free issuance capacity when an outstanding code is decided")
+  void shouldFreeIssuanceCapacityWhenOutstandingCodeDecided(DeviceDecision decision) {
+    var first = service.issue("One");
+    service.issue("Two");
+    service.issue("Three");
+
+    decide(first.userCode(), decision);
+
+    assertThat(service.issue("Four").deviceCode()).isNotBlank();
+  }
+
+  @Test
+  @DisplayName("Should warn only when issuance first nears and then reaches capacity")
+  void shouldWarnOnlyWhenIssuanceFirstNearsAndThenReachesCapacity(CapturedOutput output) {
+    var capacityService = serviceWithCapacity(4);
+
+    capacityService.issue("One");
+    capacityService.issue("Two");
+    capacityService.issue("Three");
+    capacityService.issue("Four");
+
+    assertThat(output.getAll())
+        .contains("issuance at 2 of 4")
+        .doesNotContain("issuance at 3 of 4")
+        .contains("issuance at 4 of 4");
+  }
+
+  @Test
+  @DisplayName("Should use the atomic outstanding count returned by insertion")
+  void shouldUseAtomicOutstandingCountReturnedByInsertion() {
+    var atomicRepository =
+        new FakeDeviceAuthorizationRepository() {
+          private boolean inserted;
+
+          @Override
+          public DeviceAuthorizationInsertResult tryInsertWithinCap(
+              DeviceAuthorizationInsertCommand command) {
+            var result = super.tryInsertWithinCap(command);
+            inserted = result.inserted();
+            return result;
+          }
+
+          @Override
+          public int countOutstanding(Instant now) {
+            if (inserted) {
+              throw new IllegalStateException("Post-insert recount escaped the atomic operation.");
+            }
+            return super.countOutstanding(now);
+          }
+        };
+    var atomicService = serviceWith(atomicRepository, new UserCodeGenerator());
+
+    assertThatCode(() -> atomicService.issue("Apple TV")).doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("Should rethrow an integrity failure unrelated to the user-code constraint")
+  void shouldRethrowIntegrityFailureUnrelatedToUserCodeConstraint() {
+    var failure = constraintViolation("uq_device_authorization_device_code_digest");
+    var throwingRepository =
+        new FakeDeviceAuthorizationRepository() {
+          @Override
+          public DeviceAuthorizationInsertResult tryInsertWithinCap(
+              DeviceAuthorizationInsertCommand command) {
+            throw failure;
+          }
+        };
+    var failingService = serviceWith(throwingRepository, new UserCodeGenerator());
+
+    assertThatThrownBy(() -> failingService.issue("Apple TV")).isSameAs(failure);
+  }
+
+  @Test
+  @DisplayName("Should retry a collision on the user-code constraint")
+  void shouldRetryCollisionOnUserCodeConstraint() {
+    var candidates = new ArrayDeque<>(List.of("BBBBBBBB", "BBBBBBBB", "CCCCCCCC"));
+    var collidingService =
+        serviceWith(
+            authorizationRepository,
+            new UserCodeGenerator() {
+              @Override
+              public String generate() {
+                return candidates.removeFirst();
+              }
+            });
+
+    assertThat(collidingService.issue("First").userCode()).isEqualTo("BBBB-BBBB");
+    assertThat(collidingService.issue("Second").userCode()).isEqualTo("CCCC-CCCC");
+    assertThat(authorizationRepository.findAll()).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should retain the final user-code collision when retries are exhausted")
+  void shouldRetainFinalUserCodeCollisionWhenRetriesExhausted() {
+    var collidingService =
+        serviceWith(
+            authorizationRepository,
+            new UserCodeGenerator() {
+              @Override
+              public String generate() {
+                return "BBBBBBBB";
+              }
+            });
+    collidingService.issue("First");
+
+    assertThatThrownBy(() -> collidingService.issue("Second"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasCauseInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail fast when a lost decision still observes a live pending row")
+  void shouldFailFastWhenLostDecisionStillObservesLivePendingRow() {
+    var losingRepository =
+        new FakeDeviceAuthorizationRepository() {
+          @Override
+          public int decide(DeviceAuthorizationDecisionCommand command) {
+            return 0;
+          }
+        };
+    var losingService = serviceWith(losingRepository, new UserCodeGenerator());
+    var issued = losingService.issue("Apple TV");
+    var command =
+        DeviceDecisionCommand.builder()
+            .userCode(issued.userCode())
+            .decision(DeviceDecision.APPROVE)
+            .decidedByAccountId(approver.getId())
+            .build();
+
+    assertThatThrownBy(() -> losingService.decide(command))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("pending");
+  }
+
+  @Test
+  @DisplayName("Should report not pending when another decision wins the conditional update")
+  void shouldReportNotPendingWhenAnotherDecisionWinsConditionalUpdate() {
+    var losingRepository =
+        new FakeDeviceAuthorizationRepository() {
+          @Override
+          public int decide(DeviceAuthorizationDecisionCommand command) {
+            super.decide(command);
+            return 0;
+          }
+        };
+    var losingService = serviceWith(losingRepository, new UserCodeGenerator());
+    var issued = losingService.issue("Apple TV");
+    var command = decisionCommand(issued.userCode());
+
+    assertThatThrownBy(() -> losingService.decide(command))
+        .isInstanceOf(DeviceCodeNotPendingException.class);
+  }
+
+  @Test
+  @DisplayName("Should report not found when the row vanishes before the conditional update")
+  void shouldReportNotFoundWhenRowVanishesBeforeConditionalUpdate() {
+    var losingRepository =
+        new FakeDeviceAuthorizationRepository() {
+          @Override
+          public int decide(DeviceAuthorizationDecisionCommand command) {
+            findByUserCode(command.userCode()).ifPresent(row -> deleteById(row.getId()));
+            return 0;
+          }
+        };
+    var losingService = serviceWith(losingRepository, new UserCodeGenerator());
+    var issued = losingService.issue("Apple TV");
+    var command = decisionCommand(issued.userCode());
+
+    assertThatThrownBy(() -> losingService.decide(command))
+        .isInstanceOf(DeviceCodeNotFoundException.class);
+  }
+
   @Test
   @DisplayName("Should refuse a grant whose approver has since been disabled")
   void shouldRefuseGrantWhoseApproverHasSinceBeenDisabled() {
@@ -414,6 +607,42 @@ class DeviceAuthorizationServiceTest {
   }
 
   private DeviceAuthorizationService serviceWith(CanonicalBaseUrl baseUrl) {
+    return serviceWith(authorizationRepository, new UserCodeGenerator(), baseUrl);
+  }
+
+  private DeviceAuthorizationService serviceWith(
+      DeviceAuthorizationRepository repository, UserCodeGenerator generator) {
+    return serviceWith(repository, generator, CanonicalBaseUrl.of(BASE_URL, false));
+  }
+
+  private DeviceAuthorizationService serviceWith(
+      DeviceAuthorizationRepository repository,
+      UserCodeGenerator generator,
+      CanonicalBaseUrl baseUrl) {
+    return new DeviceAuthorizationService(
+        repository,
+        userAccountRepository,
+        refreshTokenService,
+        sessionScopeService,
+        accessTokenIssuer,
+        generator,
+        new DeviceGuessThrottle(properties, clock),
+        properties,
+        baseUrl,
+        clock);
+  }
+
+  private DeviceAuthorizationService serviceWithCapacity(int capacity) {
+    var capacityProperties =
+        DeviceAuthProperties.builder()
+            .codeTtl(properties.codeTtl())
+            .pollIntervalSeconds(properties.pollIntervalSeconds())
+            .verificationPath(properties.verificationPath())
+            .maxOutstandingCodes(capacity)
+            .maxGuessAttempts(properties.maxGuessAttempts())
+            .guessWindow(properties.guessWindow())
+            .sweepInterval(properties.sweepInterval())
+            .build();
     return new DeviceAuthorizationService(
         authorizationRepository,
         userAccountRepository,
@@ -421,14 +650,30 @@ class DeviceAuthorizationServiceTest {
         sessionScopeService,
         accessTokenIssuer,
         new UserCodeGenerator(),
-        new DeviceGuessThrottle(properties, clock),
-        properties,
-        baseUrl,
+        new DeviceGuessThrottle(capacityProperties, clock),
+        capacityProperties,
+        CanonicalBaseUrl.of(BASE_URL, false),
         clock);
+  }
+
+  private static DataIntegrityViolationException constraintViolation(String constraintName) {
+    var message = "duplicate key value violates unique constraint \"%s\"".formatted(constraintName);
+    return new DataIntegrityViolationException(
+        message,
+        new ConstraintViolationException(
+            message, new SQLException(message, "23505"), constraintName));
   }
 
   private DeviceAuthorizationView approve(String userCode) {
     return decide(userCode, DeviceDecision.APPROVE);
+  }
+
+  private DeviceDecisionCommand decisionCommand(String userCode) {
+    return DeviceDecisionCommand.builder()
+        .userCode(userCode)
+        .decision(DeviceDecision.APPROVE)
+        .decidedByAccountId(approver.getId())
+        .build();
   }
 
   private DeviceAuthorizationView decide(String userCode, DeviceDecision decision) {

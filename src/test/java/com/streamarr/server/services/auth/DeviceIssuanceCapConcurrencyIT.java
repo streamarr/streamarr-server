@@ -5,6 +5,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.security.DeviceAuthProperties;
+import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import java.time.Duration;
 import java.time.Instant;
@@ -78,6 +79,9 @@ class DeviceIssuanceCapConcurrencyIT extends AbstractIntegrationTest {
     // Exactly one slot was free, so exactly one racer may win and the table must land on the cap.
     assertThat(accepted).hasSize(1);
     assertThat(refused).hasSize(racers - 1);
+    assertThat(refused)
+        .allSatisfy(
+            failure -> assertThat(failure).isInstanceOf(TooManyDeviceAttemptsException.class));
     assertThat(authorizationRepository.countOutstanding(Instant.now())).isEqualTo(cap);
   }
 }

@@ -33,7 +33,8 @@ public interface DeviceAuthorizationRepositoryCustom {
 
   /**
    * Counts and inserts as one indivisible unit, so the outstanding cap is a hard limit rather than
-   * a suggestion. Returns false when the cap is already full.
+   * a suggestion. The result carries both the insertion decision and the outstanding count observed
+   * while holding the lock, so callers never need a racy post-transaction recount.
    *
    * <p>Counting in Java and then inserting is the check-then-act race AGENTS.md names: under READ
    * COMMITTED every concurrent caller reads the same pre-commit count and every one of them
@@ -42,7 +43,7 @@ public interface DeviceAuthorizationRepositoryCustom {
    * a database advisory lock does, and issuance is a human pairing a TV, so the contention cost is
    * nil.
    */
-  boolean tryInsertWithinCap(DeviceAuthorizationInsertCommand command);
+  DeviceAuthorizationInsertResult tryInsertWithinCap(DeviceAuthorizationInsertCommand command);
 
   /**
    * The expiry of the oldest outstanding code: with a row-count cap there is no window to measure,

@@ -25,6 +25,7 @@ import java.util.Base64;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +40,7 @@ public class DeviceAuthorizationService {
   private static final int DEVICE_CODE_CHARACTERS = 43;
   private static final int SLOW_DOWN_INCREMENT_SECONDS = 5;
   private static final int USER_CODE_ATTEMPTS = 5;
+  private static final String USER_CODE_UNIQUE_CONSTRAINT = "uq_device_authorization_user_code";
 
   private final DeviceAuthorizationRepository authorizationRepository;
   private final UserAccountRepository userAccountRepository;
@@ -256,12 +258,17 @@ public class DeviceAuthorizationService {
   private RuntimeException classifyLostDecision(String userCode) {
     return authorizationRepository
         .findStatusByUserCode(userCode)
-        .<RuntimeException>map(
-            status ->
-                status == DeviceAuthorizationStatus.PENDING
-                    ? new DeviceCodeExpiredException()
-                    : new DeviceCodeNotPendingException())
+        .<RuntimeException>map(DeviceAuthorizationService::lostDecisionForStatus)
         .orElseGet(DeviceCodeNotFoundException::new);
+  }
+
+  private static RuntimeException lostDecisionForStatus(DeviceAuthorizationStatus status) {
+    return switch (status) {
+      case PENDING ->
+          new IllegalStateException(
+              "Conditional device decision updated no rows, but the code is still pending.");
+      case APPROVED, DENIED, CONSUMED -> new DeviceCodeNotPendingException();
+    };
   }
 
   /**
@@ -270,54 +277,68 @@ public class DeviceAuthorizationService {
    */
   private String saveWithUniqueUserCode(
       String deviceCode, String rawDeviceName, int interval, Instant now) {
+    DataIntegrityViolationException lastCollision = null;
     for (var attempt = 0; attempt < USER_CODE_ATTEMPTS; attempt++) {
       var candidate = userCodeGenerator.generate();
       try {
-        if (!authorizationRepository.tryInsertWithinCap(
-            DeviceAuthorizationInsertCommand.builder()
-                .deviceCodeDigest(digestOf(deviceCode))
-                .userCode(candidate)
-                .deviceName(DeviceName.sanitize(rawDeviceName))
-                .expiresAt(now.plus(properties.codeTtl()))
-                // RFC 8628 §3.2: the interval is the wait between polls. Nothing precedes the
-                // first one, so the gate opens at issuance and governs from the second poll on.
-                .nextPollAt(now)
-                .pollIntervalSeconds(interval)
-                .maxOutstanding(properties.maxOutstandingCodes())
-                .now(now)
-                .build())) {
-          throw refusedForCapacity(now);
+        var result =
+            authorizationRepository.tryInsertWithinCap(
+                DeviceAuthorizationInsertCommand.builder()
+                    .deviceCodeDigest(digestOf(deviceCode))
+                    .userCode(candidate)
+                    .deviceName(DeviceName.sanitize(rawDeviceName))
+                    .expiresAt(now.plus(properties.codeTtl()))
+                    // RFC 8628 §3.2: the interval is the wait between polls. Nothing precedes the
+                    // first one, so the gate opens at issuance and governs from the second poll on.
+                    .nextPollAt(now)
+                    .pollIntervalSeconds(interval)
+                    .maxOutstanding(properties.maxOutstandingCodes())
+                    .now(now)
+                    .build());
+        if (!result.inserted()) {
+          throw refusedForCapacity(result.outstanding(), now);
         }
-        warnAsCapacityNears(now);
+        warnAsCapacityNears(result.outstanding());
         return candidate;
-      } catch (DataIntegrityViolationException _) {
+      } catch (DataIntegrityViolationException e) {
+        if (!isUserCodeCollision(e)) {
+          throw e;
+        }
         // A collision with an outstanding code. In a 20^8 space against a capped number of live
         // codes this is vanishingly rare; retrying is cheaper than reasoning about it.
+        lastCollision = e;
         log.warn("User code collided with an outstanding pairing code; retrying.");
       }
     }
 
     throw new IllegalStateException(
-        "Could not mint a unique pairing code in %d attempts.".formatted(USER_CODE_ATTEMPTS));
+        "Could not mint a unique pairing code in %d attempts.".formatted(USER_CODE_ATTEMPTS),
+        lastCollision);
   }
 
-  private TooManyDeviceAttemptsException refusedForCapacity(Instant now) {
+  private static boolean isUserCodeCollision(DataIntegrityViolationException e) {
+    return e.getCause() instanceof ConstraintViolationException violation
+        && USER_CODE_UNIQUE_CONSTRAINT.equals(violation.getConstraintName());
+  }
+
+  private TooManyDeviceAttemptsException refusedForCapacity(int outstanding, Instant now) {
     log.warn(
         "Device pairing issuance refused: {} outstanding codes at the configured cap of {}",
-        authorizationRepository.countOutstanding(now),
+        outstanding,
         properties.maxOutstandingCodes());
     return new TooManyDeviceAttemptsException(waitUntilCapacityFrees(now));
   }
 
   /** Approaching the cap is the attack signal operators can alert on. */
-  private void warnAsCapacityNears(Instant now) {
-    var outstanding = authorizationRepository.countOutstanding(now);
-    if (outstanding * 2 >= properties.maxOutstandingCodes()) {
-      log.warn(
-          "Device pairing issuance at {} of {} outstanding codes",
-          outstanding,
-          properties.maxOutstandingCodes());
+  private void warnAsCapacityNears(int outstanding) {
+    var warningThreshold = (properties.maxOutstandingCodes() + 1) / 2;
+    if (outstanding != warningThreshold && outstanding != properties.maxOutstandingCodes()) {
+      return;
     }
+    log.warn(
+        "Device pairing issuance at {} of {} outstanding codes",
+        outstanding,
+        properties.maxOutstandingCodes());
   }
 
   /**

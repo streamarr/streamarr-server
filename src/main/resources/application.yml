@@ -118,11 +118,12 @@ auth:
     max-outstanding-codes: ${AUTH_DEVICE_MAX_OUTSTANDING_CODES:50}
     max-guess-attempts: ${AUTH_DEVICE_MAX_GUESS_ATTEMPTS:5}
     guess-window: ${AUTH_DEVICE_GUESS_WINDOW:15m}
-    sweep-interval-ms: ${AUTH_DEVICE_SWEEP_INTERVAL_MS:900000}
+    # A bare legacy AUTH_DEVICE_SWEEP_INTERVAL_MS value remains milliseconds; duration suffixes are preferred.
+    sweep-interval: ${AUTH_DEVICE_SWEEP_INTERVAL_MS:15m}
 
 streamarr:
-  # The externally reachable base URL. Absent means device pairing is off and mDNS stays silent —
-  # the server never invents an address a container cannot know.
+  # The externally reachable base URL. Absent means device pairing is off; the server never
+  # invents an address a container cannot know.
   base-url: ${STREAMARR_BASE_URL:}
   # Honored only together with a development or test profile.
   allow-insecure-http: ${STREAMARR_ALLOW_INSECURE_HTTP:false}

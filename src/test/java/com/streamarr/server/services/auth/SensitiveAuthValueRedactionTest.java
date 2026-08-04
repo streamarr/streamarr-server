@@ -131,7 +131,8 @@ class SensitiveAuthValueRedactionTest {
             .interval(5)
             .expiresIn(600)
             .build(),
-        new DevicePollResult.Success(null, SECRET_MARKER),
+        new DevicePollResult.Success(
+            new AccessToken(SECRET_MARKER, Instant.now(), TokenScope.ACCOUNT), SECRET_MARKER),
         ChangePasswordCommand.builder().currentPassword(SECRET_MARKER).newPassword(SECRET_MARKER),
         PasswordChangeCompletionCommand.builder()
             .expectedPasswordHash(SECRET_MARKER)
