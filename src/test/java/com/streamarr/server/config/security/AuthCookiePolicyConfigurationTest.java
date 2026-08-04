@@ -29,8 +29,9 @@ class AuthCookiePolicyConfigurationTest {
     // Both gates or neither: silently ignoring the flag would leave an operator believing cookies
     // were relaxed, and would arm the relaxation the moment a profile changed.
     var production = environmentWith();
+    var properties = allowingInsecureCookies();
 
-    assertThatThrownBy(() -> configuration.authCookiePolicy(allowingInsecureCookies(), production))
+    assertThatThrownBy(() -> configuration.authCookiePolicy(properties, production))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("development or test profile");
   }

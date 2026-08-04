@@ -22,7 +22,7 @@ class AuthCookieWriterTest {
   void shouldMarkEveryCookieSecureWhenCookieSecurityIsSecure() {
     var cookies = allCookiesFrom(writerWith(AuthCookiePolicy.SECURE));
 
-    assertThat(cookies).allSatisfy(cookie -> assertThat(cookie.isSecure()).isTrue());
+    assertThat(cookies).hasSize(4).allSatisfy(cookie -> assertThat(cookie.isSecure()).isTrue());
   }
 
   @Test
@@ -32,7 +32,7 @@ class AuthCookieWriterTest {
     // attribute is the only way a cookie-mode session survives there.
     var cookies = allCookiesFrom(writerWith(AuthCookiePolicy.INSECURE_DEVELOPMENT));
 
-    assertThat(cookies).allSatisfy(cookie -> assertThat(cookie.isSecure()).isFalse());
+    assertThat(cookies).hasSize(4).allSatisfy(cookie -> assertThat(cookie.isSecure()).isFalse());
   }
 
   @ParameterizedTest
@@ -44,6 +44,7 @@ class AuthCookieWriterTest {
     var cookies = allCookiesFrom(writerWith(policy));
 
     assertThat(cookies)
+        .hasSize(4)
         .allSatisfy(
             cookie -> {
               assertThat(cookie.isHttpOnly()).isTrue();
