@@ -31,6 +31,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -124,6 +127,42 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     assertThat(authorizationRepository.findAll())
         .singleElement()
         .satisfies(row -> assertThat(row.getDeviceName()).isEqualTo("Unknown device"));
+  }
+
+  @ParameterizedTest(name = "Should reject unreadable required body [{index}]")
+  @NullSource
+  @ValueSource(strings = "{")
+  @DisplayName("Should use the pinned error body when a required request body is unreadable")
+  void shouldUsePinnedErrorBodyWhenRequiredRequestBodyUnreadable(String content) throws Exception {
+    var approver = seedAccount();
+    var tokenBody =
+        readJson(
+            mockMvc
+                .perform(jsonRequest(post("/api/auth/device/token"), content))
+                .andExpect(status().isBadRequest())
+                .andExpect(uncacheable()));
+    var lookupBody =
+        readJson(
+            mockMvc
+                .perform(
+                    jsonRequest(
+                        authenticated(approver, post("/api/auth/device/authorizations/lookup")),
+                        content))
+                .andExpect(status().isBadRequest())
+                .andExpect(uncacheable()));
+    var decisionBody =
+        readJson(
+            mockMvc
+                .perform(
+                    jsonRequest(
+                        authenticated(approver, post("/api/auth/device/authorizations/decision")),
+                        content))
+                .andExpect(status().isBadRequest())
+                .andExpect(uncacheable()));
+
+    var expected = fixture("invalid-request-error.json");
+    assertThat(List.of(tokenBody, lookupBody, decisionBody))
+        .allSatisfy(body -> assertThat(body).isEqualTo(expected));
   }
 
   @Test
@@ -397,6 +436,15 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     return post("/api/auth/device/token")
         .contentType(MediaType.APPLICATION_JSON)
         .content("{\"deviceCode\": \"%s\"}".formatted(deviceCode));
+  }
+
+  private static MockHttpServletRequestBuilder jsonRequest(
+      MockHttpServletRequestBuilder request, String content) {
+    request.contentType(MediaType.APPLICATION_JSON);
+    if (content == null) {
+      return request;
+    }
+    return request.content(content);
   }
 
   private JsonNode decide(UserAccount approver, String userCode, String decision) throws Exception {

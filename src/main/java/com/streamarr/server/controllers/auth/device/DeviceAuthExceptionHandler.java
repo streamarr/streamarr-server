@@ -12,6 +12,7 @@ import java.time.Duration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -22,6 +23,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  */
 @RestControllerAdvice(assignableTypes = DeviceAuthController.class)
 public class DeviceAuthExceptionHandler {
+
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  public ResponseEntity<AuthErrorResponse> handleUnreadableRequestBody() {
+    return ResponseEntity.badRequest()
+        .body(
+            new AuthErrorResponse("INVALID_REQUEST", "The request body is missing or malformed."));
+  }
 
   @ExceptionHandler(DevicePairingNotConfiguredException.class)
   public ResponseEntity<AuthErrorResponse> handleNotConfigured(

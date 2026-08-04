@@ -22,6 +22,7 @@ For successful dynamic responses, the tests pin the field set and assert each be
 | `expired-token-error.json` | Unknown, expired, consumed, or race-lost. HTTP 400.
 | `access-denied-error.json` | Denied. HTTP 400 — never 403.
 | `not-configured-error.json` | HTTP 503 when no canonical base URL is configured.
+| `invalid-request-error.json` | HTTP 400 when a required JSON body is missing or malformed.
 | `invalid-user-code-error.json` | HTTP 400, malformed after normalization.
 | `invalid-decision-error.json` | HTTP 400, validated before any code lookup.
 | `not-found-error.json` | HTTP 404, unknown *or expired*, on lookup.
