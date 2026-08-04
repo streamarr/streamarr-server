@@ -193,16 +193,17 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   void shouldRollBackSessionCreationWhenAccessTokenIssuanceFails() {
     var approver = seedApprover();
     var issued = deviceAuthorizationService.issue("Apple TV");
+    var deviceCode = issued.deviceCode();
     approve(issued.userCode(), approver);
     gatedIssuer.failNextIssuance();
 
-    assertThatThrownBy(() -> deviceAuthorizationService.redeem(issued.deviceCode()))
+    assertThatThrownBy(() -> deviceAuthorizationService.redeem(deviceCode))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("Injected issuance failure");
 
     assertThat(sessionsOf(approver)).isEmpty();
     assertThat(statusOf(issued.userCode())).isEqualTo(DeviceAuthorizationStatus.APPROVED);
-    assertThat(deviceAuthorizationService.redeem(issued.deviceCode()))
+    assertThat(deviceAuthorizationService.redeem(deviceCode))
         .isInstanceOf(DevicePollResult.Success.class);
     assertThat(sessionsOf(approver)).hasSize(1);
   }

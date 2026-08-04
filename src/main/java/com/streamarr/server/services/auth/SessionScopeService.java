@@ -39,6 +39,10 @@ public class SessionScopeService {
    */
   @Transactional
   public AutoSelection resolveAutoSelection(UserAccount account) {
+    return determineAutoSelection(account);
+  }
+
+  private AutoSelection determineAutoSelection(UserAccount account) {
     var memberships = membershipRepository.findByAccountId(account.getId());
     if (memberships.size() != 1) {
       return AutoSelection.none();
@@ -57,7 +61,7 @@ public class SessionScopeService {
   /** Applies the auto-selection to a session that already exists. */
   @Transactional
   public TokenContext autoSelectContext(UserAccount account, AuthSession session) {
-    var selection = resolveAutoSelection(account);
+    var selection = determineAutoSelection(account);
     if (!selection.hasHousehold()) {
       return TokenContext.builder().account(account).session(session).build();
     }

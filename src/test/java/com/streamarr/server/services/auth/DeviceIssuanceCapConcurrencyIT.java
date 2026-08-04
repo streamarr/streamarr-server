@@ -78,8 +78,8 @@ class DeviceIssuanceCapConcurrencyIT extends AbstractIntegrationTest {
 
     // Exactly one slot was free, so exactly one racer may win and the table must land on the cap.
     assertThat(accepted).hasSize(1);
-    assertThat(refused).hasSize(racers - 1);
     assertThat(refused)
+        .hasSize(racers - 1)
         .allSatisfy(
             failure -> assertThat(failure).isInstanceOf(TooManyDeviceAttemptsException.class));
     assertThat(authorizationRepository.countOutstanding(Instant.now())).isEqualTo(cap);
