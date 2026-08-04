@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.env.MockEnvironment;
 
 @Tag("UnitTest")
@@ -14,11 +16,12 @@ class AuthCookiePolicyConfigurationTest {
 
   private final AuthCookiePolicyConfiguration configuration = new AuthCookiePolicyConfiguration();
 
-  @Test
-  @DisplayName("Should relax Secure when the flag and a development profile agree")
-  void shouldRelaxSecureWhenFlagAndDevelopmentProfileAgree() {
+  @ParameterizedTest
+  @ValueSource(strings = {"dev", "development", "test"})
+  @DisplayName("Should relax Secure when the flag and an allowed profile agree")
+  void shouldRelaxSecureWhenFlagAndAllowedProfileAgree(String profile) {
     var security =
-        configuration.authCookiePolicy(allowingInsecureCookies(), environmentWith("dev"));
+        configuration.authCookiePolicy(allowingInsecureCookies(), environmentWith(profile));
 
     assertThat(security).isEqualTo(AuthCookiePolicy.INSECURE_DEVELOPMENT);
   }
@@ -32,6 +35,18 @@ class AuthCookiePolicyConfigurationTest {
     var properties = allowingInsecureCookies();
 
     assertThatThrownBy(() -> configuration.authCookiePolicy(properties, production))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("development or test profile");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"prod", "production", "observability"})
+  @DisplayName("Should fail startup when the flag is set with only an unrelated profile")
+  void shouldFailStartupWhenFlagIsSetWithOnlyUnrelatedProfile(String profile) {
+    var environment = environmentWith(profile);
+    var properties = allowingInsecureCookies();
+
+    assertThatThrownBy(() -> configuration.authCookiePolicy(properties, environment))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("development or test profile");
   }
