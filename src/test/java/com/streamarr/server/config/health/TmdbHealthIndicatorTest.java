@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.Status;
 
 @Tag("UnitTest")
@@ -155,9 +157,10 @@ class TmdbHealthIndicatorTest {
     var responses = FakeHttpClient.respondingWithBlockedFirst(200, 200);
     var client = responses.client();
     var indicator = indicatorFor(client);
+    Callable<Health> healthProbe = indicator::health;
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var probe = executor.submit(() -> indicator.health());
+      var probe = executor.submit(healthProbe);
       try {
         assertThat(responses.awaitFirstRequest(Duration.ofSeconds(5))).isTrue();
         currentTime.updateAndGet(instant -> instant.plus(CACHE_TTL));
@@ -178,13 +181,14 @@ class TmdbHealthIndicatorTest {
     var responses = FakeHttpClient.respondingWithBlockedFirst(503, 200);
     var client = responses.client();
     var indicator = indicatorFor(client);
+    Callable<Health> healthProbe = indicator::health;
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var olderProbe = executor.submit(() -> indicator.health());
+      var olderProbe = executor.submit(healthProbe);
       try {
         assertThat(responses.awaitFirstRequest(Duration.ofSeconds(5))).isTrue();
 
-        var newerProbe = executor.submit(() -> indicator.health());
+        var newerProbe = executor.submit(healthProbe);
         assertThat(newerProbe.get(5, TimeUnit.SECONDS).getStatus()).isEqualTo(Status.UP);
         responses.releaseFirstResponse();
         assertThat(olderProbe.get(5, TimeUnit.SECONDS).getStatus())

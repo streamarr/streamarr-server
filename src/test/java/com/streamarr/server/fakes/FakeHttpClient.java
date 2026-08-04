@@ -32,6 +32,7 @@ import javax.net.ssl.SSLSession;
 public class FakeHttpClient extends HttpClient {
 
   public static final Duration UNBOUNDED_WAIT = Duration.ofSeconds(10);
+  private static final CountDownLatch NEVER_RESPONDS = new CountDownLatch(1);
 
   private final Outcome outcome;
   private final AtomicInteger sendCount = new AtomicInteger();
@@ -86,7 +87,7 @@ public class FakeHttpClient extends HttpClient {
   }
 
   private IOException waitOutTimeout(HttpRequest request) throws InterruptedException {
-    Thread.sleep(request.timeout().orElse(UNBOUNDED_WAIT));
+    NEVER_RESPONDS.await(request.timeout().orElse(UNBOUNDED_WAIT).toNanos(), TimeUnit.NANOSECONDS);
     return new HttpTimeoutException("request timed out");
   }
 
