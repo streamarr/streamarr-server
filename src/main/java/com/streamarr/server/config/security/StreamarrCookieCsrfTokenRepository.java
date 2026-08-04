@@ -32,7 +32,10 @@ final class StreamarrCookieCsrfTokenRepository implements CsrfTokenRepository {
     return new DefaultCsrfToken(HEADER_NAME, PARAMETER_NAME, UUID.randomUUID().toString());
   }
 
+  // The anti-CSRF nonce must be script-readable so the SPA can echo it in X-XSRF-TOKEN. It is not
+  // an authentication credential; the access and refresh cookies remain HttpOnly.
   @Override
+  @SuppressWarnings("java:S3330")
   public void saveToken(CsrfToken token, HttpServletRequest request, HttpServletResponse response) {
     var removingToken = token == null;
     var cookie =
