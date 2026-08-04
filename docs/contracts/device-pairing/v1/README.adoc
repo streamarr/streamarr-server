@@ -6,7 +6,8 @@ These files are the contract, not illustrations.
 `DeviceAuthContractIT` asserts real controller responses against them, so changing a file here is an explicit contract change clients must be told about.
 
 Values in angle brackets are placeholders: *field names and JSON types* are pinned, values vary per request.
-Every other value is literal and asserted byte-for-byte — in particular every error body, and the exact lowercase poll codes.
+Error bodies are asserted exactly, including every literal message and lowercase poll code.
+For successful dynamic responses, the tests pin the field set and assert each behaviorally significant value or shape described below; the examples are not all compared byte-for-byte.
 
 |===
 | File | Pins

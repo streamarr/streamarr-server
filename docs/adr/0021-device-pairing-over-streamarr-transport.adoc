@@ -83,7 +83,7 @@ Contract endpoints never redirect: `/api/auth/**` and `/api/stream/**` return fi
 * A TV never handles an account password, and a stolen user code is worth nothing without a signed-in person who approves it.
 * The approval surface is a dedicated `/link` page, so pairing is not user-complete until the web page ships; curl approval is a server smoke test.
 * A lost pairing *success* response is not recoverable — no raw token is stored to re-deliver — so the TV requests a new code. Recovering it would mean persisting a raw token for re-delivery, which is the digest-at-rest property this design is built on.
-* A won poll creates a session before its response reaches the TV; a lost response leaves that session with no holder until normal session reaping expires it.
+* A won poll creates a session before its response reaches the TV; a lost response leaves an unreachable session row. Its refresh token becomes unusable at the configured expiry, while session-row retention is separate cleanup work.
 * The outstanding-code cap is a shared resource: someone who can reach issuance can hold the cap and briefly starve legitimate pairing, bounded by the ten-minute TTL and the sweeper. Accepted for a self-hosted product, and preferred over proxy-fragile per-source blocking.
 
 == Rejected Alternatives

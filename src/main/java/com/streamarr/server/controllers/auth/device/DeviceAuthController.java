@@ -9,7 +9,6 @@ import com.streamarr.server.services.auth.DeviceDecision;
 import com.streamarr.server.services.auth.DeviceDecisionCommand;
 import com.streamarr.server.services.auth.DevicePollResult;
 import com.streamarr.server.services.authorization.AuthorizationService;
-import jakarta.validation.Valid;
 import java.util.Arrays;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +34,7 @@ public class DeviceAuthController {
 
   @PostMapping("/code")
   public ResponseEntity<DeviceCodeResponse> issue(
-      @Valid @RequestBody(required = false) DeviceCodeRequest request) {
+      @RequestBody(required = false) DeviceCodeRequest request) {
     var issued = deviceAuthorizationService.issue(request == null ? null : request.deviceName());
 
     return ResponseEntity.ok()
@@ -55,7 +54,7 @@ public class DeviceAuthController {
    * user out.
    */
   @PostMapping("/token")
-  public ResponseEntity<Object> poll(@Valid @RequestBody DeviceTokenRequest request) {
+  public ResponseEntity<Object> poll(@RequestBody DeviceTokenRequest request) {
     return switch (deviceAuthorizationService.redeem(request.deviceCode())) {
       case DevicePollResult.Success(var accessToken, var rawRefreshToken) ->
           ResponseEntity.ok()
@@ -79,7 +78,7 @@ public class DeviceAuthController {
 
   @PostMapping("/authorizations/lookup")
   public ResponseEntity<DeviceAuthorizationResponse> lookup(
-      @Valid @RequestBody DeviceLookupRequest request) {
+      @RequestBody DeviceLookupRequest request) {
     var view =
         deviceAuthorizationService.lookup(
             request.userCode(), authorizationService.currentIdentity().accountId());
@@ -95,8 +94,7 @@ public class DeviceAuthController {
   }
 
   @PostMapping("/authorizations/decision")
-  public ResponseEntity<DeviceDecisionResponse> decide(
-      @Valid @RequestBody DeviceDecisionRequest request) {
+  public ResponseEntity<DeviceDecisionResponse> decide(@RequestBody DeviceDecisionRequest request) {
     var view =
         deviceAuthorizationService.decide(
             DeviceDecisionCommand.builder()
