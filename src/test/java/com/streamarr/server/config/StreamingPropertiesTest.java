@@ -56,6 +56,28 @@ class StreamingPropertiesTest {
         .run(context -> assertThat(context).hasFailed());
   }
 
+  @ParameterizedTest
+  @ValueSource(longs = {0, -1})
+  @DisplayName("Should reject target segment duration when not positive")
+  void shouldRejectTargetSegmentDurationWhenNotPositive(long seconds) {
+    var builder = StreamingProperties.builder().targetSegmentDuration(Duration.ofSeconds(seconds));
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("target-segment-duration");
+  }
+
+  @ParameterizedTest
+  @ValueSource(longs = {0, -1})
+  @DisplayName("Should reject producer stall threshold when not positive")
+  void shouldRejectProducerStallThresholdWhenNotPositive(long seconds) {
+    var builder = StreamingProperties.builder().producerStallThreshold(Duration.ofSeconds(seconds));
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("producer-stall-threshold");
+  }
+
   @Test
   @DisplayName("Should default segment duration to 6 seconds when null")
   void shouldDefaultSegmentDurationToSixSecondsWhenNull() {

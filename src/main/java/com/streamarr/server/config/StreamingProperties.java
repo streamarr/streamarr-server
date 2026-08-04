@@ -39,6 +39,13 @@ public record StreamingProperties(
       targetSegmentDuration = Duration.ofSeconds(6);
     }
 
+    // Segment duration divides the relocation gap and scales every seek offset; zero divides by
+    // zero on the segment-request path.
+    if (targetSegmentDuration.isZero() || targetSegmentDuration.isNegative()) {
+      throw new IllegalArgumentException(
+          "streaming.target-segment-duration must be positive, got " + targetSegmentDuration);
+    }
+
     if (sessionTimeout == null) {
       sessionTimeout = Duration.ofSeconds(60);
     }
@@ -49,6 +56,13 @@ public record StreamingProperties(
 
     if (producerStallThreshold == null) {
       producerStallThreshold = Duration.ofSeconds(10);
+    }
+
+    // A zero threshold classifies every producer stalled on its first poll, replacing healthy
+    // producers until every execution target is exhausted.
+    if (producerStallThreshold.isZero() || producerStallThreshold.isNegative()) {
+      throw new IllegalArgumentException(
+          "streaming.producer-stall-threshold must be positive, got " + producerStallThreshold);
     }
 
     if (segmentBasePath == null || segmentBasePath.isBlank()) {
