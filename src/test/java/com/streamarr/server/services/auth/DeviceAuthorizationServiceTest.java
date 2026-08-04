@@ -1,14 +1,17 @@
 package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
+import com.streamarr.server.domain.auth.AccountProfile;
+import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
+import com.streamarr.server.domain.auth.HouseholdMembership;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.DeviceCodeExpiredException;
 import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
@@ -25,17 +28,23 @@ import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertResult;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.repositories.auth.UserCodeCollisionException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
@@ -144,18 +153,53 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should never store the raw device code")
-  void shouldNeverStoreRawDeviceCode() {
+  @DisplayName("Should return non-default configured timings")
+  void shouldReturnNonDefaultConfiguredTimings() {
+    var configuredProperties =
+        DeviceAuthProperties.builder()
+            .codeTtl(Duration.ofMinutes(17))
+            .pollIntervalSeconds(37)
+            .verificationPath(properties.verificationPath())
+            .maxOutstandingCodes(properties.maxOutstandingCodes())
+            .maxGuessAttempts(properties.maxGuessAttempts())
+            .guessWindow(properties.guessWindow())
+            .sweepInterval(properties.sweepInterval())
+            .build();
+    var configuredService = serviceWith(configuredProperties);
+
+    var issued = configuredService.issue("Apple TV");
+
+    assertThat(issued.interval()).isEqualTo(37);
+    assertThat(issued.expiresIn()).isEqualTo(Duration.ofMinutes(17).toSeconds());
+  }
+
+  @Test
+  @DisplayName("Should issue a canonical base64url device code with 256 bits")
+  void shouldIssueCanonicalBase64urlDeviceCodeWith256Bits() {
     var issued = service.issue("Apple TV");
+
+    var decoded = Base64.getUrlDecoder().decode(issued.deviceCode());
+
+    assertThat(decoded).hasSize(32);
+    assertThat(Base64.getUrlEncoder().withoutPadding().encodeToString(decoded))
+        .isEqualTo(issued.deviceCode());
+  }
+
+  @Test
+  @DisplayName("Should store only the SHA-256 digest of the device code")
+  void shouldStoreOnlySha256DigestOfDeviceCode() throws Exception {
+    var issued = service.issue("Apple TV");
+    var expectedDigest =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(
+                MessageDigest.getInstance("SHA-256")
+                    .digest(issued.deviceCode().getBytes(StandardCharsets.UTF_8)));
 
     assertThat(authorizationRepository.findAll())
         .singleElement()
-        .satisfies(
-            row -> {
-              assertThat(row.getDeviceCodeDigest()).isNotEqualTo(issued.deviceCode());
-              assertThat(row.getStatus()).isEqualTo(DeviceAuthorizationStatus.PENDING);
-              assertThat(row.getDeviceName()).isEqualTo("Apple TV");
-            });
+        .extracting(DeviceAuthorization::getDeviceCodeDigest)
+        .isEqualTo(expectedDigest);
   }
 
   @Test
@@ -255,6 +299,43 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
+  @DisplayName("Should create a profile-scoped session when the approver has one profile")
+  void shouldCreateProfileScopedSessionWhenApproverHasOneProfile() {
+    var householdId = UUID.randomUUID();
+    membershipRepository.grantMembership(
+        HouseholdMembership.builder()
+            .accountId(approver.getId())
+            .householdId(householdId)
+            .householdRole(HouseholdRole.OWNER)
+            .build());
+    var profile =
+        profileRepository.save(
+            ProfileFixture.defaultProfileBuilder().householdId(householdId).build());
+    accountProfileRepository.linkProfile(
+        AccountProfile.builder()
+            .accountId(approver.getId())
+            .householdId(householdId)
+            .profileId(profile.getId())
+            .build());
+    var issued = service.issue("Apple TV");
+    approve(issued.userCode());
+
+    var result = service.redeem(issued.deviceCode());
+
+    assertThat(result)
+        .isInstanceOf(DevicePollResult.Success.class)
+        .extracting(success -> ((DevicePollResult.Success) success).accessToken().scope())
+        .isEqualTo(TokenScope.PROFILE);
+    assertThat(sessionRepository.findAll())
+        .singleElement()
+        .satisfies(
+            session -> {
+              assertThat(session.getActiveHouseholdId()).isEqualTo(householdId);
+              assertThat(session.getActiveProfileId()).isEqualTo(profile.getId());
+            });
+  }
+
+  @Test
   @DisplayName("Should report expired once the grant has been consumed")
   void shouldReportExpiredOnceGrantHasBeenConsumed() {
     var issued = service.issue("Apple TV");
@@ -290,8 +371,18 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should report expired for a malformed device code without touching the database")
   void shouldReportExpiredForMalformedDeviceCodeWithoutTouchingDatabase() {
-    assertThat(service.redeem("not-a-device-code")).isInstanceOf(DevicePollResult.Expired.class);
-    assertThat(service.redeem(null)).isInstanceOf(DevicePollResult.Expired.class);
+    var inaccessibleRepository =
+        new FakeDeviceAuthorizationRepository() {
+          @Override
+          public Optional<DeviceAuthorization> lockByDeviceCodeDigest(String digest) {
+            throw new AssertionError("Malformed device code reached the repository.");
+          }
+        };
+    var guardedService = serviceWith(inaccessibleRepository, new UserCodeGenerator());
+
+    assertThat(guardedService.redeem("not-a-device-code"))
+        .isInstanceOf(DevicePollResult.Expired.class);
+    assertThat(guardedService.redeem(null)).isInstanceOf(DevicePollResult.Expired.class);
   }
 
   @Test
@@ -450,31 +541,20 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should use the atomic outstanding count returned by insertion")
-  void shouldUseAtomicOutstandingCountReturnedByInsertion() {
-    var atomicRepository =
-        new FakeDeviceAuthorizationRepository() {
-          private boolean inserted;
+  @DisplayName("Should base the capacity retry on the oldest outstanding expiry")
+  void shouldBaseCapacityRetryOnOldestOutstandingExpiry() {
+    service.issue("Oldest");
+    advanceClock(Duration.ofMinutes(2));
+    service.issue("Middle");
+    advanceClock(Duration.ofMinutes(2));
+    service.issue("Newest");
 
-          @Override
-          public DeviceAuthorizationInsertResult tryInsertWithinCap(
-              DeviceAuthorizationInsertCommand command) {
-            var result = super.tryInsertWithinCap(command);
-            inserted = result.inserted();
-            return result;
-          }
-
-          @Override
-          public int countOutstanding(Instant now) {
-            if (inserted) {
-              throw new IllegalStateException("Post-insert recount escaped the atomic operation.");
-            }
-            return super.countOutstanding(now);
-          }
-        };
-    var atomicService = serviceWith(atomicRepository, new UserCodeGenerator());
-
-    assertThatCode(() -> atomicService.issue("Apple TV")).doesNotThrowAnyException();
+    assertThatThrownBy(() -> service.issue("Refused"))
+        .isInstanceOf(TooManyDeviceAttemptsException.class)
+        .satisfies(
+            failure ->
+                assertThat(((TooManyDeviceAttemptsException) failure).getRetryAfter())
+                    .isEqualTo(Duration.ofMinutes(6)));
   }
 
   @Test
@@ -644,6 +724,10 @@ class DeviceAuthorizationServiceTest {
             .guessWindow(properties.guessWindow())
             .sweepInterval(properties.sweepInterval())
             .build();
+    return serviceWith(capacityProperties);
+  }
+
+  private DeviceAuthorizationService serviceWith(DeviceAuthProperties configuredProperties) {
     return new DeviceAuthorizationService(
         authorizationRepository,
         userAccountRepository,
@@ -651,8 +735,8 @@ class DeviceAuthorizationServiceTest {
         sessionScopeService,
         accessTokenIssuer,
         new UserCodeGenerator(),
-        new DeviceGuessThrottle(capacityProperties, clock),
-        capacityProperties,
+        new DeviceGuessThrottle(configuredProperties, clock),
+        configuredProperties,
         CanonicalBaseUrl.of(BASE_URL, false),
         clock);
   }

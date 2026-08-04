@@ -2,7 +2,6 @@ package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.security.AuthTokenProperties;
@@ -16,13 +15,15 @@ import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.time.Clock;
-import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -123,7 +124,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should create exactly one session when many pollers race an approved grant")
-  void shouldCreateExactlyOneSessionWhenManyPollersRaceApprovedGrant() {
+  void shouldCreateExactlyOneSessionWhenManyPollersRaceApprovedGrant() throws Exception {
     var approver = seedApprover();
     var issued = deviceAuthorizationService.issue("Apple TV");
     approve(issued.userCode(), approver);
@@ -139,35 +140,33 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should never report a live approved grant as expired when approval races a poll")
-  void shouldNeverReportLiveApprovedGrantAsExpiredWhenApprovalRacesPoll() {
+  void shouldNeverReportLiveApprovedGrantAsExpiredWhenApprovalRacesPoll() throws Exception {
     var approver = seedApprover();
     var issued = deviceAuthorizationService.issue("Apple TV");
 
-    var executor = Executors.newFixedThreadPool(2);
-    var startLatch = new CountDownLatch(1);
-    var doneLatch = new CountDownLatch(2);
-    var results = new CopyOnWriteArrayList<DevicePollResult>();
+    var start = new CyclicBarrier(2);
+    DevicePollResult result;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var approval =
+          executor.submit(
+              () -> {
+                start.await(20, TimeUnit.SECONDS);
+                approve(issued.userCode(), approver);
+                return null;
+              });
+      var poll =
+          executor.submit(
+              () -> {
+                start.await(20, TimeUnit.SECONDS);
+                return deviceAuthorizationService.redeem(issued.deviceCode());
+              });
 
-    executor.submit(
-        () -> {
-          awaitStart(startLatch);
-          approve(issued.userCode(), approver);
-          doneLatch.countDown();
-        });
-    executor.submit(
-        () -> {
-          awaitStart(startLatch);
-          results.add(deviceAuthorizationService.redeem(issued.deviceCode()));
-          doneLatch.countDown();
-        });
-
-    startLatch.countDown();
-    awaitCompletion(doneLatch);
-    executor.shutdown();
+      result = poll.get(20, TimeUnit.SECONDS);
+      approval.get(20, TimeUnit.SECONDS);
+    }
 
     // Either order is legitimate; what must never happen is a live grant classified as expired.
-    assertThat(results)
-        .singleElement()
+    assertThat(result)
         .isNotInstanceOfAny(DevicePollResult.Expired.class, DevicePollResult.Denied.class);
   }
 
@@ -210,7 +209,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should advance the cadence exactly once per poll under concurrency")
-  void shouldAdvanceCadenceExactlyOncePerPollUnderConcurrency() {
+  void shouldAdvanceCadenceExactlyOncePerPollUnderConcurrency() throws Exception {
     seedApprover();
     var issued = deviceAuthorizationService.issue("Apple TV");
 
@@ -226,33 +225,32 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     assertThat(intervalOf(issued.userCode())).isEqualTo(5 + 3 * 5);
   }
 
-  private List<DevicePollResult> pollConcurrently(String deviceCode, int pollers) {
-    var executor = Executors.newFixedThreadPool(pollers);
-    var startLatch = new CountDownLatch(1);
-    var doneLatch = new CountDownLatch(pollers);
-    var results = new CopyOnWriteArrayList<DevicePollResult>();
-    var failures = new CopyOnWriteArrayList<Exception>();
+  private List<DevicePollResult> pollConcurrently(String deviceCode, int pollers) throws Exception {
+    var start = new CyclicBarrier(pollers);
+    var attempts =
+        IntStream.range(0, pollers)
+            .mapToObj(
+                _ ->
+                    (java.util.concurrent.Callable<DevicePollResult>)
+                        () -> {
+                          start.await(20, TimeUnit.SECONDS);
+                          return deviceAuthorizationService.redeem(deviceCode);
+                        })
+            .toList();
+    var results = new ArrayList<DevicePollResult>();
+    var failures = new ArrayList<Throwable>();
 
-    for (var poller = 0; poller < pollers; poller++) {
-      executor.submit(
-          () -> {
-            awaitStart(startLatch);
-            try {
-              results.add(deviceAuthorizationService.redeem(deviceCode));
-            } catch (Exception caught) {
-              // A submitted task's exception dies inside its Future. Captured here so a poller
-              // that blew up fails the test loudly, instead of just shortening the result list
-              // and letting a whole-collection assertion pass over what survived.
-              failures.add(caught);
-            } finally {
-              doneLatch.countDown();
-            }
-          });
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var futures = executor.invokeAll(attempts, 20, TimeUnit.SECONDS);
+      assertThat(futures).noneMatch(java.util.concurrent.Future::isCancelled);
+      for (var future : futures) {
+        try {
+          results.add(future.get());
+        } catch (ExecutionException failure) {
+          failures.add(failure.getCause());
+        }
+      }
     }
-
-    startLatch.countDown();
-    awaitCompletion(doneLatch);
-    executor.shutdown();
 
     assertThat(failures).isEmpty();
     return List.copyOf(results);
@@ -291,20 +289,5 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     return sessionRepository.findAll().stream()
         .filter(session -> approver.getId().equals(session.getAccountId()))
         .toList();
-  }
-
-  private static void awaitStart(CountDownLatch startLatch) {
-    try {
-      startLatch.await();
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException(e);
-    }
-  }
-
-  private static void awaitCompletion(CountDownLatch doneLatch) {
-    await()
-        .atMost(Duration.ofSeconds(20))
-        .untilAsserted(() -> assertThat(doneLatch.getCount()).isZero());
   }
 }

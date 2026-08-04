@@ -78,6 +78,19 @@ class SessionScopeServiceTest {
   }
 
   @Test
+  @DisplayName("Should auto select the sole household when no profiles are selectable")
+  void shouldAutoSelectSoleHouseholdWhenNoProfilesSelectable() {
+    var f = fixture();
+
+    var context = service.autoSelectContext(f.account, f.session);
+
+    assertThat(context.householdId()).isEqualTo(f.household.getId());
+    assertThat(context.profileId()).isNull();
+    assertThat(reloadSession(f).getActiveHouseholdId()).isEqualTo(f.household.getId());
+    assertThat(reloadSession(f).getActiveProfileId()).isNull();
+  }
+
+  @Test
   @DisplayName("Should stay account scoped when membership is not unique")
   void shouldStayAccountScopedWhenMembershipIsNotUnique() {
     var f = fixture();

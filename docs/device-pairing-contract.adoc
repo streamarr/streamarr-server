@@ -43,6 +43,9 @@ Exactly 43 ASCII characters of canonical unpadded base64url (32 decoded bytes, 2
 `userCode`::
 Alphabet exactly `BCDFGHJKLMNPQRSTVWXZ` (RFC 8628 §6.1: no vowels, no `0`/`O`/`1`/`I`). Length is fixed at 8 in v1. *Display form* groups of four joined by a single hyphen (`BCDF-GHJK`); *wire and storage form* is uppercase with no separators. Lookup and decision accept typed input case-insensitively, with or without separators and surrounding whitespace, then normalize and validate. The issuance response's `userCode` is authoritative for display, so clients never assume a length.
 
+`deviceName`::
+Optional display label supplied by the unauthenticated device. The server normalizes it to Unicode NFC, strips ISO control characters and bidirectional formatting controls, trims surrounding whitespace, and truncates it to 64 Unicode code points without splitting a code point. Null, blank, or fully stripped input becomes `Unknown device`. Other Unicode, including emoji and non-ASCII names, remains intact. Approver clients still output-encode the value when rendering it.
+
 `verificationUriComplete`::
 *Not emitted in v1.* The field name is reserved for the deferred QR accelerator. Clients tolerate its absence and ignore it if a future server emits it.
 

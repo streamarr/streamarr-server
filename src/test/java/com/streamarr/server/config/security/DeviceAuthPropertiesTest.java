@@ -33,6 +33,15 @@ class DeviceAuthPropertiesTest {
     assertThat(validator.validate(properties)).isNotEmpty();
   }
 
+  @ParameterizedTest(name = "Should accept a poll interval of {0} seconds")
+  @ValueSource(ints = {5, 300})
+  @DisplayName("Should accept the poll interval at the contract's bounds")
+  void shouldAcceptPollIntervalAtContractsBounds(int pollIntervalSeconds) {
+    var properties = defaultProperties().pollIntervalSeconds(pollIntervalSeconds).build();
+
+    assertThat(validator.validate(properties)).isEmpty();
+  }
+
   @ParameterizedTest(name = "Should reject a code TTL of {0}")
   @ValueSource(strings = {"PT30S", "PT31M"})
   @DisplayName("Should keep the code lifetime inside the contract's bounds")
@@ -40,6 +49,15 @@ class DeviceAuthPropertiesTest {
     var properties = defaultProperties().codeTtl(Duration.parse(codeTtl)).build();
 
     assertThat(validator.validate(properties)).isNotEmpty();
+  }
+
+  @ParameterizedTest(name = "Should accept a code TTL of {0}")
+  @ValueSource(strings = {"PT1M", "PT30M"})
+  @DisplayName("Should accept the code lifetime at the contract's bounds")
+  void shouldAcceptCodeLifetimeAtContractsBounds(String codeTtl) {
+    var properties = defaultProperties().codeTtl(Duration.parse(codeTtl)).build();
+
+    assertThat(validator.validate(properties)).isEmpty();
   }
 
   @ParameterizedTest(name = "Should reject verification path \"{0}\"")
