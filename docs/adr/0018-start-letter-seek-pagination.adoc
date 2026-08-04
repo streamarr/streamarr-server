@@ -1,0 +1,45 @@
+= ADR 0018: startLetter is a seek anchor under TITLE sort
+
+== Status
+
+Accepted
+
+== Context
+
+The tvOS alphabet rail jumps to a letter and expects to fill the rows above the anchor with the tail of the previous letter, so the library reads as continuous in both directions.
+The server made that impossible three ways: the letter rendered as a result-set restriction (`WHERE lower(left(title_sort, 1)) >= 'q'`), a cursor-less fetch always reported `hasPreviousPage = false`, and cursor validation rejected any later page that omitted the letter (`Cursor filter mismatch: startLetter`).
+Forward pagination was fine — `>= 'q'` flows naturally into R, S, T — only the rows above the anchor were unreachable.
+The client halves of the regression (centering, focus) shipped separately on the tvOS branch.
+
+== Decision
+
+Under TITLE sort, `startLetter` resolves a position in the unfiltered ordering — it is a seek anchor, not part of the result set's identity.
+
+* A cursor-less TITLE-sort request with a letter is rewritten (`LetterJumpResolver`) into an ordinary FORWARD keyset fetch anchored at the predecessor row — the row immediately above the letter in the requested ordering, found by `findLetterJumpPredecessor` with the exact negation of the landing range.
+* The existing limit+2 cursor machinery does the rest: it strips the anchor row, sets `hasPreviousPage`, and mints ordinary position cursors, so backward pages cross the letter boundary with no special cases.
+* Cursor pages never re-apply the letter under TITLE sort (`startLetterCursorPageCondition`); forward pages already imply the bound through the keyset ordering.
+* Cursor validation ignores `startLetter` under TITLE sort — clients may keep or drop the letter on cursor pages; the cursor's position wins either way.
+* Under every other sort, `startLetter` stays an equality restriction on every page and remains part of cursor identity — a letter cannot be a position in a date or runtime ordering.
+* When nothing sits above the anchor there is no rewrite and `hasPreviousPage` stays false: top of library, HASH under ASC (lands at the very top), Z under DESC, and HASH under DESC (its bucket matches two non-adjacent runs of the ordering, so it has no single anchor).
+* `alphabetIndex` counts are unchanged — they count titles per letter, and a seek does not change what a letter contains.
+* Explicitly deferred:
+** A backfill cursor for the empty-anchor page: a jump past the last title returns an empty page with `hasPreviousPage = true` but no cursor to page backward with (the classic Relay empty-connection gap); unreachable from the rail, which only enables letters with a nonzero count.
+** A coherent DESC HASH anchor; the landing page keeps its historical two-run restriction.
+
+== Consequences
+
+* The jump-then-backfill flow works with plain Relay pagination; the client needs no special letter handling after the first page.
+* The landing page's content is unchanged for every letter and direction — only `hasPreviousPage` and backward reachability changed.
+* A letter jump with rows above it costs one extra limit-1 probe query, on the same index as the landing fetch.
+* A stale cursor whose letter no longer matches the request is silently accepted under TITLE sort; the cursor's position drives the page, which is the seek contract.
+* The tvOS test that stubbed cross-letter backward pages (`shouldPreFetchPreviousPageOnJumpAndSetAnchor`) must be rewritten against this now-real contract in the client repo.
+
+== Rejected Alternatives
+
+* Keep restriction semantics and delete the client's dead prefetch (handoff Option A) — defensible UX, but the product was built around continuous browsing from the anchor, and the halfway point (client assuming seek, server enforcing restriction) had to end on one side.
+* Synthesize backfill client-side with a second letter-filtered query — pushes ordering reconstruction and page-boundary stitching into every client, per protocol.
+* Keep the letter in TITLE-sort cursor identity and teach clients to always resend it — validation would pass, but the pages above the anchor would still be walled off by the restriction.
+
+== References
+
+* link:0014-protocol-agnostic-pagination.adoc[ADR 0014] — the MediaPage/keyset pagination this builds on.
