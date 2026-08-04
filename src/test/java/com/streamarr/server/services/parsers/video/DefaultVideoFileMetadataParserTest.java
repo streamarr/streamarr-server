@@ -137,6 +137,9 @@ class DefaultVideoFileMetadataParserTest {
               new TestCase("달빛 수리공", "2021", "[MOKSA] 달빛 수리공 (2021)"),
               new TestCase("Медный меридиан", "1987", "Медный меридиан (1987)"),
               new TestCase("Paper Comet ½", "2003", "Paper Comet ½ (2003)"),
+              new TestCase("Paper Comet", null, "Paper Comet [1920x1080]"),
+              new TestCase("Signal Garden", "2019", "Signal Garden 2019 x264"),
+              new TestCase("Quiet Alloy", "2014", "Quiet Alloy – 2014 – WEBDL-1080p"),
               // U+0301 combining acute: the decomposed (NFD) form must survive unnormalized.
               new TestCase("Clémentine Harvest", "2015", "Clémentine Harvest (2015)"))
           .map(

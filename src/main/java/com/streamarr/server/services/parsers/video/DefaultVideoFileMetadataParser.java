@@ -15,9 +15,9 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
   private static final List<Pattern> EXTRACTION_REGEXES =
       List.of(
           Pattern.compile(
-              "(.*[^_,.\\-])[_.()\\[\\]\\-](19[0-9]{2}|20[0-9]{2})(?![0-9]+|\\W[0-9]{2}\\W[0-9]{2})([ _,.()\\[\\]\\-][^0-9]|).*(19[0-9]{2}|20[0-9]{2})*"),
+              "(.*[^_,.\\-])[_.()\\[\\]\\-](19[0-9]{2}|20[0-9]{2})(?![0-9]+|[xX][0-9]{3,4}|\\W[0-9]{2}\\W[0-9]{2})([ _,.()\\[\\]\\-][^0-9]|).*(19[0-9]{2}|20[0-9]{2})*"),
           Pattern.compile(
-              "(.*[^_,.\\-])[ _.()\\[\\]\\-]+(19\\d{2}|20\\d{2})(?!\\d+|\\W\\d{2}\\W\\d{2})([ _,.()\\[\\]\\-]\\D|).*(19\\d{2}|20\\d{2})*"));
+              "(.*[^_,.\\-])[ _.()\\[\\]\\-]+(19\\d{2}|20\\d{2})(?!\\d+|[xX]\\d{3,4}|\\W\\d{2}\\W\\d{2})([ _,.()\\[\\]\\-]\\D|).*(19\\d{2}|20\\d{2})*"));
   private static final Pattern TAG_REGEX =
       Pattern.compile("^\\s*\\[[^]]+](?!\\.\\w+$)\\s*(?<cleaned>.+)");
   private static final Pattern KNOWN_WORD_EXCLUSIONS_REGEX =
@@ -92,7 +92,7 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
   }
 
   private String removeTrailingSymbols(String title) {
-    return title.replaceAll("(-$)", "");
+    return title.replaceAll("[-–—]+$", "");
   }
 
   private String cleanYear(String year) {
