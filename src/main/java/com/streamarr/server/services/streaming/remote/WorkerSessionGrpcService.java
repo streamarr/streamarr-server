@@ -23,6 +23,9 @@ final class WorkerSessionGrpcService
 
   private static final int MAXIMUM_CONCURRENT_SEGMENT_UPLOADS = 32;
   private static final long MAXIMUM_BUFFERED_SEGMENT_BYTES = 64L * 1024 * 1024;
+  // A ladder's variants upload in parallel, so the allowance has to clear a full ladder; it is a
+  // blast-radius bound on one worker's wedged streams, not a throughput limit.
+  private static final int MAXIMUM_SEGMENT_UPLOADS_PER_WORKER = 8;
 
   private final LiveWorkerConnectionRegistry workerConnections;
   private final SegmentStore segmentStore;
@@ -34,7 +37,9 @@ final class WorkerSessionGrpcService
     this.segmentStore = segmentStore;
     segmentUploadAdmission =
         new SegmentUploadAdmission(
-            MAXIMUM_CONCURRENT_SEGMENT_UPLOADS, MAXIMUM_BUFFERED_SEGMENT_BYTES);
+            MAXIMUM_CONCURRENT_SEGMENT_UPLOADS,
+            MAXIMUM_BUFFERED_SEGMENT_BYTES,
+            MAXIMUM_SEGMENT_UPLOADS_PER_WORKER);
   }
 
   @Override
@@ -47,11 +52,23 @@ final class WorkerSessionGrpcService
   @Override
   public StreamObserver<UploadSegmentRequest> uploadSegment(
       StreamObserver<UploadSegmentResponse> responseObserver) {
-    var ticket = segmentUploadAdmission.tryAdmit();
+    var authenticatedWorkerId = WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID.get();
+    if (authenticatedWorkerId == null) {
+      // The identity interceptor rejects before reaching here, so this means the server was wired
+      // without it. Fail closed rather than admit an upload no per-worker allowance can bound.
+      log.error("Rejecting segment upload with no authenticated worker identity in context");
+      responseObserver.onError(
+          Status.UNAUTHENTICATED
+              .withDescription("Worker identity is required")
+              .asRuntimeException());
+      return new IgnoredUploadObserver();
+    }
+
+    var ticket = segmentUploadAdmission.tryAdmit(authenticatedWorkerId);
     if (ticket.isEmpty()) {
       log.warn(
           "Rejecting segment upload from worker {}: concurrent upload limit reached",
-          WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID.get());
+          authenticatedWorkerId);
       responseObserver.onError(
           Status.RESOURCE_EXHAUSTED
               .withDescription("Concurrent segment upload limit reached")
@@ -59,7 +76,7 @@ final class WorkerSessionGrpcService
       return new IgnoredUploadObserver();
     }
     return SegmentUploadObserver.builder()
-        .authenticatedWorkerId(WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID.get())
+        .authenticatedWorkerId(authenticatedWorkerId)
         .workerConnections(workerConnections)
         .segmentStore(segmentStore)
         .responseObserver(responseObserver)

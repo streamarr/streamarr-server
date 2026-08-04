@@ -133,16 +133,18 @@ class WorkerSessionGrpcServiceTest {
 
   @Test
   @DisplayName("Should reject an upload when the global concurrent upload limit is exhausted")
-  void shouldRejectUploadWhenGlobalConcurrentUploadLimitIsExhausted() {
+  void shouldRejectUploadWhenGlobalConcurrentUploadLimitIsExhausted() throws Exception {
     var service =
         new WorkerSessionGrpcService(new LiveWorkerConnectionRegistry(), new FakeSegmentStore());
     var uploads = new ArrayList<StreamObserver<UploadSegmentRequest>>();
+    // A distinct worker per upload, so the global ceiling is what rejects rather than any single
+    // worker's allowance.
     for (var index = 0; index < 32; index++) {
-      uploads.add(service.uploadSegment(new RecordingUploadResponseObserver()));
+      uploads.add(upload(service, UUID.randomUUID(), new RecordingUploadResponseObserver()));
     }
     var rejected = new RecordingUploadResponseObserver();
 
-    var ignored = service.uploadSegment(rejected);
+    var ignored = upload(service, UUID.randomUUID(), rejected);
 
     assertThat(rejected.error()).isNotNull();
     assertThat(Status.fromThrowable(rejected.error()).getCode())
@@ -153,7 +155,7 @@ class WorkerSessionGrpcServiceTest {
 
     uploads.removeFirst().onError(Status.CANCELLED.asRuntimeException());
     var resumed = new RecordingUploadResponseObserver();
-    var resumedUpload = service.uploadSegment(resumed);
+    var resumedUpload = upload(service, UUID.randomUUID(), resumed);
 
     assertThat(resumed.error()).isNull();
     resumedUpload.onError(Status.CANCELLED.asRuntimeException());

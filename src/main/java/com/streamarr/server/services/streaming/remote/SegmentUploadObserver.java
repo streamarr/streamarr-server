@@ -37,6 +37,12 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
     if (closed) {
       return;
     }
+    if (uploadTicket.isClosed()) {
+      // The admission reclaimed this upload's capacity after it exceeded the maximum upload age.
+      // Terminate the stream: buffering on would hold bytes the byte budget no longer accounts for.
+      reject(Status.DEADLINE_EXCEEDED.withDescription("Segment upload exceeded the maximum age"));
+      return;
+    }
     if (request.hasMetadata()) {
       receiveMetadata(request.getMetadata());
       return;
