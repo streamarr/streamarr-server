@@ -86,7 +86,10 @@ public class SecurityConfig {
   // auth cookies remain httpOnly.
   @SuppressWarnings("java:S3330")
   private CsrfFilter cookieScopedCsrfFilter() {
-    var filter = new CsrfFilter(CookieCsrfTokenRepository.withHttpOnlyFalse());
+    var tokenRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+    tokenRepository.setCookieName(AuthCookies.CSRF_COOKIE);
+
+    var filter = new CsrfFilter(tokenRepository);
     filter.setRequireCsrfProtectionMatcher(new StreamarrCookieCsrfMatcher());
     filter.setRequestHandler(new SpaCookieCsrfTokenRequestHandler());
     filter.setAccessDeniedHandler(accessDeniedHandler);
