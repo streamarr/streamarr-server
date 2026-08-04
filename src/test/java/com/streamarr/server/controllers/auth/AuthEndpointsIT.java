@@ -48,7 +48,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
@@ -162,6 +164,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(refreshCookie.getValue()).isNotBlank();
     assertThat(refreshCookie.getMaxAge())
         .isEqualTo(Math.toIntExact(tokenProperties.refreshTokenTtl().toSeconds()));
+    assertUncacheable(response);
   }
 
   @Test
@@ -446,6 +449,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             .andReturn()
             .getResponse();
 
+    assertUncacheable(rotated);
     assertThat(rotated.getCookie("streamarr_access")).isNotNull();
     assertThat(rotated.getCookie("streamarr_refresh")).isNotNull();
     var successor = rotated.getCookie("streamarr_refresh").getValue();
@@ -632,8 +636,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should never expose access token body to cookie authenticated browser")
-  void shouldNeverExposeAccessTokenBodyToCookieAuthenticatedBrowser() throws Exception {
+  @DisplayName("Should never expose access token body when browser is cookie authenticated")
+  void shouldNeverExposeAccessTokenBodyWhenBrowserIsCookieAuthenticated() throws Exception {
     seedSingleProfileIdentity();
     var secondProfile =
         profileRepository.save(
@@ -648,18 +652,24 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var accessCookie = loginResponse.getCookie("streamarr_access");
     var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
 
-    mockMvc
-        .perform(
-            post("/api/auth/select-profile")
-                .contentType(MediaType.APPLICATION_JSON)
-                .cookie(accessCookie, csrfCookie)
-                .header("X-XSRF-TOKEN", csrfCookie.getValue())
-                .content(
-                    "{\"profileId\": \"%s\", \"cookieMode\": false}".formatted(profile.getId())))
-        .andExpect(status().isOk())
-        .andExpect(cookie().exists("streamarr_access"))
-        .andExpect(cookie().doesNotExist("streamarr_refresh"))
-        .andExpect(jsonPath("$.accessToken").doesNotExist());
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/select-profile")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .cookie(accessCookie, csrfCookie)
+                    .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                    .content(
+                        "{\"profileId\": \"%s\", \"cookieMode\": false}"
+                            .formatted(profile.getId())))
+            .andExpect(status().isOk())
+            .andExpect(cookie().exists("streamarr_access"))
+            .andExpect(cookie().doesNotExist("streamarr_refresh"))
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andReturn()
+            .getResponse();
+
+    assertUncacheable(response);
   }
 
   @Test
@@ -915,29 +925,34 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep cookie authenticated password change in cookie response")
-  void shouldKeepCookieAuthenticatedPasswordChangeInCookieResponse() throws Exception {
+  @DisplayName("Should keep password change tokens in cookies when request is cookie authenticated")
+  void shouldKeepPasswordChangeTokensInCookiesWhenRequestIsCookieAuthenticated() throws Exception {
     seedSingleProfileIdentity();
     var loginResponse = cookieModeLogin();
     var accessCookie = loginResponse.getCookie("streamarr_access");
     var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
 
-    mockMvc
-        .perform(
-            post("/api/auth/change-password")
-                .contentType(MediaType.APPLICATION_JSON)
-                .cookie(accessCookie, csrfCookie)
-                .header("X-XSRF-TOKEN", csrfCookie.getValue())
-                .content(
-                    """
-                    {"currentPassword": "%s", "newPassword": "%s", "cookieMode": false}
-                    """
-                        .formatted(PASSWORD, "a brand new passphrase!")))
-        .andExpect(status().isOk())
-        .andExpect(cookie().exists("streamarr_access"))
-        .andExpect(cookie().exists("streamarr_refresh"))
-        .andExpect(jsonPath("$.accessToken").doesNotExist())
-        .andExpect(jsonPath("$.refreshToken").doesNotExist());
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/change-password")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .cookie(accessCookie, csrfCookie)
+                    .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                    .content(
+                        """
+                        {"currentPassword": "%s", "newPassword": "%s", "cookieMode": false}
+                        """
+                            .formatted(PASSWORD, "a brand new passphrase!")))
+            .andExpect(status().isOk())
+            .andExpect(cookie().exists("streamarr_access"))
+            .andExpect(cookie().exists("streamarr_refresh"))
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andExpect(jsonPath("$.refreshToken").doesNotExist())
+            .andReturn()
+            .getResponse();
+
+    assertUncacheable(response);
   }
 
   @Test
@@ -1065,6 +1080,134 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(refreshBody(login.get("refreshToken").asString())))
         .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  @DisplayName("Should refuse caching when login and refresh return tokens")
+  void shouldRefuseCachingWhenLoginAndRefreshReturnTokens() throws Exception {
+    seedSingleProfileIdentity();
+
+    var login =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(account.getEmail(), PASSWORD)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    assertUncacheable(login);
+
+    var refreshToken = objectMapper.readTree(login.getContentAsString()).get("refreshToken");
+    var refresh =
+        mockMvc
+            .perform(
+                post("/api/auth/refresh")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(refreshBody(refreshToken.asString())))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    assertUncacheable(refresh);
+  }
+
+  @Test
+  @DisplayName("Should refuse caching when setup returns tokens")
+  void shouldRefuseCachingWhenSetupReturnsTokens() throws Exception {
+    var suffix = UUID.randomUUID();
+    setupEmail = "no-store-" + suffix + "@example.com";
+    setupHouseholdName = "Home-" + suffix;
+
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/setup")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(setupBody(setupEmail)))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse();
+
+    assertUncacheable(response);
+  }
+
+  @Test
+  @DisplayName("Should refuse caching when selection returns derived tokens")
+  void shouldRefuseCachingWhenSelectionReturnsDerivedTokens() throws Exception {
+    var householdToken = householdScopedTokenWithTwoProfiles();
+
+    var householdSelection =
+        mockMvc
+            .perform(
+                post("/api/auth/select-household")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + householdToken)
+                    .content(
+                        "{\"householdId\": \"%s\", \"cookieMode\": false}"
+                            .formatted(household.getId())))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    assertUncacheable(householdSelection);
+
+    var derivedToken =
+        objectMapper.readTree(householdSelection.getContentAsString()).get("accessToken");
+    var profileSelection =
+        mockMvc
+            .perform(
+                post("/api/auth/select-profile")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + derivedToken.asString())
+                    .content(
+                        "{\"profileId\": \"%s\", \"cookieMode\": false}"
+                            .formatted(profile.getId())))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    assertUncacheable(profileSelection);
+  }
+
+  @Test
+  @DisplayName("Should refuse caching when password change returns tokens")
+  void shouldRefuseCachingWhenPasswordChangeReturnsTokens() throws Exception {
+    seedSingleProfileIdentity();
+    var accessToken = loginAndReadField("accessToken");
+
+    var response =
+        changePassword(accessToken, PASSWORD, "a brand new passphrase!")
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+
+    assertUncacheable(response);
+  }
+
+  @Test
+  @DisplayName("Should refuse caching when an auth request is rejected")
+  void shouldRefuseCachingWhenAuthRequestRejected() throws Exception {
+    var unthrottledSource =
+        "10.98."
+            + ThreadLocalRandom.current().nextInt(250)
+            + "."
+            + ThreadLocalRandom.current().nextInt(250);
+
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody("absent-" + UUID.randomUUID() + "@example.com", PASSWORD))
+                    .with(
+                        request -> {
+                          request.setRemoteAddr(unthrottledSource);
+                          return request;
+                        }))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+            .andReturn()
+            .getResponse();
+
+    assertUncacheable(response);
   }
 
   private org.springframework.test.web.servlet.ResultActions changePassword(
@@ -1263,5 +1406,17 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
 
   private static String sameSiteOf(Cookie cookie) {
     return cookie.getAttribute("SameSite");
+  }
+
+  /**
+   * RFC 6749 §5.1 requires Cache-Control: no-store and Pragma: no-cache on every response carrying
+   * tokens. Both arrive from Spring Security's CacheControlHeadersWriter, which writes
+   * Cache-Control, Pragma and Expires as one group and skips all three the moment a handler has
+   * already set any of them. An explicit cacheControl(...) on an auth response therefore drops
+   * Pragma rather than adding to it — that is the regression these assertions catch.
+   */
+  private static void assertUncacheable(MockHttpServletResponse response) {
+    assertThat(response.getHeader(HttpHeaders.CACHE_CONTROL)).contains("no-store");
+    assertThat(response.getHeader(HttpHeaders.PRAGMA)).isEqualTo("no-cache");
   }
 }
