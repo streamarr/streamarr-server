@@ -34,4 +34,64 @@ class StreamarrCookieCsrfMatcherTest {
 
     assertThat(matcher.matches(request)).isTrue();
   }
+
+  @Test
+  @DisplayName("Should require csrf when only the csrf cookie rides a login")
+  void shouldRequireCsrfWhenOnlyTheCsrfCookieRidesALogin() {
+    // Login carries its credential in the body, so no auth cookie is present yet — but the XSRF
+    // cookie proves a browser that has already talked to this origin, which is exactly the
+    // login-CSRF victim.
+    var request = new MockHttpServletRequest("POST", "/api/auth/login");
+    request.setCookies(new Cookie(AuthCookies.CSRF_COOKIE, "csrf-value"));
+
+    assertThat(matcher.matches(request)).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should require csrf when a stale access cookie rides a login")
+  void shouldRequireCsrfWhenStaleAccessCookieRidesALogin() {
+    var request = new MockHttpServletRequest("POST", "/api/auth/login");
+    request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "stale-access-token"));
+
+    assertThat(matcher.matches(request)).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should not require csrf when no cookies ride the request")
+  void shouldNotRequireCsrfWhenNoCookiesRideTheRequest() {
+    // The native/TV shape: body credentials, no cookie jar for this origin, nothing ambient to
+    // forge. Device pairing polls arrive this way too.
+    var request = new MockHttpServletRequest("POST", "/api/auth/login");
+
+    assertThat(matcher.matches(request)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should not require csrf when only a foreign cookie rides the request")
+  void shouldNotRequireCsrfWhenOnlyForeignCookieRidesTheRequest() {
+    // Only Streamarr-issued cookies are evidence of a browser session with this application.
+    var request = new MockHttpServletRequest("POST", "/api/auth/login");
+    request.setCookies(new Cookie("some_other_app", "irrelevant"));
+
+    assertThat(matcher.matches(request)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should not require csrf when a bearer credential accompanies streamarr cookies")
+  void shouldNotRequireCsrfWhenBearerCredentialAccompaniesStreamarrCookies() {
+    var request = new MockHttpServletRequest("POST", "/api/auth/login");
+    request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer a-real-looking-token");
+    request.setCookies(new Cookie(AuthCookies.CSRF_COOKIE, "csrf-value"));
+
+    assertThat(matcher.matches(request)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should not require csrf when the method is safe despite streamarr cookies")
+  void shouldNotRequireCsrfWhenMethodIsSafeDespiteStreamarrCookies() {
+    var request = new MockHttpServletRequest("GET", "/api/auth/status");
+    request.setCookies(new Cookie(AuthCookies.CSRF_COOKIE, "csrf-value"));
+
+    assertThat(matcher.matches(request)).isFalse();
+  }
 }
