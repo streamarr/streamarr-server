@@ -5,12 +5,16 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.github.mizosoft.methanol.Methanol;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.config.health.TmdbHealthProperties;
+import com.streamarr.server.config.http.RateLimitingInterceptor;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -83,6 +87,50 @@ class TmdbHttpClientConfigurationTest {
     var client = new TmdbHttpClientConfiguration().tmdbHealthHttpClient(properties);
 
     assertThat(client.connectTimeout()).contains(PROBE_TIMEOUT);
+  }
+
+  @Test
+  @DisplayName("Should time out request when server exceeds health probe timeout")
+  void shouldTimeOutRequestWhenServerExceedsHealthProbeTimeout() {
+    wireMock.stubFor(
+        get("/slow-configuration")
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withFixedDelay(Math.toIntExact(LOCAL_SERVER_TIMEOUT.toMillis()))));
+    var properties =
+        TmdbHealthProperties.builder()
+            .probeTimeout(PROBE_TIMEOUT)
+            .cacheTtl(Duration.ofSeconds(30))
+            .build();
+    var client = new TmdbHttpClientConfiguration().tmdbHealthHttpClient(properties);
+    var request =
+        HttpRequest.newBuilder()
+            .uri(URI.create(wireMock.baseUrl() + "/slow-configuration"))
+            .GET()
+            .build();
+
+    assertThatThrownBy(() -> client.send(request, HttpResponse.BodyHandlers.discarding()))
+        .isInstanceOf(HttpTimeoutException.class);
+  }
+
+  @Test
+  @DisplayName("Should omit rate limiter when health client is configured")
+  void shouldOmitRateLimiterWhenHealthClientIsConfigured() {
+    var properties =
+        TmdbHealthProperties.builder()
+            .probeTimeout(PROBE_TIMEOUT)
+            .cacheTtl(Duration.ofSeconds(30))
+            .build();
+
+    var client = new TmdbHttpClientConfiguration().tmdbHealthHttpClient(properties);
+
+    assertThat(client)
+        .isInstanceOfSatisfying(
+            Methanol.class,
+            methanol ->
+                assertThat(methanol.interceptors())
+                    .noneMatch(RateLimitingInterceptor.class::isInstance));
   }
 
   @Test
