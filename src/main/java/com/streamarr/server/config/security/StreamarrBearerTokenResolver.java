@@ -11,8 +11,8 @@ import org.springframework.web.util.UrlPathHelper;
 /**
  * Path-aware token resolution. The permitAll auth, health, and public-key endpoints resolve
  * nothing: the Path=/ access cookie rides every same-origin request, and an expired one would
- * otherwise 401 before the public endpoint runs. Everywhere else the Authorization header wins,
- * falling back to the access cookie.
+ * otherwise 401 before the public endpoint runs. Stream endpoints resolve only their playback query
+ * token. Everywhere else the Authorization header wins, falling back to the access cookie.
  */
 public final class StreamarrBearerTokenResolver implements BearerTokenResolver {
 

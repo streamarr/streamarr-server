@@ -9,8 +9,8 @@ server, run `Auth/Public/Setup (one time)` instead. Both requests keep the retur
 tokens in Bruno runtime variables; issued tokens are never persisted in the collection.
 Use Bruno CLI 4.0 or newer. If its cookie jar contains the script-readable
 `__Host-XSRF-TOKEN` issued by the status request, every unsafe public auth request echoes it in
-`X-XSRF-TOKEN` as the browser contract requires. The scripts also recognize the unprefixed
-development fallback.
+`X-XSRF-TOKEN` as the browser contract requires. The scripts also recognize the unprefixed cookie
+reserved for the development profile in server PR #266; production never emits that fallback.
 `Auth/Public/Refresh Tokens` replaces the access token and captures a rotated refresh token when
 the response includes one.
 

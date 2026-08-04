@@ -255,7 +255,7 @@ Rollback in reverse compatibility order: roll the server back before rolling the
 - Native bearer-mode login and refresh remain usable when the client truly does not keep cookies.
 - Cookie-name reuse through `AuthCookies.CSRF_COOKIE` prevents repository/matcher drift.
 - CSRF failures use a fixed forbidden response and do not leak whether credentials were valid.
-- The ADR records the major rejected alternatives and the Spring Security 7 cookie-lifetime API change.
+- The ADR records the major rejected alternatives and the coordinated CSRF rollout invariants.
 
 ## References
 
