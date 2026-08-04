@@ -39,7 +39,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     var filter = options.getMediaFilter();
     var limit = options.getPaginationOptions().getLimit();
 
-    return filterByLibrary(filter)
+    return filterByStartLetter(filterByLibrary(filter), filter)
         .sorted(comparatorFor(filter, filter.getSortDirection()))
         .limit(limit + 1L)
         .toList();
@@ -55,7 +55,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     var effectiveFilter = shouldReverse ? FakeFilterHelper.reverseFilter(filter) : filter;
 
     var sorted =
-        filterByLibrary(effectiveFilter)
+        filterByCursorPageStartLetter(filterByLibrary(effectiveFilter), effectiveFilter)
             .sorted(comparatorFor(effectiveFilter, effectiveFilter.getSortDirection()))
             .toList();
 
@@ -70,6 +70,18 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     return result;
   }
 
+  @Override
+  public Optional<Movie> findLetterJumpPredecessor(MediaFilter filter) {
+    var reversed = FakeFilterHelper.reverseFilter(filter);
+    return filterByLibrary(filter)
+        .filter(
+            m ->
+                FakeFilterHelper.isAboveLetterAnchor(
+                    m.getTitleSort(), filter.getStartLetter(), filter.getSortDirection()))
+        .sorted(comparatorFor(reversed, reversed.getSortDirection()))
+        .findFirst();
+  }
+
   private Stream<Movie> filterByLibrary(MediaFilter filter) {
     var libraryId = filter.getLibraryId();
 
@@ -79,7 +91,18 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
             : database.values().stream()
                 .filter(m -> m.getLibrary() != null && libraryId.equals(m.getLibrary().getId()));
 
-    return applyFilters(filterByStartLetter(stream, filter), filter);
+    return applyFilters(stream, filter);
+  }
+
+  // Mirrors production seekWithFilter: under TITLE sort the letter was consumed as the landing
+  // page's seek anchor, so cursor pages only re-apply it as an equality restriction for other
+  // sorts.
+  private Stream<Movie> filterByCursorPageStartLetter(Stream<Movie> stream, MediaFilter filter) {
+    var letter = filter.getStartLetter();
+    if (letter == null || filter.getSortBy() == OrderMediaBy.TITLE) {
+      return stream;
+    }
+    return stream.filter(m -> FakeFilterHelper.matchesLetterEquality(m.getTitleSort(), letter));
   }
 
   private Stream<Movie> applyFilters(Stream<Movie> stream, MediaFilter filter) {
@@ -138,14 +161,14 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     }
 
     if (filter.getSortBy() != OrderMediaBy.TITLE) {
-      return stream.filter(m -> FakeFilterHelper.matchesLetterEquality(m.getTitle(), letter));
+      return stream.filter(m -> FakeFilterHelper.matchesLetterEquality(m.getTitleSort(), letter));
     }
 
     if (filter.getSortDirection() == SortOrder.DESC) {
-      return stream.filter(m -> FakeFilterHelper.matchesLetterDescRange(m.getTitle(), letter));
+      return stream.filter(m -> FakeFilterHelper.matchesLetterDescRange(m.getTitleSort(), letter));
     }
 
-    return stream.filter(m -> FakeFilterHelper.matchesLetterAscRange(m.getTitle(), letter));
+    return stream.filter(m -> FakeFilterHelper.matchesLetterAscRange(m.getTitleSort(), letter));
   }
 
   private Comparator<Movie> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
@@ -158,9 +181,9 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
               Comparator.comparing(Movie::getReleaseDate, nullsLastDirectional(isDesc));
           case RUNTIME -> Comparator.comparing(Movie::getRuntime, nullsLastDirectional(isDesc));
           case TITLE ->
-              isDesc
-                  ? Comparator.comparing(Movie::getTitle, Comparator.reverseOrder())
-                  : Comparator.comparing(Movie::getTitle);
+              Comparator.comparing(
+                  Movie::getTitleSort,
+                  FakeFilterHelper.titleSortComparator(filter.getSortDirection()));
           case LAST_WATCHED ->
               throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
         };

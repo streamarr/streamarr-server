@@ -8,6 +8,7 @@ import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.val;
 
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.jooq.generated.Tables;
@@ -19,6 +20,8 @@ import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.experimental.UtilityClass;
 import org.jooq.Condition;
@@ -58,14 +61,50 @@ public class JooqQueryHelper {
         : ascLetterCondition(startLetter);
   }
 
-  private Condition equalityLetterCondition(AlphabetLetter startLetter) {
-    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
-
+  // Matches the rows above a TITLE-sort letter jump's landing page - the exact negation of the
+  // landing condition. Empty when nothing can sit above the anchor: HASH lands at the top under
+  // ASC, Z at the top under DESC, and DESC HASH matches two non-adjacent runs of the ordering so
+  // it has no single anchor to sit below.
+  public Optional<Condition> letterJumpPredecessorCondition(
+      AlphabetLetter startLetter, SortOrder direction) {
     if (startLetter == AlphabetLetter.HASH) {
-      return firstCharLower.lessThan(inline("a")).or(firstCharLower.greaterThan(inline("z")));
+      return Optional.empty();
     }
 
-    return firstCharLower.eq(inline(startLetter.name().toLowerCase()));
+    if (direction == SortOrder.DESC) {
+      return startLetter == AlphabetLetter.Z
+          ? Optional.empty()
+          : Optional.of(titleSortField().greaterOrEqual(nextLetterValue(startLetter)));
+    }
+
+    return Optional.of(titleSortField().lessThan(letterValue(startLetter)));
+  }
+
+  // Under TITLE sort the letter is a seek anchor consumed by the landing page - on cursor pages
+  // the keyset alone fixes the position, and re-applying the letter would wall off backward
+  // pages. Non-TITLE sorts keep the letter as an equality restriction on every page.
+  public Condition startLetterCursorPageCondition(AlphabetLetter startLetter, OrderMediaBy sortBy) {
+    if (startLetter == null || sortBy == OrderMediaBy.TITLE) {
+      return noCondition();
+    }
+    return equalityLetterCondition(startLetter);
+  }
+
+  private Condition equalityLetterCondition(AlphabetLetter startLetter) {
+    if (startLetter == AlphabetLetter.HASH) {
+      return hashLetterCondition();
+    }
+
+    var titleSort = titleSortField();
+    if (startLetter == AlphabetLetter.Z) {
+      return titleSort
+          .greaterOrEqual(letterValue(startLetter))
+          .and(lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1)).eq(letterValue(startLetter)));
+    }
+
+    return titleSort
+        .greaterOrEqual(letterValue(startLetter))
+        .and(titleSort.lessThan(nextLetterValue(startLetter)));
   }
 
   private Condition ascLetterCondition(AlphabetLetter startLetter) {
@@ -73,8 +112,7 @@ public class JooqQueryHelper {
       return noCondition();
     }
 
-    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
-    return firstCharLower.greaterOrEqual(inline(startLetter.name().toLowerCase()));
+    return titleSortField().greaterOrEqual(letterValue(startLetter));
   }
 
   private Condition descLetterCondition(AlphabetLetter startLetter) {
@@ -82,17 +120,32 @@ public class JooqQueryHelper {
       return noCondition();
     }
 
-    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
-
     if (startLetter == AlphabetLetter.HASH) {
-      return firstCharLower.lessThan(inline("a")).or(firstCharLower.greaterThan(inline("z")));
+      return hashLetterCondition();
     }
 
-    return firstCharLower.lessOrEqual(inline(startLetter.name().toLowerCase()));
+    return titleSortField().lessThan(nextLetterValue(startLetter));
+  }
+
+  private Condition hashLetterCondition() {
+    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
+    return firstCharLower.lessThan(inline("a")).or(firstCharLower.greaterThan(inline("z")));
+  }
+
+  private Field<String> letterValue(AlphabetLetter letter) {
+    return inline(letter.name().toLowerCase());
+  }
+
+  private Field<String> nextLetterValue(AlphabetLetter startLetter) {
+    return letterValue(AlphabetLetter.values()[startLetter.ordinal() + 1]);
   }
 
   public Condition libraryCondition(UUID libraryId) {
     return libraryId != null ? Tables.BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
+  }
+
+  public Field<String> titleSortField() {
+    return lower(Tables.BASE_COLLECTABLE.TITLE_SORT);
   }
 
   public Condition yearCondition(Field<LocalDate> dateField, List<Integer> years) {
@@ -170,6 +223,16 @@ public class JooqQueryHelper {
     var idField = Tables.BASE_COLLECTABLE.ID;
     var coercedValue = coerceSortValue(filter);
     var isAsc = filter.getSortDirection() == SortOrder.ASC;
+
+    if (filter.getSortBy() == OrderMediaBy.TITLE) {
+      var titleSortCol = (Field<String>) sortCol;
+      var cursorTitleSortValue =
+          Objects.requireNonNull(coercedValue, "TITLE cursor sort value is required").toString();
+      var cursorTitleSort = lower(val(cursorTitleSortValue));
+      var fields = row(titleSortCol, idField);
+      var seekValues = row(cursorTitleSort, val(cursorId));
+      return isAsc ? fields.greaterOrEqual(seekValues) : fields.lessOrEqual(seekValues);
+    }
 
     if (!isNullableSortField(filter.getSortBy())) {
       var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();

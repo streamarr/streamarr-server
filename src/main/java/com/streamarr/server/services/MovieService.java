@@ -18,6 +18,7 @@ import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import com.streamarr.server.services.pagination.LetterJumpResolver;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
@@ -194,12 +195,15 @@ public class MovieService {
   }
 
   public MediaPage<Movie> getMoviesWithFilter(MediaPaginationOptions options) {
-    var movies =
-        options.getCursorId().isPresent()
-            ? movieRepository.seekWithFilter(options)
-            : movieRepository.findFirstWithFilter(options);
+    var resolvedOptions =
+        LetterJumpResolver.resolve(options, movieRepository::findLetterJumpPredecessor);
 
-    var lastWatchedByMovieId = lastWatchedFor(options.getMediaFilter(), movies);
+    var movies =
+        resolvedOptions.getCursorId().isPresent()
+            ? movieRepository.seekWithFilter(resolvedOptions)
+            : movieRepository.findFirstWithFilter(resolvedOptions);
+
+    var lastWatchedByMovieId = lastWatchedFor(resolvedOptions.getMediaFilter(), movies);
 
     var pageItems =
         movies.stream()
@@ -207,11 +211,12 @@ public class MovieService {
                 movie ->
                     new PageItem<>(
                         movie,
-                        getOrderByValue(options.getMediaFilter(), movie, lastWatchedByMovieId)))
+                        getOrderByValue(
+                            resolvedOptions.getMediaFilter(), movie, lastWatchedByMovieId)))
             .toList();
 
     return paginationService.buildMediaPage(
-        pageItems, options.getPaginationOptions(), options.getCursorId());
+        pageItems, resolvedOptions.getPaginationOptions(), resolvedOptions.getCursorId());
   }
 
   private Map<UUID, Instant> lastWatchedFor(MediaFilter filter, List<Movie> movies) {

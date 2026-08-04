@@ -42,7 +42,6 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     var shouldReverse =
         options.getPaginationOptions().getPaginationDirection().equals(PaginationDirection.REVERSE);
     var filter = options.getMediaFilter();
-    var originalDirection = filter.getSortDirection();
 
     if (shouldReverse) {
       filter = JooqQueryHelper.reverseFilter(filter);
@@ -66,8 +65,8 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
             .where(seekCondition)
             .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
             .and(
-                JooqQueryHelper.startLetterCondition(
-                    filter.getStartLetter(), originalDirection, filter.getSortBy()))
+                JooqQueryHelper.startLetterCursorPageCondition(
+                    filter.getStartLetter(), filter.getSortBy()))
             .and(filterConditions(filter))
             .orderBy(orderByColumns)
             // N+2 (Allows us to efficiently check if there are items before AND after N)
@@ -132,6 +131,36 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
             .limit(options.getPaginationOptions().getLimit() + 1);
 
     return JooqQueryHelper.nativeQuery(entityManager, query, Series.class);
+  }
+
+  public Optional<Series> findLetterJumpPredecessor(MediaFilter filter) {
+    var predecessorCondition =
+        JooqQueryHelper.letterJumpPredecessorCondition(
+            filter.getStartLetter(), filter.getSortDirection());
+    if (predecessorCondition.isEmpty()) {
+      return Optional.empty();
+    }
+
+    var reversed = JooqQueryHelper.reverseFilter(filter);
+    var orderByColumns =
+        new SortField[] {
+          buildOrderBy(reversed), Tables.BASE_COLLECTABLE.ID.sort(reversed.getSortDirection())
+        };
+
+    var query =
+        context
+            .select()
+            .from(Tables.SERIES)
+            .innerJoin(Tables.BASE_COLLECTABLE)
+            .on(Tables.SERIES.ID.eq(Tables.BASE_COLLECTABLE.ID))
+            .where(predecessorCondition.get())
+            .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
+            .and(filterConditions(filter))
+            .orderBy(orderByColumns)
+            .limit(1);
+
+    var results = JooqQueryHelper.nativeQuery(entityManager, query, Series.class);
+    return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
   }
 
   private Condition filterConditions(MediaFilter filter) {
@@ -329,7 +358,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
 
   private Field<?> sortField(MediaFilter filter) {
     return switch (filter.getSortBy()) {
-      case TITLE -> Tables.BASE_COLLECTABLE.TITLE_SORT;
+      case TITLE -> JooqQueryHelper.titleSortField();
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON;
       case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE;
       case RUNTIME -> Tables.SERIES.RUNTIME;
@@ -341,7 +370,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     var direction = filter.getSortDirection();
 
     return switch (filter.getSortBy()) {
-      case TITLE -> Tables.BASE_COLLECTABLE.TITLE_SORT.sort(direction);
+      case TITLE -> JooqQueryHelper.titleSortField().sort(direction);
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
       case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE.sort(direction).nullsLast();
       case RUNTIME -> Tables.SERIES.RUNTIME.sort(direction).nullsLast();

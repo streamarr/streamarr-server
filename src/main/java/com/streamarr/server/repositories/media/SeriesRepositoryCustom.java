@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import java.time.Instant;
 import java.util.Collection;
@@ -16,6 +17,8 @@ public interface SeriesRepositoryCustom {
   List<Series> seekWithFilter(MediaPaginationOptions options);
 
   List<Series> findFirstWithFilter(MediaPaginationOptions options);
+
+  Optional<Series> findLetterJumpPredecessor(MediaFilter filter);
 
   Map<UUID, Instant> findLastWatchedBySeriesIds(UUID profileId, Collection<UUID> seriesIds);
 }

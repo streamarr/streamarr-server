@@ -156,8 +156,8 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should apply default title ASC sort when given empty filter")
     void shouldApplyDefaultTitleAscSortWhenGivenEmptyFilter() {
-      seriesRepository.save(Series.builder().title("Zebra").build());
-      seriesRepository.save(Series.builder().title("Apple").build());
+      seriesRepository.save(seriesBuilder("Zebra").build());
+      seriesRepository.save(seriesBuilder("Apple").build());
 
       var result =
           seriesService.getSeriesWithFilter(buildForwardOptions(10, MediaFilter.builder().build()));
@@ -170,8 +170,8 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should apply provided sort direction when given explicit filter")
     void shouldApplyProvidedSortDirectionWhenGivenExplicitFilter() {
-      seriesRepository.save(Series.builder().title("Apple").build());
-      seriesRepository.save(Series.builder().title("Zebra").build());
+      seriesRepository.save(seriesBuilder("Apple").build());
+      seriesRepository.save(seriesBuilder("Zebra").build());
 
       var filter =
           MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
@@ -191,9 +191,9 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should paginate forward using cursor when sorted by title")
     void shouldPaginateForwardUsingCursorWhenSortedByTitle() {
-      seriesRepository.save(Series.builder().title("Apple").build());
-      seriesRepository.save(Series.builder().title("Banana").build());
-      seriesRepository.save(Series.builder().title("Cherry").build());
+      seriesRepository.save(seriesBuilder("Apple").build());
+      seriesRepository.save(seriesBuilder("Banana").build());
+      seriesRepository.save(seriesBuilder("Cherry").build());
 
       var filter = MediaFilter.builder().build();
       var firstPage = seriesService.getSeriesWithFilter(buildForwardOptions(1, filter));
@@ -215,9 +215,9 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should paginate backward using cursor when sorted by title")
     void shouldPaginateBackwardUsingCursorWhenSortedByTitle() {
-      seriesRepository.save(Series.builder().title("Apple").build());
-      seriesRepository.save(Series.builder().title("Banana").build());
-      seriesRepository.save(Series.builder().title("Cherry").build());
+      seriesRepository.save(seriesBuilder("Apple").build());
+      seriesRepository.save(seriesBuilder("Banana").build());
+      seriesRepository.save(seriesBuilder("Cherry").build());
 
       var filter = MediaFilter.builder().build();
       var allSeries = seriesService.getSeriesWithFilter(buildForwardOptions(3, filter));
@@ -867,6 +867,10 @@ class SeriesServiceTest {
       assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.SEASON).hasSize(1);
       assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.EPISODE).hasSize(1);
     }
+  }
+
+  private static Series.SeriesBuilder<?, ?> seriesBuilder(String title) {
+    return Series.builder().title(title).titleSort(title);
   }
 
   private void seedImage(UUID entityId) {

@@ -98,8 +98,8 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should apply default title ASC sort when given empty filter")
     void shouldApplyDefaultTitleAscSortWhenGivenEmptyFilter() {
-      movieRepository.save(Movie.builder().title("Zebra").build());
-      movieRepository.save(Movie.builder().title("Apple").build());
+      movieRepository.save(movieBuilder("Zebra").build());
+      movieRepository.save(movieBuilder("Apple").build());
 
       var options = buildForwardOptions(10, MediaFilter.builder().build());
       var result = movieService.getMoviesWithFilter(options);
@@ -112,8 +112,8 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should apply provided sort direction when given explicit filter")
     void shouldApplyProvidedSortDirectionWhenGivenExplicitFilter() {
-      movieRepository.save(Movie.builder().title("Apple").build());
-      movieRepository.save(Movie.builder().title("Zebra").build());
+      movieRepository.save(movieBuilder("Apple").build());
+      movieRepository.save(movieBuilder("Zebra").build());
 
       var filter =
           MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
@@ -266,9 +266,9 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should paginate forward using cursor when sorted by title")
     void shouldPaginateForwardUsingCursorWhenSortedByTitle() {
-      movieRepository.save(Movie.builder().title("Apple").build());
-      movieRepository.save(Movie.builder().title("Banana").build());
-      movieRepository.save(Movie.builder().title("Cherry").build());
+      movieRepository.save(movieBuilder("Apple").build());
+      movieRepository.save(movieBuilder("Banana").build());
+      movieRepository.save(movieBuilder("Cherry").build());
 
       var filter = MediaFilter.builder().build();
       var firstPage = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
@@ -290,9 +290,9 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should paginate backward using cursor when sorted by title")
     void shouldPaginateBackwardUsingCursorWhenSortedByTitle() {
-      movieRepository.save(Movie.builder().title("Apple").build());
-      movieRepository.save(Movie.builder().title("Banana").build());
-      movieRepository.save(Movie.builder().title("Cherry").build());
+      movieRepository.save(movieBuilder("Apple").build());
+      movieRepository.save(movieBuilder("Banana").build());
+      movieRepository.save(movieBuilder("Cherry").build());
 
       var filter = MediaFilter.builder().build();
       var allMovies = movieService.getMoviesWithFilter(buildForwardOptions(3, filter));
@@ -308,11 +308,11 @@ class MovieServiceTest {
     }
 
     @Test
-    @DisplayName("Should paginate backward from DESC maintaining canonical order")
-    void shouldPaginateBackwardFromDescMaintainingCanonicalOrder() {
-      movieRepository.save(Movie.builder().title("Apple").build());
-      movieRepository.save(Movie.builder().title("Banana").build());
-      movieRepository.save(Movie.builder().title("Cherry").build());
+    @DisplayName("Should maintain canonical order when paginating backward from TITLE DESC")
+    void shouldMaintainCanonicalOrderWhenPaginatingBackwardFromTitleDesc() {
+      movieRepository.save(movieBuilder("Apple").build());
+      movieRepository.save(movieBuilder("Banana").build());
+      movieRepository.save(movieBuilder("Cherry").build());
 
       var filter =
           MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
@@ -332,10 +332,10 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should maintain canonical order when paginating backward")
     void shouldMaintainCanonicalOrderWhenPaginatingBackward() {
-      movieRepository.save(Movie.builder().title("Apple").build());
-      movieRepository.save(Movie.builder().title("Banana").build());
-      movieRepository.save(Movie.builder().title("Cherry").build());
-      movieRepository.save(Movie.builder().title("Date").build());
+      movieRepository.save(movieBuilder("Apple").build());
+      movieRepository.save(movieBuilder("Banana").build());
+      movieRepository.save(movieBuilder("Cherry").build());
+      movieRepository.save(movieBuilder("Date").build());
 
       var filter = MediaFilter.builder().build();
       var forwardAll = movieService.getMoviesWithFilter(buildForwardOptions(4, filter));
@@ -399,20 +399,17 @@ class MovieServiceTest {
       var libraryId = UUID.randomUUID();
       var library = Library.builder().id(libraryId).name("Movies").build();
       movieRepository.save(
-          Movie.builder()
-              .title("~Tilde Movie")
+          movieBuilder("~Tilde Movie")
               .releaseDate(LocalDate.of(2024, 1, 1))
               .library(library)
               .build());
       movieRepository.save(
-          Movie.builder()
-              .title("123 Numbers")
+          movieBuilder("123 Numbers")
               .releaseDate(LocalDate.of(2023, 6, 15))
               .library(library)
               .build());
       movieRepository.save(
-          Movie.builder()
-              .title("Alpha Movie")
+          movieBuilder("Alpha Movie")
               .releaseDate(LocalDate.of(2022, 3, 10))
               .library(library)
               .build());
@@ -436,10 +433,10 @@ class MovieServiceTest {
     void shouldFilterByStartLetterAsEqualityWhenSortIsNotTitle() {
       var libraryId = UUID.randomUUID();
       var library = Library.builder().id(libraryId).name("Movies").build();
-      movieRepository.save(Movie.builder().title("Alpha").library(library).build());
-      movieRepository.save(Movie.builder().title("Avengers").library(library).build());
-      movieRepository.save(Movie.builder().title("Batman").library(library).build());
-      movieRepository.save(Movie.builder().title("Cherry").library(library).build());
+      movieRepository.save(movieBuilder("Alpha").library(library).build());
+      movieRepository.save(movieBuilder("Avengers").library(library).build());
+      movieRepository.save(movieBuilder("Batman").library(library).build());
+      movieRepository.save(movieBuilder("Cherry").library(library).build());
 
       var filter =
           MediaFilter.builder()
@@ -460,10 +457,10 @@ class MovieServiceTest {
     void shouldFilterByStartLetterAsRangeWhenSortIsTitle() {
       var libraryId = UUID.randomUUID();
       var library = Library.builder().id(libraryId).name("Movies").build();
-      movieRepository.save(Movie.builder().title("Alpha").library(library).build());
-      movieRepository.save(Movie.builder().title("Avengers").library(library).build());
-      movieRepository.save(Movie.builder().title("Batman").library(library).build());
-      movieRepository.save(Movie.builder().title("Cherry").library(library).build());
+      movieRepository.save(movieBuilder("Alpha").library(library).build());
+      movieRepository.save(movieBuilder("Avengers").library(library).build());
+      movieRepository.save(movieBuilder("Batman").library(library).build());
+      movieRepository.save(movieBuilder("Cherry").library(library).build());
 
       var filter =
           MediaFilter.builder()
@@ -477,6 +474,33 @@ class MovieServiceTest {
       var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
       assertThat(titles).containsExactly("Alpha", "Avengers", "Batman", "Cherry");
+    }
+
+    @Test
+    @DisplayName("Should report previous page when letter jump has titles above the anchor")
+    void shouldReportPreviousPageWhenLetterJumpHasTitlesAboveAnchor() {
+      var libraryId = UUID.randomUUID();
+      var library = Library.builder().id(libraryId).name("Movies").build();
+      movieRepository.save(
+          Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+      movieRepository.save(
+          Movie.builder().title("Batman").titleSort("Batman").library(library).build());
+      movieRepository.save(
+          Movie.builder().title("Cherry").titleSort("Cherry").library(library).build());
+
+      var filter =
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.TITLE)
+              .sortDirection(SortOrder.ASC)
+              .libraryId(libraryId)
+              .startLetter(com.streamarr.server.domain.AlphabetLetter.B)
+              .build();
+
+      var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+      var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
+
+      assertThat(titles).containsExactly("Batman", "Cherry");
+      assertThat(result.hasPreviousPage()).isTrue();
     }
 
     @Test
@@ -1000,6 +1024,10 @@ class MovieServiceTest {
 
       assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
     }
+  }
+
+  private static Movie.MovieBuilder<?, ?> movieBuilder(String title) {
+    return Movie.builder().title(title).titleSort(title);
   }
 
   private void seedImage(UUID entityId) {

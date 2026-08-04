@@ -23,6 +23,7 @@ import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.utils.TitleSortUtil;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
@@ -423,6 +424,56 @@ class MovieServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("Should keep landing page content when an earlier title sort starts lowercase")
+    void shouldKeepLandingPageContentWhenEarlierTitleSortStartsLowercase() {
+      var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+      movieRepository.saveAllAndFlush(
+          Stream.of("Beta", "alpha")
+              .map(
+                  title ->
+                      Movie.builder()
+                          .title(title)
+                          .titleSort(TitleSortUtil.computeTitleSort(title))
+                          .library(library)
+                          .build())
+              .toList());
+      var filter =
+          MediaFilter.builder().libraryId(library.getId()).startLetter(AlphabetLetter.B).build();
+
+      var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+
+      var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Beta");
+    }
+
+    @Test
+    @DisplayName("Should land on title sort when display titles precede letter")
+    void shouldLandOnTitleSortWhenDisplayTitlesPrecedeLetter() {
+      var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+      movieRepository.saveAllAndFlush(
+          List.of(
+              Movie.builder()
+                  .title("Aardvark Display")
+                  .titleSort("beta sort")
+                  .library(library)
+                  .build(),
+              Movie.builder()
+                  .title("Apple Display")
+                  .titleSort("Charlie Sort")
+                  .library(library)
+                  .build()));
+      var filter =
+          MediaFilter.builder().libraryId(library.getId()).startLetter(AlphabetLetter.B).build();
+
+      var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+
+      assertThat(result.items())
+          .extracting(pageItem -> pageItem.item().getTitle())
+          .containsExactly("Aardvark Display", "Apple Display");
+      assertThat(result.hasPreviousPage()).isFalse();
+    }
+
+    @Test
     @DisplayName("Should return all movies when start letter is hash")
     void shouldReturnAllMoviesWhenStartLetterIsHash() {
 
@@ -567,6 +618,236 @@ class MovieServiceIT extends AbstractIntegrationTest {
               .toList();
 
       assertThat(allTitles).containsExactly("Beta", "Batman", "Avengers", "Alpha", "123 Movie");
+    }
+
+    @Test
+    @DisplayName("Should report previous page when letter jump has titles above the anchor")
+    void shouldReportPreviousPageWhenLetterJumpHasTitlesAboveAnchor() {
+
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .build();
+
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
+
+      var titles = landing.items().stream().map(pi -> pi.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Batman", "Beta");
+      assertThat(landing.hasPreviousPage()).isTrue();
+      assertThat(landing.hasNextPage()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should report previous page when start letter is A and digit titles exist")
+    void shouldReportPreviousPageWhenStartLetterIsAAndDigitTitlesExist() {
+
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.A)
+              .build();
+
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+
+      assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("Alpha");
+      assertThat(landing.hasPreviousPage()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should not report previous page when letter jump lands at top of library")
+    void shouldNotReportPreviousPageWhenLetterJumpLandsAtTopOfLibrary() {
+
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryA.getId())
+              .startLetter(AlphabetLetter.A)
+              .build();
+
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+
+      var titles = landing.items().stream().map(pi -> pi.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Alpha", "Beta");
+      assertThat(landing.hasPreviousPage()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Should not report previous page when start letter is hash")
+    void shouldNotReportPreviousPageWhenStartLetterIsHash() {
+
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.HASH)
+              .build();
+
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+
+      assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("123 Movie");
+      assertThat(landing.hasPreviousPage()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Should not report previous page when start letter is HASH and sort is DESC")
+    void shouldNotReportPreviousPageWhenStartLetterIsHashAndSortIsDesc() {
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.HASH)
+              .sortDirection(SortOrder.DESC)
+              .build();
+
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+
+      assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("123 Movie");
+      assertThat(landing.hasPreviousPage()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Should report previous page when letter jump has titles above and sort is DESC")
+    void shouldReportPreviousPageWhenLetterJumpHasTitlesAboveAndSortIsDesc() {
+
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .sortDirection(SortOrder.DESC)
+              .build();
+
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
+
+      var titles = landing.items().stream().map(pi -> pi.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Beta", "Batman");
+      assertThat(landing.hasPreviousPage()).isTrue();
+      assertThat(landing.hasNextPage()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should not report previous page when start letter is Z and sort is DESC")
+    void shouldNotReportPreviousPageWhenStartLetterIsZAndSortIsDesc() {
+
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.Z)
+              .sortDirection(SortOrder.DESC)
+              .build();
+
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+
+      assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("Zorro");
+      assertThat(landing.hasPreviousPage()).isFalse();
+    }
+
+    @Test
+    @DisplayName(
+        "Should report previous page with empty items when letter jump lands past the last title")
+    void shouldReportPreviousPageWithEmptyItemsWhenLetterJumpLandsPastLastTitle() {
+
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryC.getId())
+              .startLetter(AlphabetLetter.T)
+              .build();
+
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+
+      assertThat(landing.items()).isEmpty();
+      assertThat(landing.hasPreviousPage()).isTrue();
+      assertThat(landing.hasNextPage()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Should page backward past the start letter when sort is TITLE")
+    void shouldPageBackwardPastStartLetterWhenSortIsTitle() {
+
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .build();
+
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
+      assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("Batman");
+
+      var backfill =
+          movieService.getMoviesWithFilter(
+              buildBackwardContinuation(2, filter, landing.items().getFirst()));
+
+      var titles = backfill.items().stream().map(pi -> pi.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Alpha", "Avengers");
+      assertThat(backfill.hasNextPage()).isTrue();
+      assertThat(backfill.hasPreviousPage()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should page backward past the start letter when sort is TITLE DESC")
+    void shouldPageBackwardPastStartLetterWhenSortIsTitleDesc() {
+
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .sortDirection(SortOrder.DESC)
+              .build();
+
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
+      assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("Beta");
+
+      var backfill =
+          movieService.getMoviesWithFilter(
+              buildBackwardContinuation(2, filter, landing.items().getFirst()));
+
+      var titles = backfill.items().stream().map(pi -> pi.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Zorro", "Gamma");
+      assertThat(backfill.hasNextPage()).isTrue();
+      assertThat(backfill.hasPreviousPage()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Should keep start letter equality when continuing under non-TITLE sort")
+    void shouldKeepStartLetterEqualityWhenContinuingUnderNonTitleSort() {
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .sortBy(OrderMediaBy.ADDED)
+              .build();
+
+      var firstPage = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
+      var secondPage =
+          movieService.getMoviesWithFilter(
+              buildForwardContinuation(1, filter, firstPage.items().getFirst()));
+
+      var titles =
+          Stream.concat(firstPage.items().stream(), secondPage.items().stream())
+              .map(pageItem -> pageItem.item().getTitle())
+              .toList();
+      assertThat(titles).containsExactlyInAnyOrder("Batman", "Beta");
+      assertThat(secondPage.hasNextPage()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Should return only Z movies when start letter is Z with ADDED sort")
+    void shouldReturnOnlyZMoviesWhenStartLetterIsZWithAddedSort() {
+      var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+      movieRepository.saveAllAndFlush(
+          List.of(
+              Movie.builder().title("Alpha").titleSort("alpha").library(library).build(),
+              Movie.builder().title("Zorro").titleSort("zorro").library(library).build(),
+              Movie.builder().title("~Tilde").titleSort("~tilde").library(library).build()));
+      var filter =
+          MediaFilter.builder()
+              .libraryId(library.getId())
+              .startLetter(AlphabetLetter.Z)
+              .sortBy(OrderMediaBy.ADDED)
+              .build();
+
+      var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+
+      assertThat(result.items())
+          .extracting(pageItem -> pageItem.item().getTitle())
+          .containsExactly("Zorro");
     }
 
     @Test
