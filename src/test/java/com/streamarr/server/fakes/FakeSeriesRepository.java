@@ -39,7 +39,7 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     var filter = options.getMediaFilter();
     var limit = options.getPaginationOptions().getLimit();
 
-    return filterByLibrary(filter)
+    return filterByStartLetter(filterByLibrary(filter), filter)
         .sorted(comparatorFor(filter, filter.getSortDirection()))
         .limit(limit + 1L)
         .toList();
@@ -55,7 +55,7 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     var effectiveFilter = shouldReverse ? FakeFilterHelper.reverseFilter(filter) : filter;
 
     var sorted =
-        filterByLibrary(effectiveFilter)
+        filterByCursorPageStartLetter(filterByLibrary(effectiveFilter), effectiveFilter)
             .sorted(comparatorFor(effectiveFilter, effectiveFilter.getSortDirection()))
             .toList();
 
@@ -97,7 +97,18 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
             : database.values().stream()
                 .filter(s -> s.getLibrary() != null && libraryId.equals(s.getLibrary().getId()));
 
-    return applyFilters(filterByStartLetter(stream, filter), filter);
+    return applyFilters(stream, filter);
+  }
+
+  // Mirrors production seekWithFilter: under TITLE sort the letter was consumed as the landing
+  // page's seek anchor, so cursor pages only re-apply it as an equality restriction for other
+  // sorts.
+  private Stream<Series> filterByCursorPageStartLetter(Stream<Series> stream, MediaFilter filter) {
+    var letter = filter.getStartLetter();
+    if (letter == null || filter.getSortBy() == OrderMediaBy.TITLE) {
+      return stream;
+    }
+    return stream.filter(s -> FakeFilterHelper.matchesLetterEquality(s.getTitle(), letter));
   }
 
   private Stream<Series> applyFilters(Stream<Series> stream, MediaFilter filter) {

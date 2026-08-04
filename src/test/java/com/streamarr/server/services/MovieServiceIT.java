@@ -570,6 +570,53 @@ class MovieServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("Should page backward past the start letter when sort is TITLE")
+    void shouldPageBackwardPastStartLetterWhenSortIsTitle() {
+
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .build();
+
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
+      assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("Batman");
+
+      var backfill =
+          movieService.getMoviesWithFilter(
+              buildBackwardContinuation(2, filter, landing.items().getFirst()));
+
+      var titles = backfill.items().stream().map(pi -> pi.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Alpha", "Avengers");
+      assertThat(backfill.hasNextPage()).isTrue();
+      assertThat(backfill.hasPreviousPage()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should page backward past the start letter when sort is TITLE DESC")
+    void shouldPageBackwardPastStartLetterWhenSortIsTitleDesc() {
+
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .sortDirection(SortOrder.DESC)
+              .build();
+
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
+      assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("Beta");
+
+      var backfill =
+          movieService.getMoviesWithFilter(
+              buildBackwardContinuation(2, filter, landing.items().getFirst()));
+
+      var titles = backfill.items().stream().map(pi -> pi.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Zorro", "Gamma");
+      assertThat(backfill.hasNextPage()).isTrue();
+      assertThat(backfill.hasPreviousPage()).isFalse();
+    }
+
+    @Test
     @DisplayName("Should include title starting above z in HASH filter when sortBy is RELEASE_DATE")
     void shouldIncludeTitleStartingAboveZInHashFilterWhenSortByIsReleaseDate() {
 

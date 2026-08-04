@@ -42,7 +42,6 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     var shouldReverse =
         options.getPaginationOptions().getPaginationDirection().equals(PaginationDirection.REVERSE);
     var filter = options.getMediaFilter();
-    var originalDirection = filter.getSortDirection();
 
     if (shouldReverse) {
       filter = JooqQueryHelper.reverseFilter(filter);
@@ -66,8 +65,8 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
             .where(seekCondition)
             .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
             .and(
-                JooqQueryHelper.startLetterCondition(
-                    filter.getStartLetter(), originalDirection, filter.getSortBy()))
+                JooqQueryHelper.startLetterCursorPageCondition(
+                    filter.getStartLetter(), filter.getSortBy()))
             .and(filterConditions(filter))
             .orderBy(orderByColumns)
             // N+2 (Allows us to efficiently check if there are items before AND after N)

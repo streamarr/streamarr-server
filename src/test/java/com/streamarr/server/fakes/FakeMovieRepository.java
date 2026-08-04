@@ -39,7 +39,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     var filter = options.getMediaFilter();
     var limit = options.getPaginationOptions().getLimit();
 
-    return filterByLibrary(filter)
+    return filterByStartLetter(filterByLibrary(filter), filter)
         .sorted(comparatorFor(filter, filter.getSortDirection()))
         .limit(limit + 1L)
         .toList();
@@ -55,7 +55,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     var effectiveFilter = shouldReverse ? FakeFilterHelper.reverseFilter(filter) : filter;
 
     var sorted =
-        filterByLibrary(effectiveFilter)
+        filterByCursorPageStartLetter(filterByLibrary(effectiveFilter), effectiveFilter)
             .sorted(comparatorFor(effectiveFilter, effectiveFilter.getSortDirection()))
             .toList();
 
@@ -79,7 +79,18 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
             : database.values().stream()
                 .filter(m -> m.getLibrary() != null && libraryId.equals(m.getLibrary().getId()));
 
-    return applyFilters(filterByStartLetter(stream, filter), filter);
+    return applyFilters(stream, filter);
+  }
+
+  // Mirrors production seekWithFilter: under TITLE sort the letter was consumed as the landing
+  // page's seek anchor, so cursor pages only re-apply it as an equality restriction for other
+  // sorts.
+  private Stream<Movie> filterByCursorPageStartLetter(Stream<Movie> stream, MediaFilter filter) {
+    var letter = filter.getStartLetter();
+    if (letter == null || filter.getSortBy() == OrderMediaBy.TITLE) {
+      return stream;
+    }
+    return stream.filter(m -> FakeFilterHelper.matchesLetterEquality(m.getTitle(), letter));
   }
 
   private Stream<Movie> applyFilters(Stream<Movie> stream, MediaFilter filter) {

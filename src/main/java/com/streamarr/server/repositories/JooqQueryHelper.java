@@ -58,6 +58,16 @@ public class JooqQueryHelper {
         : ascLetterCondition(startLetter);
   }
 
+  // Under TITLE sort the letter is a seek anchor consumed by the landing page - on cursor pages
+  // the keyset alone fixes the position, and re-applying the letter would wall off backward
+  // pages. Non-TITLE sorts keep the letter as an equality restriction on every page.
+  public Condition startLetterCursorPageCondition(AlphabetLetter startLetter, OrderMediaBy sortBy) {
+    if (startLetter == null || sortBy == OrderMediaBy.TITLE) {
+      return noCondition();
+    }
+    return equalityLetterCondition(startLetter);
+  }
+
   private Condition equalityLetterCondition(AlphabetLetter startLetter) {
     var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
 
