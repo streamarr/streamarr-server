@@ -1,5 +1,6 @@
 package com.streamarr.server.controllers;
 
+import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.HttpHeaders.IF_NONE_MATCH;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -32,6 +33,7 @@ class ImageControllerTest {
 
   private MockMvc mockMvc;
   private FakeImageRepository imageRepository;
+  private ImageService imageService;
   private FileSystem fileSystem;
 
   @BeforeEach
@@ -40,7 +42,7 @@ class ImageControllerTest {
     fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageProperties = new ImageProperties("/data/images");
     var imageVariantService = new ImageVariantService();
-    var imageService =
+    imageService =
         new ImageService(imageRepository, imageVariantService, imageProperties, fileSystem);
     var controller = new ImageController(imageService);
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
@@ -144,6 +146,54 @@ class ImageControllerTest {
         .perform(
             get("/api/images/{imageId}", image.getId())
                 .header(IF_NONE_MATCH, quoted(image.getId())))
+        .andExpect(status().isNotModified());
+  }
+
+  @Test
+  @DisplayName("Should keep cached image bytes stable across concurrent enrichment")
+  void shouldKeepCachedImageBytesStableAcrossConcurrentEnrichment() throws Exception {
+    var entityId = UUID.randomUUID();
+    var firstImageData = createTestImage(600, 900);
+    var secondImageData = createTestImage(600, 600);
+    var secondImageService =
+        new ImageService(
+            imageRepository,
+            new ImageVariantService(),
+            new ImageProperties("/data/images"),
+            fileSystem);
+
+    assertThat(secondImageService.findByEntity(entityId, ImageEntityType.MOVIE)).isEmpty();
+
+    var firstResult =
+        imageService.processImage(
+            firstImageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    imageService.saveImages(firstResult.images());
+
+    var image =
+        imageRepository
+            .findByEntityIdAndEntityTypeAndImageType(
+                entityId, ImageEntityType.MOVIE, ImageType.POSTER)
+            .stream()
+            .filter(candidate -> candidate.getVariant() == ImageSize.SMALL)
+            .findFirst()
+            .orElseThrow();
+    var firstResponse =
+        mockMvc
+            .perform(get("/api/images/{imageId}", image.getId()))
+            .andExpect(status().isOk())
+            .andReturn();
+    var originalETag = firstResponse.getResponse().getHeader("ETag");
+
+    var secondResult =
+        secondImageService.processImage(
+            secondImageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    secondImageService.saveImages(secondResult.images());
+
+    assertThat(secondImageService.readImageFile(image))
+        .isEqualTo(firstResponse.getResponse().getContentAsByteArray());
+
+    mockMvc
+        .perform(get("/api/images/{imageId}", image.getId()).header(IF_NONE_MATCH, originalETag))
         .andExpect(status().isNotModified());
   }
 

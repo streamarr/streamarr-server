@@ -23,11 +23,10 @@ import org.springframework.web.context.request.WebRequest;
 public class ImageController {
 
   /**
-   * Bytes never change under a given image id: a row's file path is derived from its (entity, type,
-   * variant) unique key, rows are inserted ON CONFLICT DO NOTHING and are only ever deleted
-   * together with their file, and each insert mints a fresh id. So a stored copy stays correct
-   * indefinitely. Private, because images are profile-scoped media behind SCOPE_PROFILE and must
-   * never settle in a shared proxy cache.
+   * Bytes never change under a given image id: each file path includes the row id, losing ON
+   * CONFLICT inserts clean up only their own files, and rows are only ever deleted together with
+   * their file. So a stored copy stays correct indefinitely. Private, because images are
+   * profile-scoped media behind SCOPE_PROFILE and must never settle in a shared proxy cache.
    */
   private static final CacheControl PRIVATE_IMMUTABLE =
       CacheControl.maxAge(Duration.ofDays(365)).cachePrivate().immutable();
