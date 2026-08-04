@@ -20,6 +20,7 @@ import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.experimental.UtilityClass;
@@ -211,7 +212,9 @@ public class JooqQueryHelper {
 
     if (filter.getSortBy() == OrderMediaBy.TITLE) {
       var titleSortCol = (Field<String>) sortCol;
-      var cursorTitleSort = lower(val(coercedValue.toString()));
+      var cursorTitleSortValue =
+          Objects.requireNonNull(coercedValue, "TITLE cursor sort value is required").toString();
+      var cursorTitleSort = lower(val(cursorTitleSortValue));
       var fields = row(titleSortCol, idField);
       var seekValues = row(cursorTitleSort, val(cursorId));
       return isAsc ? fields.greaterOrEqual(seekValues) : fields.lessOrEqual(seekValues);

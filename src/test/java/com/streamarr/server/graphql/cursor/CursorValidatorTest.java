@@ -22,6 +22,23 @@ class CursorValidatorTest {
   private final CursorValidator cursorValidator = new CursorValidator();
 
   @Nested
+  @DisplayName("Malformed Cursors")
+  class MalformedCursors {
+
+    @Test
+    @DisplayName("Should reject TITLE cursor when sort value is missing")
+    void shouldRejectTitleCursorWhenSortValueIsMissing() {
+      var cursorFilter = MediaFilter.builder().sortBy(OrderMediaBy.TITLE).build();
+      var currentFilter = MediaFilter.builder().sortBy(OrderMediaBy.TITLE).build();
+      var decoded = MediaPaginationOptions.builder().mediaFilter(cursorFilter).build();
+
+      assertThatThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, currentFilter))
+          .isInstanceOf(InvalidCursorException.class)
+          .hasMessage("Cursor sort value is required for TITLE sort");
+    }
+  }
+
+  @Nested
   @DisplayName("Matching Filters")
   class MatchingFilters {
 
@@ -30,7 +47,8 @@ class CursorValidatorTest {
     void shouldNotThrowWhenCursorFilterMatchesCurrentFilter() {
       var libraryId = UUID.randomUUID();
       var filter = MediaFilter.builder().libraryId(libraryId).sortBy(OrderMediaBy.TITLE).build();
-      var decoded = MediaPaginationOptions.builder().mediaFilter(filter).build();
+      var cursorFilter = filter.toBuilder().previousSortFieldValue("Alpha").build();
+      var decoded = MediaPaginationOptions.builder().mediaFilter(cursorFilter).build();
 
       assertThatNoException()
           .isThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, filter));
@@ -251,7 +269,11 @@ class CursorValidatorTest {
         "Should not throw when startLetter is dropped after a letter jump under TITLE sort")
     void shouldNotThrowWhenStartLetterIsDroppedAfterLetterJumpUnderTitleSort() {
       var cursorFilter =
-          MediaFilter.builder().sortBy(OrderMediaBy.TITLE).startLetter(AlphabetLetter.Q).build();
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.TITLE)
+              .startLetter(AlphabetLetter.Q)
+              .previousSortFieldValue("Quartz")
+              .build();
       var currentFilter = MediaFilter.builder().sortBy(OrderMediaBy.TITLE).build();
       var decoded = MediaPaginationOptions.builder().mediaFilter(cursorFilter).build();
 
