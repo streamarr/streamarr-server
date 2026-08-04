@@ -1,6 +1,10 @@
 package com.streamarr.server.services.filepath;
 
 import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.FileSystems;
@@ -9,6 +13,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Encodes filesystem paths for persistence and recovers paths or display text from those values.
+ *
+ * <p>New values are absolute {@code file:} URIs. Their percent-encoded path bytes are decoded
+ * strictly as UTF-8; malformed file URIs and invalid UTF-8 are rejected. Scheme-less strings remain
+ * supported as legacy persisted paths. See ADR 0012 for the storage contract.
+ */
 public final class FilepathCodec {
 
   private static final char SEPARATOR = '/';
@@ -25,7 +36,8 @@ public final class FilepathCodec {
    * <p>Unlike {@code path.getFileName().toString()}, which decodes the raw filesystem bytes using
    * {@code sun.jnu.encoding} and therefore silently substitutes U+FFFD for every non-ASCII byte
    * under a non-UTF-8 process locale, this is charset-independent: the URI produced by {@link
-   * #encode(Path)} already carries the bytes verbatim.
+   * #encode(Path)} carries the filename as percent-encoded UTF-8. Invalid UTF-8 sequences are
+   * rejected rather than replaced with U+FFFD.
    */
   public static String filenameOf(String filepathUri) {
     return nameAbove(filepathUri, 0)
@@ -82,13 +94,66 @@ public final class FilepathCodec {
   private static String decodedPathComponentOf(String filepathUri) {
     try {
       var uri = URI.create(filepathUri);
-      if (uri.getScheme() != null && uri.getPath() != null) {
-        return uri.getPath();
+      if (hasFileScheme(filepathUri)
+          && (uri.isOpaque() || uri.getQuery() != null || uri.getFragment() != null)) {
+        throw invalidFilepathUri(filepathUri);
       }
-    } catch (IllegalArgumentException _) {
-      // fall through to raw path interpretation
+      if (uri.getScheme() != null && uri.getPath() != null) {
+        return decodeUtf8Path(uri, filepathUri);
+      }
+    } catch (IllegalArgumentException exception) {
+      if (hasFileScheme(filepathUri)) {
+        throw new IllegalArgumentException("Invalid filepath URI: " + filepathUri, exception);
+      }
+      // Scheme-less legacy paths can contain characters that URI parsing rejects.
     }
+    // Deliberate compatibility path for values persisted before ADR 0012.
     return filepathUri;
+  }
+
+  private static boolean hasFileScheme(String value) {
+    return value.regionMatches(true, 0, "file:", 0, "file:".length());
+  }
+
+  private static IllegalArgumentException invalidFilepathUri(String filepathUri) {
+    return new IllegalArgumentException("Invalid filepath URI: " + filepathUri);
+  }
+
+  private static String decodeUtf8Path(URI uri, String filepathUri) {
+    var rawPath = uri.getRawPath();
+    var decoded = new StringBuilder(rawPath.length());
+    var index = 0;
+
+    try {
+      while (index < rawPath.length()) {
+        var percentIndex = rawPath.indexOf('%', index);
+        if (percentIndex < 0) {
+          decoded.append(rawPath, index, rawPath.length());
+          break;
+        }
+
+        decoded.append(rawPath, index, percentIndex);
+        var bytes = new byte[(rawPath.length() - percentIndex) / 3];
+        var byteCount = 0;
+        index = percentIndex;
+
+        while (index + 2 < rawPath.length() && rawPath.charAt(index) == '%') {
+          bytes[byteCount++] = (byte) Integer.parseInt(rawPath, index + 1, index + 3, 16);
+          index += 3;
+        }
+
+        var decoder =
+            StandardCharsets.UTF_8
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        decoded.append(decoder.decode(ByteBuffer.wrap(bytes, 0, byteCount)));
+      }
+    } catch (CharacterCodingException | NumberFormatException exception) {
+      throw new IllegalArgumentException("Invalid filepath URI: " + filepathUri, exception);
+    }
+
+    return decoded.toString();
   }
 
   public static Path decode(String filepathUri) {
@@ -99,10 +164,18 @@ public final class FilepathCodec {
     try {
       var uri = URI.create(filepathUri);
       if (uri.getScheme() != null) {
+        if (hasFileScheme(filepathUri)) {
+          decodedPathComponentOf(filepathUri);
+        }
         return decodeUri(fileSystem, uri);
       }
-    } catch (IllegalArgumentException | FileSystemNotFoundException _) {
-      // fall through to raw path interpretation
+    } catch (IllegalArgumentException exception) {
+      if (hasFileScheme(filepathUri)) {
+        throw new IllegalArgumentException("Invalid filepath URI: " + filepathUri, exception);
+      }
+      // Scheme-less legacy paths can contain characters that URI parsing rejects.
+    } catch (FileSystemNotFoundException _) {
+      // An unavailable non-file provider can still represent a legacy raw path.
     }
     return fileSystem.getPath(filepathUri);
   }

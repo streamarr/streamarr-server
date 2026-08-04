@@ -31,6 +31,25 @@ class FilenameEncodingCheckTest {
   }
 
   @Test
+  @DisplayName("Should recommend overriding LC_ALL when filename encoding is not UTF-8")
+  void shouldRecommendOverridingLcAllWhenFilenameEncodingIsNotUtf8() {
+    assertThat(runCheckWith("ANSI_X3.4-1968"))
+        .singleElement()
+        .asString()
+        .contains("LC_ALL=C.UTF-8");
+  }
+
+  @Test
+  @DisplayName("Should describe filename encoding as unknown when property is unavailable")
+  void shouldDescribeFilenameEncodingAsUnknownWhenPropertyIsUnavailable() {
+    assertThat(runCheckWith(""))
+        .singleElement()
+        .asString()
+        .contains("unknown")
+        .doesNotContain("as ''");
+  }
+
+  @Test
   @DisplayName("Should stay silent when filenames are decoded as UTF-8")
   void shouldStaySilentWhenFilenamesAreDecodedAsUtf8() {
     assertThat(runCheckWith("UTF-8")).isEmpty();

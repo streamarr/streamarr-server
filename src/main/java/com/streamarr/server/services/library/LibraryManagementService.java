@@ -424,14 +424,19 @@ public class LibraryManagementService implements ActiveScanChecker {
     try {
       var optionalMediaFile = mediaFileRepository.findFirstByFilepathUri(absoluteFilepath);
 
-      if (optionalMediaFile.isPresent()) {
-        log.info(
-            "MediaFile id: '{}' already exists, not adding again.",
-            optionalMediaFile.get().getId());
-        return optionalMediaFile.get();
+      if (optionalMediaFile.isEmpty()) {
+        return createNewMediaFile(library, path, absoluteFilepath);
       }
 
-      return createNewMediaFile(library, path, absoluteFilepath);
+      var mediaFile = optionalMediaFile.orElseThrow();
+      var filename = FilepathCodec.filenameOf(absoluteFilepath);
+      if (!filename.equals(mediaFile.getFilename())) {
+        mediaFile.setFilename(filename);
+        mediaFileRepository.save(mediaFile);
+      }
+
+      log.info("MediaFile id: '{}' already exists, not adding again.", mediaFile.getId());
+      return mediaFile;
     } finally {
       filepathMutex.unlock();
     }

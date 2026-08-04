@@ -262,6 +262,40 @@ class SeriesFileProcessorTest {
   }
 
   @Test
+  @DisplayName("Should use filename title when root season folder has no series parent")
+  void shouldUseFilenameTitleWhenRootSeasonFolderHasNoSeriesParent() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("file:///Season%2025/The%20Simpsons.S25E09.mkv")
+                .filename("The Simpsons.S25E09.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    when(seriesMetadataProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(Optional.empty());
+    when(seriesMetadataProvider.search(argThat(r -> "The Simpsons".equals(r.title()))))
+        .thenReturn(
+            Optional.of(
+                RemoteSearchResult.builder()
+                    .title("The Simpsons")
+                    .externalId("456")
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+    when(seriesService.findByTmdbId("456")).thenReturn(Optional.empty());
+    when(seriesMetadataProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+        .thenReturn(Optional.empty());
+
+    seriesFileProcessor.process(library, mediaFile);
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
+  }
+
+  @Test
   @DisplayName("Should mark metadata parsing failed when path has no episode info")
   void shouldMarkMetadataParsingFailedWhenPathHasNoEpisodeInfo() {
     var library = LibraryFixtureCreator.buildFakeSeriesLibrary();

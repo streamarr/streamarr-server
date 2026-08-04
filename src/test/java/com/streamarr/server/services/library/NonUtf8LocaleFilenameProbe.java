@@ -17,8 +17,8 @@ import java.util.Base64;
  * classes on the classpath, so it must not reference Spring, JUnit, or any third-party library.
  *
  * <p>Every value is printed as base64 of its UTF-8 bytes. Under an ASCII locale {@code System.out}
- * encodes with {@code sun.jnu.encoding}, which would turn the U+FFFD characters this probe exists
- * to observe into plain question marks before the test could see them.
+ * uses {@code stdout.encoding}, which would turn the U+FFFD characters this probe exists to observe
+ * into plain question marks before the test could see them.
  */
 public final class NonUtf8LocaleFilenameProbe {
 

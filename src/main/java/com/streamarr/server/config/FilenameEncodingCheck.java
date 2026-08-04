@@ -33,11 +33,14 @@ public class FilenameEncodingCheck {
       return;
     }
 
+    var charsetDescription =
+        filenameEncoding.isBlank() ? "an unknown charset" : "'" + filenameEncoding + "'";
     log.warn(
-        "Filenames are read from the filesystem as '{}' rather than UTF-8, because sun.jnu.encoding"
+        "Filenames are read from the filesystem as {} rather than UTF-8, because sun.jnu.encoding"
             + " follows the process locale. Library paths containing non-ASCII characters may fail"
-            + " to resolve. Start this process under a UTF-8 locale, for example LANG=C.UTF-8.",
-        filenameEncoding);
+            + " to resolve. Start this process under a UTF-8 locale, for example"
+            + " LC_ALL=C.UTF-8.",
+        charsetDescription);
   }
 
   private static boolean isUtf8(String charsetName) {

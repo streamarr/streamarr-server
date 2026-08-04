@@ -1,6 +1,5 @@
 package com.streamarr.server.services.parsers.show;
 
-import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.parsers.MetadataParser;
 import java.util.List;
 import java.util.Optional;
@@ -20,12 +19,17 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
     public Result {}
   }
 
-  public Optional<Result> parse(String path) {
-    return Optional.of(getSeasonNumberFromPath(path));
+  public Optional<Result> parse(String folderName) {
+    if (folderName.isBlank()) {
+      return Optional.of(
+          Result.builder().seasonNumber(OptionalInt.empty()).isSeasonFolder(false).build());
+    }
+
+    return Optional.of(getSeasonNumberFromFolderName(folderName));
   }
 
-  private Result getSeasonNumberFromPath(String path) {
-    var directoryName = FilepathCodec.filenameOf(path).toLowerCase();
+  private Result getSeasonNumberFromFolderName(String folderName) {
+    var directoryName = folderName.toLowerCase();
 
     var specialAliasResult = evaluatePathForSpecialAliases(directoryName);
 

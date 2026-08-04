@@ -621,6 +621,28 @@ class LibraryManagementServiceTest {
   }
 
   @Test
+  @DisplayName("Should repair existing mangled filename from filepath URI when rescanned")
+  void shouldRepairExistingMangledFilenameFromFilepathUriWhenRescanned() throws IOException {
+    var movieFilename = "Déjà Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+    var rootPath = createRootLibraryDirectory();
+    var moviePath = createMovieFile(rootPath, "Déjà Vu (2006)", movieFilename);
+    var filepathUri = FilepathCodec.encode(moviePath);
+
+    fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(savedLibraryId)
+            .filepathUri(filepathUri)
+            .filename("D��j�� Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv")
+            .status(MediaFileStatus.MATCHED)
+            .build());
+
+    libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
+
+    var repairedMediaFile = fakeMediaFileRepository.findFirstByFilepathUri(filepathUri);
+    assertThat(repairedMediaFile).get().extracting(MediaFile::getFilename).isEqualTo(movieFilename);
+  }
+
+  @Test
   @DisplayName("Should throw when library not found for discovered file")
   void shouldThrowWhenLibraryNotFoundForDiscoveredFile() throws IOException {
     var rootPath = createRootLibraryDirectory();

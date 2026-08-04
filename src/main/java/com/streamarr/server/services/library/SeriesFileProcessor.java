@@ -172,14 +172,16 @@ public class SeriesFileProcessor {
       Optional<SeasonPathMetadataParser.Result> seasonParseResult,
       EpisodePathResult episodeResult) {
 
-    if (isSeasonFolder(seasonParseResult) && seasonParseResult.get().seasonNumber().isPresent()) {
-      return seasonParseResult.get().seasonNumber().getAsInt();
-    }
+    var folderSeasonNumber =
+        seasonParseResult
+            .filter(SeasonPathMetadataParser.Result::isSeasonFolder)
+            .map(SeasonPathMetadataParser.Result::seasonNumber)
+            .orElseGet(OptionalInt::empty);
 
-    return episodeResult.getSeasonNumber().orElse(1);
+    return folderSeasonNumber.orElseGet(() -> episodeResult.getSeasonNumber().orElse(1));
   }
 
-  /** The folder named after the series: the season folder's parent, or the file's own folder. */
+  /** The series folder: the season folder's parent when present, or the file's own folder. */
   private Optional<String> seriesFolderNameOf(
       String filepathUri, Optional<SeasonPathMetadataParser.Result> seasonParseResult) {
 
@@ -189,7 +191,7 @@ public class SeriesFileProcessor {
       return folderName;
     }
 
-    return FilepathCodec.grandparentNameOf(filepathUri).or(() -> folderName);
+    return FilepathCodec.grandparentNameOf(filepathUri);
   }
 
   private boolean isSeasonFolder(Optional<SeasonPathMetadataParser.Result> seasonParseResult) {

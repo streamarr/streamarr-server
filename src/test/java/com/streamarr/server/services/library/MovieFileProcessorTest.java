@@ -192,15 +192,49 @@ class MovieFileProcessorTest {
   }
 
   @Test
-  @DisplayName("Should mark metadata parsing failed when filename is blank")
-  void shouldMarkMetadataParsingFailedWhenFilenameIsBlank() {
+  @DisplayName("Should search from filepath URI when existing filename is mangled")
+  void shouldSearchFromFilepathUriWhenExistingFilenameIsMangled() {
+    var library = LibraryFixtureCreator.buildFakeLibrary();
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri(
+                    "file:///library/D%C3%A9j%C3%A0%20Vu%20(2006)/D%C3%A9j%C3%A0%20Vu%20(2006).mkv")
+                .filename("D��j�� Vu (2006).mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(Optional.empty());
+    when(tmdbMovieProvider.search(
+            argThat(r -> "Déjà Vu".equals(r.title()) && "2006".equals(r.year()))))
+        .thenReturn(
+            Optional.of(
+                RemoteSearchResult.builder()
+                    .title("Déjà Vu")
+                    .externalId("7551")
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+        .thenReturn(Optional.empty());
+
+    movieFileProcessor.process(library, mediaFile);
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.UNMATCHED);
+  }
+
+  @Test
+  @DisplayName("Should use filepath URI when stored filename is blank")
+  void shouldUseFilepathUriWhenStoredFilenameIsBlank() {
     var library = LibraryFixtureCreator.buildFakeLibrary();
 
     var mediaFile =
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(library.getId())
-                .filepathUri("file:///library/unknown/")
+                .filepathUri("file:///library/unknown/unknown.mkv")
                 .filename("")
                 .status(MediaFileStatus.UNMATCHED)
                 .build());
@@ -208,7 +242,7 @@ class MovieFileProcessorTest {
     movieFileProcessor.process(library, mediaFile);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isEqualTo(MediaFileStatus.METADATA_PARSING_FAILED);
+        .isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
   }
 
   @Test

@@ -3,6 +3,9 @@ package com.streamarr.server.services.library;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.net.URISyntaxException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.HashMap;
@@ -20,17 +23,18 @@ import org.testcontainers.utility.MountableFile;
  * Reproduces the locale-dependent filename corruption the shipped container hits, and pins the
  * decode that survives it.
  *
- * <p>The bug needs a Linux JVM whose {@code sun.jnu.encoding} resolves to ASCII, which macOS cannot
- * produce: {@code -Dsun.jnu.encoding} is ignored on the command line there, and {@code
- * LC_ALL=POSIX} yields a single {@code ?} per character from the macOS filesystem layer instead of
- * the two U+FFFD per accented character Linux produces. So the scenario runs inside a JDK 25 Linux
- * container.
+ * <p>The bug needs a Linux JVM whose {@code sun.jnu.encoding} resolves to ASCII. On macOS, {@code
+ * -Dsun.jnu.encoding} is ignored and {@code LC_ALL=POSIX} leaves filesystem decoding as UTF-8; only
+ * console output switches to US-ASCII. The scenario therefore runs inside a JDK 25 Linux container
+ * and is tagged as an integration test because it launches and controls that external process.
  */
 @Tag("IntegrationTest")
 @DisplayName("Non UTF-8 Locale Filename Integration Tests")
 class NonUtf8LocaleFilenameIT {
 
-  private static final DockerImageName JDK_IMAGE = DockerImageName.parse("eclipse-temurin:25-jdk");
+  private static final DockerImageName JDK_IMAGE =
+      DockerImageName.parse(
+          "eclipse-temurin:25-jdk@sha256:12e44624adee6808a36d962717e1656e0afeeeff5a100f9cb00e0136513558f0");
 
   private static final String MOVIE_ROOT = "/media/movies";
   private static final String MOVIE_FOLDER = "Déjà Vu (2006)";
@@ -62,9 +66,11 @@ class NonUtf8LocaleFilenameIT {
     container =
         new GenericContainer<>(JDK_IMAGE)
             .withCopyFileToContainer(
-                MountableFile.forHostPath(Path.of("target", "classes")), "/app/classes")
+                MountableFile.forHostPath(classesDirectoryOf(LibraryManagementService.class)),
+                "/app/classes")
             .withCopyFileToContainer(
-                MountableFile.forHostPath(Path.of("target", "test-classes")), "/app/test-classes")
+                MountableFile.forHostPath(classesDirectoryOf(NonUtf8LocaleFilenameIT.class)),
+                "/app/test-classes")
             .withEnv("LC_ALL", "POSIX")
             .withEnv("LANG", "POSIX")
             .withCommand("sleep", "infinity");
@@ -87,7 +93,8 @@ class NonUtf8LocaleFilenameIT {
   @Test
   @DisplayName("Should resolve sun.jnu.encoding to ASCII when the container locale is POSIX")
   void shouldResolveSunJnuEncodingToAsciiWhenContainerLocaleIsPosix() {
-    assertThat(movieReport).containsEntry("sun.jnu.encoding", "ANSI_X3.4-1968");
+    assertThat(Charset.forName(movieReport.get("sun.jnu.encoding")))
+        .isEqualTo(StandardCharsets.US_ASCII);
   }
 
   @Test
@@ -214,5 +221,9 @@ class NonUtf8LocaleFilenameIT {
 
   private static String decodeBase64(String value) {
     return new String(Base64.getDecoder().decode(value), UTF_8);
+  }
+
+  private static Path classesDirectoryOf(Class<?> type) throws URISyntaxException {
+    return Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
   }
 }

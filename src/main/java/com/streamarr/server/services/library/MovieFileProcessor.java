@@ -90,7 +90,8 @@ public class MovieFileProcessor {
   }
 
   private Optional<VideoFileParserResult> parseMediaFileForMovieInfo(MediaFile mediaFile) {
-    var result = defaultVideoFileMetadataParser.parse(mediaFile.getFilename());
+    var filename = FilepathCodec.filenameOf(mediaFile.getFilepathUri());
+    var result = defaultVideoFileMetadataParser.parse(filename);
 
     if (result.isEmpty() || StringUtils.isEmpty(result.get().title())) {
       return Optional.empty();
@@ -101,7 +102,7 @@ public class MovieFileProcessor {
       result = folderResult;
     }
 
-    var externalIdResult = externalIdVideoFileMetadataParser.parse(mediaFile.getFilename());
+    var externalIdResult = externalIdVideoFileMetadataParser.parse(filename);
     if (externalIdResult.isEmpty()) {
       return result;
     }
