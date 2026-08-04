@@ -100,18 +100,7 @@ class ImageControllerTest {
   @Test
   @DisplayName("Should return 500 when image file cannot be read")
   void shouldReturn500WhenImageFileCannotBeRead() throws Exception {
-    var entityId = UUID.randomUUID();
-    var image =
-        imageRepository.save(
-            Image.builder()
-                .entityId(entityId)
-                .entityType(ImageEntityType.MOVIE)
-                .imageType(ImageType.POSTER)
-                .variant(ImageSize.SMALL)
-                .width(185)
-                .height(278)
-                .path("movie/" + entityId + "/poster/small.jpg")
-                .build());
+    var image = createImageWithoutFile();
 
     mockMvc
         .perform(get("/api/images/{imageId}", image.getId()))
@@ -119,11 +108,17 @@ class ImageControllerTest {
   }
 
   private Image createImageWithFile(byte[] data) throws IOException {
-    var entityId = UUID.randomUUID();
-    var relativePath = "movie/" + entityId + "/poster/small.jpg";
-    var absolutePath = fileSystem.getPath("/data/images").resolve(relativePath);
+    var image = createImageWithoutFile();
+    var absolutePath = fileSystem.getPath("/data/images").resolve(image.getPath());
+
     Files.createDirectories(absolutePath.getParent());
     Files.write(absolutePath, data);
+
+    return image;
+  }
+
+  private Image createImageWithoutFile() {
+    var entityId = UUID.randomUUID();
 
     return imageRepository.save(
         Image.builder()
@@ -133,7 +128,7 @@ class ImageControllerTest {
             .variant(ImageSize.SMALL)
             .width(185)
             .height(278)
-            .path(relativePath)
+            .path("movie/" + entityId + "/poster/small.jpg")
             .build());
   }
 }
