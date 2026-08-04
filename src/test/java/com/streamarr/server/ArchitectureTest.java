@@ -6,11 +6,14 @@ import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.sli
 
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.library.dependencies.SliceAssignment;
+import com.tngtech.archunit.library.dependencies.SliceIdentifier;
 import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -22,6 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
     packages = "com.streamarr.server",
     importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
+
+  private static final String SERVICES_PACKAGE = "com.streamarr.server.services";
 
   @ArchTest
   static final ArchRule domainMustNotDependOnOuterLayers =
@@ -148,11 +153,32 @@ class ArchitectureTest {
   @ArchTest
   static final ArchRule serviceSlicesMustBeFreeOfCycles =
       slices()
-          .matching("..services.(*)..")
+          .assignedFrom(new ServiceDomainSliceAssignment())
           .should()
           .beFreeOfCycles()
           .as(
               "Service domains must form a directed acyclic graph — a cycle means neither domain"
                   + " can be understood, tested, or extracted without the other, and it lets a"
                   + " change in one silently reach back through the other");
+
+  private static final class ServiceDomainSliceAssignment implements SliceAssignment {
+
+    @Override
+    public SliceIdentifier getIdentifierOf(JavaClass javaClass) {
+      var packageName = javaClass.getPackageName();
+      if (packageName.equals(SERVICES_PACKAGE)) {
+        return SliceIdentifier.of("root");
+      }
+      if (!packageName.startsWith(SERVICES_PACKAGE + ".")) {
+        return SliceIdentifier.ignore();
+      }
+      return SliceIdentifier.of(
+          packageName.substring(SERVICES_PACKAGE.length() + 1).split("\\.", 2)[0]);
+    }
+
+    @Override
+    public String getDescription() {
+      return "service domains including root services";
+    }
+  }
 }
