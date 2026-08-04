@@ -5,7 +5,9 @@ import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.repositories.media.ImageRepository;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public class FakeImageRepository extends FakeJpaRepository<Image> implements ImageRepository {
@@ -17,16 +19,21 @@ public class FakeImageRepository extends FakeJpaRepository<Image> implements Ima
   }
 
   @Override
-  public void insertAllIfAbsent(List<Image> images) {
+  public Set<UUID> insertAllIfAbsent(List<Image> images) {
     if (failOnInsertAllIfAbsent) {
       throw new RuntimeException("Simulated insertAllIfAbsent failure");
     }
 
+    var insertedImageIds = new HashSet<UUID>();
+
     for (var image : images) {
       if (!isDuplicate(image)) {
         save(image);
+        insertedImageIds.add(image.getId());
       }
     }
+
+    return Set.copyOf(insertedImageIds);
   }
 
   private boolean isDuplicate(Image image) {
