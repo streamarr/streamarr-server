@@ -108,8 +108,9 @@ class NonUtf8LocaleFilenameIT {
   @Test
   @DisplayName("Should percent-encode the raw filesystem bytes when encoding a path to a URI")
   void shouldPercentEncodeRawFilesystemBytesWhenEncodingPathToUri() {
-    assertThat(movieReport.get("codec.uri"))
-        .isEqualTo(
+    assertThat(movieReport)
+        .containsEntry(
+            "codec.uri",
             "file:///media/movies/D%C3%A9j%C3%A0%20Vu%20(2006)/"
                 + "D%C3%A9j%C3%A0%20Vu%20(2006)%20-%20%5BBLURAY-1080p%5D%5BDTS%205.1%5D.mkv");
   }
@@ -126,13 +127,13 @@ class NonUtf8LocaleFilenameIT {
   @DisplayName("Should name the movie folder from the URI when Path mangles it")
   void shouldNameMovieFolderFromUriWhenPathManglesIt() {
     assertThat(movieReport.get("path.parentName")).contains(REPLACEMENT_CHAR);
-    assertThat(movieReport.get("codec.parentName")).isEqualTo(MOVIE_FOLDER);
+    assertThat(movieReport).containsEntry("codec.parentName", MOVIE_FOLDER);
   }
 
   @Test
   @DisplayName("Should mangle directory names above the file when they are read through Path")
   void shouldMangleDirectoryNamesAboveFileWhenTheyAreReadThroughPath() {
-    assertThat(seriesReport.get("path.parentName")).isEqualTo(MANGLED_SEASON_FOLDER);
+    assertThat(seriesReport).containsEntry("path.parentName", MANGLED_SEASON_FOLDER);
     assertThat(seriesReport.get("path.grandparentName")).contains(REPLACEMENT_CHAR);
     assertThat(seriesReport.get("path.toString")).contains(REPLACEMENT_CHAR);
   }
@@ -140,10 +141,11 @@ class NonUtf8LocaleFilenameIT {
   @Test
   @DisplayName("Should name the directories above the file when deriving them from the URI")
   void shouldNameDirectoriesAboveFileWhenDerivingThemFromUri() {
-    assertThat(seriesReport.get("codec.parentName")).isEqualTo(SEASON_FOLDER);
-    assertThat(seriesReport.get("codec.grandparentName")).isEqualTo(SERIES_FOLDER);
-    assertThat(seriesReport.get("codec.path"))
-        .isEqualTo(
+    assertThat(seriesReport)
+        .containsEntry("codec.parentName", SEASON_FOLDER)
+        .containsEntry("codec.grandparentName", SERIES_FOLDER)
+        .containsEntry(
+            "codec.path",
             SERIES_ROOT + "/" + SERIES_FOLDER + "/" + SEASON_FOLDER + "/" + EPISODE_FILENAME);
   }
 

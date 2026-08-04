@@ -37,14 +37,12 @@ public class V049__Derive_Media_File_Filename_From_Filepath_Uri extends BaseJava
               exception.getMessage());
           continue;
         }
-        if (filename.equals(rows.getString("filename"))) {
-          continue;
+        if (!filename.equals(rows.getString("filename"))) {
+          update.setString(1, filename);
+          update.setString(2, id);
+          update.addBatch();
+          updatedCount++;
         }
-
-        update.setString(1, filename);
-        update.setString(2, id);
-        update.addBatch();
-        updatedCount++;
       }
 
       update.executeBatch();
