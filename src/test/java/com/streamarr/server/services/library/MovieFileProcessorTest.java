@@ -27,7 +27,6 @@ import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
-import java.nio.file.FileSystems;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -72,7 +71,6 @@ class MovieFileProcessorTest {
           movieMetadataProviderResolver,
           movieService,
           fakeMediaFileRepository,
-          FileSystems.getDefault(),
           new MutexFactoryProvider());
 
   @Test

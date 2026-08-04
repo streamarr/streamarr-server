@@ -120,7 +120,6 @@ class FileEventProcessorTest {
             new MovieMetadataProviderResolver(List.of(tmdbProvider)),
             movieService,
             mediaFileRepository,
-            fileSystem,
             new MutexFactoryProvider());
 
     var seriesFileProcessor = mock(SeriesFileProcessor.class);

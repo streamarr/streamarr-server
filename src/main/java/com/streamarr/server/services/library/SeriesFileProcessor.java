@@ -19,7 +19,6 @@ import com.streamarr.server.services.parsers.show.EpisodePathResult;
 import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
-import java.nio.file.FileSystem;
 import java.util.Optional;
 import java.util.OptionalInt;
 import lombok.extern.slf4j.Slf4j;
@@ -38,7 +37,6 @@ public class SeriesFileProcessor {
   private final MediaFileRepository mediaFileRepository;
   private final SeasonRepository seasonRepository;
   private final EpisodeRepository episodeRepository;
-  private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
 
   public SeriesFileProcessor(
@@ -51,7 +49,6 @@ public class SeriesFileProcessor {
       MediaFileRepository mediaFileRepository,
       SeasonRepository seasonRepository,
       EpisodeRepository episodeRepository,
-      FileSystem fileSystem,
       MutexFactoryProvider mutexFactoryProvider) {
     this.episodePathMetadataParser = episodePathMetadataParser;
     this.seasonPathMetadataParser = seasonPathMetadataParser;
@@ -62,7 +59,6 @@ public class SeriesFileProcessor {
     this.mediaFileRepository = mediaFileRepository;
     this.seasonRepository = seasonRepository;
     this.episodeRepository = episodeRepository;
-    this.fileSystem = fileSystem;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
