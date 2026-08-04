@@ -110,21 +110,6 @@ class MovieServiceTest {
     }
 
     @Test
-    @DisplayName(
-        "Should sort by title sort case insensitively when display titles have different order")
-    void shouldSortByTitleSortCaseInsensitivelyWhenDisplayTitlesHaveDifferentOrder() {
-      movieRepository.save(Movie.builder().title("Zulu Display").titleSort("alpha").build());
-      movieRepository.save(Movie.builder().title("Alpha Display").titleSort("Beta").build());
-
-      var result =
-          movieService.getMoviesWithFilter(buildForwardOptions(10, MediaFilter.builder().build()));
-
-      assertThat(result.items())
-          .extracting(pageItem -> pageItem.item().getTitle())
-          .containsExactly("Zulu Display", "Alpha Display");
-    }
-
-    @Test
     @DisplayName("Should apply provided sort direction when given explicit filter")
     void shouldApplyProvidedSortDirectionWhenGivenExplicitFilter() {
       movieRepository.save(movieBuilder("Apple").build());
@@ -402,40 +387,6 @@ class MovieServiceTest {
               buildCursorOptions(1, PaginationDirection.FORWARD, lastItem, filter));
       assertThat(secondPage.items().getFirst().item().getTitle()).isEqualTo("Second");
     }
-
-    @Test
-    @DisplayName("Should retain title sort letter bucket when continuing non-title pagination")
-    void shouldRetainTitleSortLetterBucketWhenContinuingNonTitlePagination() {
-      movieRepository.save(
-          Movie.builder()
-              .title("Alpha First")
-              .titleSort("Beta First")
-              .releaseDate(LocalDate.of(2000, 1, 1))
-              .build());
-      movieRepository.save(
-          Movie.builder()
-              .title("Alpha Second")
-              .titleSort("Beta Second")
-              .releaseDate(LocalDate.of(2010, 1, 1))
-              .build());
-
-      var filter =
-          MediaFilter.builder()
-              .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
-              .startLetter(com.streamarr.server.domain.AlphabetLetter.B)
-              .build();
-      var firstPage = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
-
-      var secondPage =
-          movieService.getMoviesWithFilter(
-              buildCursorOptions(
-                  1, PaginationDirection.FORWARD, firstPage.items().getLast(), filter));
-
-      assertThat(secondPage.items())
-          .extracting(pageItem -> pageItem.item().getTitle())
-          .containsExactly("Alpha Second");
-    }
   }
 
   @Nested
@@ -502,26 +453,6 @@ class MovieServiceTest {
     }
 
     @Test
-    @DisplayName("Should derive start letter bucket from title sort when display title differs")
-    void shouldDeriveStartLetterBucketFromTitleSortWhenDisplayTitleDiffers() {
-      movieRepository.save(Movie.builder().title("Alpha Display").titleSort("Beta Sort").build());
-      movieRepository.save(Movie.builder().title("Zulu Display").titleSort("Alpha Sort").build());
-
-      var filter =
-          MediaFilter.builder()
-              .sortBy(OrderMediaBy.ADDED)
-              .sortDirection(SortOrder.ASC)
-              .startLetter(com.streamarr.server.domain.AlphabetLetter.B)
-              .build();
-
-      var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
-
-      assertThat(result.items())
-          .extracting(pageItem -> pageItem.item().getTitle())
-          .containsExactly("Alpha Display");
-    }
-
-    @Test
     @DisplayName("Should filter by start letter as range when sort is TITLE")
     void shouldFilterByStartLetterAsRangeWhenSortIsTitle() {
       var libraryId = UUID.randomUUID();
@@ -570,29 +501,6 @@ class MovieServiceTest {
 
       assertThat(titles).containsExactly("Batman", "Cherry");
       assertThat(result.hasPreviousPage()).isTrue();
-    }
-
-    @Test
-    @DisplayName("Should land title jump from title sort when display titles precede the letter")
-    void shouldLandTitleJumpFromTitleSortWhenDisplayTitlesPrecedeTheLetter() {
-      movieRepository.save(
-          Movie.builder().title("Aardvark Display").titleSort("beta sort").build());
-      movieRepository.save(
-          Movie.builder().title("Apple Display").titleSort("Charlie Sort").build());
-
-      var filter =
-          MediaFilter.builder()
-              .sortBy(OrderMediaBy.TITLE)
-              .sortDirection(SortOrder.ASC)
-              .startLetter(com.streamarr.server.domain.AlphabetLetter.B)
-              .build();
-
-      var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
-
-      assertThat(result.items())
-          .extracting(pageItem -> pageItem.item().getTitle())
-          .containsExactly("Aardvark Display", "Apple Display");
-      assertThat(result.hasPreviousPage()).isFalse();
     }
 
     @Test

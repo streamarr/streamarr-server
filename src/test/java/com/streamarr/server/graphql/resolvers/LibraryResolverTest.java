@@ -37,6 +37,7 @@ import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.support.security.WithAccountContext;
 import com.streamarr.server.support.security.WithProfileContext;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -396,6 +397,42 @@ class LibraryResolverTest {
       assertThat(result.getErrors()).hasSize(1);
       assertThat(result.getErrors().getFirst().getMessage())
           .contains("Cursor sort value is required for TITLE sort");
+    }
+
+    @Test
+    @DisplayName("Should return GraphQL error when start letter changes on non-TITLE cursor")
+    void shouldReturnGraphQLErrorWhenStartLetterChangesOnNonTitleCursor() {
+      var libraryId = UUID.randomUUID();
+      var library = buildMovieLibrary(libraryId);
+
+      var movie = Movie.builder().title("Batman").titleSort("Batman").build();
+      movie.setId(UUID.randomUUID());
+      var page =
+          new MediaPage<>(
+              List.of(new PageItem<>(movie, Instant.parse("2026-08-04T12:00:00Z"))), false, true);
+
+      when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+      when(movieService.getMoviesWithFilter(any(MediaPaginationOptions.class))).thenReturn(page);
+
+      String cursor =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              String.format(
+                  """
+                  { library(id: "%s") { items(first: 1, filter: {startLetter: A}, sort: {by: ADDED}) { edges { cursor } } } }
+                  """,
+                  libraryId),
+              "data.library.items.edges[0].cursor");
+
+      var result =
+          dgsQueryExecutor.execute(
+              String.format(
+                  """
+                  { library(id: "%s") { items(first: 1, after: "%s", filter: {startLetter: B}, sort: {by: ADDED}) { edges { node { ... on Movie { title } } } } } }
+                  """,
+                  libraryId, cursor));
+
+      assertThat(result.getErrors()).hasSize(1);
+      assertThat(result.getErrors().getFirst().getMessage()).contains("startLetter");
     }
 
     @Test

@@ -22,23 +22,6 @@ class CursorValidatorTest {
   private final CursorValidator cursorValidator = new CursorValidator();
 
   @Nested
-  @DisplayName("Malformed Cursors")
-  class MalformedCursors {
-
-    @Test
-    @DisplayName("Should reject TITLE cursor when sort value is missing")
-    void shouldRejectTitleCursorWhenSortValueIsMissing() {
-      var cursorFilter = MediaFilter.builder().sortBy(OrderMediaBy.TITLE).build();
-      var currentFilter = MediaFilter.builder().sortBy(OrderMediaBy.TITLE).build();
-      var decoded = MediaPaginationOptions.builder().mediaFilter(cursorFilter).build();
-
-      assertThatThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, currentFilter))
-          .isInstanceOf(InvalidCursorException.class)
-          .hasMessage("Cursor sort value is required for TITLE sort");
-    }
-  }
-
-  @Nested
   @DisplayName("Matching Filters")
   class MatchingFilters {
 
@@ -147,20 +130,6 @@ class CursorValidatorTest {
       assertThatThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, currentFilter))
           .isInstanceOf(InvalidCursorException.class)
           .hasMessageContaining("genreIds");
-    }
-
-    @Test
-    @DisplayName("Should throw when startLetter changes between queries and sort is not TITLE")
-    void shouldThrowWhenStartLetterChangesBetweenQueriesAndSortIsNotTitle() {
-      var cursorFilter =
-          MediaFilter.builder().sortBy(OrderMediaBy.ADDED).startLetter(AlphabetLetter.A).build();
-      var currentFilter =
-          MediaFilter.builder().sortBy(OrderMediaBy.ADDED).startLetter(AlphabetLetter.B).build();
-      var decoded = MediaPaginationOptions.builder().mediaFilter(cursorFilter).build();
-
-      assertThatThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, currentFilter))
-          .isInstanceOf(InvalidCursorException.class)
-          .hasMessageContaining("startLetter");
     }
 
     @Test

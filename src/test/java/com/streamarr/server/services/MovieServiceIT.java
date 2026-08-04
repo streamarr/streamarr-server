@@ -447,6 +447,33 @@ class MovieServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("Should land on title sort when display titles precede letter")
+    void shouldLandOnTitleSortWhenDisplayTitlesPrecedeLetter() {
+      var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+      movieRepository.saveAllAndFlush(
+          List.of(
+              Movie.builder()
+                  .title("Aardvark Display")
+                  .titleSort("beta sort")
+                  .library(library)
+                  .build(),
+              Movie.builder()
+                  .title("Apple Display")
+                  .titleSort("Charlie Sort")
+                  .library(library)
+                  .build()));
+      var filter =
+          MediaFilter.builder().libraryId(library.getId()).startLetter(AlphabetLetter.B).build();
+
+      var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+
+      assertThat(result.items())
+          .extracting(pageItem -> pageItem.item().getTitle())
+          .containsExactly("Aardvark Display", "Apple Display");
+      assertThat(result.hasPreviousPage()).isFalse();
+    }
+
+    @Test
     @DisplayName("Should return all movies when start letter is hash")
     void shouldReturnAllMoviesWhenStartLetterIsHash() {
 

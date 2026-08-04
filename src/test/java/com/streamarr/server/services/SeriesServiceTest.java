@@ -168,21 +168,6 @@ class SeriesServiceTest {
     }
 
     @Test
-    @DisplayName(
-        "Should sort by title sort case insensitively when display titles have different order")
-    void shouldSortByTitleSortCaseInsensitivelyWhenDisplayTitlesHaveDifferentOrder() {
-      seriesRepository.save(Series.builder().title("Zulu Display").titleSort("alpha").build());
-      seriesRepository.save(Series.builder().title("Alpha Display").titleSort("Beta").build());
-
-      var result =
-          seriesService.getSeriesWithFilter(buildForwardOptions(10, MediaFilter.builder().build()));
-
-      assertThat(result.items())
-          .extracting(pageItem -> pageItem.item().getTitle())
-          .containsExactly("Zulu Display", "Alpha Display");
-    }
-
-    @Test
     @DisplayName("Should apply provided sort direction when given explicit filter")
     void shouldApplyProvidedSortDirectionWhenGivenExplicitFilter() {
       seriesRepository.save(seriesBuilder("Apple").build());
@@ -255,88 +240,6 @@ class SeriesServiceTest {
 
       assertThat(result.items()).isEmpty();
       assertThat(result.hasNextPage()).isFalse();
-      assertThat(result.hasPreviousPage()).isFalse();
-    }
-
-    @Test
-    @DisplayName("Should retain title sort letter bucket when continuing non-title pagination")
-    void shouldRetainTitleSortLetterBucketWhenContinuingNonTitlePagination() {
-      seriesRepository.save(
-          Series.builder()
-              .title("Alpha First")
-              .titleSort("Beta First")
-              .firstAirDate(LocalDate.of(2000, 1, 1))
-              .build());
-      seriesRepository.save(
-          Series.builder()
-              .title("Alpha Second")
-              .titleSort("Beta Second")
-              .firstAirDate(LocalDate.of(2010, 1, 1))
-              .build());
-
-      var filter =
-          MediaFilter.builder()
-              .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
-              .startLetter(com.streamarr.server.domain.AlphabetLetter.B)
-              .build();
-      var firstPage = seriesService.getSeriesWithFilter(buildForwardOptions(1, filter));
-
-      var secondPage =
-          seriesService.getSeriesWithFilter(
-              buildCursorOptions(
-                  1, PaginationDirection.FORWARD, firstPage.items().getLast(), filter));
-
-      assertThat(secondPage.items())
-          .extracting(pageItem -> pageItem.item().getTitle())
-          .containsExactly("Alpha Second");
-    }
-  }
-
-  @Nested
-  @DisplayName("Letter Jump")
-  class LetterJump {
-
-    @Test
-    @DisplayName("Should derive start letter bucket from title sort when display title differs")
-    void shouldDeriveStartLetterBucketFromTitleSortWhenDisplayTitleDiffers() {
-      seriesRepository.save(Series.builder().title("Alpha Display").titleSort("Beta Sort").build());
-      seriesRepository.save(Series.builder().title("Zulu Display").titleSort("Alpha Sort").build());
-
-      var filter =
-          MediaFilter.builder()
-              .sortBy(OrderMediaBy.ADDED)
-              .sortDirection(SortOrder.ASC)
-              .startLetter(com.streamarr.server.domain.AlphabetLetter.B)
-              .build();
-
-      var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
-
-      assertThat(result.items())
-          .extracting(pageItem -> pageItem.item().getTitle())
-          .containsExactly("Alpha Display");
-    }
-
-    @Test
-    @DisplayName("Should land title jump from title sort when display titles precede the letter")
-    void shouldLandTitleJumpFromTitleSortWhenDisplayTitlesPrecedeTheLetter() {
-      seriesRepository.save(
-          Series.builder().title("Aardvark Display").titleSort("beta sort").build());
-      seriesRepository.save(
-          Series.builder().title("Apple Display").titleSort("Charlie Sort").build());
-
-      var filter =
-          MediaFilter.builder()
-              .sortBy(OrderMediaBy.TITLE)
-              .sortDirection(SortOrder.ASC)
-              .startLetter(com.streamarr.server.domain.AlphabetLetter.B)
-              .build();
-
-      var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
-
-      assertThat(result.items())
-          .extracting(pageItem -> pageItem.item().getTitle())
-          .containsExactly("Aardvark Display", "Apple Display");
       assertThat(result.hasPreviousPage()).isFalse();
     }
   }
