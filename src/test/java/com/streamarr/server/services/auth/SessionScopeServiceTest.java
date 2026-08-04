@@ -88,6 +88,36 @@ class SessionScopeServiceTest {
     assertThat(context.profileId()).isNull();
   }
 
+  @Test
+  @DisplayName("Should clear stale profile when sole household has no selectable profile")
+  void shouldClearStaleProfileWhenSoleHouseholdHasNoSelectableProfile() {
+    var f = fixture();
+    f.session.setActiveProfileId(f.profile.getId());
+    sessionRepository.save(f.session);
+
+    var context = service.autoSelectContext(f.account, f.session);
+
+    assertThat(context.householdId()).isEqualTo(f.household.getId());
+    assertThat(context.profileId()).isNull();
+    assertThat(reloadSession(f).getActiveProfileId()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should clear stale profile when sole household has multiple selectable profiles")
+  void shouldClearStaleProfileWhenSoleHouseholdHasMultipleSelectableProfiles() {
+    var f = fixture();
+    f.session.setActiveProfileId(UUID.randomUUID());
+    sessionRepository.save(f.session);
+    linkProfile(f);
+    linkProfile(newProfile(f.household.getId()), f);
+
+    var context = service.autoSelectContext(f.account, f.session);
+
+    assertThat(context.householdId()).isEqualTo(f.household.getId());
+    assertThat(context.profileId()).isNull();
+    assertThat(reloadSession(f).getActiveProfileId()).isNull();
+  }
+
   // --- revalidateStoredContext ---
 
   @Test
