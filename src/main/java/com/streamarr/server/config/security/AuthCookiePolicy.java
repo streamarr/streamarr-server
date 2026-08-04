@@ -10,7 +10,7 @@ import lombok.RequiredArgsConstructor;
  */
 @Getter
 @RequiredArgsConstructor
-public enum AuthCookieSecurity {
+public enum AuthCookiePolicy {
 
   /** Cookies travel only over HTTPS. The only value production may hold. */
   SECURE(true),

@@ -10,18 +10,17 @@ import org.springframework.mock.env.MockEnvironment;
 
 @Tag("UnitTest")
 @DisplayName("Auth Cookie Security Configuration Tests")
-class AuthCookieSecurityConfigurationTest {
+class AuthCookiePolicyConfigurationTest {
 
-  private final AuthCookieSecurityConfiguration configuration =
-      new AuthCookieSecurityConfiguration();
+  private final AuthCookiePolicyConfiguration configuration = new AuthCookiePolicyConfiguration();
 
   @Test
   @DisplayName("Should relax Secure when the flag and a development profile agree")
   void shouldRelaxSecureWhenFlagAndDevelopmentProfileAgree() {
     var security =
-        configuration.authCookieSecurity(allowingInsecureCookies(), environmentWith("dev"));
+        configuration.authCookiePolicy(allowingInsecureCookies(), environmentWith("dev"));
 
-    assertThat(security).isEqualTo(AuthCookieSecurity.INSECURE_DEVELOPMENT);
+    assertThat(security).isEqualTo(AuthCookiePolicy.INSECURE_DEVELOPMENT);
   }
 
   @Test
@@ -31,8 +30,7 @@ class AuthCookieSecurityConfigurationTest {
     // were relaxed, and would arm the relaxation the moment a profile changed.
     var production = environmentWith();
 
-    assertThatThrownBy(
-            () -> configuration.authCookieSecurity(allowingInsecureCookies(), production))
+    assertThatThrownBy(() -> configuration.authCookiePolicy(allowingInsecureCookies(), production))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("development or test profile");
   }
@@ -41,19 +39,19 @@ class AuthCookieSecurityConfigurationTest {
   @DisplayName("Should require Secure when a development profile is active without the flag")
   void shouldRequireSecureWhenDevelopmentProfileIsActiveWithoutFlag() {
     var security =
-        configuration.authCookieSecurity(
+        configuration.authCookiePolicy(
             AuthCookieProperties.builder().build(), environmentWith("dev"));
 
-    assertThat(security).isEqualTo(AuthCookieSecurity.SECURE);
+    assertThat(security).isEqualTo(AuthCookiePolicy.SECURE);
   }
 
   @Test
   @DisplayName("Should require Secure when nothing is configured")
   void shouldRequireSecureWhenNothingIsConfigured() {
     var security =
-        configuration.authCookieSecurity(AuthCookieProperties.builder().build(), environmentWith());
+        configuration.authCookiePolicy(AuthCookieProperties.builder().build(), environmentWith());
 
-    assertThat(security).isEqualTo(AuthCookieSecurity.SECURE);
+    assertThat(security).isEqualTo(AuthCookiePolicy.SECURE);
   }
 
   private static AuthCookieProperties allowingInsecureCookies() {

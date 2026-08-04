@@ -2,7 +2,7 @@ package com.streamarr.server.controllers.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.security.AuthCookieSecurity;
+import com.streamarr.server.config.security.AuthCookiePolicy;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import java.time.Duration;
 import java.util.List;
@@ -20,7 +20,7 @@ class AuthCookieWriterTest {
   @Test
   @DisplayName("Should mark every cookie Secure when cookie security is secure")
   void shouldMarkEveryCookieSecureWhenCookieSecurityIsSecure() {
-    var cookies = allCookiesFrom(writerWith(AuthCookieSecurity.SECURE));
+    var cookies = allCookiesFrom(writerWith(AuthCookiePolicy.SECURE));
 
     assertThat(cookies).allSatisfy(cookie -> assertThat(cookie.isSecure()).isTrue());
   }
@@ -30,18 +30,18 @@ class AuthCookieWriterTest {
   void shouldOmitSecureFromEveryCookieWhenCookieSecurityIsInsecureDevelopment() {
     // Safari refuses to store or send a Secure cookie over http://localhost, so dropping the
     // attribute is the only way a cookie-mode session survives there.
-    var cookies = allCookiesFrom(writerWith(AuthCookieSecurity.INSECURE_DEVELOPMENT));
+    var cookies = allCookiesFrom(writerWith(AuthCookiePolicy.INSECURE_DEVELOPMENT));
 
     assertThat(cookies).allSatisfy(cookie -> assertThat(cookie.isSecure()).isFalse());
   }
 
   @ParameterizedTest
-  @EnumSource(AuthCookieSecurity.class)
+  @EnumSource(AuthCookiePolicy.class)
   @DisplayName("Should keep httpOnly and SameSite=Strict when cookie security varies")
-  void shouldKeepHttpOnlyAndStrictSameSiteWhenCookieSecurityVaries(AuthCookieSecurity security) {
+  void shouldKeepHttpOnlyAndStrictSameSiteWhenCookieSecurityVaries(AuthCookiePolicy policy) {
     // The development relaxation covers Secure and nothing else: ADR 0016 rests on browsers never
     // touching tokens from script, and the service worker design assumes unreadable cookies.
-    var cookies = allCookiesFrom(writerWith(security));
+    var cookies = allCookiesFrom(writerWith(policy));
 
     assertThat(cookies)
         .allSatisfy(
@@ -59,13 +59,13 @@ class AuthCookieWriterTest {
         writer.expiredRefreshCookie());
   }
 
-  private static AuthCookieWriter writerWith(AuthCookieSecurity security) {
+  private static AuthCookieWriter writerWith(AuthCookiePolicy policy) {
     return new AuthCookieWriter(
         AuthTokenProperties.builder()
             .accessTokenTtl(Duration.ofMinutes(10))
             .refreshTokenTtl(Duration.ofDays(30))
             .rotationGrace(Duration.ofSeconds(30))
             .build(),
-        security);
+        policy);
   }
 }

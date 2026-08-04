@@ -9,7 +9,7 @@ import org.springframework.core.env.Environment;
 
 @Slf4j
 @Configuration
-public class AuthCookieSecurityConfiguration {
+public class AuthCookiePolicyConfiguration {
 
   private static final Set<String> NON_PRODUCTION_PROFILES = Set.of("dev", "development", "test");
 
@@ -21,9 +21,9 @@ public class AuthCookieSecurityConfiguration {
    * anyone deciding so.
    */
   @Bean
-  AuthCookieSecurity authCookieSecurity(AuthCookieProperties properties, Environment environment) {
+  AuthCookiePolicy authCookiePolicy(AuthCookieProperties properties, Environment environment) {
     if (!properties.allowInsecure()) {
-      return AuthCookieSecurity.SECURE;
+      return AuthCookiePolicy.SECURE;
     }
 
     if (!isNonProductionProfileActive(environment)) {
@@ -37,7 +37,7 @@ public class AuthCookieSecurityConfiguration {
             + " Safari — development only. Session cookies will travel in cleartext and any host on"
             + " the path can replay them.");
 
-    return AuthCookieSecurity.INSECURE_DEVELOPMENT;
+    return AuthCookiePolicy.INSECURE_DEVELOPMENT;
   }
 
   private static boolean isNonProductionProfileActive(Environment environment) {
