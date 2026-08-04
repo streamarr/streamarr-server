@@ -132,10 +132,12 @@ class CursorValidatorTest {
     }
 
     @Test
-    @DisplayName("Should throw when startLetter changes between queries")
-    void shouldThrowWhenStartLetterChangesBetweenQueries() {
-      var cursorFilter = MediaFilter.builder().startLetter(AlphabetLetter.A).build();
-      var currentFilter = MediaFilter.builder().startLetter(AlphabetLetter.B).build();
+    @DisplayName("Should throw when startLetter changes between queries and sort is not TITLE")
+    void shouldThrowWhenStartLetterChangesBetweenQueriesAndSortIsNotTitle() {
+      var cursorFilter =
+          MediaFilter.builder().sortBy(OrderMediaBy.ADDED).startLetter(AlphabetLetter.A).build();
+      var currentFilter =
+          MediaFilter.builder().sortBy(OrderMediaBy.ADDED).startLetter(AlphabetLetter.B).build();
       var decoded = MediaPaginationOptions.builder().mediaFilter(cursorFilter).build();
 
       assertThatThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, currentFilter))
@@ -243,6 +245,19 @@ class CursorValidatorTest {
   @Nested
   @DisplayName("Ignored Fields")
   class IgnoredFields {
+
+    @Test
+    @DisplayName(
+        "Should not throw when startLetter is dropped after a letter jump under TITLE sort")
+    void shouldNotThrowWhenStartLetterIsDroppedAfterLetterJumpUnderTitleSort() {
+      var cursorFilter =
+          MediaFilter.builder().sortBy(OrderMediaBy.TITLE).startLetter(AlphabetLetter.Q).build();
+      var currentFilter = MediaFilter.builder().sortBy(OrderMediaBy.TITLE).build();
+      var decoded = MediaPaginationOptions.builder().mediaFilter(cursorFilter).build();
+
+      assertThatNoException()
+          .isThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, currentFilter));
+    }
 
     @Test
     @DisplayName("Should ignore previousSortFieldValue when comparing filters")
