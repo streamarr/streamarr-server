@@ -1,9 +1,13 @@
-# Adapted from Eclipse Jetty URIUtilTest and Spring Framework UriUtilsTests.
+# Contains data adapted from Eclipse Jetty URIUtilTest and Spring Framework UriUtilsTests.
+# Jetty copyright: Copyright (c) 1995 Mort Bay Consulting Pty Ltd and others.
 # Jetty source: https://github.com/jetty/jetty.project/blob/2812785776c320d511ab382d2cdc25cf6cf47b29/jetty-core/jetty-util/src/test/java/org/eclipse/jetty/util/URIUtilTest.java
-# Jetty license: Apache-2.0 OR EPL-2.0
+# Jetty license selection: Apache-2.0 (offered upstream as EPL-2.0 OR Apache-2.0).
+# Spring copyright: Copyright 2002-present the original author or authors.
 # Spring source: https://github.com/spring-projects/spring-framework/blob/e8729d043887bf0d0baf91e062e909b56eb2b708/spring-web/src/test/java/org/springframework/web/util/UriUtilsTests.java
 # Spring license: Apache-2.0
-# Changes: selected, deduplicated, renamed, and expressed as filepath URI path suffixes.
+# License text: LICENSES/Apache-2.0.txt
+# Changes by Streamarr contributors: selected, deduplicated, renamed, expressed as filepath URI path suffixes, and tested against Streamarr's strict-rejection contract.
+# Full attribution and notices: THIRD_PARTY_NOTICES.md
 bad-hex|abc%xyz
 trailing-percent|abc%
 single-hex-digit|abc%A

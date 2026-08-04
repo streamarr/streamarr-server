@@ -1,7 +1,9 @@
-# Adapted from "UTF-8 decoder capability and stress test" by Markus Kuhn.
+# Contains data adapted from "UTF-8 decoder capability and stress test" by Markus Kuhn, 2015-08-28.
 # Source: https://www.cl.cam.ac.uk/~mgk25/ucs/examples/UTF-8-test.txt
-# License: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
-# Changes: selected malformed sequences, split compound cases, renamed cases, and represented each byte as uppercase %HH.
+# Original license: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+# License text: LICENSES/CC-BY-4.0.txt
+# Changes by Streamarr contributors: selected malformed sequences, split compound cases, renamed cases, and represented each byte as uppercase %HH.
+# Full attribution and notices: THIRD_PARTY_NOTICES.md
 first-continuation-byte|%80
 last-continuation-byte|%BF
 two-continuation-bytes|%80%BF
