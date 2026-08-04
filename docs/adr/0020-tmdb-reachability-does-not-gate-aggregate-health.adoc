@@ -8,8 +8,9 @@ Accepted
 
 `GET /actuator/health` was reported hung in a container deployment: zero bytes in 45 seconds, while `/actuator/health/liveness`, `/actuator/health/readiness` and `/api/auth/status` all answered in milliseconds.
 Only the aggregate stalled, because the probe groups exclude custom contributors.
-`TmdbHealthIndicator` sent an `HttpRequest` with no timeout of its own, so it inherited the `tmdb` client's metadata-enrichment budget — 15s to connect plus a 30s request timeout — and `HttpClient.send` is synchronous, so a request thread was parked there for the whole window.
-This is the shape CLAUDE.md already forbids: no thread waits unbounded on an external dependency.
+`TmdbHealthIndicator` used the metadata-enrichment HTTP client, whose connection, retry and rate-limit budgets are appropriate for library work but not for a health endpoint.
+`HttpClient.send` is synchronous, so every wait parks the request thread.
+A per-request timeout does not bound time spent in Methanol interceptor queues or retry backoff: a `429` can retry up to five times, honoring `Retry-After` when present or using the configured 2s..32s fallback, and a saturated library scan can queue the probe behind enrichment on the shared rate limiter.
 
 Two failure modes compound the wait.
 A live third-party call on every hit is an amplifier: an uptime monitor polling every 10 seconds becomes six TMDB requests a minute, forever.
@@ -22,34 +23,35 @@ Spring Boot offers no property to keep a contributor out of the root aggregate.
 
 The TMDB health probe is bounded and cached, and its verdict is an enrichment signal rather than a traffic-admission signal.
 
-* The probe sets a per-request timeout (`tmdb.health.probe-timeout`, 2s by default), which takes precedence over Methanol's client-level `requestTimeout`, so the probe cannot inherit the enrichment budget while enrichment keeps it.
-* The verdict is held for `tmdb.health.cache-ttl` (30s by default) in an `AtomicReference`, deliberately unsynchronized: a concurrent burst may probe more than once, which costs one extra bounded request, whereas a lock would park every prober on an external dependency.
+* The probe uses a dedicated `tmdbHealth` Methanol client with no cache, retry interceptor or rate-limit interceptor. Its connection and request timeouts both use `tmdb.health.probe-timeout` (2s by default), and the request carries the same explicit timeout. The enrichment client keeps its longer budgets and interceptors.
+* The verdict is held for `tmdb.health.cache-ttl` (30s by default, one day maximum) in an `AtomicReference`. Expiry starts after the probe completes, and interruption-derived verdicts are not cached.
+* Cache misses are deliberately unsynchronized, so any number of simultaneous misses may probe in parallel. Cache publication uses `compareAndSet` against the snapshot that triggered the probe, preventing an older delayed result from overwriting a result that another probe already published without holding coordination across external I/O.
 * The indicator reports `DEGRADED`, never `DOWN` — TMDB being unreachable degrades metadata enrichment, it does not mean this instance should stop taking traffic or be restarted.
+* `DEGRADED` uses the neutral description "TMDB metadata service is unavailable" because both network failures and HTTP error responses produce it. Unexpected HTTP statuses are logged with their numeric code.
 * `management.endpoint.health.status.order` ranks `DEGRADED` below `UP`, so the status cannot pull the aggregate down.
 * `/actuator/health/metadata` is where TMDB reachability stays observable and alertable, mapping `DEGRADED` to 503 so a monitor pointed at it still fires.
 
 Explicitly deferred:
 
-* The probe still shares the `tmdb` client's `RetryInterceptor` and `RateLimitingInterceptor`.
-  Neither retries a timeout or an `IOException` — verified against the shipped configuration: an unresponsive endpoint produced one attempt and an `HttpTimeoutException` — but a `429` answer is retried up to five times with 2s..32s backoff, and a saturated library scan queues the probe behind enrichment on the shared rate limiter.
-  Both waits sit outside the per-request timeout because the retry interceptor is the outermost one.
-  Giving the probe its own interceptor-free client would close this at the cost of no longer exercising the client enrichment actually uses.
 * The `ffmpeg` contributor still gates the aggregate; whether a missing transcoder means "do not send traffic here" is a separate decision.
 
 == Consequences
 
-* A TMDB outage no longer restarts healthy servers, and `/actuator/health` answers within its own budget instead of the enrichment budget.
+* A TMDB outage no longer restarts healthy servers, and `/actuator/health` answers within its own budget instead of retrying or queueing behind enrichment.
 * Operators watching TMDB must watch `/actuator/health/metadata`; the root endpoint deliberately no longer tells them.
 * A custom status code exists in the health vocabulary, so anything parsing health JSON must tolerate `DEGRADED`.
-* `TmdbHealthIndicatorTest` covers the bounded and cached behaviour; `TmdbHealthAggregationTest` loads the shipped `application.yml` so the aggregation rules under test are the ones that ship.
+* The probe no longer exercises enrichment's retry, rate-limit or HTTP-cache path. It still uses Methanol with the platform's proxy and TLS defaults.
+* `TmdbHttpClientConfigurationTest` covers the dedicated client's timeout, retry and cache behaviour. `TmdbHealthIndicatorTest` covers cached verdict behaviour, and `TmdbHealthAggregationTest` loads the shipped `application.yml` so the aggregation rules under test are the ones that ship.
 
 == Rejected Alternatives
 
 * Removing the indicator, or not registering it as a bean — the aggregate stops lying, but operators lose the only signal that enrichment is degraded.
+* Sharing the enrichment client and relying on the request timeout — the timeout governs an individual HTTP exchange, not retry backoff or rate-limit queueing, so the endpoint can still exceed its budget and health probes compete with metadata traffic.
+* Wrapping the shared client with `sendAsync(...).get(timeout)` — this bounds the Actuator caller's wait, but cancellation propagation through the interceptor chain is not a structural guarantee. An abandoned retry or rate-limited operation may continue consuming resources and competing with enrichment after the health response returns.
 * Registering the contributor into a group only — not expressible: the primary group's membership is `always()`, and there is no root `exclude`.
 * A custom `StatusAggregator` bean — it receives a set of statuses, not which contributor produced them, so it cannot single out TMDB, and it would apply to every group.
 * A `HealthEndpointGroupsPostProcessor` that wraps the primary group to drop the member — hand-rolled machinery to express what a status rank already expresses in configuration.
-* Reporting `UNKNOWN` instead of a custom status — it is already ranked below `UP`, but it reads as "could not determine" when we determined precisely that TMDB is unreachable.
+* Reporting `UNKNOWN` instead of a custom status — it is already ranked below `UP`, but it reads as "could not determine" when we determined that TMDB metadata is unavailable.
 * Relying on the aggregator ignoring statuses absent from the order list — true of `SimpleStatusAggregator` today, but undocumented; an explicit rank below `UP` survives a later reader who edits the order property.
 * Leaving the aggregate `DOWN` and pointing container healthchecks at `/actuator/health/readiness` — the aggregate would still misreport, and every operator would have to learn the workaround.
 

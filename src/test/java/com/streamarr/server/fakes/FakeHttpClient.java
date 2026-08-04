@@ -15,7 +15,9 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
@@ -50,6 +52,17 @@ public class FakeHttpClient extends HttpClient {
     return new FakeHttpClient(new Unresponsive());
   }
 
+  public static ControlledResponses respondingWithBlockedFirst(
+      int firstStatusCode, int subsequentStatusCode) {
+    var firstRequestStarted = new CountDownLatch(1);
+    var releaseFirstResponse = new CountDownLatch(1);
+    var client =
+        new FakeHttpClient(
+            new BlockedFirstResponse(
+                firstStatusCode, subsequentStatusCode, firstRequestStarted, releaseFirstResponse));
+    return new ControlledResponses(client, firstRequestStarted, releaseFirstResponse);
+  }
+
   public int sendCount() {
     return sendCount.get();
   }
@@ -57,12 +70,13 @@ public class FakeHttpClient extends HttpClient {
   @Override
   public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> bodyHandler)
       throws IOException, InterruptedException {
-    sendCount.incrementAndGet();
+    var requestNumber = sendCount.incrementAndGet();
 
     return switch (outcome) {
       case Responding(int statusCode) -> new FakeHttpResponse<>(statusCode, request);
       case Failing(Exception exception) -> throw asSendFailure(exception);
       case Unresponsive _ -> throw waitOutTimeout(request);
+      case BlockedFirstResponse response -> response.answer(requestNumber, request);
     };
   }
 
@@ -147,13 +161,47 @@ public class FakeHttpClient extends HttpClient {
     throw new UnsupportedOperationException("WebSockets are not faked");
   }
 
-  private sealed interface Outcome permits Responding, Failing, Unresponsive {}
+  private sealed interface Outcome
+      permits Responding, Failing, Unresponsive, BlockedFirstResponse {}
 
   private record Responding(int statusCode) implements Outcome {}
 
   private record Failing(Exception exception) implements Outcome {}
 
   private record Unresponsive() implements Outcome {}
+
+  private record BlockedFirstResponse(
+      int firstStatusCode,
+      int subsequentStatusCode,
+      CountDownLatch firstRequestStarted,
+      CountDownLatch releaseFirstResponse)
+      implements Outcome {
+
+    private <T> HttpResponse<T> answer(int requestNumber, HttpRequest request)
+        throws InterruptedException {
+      if (requestNumber != 1) {
+        return new FakeHttpResponse<>(subsequentStatusCode, request);
+      }
+
+      firstRequestStarted.countDown();
+      releaseFirstResponse.await();
+      return new FakeHttpResponse<>(firstStatusCode, request);
+    }
+  }
+
+  public record ControlledResponses(
+      FakeHttpClient client,
+      CountDownLatch firstRequestStarted,
+      CountDownLatch releaseFirstResponseSignal) {
+
+    public boolean awaitFirstRequest(Duration timeout) throws InterruptedException {
+      return firstRequestStarted.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    }
+
+    public void releaseFirstResponse() {
+      releaseFirstResponseSignal.countDown();
+    }
+  }
 
   private record FakeHttpResponse<T>(int statusCode, HttpRequest request)
       implements HttpResponse<T> {

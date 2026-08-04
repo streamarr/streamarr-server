@@ -53,14 +53,14 @@ class TmdbHealthAggregationTest {
       return Clock.systemUTC();
     }
 
-    @Bean("tmdb")
-    HttpClient tmdbHttpClient() {
+    @Bean("tmdbHealth")
+    HttpClient tmdbHealthHttpClient() {
       return FakeHttpClient.unresponsive();
     }
 
     @Bean
     TmdbHealthIndicator tmdbHealthIndicator(
-        @Qualifier("tmdb") HttpClient client, TmdbHealthProperties properties, Clock clock) {
+        @Qualifier("tmdbHealth") HttpClient client, TmdbHealthProperties properties, Clock clock) {
       return new TmdbHealthIndicator(client, properties, clock);
     }
   }
@@ -73,6 +73,38 @@ class TmdbHealthAggregationTest {
           var health = context.getBean(HealthEndpoint.class).health();
 
           assertThat(health.getStatus()).isEqualTo(Status.UP);
+        });
+  }
+
+  @Test
+  @DisplayName("Should preserve DOWN when aggregate health includes degraded TMDB")
+  void shouldPreserveDownWhenAggregateHealthIncludesDegradedTmdb() {
+    CONTEXT_RUNNER.run(
+        context -> {
+          var primaryGroup = context.getBean(HealthEndpointGroups.class).getPrimary();
+
+          var aggregateStatus =
+              primaryGroup
+                  .getStatusAggregator()
+                  .getAggregateStatus(Set.of(Status.DOWN, Status.UP, TmdbHealthIndicator.DEGRADED));
+
+          assertThat(aggregateStatus).isEqualTo(Status.DOWN);
+        });
+  }
+
+  @Test
+  @DisplayName("Should rank DEGRADED in primary aggregate health")
+  void shouldRankDegradedInPrimaryAggregateHealth() {
+    CONTEXT_RUNNER.run(
+        context -> {
+          var primaryGroup = context.getBean(HealthEndpointGroups.class).getPrimary();
+
+          var aggregateStatus =
+              primaryGroup
+                  .getStatusAggregator()
+                  .getAggregateStatus(Set.of(TmdbHealthIndicator.DEGRADED));
+
+          assertThat(aggregateStatus).isEqualTo(TmdbHealthIndicator.DEGRADED);
         });
   }
 

@@ -26,9 +26,9 @@ public class TmdbHealthIndicator implements HealthIndicator {
   // Not DOWN: an unreachable TMDB degrades metadata enrichment while playback, auth and browsing
   // keep serving. management.endpoint.health.status.order ranks DEGRADED below UP so it stays out
   // of the aggregate verdict, and the metadata health group surfaces it on its own.
-  static final Status DEGRADED = new Status("DEGRADED", "TMDB is unreachable");
+  static final Status DEGRADED = new Status("DEGRADED", "TMDB metadata service is unavailable");
 
-  @Qualifier("tmdb")
+  @Qualifier("tmdbHealth")
   private final HttpClient client;
 
   private final TmdbHealthProperties properties;
@@ -45,30 +45,32 @@ public class TmdbHealthIndicator implements HealthIndicator {
       return cached.health();
     }
 
-    var health = probe();
-    lastProbe.set(new CachedProbe(health, now.plus(properties.cacheTtl())));
+    var result = probe();
+    if (result.cacheable()) {
+      lastProbe.compareAndSet(
+          cached, new CachedProbe(result.health(), clock.instant().plus(properties.cacheTtl())));
+    }
 
-    return health;
+    return result.health();
   }
 
-  private Health probe() {
+  private ProbeResult probe() {
     try {
       var response = client.send(probeRequest(), HttpResponse.BodyHandlers.discarding());
 
-      return healthFor(response.statusCode());
+      return new ProbeResult(healthFor(response.statusCode()), true);
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.warn("TMDB health check interrupted", ex);
-      return degraded(ex);
+      return new ProbeResult(degraded(ex), false);
     } catch (Exception ex) {
       log.warn("TMDB health check failed", ex);
-      return degraded(ex);
+      return new ProbeResult(degraded(ex), true);
     }
   }
 
   private HttpRequest probeRequest() {
-    // A per-request timeout wins over the client's requestTimeout, so the probe is bounded even
-    // though it shares the enrichment client.
+    // Keep the request budget explicit even though the dedicated client carries the same timeout.
     return HttpRequest.newBuilder()
         .uri(CONFIGURATION_URI)
         .timeout(properties.probeTimeout())
@@ -83,6 +85,7 @@ public class TmdbHealthIndicator implements HealthIndicator {
       return Health.up().withDetail("api", "reachable").build();
     }
 
+    log.warn("TMDB health check returned HTTP status {}", statusCode);
     return Health.status(DEGRADED).withDetail("statusCode", statusCode).build();
   }
 
@@ -90,9 +93,10 @@ public class TmdbHealthIndicator implements HealthIndicator {
     return Health.status(DEGRADED).withException(ex).build();
   }
 
-  // Deliberately unsynchronized: a concurrent burst may probe more than once, which costs one
-  // extra bounded request, whereas a lock would park every prober on an external dependency —
-  // the wait CLAUDE.md forbids holding a lock across.
+  private record ProbeResult(Health health, boolean cacheable) {}
+
+  // Deliberately unsynchronized: concurrent cache misses may probe in parallel. Optimistic cache
+  // publication lets the first completed probe win without holding coordination across I/O.
   private record CachedProbe(Health health, Instant expiresAt) {
 
     private static CachedProbe stale() {

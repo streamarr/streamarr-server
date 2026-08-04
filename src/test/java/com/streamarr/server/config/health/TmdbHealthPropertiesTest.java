@@ -10,6 +10,11 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration;
+import org.springframework.context.annotation.Configuration;
 
 @Tag("UnitTest")
 @DisplayName("TMDB Health Properties Tests")
@@ -17,6 +22,15 @@ class TmdbHealthPropertiesTest {
 
   private static final Validator VALIDATOR =
       Validation.buildDefaultValidatorFactory().getValidator();
+
+  private static final ApplicationContextRunner CONTEXT_RUNNER =
+      new ApplicationContextRunner()
+          .withConfiguration(AutoConfigurations.of(ValidationAutoConfiguration.class))
+          .withUserConfiguration(TmdbHealthPropertiesConfiguration.class);
+
+  @Configuration(proxyBeanMethods = false)
+  @EnableConfigurationProperties(TmdbHealthProperties.class)
+  static class TmdbHealthPropertiesConfiguration {}
 
   @Test
   @DisplayName("Should accept configuration when probe timeout is a short positive duration")
@@ -43,6 +57,24 @@ class TmdbHealthPropertiesTest {
     assertThat(VALIDATOR.validate(properties))
         .extracting(violation -> violation.getPropertyPath().toString())
         .containsExactly("probeTimeout");
+  }
+
+  @Test
+  @DisplayName("Should fail startup when configured probe timeout is not positive")
+  void shouldFailStartupWhenConfiguredProbeTimeoutIsNotPositive() {
+    CONTEXT_RUNNER
+        .withPropertyValues("tmdb.health.probe-timeout=0s", "tmdb.health.cache-ttl=30s")
+        .run(context -> assertThat(context).hasFailed());
+  }
+
+  @Test
+  @DisplayName("Should fail startup when cache TTL exceeds one day")
+  void shouldFailStartupWhenCacheTtlExceedsOneDay() {
+    var excessiveTtl = Duration.ofDays(1).plusSeconds(1);
+
+    CONTEXT_RUNNER
+        .withPropertyValues("tmdb.health.probe-timeout=2s", "tmdb.health.cache-ttl=" + excessiveTtl)
+        .run(context -> assertThat(context).hasFailed());
   }
 
   @Test

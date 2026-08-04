@@ -2,16 +2,27 @@ package com.streamarr.server.config.health;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import com.github.mizosoft.methanol.Methanol;
+import com.github.mizosoft.methanol.RetryInterceptor;
+import com.github.mizosoft.methanol.RetryInterceptor.BackoffStrategy;
 import com.streamarr.server.fakes.FakeHttpClient;
 import com.streamarr.server.fakes.MutableClock;
 import java.io.IOException;
 import java.net.http.HttpClient;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.health.contributor.Status;
 
 @Tag("UnitTest")
@@ -56,6 +67,29 @@ class TmdbHealthIndicatorTest {
   }
 
   @Test
+  @DisplayName("Should log warning when TMDB returns unexpected status")
+  void shouldLogWarningWhenTmdbReturnsUnexpectedStatus() {
+    var logger = (Logger) LoggerFactory.getLogger(TmdbHealthIndicator.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+
+    try {
+      indicatorFor(FakeHttpClient.respondingWith(503)).health();
+
+      assertThat(appender.list)
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage()).contains("503");
+              });
+    } finally {
+      logger.detachAppender(appender);
+      appender.stop();
+    }
+  }
+
+  @Test
   @DisplayName("Should report DEGRADED when IOException is thrown")
   void shouldReportDegradedWhenIOExceptionThrown() {
     var indicator = indicatorFor(FakeHttpClient.failingWith(new IOException("connection refused")));
@@ -93,6 +127,20 @@ class TmdbHealthIndicatorTest {
   }
 
   @Test
+  @DisplayName("Should cache degraded verdict when TMDB is unresponsive")
+  void shouldCacheDegradedVerdictWhenTmdbIsUnresponsive() {
+    var client = FakeHttpClient.unresponsive();
+    var indicator = indicatorFor(client);
+
+    var firstHealth = indicator.health();
+    var secondHealth = indicator.health();
+
+    assertThat(firstHealth.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
+    assertThat(secondHealth.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
+    assertThat(client.sendCount()).isEqualTo(1);
+  }
+
+  @Test
   @DisplayName("Should call TMDB again when probed after the cache TTL expires")
   void shouldCallTmdbAgainWhenProbedAfterCacheTtlExpires() {
     var client = FakeHttpClient.respondingWith(200);
@@ -102,6 +150,57 @@ class TmdbHealthIndicatorTest {
     currentTime.set(currentTime.get().plus(CACHE_TTL));
     indicator.health();
 
+    assertThat(client.sendCount()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should start cache TTL after slow probe completes")
+  void shouldStartCacheTtlAfterSlowProbeCompletes() {
+    var cacheTtl = Duration.ofMillis(50);
+    var backend = FakeHttpClient.respondingWith(429);
+    var retryingClient =
+        Methanol.newBuilder(backend)
+            .interceptor(
+                RetryInterceptor.newBuilder()
+                    .maxRetries(1)
+                    .onStatus(429)
+                    .backoff(BackoffStrategy.fixed(cacheTtl.multipliedBy(2)))
+                    .build())
+            .build();
+    var properties =
+        TmdbHealthProperties.builder().probeTimeout(PROBE_TIMEOUT).cacheTtl(cacheTtl).build();
+    var indicator = new TmdbHealthIndicator(retryingClient, properties, Clock.systemUTC());
+
+    indicator.health();
+    var sendsAfterFirstProbe = backend.sendCount();
+    indicator.health();
+
+    assertThat(backend.sendCount()).isEqualTo(sendsAfterFirstProbe);
+  }
+
+  @Test
+  @DisplayName("Should prevent older probe from overwriting a published verdict")
+  void shouldPreventOlderProbeFromOverwritingPublishedVerdict() throws Exception {
+    var responses = FakeHttpClient.respondingWithBlockedFirst(503, 200);
+    var client = responses.client();
+    var indicator = indicatorFor(client);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var olderProbe = executor.submit(() -> indicator.health());
+      try {
+        assertThat(responses.awaitFirstRequest(Duration.ofSeconds(5))).isTrue();
+
+        var newerProbe = executor.submit(() -> indicator.health());
+        assertThat(newerProbe.get(5, TimeUnit.SECONDS).getStatus()).isEqualTo(Status.UP);
+        responses.releaseFirstResponse();
+        assertThat(olderProbe.get(5, TimeUnit.SECONDS).getStatus())
+            .isEqualTo(TmdbHealthIndicator.DEGRADED);
+      } finally {
+        responses.releaseFirstResponse();
+      }
+    }
+
+    assertThat(indicator.health().getStatus()).isEqualTo(Status.UP);
     assertThat(client.sendCount()).isEqualTo(2);
   }
 
@@ -118,6 +217,24 @@ class TmdbHealthIndicatorTest {
 
     // Clear the interrupt flag to avoid polluting other tests
     Thread.interrupted();
+  }
+
+  @Test
+  @DisplayName("Should not cache degraded verdict when probe is interrupted")
+  void shouldNotCacheDegradedVerdictWhenProbeIsInterrupted() {
+    var client = FakeHttpClient.failingWith(new InterruptedException("interrupted"));
+    var indicator = indicatorFor(client);
+
+    try {
+      indicator.health();
+      Thread.interrupted();
+
+      indicator.health();
+
+      assertThat(client.sendCount()).isEqualTo(2);
+    } finally {
+      Thread.interrupted();
+    }
   }
 
   private TmdbHealthIndicator indicatorFor(HttpClient client) {

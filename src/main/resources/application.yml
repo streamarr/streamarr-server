@@ -35,7 +35,7 @@ management:
       # third party we merely enrich metadata from must not decide it. Spring has no way to keep
       # a contributor out of the root aggregate, so TMDB reports DEGRADED and DEGRADED is ordered
       # below UP: it can never pull the aggregate down, and orchestrators stop restarting a
-      # healthy server because TMDB is unreachable.
+      # healthy server because TMDB metadata is unavailable.
       status:
         order: DOWN,OUT_OF_SERVICE,UP,DEGRADED,UNKNOWN
       group:
