@@ -19,6 +19,12 @@
 - Refactor only when tests are green — never refactor while red
 - Use the simplest solution that could possibly work
 
+### Root Cause First
+- Before fixing a bug, reproduce it and explain the mechanism. A fix that adds a retry, sleep, widened timeout, defensive check, or call-site special case without a stated mechanism is a symptom patch, not a fix.
+- If the mechanism lives in a lower layer, fix it there rather than working around it in the caller — the workaround becomes load-bearing and hides the bug from the next caller.
+- "It's a flake" is a claim that needs evidence; assume an intermittent failure is a real race until proven otherwise — single-thread happy paths hide races, concurrency tests surface them.
+- State the root cause in the PR description so reviewers can check the diagnosis, not just the patch.
+
 ### Tidy First (Kent Beck)
 - Separate all changes into two types:
     1. STRUCTURAL: Rearranging code without changing behavior (renaming, extracting methods, moving code)
@@ -220,7 +226,7 @@ We follow these factors from the Twelve-Factor App methodology:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **streamarr-server** (8810 symbols, 25041 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **streamarr-server** (9488 symbols, 27012 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 
