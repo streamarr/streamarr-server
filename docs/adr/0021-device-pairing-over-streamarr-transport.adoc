@@ -22,6 +22,10 @@ The device-authorization grant's *semantics* are adopted wholesale: a device cod
 Its *transport* is not. Requests and responses are Streamarr JSON with camelCase fields, not RFC form-encoding, because every other endpoint in this server is JSON and one endpoint family speaking `application/x-www-form-urlencoded` would be a parser and a client-side special case for no benefit.
 The RFC vocabulary rides the house error envelope as lowercase codes, on the poll endpoint only.
 
+The RFC stops at the verification URI: it says only that the person goes there and approves, and defines no API behind it.
+`/api/auth/device/authorizations/lookup` and `.../decision` are therefore *outside* RFC 8628 rather than deviations from it — their request shapes, their `404`/`409` statuses, and their shared guessing budget answer to this server's conventions and to nothing in the spec.
+A future reader should not try to conform them to a standard that does not cover them.
+
 === The two credentials are different things
 
 The *device code* is a correlation handle the device polls with, **not** a credential a human types: 256 bits from `SecureRandom`, stored only as a SHA-256 digest, shape-validated before hashing so a malformed value is indistinguishable from an unknown one.
@@ -45,7 +49,8 @@ Expiry is a predicate over `expires_at`, never a stored status — an expired ro
 
 === Approval authenticates a device, it does not choose a profile
 
-Approval runs the existing `autoSelectContext`, so the TV receives whatever scope the account's shape implies and picks household and profile afterward through the existing selection endpoints (link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015]).
+Approval applies the existing auto-selection rules, so the TV receives whatever scope the account's shape implies and picks household and profile afterward through the existing selection endpoints (link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015]).
+The scope is resolved before the session is created and carried into its insert: it follows from the account alone, and updating a session the same transaction has only queued for insert would write through jOOQ before Hibernate ever flushed the row.
 An account with no memberships, or a household with no selectable profiles, is a *valid domain state* the client renders as guidance — not an authentication failure.
 
 === Issuance requires a canonical base URL
@@ -62,7 +67,7 @@ Contract endpoints never redirect: `/api/auth/**` and `/api/stream/**` return fi
 `LoginThrottle` already learned the lesson: behind a reverse proxy every client shares one address, so a blocking per-source budget locks out everybody.
 
 . *Issuance* — a global cap on outstanding `PENDING` rows, evaluated as a row count so it is DB-backed and cross-instance for free. `Retry-After` is the time until the oldest outstanding code expires, the moment capacity provably frees.
-. *Polling* — the per-code `next_poll_at` gate, which is proxy-immune and cross-instance by construction.
+. *Polling* — the per-code `next_poll_at` gate, which is proxy-immune and cross-instance by construction. It opens at issuance: RFC 8628 §3.2 measures the interval *between* polls, so the first one is never early, and penalising it would cost the device half its polling rate for the whole grant.
 . *Lookup and decision* — one shared account-keyed guessing budget. Lookup is the enumeration oracle (`200` with a device name versus `404`), so two separate budgets would hand an attacker twice the attempts.
 
 === Explicitly deferred
