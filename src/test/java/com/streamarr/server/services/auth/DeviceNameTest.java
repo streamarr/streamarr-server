@@ -33,6 +33,27 @@ class DeviceNameTest {
     assertThat(DeviceName.sanitize("Living\nRoom\tTV\0")).isEqualTo("LivingRoomTV");
   }
 
+  @ParameterizedTest(name = "Should strip bidi control U+{0}")
+  @ValueSource(
+      ints = {
+        0x061C, 0x200E, 0x200F, 0x202A, 0x202B, 0x202C,
+        0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069
+      })
+  @DisplayName("Should strip bidi controls that can spoof displayed names")
+  void shouldStripBidiControlsThatCanSpoofDisplayedNames(int bidiControl) {
+    var spoofed = "Living" + Character.toString(bidiControl) + "Room TV";
+
+    assertThat(DeviceName.sanitize(spoofed)).isEqualTo("LivingRoom TV");
+  }
+
+  @Test
+  @DisplayName("Should keep legitimate format characters used by emoji")
+  void shouldKeepLegitimateFormatCharactersUsedByEmoji() {
+    var familyTv = "Family 👨‍👩‍👧‍👦 TV";
+
+    assertThat(DeviceName.sanitize(familyTv)).isEqualTo(familyTv);
+  }
+
   @ParameterizedTest(name = "Should fall back for blank input [{index}]")
   @NullSource
   @ValueSource(strings = {"", "   ", "\n\t"})
