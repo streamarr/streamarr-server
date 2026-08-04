@@ -14,6 +14,7 @@ import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.repositories.auth.UserCodeCollisionException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -25,8 +26,6 @@ import java.util.Base64;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.hibernate.exception.ConstraintViolationException;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,7 +39,6 @@ public class DeviceAuthorizationService {
   private static final int DEVICE_CODE_CHARACTERS = 43;
   private static final int SLOW_DOWN_INCREMENT_SECONDS = 5;
   private static final int USER_CODE_ATTEMPTS = 5;
-  private static final String USER_CODE_UNIQUE_CONSTRAINT = "uq_device_authorization_user_code";
 
   private final DeviceAuthorizationRepository authorizationRepository;
   private final UserAccountRepository userAccountRepository;
@@ -277,7 +275,7 @@ public class DeviceAuthorizationService {
    */
   private String saveWithUniqueUserCode(
       String deviceCode, String rawDeviceName, int interval, Instant now) {
-    DataIntegrityViolationException lastCollision = null;
+    UserCodeCollisionException lastCollision = null;
     for (var attempt = 0; attempt < USER_CODE_ATTEMPTS; attempt++) {
       var candidate = userCodeGenerator.generate();
       try {
@@ -300,10 +298,7 @@ public class DeviceAuthorizationService {
         }
         warnAsCapacityNears(result.outstanding());
         return candidate;
-      } catch (DataIntegrityViolationException e) {
-        if (!isUserCodeCollision(e)) {
-          throw e;
-        }
+      } catch (UserCodeCollisionException e) {
         // A collision with an outstanding code. In a 20^8 space against a capped number of live
         // codes this is vanishingly rare; retrying is cheaper than reasoning about it.
         lastCollision = e;
@@ -314,11 +309,6 @@ public class DeviceAuthorizationService {
     throw new IllegalStateException(
         "Could not mint a unique pairing code in %d attempts.".formatted(USER_CODE_ATTEMPTS),
         lastCollision);
-  }
-
-  private static boolean isUserCodeCollision(DataIntegrityViolationException e) {
-    return e.getCause() instanceof ConstraintViolationException violation
-        && USER_CODE_UNIQUE_CONSTRAINT.equals(violation.getConstraintName());
   }
 
   private TooManyDeviceAttemptsException refusedForCapacity(int outstanding, Instant now) {

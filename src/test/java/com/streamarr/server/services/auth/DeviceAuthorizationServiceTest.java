@@ -29,6 +29,7 @@ import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertResult;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import com.streamarr.server.repositories.auth.UserCodeCollisionException;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
@@ -528,7 +529,7 @@ class DeviceAuthorizationServiceTest {
 
     assertThatThrownBy(() -> collidingService.issue("Second"))
         .isInstanceOf(IllegalStateException.class)
-        .hasCauseInstanceOf(DataIntegrityViolationException.class);
+        .hasCauseInstanceOf(UserCodeCollisionException.class);
   }
 
   @Test

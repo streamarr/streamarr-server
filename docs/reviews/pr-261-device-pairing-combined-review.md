@@ -259,7 +259,7 @@ correct by the review's temporary probes were committed as green characterizatio
 | --- | --- |
 | F1 contract gaps | Added exact expired-decision, unconfigured 503, and capacity 429 fixture assertions; added the disabled status assertion and corrected the fixture README. |
 | F2 literal NUL | Replaced the raw source byte with Java's textual `\0`; `file` now classifies the source as UTF-8 text and `DeviceNameTest` remains green. |
-| F3 integrity classification | Added RED tests for unrelated constraints and exhausted retries, plus retry-success coverage. Only `uq_device_authorization_user_code` is retried; unrelated failures escape unchanged and exhaustion retains the final cause. |
+| F3 integrity classification | A public-service PostgreSQL RED test proved jOOQ reports a real user-code collision as `DuplicateKeyException` → `PSQLException`, not Hibernate's exception. The repository adapter now translates only `uq_device_authorization_user_code` to `UserCodeCollisionException`; the service and fake share that error contract, unrelated failures escape unchanged, and exhaustion retains the final cause. |
 | F4 rollback coverage | Renamed the approver-deletion refusal test and added a PostgreSQL test with an injected access-token issuance failure. It proves session creation rolls back, the grant remains APPROVED, and a retry succeeds. |
 | F5 capacity observability | Chose edge-trigger warnings at half-full and full. `tryInsertWithinCap` now returns an atomic `{inserted, outstanding}` result from under the advisory lock, eliminating the post-insert recount. |
 | F6 lost-decision classification | Added RED coverage for a live PENDING reread and deterministic coverage for terminal and vanished rows. PENDING now fails fast with `IllegalStateException`. |
@@ -274,8 +274,9 @@ server-side endpoint-normalization finding was not implemented.
 
 ## Verification record
 
-- Five focused RED probes behaved as predicted: unrelated integrity violation, live/PENDING lost
-  decision, invalid `AutoSelection`, null `DevicePollResult.Success`, and relative-path `resolve`.
+- Six focused RED probes behaved as predicted: a real PostgreSQL user-code collision, unrelated
+  integrity violation, live/PENDING lost decision, invalid `AutoSelection`, null
+  `DevicePollResult.Success`, and relative-path `resolve`.
 - The NUL source-hygiene assertion failed as predicted.
 - Eight focused GREEN probes passed, including five Testcontainers/PostgreSQL integration probes and
   three exact HTTP fixtures. The unconfigured, expired, too-many, rollback, and concurrency probes
@@ -284,3 +285,17 @@ server-side endpoint-normalization finding was not implemented.
   tests against PostgreSQL 18, Checkstyle, and Spotless.
 - Temporary reproduction-only sources were removed after each run. The durable regression tests,
   production remediations, and this review record remain as the intentional worktree changes.
+
+## Additional adversarial follow-up — 2026-08-04
+
+Four later findings were reviewed against the remediated PR head:
+
+| Finding | Adversarial result and disposition |
+| --- | --- |
+| Unicode format characters in device names | Confirmed for bidi controls: a RED probe showed U+202E surviving into the sanitized value. The fix removes Unicode's bidi-control set specifically rather than every `FORMAT` character; a ZWJ emoji characterization test protects legitimate Unicode names. |
+| Missing or malformed JSON body | Confirmed with a corrected manifestation: `/token`, lookup, and decision returned HTTP 400 with an empty body in MockMvc, not a populated default error shape. RED contract probes now pass against the exact `INVALID_REQUEST` fixture for both absent and malformed bodies. |
+| Raw advisory-lock SQL | A real policy exception, not a reproduced defect. The isolated PostgreSQL dialect bridge remains unchanged; deciding whether generic jOOQ function construction is preferable to an explicit exception belongs in the repository's SQL-style policy, not a behavioral test. |
+| Extra warning `COUNT` | Stale after the earlier remediation. `tryInsertWithinCap` returns its atomic outstanding count and the focused regression test remains green if any post-insert recount is attempted. |
+
+Post-follow-up verification passed through the complete `./mvnw verify` lifecycle on Java 25,
+including the PostgreSQL 18 integration and concurrency suites, Checkstyle, and Spotless.

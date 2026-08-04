@@ -6,6 +6,7 @@ import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertResult;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import com.streamarr.server.repositories.auth.UserCodeCollisionException;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.Comparator;
@@ -19,6 +20,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceAuthorization>
     implements DeviceAuthorizationRepository {
 
+  private static final String USER_CODE_UNIQUE_CONSTRAINT = "uq_device_authorization_user_code";
+
   /** Mirrors uq_device_authorization_device_code_digest and uq_device_authorization_user_code. */
   @Override
   public synchronized <S extends DeviceAuthorization> S save(S authorization) {
@@ -26,8 +29,7 @@ public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceA
         authorization,
         DeviceAuthorization::getDeviceCodeDigest,
         "uq_device_authorization_device_code_digest");
-    requireUnique(
-        authorization, DeviceAuthorization::getUserCode, "uq_device_authorization_user_code");
+    requireUnique(authorization, DeviceAuthorization::getUserCode, USER_CODE_UNIQUE_CONSTRAINT);
     return super.save(authorization);
   }
 
@@ -93,16 +95,23 @@ public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceA
       return new DeviceAuthorizationInsertResult(false, outstanding);
     }
 
-    save(
-        DeviceAuthorization.builder()
-            .deviceCodeDigest(command.deviceCodeDigest())
-            .userCode(command.userCode())
-            .status(DeviceAuthorizationStatus.PENDING)
-            .deviceName(command.deviceName())
-            .expiresAt(command.expiresAt())
-            .nextPollAt(command.nextPollAt())
-            .pollIntervalSeconds(command.pollIntervalSeconds())
-            .build());
+    try {
+      save(
+          DeviceAuthorization.builder()
+              .deviceCodeDigest(command.deviceCodeDigest())
+              .userCode(command.userCode())
+              .status(DeviceAuthorizationStatus.PENDING)
+              .deviceName(command.deviceName())
+              .expiresAt(command.expiresAt())
+              .nextPollAt(command.nextPollAt())
+              .pollIntervalSeconds(command.pollIntervalSeconds())
+              .build());
+    } catch (DataIntegrityViolationException e) {
+      if (isUserCodeCollision(e)) {
+        throw new UserCodeCollisionException(e);
+      }
+      throw e;
+    }
     return new DeviceAuthorizationInsertResult(true, outstanding + 1);
   }
 
@@ -133,6 +142,11 @@ public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceA
     return database.values().stream()
         .filter(a -> a.getStatus() == DeviceAuthorizationStatus.PENDING)
         .filter(a -> !a.hasExpiredAt(now));
+  }
+
+  private static boolean isUserCodeCollision(DataIntegrityViolationException exception) {
+    return exception.getCause() instanceof ConstraintViolationException violation
+        && USER_CODE_UNIQUE_CONSTRAINT.equals(violation.getConstraintName());
   }
 
   private void requireUnique(

@@ -15,6 +15,8 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
+import org.postgresql.util.PSQLException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +27,8 @@ public class DeviceAuthorizationRepositoryCustomImpl
 
   /** Arbitrary but fixed: only issuance takes this lock, so it contends with nothing else. */
   private static final long ISSUANCE_LOCK_KEY = 0x5354524D_44455601L;
+
+  private static final String USER_CODE_UNIQUE_CONSTRAINT = "uq_device_authorization_user_code";
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
@@ -100,19 +104,26 @@ public class DeviceAuthorizationRepositoryCustomImpl
     }
 
     var nowOffset = offsetOf(command.now());
-    dsl.insertInto(DEVICE_AUTHORIZATION)
-        .set(DEVICE_AUTHORIZATION.DEVICE_CODE_DIGEST, command.deviceCodeDigest())
-        .set(DEVICE_AUTHORIZATION.USER_CODE, command.userCode())
-        .set(DEVICE_AUTHORIZATION.STATUS, DeviceAuthorizationStatus.PENDING)
-        .set(DEVICE_AUTHORIZATION.DEVICE_NAME, command.deviceName())
-        .set(DEVICE_AUTHORIZATION.EXPIRES_AT, offsetOf(command.expiresAt()))
-        .set(DEVICE_AUTHORIZATION.NEXT_POLL_AT, offsetOf(command.nextPollAt()))
-        .set(DEVICE_AUTHORIZATION.POLL_INTERVAL_SECONDS, command.pollIntervalSeconds())
-        .set(DEVICE_AUTHORIZATION.CREATED_ON, nowOffset)
-        .set(DEVICE_AUTHORIZATION.CREATED_BY, currentAuditor())
-        .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_ON, nowOffset)
-        .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_BY, currentAuditor())
-        .execute();
+    try {
+      dsl.insertInto(DEVICE_AUTHORIZATION)
+          .set(DEVICE_AUTHORIZATION.DEVICE_CODE_DIGEST, command.deviceCodeDigest())
+          .set(DEVICE_AUTHORIZATION.USER_CODE, command.userCode())
+          .set(DEVICE_AUTHORIZATION.STATUS, DeviceAuthorizationStatus.PENDING)
+          .set(DEVICE_AUTHORIZATION.DEVICE_NAME, command.deviceName())
+          .set(DEVICE_AUTHORIZATION.EXPIRES_AT, offsetOf(command.expiresAt()))
+          .set(DEVICE_AUTHORIZATION.NEXT_POLL_AT, offsetOf(command.nextPollAt()))
+          .set(DEVICE_AUTHORIZATION.POLL_INTERVAL_SECONDS, command.pollIntervalSeconds())
+          .set(DEVICE_AUTHORIZATION.CREATED_ON, nowOffset)
+          .set(DEVICE_AUTHORIZATION.CREATED_BY, currentAuditor())
+          .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_ON, nowOffset)
+          .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_BY, currentAuditor())
+          .execute();
+    } catch (DuplicateKeyException e) {
+      if (isUserCodeCollision(e)) {
+        throw new UserCodeCollisionException(e);
+      }
+      throw e;
+    }
 
     return new DeviceAuthorizationInsertResult(true, outstanding + 1);
   }
@@ -159,6 +170,15 @@ public class DeviceAuthorizationRepositoryCustomImpl
 
   private UUID currentAuditor() {
     return auditorAware.getCurrentAuditor().orElse(null);
+  }
+
+  private static boolean isUserCodeCollision(DuplicateKeyException exception) {
+    if (!(exception.getMostSpecificCause() instanceof PSQLException postgresException)) {
+      return false;
+    }
+
+    var serverError = postgresException.getServerErrorMessage();
+    return serverError != null && USER_CODE_UNIQUE_CONSTRAINT.equals(serverError.getConstraint());
   }
 
   private static DeviceAuthorizationStatus generatedStatusOf(
