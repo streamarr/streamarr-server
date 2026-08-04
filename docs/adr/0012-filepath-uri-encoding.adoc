@@ -21,6 +21,12 @@ Encode on write (`FilepathCodec.encode`), decode on read (`FilepathCodec.decode`
 * *`path` / `url`* -- opaque identifier for a resource served by the application.
 No encoding required.
 
+`FilepathCodec` keeps text and filesystem decoding separate.
+Text accessors decode percent-encoded path bytes strictly as UTF-8 so malformed persisted text fails
+loudly.
+Path decoding delegates URI conversion to the filesystem provider, preserving POSIX filename bytes
+without first converting the path through `Path.toString()` and `sun.jnu.encoding`.
+
 == Consequences
 
 * Frontend consumers parse every filepath field the same way (standard URI decoding).

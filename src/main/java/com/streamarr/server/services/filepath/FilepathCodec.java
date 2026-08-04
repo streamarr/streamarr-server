@@ -149,6 +149,7 @@ public final class FilepathCodec {
     }
 
     if (uri.getScheme() == null) {
+      // ADR 0012 keeps raw paths readable for pre-migration rows.
       return fileSystem.getPath(filepathUri);
     }
 
