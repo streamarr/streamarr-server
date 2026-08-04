@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
 import java.io.IOException;

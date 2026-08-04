@@ -1,4 +1,4 @@
-package com.streamarr.server.services.library;
+package com.streamarr.server.services.filepath;
 
 import java.net.URI;
 import java.nio.file.FileSystem;

@@ -14,7 +14,7 @@ import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
-import com.streamarr.server.services.library.FilepathCodec;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;

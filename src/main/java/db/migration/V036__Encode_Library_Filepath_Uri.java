@@ -1,6 +1,6 @@
 package db.migration;
 
-import com.streamarr.server.services.library.FilepathCodec;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import java.nio.file.Path;
 import org.flywaydb.core.api.migration.BaseJavaMigration;
 import org.flywaydb.core.api.migration.Context;

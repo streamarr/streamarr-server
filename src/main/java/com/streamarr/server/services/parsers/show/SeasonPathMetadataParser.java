@@ -1,6 +1,6 @@
 package com.streamarr.server.services.parsers.show;
 
-import com.streamarr.server.services.library.FilepathCodec;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.parsers.MetadataParser;
 import java.util.List;
 import java.util.Optional;

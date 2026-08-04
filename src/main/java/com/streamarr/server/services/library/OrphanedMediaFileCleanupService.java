@@ -6,6 +6,7 @@ import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
