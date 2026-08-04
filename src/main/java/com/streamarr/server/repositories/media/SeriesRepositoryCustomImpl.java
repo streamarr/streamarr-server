@@ -358,7 +358,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
 
   private Field<?> sortField(MediaFilter filter) {
     return switch (filter.getSortBy()) {
-      case TITLE -> Tables.BASE_COLLECTABLE.TITLE_SORT;
+      case TITLE -> JooqQueryHelper.titleSortField();
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON;
       case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE;
       case RUNTIME -> Tables.SERIES.RUNTIME;
@@ -370,7 +370,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     var direction = filter.getSortDirection();
 
     return switch (filter.getSortBy()) {
-      case TITLE -> Tables.BASE_COLLECTABLE.TITLE_SORT.sort(direction);
+      case TITLE -> JooqQueryHelper.titleSortField().sort(direction);
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
       case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE.sort(direction).nullsLast();
       case RUNTIME -> Tables.SERIES.RUNTIME.sort(direction).nullsLast();

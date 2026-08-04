@@ -302,7 +302,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
   private Field<?> sortField(MediaFilter filter) {
     return switch (filter.getSortBy()) {
-      case TITLE -> Tables.BASE_COLLECTABLE.TITLE_SORT;
+      case TITLE -> JooqQueryHelper.titleSortField();
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON;
       case RELEASE_DATE -> Tables.MOVIE.RELEASE_DATE;
       case RUNTIME -> Tables.MOVIE.RUNTIME;
@@ -314,7 +314,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     var direction = filter.getSortDirection();
 
     return switch (filter.getSortBy()) {
-      case TITLE -> Tables.BASE_COLLECTABLE.TITLE_SORT.sort(direction);
+      case TITLE -> JooqQueryHelper.titleSortField().sort(direction);
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
       case RELEASE_DATE -> Tables.MOVIE.RELEASE_DATE.sort(direction).nullsLast();
       case RUNTIME -> Tables.MOVIE.RUNTIME.sort(direction).nullsLast();

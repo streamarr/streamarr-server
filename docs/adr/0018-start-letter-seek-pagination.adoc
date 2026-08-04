@@ -16,6 +16,7 @@ The client halves of the regression (centering, focus) shipped separately on the
 Under TITLE sort, `startLetter` resolves a position in the unfiltered ordering — it is a seek anchor, not part of the result set's identity.
 
 * A cursor-less TITLE-sort request with a letter is rewritten (`LetterJumpResolver`) into an ordinary FORWARD keyset fetch anchored at the predecessor row — the row immediately above the letter in the requested ordering, found by `findLetterJumpPredecessor` with the exact negation of the landing range.
+* TITLE ordering and keyset comparisons use `lower(title_sort)` so case-insensitive alphabet buckets are contiguous in the seek ordering.
 * The existing limit+2 cursor machinery does the rest: it strips the anchor row, sets `hasPreviousPage`, and mints ordinary position cursors, so backward pages cross the letter boundary with no special cases.
 * Cursor pages never re-apply the letter under TITLE sort (`startLetterCursorPageCondition`); forward pages already imply the bound through the keyset ordering.
 * Cursor validation ignores `startLetter` under TITLE sort — clients may keep or drop the letter on cursor pages; the cursor's position wins either way.

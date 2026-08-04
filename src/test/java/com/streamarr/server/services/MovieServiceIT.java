@@ -23,6 +23,7 @@ import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.utils.TitleSortUtil;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
@@ -420,6 +421,29 @@ class MovieServiceIT extends AbstractIntegrationTest {
       var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
       assertThat(titles).containsExactly("Batman", "Beta", "Gamma", "Zorro");
+    }
+
+    @Test
+    @DisplayName("Should keep landing page content when an earlier title sort starts lowercase")
+    void shouldKeepLandingPageContentWhenEarlierTitleSortStartsLowercase() {
+      var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+      movieRepository.saveAllAndFlush(
+          Stream.of("Beta", "alpha")
+              .map(
+                  title ->
+                      Movie.builder()
+                          .title(title)
+                          .titleSort(TitleSortUtil.computeTitleSort(title))
+                          .library(library)
+                          .build())
+              .toList());
+      var filter =
+          MediaFilter.builder().libraryId(library.getId()).startLetter(AlphabetLetter.B).build();
+
+      var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+
+      var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Beta");
     }
 
     @Test

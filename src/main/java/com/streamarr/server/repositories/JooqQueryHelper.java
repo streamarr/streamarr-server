@@ -8,6 +8,7 @@ import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.val;
 
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.jooq.generated.Tables;
@@ -128,6 +129,10 @@ public class JooqQueryHelper {
     return libraryId != null ? Tables.BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
   }
 
+  public Field<String> titleSortField() {
+    return lower(Tables.BASE_COLLECTABLE.TITLE_SORT);
+  }
+
   public Condition yearCondition(Field<LocalDate> dateField, List<Integer> years) {
     if (years == null || years.isEmpty()) {
       return noCondition();
@@ -203,6 +208,14 @@ public class JooqQueryHelper {
     var idField = Tables.BASE_COLLECTABLE.ID;
     var coercedValue = coerceSortValue(filter);
     var isAsc = filter.getSortDirection() == SortOrder.ASC;
+
+    if (filter.getSortBy() == OrderMediaBy.TITLE) {
+      var titleSortCol = (Field<String>) sortCol;
+      var cursorTitleSort = lower(val(coercedValue.toString()));
+      var fields = row(titleSortCol, idField);
+      var seekValues = row(cursorTitleSort, val(cursorId));
+      return isAsc ? fields.greaterOrEqual(seekValues) : fields.lessOrEqual(seekValues);
+    }
 
     if (!isNullableSortField(filter.getSortBy())) {
       var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();
