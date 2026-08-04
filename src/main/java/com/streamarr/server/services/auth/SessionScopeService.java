@@ -37,22 +37,39 @@ public class SessionScopeService {
    * arriving with a stale selection has it cleared rather than carried into the minted token.
    */
   @Transactional
-  public TokenContext autoSelectContext(UserAccount account, AuthSession session) {
+  public AutoSelection resolveAutoSelection(UserAccount account) {
     var memberships = membershipRepository.findByAccountId(account.getId());
     if (memberships.size() != 1) {
-      return TokenContext.builder().account(account).session(session).build();
+      return AutoSelection.none();
     }
 
     var householdId = memberships.getFirst().getHouseholdId();
-    session.setActiveHouseholdId(householdId);
-    session.setActiveProfileId(soleSelectableProfileId(account.getId(), householdId).orElse(null));
+    var links =
+        accountProfileRepository.findByAccountIdAndHouseholdId(account.getId(), householdId);
+    if (links.size() != 1) {
+      return AutoSelection.household(householdId);
+    }
+
+    return AutoSelection.householdAndProfile(householdId, links.getFirst().getProfileId());
+  }
+
+  /** Applies the auto-selection to a session that already exists. */
+  @Transactional
+  public TokenContext autoSelectContext(UserAccount account, AuthSession session) {
+    var selection = resolveAutoSelection(account);
+    if (!selection.hasHousehold()) {
+      return TokenContext.builder().account(account).session(session).build();
+    }
+
+    session.setActiveHouseholdId(selection.householdId());
+    session.setActiveProfileId(selection.profileId());
 
     persistSelection(session);
 
     return TokenContext.builder()
         .account(account)
         .session(session)
-        .householdId(householdId)
+        .householdId(selection.householdId())
         .profileId(session.getActiveProfileId())
         .build();
   }
