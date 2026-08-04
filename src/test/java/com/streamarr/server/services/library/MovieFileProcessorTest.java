@@ -243,6 +243,42 @@ class MovieFileProcessorTest {
   }
 
   @Test
+  @DisplayName("Should search with external ID from filepath URI when stored filename is mangled")
+  void shouldSearchWithExternalIdFromFilepathUriWhenStoredFilenameIsMangled() {
+    var library = LibraryFixtureCreator.buildFakeLibrary();
+    var expectedSearch =
+        VideoFileParserResult.builder()
+            .title("Inception")
+            .year("2010")
+            .externalId("tt1375666")
+            .externalSource(ExternalSourceType.IMDB)
+            .build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("Inception")
+            .externalId("27205")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingMetadataProvider<Movie>();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    var processor = movieFileProcessorWith(metadataProvider);
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri(
+                    "file:///library/Inception%20(2010)/"
+                        + "Inception%20(2010)%20%5Bimdb-tt1375666%5D.mkv")
+                .filename("legacy-mangled-name.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    processor.process(library, mediaFile);
+
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+  }
+
+  @Test
   @DisplayName("Should mark metadata search failed when provider finds no match")
   void shouldMarkMetadataSearchFailedWhenProviderFindsNoMatch() {
     var library = LibraryFixtureCreator.buildFakeLibrary();

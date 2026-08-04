@@ -33,10 +33,14 @@ import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.FakeSeasonRepository;
+import com.streamarr.server.fakes.RecordingMetadataProvider;
+import com.streamarr.server.fakes.RecordingSeriesMetadataProvider;
 import com.streamarr.server.fakes.SecurityExceptionFileSystem;
 import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -61,15 +65,24 @@ import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
+import com.streamarr.server.services.metadata.series.SeriesMetadataProvider;
+import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
+import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
+import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
+import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
+import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.spi.FileSystemProvider;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -752,21 +765,68 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should persist filename decoded from the filepath URI when name is non-ASCII")
-  void shouldPersistFilenameDecodedFromFilepathUriWhenNameIsNonAscii() throws IOException {
-    var movieFilename = "Déjà Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+  @DisplayName("Should search with URI-derived movie metadata when processing discovered file")
+  void shouldSearchWithUriDerivedMovieMetadataWhenProcessingDiscoveredFile() throws IOException {
+    var expectedSearch = VideoFileParserResult.builder().title("Amélie").year("2001").build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("Amélie")
+            .externalId("194")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingMetadataProvider<Movie>();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    var service =
+        libraryManagementServiceWith(movieFileProcessorWith(metadataProvider), seriesFileProcessor);
+    var filepathUri = "file:///library/Am%C3%A9lie%20(2001)/movie.mkv";
+    var moviePath = pathWithDisplayName(filepathUri, "movie.mkv");
 
-    var rootPath = createRootLibraryDirectory();
-    var moviePath = createMovieFile(rootPath, "Déjà Vu (2006)", movieFilename);
+    service.processDiscoveredFile(savedLibraryId, moviePath);
+
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+  }
+
+  @Test
+  @DisplayName("Should search with URI-derived series metadata when processing root season file")
+  void shouldSearchWithUriDerivedSeriesMetadataWhenProcessingRootSeasonFile() throws IOException {
+    var library = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var expectedSearch = VideoFileParserResult.builder().title("The Simpsons").build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("The Simpsons")
+            .externalId("456")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingSeriesMetadataProvider();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    when(seriesService.findByTmdbId("456")).thenReturn(Optional.empty());
+    var service =
+        libraryManagementServiceWith(movieFileProcessor, seriesFileProcessorWith(metadataProvider));
+    var seriesPath =
+        pathWithDisplayName(
+            "file:///Season%2025/The%20Simpsons.S25E09.mkv", "The Simpsons.S25E09.mkv");
+
+    service.processDiscoveredFile(library.getId(), seriesPath);
+
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+  }
+
+  @Test
+  @DisplayName("Should persist filename from filepath URI when Path display text is mangled")
+  void shouldPersistFilenameFromFilepathUriWhenPathDisplayTextIsMangled() throws IOException {
+    var movieFilename = "Déjà Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+    var filepathUri =
+        "file:///library/D%C3%A9j%C3%A0%20Vu%20(2006)/"
+            + "D%C3%A9j%C3%A0%20Vu%20(2006)%20-%20%5BBLURAY-1080p%5D%5BDTS%205.1%5D.mkv";
+    var mangledFilename = "D��j�� Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+    var moviePath = pathWithDisplayName(filepathUri, mangledFilename);
 
     libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
 
-    var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
-
-    assertThat(mediaFile).isPresent();
-    assertThat(mediaFile.get().getFilename())
-        .isEqualTo(movieFilename)
-        .isEqualTo(FilepathCodec.filenameOf(mediaFile.get().getFilepathUri()));
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(filepathUri))
+        .get()
+        .extracting(MediaFile::getFilename)
+        .isEqualTo(movieFilename);
   }
 
   @Test
@@ -1359,6 +1419,66 @@ class LibraryManagementServiceTest {
     var path = FilepathCodec.decode(fileSystem, library.orElseThrow().getFilepathUri());
     Files.createDirectories(path);
 
+    return path;
+  }
+
+  private MovieFileProcessor movieFileProcessorWith(MetadataProvider<Movie> metadataProvider) {
+    return new MovieFileProcessor(
+        new DefaultVideoFileMetadataParser(),
+        new ExternalIdVideoFileMetadataParser(),
+        new MovieMetadataProviderResolver(List.of(metadataProvider)),
+        movieService,
+        fakeMediaFileRepository,
+        new MutexFactoryProvider());
+  }
+
+  private SeriesFileProcessor seriesFileProcessorWith(SeriesMetadataProvider metadataProvider) {
+    var metadataProviderResolver = new SeriesMetadataProviderResolver(List.of(metadataProvider));
+    return new SeriesFileProcessor(
+        new EpisodePathMetadataParser(new EpisodeRegexFixtures()),
+        new SeasonPathMetadataParser(),
+        new SeriesFolderNameParser(),
+        metadataProviderResolver,
+        new DateBasedEpisodeResolver(metadataProviderResolver),
+        seriesService,
+        fakeMediaFileRepository,
+        new FakeSeasonRepository(),
+        new FakeEpisodeRepository(),
+        new MutexFactoryProvider());
+  }
+
+  private LibraryManagementService libraryManagementServiceWith(
+      MovieFileProcessor movieProcessor, SeriesFileProcessor seriesProcessor) {
+    return new LibraryManagementService(
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        new VideoExtensionValidator(),
+        movieProcessor,
+        seriesProcessor,
+        fakeLibraryRepository,
+        new FakeLibraryMetadataRepository(),
+        fakeMediaFileRepository,
+        movieService,
+        seriesService,
+        capturingEventPublisher,
+        new MutexFactoryProvider(),
+        libraryRefreshService,
+        fileSystem);
+  }
+
+  private Path pathWithDisplayName(String filepathUri, String displayName) throws IOException {
+    var path = mock(Path.class);
+    var displayedFilename = mock(Path.class);
+    var pathFileSystem = mock(FileSystem.class);
+    var pathProvider = mock(FileSystemProvider.class);
+    var fileAttributes = mock(BasicFileAttributes.class);
+    when(path.getFileName()).thenReturn(displayedFilename);
+    when(displayedFilename.toString()).thenReturn(displayName);
+    when(path.toAbsolutePath()).thenReturn(path);
+    when(path.toUri()).thenReturn(URI.create(filepathUri));
+    when(path.getFileSystem()).thenReturn(pathFileSystem);
+    when(pathFileSystem.provider()).thenReturn(pathProvider);
+    when(pathProvider.readAttributes(path, BasicFileAttributes.class)).thenReturn(fileAttributes);
+    when(fileAttributes.size()).thenReturn(1L);
     return path;
   }
 

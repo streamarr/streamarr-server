@@ -15,6 +15,8 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import db.migration.V049__Derive_Media_File_Filename_From_Filepath_Uri;
 import jakarta.persistence.EntityManager;
 import java.sql.Connection;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -56,8 +58,8 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should derive existing media filename from filepath URI")
-  void shouldDeriveExistingMediaFilenameFromFilepathUri() throws Exception {
+  @DisplayName("Should derive existing media filename from filepath URI when migration runs")
+  void shouldDeriveExistingMediaFilenameFromFilepathUriWhenMigrationRuns() throws Exception {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     libraryId = library.getId();
     var mediaFile =
@@ -82,9 +84,36 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should migrate valid rows and report skipped rows when another filepath URI cannot be decoded")
-  void shouldMigrateValidRowsAndReportSkippedRowsWhenAnotherFilepathUriCannotBeDecoded()
+      "Should preserve audit timestamp when existing filename already matches filepath URI")
+  void shouldPreserveAuditTimestampWhenExistingFilenameAlreadyMatchesFilepathUri()
       throws Exception {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    libraryId = library.getId();
+    var mediaFile =
+        mediaFileRepository.saveAndFlush(
+            MediaFile.builder()
+                .libraryId(libraryId)
+                .filepathUri("file:///media/Am%C3%A9lie%20(2001).mkv")
+                .filename("Amélie (2001).mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+    mediaFileId = mediaFile.getId();
+    var originalTimestamp = Instant.parse("2020-01-01T00:00:00Z");
+    setLastModifiedOn(mediaFileId, originalTimestamp);
+
+    try (var connection = dataSource.getConnection()) {
+      new V049__Derive_Media_File_Filename_From_Filepath_Uri()
+          .migrate(new MigrationContext(connection));
+    }
+    entityManager.clear();
+
+    assertThat(mediaFileRepository.findById(mediaFileId).orElseThrow().getLastModifiedOn())
+        .isEqualTo(originalTimestamp);
+  }
+
+  @Test
+  @DisplayName("Should continue migrating valid rows when another filepath URI cannot be decoded")
+  void shouldContinueMigratingValidRowsWhenAnotherFilepathUriCannotBeDecoded() throws Exception {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     libraryId = library.getId();
     var undecodableMediaFile =
@@ -106,14 +135,32 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
                 .build());
     additionalMediaFileId = validMediaFile.getId();
 
-    var expectedCounts = expectedMigrationCounts();
-    var migrationLogs = migrateAndCaptureLogs();
+    migrate();
     entityManager.clear();
 
     assertThat(mediaFileRepository.findById(mediaFileId).orElseThrow().getFilename())
         .isEqualTo("legacy-undecodable-name.mkv");
     assertThat(mediaFileRepository.findById(additionalMediaFileId).orElseThrow().getFilename())
         .isEqualTo("Amélie (2001).mkv");
+  }
+
+  @Test
+  @DisplayName("Should identify skipped row when filepath URI cannot be decoded")
+  void shouldIdentifySkippedRowWhenFilepathUriCannotBeDecoded() throws Exception {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    libraryId = library.getId();
+    var mediaFile =
+        mediaFileRepository.saveAndFlush(
+            MediaFile.builder()
+                .libraryId(libraryId)
+                .filepathUri("file:///media/caf%E9.mkv")
+                .filename("legacy-undecodable-name.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+    mediaFileId = mediaFile.getId();
+
+    var migrationLogs = migrateAndCaptureLogs();
+
     assertThat(migrationLogs)
         .filteredOn(event -> event.getLevel() == Level.WARN)
         .anySatisfy(
@@ -122,29 +169,45 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
                   .contains(mediaFileId.toString())
                   .contains("file:///media/caf%E9.mkv");
             });
+  }
+
+  @Test
+  @DisplayName("Should report literal update and skip counts when migration completes")
+  void shouldReportLiteralUpdateAndSkipCountsWhenMigrationCompletes() throws Exception {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    libraryId = library.getId();
+    var undecodableMediaFile =
+        mediaFileRepository.saveAndFlush(
+            MediaFile.builder()
+                .libraryId(libraryId)
+                .filepathUri("file:///media/caf%E9.mkv")
+                .filename("legacy-undecodable-name.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+    mediaFileId = undecodableMediaFile.getId();
+    var validMediaFile =
+        mediaFileRepository.saveAndFlush(
+            MediaFile.builder()
+                .libraryId(libraryId)
+                .filepathUri("file:///media/Am%C3%A9lie%20(2001).mkv")
+                .filename("Am��lie (2001).mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+    additionalMediaFileId = validMediaFile.getId();
+
+    var migrationLogs = migrateAndCaptureLogs();
+
     assertThat(migrationLogs)
         .filteredOn(event -> event.getLevel() == Level.INFO)
         .extracting(ILoggingEvent::getFormattedMessage)
-        .contains(
-            "Media file filename migration completed: updated=%d, skipped=%d"
-                .formatted(expectedCounts.updated(), expectedCounts.skipped()));
+        .contains("Media file filename migration completed: updated=1, skipped=1");
   }
 
-  private MigrationCounts expectedMigrationCounts() {
-    var updated = 0;
-    var skipped = 0;
-
-    for (var mediaFile : mediaFileRepository.findAll()) {
-      try {
-        if (!FilepathCodec.filenameOf(mediaFile.getFilepathUri()).equals(mediaFile.getFilename())) {
-          updated++;
-        }
-      } catch (IllegalArgumentException _) {
-        skipped++;
-      }
+  private void migrate() throws Exception {
+    try (var connection = dataSource.getConnection()) {
+      new V049__Derive_Media_File_Filename_From_Filepath_Uri()
+          .migrate(new MigrationContext(connection));
     }
-
-    return new MigrationCounts(updated, skipped);
   }
 
   private List<ILoggingEvent> migrateAndCaptureLogs() throws Exception {
@@ -164,6 +227,18 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
     return List.copyOf(appender.list);
   }
 
+  private void setLastModifiedOn(UUID id, Instant timestamp) throws Exception {
+    try (var connection = dataSource.getConnection();
+        var update =
+            connection.prepareStatement(
+                "UPDATE media_file SET last_modified_on = ? WHERE id = ?")) {
+      update.setObject(1, timestamp.atOffset(ZoneOffset.UTC));
+      update.setObject(2, id);
+      update.executeUpdate();
+    }
+    entityManager.clear();
+  }
+
   private record MigrationContext(Connection connection) implements Context {
 
     @Override
@@ -176,6 +251,4 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
       return connection;
     }
   }
-
-  private record MigrationCounts(int updated, int skipped) {}
 }
