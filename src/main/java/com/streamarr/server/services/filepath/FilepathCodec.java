@@ -9,13 +9,14 @@ import java.nio.file.FileSystem;
 import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
+import java.nio.file.spi.FileSystemProvider;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Encodes paths as file URIs while continuing to read legacy raw paths. URI text decoding is strict
- * UTF-8; decoding to {@link Path} preserves filesystem bytes. See ADR 0012.
+ * Encodes paths as filesystem-provider URIs while continuing to read legacy raw paths. URI text
+ * decoding is strict UTF-8; decoding to {@link Path} preserves filesystem bytes. See ADR 0012.
  */
 public final class FilepathCodec {
 
@@ -25,6 +26,17 @@ public final class FilepathCodec {
 
   public static String encode(Path path) {
     return path.toAbsolutePath().toUri().toString();
+  }
+
+  public static Path decode(String filepathUri) {
+    return decode(FileSystems.getDefault(), filepathUri);
+  }
+
+  public static Path decode(FileSystem fileSystem, String filepathUri) {
+    return switch (parse(filepathUri)) {
+      case EncodedUri(URI uri) -> decodeUri(fileSystem, uri, filepathUri);
+      case LegacyPath(String value) -> fileSystem.getPath(value);
+    };
   }
 
   public static String filenameOf(String filepathUri) {
@@ -64,22 +76,55 @@ public final class FilepathCodec {
   }
 
   private static String decodedPathComponentOf(String filepathUri) {
+    return switch (parse(filepathUri)) {
+      case EncodedUri(URI uri) -> decodeUtf8Path(uri, filepathUri);
+      case LegacyPath(String value) -> value;
+    };
+  }
+
+  private static ParsedFilepath parse(String filepathUri) {
+    URI uri;
+
     try {
-      var uri = URI.create(filepathUri);
-      validateFileUriStructure(uri, filepathUri);
-      if (uri.getScheme() != null && uri.getPath() != null) {
-        return decodeUtf8Path(uri, filepathUri);
-      }
+      uri = URI.create(filepathUri);
     } catch (IllegalArgumentException exception) {
       if (hasFileScheme(filepathUri)) {
-        throw new IllegalArgumentException("Invalid filepath URI: " + filepathUri, exception);
+        throw invalidFilepathUri(filepathUri, exception);
       }
+      return new LegacyPath(filepathUri);
     }
-    return filepathUri;
+
+    validateFileUriStructure(uri, filepathUri);
+
+    if (uri.getScheme() == null || hasWindowsDrivePrefix(filepathUri)) {
+      return new LegacyPath(filepathUri);
+    }
+
+    if (uri.isOpaque()) {
+      return new LegacyPath(filepathUri);
+    }
+
+    if (hasSupportedFileSystemScheme(uri)) {
+      return new EncodedUri(uri);
+    }
+
+    throw invalidFilepathUri(filepathUri);
   }
 
   private static boolean hasFileScheme(String value) {
     return value.regionMatches(true, 0, "file:", 0, "file:".length());
+  }
+
+  private static boolean hasWindowsDrivePrefix(String value) {
+    return value.length() >= 3
+        && Character.isLetter(value.charAt(0))
+        && value.charAt(1) == ':'
+        && value.charAt(2) == '/';
+  }
+
+  private static boolean hasSupportedFileSystemScheme(URI uri) {
+    return FileSystemProvider.installedProviders().stream()
+        .anyMatch(provider -> provider.getScheme().equalsIgnoreCase(uri.getScheme()));
   }
 
   private static void validateFileUriStructure(URI uri, String filepathUri) {
@@ -87,7 +132,10 @@ public final class FilepathCodec {
       return;
     }
 
-    if (!uri.isOpaque() && uri.getQuery() == null && uri.getFragment() == null) {
+    if (!uri.isOpaque()
+        && uri.getRawAuthority() == null
+        && uri.getQuery() == null
+        && uri.getFragment() == null) {
       return;
     }
 
@@ -96,6 +144,10 @@ public final class FilepathCodec {
 
   private static IllegalArgumentException invalidFilepathUri(String filepathUri) {
     return new IllegalArgumentException("Invalid filepath URI: " + filepathUri);
+  }
+
+  private static IllegalArgumentException invalidFilepathUri(String filepathUri, Throwable cause) {
+    return new IllegalArgumentException("Invalid filepath URI: " + filepathUri, cause);
   }
 
   private static String decodeUtf8Path(URI uri, String filepathUri) {
@@ -128,58 +180,40 @@ public final class FilepathCodec {
                 .onUnmappableCharacter(CodingErrorAction.REPORT);
         decoded.append(decoder.decode(ByteBuffer.wrap(bytes, 0, byteCount)));
       }
-    } catch (CharacterCodingException | NumberFormatException exception) {
-      throw new IllegalArgumentException("Invalid filepath URI: " + filepathUri, exception);
+    } catch (CharacterCodingException exception) {
+      throw invalidFilepathUri(filepathUri, exception);
     }
 
     return decoded.toString();
   }
 
-  public static Path decode(String filepathUri) {
-    return decode(FileSystems.getDefault(), filepathUri);
-  }
-
-  public static Path decode(FileSystem fileSystem, String filepathUri) {
-    URI uri;
-
+  private static Path decodeUri(FileSystem fileSystem, URI uri, String filepathUri) {
     try {
-      uri = URI.create(filepathUri);
-    } catch (IllegalArgumentException exception) {
-      return legacyPathOrThrow(fileSystem, filepathUri, exception);
-    }
+      if (fileSystem.provider().getScheme().equalsIgnoreCase(uri.getScheme())) {
+        return pathFromProvider(fileSystem, uri);
+      }
 
-    if (uri.getScheme() == null) {
-      // ADR 0012 keeps raw paths readable for pre-migration rows.
-      return fileSystem.getPath(filepathUri);
-    }
+      if ("file".equalsIgnoreCase(uri.getScheme())) {
+        return fileSystem.getPath(uri.getPath());
+      }
 
-    try {
-      validateFileUriStructure(uri, filepathUri);
-      return decodeUri(fileSystem, uri);
-    } catch (FileSystemNotFoundException _) {
-      return fileSystem.getPath(filepathUri);
-    } catch (IllegalArgumentException exception) {
-      return legacyPathOrThrow(fileSystem, filepathUri, exception);
+      return Path.of(uri);
+    } catch (FileSystemNotFoundException | IllegalArgumentException exception) {
+      throw invalidFilepathUri(filepathUri, exception);
     }
   }
 
-  private static Path legacyPathOrThrow(
-      FileSystem fileSystem, String filepathUri, IllegalArgumentException exception) {
-    if (!hasFileScheme(filepathUri)) {
-      return fileSystem.getPath(filepathUri);
-    }
-
-    throw new IllegalArgumentException("Invalid filepath URI: " + filepathUri, exception);
-  }
-
-  private static Path decodeUri(FileSystem fileSystem, URI uri) {
+  private static Path pathFromProvider(FileSystem fileSystem, URI uri) {
     try {
       return fileSystem.provider().getPath(uri);
     } catch (UnsupportedOperationException _) {
-      if ("file".equals(uri.getScheme())) {
-        return fileSystem.getPath(uri.getPath());
-      }
       return Path.of(uri);
     }
   }
+
+  private sealed interface ParsedFilepath permits EncodedUri, LegacyPath {}
+
+  private record EncodedUri(URI uri) implements ParsedFilepath {}
+
+  private record LegacyPath(String value) implements ParsedFilepath {}
 }

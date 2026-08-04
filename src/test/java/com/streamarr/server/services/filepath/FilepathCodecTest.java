@@ -73,6 +73,15 @@ class FilepathCodecTest {
   }
 
   @Test
+  @DisplayName("Should decode with installed filesystem provider when given provider URI")
+  void shouldDecodeWithInstalledFileSystemProviderWhenGivenProviderUri() {
+    var filepathUri = "jrt:/java.base/java/lang/Object.class";
+
+    assertThat(FilepathCodec.pathOf(filepathUri)).isEqualTo("/java.base/java/lang/Object.class");
+    assertThat(FilepathCodec.decode(filepathUri)).isEqualTo(Path.of(URI.create(filepathUri)));
+  }
+
+  @Test
   @DisplayName("Should fall back to plain path when no URI scheme present")
   void shouldFallBackToPlainPathWhenNoUriScheme() throws IOException {
     try (FileSystem jimfs = Jimfs.newFileSystem(Configuration.unix())) {
@@ -182,6 +191,32 @@ class FilepathCodecTest {
   }
 
   @Test
+  @DisplayName("Should return legacy Windows path unchanged when it uses forward slashes")
+  void shouldReturnLegacyWindowsPathUnchangedWhenItUsesForwardSlashes() {
+    assertThat(FilepathCodec.pathOf("C:/Movies/Amélie.mkv")).isEqualTo("C:/Movies/Amélie.mkv");
+  }
+
+  @Test
+  @DisplayName("Should reject unsupported URI scheme when reading path text")
+  void shouldRejectUnsupportedUriSchemeWhenReadingPathText() {
+    var filepathUri = "https://example.test/Movies/Am%C3%A9lie.mkv";
+
+    assertThatThrownBy(() -> FilepathCodec.pathOf(filepathUri))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(filepathUri);
+  }
+
+  @Test
+  @DisplayName("Should reject unsupported URI scheme when decoding to path")
+  void shouldRejectUnsupportedUriSchemeWhenDecodingToPath() {
+    var filepathUri = "https://example.test/Movies/Am%C3%A9lie.mkv";
+
+    assertThatThrownBy(() -> FilepathCodec.decode(filepathUri))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(filepathUri);
+  }
+
+  @Test
   @DisplayName("Should reject filepath URI when it has no final segment")
   void shouldRejectFilepathUriWhenItHasNoFinalSegment() {
     assertThatThrownBy(() -> FilepathCodec.filenameOf("file:///"))
@@ -219,6 +254,19 @@ class FilepathCodecTest {
     assertThatThrownBy(() -> FilepathCodec.filenameOf("file:movie.mkv"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("file:movie.mkv");
+  }
+
+  @Test
+  @DisplayName("Should reject file URI when it has an authority")
+  void shouldRejectFileUriWhenItHasAnAuthority() {
+    var filepathUri = "file://localhost/media/movie.mkv";
+
+    assertThatThrownBy(() -> FilepathCodec.pathOf(filepathUri))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(filepathUri);
+    assertThatThrownBy(() -> FilepathCodec.decode(filepathUri))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(filepathUri);
   }
 
   @Test
@@ -274,5 +322,14 @@ class FilepathCodecTest {
   @DisplayName("Should treat plain filename as a legacy path when it contains a colon")
   void shouldTreatPlainFilenameAsLegacyPathWhenItContainsColon() {
     assertThat(FilepathCodec.filenameOf("Frost:Nixon.mkv")).isEqualTo("Frost:Nixon.mkv");
+  }
+
+  @Test
+  @DisplayName("Should treat opaque provider URI as a legacy path when reading and decoding")
+  void shouldTreatOpaqueProviderUriAsLegacyPathWhenReadingAndDecoding() {
+    var filepathUri = "jar:file:///tmp/a.zip!/b.mkv";
+
+    assertThat(FilepathCodec.pathOf(filepathUri)).isEqualTo(filepathUri);
+    assertThat(FilepathCodec.decode(filepathUri)).isEqualTo(Path.of(filepathUri));
   }
 }

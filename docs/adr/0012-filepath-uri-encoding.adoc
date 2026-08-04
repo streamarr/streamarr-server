@@ -26,6 +26,11 @@ Text accessors decode percent-encoded path bytes strictly as UTF-8 so malformed 
 loudly.
 Path decoding delegates URI conversion to the filesystem provider, preserving POSIX filename bytes
 without first converting the path through `Path.toString()` and `sun.jnu.encoding`.
+Hierarchical URI values are accepted only when their scheme belongs to an installed filesystem
+provider and are decoded through that provider. Local `file:` URIs with an authority are rejected
+because local filesystem providers cannot resolve them. Unsupported schemes fail rather than being
+interpreted differently by the text and filesystem views. Legacy Windows drive paths and opaque
+colon-containing raw names remain plain paths.
 
 == Consequences
 
