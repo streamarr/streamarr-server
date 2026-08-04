@@ -67,11 +67,7 @@ class ImageServiceTest {
         imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
     imageService.saveImages(result.images());
 
-    var basePath = fileSystem.getPath("/data/images/movie", entityId.toString(), "poster");
-    assertThat(Files.exists(basePath.resolve("small.jpg"))).isTrue();
-    assertThat(Files.exists(basePath.resolve("medium.jpg"))).isTrue();
-    assertThat(Files.exists(basePath.resolve("large.jpg"))).isTrue();
-    assertThat(Files.exists(basePath.resolve("original.jpg"))).isTrue();
+    assertThat(result.writtenFiles()).hasSize(4).allSatisfy(path -> assertThat(path).exists());
   }
 
   @Test
@@ -88,7 +84,8 @@ class ImageServiceTest {
     var smallImage =
         images.stream().filter(i -> i.getVariant() == ImageSize.SMALL).findFirst().orElseThrow();
 
-    assertThat(smallImage.getPath()).isEqualTo("movie/" + entityId + "/poster/small.jpg");
+    assertThat(smallImage.getPath())
+        .isEqualTo("movie/" + entityId + "/poster/small-" + smallImage.getId() + ".jpg");
   }
 
   @Test
@@ -144,8 +141,7 @@ class ImageServiceTest {
     assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
         .isEmpty();
 
-    var basePath = fileSystem.getPath("/data/images/movie", entityId.toString(), "poster");
-    assertThat(Files.exists(basePath.resolve("small.jpg"))).isFalse();
+    assertThat(result.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
   }
 
   @Test
@@ -174,6 +170,24 @@ class ImageServiceTest {
         .extracting(Image::getVariant)
         .containsExactlyInAnyOrder(
             ImageSize.SMALL, ImageSize.MEDIUM, ImageSize.LARGE, ImageSize.ORIGINAL);
+  }
+
+  @Test
+  @DisplayName("Should delete files when concurrent image save loses conflict")
+  void shouldDeleteFilesWhenConcurrentImageSaveLosesConflict() {
+    var entityId = UUID.randomUUID();
+    var firstResult =
+        imageService.processImage(
+            createTestImage(600, 900), ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    imageService.saveImages(firstResult.images());
+
+    var losingResult =
+        imageService.processImage(
+            createTestImage(600, 600), ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    imageService.saveImages(losingResult.images());
+
+    assertThat(losingResult.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+    assertThat(firstResult.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
   }
 
   @Test
