@@ -12,7 +12,7 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
  * auth cookie that can authenticate requires CSRF protection. SameSite=Strict already blocks
  * cross-site sends; CSRF stays correct independently as the second layer.
  */
-public class CookieAuthenticationCsrfMatcher implements RequestMatcher {
+public class StreamarrCookieCsrfMatcher implements RequestMatcher {
 
   private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "TRACE", "OPTIONS");
 

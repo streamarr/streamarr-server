@@ -10,10 +10,10 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 @Tag("UnitTest")
-@DisplayName("Cookie Authentication Csrf Matcher Tests")
-class CookieAuthenticationCsrfMatcherTest {
+@DisplayName("Streamarr Cookie Csrf Matcher Tests")
+class StreamarrCookieCsrfMatcherTest {
 
-  private final CookieAuthenticationCsrfMatcher matcher = new CookieAuthenticationCsrfMatcher();
+  private final StreamarrCookieCsrfMatcher matcher = new StreamarrCookieCsrfMatcher();
 
   @Test
   @DisplayName("Should require csrf when only refresh cookie rides the request")

@@ -87,7 +87,7 @@ public class SecurityConfig {
   @SuppressWarnings("java:S3330")
   private CsrfFilter cookieScopedCsrfFilter() {
     var filter = new CsrfFilter(CookieCsrfTokenRepository.withHttpOnlyFalse());
-    filter.setRequireCsrfProtectionMatcher(new CookieAuthenticationCsrfMatcher());
+    filter.setRequireCsrfProtectionMatcher(new StreamarrCookieCsrfMatcher());
     filter.setRequestHandler(new SpaCookieCsrfTokenRequestHandler());
     filter.setAccessDeniedHandler(accessDeniedHandler);
     return filter;
