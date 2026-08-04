@@ -95,6 +95,26 @@ class ArchitectureTest {
           .beAnnotatedWith(Transactional.class)
           .as(TRANSACTION_BOUNDARY_REASON);
 
+  // The library services call the filepath, parsers, streaming, and task services; a dependency
+  // back the other way puts them in a cycle. FilepathCodec did exactly that from the library
+  // package until it moved to services.filepath.
+  @ArchTest
+  static final ArchRule servicesBelowLibraryMustNotDependOnLibrary =
+      noClasses()
+          .that()
+          .resideInAnyPackage(
+              "..services.filepath..",
+              "..services.parsers..",
+              "..services.streaming..",
+              "..services.task..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("..services.library..")
+          .as(
+              "Filepath, parsers, streaming, and task services must remain below the library"
+                  + " services that call them; shared helpers belong in a package both may depend"
+                  + " on");
+
   @ArchTest
   static final ArchRule authRepositoriesMustNotDependOnAuthServices =
       noClasses()
