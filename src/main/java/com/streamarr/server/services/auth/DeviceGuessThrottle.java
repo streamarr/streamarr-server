@@ -73,7 +73,7 @@ public class DeviceGuessThrottle {
 
   private void prune(Deque<Instant> timestamps) {
     var cutoff = clock.instant().minus(properties.guessWindow());
-    while (!timestamps.isEmpty() && timestamps.peekFirst().isBefore(cutoff)) {
+    while (!timestamps.isEmpty() && !timestamps.peekFirst().isAfter(cutoff)) {
       timestamps.pollFirst();
     }
   }

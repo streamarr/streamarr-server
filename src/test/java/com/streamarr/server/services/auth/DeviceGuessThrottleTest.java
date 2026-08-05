@@ -60,12 +60,12 @@ class DeviceGuessThrottleTest {
   }
 
   @Test
-  @DisplayName("Should let attempts through after the window")
-  void shouldLetAttemptsThroughAfterWindow() {
+  @DisplayName("Should let attempts through at the exact window boundary")
+  void shouldLetAttemptsThroughAtExactWindowBoundary() {
     var accountId = UUID.randomUUID();
     exhaustBudget(accountId);
 
-    advanceClock(properties.guessWindow().plusNanos(1));
+    advanceClock(properties.guessWindow());
 
     assertThatCode(() -> throttle.registerAttempt(accountId)).doesNotThrowAnyException();
   }
