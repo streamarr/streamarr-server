@@ -30,6 +30,14 @@ body:json {
   }
 }
 
+script:pre-request {
+  const csrfToken =
+    bru.cookies.get("__Host-XSRF-TOKEN") || bru.cookies.get("XSRF-TOKEN");
+  if (csrfToken) {
+    req.setHeader("X-XSRF-TOKEN", csrfToken);
+  }
+}
+
 script:post-response {
   if (res.status === 201 && res.body.accessToken && res.body.refreshToken) {
     bru.setVar("ACCESS_TOKEN", res.body.accessToken);

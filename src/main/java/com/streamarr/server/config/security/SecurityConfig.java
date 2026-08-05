@@ -7,10 +7,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.annotation.web.configurers.CsrfConfigurer;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.header.HeaderWriterFilter;
 
@@ -23,6 +23,8 @@ public class SecurityConfig {
   private final JwtIdentityConverter identityConverter;
   private final RestAuthenticationEntryPoint authenticationEntryPoint;
   private final RestAccessDeniedHandler accessDeniedHandler;
+  private final AuthTokenProperties tokenProperties;
+  private final AuthCookiePolicy cookiePolicy;
 
   /**
    * The permit matrix: pre-auth endpoints and health stay open; non-health actuator endpoints are
@@ -31,10 +33,11 @@ public class SecurityConfig {
    * and future surfaces — demands SCOPE_ACCOUNT, which household and profile tokens satisfy through
    * the scope hierarchy.
    *
-   * <p>CSRF (SPA shape: readable XSRF-TOKEN cookie, Xor handler) protects exactly the
-   * cookie-authenticated requests. The filter is wired manually because the resource-server DSL
-   * exempts any request its bearer resolver finds a token on — and our resolver reads the access
-   * cookie, which is precisely the ambient credential CSRF must cover.
+   * <p>CSRF (SPA shape: readable host-bound cookie, Xor rendering, header-only submission) protects
+   * unsafe requests from the Streamarr cookie-carrying browser population. Explicitly insecure
+   * development uses an unprefixed fallback. The filter is wired manually because the
+   * resource-server DSL exempts any request its bearer resolver finds a token on — and our resolver
+   * reads the access cookie, which is precisely the ambient credential CSRF must cover.
    */
   @Bean
   SecurityFilterChain securityFilterChain(HttpSecurity http) {
@@ -73,6 +76,9 @@ public class SecurityConfig {
                 exceptions
                     .authenticationEntryPoint(authenticationEntryPoint)
                     .accessDeniedHandler(accessDeniedHandler))
+        // Streamarr revokes refresh families through POST /api/auth/logout; expose no framework
+        // logout endpoint that could imply revocation without performing it.
+        .logout(AbstractHttpConfigurer::disable)
         .build();
   }
 
@@ -81,13 +87,12 @@ public class SecurityConfig {
     return ScopeHierarchy.roleHierarchy();
   }
 
-  // The XSRF-TOKEN cookie is deliberately script-readable (S3330): its whole purpose is the
-  // double-submit echo — the page reads it and sends X-XSRF-TOKEN. It is not a credential; both
-  // auth cookies remain httpOnly.
-  @SuppressWarnings("java:S3330")
   private CsrfFilter cookieScopedCsrfFilter() {
-    var filter = new CsrfFilter(CookieCsrfTokenRepository.withHttpOnlyFalse());
-    filter.setRequireCsrfProtectionMatcher(new CookieAuthenticationCsrfMatcher());
+    var tokenRepository =
+        new StreamarrCookieCsrfTokenRepository(tokenProperties.refreshTokenTtl(), cookiePolicy);
+
+    var filter = new CsrfFilter(tokenRepository);
+    filter.setRequireCsrfProtectionMatcher(new StreamarrCookieCsrfMatcher(cookiePolicy));
     filter.setRequestHandler(new SpaCookieCsrfTokenRequestHandler());
     filter.setAccessDeniedHandler(accessDeniedHandler);
     return filter;

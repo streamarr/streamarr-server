@@ -37,6 +37,22 @@ The server starts on `http://localhost:8080` with the `dev` profile active.
 
 The `dev` profile enables GraphiQL at `http://localhost:8080/graphiql` and auto-populates the database with sample data via `DevDataInitializer`.
 
+=== Cookie-Mode Login in Safari
+
+Auth cookies are `Secure`, and Safari -- unlike Chrome and Firefox -- refuses to store or send a `Secure` cookie over plain HTTP even on `localhost`.
+Cookie-mode login therefore appears to succeed while every following request answers `AUTHENTICATION_REQUIRED`.
+
+Set `AUTH_COOKIES_ALLOW_INSECURE=true` to drop the attribute:
+
+[source,bash]
+----
+AUTH_COOKIES_ALLOW_INSECURE=true ./mvnw spring-boot:run
+----
+
+The flag is honored only while a `dev`, `development`, or `test` profile is active; setting it anywhere else fails startup.
+It drops `Secure` from both credential and CSRF cookies. Credential cookies stay `httpOnly` and `SameSite=Strict`, so application code still cannot read the tokens.
+Because the `__Host-` prefix requires `Secure`, the script-readable CSRF cookie switches from `__Host-XSRF-TOKEN` to the development-only `XSRF-TOKEN`; the web client recognizes both names.
+
 == Running Tests
 
 [source,bash]

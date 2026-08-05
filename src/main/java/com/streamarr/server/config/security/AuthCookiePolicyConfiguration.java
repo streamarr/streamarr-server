@@ -1,0 +1,47 @@
+package com.streamarr.server.config.security;
+
+import java.util.Arrays;
+import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+
+@Slf4j
+@Configuration
+public class AuthCookiePolicyConfiguration {
+
+  private static final Set<String> NON_PRODUCTION_PROFILES = Set.of("dev", "development", "test");
+
+  /**
+   * Resolves cookie transport at startup from two independent gates: the opt-in flag and a
+   * development or test profile. Either alone leaves cookies secure and the CSRF nonce host-bound.
+   * The flag without a profile fails the application rather than being quietly ignored — an
+   * operator who set it would otherwise believe the relaxation was active, and a later profile
+   * change would arm it without anyone deciding so.
+   */
+  @Bean
+  AuthCookiePolicy authCookiePolicy(AuthCookieProperties properties, Environment environment) {
+    if (!properties.allowInsecure()) {
+      return AuthCookiePolicy.SECURE;
+    }
+
+    if (!isNonProductionProfileActive(environment)) {
+      throw new IllegalStateException(
+          "AUTH_COOKIES_ALLOW_INSECURE requires a development or test profile; a single flag is one"
+              + " typo away from sending session cookies in cleartext.");
+    }
+
+    log.warn(
+        "Auth and CSRF cookies are being issued WITHOUT the Secure attribute so http://localhost"
+            + " works in Safari — development only. Session cookies will travel in cleartext, and"
+            + " the CSRF cookie cannot use the host-binding prefix.");
+
+    return AuthCookiePolicy.INSECURE_DEVELOPMENT;
+  }
+
+  private static boolean isNonProductionProfileActive(Environment environment) {
+    return Arrays.stream(environment.getActiveProfiles())
+        .anyMatch(NON_PRODUCTION_PROFILES::contains);
+  }
+}

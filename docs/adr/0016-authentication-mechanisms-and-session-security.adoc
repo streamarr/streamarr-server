@@ -101,9 +101,22 @@ Retiring the counters removes this machinery, the version claims, and the sessio
 
 How a client presents tokens depends on what it can protect.
 Native apps — iOS, Android, TV — send access tokens as `Authorization: Bearer` headers and keep refresh tokens in platform-secure storage.
-Browsers never touch tokens from script: both tokens travel as `httpOnly`, `Secure`, `SameSite` cookies, with the refresh cookie path-scoped to the refresh endpoint.
-Cookies are ambient credentials, so cookie-authenticated requests keep CSRF protection — a manually wired `CsrfFilter` pairing the BREACH-protected `XorCsrfTokenRequestAttributeHandler` with `CookieCsrfTokenRepository`, applied by a matcher that exempts only bearer-header requests, which carry no ambient credential; the `csrf.spa()` DSL was deliberately not used because it would exempt cookie-authenticated requests as well.
-`httpOnly` keeps scripts from reading the session cookie, and cross-site tracing cannot echo it back while HTTP `TRACE` stays disabled — embedded Tomcat's default, which must not be re-enabled.
+Browsers never touch tokens from script: both tokens travel as `httpOnly`, `SameSite` cookies, normally `Secure`, with the refresh cookie path-scoped to the refresh endpoint.
+Cookies are ambient credentials, so cookie-carrying requests keep CSRF protection — a manually wired `CsrfFilter` pairs BREACH-protected rendering with a cookie repository and accepts request tokens only through `X-XSRF-TOKEN`.
+Its matcher exempts a bearer-header request only on routes where the bearer resolver can consume that header; the `csrf.spa()` DSL was deliberately not used because it would exempt cookie-authenticated requests as well.
+That matcher keys on *any* Streamarr cookie — both auth cookies and the active readable CSRF cookie — not on whether the request is already cookie-authenticated.
+Login is why: it carries its credential in the body, so a browser reaches it holding no auth cookie and the response mints the session, which is login CSRF — a victim silently signed into the attacker's account, who then pairs a TV to it.
+The `__Host-XSRF-TOKEN` cookie closes that gap for returning browsers: the filter writes one on a client's first request, so any browser that has already talked to this origin carries it before it can POST a login.
+In secure mode, the browser-enforced prefix binds the double-submit cookie to the exact host: it requires `Secure`, `Path=/`, and no `Domain`, preventing a sibling subdomain from planting the token that Streamarr validates.
+The explicitly insecure development mode cannot satisfy that prefix contract, so it issues and validates only `XSRF-TOKEN`; production never accepts that fallback.
+A first-contact browser has no marker yet, so setup, login, and refresh explicitly accept only JSON and the deployment grants no hostile cross-origin CORS access; both constraints are load-bearing parts of the login-CSRF boundary.
+Bearer-mode login — and the planned device-pairing flow — stays exempt only because native clients keep no cookie jar at all: the Apple clients build every session with cookie storage, acceptance, and sending disabled, and that is a load-bearing client contract rather than an incidental property.
+A cookie-keeping client the server does not know about therefore fails closed with a CSRF `403`, never by silently losing the protection.
+The script-readable CSRF cookie is `SameSite=Lax` and path `/`; it is `Secure` and host-bound except in explicitly insecure development. Its lifetime comes from the same refresh-token property as the auth cookies.
+The repository renews that lifetime whenever the filter realizes a token, including login and refresh, so rotating credentials cannot outlive their guard; removing a token remains a distinct `Max-Age=0` operation.
+CSRF rejection returns the machine-readable `CSRF_TOKEN_REQUIRED` code and increments `streamarr.security.denials{reason="csrf"}`; other authorization denials retain `FORBIDDEN` and the `reason="access"` tag.
+Realizing the token happens before validation, so even a rejected response re-mints the readable cookie; the web client may retry that specific failure exactly once after re-reading the cookie, but never retries a generic `403`.
+`httpOnly` keeps scripts from reading the session cookie, and cross-site tracing cannot echo it back while HTTP `TRACE` stays disabled — `TomcatSecurityConfig` enforces that invariant explicitly rather than relying only on embedded Tomcat's default.
 That narrows XSS rather than eliminating it: an injected script can still ride the session, so Spring Security's default security headers, a Content-Security-Policy, and output encoding remain required hygiene.
 Streaming is the third carrier: playlist-driven players — AVPlayer above all — cannot attach headers to the segment requests a playlist spawns, so issued manifest, playlist, and segment URLs embed a playback-scoped, stream-session-bound profile token the server validates exactly like a header token.
 Same tokens, different carrier, not a weaker channel: playback-URL tokens authorize nothing but playback, and the server redacts them from its own request logs and traces.
@@ -123,7 +136,8 @@ This makes a lost successful rotation response recoverable without storing plain
 If that successor has already rotated, the older predecessor is superseded: its grace replay may receive a fresh access token but no refresh token, so it cannot overwrite the current cookie with a consumed credential.
 Exactly one genuine rotation happens per predecessor, and reuse outside the window stays theft.
 On the web, a service worker owns renewal: one worker serves every tab of the origin, making it the natural single-flight point — it intercepts the app's API fetches, refreshes once when expiry nears or an expired-token response arrives, queues intercepted requests, and replays them once the successor cookies land.
-The worker coordinates timing but never handles the tokens themselves; the cookies stay `httpOnly` and ride its fetches automatically, and the page supplies the script-readable CSRF token the refresh `POST` needs, since workers cannot read `document.cookie`.
+The worker coordinates timing but never handles the auth tokens themselves; the cookies stay `httpOnly` and ride its fetches automatically, and the page supplies the script-readable CSRF token the refresh `POST` needs, since workers cannot read `document.cookie`.
+Because worker memory is disposable, every intercepted unsafe page request also lets a restarted worker relearn the echoed CSRF header before it attempts reactive refresh.
 Browsers kill idle workers and a first visit precedes registration, so correctness never rests on the worker: the grace window and expired-token retry keep a workerless tab correct, and the worker's job is making renewal invisible.
 
 Limited-input clients — Apple TV, Android TV, Nvidia Shield, smart-TV apps — pair rather than type credentials.
@@ -170,6 +184,8 @@ Explicitly deferred from v1:
 * MFA and device pairing are account/session concerns; profile selection stays a viewing-context concern.
 * Refresh-token revocation, rotation with reuse detection, digest-at-rest storage, and playback-authority revocation are required server features, not optional client behavior.
 * One token model has three carriers — bearer headers for native apps, `httpOnly` cookies plus CSRF protection for browsers, session-bound playback-URL tokens for streaming — and no carrier weakens validation.
+* The host-bound cookie rename is a coordinated deployment: the web bundle that understands `__Host-XSRF-TOKEN` is deployed and old cached assets are invalidated before the server begins issuing only that name. Production does not temporarily accept the unprefixed name because doing so would preserve the cookie-planting risk being removed.
+* Browser cookies carry `Secure` in every deployment, with one development affordance: Safari refuses to store or send a `Secure` cookie over plain HTTP where Chrome and Firefox trust `http://localhost`, so an explicit opt-in flag *together with* an active development or test profile drops that attribute. Either gate alone changes nothing, and the flag without such a profile fails startup rather than being ignored. Credential cookies remain `httpOnly` and `SameSite=Strict`; the readable CSRF cookie remains `SameSite=Lax` and switches to the unprefixed development name because `__Host-` requires `Secure`.
 * Access-token `exp` is inviolable and the TTL ceiling is a security parameter: bounded API staleness is only sound while both hold.
 * API-surface revocation is bounded by the access-token TTL; instant revocation is a playback property, carried by the joint authority of link:0017-playback-enforcement-lifecycle.adoc[ADR 0017] once the counter transition completes.
 * Refresh races are resolved on the server — the rotation grace window — and merely smoothed by the web client's service worker, so a browser without a live worker degrades to slower renewal, never to spurious logout.
@@ -188,6 +204,9 @@ Explicitly deferred from v1:
 * Sliding or self-renewing access tokens — re-issuing near expiry on the access token's own authority makes the short-lived credential immortal for whoever holds it, yields no rotation theft signal, lets active clients outrun the TTL backstop for missed invalidations, and skips the refresh endpoint's authoritative database checkpoint.
 * Short access-token TTLs as the sole revocation mechanism *for playback* — bounded staleness is accepted for API surfaces, but playback-URL tokens have no refresh channel: playlist-driven players fetch segment URLs once and replay them for hours, so playback validity must ride the stream-session lifetime and only a per-request authority check can revoke it mid-stream; TTL stays a backstop, never the guard.
 * Version counters as the permanent revocation authority — playback is their only load-bearing case once the stream-session row exists, one authority beats two, and retiring the feed removes the version claims, the dedicated-listener plumbing, and the session-mode-pooler constraint; they remain normative only until PR-B2 lands.
+* Scoping the CSRF matcher to the auth cookies alone — it protects only requests that already ride an ambient credential, which is precisely backwards for login: a fresh browser is never challenged while a stale auth cookie blocks the one call that would replace it.
+* Reading `cookieMode` from the request body to decide whether login needs CSRF — it is the exact discriminator, but the CSRF filter runs before body parsing, so it would mean buffering every request body in a security filter to recover a bit that cookie presence already supplies.
+* Fetch metadata (`Sec-Fetch-Site`) as the browser discriminator — strictly sharper, since it also names cross-site requests whose cookies `SameSite` suppressed, but it is a resource-isolation policy rather than a CSRF token check, it exempts any client that omits the header, and it belongs in its own decision instead of inside this matcher.
 * Script-readable browser token storage (`localStorage` or plain cookies) — `httpOnly` cookies plus CSRF protection confine XSS to riding a session rather than stealing it.
 * `Authorization` headers on streaming segment requests — playlist-driven players cannot attach them, so playback URLs carry the token instead.
 * Profile PINs as an authentication or MFA factor — low-entropy convenience gates guard viewing context, never accounts.
@@ -213,6 +232,8 @@ Explicitly deferred from v1:
 * https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html[OWASP Password Storage Cheat Sheet]
 * https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html#handling-secrets-in-memory[OWASP: Handling Secrets in Memory]
 * https://docs.oracle.com/en/java/javase/25/docs/api/java.base/javax/crypto/spec/PBEKeySpec.html[Java `PBEKeySpec`: Mutable Password Storage]
+* https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html#login-csrf[OWASP CSRF Prevention Cheat Sheet: Login CSRF]
+* https://docs.spring.io/spring-security/reference/7.0/servlet/exploits/csrf.html#csrf-considerations-login[Spring Security: CSRF Considerations — Logging In]
 * https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html[OWASP Multifactor Authentication Cheat Sheet]
 * https://pages.nist.gov/800-63-4/sp800-63b.html[NIST SP 800-63B]
 * https://www.rfc-editor.org/rfc/rfc9106.html[RFC 9106: Argon2]
