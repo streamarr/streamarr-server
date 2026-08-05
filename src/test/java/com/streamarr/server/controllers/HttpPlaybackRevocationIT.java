@@ -25,15 +25,14 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * PR #247 B6 validation: the HTTP boundary must enforce live playback authority through the real
- * service and gate against PostgreSQL. Unlike {@code StreamControllerIT}, no streaming beans are
- * stubbed — this drives {@code StreamController} → {@code HlsStreamingService.accessSession} →
- * {@code LivePlaybackAuthorityGate} → the live authority query. GREEN at HEAD pins the contract;
- * bypassing the gate consult in {@code accessSession} must turn it RED.
+ * Verifies that the HTTP boundary enforces live playback authority through the real service and
+ * PostgreSQL. Unlike {@code StreamControllerIT}, no streaming beans are stubbed — this drives
+ * {@code StreamController} → {@code HlsStreamingService.accessSession} → {@code
+ * LivePlaybackAuthorityGate} → the live authority query.
  */
 @Tag("IntegrationTest")
-@DisplayName("PR #247 B6 HTTP revocation validation")
-class Pr247HttpRevocationValidationIT extends AbstractIntegrationTest {
+@DisplayName("HTTP Playback Revocation Integration Tests")
+class HttpPlaybackRevocationIT extends AbstractIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private RuntimeStreamSessionRegistry runtimeRegistry;

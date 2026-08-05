@@ -31,16 +31,15 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * PR #247 B3-A validation. The review claims a flow-control-blocked control-stream send freezes
- * every liveness query behind the server monitor. This test exhausts the worker's HTTP/2 stream
- * window for real (the client parks inside its first {@code onNext} and never requests another
- * message) and then floods dispatches far past the window. If sends block, the flood hangs and the
- * bounded wait fails the test; if gRPC buffers outbound messages asynchronously, the flood and a
- * subsequent liveness probe complete promptly and the claimed mechanism is refuted.
+ * Verifies that a flow-control-blocked control stream does not freeze liveness queries behind the
+ * server monitor. This test exhausts the worker's HTTP/2 stream window for real (the client parks
+ * inside its first {@code onNext} and never requests another message) and then floods dispatches
+ * far past the window. If sends block, the bounded flood wait fails; if gRPC buffers outbound
+ * messages asynchronously, the flood and a subsequent liveness probe complete promptly.
  */
 @Tag("IntegrationTest")
-@DisplayName("PR #247 B3-A dispatch flow-control validation")
-class Pr247DispatchFlowControlValidationIT {
+@DisplayName("Worker Dispatch Flow Control Integration Tests")
+class WorkerDispatchFlowControlIT {
 
   private static final UUID AUTHENTICATED_WORKER_ID =
       UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
@@ -101,7 +100,8 @@ class Pr247DispatchFlowControlValidationIT {
             .as("liveness probe must not queue behind buffered control-stream sends")
             .isLessThan(2_000);
         System.out.printf(
-            "B3-A evidence: flood of %d commands took %d ms; post-flood liveness probe took %d"
+            "Dispatch flow-control evidence: flood of %d commands took %d ms; post-flood liveness"
+                + " probe took %d"
                 + " ms%n",
             FLOOD_COMMANDS, floodMillis, probeMillis);
       } finally {
