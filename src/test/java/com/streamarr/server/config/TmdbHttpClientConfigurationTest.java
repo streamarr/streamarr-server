@@ -6,6 +6,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.github.mizosoft.methanol.HttpCache;
 import com.github.mizosoft.methanol.Methanol;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.config.health.TmdbHealthProperties;
@@ -121,6 +122,21 @@ class TmdbHttpClientConfigurationTest {
             methanol ->
                 assertThat(methanol.interceptors())
                     .noneMatch(RateLimitingInterceptor.class::isInstance));
+  }
+
+  @Test
+  @DisplayName("Should retain rate limiter when enrichment client is configured")
+  void shouldRetainRateLimiterWhenEnrichmentClientIsConfigured() throws Exception {
+    try (var cache = HttpCache.newBuilder().cacheOnMemory(1024).build()) {
+      var client = new TmdbHttpClientConfiguration().tmdbHttpClient(35, 30, cache);
+
+      assertThat(client)
+          .isInstanceOfSatisfying(
+              Methanol.class,
+              methanol ->
+                  assertThat(methanol.interceptors())
+                      .anyMatch(RateLimitingInterceptor.class::isInstance));
+    }
   }
 
   @Test

@@ -12,8 +12,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.context.properties.ConfigurationPropertiesBindException;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.context.properties.bind.validation.BindValidationException;
 import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.boot.test.context.assertj.AssertableApplicationContext;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration;
 import org.springframework.context.annotation.Configuration;
@@ -93,7 +96,7 @@ class TmdbHealthPropertiesTest {
   void shouldFailStartupWhenConfiguredProbeTimeoutIsNotPositive() {
     CONTEXT_RUNNER
         .withPropertyValues("tmdb.health.probe-timeout=0s", "tmdb.health.cache-ttl=30s")
-        .run(context -> assertThat(context).hasFailed());
+        .run(context -> assertBindingFailure(context, "probeTimeout"));
   }
 
   @Test
@@ -103,7 +106,7 @@ class TmdbHealthPropertiesTest {
 
     CONTEXT_RUNNER
         .withPropertyValues("tmdb.health.probe-timeout=2s", "tmdb.health.cache-ttl=" + excessiveTtl)
-        .run(context -> assertThat(context).hasFailed());
+        .run(context -> assertBindingFailure(context, "cacheTtl"));
   }
 
   @Test
@@ -165,5 +168,15 @@ class TmdbHealthPropertiesTest {
     assertThat(VALIDATOR.validate(properties))
         .extracting(violation -> violation.getPropertyPath().toString())
         .containsExactly("cacheTtl");
+  }
+
+  private static void assertBindingFailure(
+      AssertableApplicationContext context, String propertyName) {
+    assertThat(context).hasFailed();
+    assertThat(context.getStartupFailure())
+        .isInstanceOf(ConfigurationPropertiesBindException.class)
+        .hasRootCauseInstanceOf(BindValidationException.class)
+        .hasStackTraceContaining(
+            "Field error in object 'tmdb.health' on field '" + propertyName + "'");
   }
 }

@@ -30,6 +30,7 @@ class TmdbHealthIndicatorTest {
 
   private static final Duration PROBE_TIMEOUT = Duration.ofMillis(200);
   private static final Duration CACHE_TTL = Duration.ofSeconds(30);
+  private static final String DEGRADED_DESCRIPTION = "TMDB metadata service is unavailable";
 
   private final AtomicReference<Instant> currentTime =
       new AtomicReference<>(Instant.parse("2026-08-03T12:00:00Z"));
@@ -63,6 +64,7 @@ class TmdbHealthIndicatorTest {
     var health = indicator.health();
 
     assertThat(health.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
+    assertThat(health.getStatus().getDescription()).isEqualTo(DEGRADED_DESCRIPTION);
   }
 
   @Test
@@ -96,6 +98,7 @@ class TmdbHealthIndicatorTest {
     var health = indicator.health();
 
     assertThat(health.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
+    assertThat(health.getStatus().getDescription()).isEqualTo(DEGRADED_DESCRIPTION);
   }
 
   @Test
@@ -224,6 +227,7 @@ class TmdbHealthIndicatorTest {
       var health = indicator.health();
 
       assertThat(health.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
+      assertThat(health.getStatus().getDescription()).isEqualTo(DEGRADED_DESCRIPTION);
       assertThat(Thread.currentThread().isInterrupted()).isTrue();
     } finally {
       Thread.interrupted();
