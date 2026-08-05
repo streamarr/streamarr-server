@@ -112,8 +112,7 @@ class PackagedConfigurationTest {
         .allMatch(
             dependency ->
                 dependency.matches(
-                    "--(?:builder|buildpack) [^\\s\\\\]+(?:[:@])\\d+\\.\\d+\\.\\d+ \\\\"));
-    assertThat(packDependencies)
+                    "--(?:builder|buildpack) [^\\s\\\\]+(?:[:@])\\d+\\.\\d+\\.\\d+ \\\\"))
         .allSatisfy(
             dependency ->
                 assertThat(renovateMatchers)

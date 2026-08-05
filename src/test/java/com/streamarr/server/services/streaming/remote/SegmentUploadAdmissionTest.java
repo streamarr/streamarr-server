@@ -190,7 +190,7 @@ class SegmentUploadAdmissionTest {
     var handlerInvoked = new AtomicBoolean();
     clock.advance(Duration.ofSeconds(31));
 
-    try (var successor = admission.tryAdmit(WORKER_B).orElseThrow()) {
+    try (var _ = admission.tryAdmit(WORKER_B).orElseThrow()) {
       reclaimedTicket.onReclaimed(() -> handlerInvoked.set(true));
 
       assertThat(handlerInvoked)

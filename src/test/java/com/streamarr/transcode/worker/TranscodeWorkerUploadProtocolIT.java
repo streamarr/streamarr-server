@@ -298,7 +298,9 @@ class TranscodeWorkerUploadProtocolIT {
         public void onCompleted() {
           uploadCompleted.countDown();
           switch (uploadResponseBehavior) {
-            case LEAVES_RPC_OPEN -> {}
+            case LEAVES_RPC_OPEN -> {
+              // Keep the response open so the client must cancel the timed-out upload.
+            }
             case ACKNOWLEDGES_FEWER_BYTES -> {
               responseObserver.onNext(
                   UploadSegmentResponse.newBuilder().setAcceptedLengthBytes(0).build());

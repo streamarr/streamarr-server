@@ -162,8 +162,7 @@ class WorkerSessionServerRuntimeTest {
 
     @Override
     public Server shutdownNow() {
-      shutdownRequested = true;
-      return this;
+      return shutdown();
     }
 
     @Override
