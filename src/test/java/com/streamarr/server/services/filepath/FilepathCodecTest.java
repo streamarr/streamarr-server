@@ -62,8 +62,8 @@ class FilepathCodecTest {
   }
 
   @Test
-  @DisplayName("Should decode file:// URI against Jimfs filesystem")
-  void shouldDecodeFileUriAgainstJimfsFilesystem() throws IOException {
+  @DisplayName("Should decode file URI when using Jimfs filesystem")
+  void shouldDecodeFileUriWhenUsingJimfsFilesystem() throws IOException {
     try (FileSystem jimfs = Jimfs.newFileSystem(Configuration.unix())) {
       var decoded = FilepathCodec.decode(jimfs, "file:///some/path");
 

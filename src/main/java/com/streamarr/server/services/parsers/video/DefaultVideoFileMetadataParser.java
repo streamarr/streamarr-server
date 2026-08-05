@@ -118,10 +118,6 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
 
     while (separatorIndex > 0
         && contains(INVALID_TITLE_ENDINGS, value.charAt(separatorIndex - 1))) {
-      if (!contains(SUPPORTED_YEAR_SEPARATORS, value.charAt(separatorIndex - 1))) {
-        return Optional.empty();
-      }
-
       separatorIndex--;
     }
 

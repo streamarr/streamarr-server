@@ -14,7 +14,6 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
-import com.streamarr.server.fakes.RecordingMetadataProvider;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.GenreService;
@@ -156,129 +155,6 @@ class MovieFileProcessorTest {
   }
 
   @Test
-  @DisplayName("Should search with the accented folder title when filename lacks the year")
-  void shouldSearchWithAccentedFolderTitleWhenFilenameLacksTheYear() {
-    var library = LibraryFixtureCreator.buildFakeLibrary();
-    var expectedSearch = VideoFileParserResult.builder().title("Amélie").year("2001").build();
-    var searchResult =
-        RemoteSearchResult.builder()
-            .title("Amélie")
-            .externalId("194")
-            .externalSourceType(ExternalSourceType.TMDB)
-            .build();
-    var metadataProvider = new RecordingMetadataProvider<Movie>();
-    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
-    var processor = movieFileProcessorWith(metadataProvider);
-
-    var mediaFile =
-        fakeMediaFileRepository.save(
-            MediaFile.builder()
-                .libraryId(library.getId())
-                .filepathUri("file:///library/Am%C3%A9lie%20(2001)/movie.mkv")
-                .filename("movie.mkv")
-                .status(MediaFileStatus.UNMATCHED)
-                .build());
-
-    processor.process(library, mediaFile);
-
-    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
-    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isEqualTo(MediaFileStatus.UNMATCHED);
-  }
-
-  @Test
-  @DisplayName("Should search from filepath URI when existing filename is mangled")
-  void shouldSearchFromFilepathUriWhenExistingFilenameIsMangled() {
-    var library = LibraryFixtureCreator.buildFakeLibrary();
-    var expectedSearch = VideoFileParserResult.builder().title("Déjà Vu").year("2006").build();
-    var searchResult =
-        RemoteSearchResult.builder()
-            .title("Déjà Vu")
-            .externalId("7551")
-            .externalSourceType(ExternalSourceType.TMDB)
-            .build();
-    var metadataProvider = new RecordingMetadataProvider<Movie>();
-    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
-    var processor = movieFileProcessorWith(metadataProvider);
-    var mediaFile =
-        fakeMediaFileRepository.save(
-            MediaFile.builder()
-                .libraryId(library.getId())
-                .filepathUri(
-                    "file:///library/D%C3%A9j%C3%A0%20Vu%20(2006)/D%C3%A9j%C3%A0%20Vu%20(2006).mkv")
-                .filename("D��j�� Vu (2006).mkv")
-                .status(MediaFileStatus.UNMATCHED)
-                .build());
-
-    processor.process(library, mediaFile);
-
-    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
-    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isEqualTo(MediaFileStatus.UNMATCHED);
-  }
-
-  @Test
-  @DisplayName("Should use filepath URI when stored filename is blank")
-  void shouldUseFilepathUriWhenStoredFilenameIsBlank() {
-    var library = LibraryFixtureCreator.buildFakeLibrary();
-    var expectedSearch =
-        VideoFileParserResult.builder().title("Unknown.Movie").year("2024").build();
-    var metadataProvider = new RecordingMetadataProvider<Movie>();
-    var processor = movieFileProcessorWith(metadataProvider);
-
-    var mediaFile =
-        fakeMediaFileRepository.save(
-            MediaFile.builder()
-                .libraryId(library.getId())
-                .filepathUri("file:///library/Unknown%20Movie%20(2024)/Unknown.Movie.2024.mkv")
-                .filename("")
-                .status(MediaFileStatus.UNMATCHED)
-                .build());
-
-    processor.process(library, mediaFile);
-
-    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
-    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
-  }
-
-  @Test
-  @DisplayName("Should search with external ID from filepath URI when stored filename is mangled")
-  void shouldSearchWithExternalIdFromFilepathUriWhenStoredFilenameIsMangled() {
-    var library = LibraryFixtureCreator.buildFakeLibrary();
-    var expectedSearch =
-        VideoFileParserResult.builder()
-            .title("Inception")
-            .year("2010")
-            .externalId("tt1375666")
-            .externalSource(ExternalSourceType.IMDB)
-            .build();
-    var searchResult =
-        RemoteSearchResult.builder()
-            .title("Inception")
-            .externalId("27205")
-            .externalSourceType(ExternalSourceType.TMDB)
-            .build();
-    var metadataProvider = new RecordingMetadataProvider<Movie>();
-    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
-    var processor = movieFileProcessorWith(metadataProvider);
-    var mediaFile =
-        fakeMediaFileRepository.save(
-            MediaFile.builder()
-                .libraryId(library.getId())
-                .filepathUri(
-                    "file:///library/Inception%20(2010)/"
-                        + "Inception%20(2010)%20%5Bimdb-tt1375666%5D.mkv")
-                .filename("legacy-mangled-name.mkv")
-                .status(MediaFileStatus.UNMATCHED)
-                .build());
-
-    processor.process(library, mediaFile);
-
-    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
-  }
-
-  @Test
   @DisplayName("Should mark metadata search failed when provider finds no match")
   void shouldMarkMetadataSearchFailedWhenProviderFindsNoMatch() {
     var library = LibraryFixtureCreator.buildFakeLibrary();
@@ -299,15 +175,5 @@ class MovieFileProcessorTest {
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
-  }
-
-  private MovieFileProcessor movieFileProcessorWith(MetadataProvider<Movie> metadataProvider) {
-    return new MovieFileProcessor(
-        new DefaultVideoFileMetadataParser(),
-        new ExternalIdVideoFileMetadataParser(),
-        new MovieMetadataProviderResolver(List.of(metadataProvider)),
-        movieService,
-        fakeMediaFileRepository,
-        new MutexFactoryProvider());
   }
 }

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.util.stream.Stream;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicNode;
 import org.junit.jupiter.api.DynamicTest;
@@ -46,54 +47,117 @@ class DefaultVideoFileMetadataParserTest {
   }
 
   @Nested
-  @DisplayName("Should successfully extract both title and year from filename")
+  @DisplayName("Title and Year Extraction Tests")
   class SuccessfulTitleAndYearExtractionTests {
 
+    @Builder
     record TestCase(String title, String year, String filename) {}
 
+    private TestCase.TestCaseBuilder testCase() {
+      return TestCase.builder();
+    }
+
     @TestFactory
-    Stream<DynamicNode> tests() {
+    @DisplayName("Should extract title and year when filename contains release metadata")
+    Stream<DynamicNode> shouldExtractTitleAndYearWhenFilenameContainsReleaseMetadata() {
       return Stream.of(
-              new TestCase("Garnet Vale", "2002", "Garnet Vale 2002"),
-              new TestCase("Garnet Vale", "2002", "Garnet Vale (2002)"),
-              new TestCase("Veldane", "1988", "Veldane 1988"),
-              new TestCase("Veldane", "1988", "Veldane (1988)"),
-              new TestCase("$", "1973", "$ 1973"),
-              new TestCase("$", "1973", "$ (1973)"),
-              new TestCase("Tricky Movie Name 2001", "2012", "Tricky Movie Name 2001 2012"),
-              new TestCase("Tricky Movie Name 2001", "2012", "Tricky Movie Name 2001 (2012)"),
-              new TestCase("Marsh Warden", "2018", "Marsh Warden [Multi-Subs] 2018"),
-              new TestCase("Marsh Warden", "2018", "Marsh Warden [Multi-Subs] [2018]"),
-              new TestCase("Marsh Warden", "2018", "Marsh Warden [Multi-Subs] (2018)"),
-              new TestCase("A Breezy Picture", "1995", "[Multi-Subs] A Breezy Picture (1995)"),
-              new TestCase(
-                  "The.Improbable.Mass.of.Gentle.Static",
-                  "2022",
-                  "The.Improbable.Mass.of.Gentle.Static.2022.HDR.2160p.WEB.H265"),
-              new TestCase(
-                  "The Movie Title",
-                  "2010",
-                  "The Movie Title (2010) Ultimate Extended Edition [imdb-tt5203941][IMAX HYBRID][Bluray-1080p Proper][3D][DV HDR10][DTS 5.1][x264]"),
-              new TestCase("Home Movie 2012-12-12", "2012", "Home Movie 2012-12-12 2012"),
-              new TestCase("3 nights to sail", "2014", "3 nights to sail (2014)"),
-              new TestCase(
-                  "3.Nights.to.Sail", "2014", "3.Nights.to.Sail.2014.720p.BluRay.x264.PELT"),
-              new TestCase(
-                  "Fern Warden",
-                  "1988",
-                  "Fern Warden 1988 REMASTERED 1080p BluRay x264 AAC - Quill"),
-              new TestCase("A Movie", "1996", "A Movie (1996) - AnotherTitle 2019.mp4"),
-              new TestCase(
-                  "Meridian Glide", "2016", "Meridian Glide - 2016 - WEBDL-1080p - x264 AC3"),
-              new TestCase("No Space", "2000", "No Space(2000)"),
-              new TestCase("Mr. Bramble", "2019", "Mr. Bramble 2019"),
-              new TestCase("512", "2006", "512 (2006)"),
-              new TestCase("512 2", "2006", "512 2 (2006)"),
-              new TestCase("512 - 2", "2006", "512 - 2 (2006)"),
-              new TestCase("[HUM]", "2007", "[HUM] (2007) - [REMUX-1080p][AC3 5.1].mkv"),
-              new TestCase("Glint", "2022", "Glint (2022) [WEBDL-1080p][EAC3 5.1][h264]-KLV.mkv"),
-              new TestCase(
-                  "3 Anchors", "2009", "3 Anchors - (2009) - [Bluray-1080p][DTS-HD MA 5.1].mkv"))
+              testCase().title("Garnet Vale").year("2002").filename("Garnet Vale 2002").build(),
+              testCase().title("Garnet Vale").year("2002").filename("Garnet Vale (2002)").build(),
+              testCase().title("Veldane").year("1988").filename("Veldane 1988").build(),
+              testCase().title("Veldane").year("1988").filename("Veldane (1988)").build(),
+              testCase().title("$").year("1973").filename("$ 1973").build(),
+              testCase().title("$").year("1973").filename("$ (1973)").build(),
+              testCase()
+                  .title("Tricky Movie Name 2001")
+                  .year("2012")
+                  .filename("Tricky Movie Name 2001 2012")
+                  .build(),
+              testCase()
+                  .title("Tricky Movie Name 2001")
+                  .year("2012")
+                  .filename("Tricky Movie Name 2001 (2012)")
+                  .build(),
+              testCase()
+                  .title("Marsh Warden")
+                  .year("2018")
+                  .filename("Marsh Warden [Multi-Subs] 2018")
+                  .build(),
+              testCase()
+                  .title("Marsh Warden")
+                  .year("2018")
+                  .filename("Marsh Warden [Multi-Subs] [2018]")
+                  .build(),
+              testCase()
+                  .title("Marsh Warden")
+                  .year("2018")
+                  .filename("Marsh Warden [Multi-Subs] (2018)")
+                  .build(),
+              testCase()
+                  .title("A Breezy Picture")
+                  .year("1995")
+                  .filename("[Multi-Subs] A Breezy Picture (1995)")
+                  .build(),
+              testCase()
+                  .title("The.Improbable.Mass.of.Gentle.Static")
+                  .year("2022")
+                  .filename("The.Improbable.Mass.of.Gentle.Static.2022.HDR.2160p.WEB.H265")
+                  .build(),
+              testCase()
+                  .title("The Movie Title")
+                  .year("2010")
+                  .filename(
+                      "The Movie Title (2010) Ultimate Extended Edition [imdb-tt5203941][IMAX HYBRID][Bluray-1080p Proper][3D][DV HDR10][DTS 5.1][x264]")
+                  .build(),
+              testCase()
+                  .title("Home Movie 2012-12-12")
+                  .year("2012")
+                  .filename("Home Movie 2012-12-12 2012")
+                  .build(),
+              testCase()
+                  .title("3 nights to sail")
+                  .year("2014")
+                  .filename("3 nights to sail (2014)")
+                  .build(),
+              testCase()
+                  .title("3.Nights.to.Sail")
+                  .year("2014")
+                  .filename("3.Nights.to.Sail.2014.720p.BluRay.x264.PELT")
+                  .build(),
+              testCase()
+                  .title("Fern Warden")
+                  .year("1988")
+                  .filename("Fern Warden 1988 REMASTERED 1080p BluRay x264 AAC - Quill")
+                  .build(),
+              testCase()
+                  .title("A Movie")
+                  .year("1996")
+                  .filename("A Movie (1996) - AnotherTitle 2019.mp4")
+                  .build(),
+              testCase()
+                  .title("Meridian Glide")
+                  .year("2016")
+                  .filename("Meridian Glide - 2016 - WEBDL-1080p - x264 AC3")
+                  .build(),
+              testCase().title("No Space").year("2000").filename("No Space(2000)").build(),
+              testCase().title("Mr. Bramble").year("2019").filename("Mr. Bramble 2019").build(),
+              testCase().title("512").year("2006").filename("512 (2006)").build(),
+              testCase().title("512 2").year("2006").filename("512 2 (2006)").build(),
+              testCase().title("512 - 2").year("2006").filename("512 - 2 (2006)").build(),
+              testCase()
+                  .title("[HUM]")
+                  .year("2007")
+                  .filename("[HUM] (2007) - [REMUX-1080p][AC3 5.1].mkv")
+                  .build(),
+              testCase()
+                  .title("Glint")
+                  .year("2022")
+                  .filename("Glint (2022) [WEBDL-1080p][EAC3 5.1][h264]-KLV.mkv")
+                  .build(),
+              testCase()
+                  .title("3 Anchors")
+                  .year("2009")
+                  .filename("3 Anchors - (2009) - [Bluray-1080p][DTS-HD MA 5.1].mkv")
+                  .build())
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -149,26 +213,64 @@ class DefaultVideoFileMetadataParserTest {
   }
 
   @Nested
-  @DisplayName("Should extract metadata when filename contains adversarial numbering or scripts")
+  @DisplayName("Adversarial Metadata Extraction Tests")
   class AdversarialExtractionTests {
 
+    @Builder
     record TestCase(String title, String year, String filename) {}
 
+    private TestCase.TestCaseBuilder testCase() {
+      return TestCase.builder();
+    }
+
     @TestFactory
-    Stream<DynamicNode> tests() {
+    @DisplayName("Should extract metadata when filename contains adversarial numbering or scripts")
+    Stream<DynamicNode> shouldExtractMetadataWhenFilenameContainsAdversarialNumberingOrScripts() {
       return Stream.of(
-              new TestCase("Iron Orchard 1974", "2011", "Iron Orchard 1974 (2011)"),
-              new TestCase("2049", "2019", "2049 (2019)"),
-              new TestCase("480 Velvet Antenna", null, "480 Velvet Antenna"),
-              new TestCase("銅の子午線　特別版", "2016", "銅の子午線　特別版 (2016)"),
-              new TestCase("달빛 수리공", "2021", "[MOKSA] 달빛 수리공 (2021)"),
-              new TestCase("Медный меридиан", "1987", "Медный меридиан (1987)"),
-              new TestCase("Paper Comet ½", "2003", "Paper Comet ½ (2003)"),
-              new TestCase("Paper Comet", null, "Paper Comet [1920x1080]"),
-              new TestCase("Signal Garden", "2019", "Signal Garden 2019 x264"),
-              new TestCase("Quiet Alloy", "2014", "Quiet Alloy – 2014 – WEBDL-1080p"),
+              testCase()
+                  .title("Iron Orchard 1974")
+                  .year("2011")
+                  .filename("Iron Orchard 1974 (2011)")
+                  .build(),
+              testCase().title("2049").year("2019").filename("2049 (2019)").build(),
+              testCase()
+                  .title("480 Velvet Antenna")
+                  .year(null)
+                  .filename("480 Velvet Antenna")
+                  .build(),
+              testCase().title("銅の子午線　特別版").year("2016").filename("銅の子午線　特別版 (2016)").build(),
+              testCase().title("달빛 수리공").year("2021").filename("[MOKSA] 달빛 수리공 (2021)").build(),
+              testCase()
+                  .title("Медный меридиан")
+                  .year("1987")
+                  .filename("Медный меридиан (1987)")
+                  .build(),
+              testCase()
+                  .title("Paper Comet ½")
+                  .year("2003")
+                  .filename("Paper Comet ½ (2003)")
+                  .build(),
+              testCase()
+                  .title("Paper Comet")
+                  .year(null)
+                  .filename("Paper Comet [1920x1080]")
+                  .build(),
+              testCase()
+                  .title("Signal Garden")
+                  .year("2019")
+                  .filename("Signal Garden 2019 x264")
+                  .build(),
+              testCase()
+                  .title("Quiet Alloy")
+                  .year("2014")
+                  .filename("Quiet Alloy – 2014 – WEBDL-1080p")
+                  .build(),
               // U+0301 combining acute: the decomposed (NFD) form must survive unnormalized.
-              new TestCase("Clémentine Harvest", "2015", "Clémentine Harvest (2015)"))
+              testCase()
+                  .title("Clémentine Harvest")
+                  .year("2015")
+                  .filename("Clémentine Harvest (2015)")
+                  .build())
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -183,17 +285,23 @@ class DefaultVideoFileMetadataParserTest {
   }
 
   @Nested
-  @DisplayName("Should return empty optional")
+  @DisplayName("Unsuccessful Metadata Extraction Tests")
   class UnsuccessfulExtractionTests {
 
+    @Builder
     record TestCase(String name, String input) {}
 
+    private TestCase.TestCaseBuilder testCase() {
+      return TestCase.builder();
+    }
+
     @TestFactory
-    Stream<DynamicNode> tests() {
+    @DisplayName("Should return empty when filename has no metadata")
+    Stream<DynamicNode> shouldReturnEmptyWhenFilenameHasNoMetadata() {
       return Stream.of(
-              new TestCase("when given null input", null),
-              new TestCase("when given empty input", ""),
-              new TestCase("when given blank input", " "))
+              testCase().name("when given null input").input(null).build(),
+              testCase().name("when given empty input").input("").build(),
+              testCase().name("when given blank input").input(" ").build())
           .map(
               testCase ->
                   DynamicTest.dynamicTest(

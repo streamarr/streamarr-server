@@ -130,8 +130,8 @@ class ArchitectureTest {
           .as("Auth repositories must remain below auth services in the dependency direction");
 
   @ArchTest
-  @DisplayName("Should avoid Path display text when processing media metadata")
-  static void shouldAvoidPathDisplayTextWhenProcessingMediaMetadata(JavaClasses classes) {
+  @DisplayName("Should avoid Path display text when media metadata is processed")
+  static void shouldAvoidPathDisplayTextWhenMediaMetadataIsProcessed(JavaClasses classes) {
     noClasses()
         .that()
         .areAssignableTo(MovieFileProcessor.class)

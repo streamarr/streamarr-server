@@ -18,8 +18,9 @@ class SeriesFolderNameParserTest {
   private final SeriesFolderNameParser parser = new SeriesFolderNameParser();
 
   @Test
-  @DisplayName("Should extract title, year, and IMDB external ID from folder name")
-  void shouldExtractTitleYearAndImdbExternalIdFromFolderName() {
+  @DisplayName(
+      "Should extract title, year, and IMDB external ID when folder name contains structured metadata")
+  void shouldExtractTitleYearAndImdbExternalIdWhenFolderNameContainsStructuredMetadata() {
     var result = parser.parse("Rust, Dust & Orbits (2019) [imdb-tt9461738]");
 
     assertThat(result.title()).isEqualTo("Rust, Dust & Orbits");
@@ -51,8 +52,9 @@ class SeriesFolderNameParserTest {
   }
 
   @Test
-  @DisplayName("Should extract title, year, and IMDB external ID from single-word folder")
-  void shouldExtractTitleYearAndImdbExternalIdFromSingleWordFolder() {
+  @DisplayName(
+      "Should extract title, year, and IMDB external ID when folder name has a single-word title")
+  void shouldExtractTitleYearAndImdbExternalIdWhenFolderNameHasSingleWordTitle() {
     var result = parser.parse("Brindle (2018) [imdb-tt6481553]");
 
     assertThat(result.title()).isEqualTo("Brindle");

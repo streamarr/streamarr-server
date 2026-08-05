@@ -1,50 +1,58 @@
 package com.streamarr.server.services.parsers.video;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.when;
 
+import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.services.parsers.MetadataParser;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 @Tag("UnitTest")
 @DisplayName("Video File Metadata Parser Factory Tests")
-@ExtendWith(MockitoExtension.class)
 class VideoFileMetadataParserFactoryTest {
 
-  @Mock private DefaultVideoFileMetadataParser mockDefaultVideoFileMetadataParser;
+  @Test
+  @DisplayName("Should return parser result when parser recognizes filename")
+  void shouldReturnParserResultWhenParserRecognizesFilename() {
+    var expected = VideoFileParserResult.builder().title("Garnet Vale").year("2002").build();
+    MetadataParser<VideoFileParserResult> recognizingParser = _ -> Optional.of(expected);
+    var factory = new VideoFileMetadataParserFactory(List.of(recognizingParser));
 
-  private final List<MetadataParser<VideoFileParserResult>> parsers = new ArrayList<>();
+    var result = factory.parseMetadata("Garnet Vale (2002).mkv");
 
-  private VideoFileMetadataParserFactory videoFileMetadataParserFactory;
-
-  @BeforeEach
-  void setup() {
-    parsers.add(mockDefaultVideoFileMetadataParser);
-    videoFileMetadataParserFactory = new VideoFileMetadataParserFactory(parsers);
+    assertThat(result).contains(expected);
   }
 
   @Test
-  @DisplayName("Should parse and return result from MetadataParser when provided valid filename")
-  void shouldSuccessfullyParseFilename() {
-    var fakeResult =
-        Optional.of(VideoFileParserResult.builder().title("Garnet Vale").year("2002").build());
+  @DisplayName("Should parse external ID when filename contains an ID tag")
+  void shouldParseExternalIdWhenFilenameContainsIdTag() {
+    var factory = parserFactoryWithProductionParsers();
 
-    when(mockDefaultVideoFileMetadataParser.parse(anyString())).thenReturn(fakeResult);
+    var result =
+        factory
+            .parseMetadata("Glint (2022) [tmdb-815339][WEBDL-1080p][EAC3 5.1][h264]-KLV.mkv")
+            .orElseThrow();
 
-    var result = videoFileMetadataParserFactory.parseMetadata("Garnet Vale (2002).mkv");
+    assertThat(result.externalId()).isEqualTo("815339");
+    assertThat(result.externalSource()).isEqualTo(ExternalSourceType.TMDB);
+  }
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo(fakeResult.get().title());
-    assertThat(result.get().year()).isEqualTo(fakeResult.get().year());
+  @Test
+  @DisplayName("Should parse title and year when filename has no ID tag")
+  void shouldParseTitleAndYearWhenFilenameHasNoIdTag() {
+    var factory = parserFactoryWithProductionParsers();
+
+    var result = factory.parseMetadata("Garnet Vale (2002)").orElseThrow();
+
+    assertThat(result.title()).isEqualTo("Garnet Vale");
+    assertThat(result.year()).isEqualTo("2002");
+  }
+
+  private VideoFileMetadataParserFactory parserFactoryWithProductionParsers() {
+    return new VideoFileMetadataParserFactory(
+        List.of(new ExternalIdVideoFileMetadataParser(), new DefaultVideoFileMetadataParser()));
   }
 }

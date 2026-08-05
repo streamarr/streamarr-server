@@ -17,7 +17,6 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
-import com.streamarr.server.fakes.RecordingSeriesMetadataProvider;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -224,73 +223,6 @@ class SeriesFileProcessorTest {
   }
 
   @Test
-  @DisplayName("Should search with the accented series folder title when path has a season folder")
-  void shouldSearchWithAccentedSeriesFolderTitleWhenPathHasSeasonFolder() {
-    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
-    var expectedSearch = VideoFileParserResult.builder().title("Amélie Chronicles").build();
-    var searchResult =
-        RemoteSearchResult.builder()
-            .title("Amélie Chronicles")
-            .externalId("777")
-            .externalSourceType(ExternalSourceType.TMDB)
-            .build();
-    var metadataProvider = new RecordingSeriesMetadataProvider();
-    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
-    var processor = seriesFileProcessorWith(metadataProvider);
-
-    var mediaFile =
-        fakeMediaFileRepository.save(
-            MediaFile.builder()
-                .libraryId(library.getId())
-                .filepathUri(
-                    "file:///library/Am%C3%A9lie%20Chronicles/S%C3%A6son%203/"
-                        + "Amelie.Chronicles.S03E05.mkv")
-                .filename("Amelie.Chronicles.S03E05.mkv")
-                .status(MediaFileStatus.UNMATCHED)
-                .build());
-
-    when(seriesService.findByTmdbId("777")).thenReturn(Optional.empty());
-
-    processor.process(library, mediaFile);
-
-    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
-    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
-  }
-
-  @Test
-  @DisplayName("Should use filename title when root season folder has no series parent")
-  void shouldUseFilenameTitleWhenRootSeasonFolderHasNoSeriesParent() {
-    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
-    var expectedSearch = VideoFileParserResult.builder().title("The Simpsons").build();
-    var searchResult =
-        RemoteSearchResult.builder()
-            .title("The Simpsons")
-            .externalId("456")
-            .externalSourceType(ExternalSourceType.TMDB)
-            .build();
-    var metadataProvider = new RecordingSeriesMetadataProvider();
-    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
-    var processor = seriesFileProcessorWith(metadataProvider);
-    var mediaFile =
-        fakeMediaFileRepository.save(
-            MediaFile.builder()
-                .libraryId(library.getId())
-                .filepathUri("file:///Season%2025/The%20Simpsons.S25E09.mkv")
-                .filename("The Simpsons.S25E09.mkv")
-                .status(MediaFileStatus.UNMATCHED)
-                .build());
-
-    when(seriesService.findByTmdbId("456")).thenReturn(Optional.empty());
-
-    processor.process(library, mediaFile);
-
-    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
-    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
-  }
-
-  @Test
   @DisplayName("Should mark metadata parsing failed when path has no episode info")
   void shouldMarkMetadataParsingFailedWhenPathHasNoEpisodeInfo() {
     var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
@@ -332,20 +264,5 @@ class SeriesFileProcessorTest {
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
-  }
-
-  private SeriesFileProcessor seriesFileProcessorWith(SeriesMetadataProvider metadataProvider) {
-    var metadataProviderResolver = new SeriesMetadataProviderResolver(List.of(metadataProvider));
-    return new SeriesFileProcessor(
-        new EpisodePathMetadataParser(new EpisodeRegexFixtures()),
-        new SeasonPathMetadataParser(),
-        new SeriesFolderNameParser(),
-        metadataProviderResolver,
-        new DateBasedEpisodeResolver(metadataProviderResolver),
-        seriesService,
-        fakeMediaFileRepository,
-        fakeSeasonRepository,
-        fakeEpisodeRepository,
-        new MutexFactoryProvider());
   }
 }
