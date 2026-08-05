@@ -10,6 +10,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.validation.IgnoredFileValidator;

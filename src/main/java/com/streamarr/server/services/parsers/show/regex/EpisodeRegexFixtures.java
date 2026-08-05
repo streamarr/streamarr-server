@@ -29,16 +29,16 @@ public class EpisodeRegexFixtures {
               .exampleMatch("/foo/foo.e01")
               .build(),
           EpisodeRegexContainer.DateRegex.builder()
-              // Extracts date from filename. Ex -> "PBS NewsHour 2020-04-17"
+              // Extracts date from filename. Ex -> "KWX Newsdesk 2020-04-17"
               .expression(
                   ".*(?<year>[0-9]{4})[\\\\._ -](?<month>[0-9]{2})[\\\\._ -](?<day>[0-9]{2})[^\\\\/]*")
-              .exampleMatch("PBS NewsHour 2020-04-17")
+              .exampleMatch("KWX Newsdesk 2020-04-17")
               .build(),
           EpisodeRegexContainer.DateRegex.builder()
-              // Extracts date from filename. Ex -> "PBS NewsHour 17-04-2020"
+              // Extracts date from filename. Ex -> "KWX Newsdesk 17-04-2020"
               .expression(
                   ".*(?<day>[0-9]{2})[._ -](?<month>[0-9]{2})[._ -](?<year>[0-9]{4})[^\\\\/]*")
-              .exampleMatch("PBS NewsHour 17-04-2020")
+              .exampleMatch("KWX Newsdesk 17-04-2020")
               .build(),
           EpisodeRegexContainer.NamedGroupRegex.builder()
               // Extracts seriesName, seasonNumber, episodeNumber via verbose keywords.
@@ -108,17 +108,17 @@ public class EpisodeRegexFixtures {
               .build(),
           EpisodeRegexContainer.NamedGroupRegex.builder()
               // Extracts seriesName, seasonNumber, and episodeNumber. Ex ->
-              // "/server/the_simpsons-s02x01_18536"
+              // "/server/the_greenfields-s02x01_18536"
               .expression(
                   ".*(\\\\|\\/)(?<seriesname>((?![sS]?[0-9]{1,4}[xX][0-9]{1,3})[^\\\\\\/])*)?([sS]?(?<seasonnumber>[0-9]{1,4})[xX](?<epnumber>[0-9]+))[^\\\\\\/]*$")
-              .exampleMatch("/server/the_simpsons-s02x01_18536.mp4")
+              .exampleMatch("/server/the_greenfields-s02x01_18536.mp4")
               .build(),
           EpisodeRegexContainer.NamedGroupRegex.builder()
               // Extracts seriesName, seasonNumber, and episodeNumber. Ex ->
-              // "/server/the_simpsons-s02e01_18536"
+              // "/server/the_greenfields-s02e01_18536"
               .expression(
                   ".*(\\\\|\\/)(?<seriesname>[^\\\\\\/]*)[sS](?<seasonnumber>[0-9]{1,4})[xX\\.]?[eE](?<epnumber>[0-9]+)[^\\\\\\/]*$")
-              .exampleMatch("/server/the_simpsons-s02e01_18536.mp4")
+              .exampleMatch("/server/the_greenfields-s02e01_18536.mp4")
               .build(),
           EpisodeRegexContainer.NamedGroupRegex.builder()
               // Extracts episodeNumber and optionally endingEpisodeNumber. Ex -> "/01-03.avi",

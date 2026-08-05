@@ -7,12 +7,12 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
-import java.nio.file.FileSystem;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -27,7 +27,6 @@ public class MovieFileProcessor {
   private final MovieMetadataProviderResolver movieMetadataProviderResolver;
   private final MovieService movieService;
   private final MediaFileRepository mediaFileRepository;
-  private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
 
   public MovieFileProcessor(
@@ -36,14 +35,12 @@ public class MovieFileProcessor {
       MovieMetadataProviderResolver movieMetadataProviderResolver,
       MovieService movieService,
       MediaFileRepository mediaFileRepository,
-      FileSystem fileSystem,
       MutexFactoryProvider mutexFactoryProvider) {
     this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
     this.externalIdVideoFileMetadataParser = externalIdVideoFileMetadataParser;
     this.movieMetadataProviderResolver = movieMetadataProviderResolver;
     this.movieService = movieService;
     this.mediaFileRepository = mediaFileRepository;
-    this.fileSystem = fileSystem;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
@@ -93,7 +90,8 @@ public class MovieFileProcessor {
   }
 
   private Optional<VideoFileParserResult> parseMediaFileForMovieInfo(MediaFile mediaFile) {
-    var result = defaultVideoFileMetadataParser.parse(mediaFile.getFilename());
+    var filename = FilepathCodec.filenameOf(mediaFile.getFilepathUri());
+    var result = defaultVideoFileMetadataParser.parse(filename);
 
     if (result.isEmpty() || StringUtils.isEmpty(result.get().title())) {
       return Optional.empty();
@@ -104,7 +102,7 @@ public class MovieFileProcessor {
       result = folderResult;
     }
 
-    var externalIdResult = externalIdVideoFileMetadataParser.parse(mediaFile.getFilename());
+    var externalIdResult = externalIdVideoFileMetadataParser.parse(filename);
     if (externalIdResult.isEmpty()) {
       return result;
     }
@@ -119,14 +117,8 @@ public class MovieFileProcessor {
   }
 
   private Optional<VideoFileParserResult> parseFolderName(MediaFile mediaFile) {
-    var path = FilepathCodec.decode(fileSystem, mediaFile.getFilepathUri());
-    var parent = path.getParent();
-
-    if (parent == null || parent.getFileName() == null) {
-      return Optional.empty();
-    }
-
-    return defaultVideoFileMetadataParser.parse(parent.getFileName().toString());
+    return FilepathCodec.parentNameOf(mediaFile.getFilepathUri())
+        .flatMap(defaultVideoFileMetadataParser::parse);
   }
 
   private void enrichMovieMetadata(

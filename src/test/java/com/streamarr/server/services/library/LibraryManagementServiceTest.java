@@ -9,6 +9,11 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.ThrowableProxyUtil;
+import ch.qos.logback.core.read.ListAppender;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.LibraryScanProperties;
@@ -28,10 +33,14 @@ import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.FakeSeasonRepository;
+import com.streamarr.server.fakes.RecordingMetadataProvider;
+import com.streamarr.server.fakes.RecordingSeriesMetadataProvider;
 import com.streamarr.server.fakes.SecurityExceptionFileSystem;
 import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -44,6 +53,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.library.events.ItemProcessedEvent;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
@@ -55,15 +65,24 @@ import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
+import com.streamarr.server.services.metadata.series.SeriesMetadataProvider;
+import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
+import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
+import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
+import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
+import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.spi.FileSystemProvider;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -74,6 +93,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -82,6 +102,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @ExtendWith(MockitoExtension.class)
@@ -122,7 +143,6 @@ class LibraryManagementServiceTest {
           fakeMovieMetadataProviderResolver,
           movieService,
           fakeMediaFileRepository,
-          fileSystem,
           new MutexFactoryProvider());
 
   private final SeriesFileProcessor seriesFileProcessor = mock(SeriesFileProcessor.class);
@@ -163,8 +183,8 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should remain healthy when file processing task fails during scan")
-  void shouldRemainHealthyWhenFileProcessingTaskFailsDuringScan() throws Exception {
+  @DisplayName("Should become unhealthy when file processing task fails during scan")
+  void shouldBecomeUnhealthyWhenFileProcessingTaskFailsDuringScan() throws Exception {
     var rootPath = createRootLibraryDirectory();
     var moviePath = createMovieFile(rootPath, "Failing Movie", "Failing Movie (2024).mkv");
 
@@ -175,18 +195,160 @@ class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-    assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    assertThat(library.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
+        .as("Media file should have been created before scanLibrary returned")
+        .isPresent();
+  }
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var mediaFile =
-                  fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
-              assertThat(mediaFile)
-                  .as("Media file should have been created during scan")
-                  .isPresent();
+  @Test
+  @DisplayName("Should report every file processing failure when multiple tasks fail")
+  void shouldReportEveryFileProcessingFailureWhenMultipleTasksFail() throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "First Movie", "First Movie (2024).mkv");
+    createMovieFile(rootPath, "Second Movie", "Second Movie (2024).mkv");
+    var failuresReady = new CountDownLatch(2);
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenAnswer(
+            invocation -> {
+              var parsedFile = invocation.getArgument(0, VideoFileParserResult.class);
+              failuresReady.countDown();
+              assertThat(failuresReady.await(5, TimeUnit.SECONDS)).isTrue();
+              throw new RuntimeException("simulated failure: " + parsedFile.title());
             });
+
+    var logger = (Logger) LoggerFactory.getLogger(LibraryManagementService.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      libraryManagementService.scanLibrary(savedLibraryId);
+    } finally {
+      logger.detachAppender(appender);
+      appender.stop();
+    }
+
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.ERROR)
+        .singleElement()
+        .satisfies(
+            event -> {
+              assertThat(event.getFormattedMessage())
+                  .isEqualTo("Failed Test Library library scan.");
+              assertThat(ThrowableProxyUtil.asString(event.getThrowableProxy()))
+                  .contains(
+                      "2 file processing tasks failed",
+                      "simulated failure: First Movie",
+                      "simulated failure: Second Movie");
+            });
+  }
+
+  @Test
+  @DisplayName("Should finish submitted files when a file processing task fails")
+  void shouldFinishSubmittedFilesWhenFileProcessingTaskFails() throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    var failingMoviePath =
+        createMovieFile(rootPath, "00 Failing Movie", "Failing Movie (2024).mkv");
+    var completingMoviePath =
+        createMovieFile(rootPath, "99 Completing Movie", "Completing Movie (2024).mkv");
+    var completingTaskStarted = new CountDownLatch(1);
+    var releaseCompletingTask = new CountDownLatch(1);
+    var failingTaskFinished = new CountDownLatch(1);
+
+    try (var paths = Files.walk(rootPath)) {
+      assertThat(paths.filter(Files::isRegularFile).toList())
+          .as("fixture requires the failing future to be awaited first")
+          .containsExactly(failingMoviePath, completingMoviePath);
+    }
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenAnswer(
+            invocation -> {
+              var parsedFile = invocation.getArgument(0, VideoFileParserResult.class);
+              if (parsedFile.title().equals("Completing Movie")) {
+                completingTaskStarted.countDown();
+                releaseCompletingTask.await();
+                return Optional.empty();
+              }
+
+              assertThat(completingTaskStarted.await(5, TimeUnit.SECONDS)).isTrue();
+              failingTaskFinished.countDown();
+              throw new RuntimeException("simulated search failure");
+            });
+
+    var scanThread =
+        Thread.ofPlatform().start(() -> libraryManagementService.scanLibrary(savedLibraryId));
+
+    try {
+      assertThat(failingTaskFinished.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(scanThread.isAlive())
+          .as("scan should still be waiting for the completing task")
+          .isTrue();
+    } finally {
+      releaseCompletingTask.countDown();
+    }
+
+    assertThat(scanThread.join(Duration.ofSeconds(5))).isTrue();
+    assertThat(
+            fakeMediaFileRepository
+                .findFirstByFilepathUri(FilepathCodec.encode(completingMoviePath))
+                .orElseThrow()
+                .getStatus())
+        .isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should restore interrupt flag and become unhealthy when scan is interrupted during file processing")
+  void shouldRestoreInterruptFlagAndBecomeUnhealthyWhenScanIsInterruptedDuringFileProcessing()
+      throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "Interrupted Movie", "Interrupted Movie (2024).mkv");
+    var processingStarted = new CountDownLatch(1);
+    var releaseProcessing = new CountDownLatch(1);
+    var interruptRestored = new AtomicBoolean();
+    var workerInterrupted = new AtomicBoolean();
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenAnswer(
+            _ -> {
+              processingStarted.countDown();
+              try {
+                releaseProcessing.await();
+              } catch (InterruptedException exception) {
+                workerInterrupted.set(true);
+                throw exception;
+              }
+              return Optional.empty();
+            });
+
+    var scanThread =
+        Thread.ofPlatform()
+            .unstarted(
+                () -> {
+                  libraryManagementService.scanLibrary(savedLibraryId);
+                  interruptRestored.set(Thread.currentThread().isInterrupted());
+                });
+    scanThread.start();
+
+    try {
+      assertThat(processingStarted.await(5, TimeUnit.SECONDS)).isTrue();
+      scanThread.interrupt();
+      assertThat(scanThread.join(Duration.ofSeconds(5))).isTrue();
+    } finally {
+      releaseProcessing.countDown();
+    }
+
+    assertThat(interruptRestored).isTrue();
+    assertThat(workerInterrupted).isTrue();
+    assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class)).isEmpty();
   }
 
   @Test
@@ -311,7 +473,7 @@ class LibraryManagementServiceTest {
                 .name("Other Type Library")
                 .backend(LibraryBackend.LOCAL)
                 .status(LibraryStatus.HEALTHY)
-                .filepathUri("/library/" + UUID.randomUUID())
+                .filepathUri("file:///library/" + UUID.randomUUID())
                 .externalAgentStrategy(ExternalAgentStrategy.TMDB)
                 .type(MediaType.OTHER)
                 .build());
@@ -600,6 +762,203 @@ class LibraryManagementServiceTest {
 
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+  }
+
+  @Test
+  @DisplayName("Should search with URI-derived movie metadata when processing discovered file")
+  void shouldSearchWithUriDerivedMovieMetadataWhenProcessingDiscoveredFile() throws IOException {
+    var expectedSearch =
+        VideoFileParserResult.builder().title("Café Meridian").year("2001").build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("Café Meridian")
+            .externalId("1001")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingMetadataProvider<Movie>();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    var service =
+        libraryManagementServiceWith(movieFileProcessorWith(metadataProvider), seriesFileProcessor);
+    var filepathUri = "file:///library/Caf%C3%A9%20Meridian%20(2001)/movie.mkv";
+    var moviePath = pathWithDisplayName(filepathUri, "movie.mkv");
+
+    service.processDiscoveredFile(savedLibraryId, moviePath);
+
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+  }
+
+  @Test
+  @DisplayName("Should search with external ID from filepath URI when stored filename is mangled")
+  void shouldSearchWithExternalIdFromFilepathUriWhenStoredFilenameIsMangled() {
+    var expectedSearch =
+        VideoFileParserResult.builder()
+            .title("Iron Harbor")
+            .year("2010")
+            .externalId("tt7654321")
+            .externalSource(ExternalSourceType.IMDB)
+            .build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("Iron Harbor")
+            .externalId("1002")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingMetadataProvider<Movie>();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    var service =
+        libraryManagementServiceWith(movieFileProcessorWith(metadataProvider), seriesFileProcessor);
+    var filepathUri =
+        "file:///library/Iron%20Harbor%20(2010)/"
+            + "Iron%20Harbor%20(2010)%20%5Bimdb-tt7654321%5D.mkv";
+    fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(savedLibraryId)
+            .filepathUri(filepathUri)
+            .filename("legacy-mangled-name.mkv")
+            .status(MediaFileStatus.UNMATCHED)
+            .build());
+    var moviePath = Path.of(URI.create(filepathUri));
+
+    service.processDiscoveredFile(savedLibraryId, moviePath);
+
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+  }
+
+  @Test
+  @DisplayName("Should ignore resolution dimensions when searching movie metadata")
+  void shouldIgnoreResolutionDimensionsWhenSearchingMovieMetadata() throws IOException {
+    var expectedSearch = VideoFileParserResult.builder().title("Paper Comet").build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("Paper Comet")
+            .externalId("507329")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingMetadataProvider<Movie>();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    var service =
+        libraryManagementServiceWith(movieFileProcessorWith(metadataProvider), seriesFileProcessor);
+    var filepathUri = "file:///library/Paper%20Comet/Paper%20Comet%20%5B1920x1080%5D.mkv";
+    var moviePath = pathWithDisplayName(filepathUri, "Paper Comet [1920x1080].mkv");
+
+    service.processDiscoveredFile(savedLibraryId, moviePath);
+
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+  }
+
+  @Test
+  @DisplayName("Should remove Unicode dash suffix when searching movie metadata")
+  void shouldRemoveUnicodeDashSuffixWhenSearchingMovieMetadata() throws IOException {
+    var expectedSearch = VideoFileParserResult.builder().title("Quiet Alloy").year("2014").build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("Quiet Alloy")
+            .externalId("815339")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingMetadataProvider<Movie>();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    var service =
+        libraryManagementServiceWith(movieFileProcessorWith(metadataProvider), seriesFileProcessor);
+    var filepathUri =
+        "file:///library/Quiet%20Alloy/Quiet%20Alloy%20%E2%80%93%202014%20%E2%80%93%20WEBDL-1080p.mkv";
+    var moviePath = pathWithDisplayName(filepathUri, "Quiet Alloy – 2014 – WEBDL-1080p.mkv");
+
+    service.processDiscoveredFile(savedLibraryId, moviePath);
+
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+  }
+
+  @Test
+  @DisplayName("Should search with URI-derived series metadata when processing root season file")
+  void shouldSearchWithUriDerivedSeriesMetadataWhenProcessingRootSeasonFile() throws IOException {
+    var library = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var expectedSearch = VideoFileParserResult.builder().title("Harbor Relay").build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("Harbor Relay")
+            .externalId("2001")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingSeriesMetadataProvider();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    when(seriesService.findByTmdbId("2001")).thenReturn(Optional.empty());
+    var service =
+        libraryManagementServiceWith(movieFileProcessor, seriesFileProcessorWith(metadataProvider));
+    var seriesPath =
+        pathWithDisplayName(
+            "file:///Season%2025/Harbor%20Relay.S25E09.mkv", "Harbor Relay.S25E09.mkv");
+
+    service.processDiscoveredFile(library.getId(), seriesPath);
+
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+  }
+
+  @Test
+  @DisplayName(
+      "Should search with accented series folder title when filepath URI has a season folder")
+  void shouldSearchWithAccentedSeriesFolderTitleWhenFilepathUriHasSeasonFolder()
+      throws IOException {
+    var library = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var expectedSearch = VideoFileParserResult.builder().title("Lumière Harbor").build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("Lumière Harbor")
+            .externalId("2002")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingSeriesMetadataProvider();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    when(seriesService.findByTmdbId("2002")).thenReturn(Optional.empty());
+    var service =
+        libraryManagementServiceWith(movieFileProcessor, seriesFileProcessorWith(metadataProvider));
+    var filepathUri =
+        "file:///library/Lumi%C3%A8re%20Harbor/S%C3%A6son%203/" + "Lumiere.Harbor.S03E05.mkv";
+    var seriesPath = pathWithDisplayName(filepathUri, "Lumiere.Harbor.S03E05.mkv");
+
+    service.processDiscoveredFile(library.getId(), seriesPath);
+
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+  }
+
+  @Test
+  @DisplayName("Should persist filename from filepath URI when Path display text is mangled")
+  void shouldPersistFilenameFromFilepathUriWhenPathDisplayTextIsMangled() throws IOException {
+    var movieFilename = "Café Meridian (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+    var filepathUri =
+        "file:///library/Caf%C3%A9%20Meridian%20(2006)/"
+            + "Caf%C3%A9%20Meridian%20(2006)%20-%20%5BBLURAY-1080p%5D%5BDTS%205.1%5D.mkv";
+    var mangledFilename = "Caf�� Meridian (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+    var moviePath = pathWithDisplayName(filepathUri, mangledFilename);
+
+    libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
+
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(filepathUri))
+        .get()
+        .extracting(MediaFile::getFilename)
+        .isEqualTo(movieFilename);
+  }
+
+  @Test
+  @DisplayName("Should repair existing mangled filename from filepath URI when rescanned")
+  void shouldRepairExistingMangledFilenameFromFilepathUriWhenRescanned() throws IOException {
+    var movieFilename = "Café Meridian (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+    var rootPath = createRootLibraryDirectory();
+    var moviePath = createMovieFile(rootPath, "Café Meridian (2006)", movieFilename);
+    var filepathUri = FilepathCodec.encode(moviePath);
+
+    fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(savedLibraryId)
+            .filepathUri(filepathUri)
+            .filename("Caf�� Meridian (2006) - [BLURAY-1080p][DTS 5.1].mkv")
+            .status(MediaFileStatus.MATCHED)
+            .build());
+
+    libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
+
+    var repairedMediaFile = fakeMediaFileRepository.findFirstByFilepathUri(filepathUri);
+    assertThat(repairedMediaFile).get().extracting(MediaFile::getFilename).isEqualTo(movieFilename);
   }
 
   @Test
@@ -1170,6 +1529,66 @@ class LibraryManagementServiceTest {
     var path = FilepathCodec.decode(fileSystem, library.orElseThrow().getFilepathUri());
     Files.createDirectories(path);
 
+    return path;
+  }
+
+  private MovieFileProcessor movieFileProcessorWith(MetadataProvider<Movie> metadataProvider) {
+    return new MovieFileProcessor(
+        new DefaultVideoFileMetadataParser(),
+        new ExternalIdVideoFileMetadataParser(),
+        new MovieMetadataProviderResolver(List.of(metadataProvider)),
+        movieService,
+        fakeMediaFileRepository,
+        new MutexFactoryProvider());
+  }
+
+  private SeriesFileProcessor seriesFileProcessorWith(SeriesMetadataProvider metadataProvider) {
+    var metadataProviderResolver = new SeriesMetadataProviderResolver(List.of(metadataProvider));
+    return new SeriesFileProcessor(
+        new EpisodePathMetadataParser(new EpisodeRegexFixtures()),
+        new SeasonPathMetadataParser(),
+        new SeriesFolderNameParser(),
+        metadataProviderResolver,
+        new DateBasedEpisodeResolver(metadataProviderResolver),
+        seriesService,
+        fakeMediaFileRepository,
+        new FakeSeasonRepository(),
+        new FakeEpisodeRepository(),
+        new MutexFactoryProvider());
+  }
+
+  private LibraryManagementService libraryManagementServiceWith(
+      MovieFileProcessor movieProcessor, SeriesFileProcessor seriesProcessor) {
+    return new LibraryManagementService(
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        new VideoExtensionValidator(),
+        movieProcessor,
+        seriesProcessor,
+        fakeLibraryRepository,
+        new FakeLibraryMetadataRepository(),
+        fakeMediaFileRepository,
+        movieService,
+        seriesService,
+        capturingEventPublisher,
+        new MutexFactoryProvider(),
+        libraryRefreshService,
+        fileSystem);
+  }
+
+  private Path pathWithDisplayName(String filepathUri, String displayName) throws IOException {
+    var path = mock(Path.class);
+    var displayedFilename = mock(Path.class);
+    var pathFileSystem = mock(FileSystem.class);
+    var pathProvider = mock(FileSystemProvider.class);
+    var fileAttributes = mock(BasicFileAttributes.class);
+    when(path.getFileName()).thenReturn(displayedFilename);
+    when(displayedFilename.toString()).thenReturn(displayName);
+    when(path.toAbsolutePath()).thenReturn(path);
+    when(path.toUri()).thenReturn(URI.create(filepathUri));
+    when(path.getFileSystem()).thenReturn(pathFileSystem);
+    when(pathFileSystem.provider()).thenReturn(pathProvider);
+    when(pathProvider.readAttributes(path, BasicFileAttributes.class)).thenReturn(fileAttributes);
+    when(fileAttributes.size()).thenReturn(1L);
     return path;
   }
 

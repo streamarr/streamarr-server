@@ -11,6 +11,7 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.concurrent.CopyOnWriteArrayList;

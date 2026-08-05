@@ -149,7 +149,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
             MediaFile.builder()
                 .libraryId(library.getId())
                 .mediaId(movie.getId())
-                .filepathUri("/test/movie.mkv")
+                .filepathUri("file:///test/movie.mkv")
                 .filename("movie.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -170,7 +170,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
         mediaFileRepository.saveAndFlush(
             MediaFile.builder()
                 .libraryId(library.getId())
-                .filepathUri("/test/orphaned.mkv")
+                .filepathUri("file:///test/orphaned.mkv")
                 .filename("orphaned.mkv")
                 .status(MediaFileStatus.UNMATCHED)
                 .build());
@@ -200,7 +200,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
             MediaFile.builder()
                 .libraryId(libraryToRemove.getId())
                 .mediaId(movieToRemove.getId())
-                .filepathUri("/remove/movie.mkv")
+                .filepathUri("file:///remove/movie.mkv")
                 .filename("movie.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -209,7 +209,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
             MediaFile.builder()
                 .libraryId(libraryToKeep.getId())
                 .mediaId(movieToKeep.getId())
-                .filepathUri("/keep/movie.mkv")
+                .filepathUri("file:///keep/movie.mkv")
                 .filename("movie.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -236,7 +236,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
             MediaFile.builder()
                 .libraryId(library.getId())
                 .mediaId(movie.getId())
-                .filepathUri("/test/streaming.mkv")
+                .filepathUri("file:///test/streaming.mkv")
                 .filename("streaming.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -396,7 +396,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
             MediaFile.builder()
                 .libraryId(library.getId())
                 .mediaId(episode.getId())
-                .filepathUri("/test/breaking.bad.s01e01.mkv")
+                .filepathUri("file:///test/breaking.bad.s01e01.mkv")
                 .filename("breaking.bad.s01e01.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());

@@ -46,7 +46,7 @@ class MovieRepositoryIT extends AbstractIntegrationTest {
             .libraryId(savedLibrary.getId())
             .status(MediaFileStatus.MATCHED)
             .filename("a-wonderful-test-[1080p].mkv")
-            .filepathUri("/root/a-wonderful-test-[1080p].mkv")
+            .filepathUri("file:///root/a-wonderful-test-%5B1080p%5D.mkv")
             .build();
 
     var movie =

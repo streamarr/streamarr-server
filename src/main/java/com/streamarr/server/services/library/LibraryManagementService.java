@@ -19,6 +19,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.library.events.ItemProcessedEvent;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
@@ -35,11 +36,14 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
@@ -310,7 +314,7 @@ public class LibraryManagementService implements ActiveScanChecker {
         walkAndProcessFiles(library);
         completeScanSuccessfully(library, startTime);
       } catch (LibraryScanFailedException e) {
-        completeScanWithFailure(library, e.getCause());
+        completeScanWithFailure(library, e);
       }
     } finally {
       eventPublisher.publishEvent(new ScanEndedEvent(libraryId));
@@ -322,14 +326,41 @@ public class LibraryManagementService implements ActiveScanChecker {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
         var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
 
-      stream
-          .filter(Files::isRegularFile)
-          .filter(file -> !ignoredFileValidator.shouldIgnore(file))
-          .forEach(file -> executor.submit(() -> processFile(library, file)));
+      var tasks =
+          stream
+              .filter(Files::isRegularFile)
+              .filter(file -> !ignoredFileValidator.shouldIgnore(file))
+              .map(file -> executor.submit(() -> processFile(library, file)))
+              .toList();
+      awaitFileProcessing(library, tasks);
 
     } catch (IOException | UncheckedIOException | SecurityException | InvalidPathException e) {
       throw new LibraryScanFailedException(library.getName(), e);
     }
+  }
+
+  private static void awaitFileProcessing(Library library, List<? extends Future<?>> tasks) {
+    var failures = new ArrayList<Throwable>();
+
+    for (var task : tasks) {
+      try {
+        task.get();
+      } catch (InterruptedException exception) {
+        Thread.currentThread().interrupt();
+        throw new LibraryScanFailedException(library.getName(), exception);
+      } catch (ExecutionException exception) {
+        failures.add(exception.getCause());
+      }
+    }
+
+    if (failures.isEmpty()) {
+      return;
+    }
+
+    var scanFailure =
+        new LibraryScanFailedException(library.getName(), failures.size(), failures.getFirst());
+    failures.stream().skip(1).forEach(scanFailure::addSuppressed);
+    throw scanFailure;
   }
 
   private void completeScanSuccessfully(Library library, Instant startTime) {
@@ -350,7 +381,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     library.setScanCompletedOn(Instant.now());
     libraryRepository.save(library);
 
-    log.error("Failed to access {} library during scan attempt.", library.getName(), cause);
+    log.error("Failed {} library scan.", library.getName(), cause);
   }
 
   private Library transitionToScanning(UUID libraryId) {
@@ -423,14 +454,19 @@ public class LibraryManagementService implements ActiveScanChecker {
     try {
       var optionalMediaFile = mediaFileRepository.findFirstByFilepathUri(absoluteFilepath);
 
-      if (optionalMediaFile.isPresent()) {
-        log.info(
-            "MediaFile id: '{}' already exists, not adding again.",
-            optionalMediaFile.get().getId());
-        return optionalMediaFile.get();
+      if (optionalMediaFile.isEmpty()) {
+        return createNewMediaFile(library, path, absoluteFilepath);
       }
 
-      return createNewMediaFile(library, path, absoluteFilepath);
+      var mediaFile = optionalMediaFile.orElseThrow();
+      var filename = FilepathCodec.filenameOf(absoluteFilepath);
+      if (!filename.equals(mediaFile.getFilename())) {
+        mediaFile.setFilename(filename);
+        mediaFileRepository.save(mediaFile);
+      }
+
+      log.info("MediaFile id: '{}' already exists, not adding again.", mediaFile.getId());
+      return mediaFile;
     } finally {
       filepathMutex.unlock();
     }
@@ -448,7 +484,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     return mediaFileRepository.save(
         MediaFile.builder()
             .status(MediaFileStatus.UNMATCHED)
-            .filename(path.getFileName().toString())
+            .filename(FilepathCodec.filenameOf(absoluteFilepath))
             .filepathUri(absoluteFilepath)
             .size(fileSize)
             .libraryId(library.getId())

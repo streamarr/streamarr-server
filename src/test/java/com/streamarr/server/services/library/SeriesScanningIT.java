@@ -18,6 +18,7 @@ import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;

@@ -15,6 +15,7 @@ import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;

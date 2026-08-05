@@ -133,7 +133,7 @@ class MovieResolverIT extends AbstractIntegrationTest {
             .libraryId(library.getId())
             .status(MediaFileStatus.MATCHED)
             .filename("inception.mkv")
-            .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
+            .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
             .build());
 
     return movie;

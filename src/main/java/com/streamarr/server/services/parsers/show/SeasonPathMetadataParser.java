@@ -1,7 +1,6 @@
 package com.streamarr.server.services.parsers.show;
 
 import com.streamarr.server.services.parsers.MetadataParser;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -20,38 +19,43 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
     public Result {}
   }
 
-  public Optional<Result> parse(String path) {
-    return Optional.of(getSeasonNumberFromPath(path));
+  public Optional<Result> parse(String folderName) {
+    if (folderName.isBlank()) {
+      return Optional.of(
+          Result.builder().seasonNumber(OptionalInt.empty()).isSeasonFolder(false).build());
+    }
+
+    return Optional.of(getSeasonNumberFromFolderName(folderName));
   }
 
-  private Result getSeasonNumberFromPath(String path) {
-    path = Path.of(path).getFileName().toString().toLowerCase();
+  private Result getSeasonNumberFromFolderName(String folderName) {
+    var directoryName = folderName.toLowerCase();
 
-    var specialAliasResult = evaluatePathForSpecialAliases(path);
+    var specialAliasResult = evaluatePathForSpecialAliases(directoryName);
 
     if (specialAliasResult.isPresent()) {
       return specialAliasResult.get();
     }
 
-    var numericFolderResult = evaluatePathForNumericSeasonFolders(path);
+    var numericFolderResult = evaluatePathForNumericSeasonFolders(directoryName);
 
     if (numericFolderResult.isPresent()) {
       return numericFolderResult.get();
     }
 
-    var shortNameResult = evaluatePathForOptimisticShortName(path);
+    var shortNameResult = evaluatePathForOptimisticShortName(directoryName);
 
     if (shortNameResult.isPresent()) {
       return shortNameResult.get();
     }
 
-    var folderEvaluationResult = evaluatePathUsingFolderNames(path);
+    var folderEvaluationResult = evaluatePathUsingFolderNames(directoryName);
 
     if (folderEvaluationResult.isPresent()) {
       return folderEvaluationResult.get();
     }
 
-    var parts = path.split("[._ -]", -1);
+    var parts = directoryName.split("[._ -]", -1);
     var partsEvaluationResult = evaluatePathUsingParts(parts);
 
     return partsEvaluationResult.orElseGet(

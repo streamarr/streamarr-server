@@ -20,6 +20,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
@@ -76,7 +77,7 @@ class FileEventProcessorTest {
             .name("Movies")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepathUri("/media/movies")
+            .filepathUri("file:///media/movies")
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.MOVIE)
             .build();
@@ -87,7 +88,7 @@ class FileEventProcessorTest {
             .name("Special Movies")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepathUri("/media/movies/special")
+            .filepathUri("file:///media/movies/special")
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.MOVIE)
             .build();
@@ -98,7 +99,7 @@ class FileEventProcessorTest {
             .name("TV Shows")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepathUri("/media/shows")
+            .filepathUri("file:///media/shows")
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.SERIES)
             .build();
@@ -120,7 +121,6 @@ class FileEventProcessorTest {
             new MovieMetadataProviderResolver(List.of(tmdbProvider)),
             movieService,
             mediaFileRepository,
-            fileSystem,
             new MutexFactoryProvider());
 
     var seriesFileProcessor = mock(SeriesFileProcessor.class);
@@ -518,7 +518,7 @@ class FileEventProcessorTest {
             .name("Anime")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepathUri("/media/anime")
+            .filepathUri("file:///media/anime")
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.MOVIE)
             .build();

@@ -113,7 +113,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
             .libraryId(movieLibrary.getId())
             .status(MediaFileStatus.MATCHED)
             .filename(title.toLowerCase().replace(' ', '-') + ".mkv")
-            .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
+            .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
             .build();
 
     return movieRepository.saveAndFlush(
@@ -162,7 +162,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
             .libraryId(seriesLibrary.getId())
             .status(MediaFileStatus.MATCHED)
             .filename(title.toLowerCase().replace(' ', '-') + ".mkv")
-            .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
+            .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
             .build();
 
     var episode =

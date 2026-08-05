@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.task.FileProcessingTask;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryChangeEvent;

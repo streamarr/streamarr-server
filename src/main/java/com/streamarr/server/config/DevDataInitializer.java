@@ -24,7 +24,7 @@ import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.library.FilepathCodec;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
