@@ -29,13 +29,30 @@ management:
     web:
       exposure:
         include: health
+  endpoint:
+    health:
+      status:
+        order: DOWN,OUT_OF_SERVICE,UP,DEGRADED,UNKNOWN
+      group:
+        metadata:
+          include: tmdb
+          status:
+            order: DEGRADED,DOWN,OUT_OF_SERVICE,UP,UNKNOWN
+            http-mapping:
+              degraded: 503
+              down: 503
+              out-of-service: 503
 
 tmdb:
   api:
+    base-url: ${TMDB_API_BASE_URL:https://api.themoviedb.org/3}
     token: ${TMDB_API_TOKEN:}
     cache-size-mb: ${TMDB_API_CACHE_SIZE_MB:200}
     requests-per-second: ${TMDB_API_REQUESTS_PER_SECOND:35}
     request-timeout-seconds: ${TMDB_API_REQUEST_TIMEOUT_SECONDS:30}
+  health:
+    probe-timeout: ${TMDB_HEALTH_PROBE_TIMEOUT:2s}
+    cache-ttl: ${TMDB_HEALTH_CACHE_TTL:30s}
   image:
     base-url: ${TMDB_IMAGE_BASE_URL:https://image.tmdb.org/t/p/original}
 

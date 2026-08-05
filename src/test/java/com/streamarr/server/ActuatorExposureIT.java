@@ -2,13 +2,17 @@ package com.streamarr.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.streamarr.server.fakes.FakeHttpClient;
+import java.net.http.HttpClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
@@ -23,7 +27,21 @@ class ActuatorExposureIT extends AbstractIntegrationTest {
 
   @Autowired private WebApplicationContext webApplicationContext;
 
+  @TestBean(name = "tmdb")
+  HttpClient tmdbHttpClient;
+
+  @TestBean(name = "tmdbHealth")
+  HttpClient tmdbHealthHttpClient;
+
   private MockMvc mockMvc;
+
+  static HttpClient tmdbHttpClient() {
+    return FakeHttpClient.respondingWith(200);
+  }
+
+  static HttpClient tmdbHealthHttpClient() {
+    return FakeHttpClient.respondingWith(503);
+  }
 
   @BeforeEach
   void setUp() {
@@ -36,10 +54,21 @@ class ActuatorExposureIT extends AbstractIntegrationTest {
     var response = mockMvc.perform(get("/actuator/health")).andReturn().getResponse();
 
     // Exposure, not liveness: the aggregate flips between 200 and 503 with the environment
-    // (the ffmpeg and TMDB indicators go DOWN on runners without them). Both statuses carry a
-    // health document, proving the endpoint is mapped.
+    // (the ffmpeg indicator goes DOWN on runners without it). Both statuses carry a health
+    // document, proving the endpoint is mapped.
     assertThat(response.getStatus()).isIn(200, 503);
     assertThat(response.getContentAsString()).contains("status");
+  }
+
+  @Test
+  @DisplayName("Should serve the metadata health group when TMDB reachability queried")
+  void shouldServeMetadataHealthGroupWhenTmdbReachabilityQueried() throws Exception {
+    mockMvc
+        .perform(get("/actuator/health/metadata"))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.status").value("DEGRADED"))
+        .andExpect(jsonPath("$.description").value("TMDB metadata service is unavailable"))
+        .andExpect(jsonPath("$.statusCode").doesNotExist());
   }
 
   @Test

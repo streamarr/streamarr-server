@@ -48,7 +48,7 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
 
   public TheMovieDatabaseHttpService(
       @Value("${tmdb.api.token:}") String tmdbApiToken,
-      @Value("${tmdb.api.base-url:https://api.themoviedb.org/3}") String tmdbApiBaseUrl,
+      @Value("${tmdb.api.base-url}") String tmdbApiBaseUrl,
       @Value("${tmdb.image.base-url:https://image.tmdb.org/t/p/original}") String tmdbImageBaseUrl,
       @Qualifier("tmdb") HttpClient client,
       ObjectMapper objectMapper) {

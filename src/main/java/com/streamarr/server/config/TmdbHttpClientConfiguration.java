@@ -4,6 +4,7 @@ import com.github.mizosoft.methanol.HttpCache;
 import com.github.mizosoft.methanol.Methanol;
 import com.github.mizosoft.methanol.RetryInterceptor;
 import com.github.mizosoft.methanol.RetryInterceptor.BackoffStrategy;
+import com.streamarr.server.config.health.TmdbHealthProperties;
 import com.streamarr.server.config.http.RateLimitingInterceptor;
 import java.net.http.HttpClient;
 import java.time.Duration;
@@ -43,6 +44,15 @@ public class TmdbHttpClientConfiguration {
         .cache(tmdbHttpCache)
         .interceptor(retryInterceptor)
         .interceptor(rateLimitingInterceptor)
+        .build();
+  }
+
+  @Bean("tmdbHealth")
+  HttpClient tmdbHealthHttpClient(TmdbHealthProperties properties) {
+    return Methanol.newBuilder()
+        .version(HttpClient.Version.HTTP_1_1)
+        .connectTimeout(properties.probeTimeout())
+        .requestTimeout(properties.probeTimeout())
         .build();
   }
 }
