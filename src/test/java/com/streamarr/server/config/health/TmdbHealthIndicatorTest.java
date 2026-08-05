@@ -220,13 +220,14 @@ class TmdbHealthIndicatorTest {
     var indicator =
         indicatorFor(FakeHttpClient.failingWith(new InterruptedException("interrupted")));
 
-    var health = indicator.health();
+    try {
+      var health = indicator.health();
 
-    assertThat(health.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
-    assertThat(Thread.currentThread().isInterrupted()).isTrue();
-
-    // Clear the interrupt flag to avoid polluting other tests
-    Thread.interrupted();
+      assertThat(health.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted();
+    }
   }
 
   @Test
