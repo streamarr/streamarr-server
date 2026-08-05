@@ -12,12 +12,13 @@ import org.springframework.stereotype.Service;
 @Order(100)
 public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileParserResult> {
 
-  private static final List<Pattern> EXTRACTION_REGEXES =
+  private static final Pattern YEAR_REGEX = Pattern.compile("(?:19|20)\\d{2}");
+  private static final List<Pattern> TITLE_BEFORE_YEAR_REGEXES =
       List.of(
-          Pattern.compile(
-              "(.*[^_,.\\-])[_.()\\[\\]\\-](19[0-9]{2}|20[0-9]{2})(?![0-9]+|[xX][0-9]{3,4}|\\W[0-9]{2}\\W[0-9]{2})([ _,.()\\[\\]\\-][^0-9]|).*(19[0-9]{2}|20[0-9]{2})*"),
-          Pattern.compile(
-              "(.*[^_,.\\-])[ _.()\\[\\]\\-]+(19\\d{2}|20\\d{2})(?!\\d+|[xX]\\d{3,4}|\\W\\d{2}\\W\\d{2})([ _,.()\\[\\]\\-]\\D|).*(19\\d{2}|20\\d{2})*"));
+          Pattern.compile("(.*[^_,.\\-])[_.()\\[\\]\\-]$"),
+          Pattern.compile("(.*[^_,.\\-])[ _.()\\[\\]\\-]+$"));
+  private static final Pattern INVALID_YEAR_SUFFIX_REGEX =
+      Pattern.compile("\\d|[xX]\\d{3}|\\W\\d{2}\\W\\d{2}");
   private static final Pattern TAG_REGEX =
       Pattern.compile("^\\s*\\[[^]]+](?!\\.\\w+$)\\s*(?<cleaned>.+)");
   private static final Pattern KNOWN_WORD_EXCLUSIONS_REGEX =
@@ -31,24 +32,19 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
       return Optional.empty();
     }
 
-    for (var rx : EXTRACTION_REGEXES) {
+    var extractedMetadata = extractTitleAndYear(filename);
 
-      var matcher = rx.matcher(filename);
+    if (extractedMetadata.isPresent()) {
+      var metadata = extractedMetadata.orElseThrow();
 
-      if (!matcher.matches()) {
-        continue;
-      }
-
-      var matchResult = matcher.toMatchResult();
-
-      if (StringUtils.isBlank(matchResult.group(1))) {
+      if (StringUtils.isBlank(metadata.rawTitle())) {
         return Optional.empty();
       }
 
       return Optional.of(
           VideoFileParserResult.builder()
-              .title(cleanTitle(matchResult.group(1)))
-              .year(cleanYear(matchResult.group(2)))
+              .title(cleanTitle(metadata.rawTitle()))
+              .year(cleanYear(metadata.year()))
               .build());
     }
 
@@ -59,6 +55,41 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
     }
 
     return Optional.of(VideoFileParserResult.builder().title(cleanedInput).build());
+  }
+
+  private Optional<ExtractedMetadata> extractTitleAndYear(String filename) {
+    for (var titleRegex : TITLE_BEFORE_YEAR_REGEXES) {
+      var extractedMetadata = findLastYear(filename, titleRegex);
+
+      if (extractedMetadata.isPresent()) {
+        return extractedMetadata;
+      }
+    }
+
+    return Optional.empty();
+  }
+
+  private Optional<ExtractedMetadata> findLastYear(String filename, Pattern titleRegex) {
+    var yearMatcher = YEAR_REGEX.matcher(filename);
+    ExtractedMetadata lastMatch = null;
+
+    while (yearMatcher.find()) {
+      if (hasInvalidYearSuffix(filename, yearMatcher.end())) {
+        continue;
+      }
+
+      var titleMatcher = titleRegex.matcher(filename.substring(0, yearMatcher.start()));
+
+      if (titleMatcher.matches()) {
+        lastMatch = new ExtractedMetadata(titleMatcher.group(1), yearMatcher.group());
+      }
+    }
+
+    return Optional.ofNullable(lastMatch);
+  }
+
+  private boolean hasInvalidYearSuffix(String filename, int yearEnd) {
+    return INVALID_YEAR_SUFFIX_REGEX.matcher(filename.substring(yearEnd)).lookingAt();
   }
 
   private String cleanTitle(String rawTitle) {
@@ -98,4 +129,6 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
   private String cleanYear(String year) {
     return year.trim();
   }
+
+  private record ExtractedMetadata(String rawTitle, String year) {}
 }
