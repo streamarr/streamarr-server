@@ -179,5 +179,5 @@ Clients render guidance ("no households yet — finish setup on the web", "no pr
 == Response headers
 
 * Every `/api/auth/**` response is uncacheable: `Cache-Control: no-cache, no-store, max-age=0, must-revalidate` alongside `Pragma: no-cache` and `Expires: 0`. The security filter chain writes that set, and it writes all of it or none — a handler that sets any cache header of its own silently downgrades the response, so handlers set none.
-* As a Streamarr extension, `429` responses carry `Retry-After` as integer delta-seconds, the ceiling of the remaining wait with a minimum of one second. RFC 8628 does not define this header; its polling controls are `interval` and cumulative five-second `slow_down` increases.
+* As a Streamarr extension, `429` responses carry a positive integer delta-seconds `Retry-After` hint. Clients treat it as advisory. RFC 8628 does not define this header; its polling controls are `interval` and cumulative five-second `slow_down` increases.
 * `/api/auth/**` never redirects. Deployments must not rewrite these paths.

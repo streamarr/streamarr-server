@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import java.security.SecureRandom;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -11,7 +12,16 @@ import org.springframework.stereotype.Component;
 @Component
 public class UserCodeGenerator {
 
-  private final SecureRandom secureRandom = new SecureRandom();
+  private final SecureRandom secureRandom;
+
+  @Autowired
+  UserCodeGenerator() {
+    this(new SecureRandom());
+  }
+
+  UserCodeGenerator(SecureRandom secureRandom) {
+    this.secureRandom = secureRandom;
+  }
 
   public String generate() {
     var code = new StringBuilder(UserCode.LENGTH);

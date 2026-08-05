@@ -283,6 +283,19 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
+  @DisplayName("Should fail fast when the cumulative polling interval would overflow")
+  void shouldFailFastWhenCumulativePollingIntervalWouldOverflow() {
+    var issued = service.issue("Apple TV");
+    var authorization = authorizationRepository.findAll().getFirst();
+    authorization.setPollIntervalSeconds(Integer.MAX_VALUE - 4);
+    authorization.setNextPollAt(clock.instant().plusSeconds(1));
+
+    assertThatThrownBy(() -> service.redeem(issued.deviceCode()))
+        .isInstanceOf(ArithmeticException.class);
+    assertThat(storedInterval()).isEqualTo(Integer.MAX_VALUE - 4);
+  }
+
+  @Test
   @DisplayName("Should mint a session at the winning poll rather than at approval")
   void shouldMintSessionAtWinningPollRatherThanAtApproval() {
     var issued = service.issue("Apple TV");
@@ -357,12 +370,21 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should report expired once the code's lifetime has passed")
-  void shouldReportExpiredOnceCodesLifetimeHasPassed() {
+  @DisplayName("Should remain pending immediately before the code lifetime ends")
+  void shouldRemainPendingImmediatelyBeforeCodeLifetimeEnds() {
     var issued = service.issue("Apple TV");
-    approve(issued.userCode());
 
-    advanceClock(Duration.ofMinutes(11));
+    advanceClock(properties.codeTtl().minusNanos(1));
+
+    assertThat(service.redeem(issued.deviceCode())).isInstanceOf(DevicePollResult.Pending.class);
+  }
+
+  @Test
+  @DisplayName("Should report expired at the exact code lifetime boundary")
+  void shouldReportExpiredAtExactCodeLifetimeBoundary() {
+    var issued = service.issue("Apple TV");
+
+    advanceClock(properties.codeTtl());
 
     assertThat(service.redeem(issued.deviceCode())).isInstanceOf(DevicePollResult.Expired.class);
     assertThat(sessionRepository.findAll()).isEmpty();

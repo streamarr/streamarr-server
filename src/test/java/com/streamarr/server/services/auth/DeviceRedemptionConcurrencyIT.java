@@ -7,6 +7,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -15,14 +16,19 @@ import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -50,21 +56,30 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   @Autowired private GatedAccessTokenIssuer gatedIssuer;
 
-  private UUID accountId;
+  @Autowired private GatedClock gatedClock;
+
+  private final List<UUID> accountIds = new ArrayList<>();
 
   @AfterEach
   void deleteSeededRows() {
     gatedIssuer.reset();
+    gatedClock.reset();
     authorizationRepository.deleteAll();
-    if (accountId != null) {
+    for (var accountId : accountIds) {
       // FK cascades sweep auth_session and refresh_token rows.
       userAccountRepository.deleteById(accountId);
-      accountId = null;
     }
+    accountIds.clear();
   }
 
   @TestConfiguration
   static class GatedIssuerConfig {
+
+    @Bean
+    @Primary
+    GatedClock gatedClock() {
+      return new GatedClock(Clock.systemUTC());
+    }
 
     @Bean
     @Primary
@@ -82,6 +97,80 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
           membershipRepository,
           profileRepository,
           accountProfileRepository);
+    }
+  }
+
+  static class GatedClock extends Clock {
+
+    private static final int APPROVAL_CLOCK_CALLS_BEFORE_WRITE = 3;
+
+    private final Clock delegate;
+    private final AtomicReference<Thread> gatedThread = new AtomicReference<>();
+    private final AtomicInteger callsUntilHold = new AtomicInteger();
+    private final AtomicReference<CountDownLatch> reachedHold = new AtomicReference<>();
+    private final AtomicReference<CountDownLatch> releaseHold = new AtomicReference<>();
+
+    GatedClock(Clock delegate) {
+      this.delegate = delegate;
+    }
+
+    void prepareApprovalHold() {
+      callsUntilHold.set(APPROVAL_CLOCK_CALLS_BEFORE_WRITE);
+      reachedHold.set(new CountDownLatch(1));
+      releaseHold.set(new CountDownLatch(1));
+    }
+
+    void gateCurrentThread() {
+      gatedThread.set(Thread.currentThread());
+    }
+
+    boolean awaitApprovalBeforeWrite() throws InterruptedException {
+      return reachedHold.get().await(10, TimeUnit.SECONDS);
+    }
+
+    void releaseApproval() {
+      var release = releaseHold.get();
+      if (release != null) {
+        release.countDown();
+      }
+    }
+
+    void reset() {
+      releaseApproval();
+      gatedThread.set(null);
+      callsUntilHold.set(0);
+      reachedHold.set(null);
+      releaseHold.set(null);
+    }
+
+    @Override
+    public ZoneId getZone() {
+      return delegate.getZone();
+    }
+
+    @Override
+    public Clock withZone(ZoneId zone) {
+      return new GatedClock(delegate.withZone(zone));
+    }
+
+    @Override
+    public Instant instant() {
+      if (Thread.currentThread() == gatedThread.get() && callsUntilHold.decrementAndGet() == 0) {
+        reachedHold.get().countDown();
+        awaitRelease();
+      }
+      return delegate.instant();
+    }
+
+    private void awaitRelease() {
+      try {
+        if (!releaseHold.get().await(20, TimeUnit.SECONDS)) {
+          throw new IllegalStateException("Approval gate was never released.");
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException("Interrupted while approval was gated.", e);
+      }
     }
   }
 
@@ -139,35 +228,72 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should never report a live approved grant as expired when approval races a poll")
-  void shouldNeverReportLiveApprovedGrantAsExpiredWhenApprovalRacesPoll() throws Exception {
+  @DisplayName("Should return pending when a poll locks the row before approval commits")
+  void shouldReturnPendingWhenPollLocksRowBeforeApprovalCommits() throws Exception {
     var approver = seedApprover();
     var issued = deviceAuthorizationService.issue("Apple TV");
+    gatedClock.prepareApprovalHold();
 
-    var start = new CyclicBarrier(2);
     DevicePollResult result;
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var approval =
           executor.submit(
               () -> {
-                start.await(20, TimeUnit.SECONDS);
+                gatedClock.gateCurrentThread();
                 approve(issued.userCode(), approver);
                 return null;
               });
-      var poll =
-          executor.submit(
-              () -> {
-                start.await(20, TimeUnit.SECONDS);
-                return deviceAuthorizationService.redeem(issued.deviceCode());
-              });
 
-      result = poll.get(20, TimeUnit.SECONDS);
+      assertThat(gatedClock.awaitApprovalBeforeWrite()).isTrue();
+      try {
+        assertThat(statusOf(issued.userCode())).isEqualTo(DeviceAuthorizationStatus.PENDING);
+        result = deviceAuthorizationService.redeem(issued.deviceCode());
+      } finally {
+        gatedClock.releaseApproval();
+      }
       approval.get(20, TimeUnit.SECONDS);
     }
 
-    // Either order is legitimate; what must never happen is a live grant classified as expired.
-    assertThat(result)
-        .isNotInstanceOfAny(DevicePollResult.Expired.class, DevicePollResult.Denied.class);
+    assertThat(result).isInstanceOf(DevicePollResult.Pending.class);
+    assertThat(statusOf(issued.userCode())).isEqualTo(DeviceAuthorizationStatus.APPROVED);
+  }
+
+  @Test
+  @DisplayName("Should preserve the winning decision when two approvers race")
+  void shouldPreserveWinningDecisionWhenTwoApproversRace() throws Exception {
+    var losingApprover = seedApprover();
+    var winningApprover = seedApprover();
+    var issued = deviceAuthorizationService.issue("Apple TV");
+    gatedClock.prepareApprovalHold();
+
+    DeviceAuthorizationView winningDecision;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var losingDecision =
+          executor.submit(
+              () -> {
+                gatedClock.gateCurrentThread();
+                return decide(issued.userCode(), DeviceDecision.APPROVE, losingApprover);
+              });
+
+      assertThat(gatedClock.awaitApprovalBeforeWrite()).isTrue();
+      try {
+        winningDecision = decide(issued.userCode(), DeviceDecision.DENY, winningApprover);
+      } finally {
+        gatedClock.releaseApproval();
+      }
+
+      assertThatThrownBy(() -> losingDecision.get(20, TimeUnit.SECONDS))
+          .isInstanceOf(ExecutionException.class)
+          .hasCauseInstanceOf(DeviceCodeNotPendingException.class);
+    }
+
+    assertThat(winningDecision.status()).isEqualTo(DeviceAuthorizationStatus.DENIED);
+    assertThat(authorizationOf(issued.userCode()))
+        .satisfies(
+            authorization -> {
+              assertThat(authorization.getStatus()).isEqualTo(DeviceAuthorizationStatus.DENIED);
+              assertThat(authorization.getDecidedByAccountId()).isEqualTo(winningApprover.getId());
+            });
   }
 
   @Test
@@ -180,7 +306,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     // A deleted approver no longer authorizes consumption. No write is attempted, so this is a
     // refusal path rather than transaction-rollback evidence.
     userAccountRepository.deleteById(approver.getId());
-    accountId = null;
+    accountIds.remove(approver.getId());
 
     assertThat(deviceAuthorizationService.redeem(issued.deviceCode()))
         .isInstanceOf(DevicePollResult.Expired.class);
@@ -258,24 +384,33 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   private UserAccount seedApprover() {
     var approver = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
-    accountId = approver.getId();
+    accountIds.add(approver.getId());
     return approver;
   }
 
   private void approve(String userCode, UserAccount approver) {
-    deviceAuthorizationService.decide(
+    decide(userCode, DeviceDecision.APPROVE, approver);
+  }
+
+  private DeviceAuthorizationView decide(
+      String userCode, DeviceDecision decision, UserAccount approver) {
+    return deviceAuthorizationService.decide(
         DeviceDecisionCommand.builder()
             .userCode(userCode)
-            .decision(DeviceDecision.APPROVE)
+            .decision(decision)
             .decidedByAccountId(approver.getId())
             .build());
   }
 
-  private DeviceAuthorizationStatus statusOf(String displayUserCode) {
+  private com.streamarr.server.domain.auth.DeviceAuthorization authorizationOf(
+      String displayUserCode) {
     return authorizationRepository
         .findByUserCode(UserCode.normalize(displayUserCode))
-        .orElseThrow()
-        .getStatus();
+        .orElseThrow();
+  }
+
+  private DeviceAuthorizationStatus statusOf(String displayUserCode) {
+    return authorizationOf(displayUserCode).getStatus();
   }
 
   private int intervalOf(String displayUserCode) {
