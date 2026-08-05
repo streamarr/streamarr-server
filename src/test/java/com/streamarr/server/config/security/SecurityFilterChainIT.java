@@ -496,10 +496,10 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
     return cookie;
   }
 
-  private static String loginBody(String email, boolean cookieMode) {
+  private String loginBody(String email, boolean cookieMode) {
     return """
         {"email": "%s", "password": "%s", "deviceName": "Test", "cookieMode": %s}"""
-        .formatted(email, AuthTestSupport.PASSWORD, cookieMode);
+        .formatted(email, authTestSupport.password(), cookieMode);
   }
 
   private static Stream<Arguments> nonJsonAuthRequests() {

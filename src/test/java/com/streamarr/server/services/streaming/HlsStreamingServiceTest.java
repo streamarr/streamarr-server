@@ -218,7 +218,7 @@ class HlsStreamingServiceTest {
                 .size(1_000_000L)
                 .build());
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getSourcePath()).isEqualTo(Path.of(URI.create(filepathUri)));
   }
