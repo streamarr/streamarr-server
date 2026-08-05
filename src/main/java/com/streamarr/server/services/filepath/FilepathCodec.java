@@ -132,14 +132,18 @@ public final class FilepathCodec {
       return;
     }
 
-    if (!uri.isOpaque()
-        && uri.getRawAuthority() == null
-        && uri.getQuery() == null
-        && uri.getFragment() == null) {
+    if (isValidFileUriStructure(uri)) {
       return;
     }
 
     throw invalidFilepathUri(filepathUri);
+  }
+
+  private static boolean isValidFileUriStructure(URI uri) {
+    return !uri.isOpaque()
+        && uri.getRawAuthority() == null
+        && uri.getQuery() == null
+        && uri.getFragment() == null;
   }
 
   private static IllegalArgumentException invalidFilepathUri(String filepathUri) {
