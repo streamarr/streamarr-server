@@ -234,6 +234,11 @@ class SecurityConfigTest {
     MeterRegistry meterRegistry() {
       return new SimpleMeterRegistry();
     }
+
+    @Bean
+    AuthCookiePolicy authCookiePolicy() {
+      return AuthCookiePolicy.SECURE;
+    }
   }
 
   @RestController

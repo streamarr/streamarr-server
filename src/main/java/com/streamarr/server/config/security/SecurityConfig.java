@@ -24,6 +24,7 @@ public class SecurityConfig {
   private final RestAuthenticationEntryPoint authenticationEntryPoint;
   private final RestAccessDeniedHandler accessDeniedHandler;
   private final AuthTokenProperties tokenProperties;
+  private final AuthCookiePolicy cookiePolicy;
 
   /**
    * The permit matrix: pre-auth endpoints and health stay open; non-health actuator endpoints are
@@ -32,11 +33,11 @@ public class SecurityConfig {
    * and future surfaces — demands SCOPE_ACCOUNT, which household and profile tokens satisfy through
    * the scope hierarchy.
    *
-   * <p>CSRF (SPA shape: readable __Host-XSRF-TOKEN cookie, Xor rendering, header-only submission)
-   * protects unsafe requests from the Streamarr cookie-carrying browser population. The filter is
-   * wired manually because the resource-server DSL exempts any request its bearer resolver finds a
-   * token on — and our resolver reads the access cookie, which is precisely the ambient credential
-   * CSRF must cover.
+   * <p>CSRF (SPA shape: readable host-bound cookie, Xor rendering, header-only submission) protects
+   * unsafe requests from the Streamarr cookie-carrying browser population. Explicitly insecure
+   * development uses an unprefixed fallback. The filter is wired manually because the
+   * resource-server DSL exempts any request its bearer resolver finds a token on — and our resolver
+   * reads the access cookie, which is precisely the ambient credential CSRF must cover.
    */
   @Bean
   SecurityFilterChain securityFilterChain(HttpSecurity http) {
@@ -87,10 +88,11 @@ public class SecurityConfig {
   }
 
   private CsrfFilter cookieScopedCsrfFilter() {
-    var tokenRepository = new StreamarrCookieCsrfTokenRepository(tokenProperties.refreshTokenTtl());
+    var tokenRepository =
+        new StreamarrCookieCsrfTokenRepository(tokenProperties.refreshTokenTtl(), cookiePolicy);
 
     var filter = new CsrfFilter(tokenRepository);
-    filter.setRequireCsrfProtectionMatcher(new StreamarrCookieCsrfMatcher());
+    filter.setRequireCsrfProtectionMatcher(new StreamarrCookieCsrfMatcher(cookiePolicy));
     filter.setRequestHandler(new SpaCookieCsrfTokenRequestHandler());
     filter.setAccessDeniedHandler(accessDeniedHandler);
     return filter;

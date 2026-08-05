@@ -15,16 +15,27 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
  * it with no auth cookie and the response mints the session. That is login CSRF — a victim silently
  * signed into the attacker's account, who then pairs a TV to it.
  *
- * <p>The __Host-XSRF-TOKEN cookie closes that gap for returning browsers: the filter writes it on
- * the SPA's first request, so any browser that has talked to this origin carries one before it can
- * POST a login. First-contact safety also relies on JSON-only auth mutations and the absence of
- * hostile CORS grants. A native client carries no cookies — the Apple clients disable cookie
- * storage — so bearer-mode login and the planned device-pairing flow stay reachable with no CSRF
- * token. An unrecognised cookie-keeping client fails closed with a CSRF 403.
+ * <p>The host-bound CSRF cookie closes that gap for returning browsers: the filter writes it on the
+ * SPA's first request, so any browser that has talked to this origin carries one before it can POST
+ * a login. Explicitly insecure development uses the unprefixed fallback instead. First-contact
+ * safety also relies on JSON-only auth mutations and the absence of hostile CORS grants. A native
+ * client carries no cookies — the Apple clients disable cookie storage — so bearer-mode login and
+ * the planned device-pairing flow stay reachable with no CSRF token. An unrecognised cookie-keeping
+ * client fails closed with a CSRF 403.
  */
 final class StreamarrCookieCsrfMatcher implements RequestMatcher {
 
   private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "TRACE", "OPTIONS");
+
+  private final Set<String> streamarrCookies;
+
+  StreamarrCookieCsrfMatcher(AuthCookiePolicy cookiePolicy) {
+    streamarrCookies =
+        Set.of(
+            AuthCookies.ACCESS_COOKIE,
+            AuthCookies.REFRESH_COOKIE,
+            cookiePolicy.getCsrfCookieName());
+  }
 
   @Override
   public boolean matches(HttpServletRequest request) {
@@ -46,12 +57,12 @@ final class StreamarrCookieCsrfMatcher implements RequestMatcher {
         && !authorization.substring(prefix.length()).isBlank();
   }
 
-  private static boolean hasStreamarrCookie(HttpServletRequest request) {
+  private boolean hasStreamarrCookie(HttpServletRequest request) {
     var cookies = request.getCookies();
     if (cookies == null) {
       return false;
     }
 
-    return Arrays.stream(cookies).anyMatch(cookie -> AuthCookies.ALL.contains(cookie.getName()));
+    return Arrays.stream(cookies).anyMatch(cookie -> streamarrCookies.contains(cookie.getName()));
   }
 }

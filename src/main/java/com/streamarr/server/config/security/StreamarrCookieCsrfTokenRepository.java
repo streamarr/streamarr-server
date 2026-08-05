@@ -25,12 +25,14 @@ final class StreamarrCookieCsrfTokenRepository implements CsrfTokenRepository {
       StreamarrCookieCsrfTokenRepository.class.getName() + ".TOKEN_REMOVED";
 
   private final Duration cookieLifetime;
+  private final AuthCookiePolicy cookiePolicy;
 
-  StreamarrCookieCsrfTokenRepository(Duration cookieLifetime) {
+  StreamarrCookieCsrfTokenRepository(Duration cookieLifetime, AuthCookiePolicy cookiePolicy) {
     if (cookieLifetime == null || cookieLifetime.isZero() || cookieLifetime.isNegative()) {
       throw new IllegalArgumentException("cookieLifetime must be positive");
     }
     this.cookieLifetime = cookieLifetime;
+    this.cookiePolicy = cookiePolicy;
   }
 
   @Override
@@ -46,8 +48,8 @@ final class StreamarrCookieCsrfTokenRepository implements CsrfTokenRepository {
   public void saveToken(CsrfToken token, HttpServletRequest request, HttpServletResponse response) {
     var removingToken = token == null;
     var cookie =
-        ResponseCookie.from(AuthCookies.CSRF_COOKIE, removingToken ? "" : token.getToken())
-            .secure(true)
+        ResponseCookie.from(cookiePolicy.getCsrfCookieName(), removingToken ? "" : token.getToken())
+            .secure(cookiePolicy.isSecure())
             .httpOnly(false)
             .sameSite("Lax")
             .path("/")
@@ -63,7 +65,7 @@ final class StreamarrCookieCsrfTokenRepository implements CsrfTokenRepository {
     if (Boolean.TRUE.equals(request.getAttribute(TOKEN_REMOVED_ATTRIBUTE))) {
       return null;
     }
-    var cookie = WebUtils.getCookie(request, AuthCookies.CSRF_COOKIE);
+    var cookie = WebUtils.getCookie(request, cookiePolicy.getCsrfCookieName());
     if (cookie == null || !StringUtils.hasText(cookie.getValue())) {
       return null;
     }

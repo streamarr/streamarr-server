@@ -1,5 +1,6 @@
 package com.streamarr.server.controllers.auth;
 
+import com.streamarr.server.config.security.AuthCookiePolicy;
 import com.streamarr.server.config.security.AuthCookies;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import java.time.Duration;
@@ -16,6 +17,7 @@ public class AuthCookieWriter {
   public static final String REFRESH_PATH = AuthCookies.REFRESH_PATH;
 
   private final AuthTokenProperties properties;
+  private final AuthCookiePolicy cookiePolicy;
 
   /**
    * The access cookie outlives its token by design: the browser must keep sending the expired JWT
@@ -39,11 +41,10 @@ public class AuthCookieWriter {
     return withDefaults(REFRESH_COOKIE, "", REFRESH_PATH, Duration.ZERO);
   }
 
-  private static ResponseCookie withDefaults(
-      String name, String value, String path, Duration maxAge) {
+  private ResponseCookie withDefaults(String name, String value, String path, Duration maxAge) {
     return ResponseCookie.from(name, value)
         .httpOnly(true)
-        .secure(true)
+        .secure(cookiePolicy.isSecure())
         .sameSite("Strict")
         .path(path)
         .maxAge(maxAge)

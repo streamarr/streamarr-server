@@ -74,6 +74,11 @@ auth:
     memory-kib: ${AUTH_ARGON2_MEMORY_KIB:19456}
     iterations: ${AUTH_ARGON2_ITERATIONS:2}
     parallelism: ${AUTH_ARGON2_PARALLELISM:1}
+  cookies:
+    # Safari refuses to store or send a Secure cookie over plain HTTP, localhost included, so
+    # cookie-mode login silently yields an unauthenticated session in local development. Honored
+    # only alongside a dev or test profile; set without one, startup fails.
+    allow-insecure: ${AUTH_COOKIES_ALLOW_INSECURE:false}
   throttle:
     max-attempts: ${AUTH_THROTTLE_MAX_ATTEMPTS:5}
     window: ${AUTH_THROTTLE_WINDOW:15m}
