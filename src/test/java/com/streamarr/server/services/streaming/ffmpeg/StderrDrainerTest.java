@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
+@DisplayName("Standard Error Drainer Tests")
 class StderrDrainerTest {
 
   @Test
@@ -45,13 +46,13 @@ class StderrDrainerTest {
   }
 
   @Test
-  @DisplayName("Should capture the full tail when awaiting output after end of stream")
-  void shouldCaptureTheFullTailWhenAwaitingOutputAfterEndOfStream() throws Exception {
+  @DisplayName("Should capture the complete bounded tail when awaiting output after end of stream")
+  void shouldCaptureCompleteBoundedTailWhenAwaitingOutputAfterEndOfStream() throws Exception {
     var output = new PipedOutputStream();
     var input = new PipedInputStream(output);
 
-    try (var drainer = new StderrDrainer(input)) {
-      output.write("first\nlast\n".getBytes(StandardCharsets.UTF_8));
+    try (var drainer = new StderrDrainer(input, 2)) {
+      output.write("discarded\nfirst\nlast\n".getBytes(StandardCharsets.UTF_8));
       output.flush();
       output.close();
 

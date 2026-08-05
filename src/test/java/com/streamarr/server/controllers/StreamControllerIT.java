@@ -89,8 +89,8 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return 404 for the retired master playlist alias")
-  void shouldReturn404ForTheRetiredMasterPlaylistAlias() throws Exception {
+  @DisplayName("Should return 404 for the retired master playlist alias when requested over HTTP")
+  void shouldReturn404ForTheRetiredMasterPlaylistAliasWhenRequestedOverHttp() throws Exception {
     var session = StreamSessionFixture.buildMpegtsSession();
     STUB_SERVICE.addSession(session);
 
@@ -148,8 +148,10 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return 404 for a produced segment after its media is deleted")
-  void shouldReturn404ForProducedSegmentAfterItsMediaIsDeleted() throws Exception {
+  @DisplayName(
+      "Should return 404 for a produced segment after its media is deleted when requested over HTTP")
+  void shouldReturn404ForProducedSegmentAfterItsMediaIsDeletedWhenRequestedOverHttp()
+      throws Exception {
     var session = StreamSessionFixture.buildMpegtsSession();
     var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
     STUB_SERVICE.addSession(session);

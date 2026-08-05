@@ -24,8 +24,8 @@ class PlaybackTokenRevocationIT extends AbstractIntegrationTest {
   @Autowired private PlaybackTokenIssuer playbackTokenIssuer;
 
   @Test
-  @DisplayName("Should not mint usable playback token after authenticated authority becomes stale")
-  void shouldNotMintUsablePlaybackTokenAfterAuthenticatedAuthorityBecomesStale() {
+  @DisplayName("Should not mint a usable playback token when authenticated authority is stale")
+  void shouldNotMintUsablePlaybackTokenWhenAuthenticatedAuthorityIsStale() {
     var identity = authTestSupport.createIdentity();
 
     try {

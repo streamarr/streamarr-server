@@ -315,8 +315,8 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should not resurrect a session destroyed while a segment request is in flight")
-  void shouldNotResurrectSessionDestroyedWhileSegmentRequestIsInFlight() {
+  @DisplayName("Should not resurrect a session when destroyed during a segment request")
+  void shouldNotResurrectSessionWhenDestroyedDuringSegmentRequest() {
     var file = seedMediaFile();
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     var sessionId = session.getSessionId();
@@ -385,8 +385,8 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should not count suspended sessions against transcode limit")
-  void shouldNotCountSuspendedSessionsAgainstTranscodeLimit() {
+  @DisplayName("Should not count a session against the transcode limit when suspended")
+  void shouldNotCountSessionAgainstTranscodeLimitWhenSuspended() {
     ffprobeService.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").build());
 
@@ -569,8 +569,9 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should pass variant label to transcode request for ABR session")
-  void shouldPassVariantLabelToTranscodeRequestForAbrSession() {
+  @DisplayName(
+      "Should pass variant label to transcode request for ABR session when managing a session")
+  void shouldPassVariantLabelToTranscodeRequestForAbrSessionWhenManagingSession() {
     ffprobeService.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());
 
@@ -586,8 +587,8 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should return session immediately after creation")
-  void shouldReturnSessionImmediatelyAfterCreation() {
+  @DisplayName("Should return a session immediately when creation completes")
+  void shouldReturnSessionImmediatelyWhenCreationCompletes() {
     var file = seedMediaFile();
 
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
@@ -723,8 +724,8 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should truncate variants to executor slots available now")
-  void shouldTruncateVariantsToExecutorSlotsAvailableNow() {
+  @DisplayName("Should truncate variants to executor slots available now when managing a session")
+  void shouldTruncateVariantsToExecutorSlotsAvailableNowWhenManagingSession() {
     transcodeExecutor.setAvailableSlots(2);
     ffprobeService.setDefaultProbe(
         defaultProbeBuilder().framerate(23.976).videoCodec("hevc").bitrate(8_000_000L).build());

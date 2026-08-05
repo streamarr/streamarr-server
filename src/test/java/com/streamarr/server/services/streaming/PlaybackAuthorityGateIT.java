@@ -57,16 +57,13 @@ class PlaybackAuthorityGateIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should allow current playback authority")
-  void shouldAllowCurrentPlaybackAuthority() {
-    assertThat(authorityGate.allows(authority)).isTrue();
-  }
-
-  @Test
-  @DisplayName("Should deny prior playback authority after the session switches active profile")
-  void shouldDenyPriorPlaybackAuthorityAfterSessionSwitchesActiveProfile() {
+  @DisplayName(
+      "Should deny prior playback authority after the session switches active profile when authorizing playback")
+  void shouldDenyPriorPlaybackAuthorityAfterSessionSwitchesActiveProfileWhenAuthorizingPlayback() {
     var alternate = authTestSupport.createIdentity();
     try {
+      assertThat(authorityGate.allows(authority)).isTrue();
+
       membershipRepository.grantMembership(
           HouseholdMembership.builder()
               .accountId(identity.account().getId())
@@ -92,9 +89,11 @@ class PlaybackAuthorityGateIT extends AbstractIntegrationTest {
 
   @ParameterizedTest
   @EnumSource(SessionRevocationReason.class)
-  @DisplayName("Should deny playback authority for every authorization session revocation reason")
-  void shouldDenyPlaybackAuthorityForEveryAuthorizationSessionRevocationReason(
-      SessionRevocationReason reason) {
+  @DisplayName(
+      "Should deny playback authority for every authorization session revocation reason when authorizing playback")
+  void
+      shouldDenyPlaybackAuthorityForEveryAuthorizationSessionRevocationReasonWhenAuthorizingPlayback(
+          SessionRevocationReason reason) {
     authSessionRepository.revoke(identity.session().getId(), reason, Instant.now());
 
     assertThat(authorityGate.allows(authority)).isFalse();
@@ -140,8 +139,10 @@ class PlaybackAuthorityGateIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should not deadlock with concurrent profile grant revocation on PostgreSQL 18")
-  void shouldNotDeadlockWithConcurrentProfileGrantRevocationOnPostgresql18() throws Exception {
+  @DisplayName(
+      "Should not deadlock with concurrent profile grant revocation on PostgreSQL 18 when authorizing playback")
+  void shouldNotDeadlockWithConcurrentProfileGrantRevocationOnPostgresql18WhenAuthorizingPlayback()
+      throws Exception {
     var start = new CyclicBarrier(2);
     var link =
         AccountProfile.builder()

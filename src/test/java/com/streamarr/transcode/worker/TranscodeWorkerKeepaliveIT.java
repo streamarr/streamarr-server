@@ -42,8 +42,10 @@ class TranscodeWorkerKeepaliveIT {
    * TCP peer; the keepalive ping's missing ACK must surface the disconnection within seconds.
    */
   @Test
-  @DisplayName("Should detect a half-open control-plane connection via client keepalive")
-  void shouldDetectHalfOpenControlPlaneConnectionViaClientKeepalive() throws Exception {
+  @DisplayName(
+      "Should detect a half-open control-plane connection via client keepalive when the peer is unresponsive")
+  void shouldDetectHalfOpenControlPlaneConnectionViaClientKeepaliveWhenPeerIsUnresponsive()
+      throws Exception {
     var segmentStore = new LocalSegmentStore(tempDir.resolve("segments"));
 
     try (var server = server(segmentStore)) {

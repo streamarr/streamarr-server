@@ -108,7 +108,8 @@ class HlsPlaylistStructureTest {
     // EXT-X-MAP in a Media Playlist without EXT-X-I-FRAMES-ONLY requires >= 6.
     @ParameterizedTest(name = "{0}")
     @EnumSource(ContainerFormat.class)
-    @DisplayName("Should declare version at least what its tags require (§7)")
+    @DisplayName(
+        "Should declare version at least what its tags require when generating media playlist (§7)")
     void shouldDeclareVersionAtLeastWhatTagsRequireWhenGeneratingMediaPlaylist(
         ContainerFormat container) {
       var playlist =
@@ -152,7 +153,8 @@ class HlsPlaylistStructureTest {
     // §4.3.3.4: EXT-X-ENDLIST indicates no more segments will be added. A VOD playlist is therefore
     // immutable — regenerating it from the same input MUST yield byte-identical output.
     @Test
-    @DisplayName("Should be an immutable VOD playlist ending in ENDLIST (§4.3.3.5)")
+    @DisplayName(
+        "Should be an immutable VOD playlist ending in ENDLIST when generating media playlist (§4.3.3.5)")
     void shouldBeImmutableVodPlaylistEndingInEndListWhenGeneratingMediaPlaylist() {
       var session = mediaSession(ContainerFormat.MPEGTS, 30);
 
@@ -170,7 +172,7 @@ class HlsPlaylistStructureTest {
     // RFC 8216 §4.3.2.5: EXT-X-MAP specifies the Media Initialization Section required to parse the
     // fMP4 Media Segments that follow it; an fMP4 media playlist MUST declare one.
     @Test
-    @DisplayName("Should declare EXT-X-MAP init segment for fMP4 media playlist (§4.3.2.5)")
+    @DisplayName("Should declare EXT-X-MAP init segment when container is fMP4 (§4.3.2.5)")
     void shouldDeclareExtXMapInitSegmentWhenContainerIsFmp4() {
       var playlist =
           MediaPlaylist.parse(
@@ -199,8 +201,9 @@ class HlsPlaylistStructureTest {
     // segment bit rate); AVERAGE-BANDWIDTH, when present, is the average segment bit rate and can
     // never exceed the peak BANDWIDTH.
     @Test
-    @DisplayName("Should give every STREAM-INF a BANDWIDTH >= AVERAGE-BANDWIDTH (§4.3.4.2)")
-    void shouldGiveEveryStreamInfBandwidthNotBelowAverageBandwidth() {
+    @DisplayName(
+        "Should give every STREAM-INF a BANDWIDTH at least its AVERAGE-BANDWIDTH when generating a multivariant playlist (§4.3.4.2)")
+    void shouldGiveEveryStreamInfValidBandwidthWhenGeneratingMultivariantPlaylist() {
       var playlist =
           MultivariantPlaylist.parse(service.generateMultivariantPlaylist(abrSession(), TOKEN));
 

@@ -64,8 +64,10 @@ class WorkerSessionServerIT {
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
   @Test
-  @DisplayName("Should register a worker whose reported identity matches its mTLS identity")
-  void shouldRegisterWorkerWhoseReportedIdentityMatchesItsMtlsIdentity() throws Exception {
+  @DisplayName(
+      "Should register a worker whose reported identity matches its mTLS identity when handling a worker session")
+  void shouldRegisterWorkerWhoseReportedIdentityMatchesItsMtlsIdentityWhenHandlingWorkerSession()
+      throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
@@ -82,8 +84,8 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should enforce the worker session server lifecycle")
-  void shouldEnforceWorkerSessionServerLifecycle() throws Exception {
+  @DisplayName("Should enforce the worker session server lifecycle when server state changes")
+  void shouldEnforceLifecycleWhenServerStateChanges() throws Exception {
     try (var server = server()) {
       assertThatThrownBy(() -> server.hasConnectedWorker(SOURCE_NAMESPACE_ID))
           .isInstanceOf(IllegalStateException.class)
@@ -95,15 +97,21 @@ class WorkerSessionServerIT {
 
       server.start();
 
+      assertThat(server.port()).isPositive();
+      assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
       assertThatThrownBy(server::start)
           .isInstanceOf(IllegalStateException.class)
           .hasMessage("Worker session server is already started");
+      server.close();
+      assertThatThrownBy(server::port)
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessage("Worker session server is not started");
     }
   }
 
   @Test
-  @DisplayName("Should reject invalid worker session server configuration")
-  void shouldRejectInvalidWorkerSessionServerConfiguration() {
+  @DisplayName("Should reject configuration when worker session server settings are invalid")
+  void shouldRejectConfigurationWhenWorkerSessionServerSettingsAreInvalid() {
     var negativePort =
         WorkerSessionServerConfiguration.builder().port(-1).trustDomain("streamarr.test");
     var excessivePort =
@@ -126,8 +134,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should reject a reported worker identity that differs from its mTLS identity")
-  void shouldRejectReportedWorkerIdentityThatDiffersFromItsMtlsIdentity() throws Exception {
+  @DisplayName(
+      "Should reject a reported worker identity that differs from its mTLS identity when handling a worker session")
+  void shouldRejectReportedWorkerIdentityThatDiffersFromItsMtlsIdentityWhenHandlingWorkerSession()
+      throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
@@ -143,8 +153,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should reject a worker that presents no client certificate")
-  void shouldRejectWorkerThatPresentsNoClientCertificate() throws Exception {
+  @DisplayName(
+      "Should reject a worker that presents no client certificate when handling a worker session")
+  void shouldRejectWorkerThatPresentsNoClientCertificateWhenHandlingWorkerSession()
+      throws Exception {
     try (var server = server()) {
       server.start();
       var channel = unauthenticatedChannel(server.port());
@@ -163,8 +175,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should reject a worker session that does not begin with registration")
-  void shouldRejectWorkerSessionThatDoesNotBeginWithRegistration() throws Exception {
+  @DisplayName(
+      "Should reject a worker session that does not begin with registration when handling a worker session")
+  void shouldRejectWorkerSessionThatDoesNotBeginWithRegistrationWhenHandlingWorkerSession()
+      throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
@@ -187,8 +201,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should reject a trusted certificate outside the worker trust domain")
-  void shouldRejectTrustedCertificateOutsideWorkerTrustDomain() throws Exception {
+  @DisplayName(
+      "Should reject a trusted certificate outside the worker trust domain when handling a worker session")
+  void shouldRejectTrustedCertificateOutsideWorkerTrustDomainWhenHandlingWorkerSession()
+      throws Exception {
     try (var server = server()) {
       server.start();
       var channel =
@@ -205,8 +221,9 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should dispatch a variant job to a registered worker")
-  void shouldDispatchVariantJobToRegisteredWorker() throws Exception {
+  @DisplayName(
+      "Should dispatch a variant job to a registered worker when handling a worker session")
+  void shouldDispatchVariantJobToRegisteredWorkerWhenHandlingWorkerSession() throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
@@ -248,8 +265,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should fence a replaced worker connection without removing its replacement")
-  void shouldFenceReplacedWorkerConnectionWithoutRemovingItsReplacement() throws Exception {
+  @DisplayName(
+      "Should fence a replaced worker connection without removing its replacement when handling a worker session")
+  void shouldFenceReplacedWorkerConnectionWithoutRemovingItsReplacementWhenHandlingWorkerSession()
+      throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
@@ -307,8 +326,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should bound active variant ownership by advertised worker capacity")
-  void shouldBoundActiveVariantOwnershipByAdvertisedWorkerCapacity() throws Exception {
+  @DisplayName(
+      "Should bound active variant ownership by advertised worker capacity when handling a worker session")
+  void shouldBoundActiveVariantOwnershipByAdvertisedWorkerCapacityWhenHandlingWorkerSession()
+      throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
@@ -341,8 +362,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should reject worker operations outside connection-owned variant state")
-  void shouldRejectWorkerOperationsOutsideConnectionOwnedVariantState() throws Exception {
+  @DisplayName(
+      "Should reject worker operations outside connection-owned variant state when handling a worker session")
+  void shouldRejectWorkerOperationsOutsideConnectionOwnedVariantStateWhenHandlingWorkerSession()
+      throws Exception {
     var segmentStore = new FakeSegmentStore();
     try (var server = server(segmentStore)) {
       server.start();
@@ -384,8 +407,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should reject a segment uploaded by a replaced worker connection")
-  void shouldRejectSegmentUploadedByReplacedWorkerConnection() throws Exception {
+  @DisplayName(
+      "Should reject a segment uploaded by a replaced worker connection when handling a worker session")
+  void shouldRejectSegmentUploadedByReplacedWorkerConnectionWhenHandlingWorkerSession()
+      throws Exception {
     var segmentStore = new FakeSegmentStore();
     try (var server = server(segmentStore)) {
       server.start();
@@ -420,8 +445,8 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should not publish an incomplete segment upload")
-  void shouldNotPublishIncompleteSegmentUpload() throws Exception {
+  @DisplayName("Should not publish an incomplete segment upload when handling a worker session")
+  void shouldNotPublishIncompleteSegmentUploadWhenHandlingWorkerSession() throws Exception {
     var segmentStore = new FakeSegmentStore();
     try (var server = server(segmentStore)) {
       server.start();
@@ -452,8 +477,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should reject malformed segment uploads without publishing bytes")
-  void shouldRejectMalformedSegmentUploadsWithoutPublishingBytes() throws Exception {
+  @DisplayName(
+      "Should reject malformed segment uploads without publishing bytes when handling a worker session")
+  void shouldRejectMalformedSegmentUploadsWithoutPublishingBytesWhenHandlingWorkerSession()
+      throws Exception {
     var segmentStore = new FakeSegmentStore();
     try (var server = server(segmentStore)) {
       server.start();
@@ -525,8 +552,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should reject an oversized segment upload frame at the transport boundary")
-  void shouldRejectOversizedSegmentUploadFrameAtTransportBoundary() throws Exception {
+  @DisplayName(
+      "Should reject an oversized segment upload frame at the transport boundary when handling a worker session")
+  void shouldRejectOversizedSegmentUploadFrameAtTransportBoundaryWhenHandlingWorkerSession()
+      throws Exception {
     var segmentStore = new FakeSegmentStore();
     try (var server = server(segmentStore)) {
       server.start();
@@ -565,8 +594,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should reject unsafe segment metadata without publishing bytes")
-  void shouldRejectUnsafeSegmentMetadataWithoutPublishingBytes() throws Exception {
+  @DisplayName(
+      "Should reject unsafe segment metadata without publishing bytes when handling a worker session")
+  void shouldRejectUnsafeSegmentMetadataWithoutPublishingBytesWhenHandlingWorkerSession()
+      throws Exception {
     var segmentStore = new FakeSegmentStore();
     try (var server = server(segmentStore)) {
       server.start();
@@ -631,8 +662,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should report storage failure without accepting a segment")
-  void shouldReportStorageFailureWithoutAcceptingSegment() throws Exception {
+  @DisplayName(
+      "Should report storage failure without accepting a segment when handling a worker session")
+  void shouldReportStorageFailureWithoutAcceptingSegmentWhenHandlingWorkerSession()
+      throws Exception {
     try (var server = server(new FailingSegmentStore())) {
       server.start();
       var channel = workerChannel(server.port());
@@ -657,8 +690,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should reject an upload that loses connection ownership before publication")
-  void shouldRejectUploadThatLosesConnectionOwnershipBeforePublication() throws Exception {
+  @DisplayName(
+      "Should reject an upload that loses connection ownership before publication when handling a worker session")
+  void shouldRejectUploadThatLosesConnectionOwnershipBeforePublicationWhenHandlingWorkerSession()
+      throws Exception {
     var segmentStore = new FakeSegmentStore();
     try (var server = server(segmentStore)) {
       server.start();
@@ -700,8 +735,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should reject an upload that loses ownership during publication")
-  void shouldRejectUploadThatLosesOwnershipDuringPublication() throws Exception {
+  @DisplayName(
+      "Should reject an upload that loses ownership during publication when handling a worker session")
+  void shouldRejectUploadThatLosesOwnershipDuringPublicationWhenHandlingWorkerSession()
+      throws Exception {
     var segmentStore = new BlockingSegmentStore();
     try (var server = server(segmentStore)) {
       server.start();
@@ -740,8 +777,11 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should expose live worker connections as execution targets for their namespace")
-  void shouldExposeLiveWorkerConnectionsAsExecutionTargetsForTheirNamespace() throws Exception {
+  @DisplayName(
+      "Should expose live worker connections as execution targets for their namespace when handling a worker session")
+  void
+      shouldExposeLiveWorkerConnectionsAsExecutionTargetsForTheirNamespaceWhenHandlingWorkerSession()
+          throws Exception {
     try (var server = server()) {
       server.start();
       assertThat(server.eligibleWorkers(SOURCE_NAMESPACE_ID)).isEmpty();
@@ -767,8 +807,10 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should dispatch jobs carrying the handle's attempt identity end to end")
-  void shouldDispatchJobsCarryingTheHandlesAttemptIdentityEndToEnd() throws Exception {
+  @DisplayName(
+      "Should dispatch jobs carrying the handle's attempt identity end to end when handling a worker session")
+  void shouldDispatchJobsCarryingTheHandlesAttemptIdentityEndToEndWhenHandlingWorkerSession()
+      throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
@@ -803,8 +845,9 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should reject stale uploads after a reported failure")
-  void shouldRejectStaleUploadsAfterReportedFailure() throws Exception {
+  @DisplayName(
+      "Should reject stale uploads after a reported failure when handling a worker session")
+  void shouldRejectStaleUploadsAfterReportedFailureWhenHandlingWorkerSession() throws Exception {
     var segmentStore = new FakeSegmentStore();
     try (var server = server(segmentStore)) {
       server.start();
@@ -842,8 +885,11 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should release attempts on completion and tolerate planned-stop confirmations")
-  void shouldReleaseAttemptsOnCompletionAndToleratePlannedStopConfirmations() throws Exception {
+  @DisplayName(
+      "Should release attempts on completion and tolerate planned-stop confirmations when handling a worker session")
+  void
+      shouldReleaseAttemptsOnCompletionAndToleratePlannedStopConfirmationsWhenHandlingWorkerSession()
+          throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
@@ -889,8 +935,8 @@ class WorkerSessionServerIT {
   }
 
   @Test
-  @DisplayName("Should release jobs abandoned by a closing worker")
-  void shouldReleaseJobsAbandonedByClosingWorker() throws Exception {
+  @DisplayName("Should release jobs abandoned by a closing worker when handling a worker session")
+  void shouldReleaseJobsAbandonedByClosingWorkerWhenHandlingWorkerSession() throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());

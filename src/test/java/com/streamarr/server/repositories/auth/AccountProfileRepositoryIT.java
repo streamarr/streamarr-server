@@ -27,8 +27,8 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
   @Autowired private AccountProfileRepository accountProfileRepository;
 
   @Test
-  @DisplayName("Should persist profile link")
-  void shouldPersistProfileLink() {
+  @DisplayName("Should persist a profile link when saved")
+  void shouldPersistProfileLinkWhenSaved() {
     var link = unlinkedProfile();
 
     accountProfileRepository.linkProfile(link);
@@ -45,8 +45,8 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should remove existing profile link")
-  void shouldRemoveExistingProfileLink() {
+  @DisplayName("Should remove a profile link when deletion is requested")
+  void shouldRemoveProfileLinkWhenDeletionIsRequested() {
     var link = unlinkedProfile();
     accountProfileRepository.linkProfile(link);
 
@@ -66,8 +66,8 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject duplicate profile link")
-  void shouldRejectDuplicateProfileLink() {
+  @DisplayName("Should reject a profile link when already present")
+  void shouldRejectProfileLinkWhenAlreadyPresent() {
     var link = unlinkedProfile();
     accountProfileRepository.linkProfile(link);
 

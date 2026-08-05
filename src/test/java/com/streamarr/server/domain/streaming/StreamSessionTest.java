@@ -16,8 +16,8 @@ import org.junit.jupiter.api.Test;
 class StreamSessionTest {
 
   @Test
-  @DisplayName("Should reject a null playback authority")
-  void shouldRejectNullPlaybackAuthority() {
+  @DisplayName("Should reject a null playback authority when enforcing session invariants")
+  void shouldRejectNullPlaybackAuthorityWhenEnforcingSessionInvariants() {
     var builder = StreamSession.builder();
 
     assertThatThrownBy(() -> builder.authority(null))
@@ -52,8 +52,9 @@ class StreamSessionTest {
   }
 
   @Test
-  @DisplayName("Should reject direct mutation of the exposed variant handle map")
-  void shouldRejectDirectMutationOfExposedVariantHandleMap() {
+  @DisplayName(
+      "Should reject direct mutation of the exposed variant handle map when enforcing session invariants")
+  void shouldRejectDirectMutationOfExposedVariantHandleMapWhenEnforcingSessionInvariants() {
     var session = buildMpegtsSession();
     var handles = session.getVariantHandles();
 
@@ -61,8 +62,9 @@ class StreamSessionTest {
   }
 
   @Test
-  @DisplayName("Should reflect handle updates through the exposed variant handle map")
-  void shouldReflectHandleUpdatesThroughExposedVariantHandleMap() {
+  @DisplayName(
+      "Should reflect handle updates through the exposed variant handle map when enforcing session invariants")
+  void shouldReflectHandleUpdatesThroughExposedVariantHandleMapWhenEnforcingSessionInvariants() {
     var session = buildMpegtsSession();
 
     session.setVariantHandle("720p", mintHandle(7L, TranscodeStatus.ACTIVE));

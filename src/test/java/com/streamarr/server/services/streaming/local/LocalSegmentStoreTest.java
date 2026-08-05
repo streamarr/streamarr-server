@@ -111,16 +111,6 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should report an existing segment after the first upload creates the directory")
-  void shouldReportExistingSegmentAfterFirstUploadCreatesTheDirectory() {
-    var sessionId = UUID.randomUUID();
-
-    store.storeSegment(sessionId, "720p/segment0.ts", "uploaded".getBytes());
-
-    assertThat(store.segmentExists(sessionId, "720p/segment0.ts")).isTrue();
-  }
-
-  @Test
   @DisplayName("Should reject segment name when path traversal is attempted")
   void shouldRejectSegmentNameWhenPathTraversalIsAttempted() {
     var sessionId = UUID.randomUUID();
@@ -145,19 +135,23 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should store a complete segment in its variant directory")
-  void shouldStoreCompleteSegmentInVariantDirectory() {
+  @DisplayName("Should store a complete segment when a remote upload is published")
+  void shouldStoreCompleteSegmentWhenRemoteUploadIsPublished() {
     var sessionId = UUID.randomUUID();
     var segmentData = "remote segment".getBytes();
+    var segmentName = "720p/segment0.ts";
 
-    store.storeSegment(sessionId, "720p/segment0.ts", segmentData);
+    assertThat(store.segmentExists(sessionId, segmentName)).isFalse();
 
-    assertThat(store.readSegment(sessionId, "720p/segment0.ts")).isEqualTo(segmentData);
+    store.storeSegment(sessionId, segmentName, segmentData);
+
+    assertThat(store.segmentExists(sessionId, segmentName)).isTrue();
+    assertThat(store.readSegment(sessionId, segmentName)).isEqualTo(segmentData);
   }
 
   @Test
-  @DisplayName("Should not expose a prepared segment until it is published")
-  void shouldNotExposePreparedSegmentUntilItIsPublished() {
+  @DisplayName("Should not expose a prepared segment when publication has not occurred")
+  void shouldNotExposePreparedSegmentWhenPublicationHasNotOccurred() {
     var sessionId = UUID.randomUUID();
     var segmentData = "remote segment".getBytes();
 
@@ -184,6 +178,26 @@ class LocalSegmentStoreTest {
   }
 
   @Test
+  @DisplayName("Should translate cleanup I/O failure when a prepared segment is closed")
+  void shouldTranslateCleanupIoFailureWhenPreparedSegmentIsClosed() throws Exception {
+    var prepared =
+        store.prepareSegment(UUID.randomUUID(), "720p/segment0.ts", "remote segment".getBytes());
+    Path temporary;
+    try (var files = Files.list(tempDir)) {
+      temporary = files.findFirst().orElseThrow();
+    }
+    Files.delete(temporary);
+    Files.createDirectory(temporary);
+    Files.writeString(temporary.resolve("undeletable-child"), "data");
+
+    assertThatThrownBy(prepared::close)
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessage("Failed to clean up segment upload: 720p/segment0.ts")
+        .cause()
+        .isInstanceOf(IOException.class);
+  }
+
+  @Test
   @DisplayName("Should clean the temporary file when segment preparation fails")
   void shouldCleanTemporaryFileWhenSegmentPreparationFails() {
     var sessionId = UUID.randomUUID();
@@ -194,8 +208,8 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should escalate an IO failure as unchecked rather than an absent segment")
-  void shouldEscalateAnIoFailureAsUncheckedRatherThanAnAbsentSegment() throws Exception {
+  @DisplayName("Should escalate an I/O failure when the session path is not a directory")
+  void shouldEscalateIoFailureWhenSessionPathIsNotDirectory() throws Exception {
     var sessionId = UUID.randomUUID();
     // A plain file squatting on the session directory path makes every write fail as real IO.
     Files.createDirectories(tempDir);
@@ -209,8 +223,8 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should reject a stored segment that escapes its session directory")
-  void shouldRejectStoredSegmentThatEscapesSessionDirectory() {
+  @DisplayName("Should reject a stored segment when its path escapes the session directory")
+  void shouldRejectStoredSegmentWhenPathEscapesSessionDirectory() {
     var sessionId = UUID.randomUUID();
     var segmentData = "data".getBytes();
 

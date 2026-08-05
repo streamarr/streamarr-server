@@ -3,7 +3,6 @@ package com.streamarr.server.services.streaming.ffmpeg;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -12,9 +11,9 @@ import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -72,7 +71,7 @@ class LocalFfmpegProcessManagerTest {
     var process =
         manager.startProcess(
             sessionId, StreamSession.defaultVariant(), List.of("echo", "done"), tempDir);
-    process.waitFor();
+    assertThat(process.waitFor(5, TimeUnit.SECONDS)).isTrue();
 
     assertThat(manager.isRunning(sessionId)).isFalse();
   }
@@ -120,12 +119,12 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
-  @DisplayName("Should stop only the requested variant")
-  void shouldStopOnlyRequestedVariant() {
+  @DisplayName("Should stop only the requested variant when stopping a variant")
+  void shouldStopOnlyRequestedVariantWhenStoppingVariant() {
     var sessionId = UUID.randomUUID();
 
-    manager.startProcess(sessionId, "1080p", List.of("sleep", "30"), tempDir);
-    manager.startProcess(sessionId, "720p", List.of("sleep", "30"), tempDir);
+    manager.startProcess(sessionId, "1080p", List.of("bash", "-c", "read -n 1"), tempDir);
+    manager.startProcess(sessionId, "720p", List.of("bash", "-c", "read -n 1"), tempDir);
 
     manager.stopProcess(sessionId, "720p");
 
@@ -161,7 +160,7 @@ class LocalFfmpegProcessManagerTest {
 
   @Test
   @DisplayName("Should not deadlock when process produces large stderr output")
-  void shouldNotDeadlockWhenProcessProducesLargeStderrOutput() {
+  void shouldNotDeadlockWhenProcessProducesLargeStderrOutput() throws Exception {
     var sessionId = UUID.randomUUID();
 
     // Write 5000 lines to stderr (well beyond the ~64KB OS pipe buffer), then exit.
@@ -172,13 +171,9 @@ class LocalFfmpegProcessManagerTest {
         manager.startProcess(
             sessionId, StreamSession.defaultVariant(), List.of("bash", "-c", script), tempDir);
 
-    await()
-        .atMost(Duration.ofSeconds(10))
-        .untilAsserted(
-            () -> {
-              assertThat(process.isAlive()).isFalse();
-              assertThat(process.exitValue()).isZero();
-            });
+    process.onExit().get(10, TimeUnit.SECONDS);
+    assertThat(process.isAlive()).isFalse();
+    assertThat(process.exitValue()).isZero();
 
     manager.stopProcess(sessionId);
   }
@@ -202,7 +197,9 @@ class LocalFfmpegProcessManagerTest {
     stopper.start();
     stopper.join(5000);
 
-    await().atMost(Duration.ofSeconds(5)).until(() -> !process.isAlive());
+    process.onExit().get(5, TimeUnit.SECONDS);
+    assertThat(stopper.isAlive()).as("stopper thread must complete").isFalse();
+    assertThat(process.isAlive()).isFalse();
     assertThat(manager.isRunning(sessionId)).isFalse();
   }
 
@@ -232,7 +229,10 @@ class LocalFfmpegProcessManagerTest {
 
       replacement =
           manager.startProcess(
-              sessionId, StreamSession.defaultVariant(), List.of("sleep", "30"), tempDir);
+              sessionId,
+              StreamSession.defaultVariant(),
+              List.of("bash", "-c", "read -n 1"),
+              tempDir);
       gate.release.countDown();
       cleanup.join(5000);
       assertThat(cleanup.isAlive()).as("cleanup thread must have completed its removal").isFalse();
@@ -241,7 +241,8 @@ class LocalFfmpegProcessManagerTest {
           .as("corpse cleanup must not unregister the live replacement")
           .isTrue();
       manager.stopProcess(sessionId);
-      await().atMost(Duration.ofSeconds(10)).until(() -> !replacementAlive(sessionId));
+      replacement.onExit().get(10, TimeUnit.SECONDS);
+      assertThat(manager.isRunning(sessionId)).isFalse();
     } finally {
       gate.release.countDown();
       logger.detachAppender(gate);
@@ -249,10 +250,6 @@ class LocalFfmpegProcessManagerTest {
         replacement.destroyForcibly();
       }
     }
-  }
-
-  private boolean replacementAlive(UUID sessionId) {
-    return manager.isRunning(sessionId);
   }
 
   /** Blocks the named thread inside an observed-exit warn, exactly once. */
@@ -291,7 +288,7 @@ class LocalFfmpegProcessManagerTest {
     var process =
         manager.startProcess(
             sessionId, StreamSession.defaultVariant(), List.of("echo", "done"), tempDir);
-    process.waitFor();
+    assertThat(process.waitFor(5, TimeUnit.SECONDS)).isTrue();
 
     var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
     var appender = new ListAppender<ILoggingEvent>();
@@ -321,7 +318,7 @@ class LocalFfmpegProcessManagerTest {
             StreamSession.defaultVariant(),
             List.of("bash", "-c", "echo 'error output' >&2; exit 1"),
             tempDir);
-    process.waitFor();
+    assertThat(process.waitFor(5, TimeUnit.SECONDS)).isTrue();
 
     var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
     var appender = new ListAppender<ILoggingEvent>();
@@ -338,6 +335,10 @@ class LocalFfmpegProcessManagerTest {
         .filteredOn(event -> event.getLevel() == Level.WARN)
         .extracting(ILoggingEvent::getFormattedMessage)
         .anyMatch(message -> message.contains("exit code 1") && message.contains("error output"));
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.INFO)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .noneMatch(message -> message.contains("completed"));
   }
 
   @Test
@@ -350,7 +351,7 @@ class LocalFfmpegProcessManagerTest {
             StreamSession.defaultVariant(),
             List.of("bash", "-c", "echo 'crash detail' >&2; exit 1"),
             tempDir);
-    process.waitFor();
+    assertThat(process.waitFor(5, TimeUnit.SECONDS)).isTrue();
 
     var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
     var appender = new ListAppender<ILoggingEvent>();
@@ -368,5 +369,9 @@ class LocalFfmpegProcessManagerTest {
         .extracting(ILoggingEvent::getFormattedMessage)
         .anyMatch(
             message -> message.contains("already exited") && message.contains("crash detail"));
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.INFO)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .noneMatch(message -> message.contains("completed"));
   }
 }

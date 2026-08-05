@@ -33,8 +33,8 @@ import org.junit.jupiter.api.Test;
 class SegmentUploadReclaimTest {
 
   @Test
-  @DisplayName("Should terminate an upload as soon as admission reclaims its expired ticket")
-  void shouldTerminateUploadAsSoonAsAdmissionReclaimsItsExpiredTicket() {
+  @DisplayName("Should terminate an upload when admission reclaims its expired ticket")
+  void shouldTerminateUploadWhenAdmissionReclaimsExpiredTicket() {
     var clock = new MutableClock();
     var admission = new SegmentUploadAdmission(1, 1024, 8, Duration.ofSeconds(30), clock);
     var workerId = UUID.randomUUID();
@@ -59,7 +59,9 @@ class SegmentUploadReclaimTest {
     var partialData = ByteString.copyFromUtf8("partial");
     observer.onNext(
         UploadSegmentRequest.newBuilder()
-            .setMetadata(metadata(workerSessionId, worker, job, partialData.size() + 1L))
+            .setMetadata(
+                metadataBuilder(workerSessionId, worker, job)
+                    .setContentLengthBytes(partialData.size() + 1L))
             .build());
     observer.onNext(UploadSegmentRequest.newBuilder().setData(partialData).build());
     assertThat(error.get()).isNull();
@@ -105,8 +107,8 @@ class SegmentUploadReclaimTest {
         .build();
   }
 
-  private static SegmentUploadMetadata metadata(
-      UUID workerSessionId, WorkerIdentity worker, VariantJob job, long contentLength) {
+  private static SegmentUploadMetadata.Builder metadataBuilder(
+      UUID workerSessionId, WorkerIdentity worker, VariantJob job) {
     return SegmentUploadMetadata.newBuilder()
         .setWorkerSessionId(toProto(workerSessionId))
         .setWorker(worker)
@@ -115,9 +117,7 @@ class SegmentUploadReclaimTest {
         .setJobAttemptId(job.getJobAttemptId())
         .setVariantLabel(job.getVariant().getVariantLabel())
         .setSegmentName("segment0.ts")
-        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T)
-        .setContentLengthBytes(contentLength)
-        .build();
+        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T);
   }
 
   private static StreamObserver<UploadSegmentResponse> errorCapturingResponseObserver(

@@ -61,8 +61,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should verify and hash passwords without a transaction-bound connection")
-  void shouldVerifyAndHashPasswordsWithoutTransactionBoundConnection() {
+  @DisplayName("Should verify and hash passwords when no transaction-bound connection is held")
+  void shouldVerifyAndHashPasswordsWhenNoTransactionBoundConnectionIsHeld() {
     var oldPassword = UUID.randomUUID().toString();
     account =
         userAccountRepository.save(

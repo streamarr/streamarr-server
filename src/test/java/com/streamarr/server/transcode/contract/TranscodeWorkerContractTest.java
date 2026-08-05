@@ -28,8 +28,9 @@ import org.junit.jupiter.api.Test;
 class TranscodeWorkerContractTest {
 
   @Test
-  @DisplayName("Should expose one reverse worker session and one segment upload stream")
-  void shouldExposeOneReverseWorkerSessionAndOneSegmentUploadStream() {
+  @DisplayName(
+      "Should expose one reverse worker session and one segment upload stream when validating the protocol")
+  void shouldExposeOneReverseWorkerSessionAndOneSegmentUploadStreamWhenValidatingProtocol() {
     var service = TranscodeWorkerServiceGrpc.getServiceDescriptor();
 
     assertThat(service.getMethods()).hasSize(2);
@@ -40,8 +41,10 @@ class TranscodeWorkerContractTest {
   }
 
   @Test
-  @DisplayName("Should carry self-reported worker identity and distinct job attempt identity")
-  void shouldCarrySelfReportedWorkerIdentityAndDistinctJobAttemptIdentity() throws Exception {
+  @DisplayName(
+      "Should carry self-reported worker identity and distinct job attempt identity when validating the protocol")
+  void shouldCarrySelfReportedWorkerIdentityAndDistinctJobAttemptIdentityWhenValidatingProtocol()
+      throws Exception {
     var sourceNamespaceId = UUID.randomUUID();
     var registration =
         EstablishWorkerSessionRequest.newBuilder()
@@ -85,8 +88,9 @@ class TranscodeWorkerContractTest {
   }
 
   @Test
-  @DisplayName("Should preserve opaque media source keys byte for byte")
-  void shouldPreserveOpaqueMediaSourceKeysByteForByte() throws Exception {
+  @DisplayName(
+      "Should preserve opaque media source keys byte for byte when validating the protocol")
+  void shouldPreserveOpaqueMediaSourceKeysByteForByteWhenValidatingProtocol() throws Exception {
     var source =
         MediaSourceRef.newBuilder()
             .setSourceNamespaceId(uuid(UUID.randomUUID()))
@@ -98,8 +102,10 @@ class TranscodeWorkerContractTest {
   }
 
   @Test
-  @DisplayName("Should upload segment bytes outside the worker control stream")
-  void shouldUploadSegmentBytesOutsideTheWorkerControlStream() throws Exception {
+  @DisplayName(
+      "Should upload segment bytes outside the worker control stream when validating the protocol")
+  void shouldUploadSegmentBytesOutsideTheWorkerControlStreamWhenValidatingProtocol()
+      throws Exception {
     var attemptId = uuid(UUID.randomUUID());
     var metadata =
         SegmentUploadMetadata.newBuilder()
@@ -122,8 +128,9 @@ class TranscodeWorkerContractTest {
   }
 
   @Test
-  @DisplayName("Should keep the wire vocabulary narrow and secret free")
-  void shouldKeepTheWireVocabularyNarrowAndSecretFree() {
+  @DisplayName(
+      "Should keep the wire vocabulary narrow and secret free when validating the protocol")
+  void shouldKeepTheWireVocabularyNarrowAndSecretFreeWhenValidatingProtocol() {
     var fields = new HashSet<String>();
     EstablishWorkerSessionRequest.getDescriptor()
         .getFile()

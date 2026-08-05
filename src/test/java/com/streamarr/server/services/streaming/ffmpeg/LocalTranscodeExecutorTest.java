@@ -114,6 +114,7 @@ class LocalTranscodeExecutorTest {
     // Recovery fencing matches observed handles against the attempt the coordinator minted; a
     // handle carrying a fresh random attemptId would break stale-producer detection invisibly.
     assertThat(handle.attemptId()).isEqualTo(attemptId);
+    assertThat(handle.attemptId()).isNotEqualTo(request.sessionId());
     assertThat(handle.startSequenceNumber()).isEqualTo(2);
     assertThat(handle.processId()).isPresent();
   }
@@ -164,12 +165,19 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("Should report running when session is active")
-  void shouldReportRunningWhenSessionIsActive() {
+  @DisplayName("Should report running only between start and stop when session is active")
+  void shouldReportRunningOnlyBetweenStartAndStopWhenSessionIsActive() {
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264");
+
+    assertThat(executor.isRunning(request.sessionId(), StreamSession.defaultVariant())).isFalse();
+
     executor.start(request);
 
     assertThat(executor.isRunning(request.sessionId(), StreamSession.defaultVariant())).isTrue();
+
+    executor.stopVariant(request.sessionId(), StreamSession.defaultVariant());
+
+    assertThat(executor.isRunning(request.sessionId(), StreamSession.defaultVariant())).isFalse();
   }
 
   @Test

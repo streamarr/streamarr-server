@@ -129,8 +129,8 @@ class ContinueWatchingResolverTest {
   class TypeResolverTests {
 
     @Test
-    @DisplayName("Should throw for unsupported media type")
-    void shouldThrowForUnsupportedMediaType() {
+    @DisplayName("Should throw when media type is unsupported")
+    void shouldThrowWhenMediaTypeIsUnsupported() {
       var resolver =
           new ContinueWatchingResolver(
               mock(ContinueWatchingService.class),

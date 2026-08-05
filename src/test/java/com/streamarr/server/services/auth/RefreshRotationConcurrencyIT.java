@@ -1,7 +1,6 @@
 package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
@@ -10,10 +9,10 @@ import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.RefreshTokenRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import java.time.Duration;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -44,7 +43,7 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should rotate exactly once when same token redeemed concurrently")
-  void shouldRotateExactlyOnceWhenSameTokenRedeemedConcurrently() {
+  void shouldRotateExactlyOnceWhenSameTokenRedeemedConcurrently() throws InterruptedException {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var issued = refreshTokenService.createSession(account, "race-device");
 
@@ -55,27 +54,26 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
     var results = new CopyOnWriteArrayList<RefreshResult>();
     var exceptions = new CopyOnWriteArrayList<Exception>();
 
-    for (int i = 0; i < threadCount; i++) {
-      executor.submit(
-          () -> {
-            try {
-              startLatch.await();
-              results.add(refreshTokenService.redeem(issued.rawToken()));
-            } catch (Exception e) {
-              exceptions.add(e);
-            } finally {
-              doneLatch.countDown();
-            }
-          });
+    try {
+      for (int i = 0; i < threadCount; i++) {
+        executor.submit(
+            () -> {
+              try {
+                startLatch.await();
+                results.add(refreshTokenService.redeem(issued.rawToken()));
+              } catch (Exception e) {
+                exceptions.add(e);
+              } finally {
+                doneLatch.countDown();
+              }
+            });
+      }
+
+      startLatch.countDown();
+      assertThat(doneLatch.await(10, TimeUnit.SECONDS)).isTrue();
+    } finally {
+      executor.shutdownNow();
     }
-
-    startLatch.countDown();
-
-    await()
-        .atMost(Duration.ofSeconds(10))
-        .untilAsserted(() -> assertThat(doneLatch.getCount()).isZero());
-
-    executor.shutdown();
 
     // Both callers recover the same successor: one genuine rotation, one grace replay.
     assertThat(exceptions).isEmpty();

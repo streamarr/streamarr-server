@@ -20,7 +20,6 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -70,7 +69,6 @@ class WorkerDispatchFlowControlIT {
             .as("worker registration must be accepted before the flood")
             .isTrue();
 
-        var floodStart = System.nanoTime();
         int dispatched;
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
           var flood =
@@ -86,24 +84,19 @@ class WorkerDispatchFlowControlIT {
                   });
           dispatched = flood.get(30, TimeUnit.SECONDS);
         }
-        var floodMillis = Duration.ofNanos(System.nanoTime() - floodStart).toMillis();
 
-        var probeStart = System.nanoTime();
-        var unknownSessionRunning = server.isRunning(UUID.randomUUID(), "720p");
-        var probeMillis = Duration.ofNanos(System.nanoTime() - probeStart).toMillis();
+        boolean unknownSessionRunning;
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          unknownSessionRunning =
+              executor
+                  .submit(() -> server.isRunning(UUID.randomUUID(), "720p"))
+                  .get(2, TimeUnit.SECONDS);
+        }
 
         assertThat(dispatched)
             .as("every dispatch must be accepted despite the exhausted stream window")
             .isEqualTo(FLOOD_COMMANDS);
         assertThat(unknownSessionRunning).isFalse();
-        assertThat(probeMillis)
-            .as("liveness probe must not queue behind buffered control-stream sends")
-            .isLessThan(2_000);
-        System.out.printf(
-            "Dispatch flow-control evidence: flood of %d commands took %d ms; post-flood liveness"
-                + " probe took %d"
-                + " ms%n",
-            FLOOD_COMMANDS, floodMillis, probeMillis);
       } finally {
         releaseClient.countDown();
         channel.shutdownNow();

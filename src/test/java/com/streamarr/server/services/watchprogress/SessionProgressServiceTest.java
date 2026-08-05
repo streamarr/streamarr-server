@@ -311,8 +311,8 @@ class SessionProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should treat session owned by another profile as not found")
-    void shouldTreatSessionOwnedByAnotherProfileAsNotFound() {
+    @DisplayName("Should treat session owned by another profile as not found when reading progress")
+    void shouldTreatSessionOwnedByAnotherProfileAsNotFoundWhenReadingProgress() {
       var session = StreamSessionFixture.buildMpegtsSessionOwnedBy(UUID.randomUUID());
       runtimeRegistry.save(session);
       saveMediaFileForSession(session);

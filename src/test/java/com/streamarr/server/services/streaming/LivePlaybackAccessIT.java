@@ -47,8 +47,8 @@ class LivePlaybackAccessIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should deny an existing runtime session after logout commits")
-  void shouldDenyExistingRuntimeSessionAfterLogoutCommits() {
+  @DisplayName("Should deny an existing runtime session when logout commits")
+  void shouldDenyExistingRuntimeSessionWhenLogoutCommits() {
     assertThat(streamingService.accessSession(playbackRequest(streamSession))).isPresent();
 
     authSessionRepository.revoke(

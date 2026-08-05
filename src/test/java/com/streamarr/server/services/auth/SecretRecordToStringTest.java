@@ -32,8 +32,8 @@ class SecretRecordToStringTest {
   }
 
   @Test
-  @DisplayName("Should not expose plaintext secrets in string representations")
-  void shouldNotExposePlaintextSecretsInStringRepresentations() {
+  @DisplayName("Should not expose plaintext secrets in string representations when rendered")
+  void shouldNotExposePlaintextSecretsInStringRepresentationsWhenRendered() {
     var secret = "review-secret-value";
     var renderedValues =
         List.of(

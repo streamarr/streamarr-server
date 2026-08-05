@@ -84,11 +84,13 @@ class ProducerLifecycleServiceTest {
   void shouldKeepPreviouslyTranscodedSegmentsWhenRelocating() {
     var session = startedSession();
     segmentStore.addSegment(session.getSessionId(), "segment0.ts", new byte[] {1});
+    var startsBefore = transcodeExecutor.getStartedRequests().size();
 
     lifecycle.ensurePositioned(session.getSessionId(), "segment100.ts");
 
     // Segments are addressed on the absolute timeline, so earlier segments stay valid.
-    assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.ts")).isTrue();
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore + 1);
+    assertThat(segmentStore.readSegment(session.getSessionId(), "segment0.ts")).containsExactly(1);
   }
 
   @Test
@@ -132,6 +134,7 @@ class ProducerLifecycleServiceTest {
     lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
 
     assertThat(session.getLastAccessedAt()).isAfter(oldAccessTime);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @ParameterizedTest(name = "{0} → startNumber={1}, seek={2}")
@@ -155,6 +158,7 @@ class ProducerLifecycleServiceTest {
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.startSequenceNumber()).isEqualTo(startNumber);
     assertThat(lastRequest.seekPosition()).isEqualTo(seekPosition);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(2);
   }
 
   @Test
@@ -181,6 +185,7 @@ class ProducerLifecycleServiceTest {
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.startSequenceNumber()).isEqualTo(900);
     assertThat(lastRequest.seekPosition()).isEqualTo(5400);
+    assertThat(session.getHandle().orElseThrow().startSequenceNumber()).isEqualTo(900);
   }
 
   @Test
@@ -202,6 +207,10 @@ class ProducerLifecycleServiceTest {
   void shouldRestartAllVariantTranscodesWhenAbrSessionIsResumed() {
     var session = startedAbrSession();
     var variantLabels = session.getVariants().stream().map(v -> v.label()).toList();
+    var previousAttempts =
+        variantLabels.stream()
+            .map(label -> session.getVariantHandle(label).orElseThrow().attemptId())
+            .toList();
 
     for (var label : variantLabels) {
       session.setVariantHandle(label, mintHandle(1L, TranscodeStatus.SUSPENDED));
@@ -225,6 +234,9 @@ class ProducerLifecycleServiceTest {
       assertThat(session.getVariantHandle(label).orElseThrow().status())
           .isEqualTo(TranscodeStatus.ACTIVE);
     }
+    assertThat(resumeRequests)
+        .extracting(TranscodeRequest::attemptId)
+        .doesNotContainAnyElementsOf(previousAttempts);
   }
 
   @Test
@@ -238,6 +250,7 @@ class ProducerLifecycleServiceTest {
     lifecycle.ensurePositioned(session.getSessionId(), "segment10.ts");
 
     // The encoder started at segment50 and will never produce segment10.
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(3);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.seekPosition()).isEqualTo(60);
     assertThat(lastRequest.startSequenceNumber()).isEqualTo(10);
@@ -251,6 +264,7 @@ class ProducerLifecycleServiceTest {
     lifecycle.ensurePositioned(session.getSessionId(), "segment100.ts");
 
     // Nothing near segment100 has been produced; waiting would stall the player.
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(2);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.seekPosition()).isEqualTo(600);
     assertThat(lastRequest.startSequenceNumber()).isEqualTo(100);
@@ -260,12 +274,14 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should wait when the requested segment is near the encoder start")
   void shouldWaitWhenTheRequestedSegmentIsNearTheEncoderStart() {
     var session = startedSession();
+    var attemptBefore = session.getHandle().orElseThrow().attemptId();
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
     lifecycle.ensurePositioned(session.getSessionId(), "segment2.ts");
 
     // The encoder started at segment0 and will reach segment2 shortly.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
+    assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptBefore);
   }
 
   @Test
@@ -273,12 +289,14 @@ class ProducerLifecycleServiceTest {
   void shouldWaitWhenTheEncoderIsWithinTheForwardGapOfTheRequest() {
     var session = startedSession();
     segmentStore.addSegment(session.getSessionId(), "segment96.ts", new byte[] {1});
+    var attemptBefore = session.getHandle().orElseThrow().attemptId();
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
     lifecycle.ensurePositioned(session.getSessionId(), "segment100.ts");
 
     // segment96 exists, so the encoder is close behind the request.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
+    assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptBefore);
   }
 
   @Test
@@ -326,6 +344,7 @@ class ProducerLifecycleServiceTest {
     lifecycle.suspend(session.getSessionId());
 
     assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptId);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.SUSPENDED);
   }
 
   private ProducerLifecycleService.ReplaceProducerCommand.ReplaceProducerCommandBuilder
@@ -358,6 +377,7 @@ class ProducerLifecycleServiceTest {
     assertThat(request.seekPosition()).isEqualTo(12);
     assertThat(request.startSequenceNumber()).isEqualTo(2);
     assertThat(request.attemptId()).isEqualTo(handle.attemptId());
+    assertThat(request.attemptId()).isNotEqualTo(deadAttempt);
   }
 
   @Test
@@ -431,8 +451,9 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should build the replacement from the variant's own geometry for ABR sessions")
-  void shouldBuildReplacementFromTheVariantsOwnGeometryForAbrSessions() {
+  @DisplayName(
+      "Should build the replacement from the variant's own geometry for ABR sessions when managing a producer")
+  void shouldBuildReplacementFromTheVariantsOwnGeometryForAbrSessionsWhenManagingProducer() {
     var session = startedAbrSession();
     transcodeExecutor.markDead(session.getSessionId(), "720p");
     var command =
@@ -450,6 +471,8 @@ class ProducerLifecycleServiceTest {
     assertThat(request.width()).isEqualTo(1280);
     assertThat(request.height()).isEqualTo(720);
     assertThat(request.bitrate()).isEqualTo(3_000_000L);
+    assertThat(request.attemptId())
+        .isEqualTo(session.getVariantHandle("720p").orElseThrow().attemptId());
   }
 
   @Test
@@ -546,6 +569,7 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should replace a suspended variant when its siblings keep the session live")
   void shouldReplaceASuspendedVariantWhenItsSiblingsKeepTheSessionLive() {
     var session = startedAbrSession();
+    var siblingAttempt = session.getVariantHandle("720p").orElseThrow().attemptId();
     var suspended =
         session.getVariantHandle("1080p").orElseThrow().withStatus(TranscodeStatus.SUSPENDED);
     session.setVariantHandle("1080p", suspended);
@@ -569,11 +593,14 @@ class ProducerLifecycleServiceTest {
     assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
     assertThat(session.getVariantHandle("1080p").orElseThrow().status())
         .isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getVariantHandle("720p").orElseThrow().attemptId())
+        .isEqualTo(siblingAttempt);
   }
 
   @Test
-  @DisplayName("Should replace a failed handle with a matching attempt for the new-target reset")
-  void shouldReplaceFailedHandleWithMatchingAttemptForTheNewTargetReset() {
+  @DisplayName(
+      "Should replace a failed handle with a matching attempt for the new-target reset when managing a producer")
+  void shouldReplaceFailedHandleWithMatchingAttemptForTheNewTargetResetWhenManagingProducer() {
     var session = startedSession();
     var exhausted =
         lifecycle.tryMarkExhausted(

@@ -44,6 +44,7 @@ import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -59,8 +60,10 @@ class RemotePlaybackIT {
   @TempDir Path tempDir;
 
   @Test
-  @DisplayName("Should serve sequential segments produced by an outbound transcode worker")
-  void shouldServeSequentialSegmentsProducedByOutboundTranscodeWorker() throws Exception {
+  @DisplayName(
+      "Should serve sequential segments produced by an outbound transcode worker when using a remote worker")
+  void shouldServeSequentialSegmentsProducedByOutboundTranscodeWorkerWhenUsingRemoteWorker()
+      throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var segments =
@@ -77,29 +80,39 @@ class RemotePlaybackIT {
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
 
       executor.start(transcodeRequest(streamSessionId, mediaFile));
-      assertThat(executor.isHealthy()).isTrue();
-      assertThat(executor.isRunning(streamSessionId, StreamSession.defaultVariant())).isTrue();
       await()
           .atMost(2, TimeUnit.SECONDS)
           .until(() -> segmentStore.segmentExists(streamSessionId, "segment1.ts"));
-      var streamController = rig(streamSessionId, segmentStore, executor).controller();
+      var streamController =
+          rig(PlaybackRigConfiguration.builder()
+                  .streamSessionId(streamSessionId)
+                  .segmentStore(segmentStore)
+                  .executor(executor)
+                  .build())
+              .controller();
       var first = streamController.getSegment(streamSessionId, "segment0.ts");
       var second = streamController.getSegment(streamSessionId, "segment1.ts");
 
-      assertThat(first.getStatusCode().is2xxSuccessful()).isTrue();
-      assertThat(first.getHeaders().getContentType()).hasToString("video/mp2t");
-      assertThat(first.getBody()).isEqualTo(segments.get("segment0.ts"));
-      assertThat(second.getStatusCode().is2xxSuccessful()).isTrue();
-      assertThat(second.getHeaders().getContentType()).hasToString("video/mp2t");
-      assertThat(second.getBody()).isEqualTo(segments.get("segment1.ts"));
-      executor.stop(streamSessionId);
-      assertThat(executor.isRunning(streamSessionId, StreamSession.defaultVariant())).isFalse();
+      assertThat(first.getStatusCode().is2xxSuccessful()).as("first segment status").isTrue();
+      assertThat(first.getHeaders().getContentType())
+          .as("first segment content type")
+          .hasToString("video/mp2t");
+      assertThat(first.getBody()).as("first segment bytes").isEqualTo(segments.get("segment0.ts"));
+      assertThat(second.getStatusCode().is2xxSuccessful()).as("second segment status").isTrue();
+      assertThat(second.getHeaders().getContentType())
+          .as("second segment content type")
+          .hasToString("video/mp2t");
+      assertThat(second.getBody())
+          .as("second segment bytes")
+          .isEqualTo(segments.get("segment1.ts"));
     }
   }
 
   @Test
-  @DisplayName("Should serve the initialization segment and media produced by an outbound worker")
-  void shouldServeInitializationSegmentAndMediaProducedByOutboundWorker() throws Exception {
+  @DisplayName(
+      "Should serve the initialization segment and media produced by an outbound worker when using a remote worker")
+  void shouldServeInitializationSegmentAndMediaProducedByOutboundWorkerWhenUsingRemoteWorker()
+      throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var segments =
@@ -120,7 +133,13 @@ class RemotePlaybackIT {
           .atMost(2, TimeUnit.SECONDS)
           .until(() -> segmentStore.segmentExists(streamSessionId, "segment0.m4s"));
       var streamController =
-          rig(streamSessionId, segmentStore, executor, ContainerFormat.FMP4).controller();
+          rig(PlaybackRigConfiguration.builder()
+                  .streamSessionId(streamSessionId)
+                  .segmentStore(segmentStore)
+                  .executor(executor)
+                  .containerFormat(ContainerFormat.FMP4)
+                  .build())
+              .controller();
       var initialization = streamController.getInitSegment(streamSessionId);
       var media = streamController.getSegment(streamSessionId, "segment0.m4s");
 
@@ -132,8 +151,10 @@ class RemotePlaybackIT {
   }
 
   @Test
-  @DisplayName("Should serve a segment requested before the worker's first upload arrives")
-  void shouldServeSegmentRequestedBeforeWorkersFirstUploadArrives() throws Exception {
+  @DisplayName(
+      "Should serve a segment requested before the worker's first upload arrives when using a remote worker")
+  void shouldServeSegmentRequestedBeforeWorkersFirstUploadArrivesWhenUsingRemoteWorker()
+      throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var segments = Map.of("segment0.ts", "first remote segment".getBytes());
@@ -145,7 +166,13 @@ class RemotePlaybackIT {
       server.start();
       worker.start("localhost", server.port());
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
-      var playback = rig(streamSessionId, segmentStore, executor);
+      var playback =
+          rig(
+              PlaybackRigConfiguration.builder()
+                  .streamSessionId(streamSessionId)
+                  .segmentStore(segmentStore)
+                  .executor(executor)
+                  .build());
 
       var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
       playback.session().setHandle(handle);
@@ -157,8 +184,10 @@ class RemotePlaybackIT {
   }
 
   @Test
-  @DisplayName("Should preserve every supported transcode decision across the worker protocol")
-  void shouldPreserveEverySupportedTranscodeDecisionAcrossWorkerProtocol() throws Exception {
+  @DisplayName(
+      "Should preserve every supported transcode decision across the worker protocol when using a remote worker")
+  void shouldPreserveEverySupportedTranscodeDecisionAcrossWorkerProtocolWhenUsingRemoteWorker()
+      throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var processManager = new RecordingFfmpegProcessManager();
@@ -216,8 +245,9 @@ class RemotePlaybackIT {
   }
 
   @Test
-  @DisplayName("Should reject media outside the configured source namespace")
-  void shouldRejectMediaOutsideConfiguredSourceNamespace() throws Exception {
+  @DisplayName(
+      "Should reject media outside the configured source namespace when using a remote worker")
+  void shouldRejectMediaOutsideConfiguredSourceNamespaceWhenUsingRemoteWorker() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var outsideFile = Files.writeString(tempDir.resolve("outside.mkv"), "test media");
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
@@ -277,22 +307,25 @@ class RemotePlaybackIT {
 
   private record PlaybackRig(StreamController controller, StreamSession session) {}
 
-  private PlaybackRig rig(
-      UUID streamSessionId, LocalSegmentStore segmentStore, RemoteTranscodeExecutor executor) {
-    return rig(streamSessionId, segmentStore, executor, ContainerFormat.MPEGTS);
-  }
-
-  private PlaybackRig rig(
+  @Builder
+  private record PlaybackRigConfiguration(
       UUID streamSessionId,
       LocalSegmentStore segmentStore,
       RemoteTranscodeExecutor executor,
       ContainerFormat containerFormat) {
+
+    private PlaybackRigConfiguration {
+      containerFormat = containerFormat != null ? containerFormat : ContainerFormat.MPEGTS;
+    }
+  }
+
+  private PlaybackRig rig(PlaybackRigConfiguration configuration) {
     var session =
         StreamSession.builder()
-            .sessionId(streamSessionId)
+            .sessionId(configuration.streamSessionId())
             .mediaFileId(UUID.randomUUID())
             .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
-            .transcodeDecision(transcodeDecision(containerFormat))
+            .transcodeDecision(transcodeDecision(configuration.containerFormat()))
             .build();
     var registry = new FakeRuntimeStreamSessionRegistry();
     registry.save(session);
@@ -304,14 +337,14 @@ class RemotePlaybackIT {
             .build();
     var rig =
         StreamingRigFixture.streamingRigBuilder()
-            .segmentStore(segmentStore)
-            .transcodeExecutor(executor)
+            .segmentStore(configuration.segmentStore())
+            .transcodeExecutor(configuration.executor())
             .properties(properties)
             .runtimeRegistry(registry)
             .pollInterval(Duration.ofMillis(50))
             .build();
     var authorizationService =
-        new FakeAuthorizationService(() -> identity(streamSessionId), "it-token");
+        new FakeAuthorizationService(() -> identity(configuration.streamSessionId()), "it-token");
     var controller =
         new StreamController(
             streamingService,

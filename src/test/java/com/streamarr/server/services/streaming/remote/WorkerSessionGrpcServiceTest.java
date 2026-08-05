@@ -104,8 +104,10 @@ class WorkerSessionGrpcServiceTest {
   }
 
   @Test
-  @DisplayName("Should warn instead of silently dropping an unexpected worker session event")
-  void shouldWarnInsteadOfSilentlyDroppingUnexpectedWorkerSessionEvent() throws Exception {
+  @DisplayName(
+      "Should warn instead of silently dropping an unexpected worker session event when handling a session event")
+  void shouldWarnInsteadOfSilentlyDroppingUnexpectedWorkerSessionEventWhenHandlingSessionEvent()
+      throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var registry = new LiveWorkerConnectionRegistry();
@@ -200,7 +202,10 @@ class WorkerSessionGrpcServiceTest {
     var job = variantJob(sourceNamespaceId);
     assertThat(registry.dispatch(job)).isTrue();
     var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
-    var metadata = metadata(workerSessionId, worker, job, 16L * 1024 * 1024);
+    var metadata =
+        metadataBuilder(workerSessionId, worker, job)
+            .setContentLengthBytes(16L * 1024 * 1024)
+            .build();
     var uploads = new ArrayList<StreamObserver<UploadSegmentRequest>>();
     for (var index = 0; index < 4; index++) {
       var response = new RecordingUploadResponseObserver();
@@ -252,7 +257,9 @@ class WorkerSessionGrpcServiceTest {
 
     upload.onNext(
         UploadSegmentRequest.newBuilder()
-            .setMetadata(metadata(workerSessionId, worker, job, segmentData.size()))
+            .setMetadata(
+                metadataBuilder(workerSessionId, worker, job)
+                    .setContentLengthBytes(segmentData.size()))
             .build());
     upload.onNext(
         UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(firstFrame)).build());
@@ -313,7 +320,9 @@ class WorkerSessionGrpcServiceTest {
     var upload = upload(service, workerId, response);
     upload.onNext(
         UploadSegmentRequest.newBuilder()
-            .setMetadata(metadata(workerSessionId, worker, job, segmentData.size()))
+            .setMetadata(
+                metadataBuilder(workerSessionId, worker, job)
+                    .setContentLengthBytes(segmentData.size()))
             .build());
     upload.onNext(UploadSegmentRequest.newBuilder().setData(segmentData).build());
 
@@ -377,8 +386,8 @@ class WorkerSessionGrpcServiceTest {
         .build();
   }
 
-  private static SegmentUploadMetadata metadata(
-      UUID workerSessionId, WorkerIdentity worker, VariantJob job, long contentLength) {
+  private static SegmentUploadMetadata.Builder metadataBuilder(
+      UUID workerSessionId, WorkerIdentity worker, VariantJob job) {
     return SegmentUploadMetadata.newBuilder()
         .setWorkerSessionId(toProto(workerSessionId))
         .setWorker(worker)
@@ -387,9 +396,7 @@ class WorkerSessionGrpcServiceTest {
         .setJobAttemptId(job.getJobAttemptId())
         .setVariantLabel(job.getVariant().getVariantLabel())
         .setSegmentName("segment0.ts")
-        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T)
-        .setContentLengthBytes(contentLength)
-        .build();
+        .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T);
   }
 
   private static final class CloseFailingBlockingSegmentStore extends BlockingSegmentStore {

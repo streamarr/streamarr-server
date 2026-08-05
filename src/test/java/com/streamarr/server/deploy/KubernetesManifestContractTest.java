@@ -49,8 +49,9 @@ class KubernetesManifestContractTest {
   }
 
   @Test
-  @DisplayName("Should recreate the single server instead of rolling out a second replica")
-  void shouldRecreateSingleServerInsteadOfRollingOutSecondReplica() {
+  @DisplayName(
+      "Should recreate the single server instead of rolling out a second replica when deployed")
+  void shouldRecreateSingleServerInsteadOfRollingOutSecondReplicaWhenDeployed() {
     var spec = asMap(serverDeployment.get("spec"));
 
     assertThat(spec).containsEntry("replicas", 1);
@@ -58,8 +59,8 @@ class KubernetesManifestContractTest {
   }
 
   @Test
-  @DisplayName("Should probe the server through the actuator health groups")
-  void shouldProbeServerThroughActuatorHealthGroups() {
+  @DisplayName("Should probe the server through the actuator health groups when deployed")
+  void shouldProbeServerThroughActuatorHealthGroupsWhenDeployed() {
     var container = container(serverDeployment);
 
     assertThat(probePath(container, "startupProbe")).isEqualTo("/actuator/health/liveness");
@@ -68,8 +69,8 @@ class KubernetesManifestContractTest {
   }
 
   @Test
-  @DisplayName("Should declare resource requests for both workloads")
-  void shouldDeclareResourceRequestsForBothWorkloads() {
+  @DisplayName("Should declare resource requests for both workloads when deployed")
+  void shouldDeclareResourceRequestsForBothWorkloadsWhenDeployed() {
     for (var deployment : List.of(serverDeployment, workerDeployment)) {
       var requests = asMap(asMap(container(deployment).get("resources")).get("requests"));
 
@@ -78,8 +79,8 @@ class KubernetesManifestContractTest {
   }
 
   @Test
-  @DisplayName("Should harden both containers to the restricted pod security profile")
-  void shouldHardenBothContainersToRestrictedPodSecurityProfile() {
+  @DisplayName("Should harden both containers to the restricted pod security profile when deployed")
+  void shouldHardenBothContainersToRestrictedPodSecurityProfileWhenDeployed() {
     for (var deployment : List.of(serverDeployment, workerDeployment)) {
       var securityContext = asMap(container(deployment).get("securityContext"));
 
@@ -92,16 +93,17 @@ class KubernetesManifestContractTest {
   }
 
   @Test
-  @DisplayName("Should pin both images to an explicit tag")
-  void shouldPinBothImagesToExplicitTag() {
+  @DisplayName("Should pin both images to an explicit tag when deployed")
+  void shouldPinBothImagesToExplicitTagWhenDeployed() {
     for (var deployment : List.of(serverDeployment, workerDeployment)) {
       assertThat((String) container(deployment).get("image")).doesNotEndWith(":latest");
     }
   }
 
   @Test
-  @DisplayName("Should declare certificate lifetimes because certificates load only at startup")
-  void shouldDeclareCertificateLifetimesBecauseCertificatesLoadOnlyAtStartup() {
+  @DisplayName(
+      "Should declare certificate lifetimes because certificates load only at startup when deployed")
+  void shouldDeclareCertificateLifetimesBecauseCertificatesLoadOnlyAtStartupWhenDeployed() {
     for (var deployment : List.of(serverDeployment, workerDeployment)) {
       var attributes = csiVolumeAttributes(deployment);
 
@@ -112,8 +114,8 @@ class KubernetesManifestContractTest {
   }
 
   @Test
-  @DisplayName("Should ship opt-in DRI passthrough for the transcode worker")
-  void shouldShipOptInDriPassthroughForTranscodeWorker() throws IOException {
+  @DisplayName("Should ship opt-in DRI passthrough for the transcode worker when deployed")
+  void shouldShipOptInDriPassthroughForTranscodeWorkerWhenDeployed() throws IOException {
     var patch = asMap(new Yaml().load(Files.readString(HARDWARE_PATCH)));
     var podSpec = asMap(asMap(asMap(patch.get("spec")).get("template")).get("spec"));
     var worker = asMap(((List<?>) podSpec.get("containers")).getFirst());

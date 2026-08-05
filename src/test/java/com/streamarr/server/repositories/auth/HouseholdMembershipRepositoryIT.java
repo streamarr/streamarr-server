@@ -22,8 +22,8 @@ class HouseholdMembershipRepositoryIT extends AbstractIntegrationTest {
   @Autowired private HouseholdMembershipRepository membershipRepository;
 
   @Test
-  @DisplayName("Should persist membership grant")
-  void shouldPersistMembershipGrant() {
+  @DisplayName("Should persist a membership grant when saved")
+  void shouldPersistMembershipGrantWhenSaved() {
     var membership = newMembership(HouseholdRole.MEMBER);
 
     membershipRepository.grantMembership(membership);

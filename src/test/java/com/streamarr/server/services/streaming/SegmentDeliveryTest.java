@@ -11,8 +11,8 @@ import org.junit.jupiter.api.Test;
 class SegmentDeliveryTest {
 
   @Test
-  @DisplayName("Should compare ready deliveries by segment content")
-  void shouldCompareReadyDeliveriesBySegmentContent() {
+  @DisplayName("Should compare ready deliveries by segment content when inspected")
+  void shouldCompareReadyDeliveriesBySegmentContentWhenInspected() {
     var delivery = new SegmentDelivery.Ready(new byte[] {0x47, 0x00});
     var sameContent = new SegmentDelivery.Ready(new byte[] {0x47, 0x00});
     var differentContent = new SegmentDelivery.Ready(new byte[] {0x47, 0x01});
@@ -20,14 +20,17 @@ class SegmentDeliveryTest {
     assertThat(delivery)
         .isEqualTo(sameContent)
         .hasSameHashCodeAs(sameContent)
-        .isNotEqualTo(differentContent);
+        .isNotEqualTo(differentContent)
+        .isNotEqualTo(new SegmentDelivery.SessionEnded());
   }
 
   @Test
-  @DisplayName("Should describe ready deliveries by size instead of dumping media bytes")
-  void shouldDescribeReadyDeliveriesBySizeInsteadOfDumpingMediaBytes() {
+  @DisplayName(
+      "Should describe ready deliveries by size instead of dumping media bytes when inspected")
+  void shouldDescribeReadyDeliveriesBySizeInsteadOfDumpingMediaBytesWhenInspected() {
     var delivery = new SegmentDelivery.Ready(new byte[] {0x47, 0x00, 0x11});
 
     assertThat(delivery).hasToString("Ready[3 bytes]");
+    assertThat(delivery.toString()).doesNotContain("71", "17", "[B@");
   }
 }

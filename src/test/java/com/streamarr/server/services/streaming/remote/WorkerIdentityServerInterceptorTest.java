@@ -43,8 +43,10 @@ class WorkerIdentityServerInterceptorTest {
   }
 
   @Test
-  @DisplayName("Should propagate downstream failure without rejecting authenticated call")
-  void shouldPropagateDownstreamFailureWithoutRejectingAuthenticatedCall() throws Exception {
+  @DisplayName(
+      "Should propagate downstream failure without rejecting authenticated call when authenticating a call")
+  void shouldPropagateDownstreamFailureWithoutRejectingAuthenticatedCallWhenAuthenticatingCall()
+      throws Exception {
     var attributes =
         Attributes.newBuilder()
             .set(Grpc.TRANSPORT_ATTR_SSL_SESSION, sslSession(workerCertificate()))
@@ -91,8 +93,9 @@ class WorkerIdentityServerInterceptorTest {
   }
 
   @Test
-  @DisplayName("Should log unexpected authentication failures at error with the stack trace")
-  void shouldLogUnexpectedAuthenticationFailuresAtErrorWithTheStackTrace() {
+  @DisplayName(
+      "Should log unexpected authentication failures at error with the stack trace when authenticating a call")
+  void shouldLogUnexpectedAuthenticationFailuresAtErrorWithTheStackTraceWhenAuthenticatingCall() {
     var attributes =
         Attributes.newBuilder().set(Grpc.TRANSPORT_ATTR_SSL_SESSION, throwingSslSession()).build();
     var call = new RecordingServerCall(attributes);

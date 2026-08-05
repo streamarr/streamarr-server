@@ -13,10 +13,14 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 
 public class FakeTranscodeExecutor implements TranscodeExecutor {
+
+  private static final long OBSERVATION_TIMEOUT_SECONDS = 5;
 
   private record ProcessKey(UUID sessionId, String variantLabel) {}
 
@@ -33,6 +37,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private Set<ExecutionTargetId> executionTargets =
       new LinkedHashSet<>(Set.of(ExecutionTargetId.LOCAL));
   private final AtomicLong livenessChecks = new AtomicLong();
+  private final Object observationMonitor = new Object();
   private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
   private boolean healthy = true;
   private volatile boolean failUntargetedStarts;
@@ -59,8 +64,11 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     var key = new ProcessKey(request.sessionId(), request.variantLabel());
     running.add(key);
     started.add(key);
-    return new TranscodeHandle(
-        1L, request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
+    var handle =
+        new TranscodeHandle(
+            1L, request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
+    signalObservation();
+    return handle;
   }
 
   /**
@@ -97,7 +105,9 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   @Override
   public boolean isRunning(UUID sessionId, String variantLabel) {
     livenessChecks.incrementAndGet();
-    return running.contains(new ProcessKey(sessionId, variantLabel));
+    var result = running.contains(new ProcessKey(sessionId, variantLabel));
+    signalObservation();
+    return result;
   }
 
   /**
@@ -107,6 +117,46 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
    */
   public long livenessChecks() {
     return livenessChecks.get();
+  }
+
+  public void awaitLivenessCheckCount(long count) {
+    awaitObservation(() -> livenessChecks.get() >= count, "liveness check count " + count);
+  }
+
+  public void awaitStartedRequestCount(int count) {
+    awaitObservation(() -> startedRequests.size() >= count, "started request count " + count);
+  }
+
+  public void awaitStartedTargetCount(int count) {
+    awaitObservation(() -> startedTargets.size() >= count, "started target count " + count);
+  }
+
+  public void awaitStartedTarget(ExecutionTargetId target) {
+    awaitObservation(() -> startedTargets.contains(target), "started target " + target.value());
+  }
+
+  private void signalObservation() {
+    synchronized (observationMonitor) {
+      observationMonitor.notifyAll();
+    }
+  }
+
+  private void awaitObservation(BooleanSupplier observed, String description) {
+    var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(OBSERVATION_TIMEOUT_SECONDS);
+    synchronized (observationMonitor) {
+      while (!observed.getAsBoolean()) {
+        var remaining = deadline - System.nanoTime();
+        if (remaining <= 0) {
+          throw new AssertionError("Timed out waiting for " + description);
+        }
+        try {
+          TimeUnit.NANOSECONDS.timedWait(observationMonitor, remaining);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw new AssertionError("Interrupted while waiting for " + description, e);
+        }
+      }
+    }
   }
 
   @Override

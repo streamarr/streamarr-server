@@ -91,15 +91,18 @@ class TranscodeWorkerControlPlaneIT {
   }
 
   @Test
-  @DisplayName("Should reject a start command addressed to another worker")
-  void shouldRejectStartCommandAddressedToAnotherWorker() throws Exception {
+  @DisplayName(
+      "Should reject a start command addressed to another worker when handling a start command")
+  void shouldRejectStartCommandAddressedToAnotherWorkerWhenHandlingStartCommand() throws Exception {
     assertRejectsStartCommand(
         target -> target.toBuilder().setWorkerId(toProto(UUID.randomUUID())).build());
   }
 
   @Test
-  @DisplayName("Should reject a start command addressed to an earlier worker boot")
-  void shouldRejectStartCommandAddressedToEarlierWorkerBoot() throws Exception {
+  @DisplayName(
+      "Should reject a start command addressed to an earlier worker boot when handling a start command")
+  void shouldRejectStartCommandAddressedToEarlierWorkerBootWhenHandlingStartCommand()
+      throws Exception {
     assertRejectsStartCommand(
         target -> target.toBuilder().setBootId(toProto(UUID.randomUUID())).build());
   }

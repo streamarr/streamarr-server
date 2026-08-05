@@ -153,8 +153,8 @@ class TokenCryptoConfigTest {
   }
 
   @Test
-  @DisplayName("Should reject token signed with HMAC")
-  void shouldRejectTokenSignedWithHmac() throws Exception {
+  @DisplayName("Should reject token signed with HMAC when validated")
+  void shouldRejectTokenSignedWithHmacWhenValidated() throws Exception {
     var hmacToken =
         new SignedJWT(
             new JWSHeader(JWSAlgorithm.HS256),
@@ -173,8 +173,8 @@ class TokenCryptoConfigTest {
   }
 
   @Test
-  @DisplayName("Should reject unsigned token")
-  void shouldRejectUnsignedToken() {
+  @DisplayName("Should reject unsigned token when validated")
+  void shouldRejectUnsignedTokenWhenValidated() {
     var unsignedToken =
         new PlainJWT(
                 new JWTClaimsSet.Builder()
@@ -253,8 +253,8 @@ class TokenCryptoConfigTest {
   }
 
   @Test
-  @DisplayName("Should reject token with an empty audience claim")
-  void shouldRejectTokenWithEmptyAudience() {
+  @DisplayName("Should reject token with an empty audience claim when validated")
+  void shouldRejectTokenWithEmptyAudienceWhenValidated() {
     var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
     var token = mint(config.jwtEncoder(keys), claims -> claims.audience(List.of()));
 
@@ -272,8 +272,8 @@ class TokenCryptoConfigTest {
   }
 
   @Test
-  @DisplayName("Should reject token addressed to a different audience")
-  void shouldRejectTokenAddressedToDifferentAudience() {
+  @DisplayName("Should reject token addressed to a different audience when validated")
+  void shouldRejectTokenAddressedToDifferentAudienceWhenValidated() {
     var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
     var token = mint(config.jwtEncoder(keys), claims -> claims.audience(List.of("other-service")));
 

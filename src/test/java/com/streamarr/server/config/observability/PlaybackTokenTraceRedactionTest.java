@@ -32,8 +32,8 @@ class PlaybackTokenTraceRedactionTest {
   private static final AttributeKey<String> URL_QUERY = AttributeKey.stringKey("url.query");
 
   @Test
-  @DisplayName("Should redact playback token from trace while preserving request parameter")
-  void shouldRedactPlaybackTokenFromTraceWhilePreservingRequestParameter() throws Exception {
+  @DisplayName("Should redact playback token and preserve request parameter when tracing a request")
+  void shouldRedactPlaybackTokenAndPreserveRequestParameterWhenTracingRequest() throws Exception {
     var exporter = new CapturingSpanExporter();
     var tracerProvider =
         SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(exporter)).build();

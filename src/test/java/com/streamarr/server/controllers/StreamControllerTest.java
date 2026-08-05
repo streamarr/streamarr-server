@@ -116,8 +116,10 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should return 404 for the retired master playlist alias")
-  void shouldReturn404ForTheRetiredMasterPlaylistAlias() throws Exception {
+  @DisplayName(
+      "Should return 404 for the retired master playlist alias when handling a playback request")
+  void shouldReturn404ForTheRetiredMasterPlaylistAliasWhenHandlingPlaybackRequest()
+      throws Exception {
     streamingService.setSession(buildMpegtsSession());
 
     mockMvc

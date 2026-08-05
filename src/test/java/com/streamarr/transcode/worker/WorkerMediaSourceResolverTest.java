@@ -27,8 +27,9 @@ class WorkerMediaSourceResolverTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"", "/movie.mkv"})
-  @DisplayName("Should reject an empty or leading-slash media source key")
-  void shouldRejectEmptyOrLeadingSlashMediaSourceKey(String relativeKey) throws Exception {
+  @DisplayName("Should reject an empty or leading-slash media source key when resolving a source")
+  void shouldRejectEmptyOrLeadingSlashMediaSourceKeyWhenResolvingSource(String relativeKey)
+      throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
     var mediaSource = source(relativeKey);
@@ -39,8 +40,8 @@ class WorkerMediaSourceResolverTest {
   }
 
   @Test
-  @DisplayName("Should reject a relative key with an empty path segment")
-  void shouldRejectRelativeKeyWithEmptyPathSegment() throws Exception {
+  @DisplayName("Should reject a relative key with an empty path segment when resolving a source")
+  void shouldRejectRelativeKeyWithEmptyPathSegmentWhenResolvingSource() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var nested = Files.createDirectory(mediaRoot.resolve("nested"));
     Files.writeString(nested.resolve("movie.mkv"), "test media");
@@ -51,8 +52,8 @@ class WorkerMediaSourceResolverTest {
   }
 
   @Test
-  @DisplayName("Should reject a relative key with a dot path segment")
-  void shouldRejectRelativeKeyWithDotPathSegment() throws Exception {
+  @DisplayName("Should reject a relative key with a dot path segment when resolving a source")
+  void shouldRejectRelativeKeyWithDotPathSegmentWhenResolvingSource() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var nested = Files.createDirectory(mediaRoot.resolve("nested"));
     Files.writeString(nested.resolve("movie.mkv"), "test media");
@@ -63,8 +64,9 @@ class WorkerMediaSourceResolverTest {
   }
 
   @Test
-  @DisplayName("Should reject a relative key with a platform-specific separator")
-  void shouldRejectRelativeKeyWithPlatformSpecificSeparator() throws Exception {
+  @DisplayName(
+      "Should reject a relative key with a platform-specific separator when resolving a source")
+  void shouldRejectRelativeKeyWithPlatformSpecificSeparatorWhenResolvingSource() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("nested\\movie.mkv"), "test media");
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
@@ -74,8 +76,8 @@ class WorkerMediaSourceResolverTest {
   }
 
   @Test
-  @DisplayName("Should reject a relative key with a Windows drive prefix")
-  void shouldRejectRelativeKeyWithWindowsDrivePrefix() throws Exception {
+  @DisplayName("Should reject a relative key with a Windows drive prefix when resolving a source")
+  void shouldRejectRelativeKeyWithWindowsDrivePrefixWhenResolvingSource() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var windows = Files.createDirectories(mediaRoot.resolve("C:/Windows"));
     Files.writeString(windows.resolve("system.ini"), "test data");
@@ -86,8 +88,10 @@ class WorkerMediaSourceResolverTest {
   }
 
   @Test
-  @DisplayName("Should resolve Unicode and percent sequences as literal key data")
-  void shouldResolveUnicodeAndPercentSequencesAsLiteralKeyData() throws Exception {
+  @DisplayName(
+      "Should resolve Unicode and percent sequences as literal key data when resolving a source")
+  void shouldResolveUnicodeAndPercentSequencesAsLiteralKeyDataWhenResolvingSource()
+      throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var nested = Files.createDirectories(mediaRoot.resolve("日本語/%2e%2e"));
     var mediaFile = Files.writeString(nested.resolve("映画.mkv"), "test media");
@@ -97,8 +101,8 @@ class WorkerMediaSourceResolverTest {
   }
 
   @Test
-  @DisplayName("Should reject a relative key containing NUL")
-  void shouldRejectRelativeKeyContainingNul() throws Exception {
+  @DisplayName("Should reject a relative key containing NUL when resolving a source")
+  void shouldRejectRelativeKeyContainingNulWhenResolvingSource() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
     var source = source("movie\0.mkv");
@@ -107,8 +111,8 @@ class WorkerMediaSourceResolverTest {
   }
 
   @Test
-  @DisplayName("Should reject an unknown source namespace")
-  void shouldRejectUnknownSourceNamespace() throws Exception {
+  @DisplayName("Should reject an unknown source namespace when resolving a source")
+  void shouldRejectUnknownSourceNamespaceWhenResolvingSource() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
     var unknownSource =
@@ -122,8 +126,8 @@ class WorkerMediaSourceResolverTest {
   }
 
   @Test
-  @DisplayName("Should report an unavailable media source")
-  void shouldReportUnavailableMediaSource() throws Exception {
+  @DisplayName("Should report an unavailable media source when resolving a source")
+  void shouldReportUnavailableMediaSourceWhenResolvingSource() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
     var unavailableSource = source("x");
@@ -135,8 +139,8 @@ class WorkerMediaSourceResolverTest {
   }
 
   @Test
-  @DisplayName("Should reject a directory as a media source")
-  void shouldRejectDirectoryAsMediaSource() throws Exception {
+  @DisplayName("Should reject a directory as a media source when resolving a source")
+  void shouldRejectDirectoryAsMediaSourceWhenResolvingSource() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.createDirectory(mediaRoot.resolve("folder"));
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
@@ -148,8 +152,8 @@ class WorkerMediaSourceResolverTest {
   }
 
   @Test
-  @DisplayName("Should reject a key that escapes its source namespace")
-  void shouldRejectKeyThatEscapesItsSourceNamespace() throws Exception {
+  @DisplayName("Should reject a key that escapes its source namespace when resolving a source")
+  void shouldRejectKeyThatEscapesItsSourceNamespaceWhenResolvingSource() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(tempDir.resolve("secret.mkv"), "secret");
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
@@ -159,8 +163,10 @@ class WorkerMediaSourceResolverTest {
   }
 
   @Test
-  @DisplayName("Should reject a symlink whose target escapes its source namespace")
-  void shouldRejectSymlinkWhoseTargetEscapesItsSourceNamespace() throws Exception {
+  @DisplayName(
+      "Should reject a symlink whose target escapes its source namespace when resolving a source")
+  void shouldRejectSymlinkWhoseTargetEscapesItsSourceNamespaceWhenResolvingSource()
+      throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var secret = Files.writeString(tempDir.resolve("secret.mkv"), "secret");
     Files.createSymbolicLink(mediaRoot.resolve("movie.mkv"), secret);
@@ -171,8 +177,10 @@ class WorkerMediaSourceResolverTest {
   }
 
   @Test
-  @DisplayName("Should resolve a symlink whose target remains inside its source namespace")
-  void shouldResolveSymlinkWhoseTargetRemainsInsideSourceNamespace() throws Exception {
+  @DisplayName(
+      "Should resolve a symlink whose target remains inside its source namespace when resolving a source")
+  void shouldResolveSymlinkWhoseTargetRemainsInsideSourceNamespaceWhenResolvingSource()
+      throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var target = Files.writeString(mediaRoot.resolve("stored-movie.mkv"), "test media");
     Files.createSymbolicLink(mediaRoot.resolve("movie.mkv"), target);

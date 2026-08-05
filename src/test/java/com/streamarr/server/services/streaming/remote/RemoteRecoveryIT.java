@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -52,8 +53,10 @@ class RemoteRecoveryIT {
   @TempDir Path tempDir;
 
   @Test
-  @DisplayName("Should re-dispatch a failed variant to another live worker connection")
-  void shouldRedispatchFailedVariantToAnotherLiveWorkerConnection() throws Exception {
+  @DisplayName(
+      "Should re-dispatch a failed variant to another live worker connection when recovering a producer")
+  void shouldRedispatchFailedVariantToAnotherLiveWorkerConnectionWhenRecoveringProducer()
+      throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
@@ -63,7 +66,14 @@ class RemoteRecoveryIT {
     try (var server = server(segmentStore)) {
       server.start();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
-      var rig = recoveryRig(streamSessionId, mediaFile, segmentStore, executor);
+      var rig =
+          recoveryRig(
+              RecoveryRigConfiguration.builder()
+                  .streamSessionId(streamSessionId)
+                  .mediaFile(mediaFile)
+                  .segmentStore(segmentStore)
+                  .executor(executor)
+                  .build());
 
       try (var failingWorker = worker(mediaRoot, new FailingFfmpegProcessManager())) {
         failingWorker.start("localhost", server.port());
@@ -108,7 +118,14 @@ class RemoteRecoveryIT {
       server.start();
       failingWorker.start("localhost", server.port());
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
-      var rig = recoveryRig(streamSessionId, mediaFile, segmentStore, executor);
+      var rig =
+          recoveryRig(
+              RecoveryRigConfiguration.builder()
+                  .streamSessionId(streamSessionId)
+                  .mediaFile(mediaFile)
+                  .segmentStore(segmentStore)
+                  .executor(executor)
+                  .build());
 
       var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
       rig.session().setHandle(handle);
@@ -127,17 +144,20 @@ class RemoteRecoveryIT {
 
   private record RecoveryRig(SegmentDeliveryCoordinator coordinator, StreamSession session) {}
 
-  private RecoveryRig recoveryRig(
+  @Builder
+  private record RecoveryRigConfiguration(
       UUID streamSessionId,
       Path mediaFile,
       LocalSegmentStore segmentStore,
-      RemoteTranscodeExecutor executor) {
+      RemoteTranscodeExecutor executor) {}
+
+  private RecoveryRig recoveryRig(RecoveryRigConfiguration configuration) {
     var session =
         StreamSession.builder()
-            .sessionId(streamSessionId)
+            .sessionId(configuration.streamSessionId())
             .mediaFileId(UUID.randomUUID())
             .authority(playbackAuthorityFor(UUID.randomUUID()))
-            .sourcePath(mediaFile)
+            .sourcePath(configuration.mediaFile())
             .mediaProbe(defaultProbeBuilder().build())
             .transcodeDecision(transcodeDecision())
             .build();
@@ -150,8 +170,8 @@ class RemoteRecoveryIT {
             .build();
     var rig =
         StreamingRigFixture.streamingRigBuilder()
-            .segmentStore(segmentStore)
-            .transcodeExecutor(executor)
+            .segmentStore(configuration.segmentStore())
+            .transcodeExecutor(configuration.executor())
             .properties(properties)
             .runtimeRegistry(registry)
             .pollInterval(Duration.ofMillis(50))

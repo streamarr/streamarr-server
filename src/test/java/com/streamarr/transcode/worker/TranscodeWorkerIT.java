@@ -62,8 +62,8 @@ class TranscodeWorkerIT {
   }
 
   @Test
-  @DisplayName("Should reject duplicate worker startup")
-  void shouldRejectDuplicateWorkerStartup() throws Exception {
+  @DisplayName("Should reject startup when the worker is already running")
+  void shouldRejectStartupWhenWorkerIsAlreadyRunning() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
 
     try (var server = server();
@@ -175,8 +175,10 @@ class TranscodeWorkerIT {
   }
 
   @Test
-  @DisplayName("Should stop a just-started variant before deleting its output on disconnect")
-  void shouldStopJustStartedVariantBeforeDeletingItsOutputOnDisconnect() throws Exception {
+  @DisplayName(
+      "Should stop a just-started variant before deleting its output on disconnect when running a worker")
+  void shouldStopJustStartedVariantBeforeDeletingItsOutputOnDisconnectWhenRunningWorker()
+      throws Exception {
     var mediaRoot = preparedMediaRoot();
     var streamSessionId = UUID.randomUUID();
     var server = server();
@@ -197,8 +199,10 @@ class TranscodeWorkerIT {
   }
 
   @Test
-  @DisplayName("Should report the control-plane disconnect cause to its process owner")
-  void shouldReportControlPlaneDisconnectCauseToItsProcessOwner() throws Exception {
+  @DisplayName(
+      "Should report the control-plane disconnect cause to its process owner when running a worker")
+  void shouldReportControlPlaneDisconnectCauseToItsProcessOwnerWhenRunningWorker()
+      throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
 
     try (var server = server();
@@ -216,8 +220,9 @@ class TranscodeWorkerIT {
   }
 
   @Test
-  @DisplayName("Should stop the dispatched variant requested by the control plane")
-  void shouldStopDispatchedVariantRequestedByControlPlane() throws Exception {
+  @DisplayName(
+      "Should stop the dispatched variant requested by the control plane when running a worker")
+  void shouldStopDispatchedVariantRequestedByControlPlaneWhenRunningWorker() throws Exception {
     var mediaRoot = preparedMediaRoot();
     var processManager = new FakeFfmpegProcessManager();
     var streamSessionId = UUID.randomUUID();
@@ -277,8 +282,9 @@ class TranscodeWorkerIT {
   }
 
   @Test
-  @DisplayName("Should upload a produced segment through the worker connection")
-  void shouldUploadProducedSegmentThroughWorkerConnection() throws Exception {
+  @DisplayName(
+      "Should upload a produced segment through the worker connection when running a worker")
+  void shouldUploadProducedSegmentThroughWorkerConnectionWhenRunningWorker() throws Exception {
     var mediaRoot = preparedMediaRoot();
     var segmentData = "remote segment".getBytes();
     var processManager = new FakeSegmentProducingFfmpegProcessManager("segment0.ts", segmentData);
@@ -311,8 +317,9 @@ class TranscodeWorkerIT {
   }
 
   @Test
-  @DisplayName("Should complete a variant after uploading all produced segments")
-  void shouldCompleteVariantAfterUploadingAllProducedSegments() throws Exception {
+  @DisplayName(
+      "Should complete a variant after uploading all produced segments when running a worker")
+  void shouldCompleteVariantAfterUploadingAllProducedSegmentsWhenRunningWorker() throws Exception {
     var mediaRoot = preparedMediaRoot();
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
@@ -343,8 +350,10 @@ class TranscodeWorkerIT {
   }
 
   @Test
-  @DisplayName("Should upload the init segment and media segments for an fMP4 variant")
-  void shouldUploadTheInitSegmentAndMediaSegmentsForAnFmp4Variant() throws Exception {
+  @DisplayName(
+      "Should upload the init segment and media segments for an fMP4 variant when running a worker")
+  void shouldUploadTheInitSegmentAndMediaSegmentsForAnFmp4VariantWhenRunningWorker()
+      throws Exception {
     var mediaRoot = preparedMediaRoot();
     var initData = "fmp4 init".getBytes();
     var mediaData = "fmp4 media".getBytes();
@@ -470,8 +479,10 @@ class TranscodeWorkerIT {
   }
 
   @Test
-  @DisplayName("Should reject malformed variant decisions without poisoning worker capacity")
-  void shouldRejectMalformedVariantDecisionsWithoutPoisoningWorkerCapacity() throws Exception {
+  @DisplayName(
+      "Should reject malformed variant decisions without poisoning worker capacity when running a worker")
+  void shouldRejectMalformedVariantDecisionsWithoutPoisoningWorkerCapacityWhenRunningWorker()
+      throws Exception {
     var mediaRoot = preparedMediaRoot();
     var processManager = new FakeFfmpegProcessManager();
 

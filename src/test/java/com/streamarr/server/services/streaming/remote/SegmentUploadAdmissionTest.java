@@ -31,8 +31,8 @@ class SegmentUploadAdmissionTest {
   }
 
   @Test
-  @DisplayName("Should reject a non-positive byte reservation")
-  void shouldRejectANonPositiveByteReservation() {
+  @DisplayName("Should reject a non-positive byte reservation when admitting an upload")
+  void shouldRejectANonPositiveByteReservationWhenAdmittingUpload() {
     var admission = new SegmentUploadAdmission(1, 100, 8);
     try (var ticket = admission.tryAdmit(UUID.randomUUID()).orElseThrow()) {
       assertThatThrownBy(() -> ticket.tryReserve(-50)).isInstanceOf(IllegalArgumentException.class);
@@ -41,15 +41,15 @@ class SegmentUploadAdmissionTest {
   }
 
   @Test
-  @DisplayName("Should enforce the shared byte budget across tickets")
-  void shouldEnforceTheSharedByteBudgetAcrossTickets() {
+  @DisplayName("Should enforce the shared byte budget across tickets when admitting an upload")
+  void shouldEnforceTheSharedByteBudgetAcrossTicketsWhenAdmittingUpload() {
     var admission = new SegmentUploadAdmission(4, 100, 8);
     var first = admission.tryAdmit(UUID.randomUUID()).orElseThrow();
     var second = admission.tryAdmit(UUID.randomUUID()).orElseThrow();
     var third = admission.tryAdmit(UUID.randomUUID()).orElseThrow();
 
     assertThat(first.tryReserve(60)).isTrue();
-    assertThat(second.tryReserve(60)).isFalse();
+    assertThat(second.tryReserve(41)).isFalse();
     assertThat(third.tryReserve(40)).isTrue();
 
     first.close();
@@ -81,8 +81,8 @@ class SegmentUploadAdmissionTest {
   }
 
   @Test
-  @DisplayName("Should cap the uploads one worker can hold concurrently")
-  void shouldCapTheUploadsOneWorkerCanHoldConcurrently() {
+  @DisplayName("Should cap the uploads one worker can hold concurrently when admitting an upload")
+  void shouldCapTheUploadsOneWorkerCanHoldConcurrentlyWhenAdmittingUpload() {
     var admission = new SegmentUploadAdmission(8, 100, 2);
 
     assertThat(admission.tryAdmit(WORKER_A)).isPresent();
@@ -92,8 +92,9 @@ class SegmentUploadAdmissionTest {
   }
 
   @Test
-  @DisplayName("Should keep one worker's wedged uploads from starving the rest of the fleet")
-  void shouldKeepOneWorkersWedgedUploadsFromStarvingTheFleet() {
+  @DisplayName(
+      "Should keep one worker's wedged uploads from starving the rest of the fleet when admitting an upload")
+  void shouldKeepOneWorkersWedgedUploadsFromStarvingTheFleetWhenAdmittingUpload() {
     var admission = new SegmentUploadAdmission(8, 100, 2);
     // Worker A opens its whole allowance and never closes either ticket.
     admission.tryAdmit(WORKER_A).orElseThrow();
@@ -117,8 +118,9 @@ class SegmentUploadAdmissionTest {
   }
 
   @Test
-  @DisplayName("Should still bound total concurrent uploads across all workers")
-  void shouldStillBoundTotalConcurrentUploadsAcrossAllWorkers() {
+  @DisplayName(
+      "Should still bound total concurrent uploads across all workers when admitting an upload")
+  void shouldStillBoundTotalConcurrentUploadsAcrossAllWorkersWhenAdmittingUpload() {
     var admission = new SegmentUploadAdmission(2, 100, 2);
     admission.tryAdmit(WORKER_A).orElseThrow();
     admission.tryAdmit(WORKER_A).orElseThrow();
@@ -127,8 +129,9 @@ class SegmentUploadAdmissionTest {
   }
 
   @Test
-  @DisplayName("Should reclaim an upload that outlived its deadline without completing")
-  void shouldReclaimAnUploadThatOutlivedItsDeadlineWithoutCompleting() {
+  @DisplayName(
+      "Should reclaim an upload that outlived its deadline without completing when admitting an upload")
+  void shouldReclaimAnUploadThatOutlivedItsDeadlineWithoutCompletingWhenAdmittingUpload() {
     var clock = new MutableClock();
     var admission = new SegmentUploadAdmission(1, 100, 8, Duration.ofSeconds(30), clock);
     // A stream that sent metadata and then stopped: slot taken, bytes reserved, never closed.
@@ -146,8 +149,9 @@ class SegmentUploadAdmissionTest {
   }
 
   @Test
-  @DisplayName("Should not reclaim an upload that is still inside its deadline")
-  void shouldNotReclaimAnUploadThatIsStillInsideItsDeadline() {
+  @DisplayName(
+      "Should not reclaim an upload that is still inside its deadline when admitting an upload")
+  void shouldNotReclaimAnUploadThatIsStillInsideItsDeadlineWhenAdmittingUpload() {
     var clock = new MutableClock();
     var admission = new SegmentUploadAdmission(1, 100, 8, Duration.ofSeconds(30), clock);
     admission.tryAdmit(WORKER_A).orElseThrow();

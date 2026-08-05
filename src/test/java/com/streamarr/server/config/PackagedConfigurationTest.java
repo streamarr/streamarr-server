@@ -67,8 +67,8 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should ship separate server and transcode worker process types")
-  void shouldShipSeparateServerAndTranscodeWorkerProcessTypes() throws IOException {
+  @DisplayName("Should ship separate server and transcode worker process types when packaged")
+  void shouldShipSeparateServerAndTranscodeWorkerProcessTypesWhenPackaged() throws IOException {
     var processes = Set.copyOf(Files.readAllLines(Path.of("Procfile")));
     var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
 
@@ -81,8 +81,8 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should ship an opt-in Docker Compose worker path")
-  void shouldShipOptInDockerComposeWorkerPath() throws IOException {
+  @DisplayName("Should ship an opt-in Docker Compose worker path when packaged")
+  void shouldShipOptInDockerComposeWorkerPathWhenPackaged() throws IOException {
     var deployment = Files.readString(Path.of("deploy/compose/distributed-transcoding.yml"));
 
     assertThat(deployment)
@@ -93,16 +93,19 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should ship opt-in hardware transcoding for the Docker Compose worker")
-  void shouldShipOptInHardwareTranscodingForDockerComposeWorker() throws IOException {
+  @DisplayName(
+      "Should ship opt-in hardware transcoding for the Docker Compose worker when packaged")
+  void shouldShipOptInHardwareTranscodingForDockerComposeWorkerWhenPackaged() throws IOException {
     var deployment = Files.readString(Path.of("deploy/compose/hardware-transcoding.yml"));
 
     assertThat(deployment).contains("transcode-worker:", "devices:", "/dev/dri:/dev/dri");
   }
 
   @Test
-  @DisplayName("Should ship a single-server Kubernetes path with per-pod worker identity")
-  void shouldShipSingleServerKubernetesPathWithPerPodWorkerIdentity() throws IOException {
+  @DisplayName(
+      "Should ship a single-server Kubernetes path with per-pod worker identity when packaged")
+  void shouldShipSingleServerKubernetesPathWithPerPodWorkerIdentityWhenPackaged()
+      throws IOException {
     var deployment = Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml"));
 
     assertThat(deployment)

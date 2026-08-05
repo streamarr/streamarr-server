@@ -20,8 +20,9 @@ class LivePlaybackAuthorityGateTest {
    * "resilience" change (catch-and-allow, cached last-known-good) cannot merge green.
    */
   @Test
-  @DisplayName("Should propagate repository failure instead of allowing playback")
-  void shouldPropagateRepositoryFailureInsteadOfAllowingPlayback() {
+  @DisplayName(
+      "Should propagate repository failure instead of allowing playback when authorizing playback")
+  void shouldPropagateRepositoryFailureInsteadOfAllowingPlaybackWhenAuthorizingPlayback() {
     var repository =
         new FakeAuthSessionRepository() {
           @Override

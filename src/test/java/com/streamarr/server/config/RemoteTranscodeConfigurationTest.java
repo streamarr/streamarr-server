@@ -35,8 +35,8 @@ class RemoteTranscodeConfigurationTest {
               RemoteTranscodeConfiguration.class, SegmentStoreConfiguration.class);
 
   @Test
-  @DisplayName("Should leave remote transcoding inactive by default")
-  void shouldLeaveRemoteTranscodingInactiveByDefault() {
+  @DisplayName("Should leave remote transcoding inactive when not configured")
+  void shouldLeaveRemoteTranscodingInactiveWhenNotConfigured() {
     contextRunner.run(
         context -> {
           assertThat(context).doesNotHaveBean(WorkerSessionServer.class);
@@ -53,8 +53,8 @@ class RemoteTranscodeConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should reject a blank remote media source root")
-  void shouldRejectBlankRemoteMediaSourceRoot() {
+  @DisplayName("Should reject a blank remote media source root when configured")
+  void shouldRejectBlankRemoteMediaSourceRootWhenConfigured() {
     assertThatThrownBy(
             () ->
                 new RemoteTranscodeProperties(

@@ -17,8 +17,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 class AuthenticatedIdentityTest {
 
   @Test
-  @DisplayName("Should reject account scope carrying household or profile identity")
-  void shouldRejectAccountScopeCarryingHouseholdOrProfileIdentity() {
+  @DisplayName(
+      "Should reject account scope carrying household or profile identity when constructed")
+  void shouldRejectAccountScopeCarryingHouseholdOrProfileIdentityWhenConstructed() {
     var identity = defaultIdentityBuilder().scope(TokenScope.ACCOUNT).streamSessionId(null);
 
     assertThatThrownBy(identity::build)
@@ -27,8 +28,8 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName("Should reject household scope carrying profile identity")
-  void shouldRejectHouseholdScopeCarryingProfileIdentity() {
+  @DisplayName("Should reject household scope carrying profile identity when constructed")
+  void shouldRejectHouseholdScopeCarryingProfileIdentityWhenConstructed() {
     var identity = defaultIdentityBuilder().scope(TokenScope.HOUSEHOLD).streamSessionId(null);
 
     assertThatThrownBy(identity::build)
@@ -37,8 +38,8 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName("Should reject profile scope without profile identity")
-  void shouldRejectProfileScopeWithoutProfileIdentity() {
+  @DisplayName("Should reject profile scope without profile identity when constructed")
+  void shouldRejectProfileScopeWithoutProfileIdentityWhenConstructed() {
     var identity =
         defaultIdentityBuilder().scope(TokenScope.PROFILE).profileId(null).streamSessionId(null);
 
@@ -48,8 +49,8 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName("Should reject profile identity without household context")
-  void shouldRejectProfileIdentityWithoutHouseholdContext() {
+  @DisplayName("Should reject profile identity without household context when constructed")
+  void shouldRejectProfileIdentityWithoutHouseholdContextWhenConstructed() {
     var identity =
         defaultIdentityBuilder().scope(TokenScope.PROFILE).householdId(null).streamSessionId(null);
 
@@ -57,8 +58,8 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName("Should reject profile identity without household role")
-  void shouldRejectProfileIdentityWithoutHouseholdRole() {
+  @DisplayName("Should reject profile identity without household role when constructed")
+  void shouldRejectProfileIdentityWithoutHouseholdRoleWhenConstructed() {
     var identity =
         defaultIdentityBuilder()
             .scope(TokenScope.PROFILE)
@@ -69,24 +70,24 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName("Should reject playback identity without profile identity")
-  void shouldRejectPlaybackIdentityWithoutProfileIdentity() {
+  @DisplayName("Should reject playback identity without profile identity when constructed")
+  void shouldRejectPlaybackIdentityWithoutProfileIdentityWhenConstructed() {
     var identity = defaultIdentityBuilder().profileId(null);
 
     assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  @DisplayName("Should reject playback identity without stream session")
-  void shouldRejectPlaybackIdentityWithoutStreamSession() {
+  @DisplayName("Should reject playback identity without stream session when constructed")
+  void shouldRejectPlaybackIdentityWithoutStreamSessionWhenConstructed() {
     var identity = defaultIdentityBuilder().streamSessionId(null);
 
     assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  @DisplayName("Should reject non-playback identity carrying a stream session")
-  void shouldRejectNonPlaybackIdentityCarryingStreamSession() {
+  @DisplayName("Should reject non-playback identity carrying a stream session when constructed")
+  void shouldRejectNonPlaybackIdentityCarryingStreamSessionWhenConstructed() {
     var identity =
         defaultIdentityBuilder().scope(TokenScope.PROFILE).streamSessionId(UUID.randomUUID());
 
@@ -94,8 +95,8 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName("Should reject a token missing the roles claim")
-  void shouldRejectTokenMissingRolesClaim() {
+  @DisplayName("Should reject a token missing the roles claim when constructed")
+  void shouldRejectTokenMissingRolesClaimWhenConstructed() {
     var jwt =
         Jwt.withTokenValue("token")
             .header("alg", "none")
@@ -108,8 +109,8 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName("Should reject a token with an empty roles claim")
-  void shouldRejectTokenWithEmptyRolesClaim() {
+  @DisplayName("Should reject a token with an empty roles claim when constructed")
+  void shouldRejectTokenWithEmptyRolesClaimWhenConstructed() {
     var jwt =
         Jwt.withTokenValue("token")
             .header("alg", "none")
@@ -122,8 +123,9 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName("Should reject building a playback authority for an account-scoped identity")
-  void shouldRejectPlaybackAuthorityForAccountScopedIdentity() {
+  @DisplayName(
+      "Should reject building a playback authority for an account-scoped identity when constructed")
+  void shouldRejectPlaybackAuthorityForAccountScopedIdentityWhenConstructed() {
     var identity =
         defaultIdentityBuilder()
             .scope(TokenScope.ACCOUNT)

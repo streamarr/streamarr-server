@@ -184,7 +184,7 @@ class HlsPlaylistServiceTest {
 
   @Test
   @DisplayName("Should start with EXTM3U when generating multivariant playlist")
-  void shouldStartWithExtm3uWhenGeneratingMasterPlaylist() {
+  void shouldStartWithExtm3uWhenGeneratingMultivariantPlaylist() {
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
 
     var playlist = service.generateMultivariantPlaylist(session, "test-token");
@@ -195,7 +195,7 @@ class HlsPlaylistServiceTest {
   @Test
   @DisplayName(
       "Should include stream inf with bandwidth and resolution when generating multivariant playlist")
-  void shouldIncludeStreamInfWithBandwidthAndResolutionWhenGeneratingMasterPlaylist() {
+  void shouldIncludeStreamInfWithBandwidthAndResolutionWhenGeneratingMultivariantPlaylist() {
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
 
     var playlist = service.generateMultivariantPlaylist(session, "test-token");
@@ -208,7 +208,7 @@ class HlsPlaylistServiceTest {
 
   @Test
   @DisplayName("Should point to stream playlist URL when generating multivariant playlist")
-  void shouldPointToStreamPlaylistUrlWhenGeneratingMasterPlaylist() {
+  void shouldPointToStreamPlaylistUrlWhenGeneratingMultivariantPlaylist() {
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
 
     var playlist = service.generateMultivariantPlaylist(session, "test-token");
@@ -335,7 +335,7 @@ class HlsPlaylistServiceTest {
 
   @Test
   @DisplayName("Should include codecs attribute when generating multivariant playlist")
-  void shouldIncludeCodecsAttributeWhenGeneratingMasterPlaylist() {
+  void shouldIncludeCodecsAttributeWhenGeneratingMultivariantPlaylist() {
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 30);
 
     var playlist = service.generateMultivariantPlaylist(session, "test-token");
@@ -345,7 +345,7 @@ class HlsPlaylistServiceTest {
 
   @Test
   @DisplayName("Should not contain multivariant playlist tags when generating media playlist")
-  void shouldNotContainMasterPlaylistTagsWhenGeneratingMediaPlaylist() {
+  void shouldNotContainMultivariantPlaylistTagsWhenGeneratingMediaPlaylist() {
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 30);
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
@@ -518,7 +518,7 @@ class HlsPlaylistServiceTest {
     @MethodSource("audioPlaylistAttributes")
     @DisplayName(
         "Should include expected audio attribute in multivariant playlist when codec is present")
-    void shouldIncludeExpectedAudioAttributeInMasterPlaylistWhenCodecIsPresent(
+    void shouldIncludeExpectedAudioAttributeInMultivariantPlaylistWhenCodecIsPresent(
         String scenario, AudioDecision audio, String expectedFragment) {
       var session = createSessionWithAudio(audio, "h264");
 

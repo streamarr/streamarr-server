@@ -20,8 +20,9 @@ class TranscodeWorkerSettingsTest {
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
   @Test
-  @DisplayName("Should map required environment values with conservative defaults")
-  void shouldMapRequiredEnvironmentValuesWithConservativeDefaults() {
+  @DisplayName(
+      "Should map required environment values with conservative defaults when loading settings")
+  void shouldMapRequiredEnvironmentValuesWithConservativeDefaultsWhenLoadingSettings() {
     var settings = TranscodeWorkerSettings.fromEnvironment(requiredEnvironment());
     var worker = settings.workerConfiguration();
 
@@ -38,8 +39,8 @@ class TranscodeWorkerSettingsTest {
   }
 
   @Test
-  @DisplayName("Should assign a fresh boot identity each time settings are loaded")
-  void shouldAssignFreshBootIdentityEachTimeSettingsAreLoaded() {
+  @DisplayName("Should assign a fresh boot identity when settings are loaded again")
+  void shouldAssignFreshBootIdentityWhenSettingsAreLoadedAgain() {
     var first = TranscodeWorkerSettings.fromEnvironment(requiredEnvironment());
     var second = TranscodeWorkerSettings.fromEnvironment(requiredEnvironment());
 
@@ -61,8 +62,8 @@ class TranscodeWorkerSettingsTest {
   }
 
   @Test
-  @DisplayName("Should distinguish a missing UUID from an invalid UUID")
-  void shouldDistinguishMissingUuidFromInvalidUuid() {
+  @DisplayName("Should distinguish a missing UUID from an invalid UUID when loading settings")
+  void shouldDistinguishMissingUuidFromInvalidUuidWhenLoadingSettings() {
     var environment = new HashMap<>(requiredEnvironment());
     environment.remove("TRANSCODE_WORKER_SOURCE_NAMESPACE_ID");
 
@@ -72,8 +73,8 @@ class TranscodeWorkerSettingsTest {
   }
 
   @Test
-  @DisplayName("Should reject a non-positive worker slot count")
-  void shouldRejectNonPositiveWorkerSlotCount() {
+  @DisplayName("Should reject a non-positive worker slot count when loading settings")
+  void shouldRejectNonPositiveWorkerSlotCountWhenLoadingSettings() {
     var environment = new HashMap<>(requiredEnvironment());
     environment.put("TRANSCODE_WORKER_SLOTS", "0");
 
@@ -83,8 +84,8 @@ class TranscodeWorkerSettingsTest {
   }
 
   @Test
-  @DisplayName("Should reject a worker configuration without capacity")
-  void shouldRejectWorkerConfigurationWithoutCapacity() {
+  @DisplayName("Should reject a worker configuration without capacity when loading settings")
+  void shouldRejectWorkerConfigurationWithoutCapacityWhenLoadingSettings() {
     var configuration =
         TranscodeWorkerConfiguration.builder()
             .workerId(UUID.randomUUID())
@@ -97,8 +98,8 @@ class TranscodeWorkerSettingsTest {
   }
 
   @Test
-  @DisplayName("Should map explicit worker process settings")
-  void shouldMapExplicitWorkerProcessSettings() {
+  @DisplayName("Should map explicit worker process settings when loading settings")
+  void shouldMapExplicitWorkerProcessSettingsWhenLoadingSettings() {
     var environment = new HashMap<>(requiredEnvironment());
     environment.put("TRANSCODE_WORKER_CONTROL_PLANE_PORT", "65535");
     environment.put("TRANSCODE_WORKER_SLOTS", "2");
@@ -114,8 +115,8 @@ class TranscodeWorkerSettingsTest {
   }
 
   @Test
-  @DisplayName("Should explain invalid worker process settings")
-  void shouldExplainInvalidWorkerProcessSettings() {
+  @DisplayName("Should explain invalid worker process settings when loading settings")
+  void shouldExplainInvalidWorkerProcessSettingsWhenLoadingSettings() {
     assertInvalidSetting("TRANSCODE_WORKER_ID", "not-a-uuid", "TRANSCODE_WORKER_ID must be a UUID");
     assertInvalidSetting(
         "TRANSCODE_WORKER_CONTROL_PLANE_PORT",

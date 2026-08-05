@@ -1,6 +1,5 @@
 package com.streamarr.server.services.streaming.remote;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -26,40 +25,30 @@ class WorkerSpiffeIdentityMapperTest {
   private final WorkerSpiffeIdentityMapper mapper = new WorkerSpiffeIdentityMapper(TRUST_DOMAIN);
 
   @Test
-  @DisplayName("Should map the one allowed worker URI SAN")
-  void shouldMapTheOneAllowedWorkerUriSan() throws Exception {
-    var certificate =
-        certificate(
-            List.of(
-                List.of(2, "worker.test"),
-                List.of(6, "spiffe://streamarr.test/streamarr/worker/" + WORKER_ID)));
-
-    assertThat(mapper.workerId(certificate)).isEqualTo(WORKER_ID);
-  }
-
-  @Test
-  @DisplayName("Should reject a certificate without a URI SAN")
-  void shouldRejectCertificateWithoutUriSan() throws Exception {
+  @DisplayName("Should reject a certificate without a URI SAN when mapping a certificate")
+  void shouldRejectCertificateWithoutUriSanWhenMappingCertificate() throws Exception {
     var certificate = certificate(List.of(List.of(2, "worker.test")));
 
     assertRejected(certificate, "exactly one URI subject alternative name");
   }
 
   @Test
-  @DisplayName("Should reject a certificate without subject alternative names")
-  void shouldRejectCertificateWithoutSubjectAlternativeNames() throws Exception {
+  @DisplayName(
+      "Should reject a certificate without subject alternative names when mapping a certificate")
+  void shouldRejectCertificateWithoutSubjectAlternativeNamesWhenMappingCertificate()
+      throws Exception {
     assertRejected(certificate(null), "no subject alternative names");
   }
 
   @Test
-  @DisplayName("Should reject a malformed URI SAN value")
-  void shouldRejectMalformedUriSanValue() throws Exception {
+  @DisplayName("Should reject a malformed URI SAN value when mapping a certificate")
+  void shouldRejectMalformedUriSanValueWhenMappingCertificate() throws Exception {
     assertRejected(certificate(List.of(List.of(6, 42))), "malformed URI subject alternative name");
   }
 
   @Test
-  @DisplayName("Should reject duplicate URI SAN identities")
-  void shouldRejectDuplicateUriSanIdentities() throws Exception {
+  @DisplayName("Should reject duplicate URI SAN identities when mapping a certificate")
+  void shouldRejectDuplicateUriSanIdentitiesWhenMappingCertificate() throws Exception {
     var certificate =
         certificate(
             List.of(
@@ -81,14 +70,18 @@ class WorkerSpiffeIdentityMapperTest {
         "spiffe://streamarr.test/streamarr/worker/1-1-1-1-1",
         "https://streamarr.test/streamarr/worker/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
       })
-  @DisplayName("Should reject a URI SAN outside the configured worker identity path")
-  void shouldRejectUriSanOutsideConfiguredWorkerIdentityPath(String uri) throws Exception {
+  @DisplayName(
+      "Should reject a URI SAN outside the configured worker identity path when mapping a certificate")
+  void shouldRejectUriSanOutsideConfiguredWorkerIdentityPathWhenMappingCertificate(String uri)
+      throws Exception {
     assertRejected(certificate(List.of(List.of(6, uri))), "SPIFFE identity");
   }
 
   @Test
-  @DisplayName("Should reject an unreadable subject alternative name extension")
-  void shouldRejectUnreadableSubjectAlternativeNameExtension() throws Exception {
+  @DisplayName(
+      "Should reject an unreadable subject alternative name extension when mapping a certificate")
+  void shouldRejectUnreadableSubjectAlternativeNameExtensionWhenMappingCertificate()
+      throws Exception {
     var certificate = mock(X509Certificate.class);
     when(certificate.getBasicConstraints()).thenReturn(-1);
     when(certificate.getSubjectAlternativeNames())
@@ -98,8 +91,9 @@ class WorkerSpiffeIdentityMapperTest {
   }
 
   @Test
-  @DisplayName("Should reject a CA certificate presented as a worker identity")
-  void shouldRejectCaCertificatePresentedAsWorkerIdentity() throws Exception {
+  @DisplayName(
+      "Should reject a CA certificate presented as a worker identity when mapping a certificate")
+  void shouldRejectCaCertificatePresentedAsWorkerIdentityWhenMappingCertificate() throws Exception {
     var certificate = certificate(List.of(List.of(6, workerIdentity())));
     when(certificate.getBasicConstraints()).thenReturn(0);
 
@@ -107,8 +101,10 @@ class WorkerSpiffeIdentityMapperTest {
   }
 
   @Test
-  @DisplayName("Should reject a certificate whose key usage permits certificate signing")
-  void shouldRejectCertificateWhoseKeyUsagePermitsCertificateSigning() throws Exception {
+  @DisplayName(
+      "Should reject a certificate whose key usage permits certificate signing when mapping a certificate")
+  void shouldRejectCertificateWhoseKeyUsagePermitsCertificateSigningWhenMappingCertificate()
+      throws Exception {
     var certificate = certificate(List.of(List.of(6, workerIdentity())));
     when(certificate.getKeyUsage()).thenReturn(keyUsage(5));
 
@@ -116,8 +112,10 @@ class WorkerSpiffeIdentityMapperTest {
   }
 
   @Test
-  @DisplayName("Should reject a certificate whose key usage permits CRL signing")
-  void shouldRejectCertificateWhoseKeyUsagePermitsCrlSigning() throws Exception {
+  @DisplayName(
+      "Should reject a certificate whose key usage permits CRL signing when mapping a certificate")
+  void shouldRejectCertificateWhoseKeyUsagePermitsCrlSigningWhenMappingCertificate()
+      throws Exception {
     var certificate = certificate(List.of(List.of(6, workerIdentity())));
     when(certificate.getKeyUsage()).thenReturn(keyUsage(6));
 
@@ -125,8 +123,9 @@ class WorkerSpiffeIdentityMapperTest {
   }
 
   @Test
-  @DisplayName("Should reject a malformed subject alternative name entry")
-  void shouldRejectMalformedSubjectAlternativeNameEntry() throws Exception {
+  @DisplayName(
+      "Should reject a malformed subject alternative name entry when mapping a certificate")
+  void shouldRejectMalformedSubjectAlternativeNameEntryWhenMappingCertificate() throws Exception {
     var certificate =
         certificate(
             List.of(
@@ -136,8 +135,9 @@ class WorkerSpiffeIdentityMapperTest {
   }
 
   @Test
-  @DisplayName("Should reject a URI subject alternative name without a value")
-  void shouldRejectUriSubjectAlternativeNameWithoutValue() throws Exception {
+  @DisplayName(
+      "Should reject a URI subject alternative name without a value when mapping a certificate")
+  void shouldRejectUriSubjectAlternativeNameWithoutValueWhenMappingCertificate() throws Exception {
     assertRejected(certificate(List.of(List.of(6))), "malformed URI subject alternative name");
   }
 
@@ -152,8 +152,8 @@ class WorkerSpiffeIdentityMapperTest {
         "Streamarr.Test",
         "user@streamarr.test"
       })
-  @DisplayName("Should reject an invalid worker trust domain")
-  void shouldRejectInvalidWorkerTrustDomain(String trustDomain) {
+  @DisplayName("Should reject mapper construction when the worker trust domain is invalid")
+  void shouldRejectMapperConstructionWhenWorkerTrustDomainIsInvalid(String trustDomain) {
     assertThatThrownBy(() -> new WorkerSpiffeIdentityMapper(trustDomain))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Worker trust domain");

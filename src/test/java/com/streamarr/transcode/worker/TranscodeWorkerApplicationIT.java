@@ -33,8 +33,10 @@ class TranscodeWorkerApplicationIT {
   @TempDir Path tempDir;
 
   @Test
-  @DisplayName("Should connect an environment-configured worker process over mTLS")
-  void shouldConnectEnvironmentConfiguredWorkerProcessOverMtls() throws Exception {
+  @DisplayName(
+      "Should connect an environment-configured worker process over mTLS when starting a worker")
+  void shouldConnectEnvironmentConfiguredWorkerProcessOverMtlsWhenStartingWorker()
+      throws Exception {
     try (var server = server()) {
       server.start();
       var process = workerProcess(server.port()).start();

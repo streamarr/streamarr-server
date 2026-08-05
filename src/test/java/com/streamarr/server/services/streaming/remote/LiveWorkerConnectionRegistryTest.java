@@ -33,8 +33,10 @@ class LiveWorkerConnectionRegistryTest {
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
   @Test
-  @DisplayName("Should accept a replacement worker before dispatching work to it")
-  void shouldAcceptReplacementWorkerBeforeDispatchingWorkToIt() throws Exception {
+  @DisplayName(
+      "Should accept a replacement worker before dispatching work to it when managing a connection")
+  void shouldAcceptReplacementWorkerBeforeDispatchingWorkToItWhenManagingConnection()
+      throws Exception {
     var registry = new LiveWorkerConnectionRegistry();
     var replacementClosing = new CountDownLatch(1);
     var continueReplacement = new CountDownLatch(1);
@@ -47,6 +49,7 @@ class LiveWorkerConnectionRegistryTest {
           executor.submit(
               () -> registry.register(WORKER_ID, registration(), collecting(replacementResponses)));
       assertThat(replacementClosing.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(replacement).isNotDone();
 
       assertThat(registry.dispatch(variantJob())).isTrue();
       continueReplacement.countDown();
@@ -107,27 +110,31 @@ class LiveWorkerConnectionRegistryTest {
   }
 
   @Test
-  @DisplayName("Should report health and capacity only for the requested source namespace")
-  void shouldReportHealthAndCapacityOnlyForRequestedSourceNamespace() {
+  @DisplayName(
+      "Should report health and capacity only for the requested source namespace when managing a connection")
+  void shouldReportHealthAndCapacityOnlyForRequestedSourceNamespaceWhenManagingConnection() {
     var registry = new LiveWorkerConnectionRegistry();
     registry.register(WORKER_ID, registration(), new CancellableObserver());
     var unavailableNamespace = UUID.randomUUID();
 
     assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID)).hasSize(1);
     assertThat(registry.hasConnectedWorker(unavailableNamespace)).isFalse();
     assertThat(registry.availableSlots(unavailableNamespace)).isZero();
+    assertThat(registry.eligibleWorkers(unavailableNamespace)).isEmpty();
   }
 
   @Test
-  @DisplayName("Should total available capacity across distinct workers")
-  void shouldTotalAvailableCapacityAcrossDistinctWorkers() {
+  @DisplayName("Should total available capacity across distinct workers when managing a connection")
+  void shouldTotalAvailableCapacityAcrossDistinctWorkersWhenManagingConnection() {
     var registry = new LiveWorkerConnectionRegistry();
     var secondWorkerId = UUID.randomUUID();
     registry.register(WORKER_ID, registration(WORKER_ID, 1), new CancellableObserver());
     registry.register(secondWorkerId, registration(secondWorkerId, 2), new CancellableObserver());
 
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(3);
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID)).hasSize(2);
 
     assertThat(registry.dispatch(variantJob())).isTrue();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
@@ -135,8 +142,9 @@ class LiveWorkerConnectionRegistryTest {
 
   @Test
   @DisplayName(
-      "Should survive stopping a session whose worker call is cancelled but not yet reaped")
-  void shouldSurviveStoppingSessionWhoseWorkerCallIsCancelledButNotYetReaped() {
+      "Should survive stopping a session whose worker call is cancelled but not yet reaped when managing a connection")
+  void
+      shouldSurviveStoppingSessionWhoseWorkerCallIsCancelledButNotYetReapedWhenManagingConnection() {
     var registry = new LiveWorkerConnectionRegistry();
     var observer = new CancellableObserver();
     registry.register(WORKER_ID, registration(), observer);
@@ -151,8 +159,10 @@ class LiveWorkerConnectionRegistryTest {
   }
 
   @Test
-  @DisplayName("Should not block worker disconnect while a segment publish is in progress")
-  void shouldNotBlockDisconnectWhileSegmentPublishInProgress() throws Exception {
+  @DisplayName(
+      "Should not block worker disconnect while a segment publish is in progress when managing a connection")
+  void shouldNotBlockDisconnectWhileSegmentPublishInProgressWhenManagingConnection()
+      throws Exception {
     var registry = new LiveWorkerConnectionRegistry();
     var worker =
         WorkerIdentity.newBuilder()
@@ -217,8 +227,9 @@ class LiveWorkerConnectionRegistryTest {
   }
 
   @Test
-  @DisplayName("Should ignore a stale disconnect after the worker connection was replaced")
-  void shouldIgnoreAStaleDisconnectAfterTheWorkerConnectionWasReplaced() {
+  @DisplayName(
+      "Should ignore a stale disconnect after the worker connection was replaced when managing a connection")
+  void shouldIgnoreAStaleDisconnectAfterTheWorkerConnectionWasReplacedWhenManagingConnection() {
     var registry = new LiveWorkerConnectionRegistry();
     var staleObserver = new CancellableObserver();
     var staleSessionId = registry.register(WORKER_ID, registration(), staleObserver);
@@ -234,8 +245,9 @@ class LiveWorkerConnectionRegistryTest {
   }
 
   @Test
-  @DisplayName("Should ignore a stale result after the worker connection was replaced")
-  void shouldIgnoreAStaleResultAfterTheWorkerConnectionWasReplaced() {
+  @DisplayName(
+      "Should ignore a stale result after the worker connection was replaced when managing a connection")
+  void shouldIgnoreAStaleResultAfterTheWorkerConnectionWasReplacedWhenManagingConnection() {
     var registry = new LiveWorkerConnectionRegistry();
     var staleSessionId = registry.register(WORKER_ID, registration(), new CancellableObserver());
     registry.register(WORKER_ID, registration(), collecting(new CopyOnWriteArrayList<>()));

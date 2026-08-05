@@ -99,8 +99,8 @@ class RefreshTokenServiceTest {
   }
 
   @Test
-  @DisplayName("Should treat exact rotation grace boundary as grace replay")
-  void shouldTreatExactRotationGraceBoundaryAsGraceReplay() {
+  @DisplayName("Should treat exact rotation grace boundary as grace replay when redeemed")
+  void shouldTreatExactRotationGraceBoundaryAsGraceReplayWhenRedeemed() {
     var issued = issueSession();
     service.redeem(issued.rawToken());
 
@@ -126,8 +126,8 @@ class RefreshTokenServiceTest {
   }
 
   @Test
-  @DisplayName("Should classify expired successor as superseded retry within grace")
-  void shouldClassifyExpiredSuccessorAsSupersededRetryWithinGrace() {
+  @DisplayName("Should classify expired successor as superseded retry within grace when redeemed")
+  void shouldClassifyExpiredSuccessorAsSupersededRetryWithinGraceWhenRedeemed() {
     var shortLivedService =
         serviceWith(
             AuthTokenProperties.builder()
