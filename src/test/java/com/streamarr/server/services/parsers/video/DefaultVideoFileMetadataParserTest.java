@@ -46,6 +46,37 @@ class DefaultVideoFileMetadataParserTest {
                 .isEqualTo(filename));
   }
 
+  @Test
+  @DisplayName("Should return empty when a year has only whitespace before it")
+  void shouldReturnEmptyWhenYearHasOnlyWhitespaceBeforeIt() {
+    assertThat(defaultVideoFileMetadataParser.parse("  2012")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return empty when title cleanup removes the entire filename")
+  void shouldReturnEmptyWhenTitleCleanupRemovesEntireFilename() {
+    assertThat(defaultVideoFileMetadataParser.parse("---")).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should use supported separator fallback when preferred separator follows invalid title ending")
+  void shouldUseSupportedSeparatorFallbackWhenPreferredSeparatorFollowsInvalidTitleEnding() {
+    var result = defaultVideoFileMetadataParser.parse("Movie-.2012").orElseThrow();
+
+    assertThat(result.title()).isEqualTo("Movie");
+    assertThat(result.year()).isEqualTo("2012");
+  }
+
+  @Test
+  @DisplayName("Should preserve filename as title when year has no valid title prefix")
+  void shouldPreserveFilenameAsTitleWhenYearHasNoValidTitlePrefix() {
+    var result = defaultVideoFileMetadataParser.parse("--- 2012").orElseThrow();
+
+    assertThat(result.title()).isEqualTo("--- 2012");
+    assertThat(result.year()).isNull();
+  }
+
   @Nested
   @DisplayName("Title and Year Extraction Tests")
   class SuccessfulTitleAndYearExtractionTests {

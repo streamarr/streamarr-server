@@ -787,6 +787,87 @@ class LibraryManagementServiceTest {
   }
 
   @Test
+  @DisplayName("Should search with external ID from filepath URI when stored filename is mangled")
+  void shouldSearchWithExternalIdFromFilepathUriWhenStoredFilenameIsMangled() throws IOException {
+    var expectedSearch =
+        VideoFileParserResult.builder()
+            .title("Inception")
+            .year("2010")
+            .externalId("tt1375666")
+            .externalSource(ExternalSourceType.IMDB)
+            .build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("Inception")
+            .externalId("27205")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingMetadataProvider<Movie>();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    var service =
+        libraryManagementServiceWith(movieFileProcessorWith(metadataProvider), seriesFileProcessor);
+    var filepathUri =
+        "file:///library/Inception%20(2010)/" + "Inception%20(2010)%20%5Bimdb-tt1375666%5D.mkv";
+    fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(savedLibraryId)
+            .filepathUri(filepathUri)
+            .filename("legacy-mangled-name.mkv")
+            .status(MediaFileStatus.UNMATCHED)
+            .build());
+    var moviePath = Path.of(URI.create(filepathUri));
+
+    service.processDiscoveredFile(savedLibraryId, moviePath);
+
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+  }
+
+  @Test
+  @DisplayName("Should ignore resolution dimensions when searching movie metadata")
+  void shouldIgnoreResolutionDimensionsWhenSearchingMovieMetadata() throws IOException {
+    var expectedSearch = VideoFileParserResult.builder().title("Paper Comet").build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("Paper Comet")
+            .externalId("507329")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingMetadataProvider<Movie>();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    var service =
+        libraryManagementServiceWith(movieFileProcessorWith(metadataProvider), seriesFileProcessor);
+    var filepathUri = "file:///library/Paper%20Comet/Paper%20Comet%20%5B1920x1080%5D.mkv";
+    var moviePath = pathWithDisplayName(filepathUri, "Paper Comet [1920x1080].mkv");
+
+    service.processDiscoveredFile(savedLibraryId, moviePath);
+
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+  }
+
+  @Test
+  @DisplayName("Should remove Unicode dash suffix when searching movie metadata")
+  void shouldRemoveUnicodeDashSuffixWhenSearchingMovieMetadata() throws IOException {
+    var expectedSearch = VideoFileParserResult.builder().title("Quiet Alloy").year("2014").build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("Quiet Alloy")
+            .externalId("815339")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingMetadataProvider<Movie>();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    var service =
+        libraryManagementServiceWith(movieFileProcessorWith(metadataProvider), seriesFileProcessor);
+    var filepathUri =
+        "file:///library/Quiet%20Alloy/Quiet%20Alloy%20%E2%80%93%202014%20%E2%80%93%20WEBDL-1080p.mkv";
+    var moviePath = pathWithDisplayName(filepathUri, "Quiet Alloy – 2014 – WEBDL-1080p.mkv");
+
+    service.processDiscoveredFile(savedLibraryId, moviePath);
+
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+  }
+
+  @Test
   @DisplayName("Should search with URI-derived series metadata when processing root season file")
   void shouldSearchWithUriDerivedSeriesMetadataWhenProcessingRootSeasonFile() throws IOException {
     var library = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeSeriesLibrary());
@@ -805,6 +886,33 @@ class LibraryManagementServiceTest {
     var seriesPath =
         pathWithDisplayName(
             "file:///Season%2025/The%20Simpsons.S25E09.mkv", "The Simpsons.S25E09.mkv");
+
+    service.processDiscoveredFile(library.getId(), seriesPath);
+
+    assertThat(metadataProvider.searchRequests()).containsExactly(expectedSearch);
+  }
+
+  @Test
+  @DisplayName(
+      "Should search with accented series folder title when filepath URI has a season folder")
+  void shouldSearchWithAccentedSeriesFolderTitleWhenFilepathUriHasSeasonFolder()
+      throws IOException {
+    var library = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var expectedSearch = VideoFileParserResult.builder().title("Amélie Chronicles").build();
+    var searchResult =
+        RemoteSearchResult.builder()
+            .title("Amélie Chronicles")
+            .externalId("777")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var metadataProvider = new RecordingSeriesMetadataProvider();
+    metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
+    when(seriesService.findByTmdbId("777")).thenReturn(Optional.empty());
+    var service =
+        libraryManagementServiceWith(movieFileProcessor, seriesFileProcessorWith(metadataProvider));
+    var filepathUri =
+        "file:///library/Am%C3%A9lie%20Chronicles/S%C3%A6son%203/" + "Amelie.Chronicles.S03E05.mkv";
+    var seriesPath = pathWithDisplayName(filepathUri, "Amelie.Chronicles.S03E05.mkv");
 
     service.processDiscoveredFile(library.getId(), seriesPath);
 

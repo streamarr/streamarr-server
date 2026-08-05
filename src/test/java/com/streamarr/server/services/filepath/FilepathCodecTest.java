@@ -82,6 +82,24 @@ class FilepathCodecTest {
   }
 
   @Test
+  @DisplayName("Should read and decode file URI when scheme uses mixed case")
+  void shouldReadAndDecodeFileUriWhenSchemeUsesMixedCase() {
+    var filepathUri = "FiLe:///media/Am%C3%A9lie.mkv";
+
+    assertThat(FilepathCodec.pathOf(filepathUri)).isEqualTo("/media/Amélie.mkv");
+    assertThat(FilepathCodec.decode(filepathUri)).isEqualTo(Path.of("/media/Amélie.mkv"));
+  }
+
+  @Test
+  @DisplayName("Should read and decode provider URI when scheme uses mixed case")
+  void shouldReadAndDecodeProviderUriWhenSchemeUsesMixedCase() {
+    var filepathUri = "JrT:/java.base/java/lang/Object.class";
+
+    assertThat(FilepathCodec.pathOf(filepathUri)).isEqualTo("/java.base/java/lang/Object.class");
+    assertThat(FilepathCodec.decode(filepathUri)).isEqualTo(Path.of(URI.create(filepathUri)));
+  }
+
+  @Test
   @DisplayName("Should fall back to plain path when no URI scheme present")
   void shouldFallBackToPlainPathWhenNoUriScheme() throws IOException {
     try (FileSystem jimfs = Jimfs.newFileSystem(Configuration.unix())) {
