@@ -16,6 +16,8 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
   private static final String SUPPORTED_YEAR_SEPARATORS = " _.()[]-";
   private static final String INVALID_TITLE_ENDINGS = "_,.-";
   private static final Pattern YEAR_REGEX = Pattern.compile("(?:19|20)\\d{2}");
+  private static final Pattern LEADING_YEAR_REGEX =
+      Pattern.compile("^\\((?<year>(?:19|20)\\d{2})\\) +(?<title>\\S.*)$", Pattern.DOTALL);
   private static final Pattern INVALID_YEAR_SUFFIX_REGEX =
       Pattern.compile("\\d|[xX]\\d{3}|\\W\\d{2}\\W\\d{2}");
   private static final Pattern TAG_REGEX =
@@ -57,15 +59,41 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
   }
 
   private Optional<ExtractedMetadata> extractTitleAndYear(String filename) {
+    var blankTitleMatch = Optional.<ExtractedMetadata>empty();
+
     for (var separatorMode : YearSeparatorMode.values()) {
       var extractedMetadata = findLastYear(filename, separatorMode);
 
-      if (extractedMetadata.isPresent()) {
+      if (extractedMetadata.isEmpty()) {
+        continue;
+      }
+
+      var metadata = extractedMetadata.orElseThrow();
+
+      if (StringUtils.isNotBlank(metadata.rawTitle())) {
         return extractedMetadata;
       }
+
+      blankTitleMatch = extractedMetadata;
     }
 
-    return Optional.empty();
+    var leadingYear = extractLeadingYear(filename.trim());
+
+    if (leadingYear.isPresent()) {
+      return leadingYear;
+    }
+
+    return blankTitleMatch;
+  }
+
+  private Optional<ExtractedMetadata> extractLeadingYear(String filename) {
+    var matcher = LEADING_YEAR_REGEX.matcher(filename);
+
+    if (!matcher.matches()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(new ExtractedMetadata(matcher.group("title"), matcher.group("year")));
   }
 
   private Optional<ExtractedMetadata> findLastYear(

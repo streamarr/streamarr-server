@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Default Video File Metadata Parsing Tests")
@@ -75,6 +77,120 @@ class DefaultVideoFileMetadataParserTest {
 
     assertThat(result.title()).isEqualTo("--- 2012");
     assertThat(result.year()).isNull();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {"(2012) Title", "(2012)    Title", "  (2012) Title  "})
+  @DisplayName("Should extract title and year when filename starts with a parenthesized year")
+  void shouldExtractTitleAndYearWhenFilenameStartsWithParenthesizedYear(String filename) {
+    var result = defaultVideoFileMetadataParser.parse(filename).orElseThrow();
+
+    assertThat(result.title()).isEqualTo("Title");
+    assertThat(result.year()).isEqualTo("2012");
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {"1900", "2099"})
+  @DisplayName("Should extract supported boundary year when filename starts with it")
+  void shouldExtractSupportedBoundaryYearWhenFilenameStartsWithIt(String year) {
+    var result = defaultVideoFileMetadataParser.parse("(" + year + ") Title").orElseThrow();
+
+    assertThat(result.title()).isEqualTo("Title");
+    assertThat(result.year()).isEqualTo(year);
+  }
+
+  @Test
+  @DisplayName("Should extract leading year when title contains a line break")
+  void shouldExtractLeadingYearWhenTitleContainsLineBreak() {
+    var result = defaultVideoFileMetadataParser.parse("(2012) Title\nSecond Line").orElseThrow();
+
+    assertThat(result.title()).isEqualTo("Title\nSecond Line");
+    assertThat(result.year()).isEqualTo("2012");
+  }
+
+  @Test
+  @DisplayName("Should prefer trailing year when filename also starts with a parenthesized year")
+  void shouldPreferTrailingYearWhenFilenameAlsoStartsWithParenthesizedYear() {
+    var result = defaultVideoFileMetadataParser.parse("(2012) Title (2020)").orElseThrow();
+
+    assertThat(result.title()).isEqualTo("(2012) Title");
+    assertThat(result.year()).isEqualTo("2020");
+  }
+
+  @Test
+  @DisplayName("Should preserve bare leading year as title text")
+  void shouldPreserveBareLeadingYearAsTitleText() {
+    var result = defaultVideoFileMetadataParser.parse("2012 Title").orElseThrow();
+
+    assertThat(result.title()).isEqualTo("2012 Title");
+    assertThat(result.year()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should treat bracketed leading year as a removable tag rather than release year")
+  void shouldTreatBracketedLeadingYearAsRemovableTagRatherThanReleaseYear() {
+    var result = defaultVideoFileMetadataParser.parse("[2012] Title").orElseThrow();
+
+    assertThat(result.title()).isEqualTo("Title");
+    assertThat(result.year()).isNull();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {"(1899) Title", "(2100) Title"})
+  @DisplayName("Should preserve out-of-range parenthesized year as title text")
+  void shouldPreserveOutOfRangeParenthesizedYearAsTitleText(String filename) {
+    var result = defaultVideoFileMetadataParser.parse(filename).orElseThrow();
+
+    assertThat(result.title()).isEqualTo(filename);
+    assertThat(result.year()).isNull();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(
+      strings = {
+        "(2012)Title",
+        "(2012)",
+        "(2012)  ",
+        "(2012-01-01) Title",
+        "(2012x1080) Title",
+        "(2012)\tTitle"
+      })
+  @DisplayName("Should preserve malformed parenthesized leading year as title text")
+  void shouldPreserveMalformedParenthesizedLeadingYearAsTitleText(String filename) {
+    var result = defaultVideoFileMetadataParser.parse(filename).orElseThrow();
+
+    assertThat(result.title()).isEqualTo(filename.trim());
+    assertThat(result.year()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should parse long title after leading year promptly")
+  void shouldParseLongTitleAfterLeadingYearPromptly() {
+    var title = "A".repeat(30_000);
+
+    assertTimeoutPreemptively(
+        Duration.ofMillis(500),
+        () -> {
+          var result = defaultVideoFileMetadataParser.parse("(2012) " + title).orElseThrow();
+
+          assertThat(result.title()).isEqualTo(title);
+          assertThat(result.year()).isEqualTo("2012");
+        });
+  }
+
+  @Test
+  @DisplayName("Should reject long blank title after leading year promptly")
+  void shouldRejectLongBlankTitleAfterLeadingYearPromptly() {
+    var filename = "(2012) " + " ".repeat(30_000);
+
+    assertTimeoutPreemptively(
+        Duration.ofMillis(500),
+        () -> {
+          var result = defaultVideoFileMetadataParser.parse(filename).orElseThrow();
+
+          assertThat(result.title()).isEqualTo("(2012)");
+          assertThat(result.year()).isNull();
+        });
   }
 
   @Nested
@@ -215,7 +331,6 @@ class DefaultVideoFileMetadataParserTest {
               new TestCase("$", " $ "),
               new TestCase("2002", " 2002 "),
               new TestCase("Just a Title", "Just a Title"),
-              // new TestCase("Title", "(2012) Title"),
               new TestCase("Title With Future Year 3001", "Title With Future Year 3001"),
               new TestCase("Some Movie", "Some Movie 480p"),
               new TestCase("Some Movie", "Some Movie [480p]"),
