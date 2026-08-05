@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 @Order(100)
 public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileParserResult> {
 
+  private static final String TRAILING_SYMBOLS = "-–—";
   private static final Pattern YEAR_REGEX = Pattern.compile("(?:19|20)\\d{2}");
   private static final List<Pattern> TITLE_BEFORE_YEAR_REGEXES =
       List.of(
@@ -123,7 +124,13 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
   }
 
   private String removeTrailingSymbols(String title) {
-    return title.replaceAll("[-–—]+$", "");
+    var end = title.length();
+
+    while (end > 0 && TRAILING_SYMBOLS.indexOf(title.charAt(end - 1)) >= 0) {
+      end--;
+    }
+
+    return title.substring(0, end);
   }
 
   private String cleanYear(String year) {

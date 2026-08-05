@@ -1,14 +1,17 @@
 package com.streamarr.server.services.parsers.video;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Duration;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicNode;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 @Tag("UnitTest")
@@ -17,6 +20,18 @@ class DefaultVideoFileMetadataParserTest {
 
   private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser =
       new DefaultVideoFileMetadataParser();
+
+  @Test
+  @DisplayName("Should parse promptly when a dash run is not trailing")
+  void shouldParsePromptlyWhenDashRunIsNotTrailing() {
+    var filename = "A" + "-".repeat(20_000) + "Z";
+
+    assertTimeoutPreemptively(
+        Duration.ofMillis(500),
+        () ->
+            assertThat(defaultVideoFileMetadataParser.parse(filename).orElseThrow().title())
+                .isEqualTo(filename));
+  }
 
   @Nested
   @DisplayName("Should successfully extract both title and year from filename")
