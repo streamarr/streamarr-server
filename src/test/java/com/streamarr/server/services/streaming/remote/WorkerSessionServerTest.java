@@ -1,6 +1,5 @@
 package com.streamarr.server.services.streaming.remote;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -32,14 +31,14 @@ class WorkerSessionServerTest {
   }
 
   @Test
-  @DisplayName("Should report no capability when the server has not been started")
-  void shouldReportNoCapabilityWhenTheServerHasNotBeenStarted() {
+  @DisplayName("Should fail fast for every capability when the server has not been started")
+  void shouldFailFastForEveryCapabilityWhenTheServerHasNotBeenStarted() {
     var server = unstartedServer();
     var sourceNamespaceId = UUID.randomUUID();
 
-    assertThat(server.eligibleWorkers(sourceNamespaceId)).isEmpty();
-    assertThat(server.hasConnectedWorker(sourceNamespaceId)).isFalse();
-    assertThat(server.stopVariant(UUID.randomUUID(), "720p")).isFalse();
+    assertNotStarted(() -> server.eligibleWorkers(sourceNamespaceId));
+    assertNotStarted(() -> server.hasConnectedWorker(sourceNamespaceId));
+    assertNotStarted(() -> server.stopVariant(UUID.randomUUID(), "720p"));
   }
 
   @Test
@@ -49,6 +48,12 @@ class WorkerSessionServerTest {
     var sourceNamespaceId = UUID.randomUUID();
 
     assertThatThrownBy(() -> server.availableSlots(sourceNamespaceId))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("not started");
+  }
+
+  private static void assertNotStarted(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
+    assertThatThrownBy(call)
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not started");
   }

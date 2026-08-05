@@ -12,14 +12,15 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * Owns every producer (transcode process) mutation for a stream session: initial start, resume of a
- * suspended session, relocation to a distant segment, replacement, and suspension. Mutations of a
- * published session serialize on the per-session mutex this service holds; the initial {@link
- * #startAll} runs before the session is reachable by waiters and takes no lock.
+ * suspended session, relocation to a distant segment, replacement, and suspension. Every mutation
+ * serializes on the per-session mutex this service holds, including initial startup because the
+ * session is published before its producers finish starting.
  */
 @Slf4j
 @Builder
@@ -70,19 +71,17 @@ public class ProducerLifecycleService {
     record SessionGone() implements ReplaceResult {}
   }
 
-  public sealed interface ExhaustResult {
-    record Exhausted() implements ExhaustResult {}
-
-    record Superseded() implements ExhaustResult {}
-  }
-
   public void startAll(StreamSession session, int seekPosition, int startSequenceNumber) {
-    if (session.getVariants().isEmpty()) {
-      startSingleTranscode(session, seekPosition, startSequenceNumber);
-      return;
-    }
+    withSessionLock(
+        session.getSessionId(),
+        () -> {
+          if (session.getVariants().isEmpty()) {
+            startSingleTranscode(session, seekPosition, startSequenceNumber);
+            return;
+          }
 
-    startVariantTranscodes(session, session.getVariants(), seekPosition, startSequenceNumber);
+          startVariantTranscodes(session, session.getVariants(), seekPosition, startSequenceNumber);
+        });
   }
 
   public void ensurePositioned(UUID sessionId, String segmentName) {
@@ -108,14 +107,7 @@ public class ProducerLifecycleService {
   }
 
   public void suspend(UUID sessionId) {
-    var lock = sessionMutex.getMutex(sessionId);
-    lock.lock();
-
-    try {
-      doSuspend(sessionId);
-    } finally {
-      lock.unlock();
-    }
+    withSessionLock(sessionId, () -> doSuspend(sessionId));
   }
 
   private void doSuspend(UUID sessionId) {
@@ -142,14 +134,7 @@ public class ProducerLifecycleService {
    * can never be resurrected by a racing save.
    */
   public boolean removeSession(UUID sessionId) {
-    var lock = sessionMutex.getMutex(sessionId);
-    lock.lock();
-
-    try {
-      return runtimeRegistry.removeById(sessionId).isPresent();
-    } finally {
-      lock.unlock();
-    }
+    return withSessionLock(sessionId, () -> runtimeRegistry.removeById(sessionId).isPresent());
   }
 
   /**
@@ -157,14 +142,7 @@ public class ProducerLifecycleService {
    * the window where a concurrent replace could start a producer for a destroyed session.
    */
   public void stopForDestroy(UUID sessionId) {
-    var lock = sessionMutex.getMutex(sessionId);
-    lock.lock();
-
-    try {
-      transcodeExecutor.stop(sessionId);
-    } finally {
-      lock.unlock();
-    }
+    withSessionLock(sessionId, () -> transcodeExecutor.stop(sessionId));
   }
 
   /**
@@ -174,14 +152,7 @@ public class ProducerLifecycleService {
    * — any miss means another actor won and the caller must re-observe.
    */
   public ReplaceResult replaceProducer(ReplaceProducerCommand command) {
-    var lock = sessionMutex.getMutex(command.sessionId());
-    lock.lock();
-
-    try {
-      return doReplace(command);
-    } finally {
-      lock.unlock();
-    }
+    return withSessionLock(command.sessionId(), () -> doReplace(command));
   }
 
   private ReplaceResult doReplace(ReplaceProducerCommand command) {
@@ -224,21 +195,14 @@ public class ProducerLifecycleService {
   }
 
   /** Marks a variant's recovery as exhausted; cleared only by a new target or a planned seek. */
-  public ExhaustResult markExhausted(UUID sessionId, String variantLabel, UUID expectedAttemptId) {
-    var lock = sessionMutex.getMutex(sessionId);
-    lock.lock();
-
-    try {
-      return doExhaust(sessionId, variantLabel, expectedAttemptId);
-    } finally {
-      lock.unlock();
-    }
+  public boolean tryMarkExhausted(UUID sessionId, String variantLabel, UUID expectedAttemptId) {
+    return withSessionLock(sessionId, () -> doExhaust(sessionId, variantLabel, expectedAttemptId));
   }
 
-  private ExhaustResult doExhaust(UUID sessionId, String variantLabel, UUID expectedAttemptId) {
+  private boolean doExhaust(UUID sessionId, String variantLabel, UUID expectedAttemptId) {
     var session = runtimeRegistry.findById(sessionId).orElse(null);
     if (session == null) {
-      return new ExhaustResult.Superseded();
+      return false;
     }
 
     // SUSPENDED is exhaustible here: with a healthy suspension every replacement supersedes
@@ -246,7 +210,7 @@ public class ProducerLifecycleService {
     // resume — can produce the segment (e.g. no eligible targets after a failed resume).
     var handle = session.getVariantHandle(variantLabel).orElse(null);
     if (handle == null || !handle.attemptId().equals(expectedAttemptId)) {
-      return new ExhaustResult.Superseded();
+      return false;
     }
 
     // The last attempt can be alive but stalled; FAILED promises "no producer", so honor it.
@@ -256,7 +220,7 @@ public class ProducerLifecycleService {
 
     session.setVariantHandle(variantLabel, handle.withStatus(TranscodeStatus.FAILED));
     runtimeRegistry.save(session);
-    return new ExhaustResult.Exhausted();
+    return true;
   }
 
   /**
@@ -277,15 +241,9 @@ public class ProducerLifecycleService {
   private TranscodeRequest replacementRequest(
       StreamSession session, ReplaceProducerCommand command) {
     var request =
-        TranscodeRequest.builder()
-            .sessionId(session.getSessionId())
-            .sourcePath(session.getSourcePath())
-            .seekPosition(command.segmentIndex() * segmentDurationSeconds())
-            .targetSegmentDuration(segmentDurationSeconds())
-            .framerate(session.getMediaProbe().framerate())
-            .transcodeDecision(session.getTranscodeDecision())
-            .variantLabel(command.variantLabel())
-            .startSequenceNumber(command.segmentIndex());
+        baseRequest(
+                session, command.segmentIndex() * segmentDurationSeconds(), command.segmentIndex())
+            .variantLabel(command.variantLabel());
 
     var variant =
         session.getVariants().stream()
@@ -306,14 +264,7 @@ public class ProducerLifecycleService {
   }
 
   private void resumeWithLock(UUID sessionId, String segmentName) {
-    var lock = sessionMutex.getMutex(sessionId);
-    lock.lock();
-
-    try {
-      doResume(sessionId, segmentName);
-    } finally {
-      lock.unlock();
-    }
+    withSessionLock(sessionId, () -> doResume(sessionId, segmentName));
   }
 
   /**
@@ -338,14 +289,7 @@ public class ProducerLifecycleService {
   }
 
   private void relocateWithLock(UUID sessionId, String segmentName) {
-    var lock = sessionMutex.getMutex(sessionId);
-    lock.lock();
-
-    try {
-      doRelocate(sessionId, segmentName);
-    } finally {
-      lock.unlock();
-    }
+    withSessionLock(sessionId, () -> doRelocate(sessionId, segmentName));
   }
 
   private void doRelocate(UUID sessionId, String segmentName) {
@@ -417,18 +361,11 @@ public class ProducerLifecycleService {
       StreamSession session, int seekPosition, int startSequenceNumber) {
     var probe = session.getMediaProbe();
     var request =
-        TranscodeRequest.builder()
-            .sessionId(session.getSessionId())
-            .sourcePath(session.getSourcePath())
-            .seekPosition(seekPosition)
-            .targetSegmentDuration(segmentDurationSeconds())
-            .framerate(probe.framerate())
-            .transcodeDecision(session.getTranscodeDecision())
+        baseRequest(session, seekPosition, startSequenceNumber)
             .width(probe.width())
             .height(probe.height())
             .bitrate(probe.bitrate())
             .variantLabel(StreamSession.defaultVariant())
-            .startSequenceNumber(startSequenceNumber)
             .build();
     var handle = transcodeExecutor.start(request);
 
@@ -442,22 +379,46 @@ public class ProducerLifecycleService {
       int startSequenceNumber) {
     for (var variant : variants) {
       var request =
-          TranscodeRequest.builder()
-              .sessionId(session.getSessionId())
-              .sourcePath(session.getSourcePath())
-              .seekPosition(seekPosition)
-              .targetSegmentDuration(segmentDurationSeconds())
-              .framerate(session.getMediaProbe().framerate())
-              .transcodeDecision(session.getTranscodeDecision())
+          baseRequest(session, seekPosition, startSequenceNumber)
               .width(variant.width())
               .height(variant.height())
               .bitrate(variant.videoBitrate())
               .variantLabel(variant.label())
-              .startSequenceNumber(startSequenceNumber)
               .build();
       var handle = transcodeExecutor.start(request);
 
       session.setVariantHandle(variant.label(), handle);
+    }
+  }
+
+  private TranscodeRequest.TranscodeRequestBuilder baseRequest(
+      StreamSession session, int seekPosition, int startSequenceNumber) {
+    return TranscodeRequest.builder()
+        .sessionId(session.getSessionId())
+        .sourcePath(session.getSourcePath())
+        .seekPosition(seekPosition)
+        .targetSegmentDuration(segmentDurationSeconds())
+        .framerate(session.getMediaProbe().framerate())
+        .transcodeDecision(session.getTranscodeDecision())
+        .startSequenceNumber(startSequenceNumber);
+  }
+
+  private void withSessionLock(UUID sessionId, Runnable action) {
+    withSessionLock(
+        sessionId,
+        () -> {
+          action.run();
+          return null;
+        });
+  }
+
+  private <T> T withSessionLock(UUID sessionId, Supplier<T> action) {
+    var lock = sessionMutex.getMutex(sessionId);
+    lock.lock();
+    try {
+      return action.get();
+    } finally {
+      lock.unlock();
     }
   }
 }

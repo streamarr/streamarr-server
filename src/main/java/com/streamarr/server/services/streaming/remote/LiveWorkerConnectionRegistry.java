@@ -106,15 +106,6 @@ final class LiveWorkerConnectionRegistry {
         .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
-  boolean stopVariant(UUID jobAttemptId) {
-    for (var connection : connections.values()) {
-      if (connection.tryStop(jobAttemptId)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   boolean stopVariant(UUID streamSessionId, String variantLabel) {
     for (var connection : connections.values()) {
       if (connection.stopVariant(streamSessionId, variantLabel)) {
@@ -136,11 +127,6 @@ final class LiveWorkerConnectionRegistry {
         fromProto(job.getStreamSessionId()),
         job.getVariant().getVariantLabel(),
         reason);
-  }
-
-  boolean isRunning(UUID streamSessionId) {
-    return connections.values().stream()
-        .anyMatch(connection -> connection.isRunning(streamSessionId));
   }
 
   boolean isRunning(UUID streamSessionId, String variantLabel) {
@@ -290,11 +276,6 @@ final class LiveWorkerConnectionRegistry {
           .map(Map.Entry::getKey)
           .toList()
           .forEach(this::tryStop);
-    }
-
-    private synchronized boolean isRunning(UUID streamSessionId) {
-      return activeVariants.values().stream()
-          .anyMatch(job -> fromProto(job.getStreamSessionId()).equals(streamSessionId));
     }
 
     private synchronized boolean isRunning(UUID streamSessionId, String variantLabel) {

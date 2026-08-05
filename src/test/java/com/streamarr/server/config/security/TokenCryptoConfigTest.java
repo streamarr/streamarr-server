@@ -1,5 +1,6 @@
 package com.streamarr.server.config.security;
 
+import static com.streamarr.server.support.TokenTestSupport.TEST_SIGNING_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -43,8 +44,7 @@ class TokenCryptoConfigTest {
 
   // Checked-in EC P-256 test keys (base64 PKCS#8 private / SPKI public). Never used outside
   // tests.
-  private static final String KEY_A =
-      "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQga+ZKCbAcyZIb7k2FE8rMPFtIpTdzX2dR/csZ8k6A95uhRANCAAQawOmVKMDLAOsboxKLb9khGsWyxwcIikucXDCfX18ME5X9/kqSS2vdMnFfZ6KR12U/Sy/EwOwnc82xFAyFdNbe";
+  private static final String KEY_A = TEST_SIGNING_KEY;
   private static final String KEY_A_PUBLIC =
       "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEGsDplSjAywDrG6MSi2/ZIRrFsscHCIpLnFwwn19fDBOV/f5Kkktr3TJxX2eikddlP0svxMDsJ3PNsRQMhXTW3g==";
   private static final String KEY_B =

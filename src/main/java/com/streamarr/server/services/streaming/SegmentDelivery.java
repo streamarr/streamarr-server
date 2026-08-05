@@ -6,9 +6,9 @@ import java.util.Arrays;
 public sealed interface SegmentDelivery {
 
   /**
-   * The segment's bytes; atomic publication guarantees existence implies completeness. The array is
-   * handed off at construction — neither party mutates it afterwards; no defensive copy is taken
-   * (segments run to 16 MB).
+   * The segment's bytes; publication exposes the final name only after all bytes are written. The
+   * array is handed off at construction — neither party mutates it afterwards; no defensive copy is
+   * taken because segments can be large.
    */
   record Ready(byte[] data) implements SegmentDelivery {
 

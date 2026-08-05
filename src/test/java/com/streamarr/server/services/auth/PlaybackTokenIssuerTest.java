@@ -2,14 +2,10 @@ package com.streamarr.server.services.auth;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthorityFor;
+import static com.streamarr.server.support.TokenTestSupport.tokenProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
-import com.nimbusds.jose.proc.JWSVerificationKeySelector;
-import com.nimbusds.jose.proc.SecurityContext;
-import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountRole;
@@ -19,6 +15,7 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
+import com.streamarr.server.support.TokenTestSupport;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
@@ -26,22 +23,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 @Tag("UnitTest")
 @DisplayName("Playback Token Issuer Tests")
 class PlaybackTokenIssuerTest {
 
-  private static final String TEST_KEY_BASE64 =
-      "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQga+ZKCbAcyZIb7k2FE8rMPFtIpTdzX2dR/csZ8k6A95uhRANCAAQawOmVKMDLAOsboxKLb9khGsWyxwcIikucXDCfX18ME5X9/kqSS2vdMnFfZ6KR12U/Sy/EwOwnc82xFAyFdNbe";
-
-  private final AuthTokenProperties properties =
-      AuthTokenProperties.builder()
-          .signingKey(TEST_KEY_BASE64)
-          .accessTokenTtl(Duration.ofMinutes(10))
-          .refreshTokenTtl(Duration.ofDays(30))
-          .rotationGrace(Duration.ofSeconds(30))
-          .build();
+  private final AuthTokenProperties properties = tokenProperties();
 
   private final TokenCryptoConfig cryptoConfig = new TokenCryptoConfig();
   private final FakePlaybackAuthorityGate authorityGate = new FakePlaybackAuthorityGate();
@@ -141,12 +128,6 @@ class PlaybackTokenIssuerTest {
   }
 
   private org.springframework.security.oauth2.jwt.Jwt decode(String token) {
-    var keys = cryptoConfig.tokenSigningKeys(properties);
-    var processor = new DefaultJWTProcessor<SecurityContext>();
-    processor.setJWSKeySelector(
-        new JWSVerificationKeySelector<>(
-            JWSAlgorithm.ES256, new ImmutableJWKSet<>(keys.verificationKeys())));
-    processor.setJWTClaimsSetVerifier((claims, context) -> {});
-    return new NimbusJwtDecoder(processor).decode(token);
+    return TokenTestSupport.decode(token, properties);
   }
 }

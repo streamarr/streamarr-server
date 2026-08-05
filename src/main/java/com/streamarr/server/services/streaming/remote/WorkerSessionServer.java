@@ -57,23 +57,29 @@ public final class WorkerSessionServer implements AutoCloseable {
     var identityInterceptor =
         new WorkerIdentityServerInterceptor(
             new WorkerSpiffeIdentityMapper(configuration.trustDomain()));
-    executor = Executors.newVirtualThreadPerTaskExecutor();
-    server =
-        NettyServerBuilder.forPort(configuration.port())
-            .sslContext(sslContext)
-            .executor(executor)
-            .maxConcurrentCallsPerConnection(MAXIMUM_CONCURRENT_CALLS_PER_CONNECTION)
-            .maxInboundMessageSize(MAXIMUM_INBOUND_MESSAGE_BYTES)
-            .keepAliveTime(KEEPALIVE_TIME_SECONDS, TimeUnit.SECONDS)
-            .keepAliveTimeout(KEEPALIVE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            .permitKeepAliveTime(PERMITTED_CLIENT_KEEPALIVE_SECONDS, TimeUnit.SECONDS)
-            .permitKeepAliveWithoutCalls(true)
-            .addService(
-                ServerInterceptors.intercept(
-                    new WorkerSessionGrpcService(workerConnections, segmentStore),
-                    identityInterceptor))
-            .build()
-            .start();
+    var startingExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    try {
+      server =
+          NettyServerBuilder.forPort(configuration.port())
+              .sslContext(sslContext)
+              .executor(startingExecutor)
+              .maxConcurrentCallsPerConnection(MAXIMUM_CONCURRENT_CALLS_PER_CONNECTION)
+              .maxInboundMessageSize(MAXIMUM_INBOUND_MESSAGE_BYTES)
+              .keepAliveTime(KEEPALIVE_TIME_SECONDS, TimeUnit.SECONDS)
+              .keepAliveTimeout(KEEPALIVE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+              .permitKeepAliveTime(PERMITTED_CLIENT_KEEPALIVE_SECONDS, TimeUnit.SECONDS)
+              .permitKeepAliveWithoutCalls(true)
+              .addService(
+                  ServerInterceptors.intercept(
+                      new WorkerSessionGrpcService(workerConnections, segmentStore),
+                      identityInterceptor))
+              .build()
+              .start();
+      executor = startingExecutor;
+    } catch (IOException | RuntimeException e) {
+      startingExecutor.shutdownNow();
+      throw e;
+    }
   }
 
   public synchronized int port() {
@@ -92,21 +98,12 @@ public final class WorkerSessionServer implements AutoCloseable {
   }
 
   public synchronized Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId) {
-    if (server == null) {
-      return Set.of();
-    }
+    requireStarted();
     return workerConnections.eligibleWorkers(sourceNamespaceId);
   }
 
-  public synchronized boolean stopVariant(UUID jobAttemptId) {
-    requireStarted();
-    return workerConnections.stopVariant(jobAttemptId);
-  }
-
   public synchronized boolean stopVariant(UUID streamSessionId, String variantLabel) {
-    if (server == null) {
-      return false;
-    }
+    requireStarted();
     return workerConnections.stopVariant(streamSessionId, variantLabel);
   }
 
@@ -115,18 +112,14 @@ public final class WorkerSessionServer implements AutoCloseable {
     workerConnections.stopStreamSession(streamSessionId);
   }
 
-  public synchronized boolean isRunning(UUID streamSessionId) {
-    requireStarted();
-    return workerConnections.isRunning(streamSessionId);
-  }
-
   public synchronized boolean isRunning(UUID streamSessionId, String variantLabel) {
     requireStarted();
     return workerConnections.isRunning(streamSessionId, variantLabel);
   }
 
   public synchronized boolean hasConnectedWorker(UUID sourceNamespaceId) {
-    return server != null && workerConnections.hasConnectedWorker(sourceNamespaceId);
+    requireStarted();
+    return workerConnections.hasConnectedWorker(sourceNamespaceId);
   }
 
   public synchronized int availableSlots(UUID sourceNamespaceId) {

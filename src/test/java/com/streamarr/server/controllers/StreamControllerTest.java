@@ -1,9 +1,11 @@
 package com.streamarr.server.controllers;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
+import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.withActiveVariantHandles;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -11,35 +13,23 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.TokenScope;
-import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.concurrency.MutexFactory;
-import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
-import com.streamarr.server.services.streaming.PlaybackRequest;
-import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
-import com.streamarr.server.services.streaming.StreamingService;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,7 +54,7 @@ class StreamControllerTest {
 
   private MockMvc mockMvc;
   private final AtomicReference<UUID> boundStreamSession = new AtomicReference<>(SESSION_ID);
-  private StubStreamingService streamingService;
+  private FakeStreamingService streamingService;
   private FakeSegmentStore segmentStore;
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private FakeTranscodeExecutor transcodeExecutor;
@@ -74,7 +64,7 @@ class StreamControllerTest {
 
   @BeforeEach
   void setUp() {
-    streamingService = new StubStreamingService();
+    streamingService = new FakeStreamingService();
     segmentStore = new FakeSegmentStore();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
     transcodeExecutor = new FakeTranscodeExecutor();
@@ -92,28 +82,19 @@ class StreamControllerTest {
             streamingService,
             playlistService,
             coordinatorOver(segmentStore),
-            new BoundAuthorizationService());
+            new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN));
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
   }
 
   private SegmentDeliveryCoordinator coordinatorOver(FakeSegmentStore store) {
-    var lifecycle =
-        ProducerLifecycleService.builder()
-            .transcodeExecutor(transcodeExecutor)
-            .segmentStore(store)
-            .properties(properties)
-            .runtimeRegistry(runtimeRegistry)
-            .sessionMutex(new MutexFactory<>())
-            .build();
-    return SegmentDeliveryCoordinator.builder()
-        .runtimeRegistry(runtimeRegistry)
+    return StreamingRigFixture.streamingRigBuilder()
         .segmentStore(store)
         .transcodeExecutor(transcodeExecutor)
-        .producerLifecycle(lifecycle)
         .properties(properties)
-        .clock(Clock.systemUTC())
+        .runtimeRegistry(runtimeRegistry)
         .pollInterval(Duration.ofMillis(10))
-        .build();
+        .build()
+        .coordinator();
   }
 
   @Test
@@ -302,7 +283,7 @@ class StreamControllerTest {
         .andExpect(status().isNotFound());
 
     assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
-    assertThat(transcodeExecutor.isRunning(SESSION_ID)).isTrue();
+    assertThat(transcodeExecutor.isRunning(SESSION_ID, StreamSession.defaultVariant())).isTrue();
   }
 
   @Test
@@ -310,7 +291,7 @@ class StreamControllerTest {
   void shouldReturn503WhenDeliveryIsCancelledByServerShutdown() throws Exception {
     var session = buildMpegtsSession();
     streamingService.setSession(session);
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    session.setHandle(mintHandle(1L, TranscodeStatus.ACTIVE));
     runtimeRegistry.save(session);
 
     var response = new AtomicReference<ResponseEntity<byte[]>>();
@@ -333,7 +314,7 @@ class StreamControllerTest {
   void shouldReturn404WhenTheSegmentIndexDoesNotFitTheNamingScheme() throws Exception {
     var session = buildMpegtsSession();
     streamingService.setSession(session);
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    session.setHandle(mintHandle(1L, TranscodeStatus.ACTIVE));
     runtimeRegistry.save(session);
 
     mockMvc
@@ -358,7 +339,7 @@ class StreamControllerTest {
             streamingService,
             playlistService,
             coordinatorOver(throwingStore),
-            new BoundAuthorizationService());
+            new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN));
     var raceMockMvc = MockMvcBuilders.standaloneSetup(raceController).build();
 
     raceMockMvc
@@ -371,7 +352,7 @@ class StreamControllerTest {
   void shouldReturn503WithNoBodyWhenRecoveryExhausted() throws Exception {
     var session = buildMpegtsSession();
     streamingService.setSession(session);
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.FAILED));
+    session.setHandle(mintHandle(1L, TranscodeStatus.FAILED));
     runtimeRegistry.save(session);
 
     var result =
@@ -591,107 +572,7 @@ class StreamControllerTest {
         .andExpect(status().isBadRequest());
   }
 
-  private class BoundAuthorizationService implements AuthorizationService {
-
-    @Override
-    public AuthenticatedIdentity currentIdentity() {
-      return AuthenticatedIdentity.builder()
-          .accountId(UUID.randomUUID())
-          .role(AccountRole.USER)
-          .authSessionId(UUID.randomUUID())
-          .scope(TokenScope.PLAYBACK)
-          .householdId(UUID.randomUUID())
-          .householdRole(HouseholdRole.MEMBER)
-          .profileId(UUID.randomUUID())
-          .streamSessionId(boundStreamSession.get())
-          .build();
-    }
-
-    @Override
-    public String currentTokenValue() {
-      return VALIDATED_TOKEN;
-    }
-
-    @Override
-    public Instant currentTokenExpiry() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public UUID requireAccountId() {
-      return currentIdentity().accountId();
-    }
-
-    @Override
-    public UUID requireHousehold() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public UUID requireProfile() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean isServerAdmin() {
-      return false;
-    }
-
-    @Override
-    public void requireServerAdmin() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void requireHouseholdRole(com.streamarr.server.domain.auth.HouseholdRole minimum) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean canViewActivityOf(UUID profileId) {
-      return false;
-    }
-  }
-
-  private static class StubStreamingService implements StreamingService {
-
-    private StreamSession session;
-
-    void setSession(StreamSession session) {
-      this.session = session;
-    }
-
-    @Override
-    public StreamSession createSession(CreateStreamSessionCommand command) {
-      return session;
-    }
-
-    @Override
-    public Optional<StreamSession> accessSession(PlaybackRequest request) {
-      if (session != null && session.getSessionId().equals(request.streamSessionId())) {
-        return Optional.of(session);
-      }
-      return Optional.empty();
-    }
-
-    @Override
-    public void destroySession(UUID sessionId) {
-      // no-op for test fake
-    }
-
-    @Override
-    public void destroySession(UUID sessionId, UUID profileId) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Collection<StreamSession> getAllSessions() {
-      return session != null ? List.of(session) : Collections.emptyList();
-    }
-
-    @Override
-    public int getActiveSessionCount() {
-      return session != null ? 1 : 0;
-    }
+  private AuthenticatedIdentity boundIdentity() {
+    return defaultIdentityBuilder().streamSessionId(boundStreamSession.get()).build();
   }
 }

@@ -1,10 +1,12 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
-import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.controllers.StreamController;
 import com.streamarr.server.domain.auth.AccountRole;
@@ -18,38 +20,25 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
+import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
-import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.concurrency.MutexFactory;
-import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
-import com.streamarr.server.services.streaming.PlaybackRequest;
-import com.streamarr.server.services.streaming.ProducerLifecycleService;
-import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
-import com.streamarr.server.services.streaming.StreamingService;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
-import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
-import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.worker.TranscodeWorker;
-import com.streamarr.transcode.worker.TranscodeWorkerConfiguration;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
@@ -62,7 +51,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 @Tag("IntegrationTest")
 @DisplayName("Remote Playback Integration Tests")
-class RemotePlaybackIT extends AbstractIntegrationTest {
+class RemotePlaybackIT {
 
   private static final UUID WORKER_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =
@@ -90,7 +79,6 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
 
       executor.start(transcodeRequest(streamSessionId, mediaFile));
       assertThat(executor.isHealthy()).isTrue();
-      assertThat(executor.isRunning(streamSessionId)).isTrue();
       assertThat(executor.isRunning(streamSessionId, StreamSession.defaultVariant())).isTrue();
       await()
           .atMost(2, TimeUnit.SECONDS)
@@ -106,7 +94,7 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
       assertThat(second.getHeaders().getContentType()).hasToString("video/mp2t");
       assertThat(second.getBody()).isEqualTo(segments.get("segment1.ts"));
       executor.stop(streamSessionId);
-      assertThat(executor.isRunning(streamSessionId)).isFalse();
+      assertThat(executor.isRunning(streamSessionId, StreamSession.defaultVariant())).isFalse();
     }
   }
 
@@ -247,18 +235,7 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
   }
 
   private WorkerSessionServer server(LocalSegmentStore segmentStore) throws URISyntaxException {
-    var configuration =
-        WorkerSessionServerConfiguration.builder()
-            .port(0)
-            .trustDomain("streamarr.test")
-            .tlsIdentity(
-                PemTlsIdentity.builder()
-                    .certificate(resource("server-cert.pem"))
-                    .privateKey(resource("server-key.fixture"))
-                    .trustBundle(resource("ca-cert.pem"))
-                    .build())
-            .build();
-    return new WorkerSessionServer(configuration, segmentStore);
+    return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
   }
 
   private TranscodeWorker worker(Path mediaRoot, Map<String, byte[]> segments)
@@ -269,116 +246,12 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
   private TranscodeWorker worker(Path mediaRoot, FakeFfmpegProcessManager processManager)
       throws URISyntaxException {
     var configuration =
-        TranscodeWorkerConfiguration.builder()
-            .workerId(WORKER_ID)
-            .bootId(UUID.randomUUID())
+        workerConfigurationBuilder()
             .availableSlots(1)
-            .tlsIdentity(
-                PemTlsIdentity.builder()
-                    .certificate(resource("worker-cert.pem"))
-                    .privateKey(resource("worker-key.fixture"))
-                    .trustBundle(resource("ca-cert.pem"))
-                    .build())
             .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, mediaRoot))
             .segmentBasePath(tempDir.resolve("worker-segments"))
             .build();
-    var engine =
-        new FfmpegTranscodeEngine(
-            new FfmpegCommandBuilder("ffmpeg"),
-            processManager,
-            new TranscodeCapabilityService(
-                "ffmpeg",
-                _ -> {
-                  throw new IllegalStateException("Not used for remux");
-                }));
-    return new TranscodeWorker(configuration, engine);
-  }
-
-  private record FixedSessionStreamingService(StreamSession session) implements StreamingService {
-
-    @Override
-    public StreamSession createSession(CreateStreamSessionCommand command) {
-      throw new UnsupportedOperationException("Sessions are prebuilt in remote playback tests");
-    }
-
-    @Override
-    public Optional<StreamSession> accessSession(PlaybackRequest request) {
-      return Optional.of(session);
-    }
-
-    @Override
-    public void destroySession(UUID sessionId) {
-      // Session lifecycle is owned by the test rig.
-    }
-
-    @Override
-    public void destroySession(UUID sessionId, UUID profileId) {
-      // Session lifecycle is owned by the test rig.
-    }
-
-    @Override
-    public Collection<StreamSession> getAllSessions() {
-      return List.of(session);
-    }
-
-    @Override
-    public int getActiveSessionCount() {
-      return 1;
-    }
-  }
-
-  private record BoundAuthorizationService(AuthenticatedIdentity identity)
-      implements AuthorizationService {
-
-    @Override
-    public AuthenticatedIdentity currentIdentity() {
-      return identity;
-    }
-
-    @Override
-    public String currentTokenValue() {
-      return "it-token";
-    }
-
-    @Override
-    public Instant currentTokenExpiry() {
-      return Instant.now().plusSeconds(3600);
-    }
-
-    @Override
-    public UUID requireAccountId() {
-      return identity.accountId();
-    }
-
-    @Override
-    public UUID requireHousehold() {
-      return identity.householdId();
-    }
-
-    @Override
-    public UUID requireProfile() {
-      return identity.profileId();
-    }
-
-    @Override
-    public boolean isServerAdmin() {
-      return false;
-    }
-
-    @Override
-    public void requireServerAdmin() {
-      throw new UnsupportedOperationException("Not an admin surface");
-    }
-
-    @Override
-    public void requireHouseholdRole(HouseholdRole minimum) {
-      // Playback tests carry a full playback identity.
-    }
-
-    @Override
-    public boolean canViewActivityOf(UUID profileId) {
-      return true;
-    }
+    return new TranscodeWorker(configuration, remuxEngine(processManager));
   }
 
   @Test
@@ -422,38 +295,29 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
             .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
             .transcodeDecision(transcodeDecision(containerFormat))
             .build();
-    var streamingService = new FixedSessionStreamingService(session);
     var registry = new FakeRuntimeStreamSessionRegistry();
     registry.save(session);
+    var streamingService = new FakeStreamingService(registry);
     var properties =
         StreamingProperties.builder()
             .targetSegmentDuration(Duration.ofSeconds(6))
             .producerStallThreshold(Duration.ofSeconds(5))
             .build();
-    var lifecycle =
-        ProducerLifecycleService.builder()
-            .transcodeExecutor(executor)
-            .segmentStore(segmentStore)
-            .properties(properties)
-            .runtimeRegistry(registry)
-            .sessionMutex(new MutexFactory<>())
-            .build();
-    var coordinator =
-        SegmentDeliveryCoordinator.builder()
-            .runtimeRegistry(registry)
+    var rig =
+        StreamingRigFixture.streamingRigBuilder()
             .segmentStore(segmentStore)
             .transcodeExecutor(executor)
-            .producerLifecycle(lifecycle)
             .properties(properties)
-            .clock(Clock.systemUTC())
+            .runtimeRegistry(registry)
             .pollInterval(Duration.ofMillis(50))
             .build();
-    var authorizationService = new BoundAuthorizationService(identity(streamSessionId));
+    var authorizationService =
+        new FakeAuthorizationService(() -> identity(streamSessionId), "it-token");
     var controller =
         new StreamController(
             streamingService,
             new HlsPlaylistService(properties),
-            coordinator,
+            rig.coordinator(),
             authorizationService);
     return new PlaybackRig(controller, session);
   }
@@ -571,11 +435,6 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
         .profileId(UUID.randomUUID())
         .streamSessionId(streamSessionId)
         .build();
-  }
-
-  private Path resource(String name) throws URISyntaxException {
-    var url = Objects.requireNonNull(getClass().getResource("/tls/" + name));
-    return Path.of(url.toURI());
   }
 
   private static final class RecordingFfmpegProcessManager extends FakeFfmpegProcessManager {

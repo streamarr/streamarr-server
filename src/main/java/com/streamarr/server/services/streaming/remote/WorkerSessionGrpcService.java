@@ -23,6 +23,20 @@ final class WorkerSessionGrpcService
 
   private static final int MAXIMUM_CONCURRENT_SEGMENT_UPLOADS = 32;
   private static final long MAXIMUM_BUFFERED_SEGMENT_BYTES = 64L * 1024 * 1024;
+
+  /** Receives frames after the service has already rejected an upload call. */
+  private static final StreamObserver<UploadSegmentRequest> IGNORED_UPLOAD_OBSERVER =
+      new StreamObserver<>() {
+        @Override
+        public void onNext(UploadSegmentRequest value) {}
+
+        @Override
+        public void onError(Throwable throwable) {}
+
+        @Override
+        public void onCompleted() {}
+      };
+
   // A ladder's variants upload in parallel, so the allowance has to clear a full ladder; it is a
   // blast-radius bound on one worker's wedged streams, not a throughput limit.
   private static final int MAXIMUM_SEGMENT_UPLOADS_PER_WORKER = 8;
@@ -61,7 +75,7 @@ final class WorkerSessionGrpcService
           Status.UNAUTHENTICATED
               .withDescription("Worker identity is required")
               .asRuntimeException());
-      return new IgnoredUploadObserver();
+      return IGNORED_UPLOAD_OBSERVER;
     }
 
     var ticket = segmentUploadAdmission.tryAdmit(authenticatedWorkerId);
@@ -73,7 +87,7 @@ final class WorkerSessionGrpcService
           Status.RESOURCE_EXHAUSTED
               .withDescription("Concurrent segment upload limit reached")
               .asRuntimeException());
-      return new IgnoredUploadObserver();
+      return IGNORED_UPLOAD_OBSERVER;
     }
     return SegmentUploadObserver.builder()
         .authenticatedWorkerId(authenticatedWorkerId)
@@ -82,24 +96,6 @@ final class WorkerSessionGrpcService
         .responseObserver(responseObserver)
         .uploadTicket(ticket.get())
         .build();
-  }
-
-  private static final class IgnoredUploadObserver implements StreamObserver<UploadSegmentRequest> {
-
-    @Override
-    public void onNext(UploadSegmentRequest value) {
-      // The call was rejected before an upload observer was created.
-    }
-
-    @Override
-    public void onError(Throwable throwable) {
-      // The call was rejected before an upload observer was created.
-    }
-
-    @Override
-    public void onCompleted() {
-      // The call was rejected before an upload observer was created.
-    }
   }
 
   private static final class RegistrationObserver
@@ -122,6 +118,10 @@ final class WorkerSessionGrpcService
 
     @Override
     public void onNext(EstablishWorkerSessionRequest request) {
+      if (authenticatedWorkerId == null) {
+        reject(Status.UNAUTHENTICATED.withDescription("Worker identity is required"));
+        return;
+      }
       if (registered) {
         handleSessionEvent(request);
         return;
@@ -140,10 +140,10 @@ final class WorkerSessionGrpcService
         return;
       }
 
-      registered = true;
       workerSessionId =
           workerConnections.register(
               authenticatedWorkerId, request.getRegistration(), responseObserver);
+      registered = true;
     }
 
     @Override
@@ -177,9 +177,9 @@ final class WorkerSessionGrpcService
                 fromProto(request.getJobAttemptStarted().getJobAttemptId()));
         case JOB_ATTEMPT_FAILED -> reportFailedJobAttempt(request.getJobAttemptFailed());
         case JOB_ATTEMPT_COMPLETED ->
-            finish(request.getJobAttemptCompleted().getJobAttemptId(), "completed");
+            finishOrWarn(request.getJobAttemptCompleted().getJobAttemptId(), "completed");
         case JOB_ATTEMPT_STOPPED ->
-            finish(request.getJobAttemptStopped().getJobAttemptId(), "stopped");
+            finishOrWarn(request.getJobAttemptStopped().getJobAttemptId(), "stopped");
         default ->
             log.warn(
                 "Ignoring unexpected {} event on established session of worker {}",
@@ -220,6 +220,17 @@ final class WorkerSessionGrpcService
                   job.getVariant().getVariantLabel(),
                   detail));
       return released;
+    }
+
+    private void finishOrWarn(Uuid jobAttemptId, String detail) {
+      if (finish(jobAttemptId, detail).isPresent()) {
+        return;
+      }
+      log.warn(
+          "Worker {} reported {} for unknown job attempt {}",
+          authenticatedWorkerId,
+          detail,
+          fromProto(jobAttemptId));
     }
 
     private void reject(Status status) {

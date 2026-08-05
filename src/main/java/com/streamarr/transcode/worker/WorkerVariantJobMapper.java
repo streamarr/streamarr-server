@@ -101,7 +101,7 @@ final class WorkerVariantJobMapper {
     };
   }
 
-  private ContainerFormat container(com.streamarr.transcode.v1.ContainerFormat container) {
+  static ContainerFormat container(com.streamarr.transcode.v1.ContainerFormat container) {
     return switch (container) {
       case CONTAINER_FORMAT_MPEG_TS -> ContainerFormat.MPEGTS;
       case CONTAINER_FORMAT_FMP4 -> ContainerFormat.FMP4;

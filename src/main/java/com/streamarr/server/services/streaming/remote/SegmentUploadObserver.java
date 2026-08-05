@@ -33,7 +33,7 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
   private boolean closed;
 
   @Override
-  public void onNext(UploadSegmentRequest request) {
+  public synchronized void onNext(UploadSegmentRequest request) {
     if (closed) {
       return;
     }
@@ -74,6 +74,7 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
 
     metadata = incoming;
     data = new ByteArrayOutputStream();
+    uploadTicket.onReclaimed(this::expire);
   }
 
   private void receiveData(UploadSegmentRequest request) {
@@ -97,13 +98,13 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
   }
 
   @Override
-  public void onError(Throwable throwable) {
+  public synchronized void onError(Throwable throwable) {
     log.warn("Segment upload from worker {} failed", authenticatedWorkerId, throwable);
     close();
   }
 
   @Override
-  public void onCompleted() {
+  public synchronized void onCompleted() {
     if (closed) {
       return;
     }
@@ -111,11 +112,6 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       reject(Status.INVALID_ARGUMENT.withDescription("Segment upload is incomplete"));
       return;
     }
-    if (!workerConnections.authorizesUpload(authenticatedWorkerId, metadata)) {
-      reject(Status.PERMISSION_DENIED.withDescription("Segment upload lost connection ownership"));
-      return;
-    }
-
     var segmentName = qualifiedSegmentName();
     boolean published;
     try (var prepared =
@@ -186,6 +182,10 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
   private void reject(Status status) {
     close();
     responseObserver.onError(status.asRuntimeException());
+  }
+
+  private synchronized void expire() {
+    reject(Status.DEADLINE_EXCEEDED.withDescription("Segment upload exceeded the maximum age"));
   }
 
   private void close() {

@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-public final class FakeSegmentProducingFfmpegProcessManager extends FakeFfmpegProcessManager {
+public class FakeSegmentProducingFfmpegProcessManager extends FakeFfmpegProcessManager {
 
   private final Map<String, byte[]> segments;
 

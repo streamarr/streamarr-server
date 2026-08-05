@@ -78,9 +78,7 @@ class SegmentUploadObserverTest {
       AtomicReference<Throwable> error) {
     return new StreamObserver<>() {
       @Override
-      public void onNext(UploadSegmentResponse value) {
-        // no-op for test fake
-      }
+      public void onNext(UploadSegmentResponse value) {}
 
       @Override
       public void onError(Throwable throwable) {
@@ -88,28 +86,20 @@ class SegmentUploadObserverTest {
       }
 
       @Override
-      public void onCompleted() {
-        // no-op for test fake
-      }
+      public void onCompleted() {}
     };
   }
 
   private static StreamObserver<UploadSegmentResponse> noOpResponseObserver() {
     return new StreamObserver<>() {
       @Override
-      public void onNext(UploadSegmentResponse value) {
-        // no-op for test fake
-      }
+      public void onNext(UploadSegmentResponse value) {}
 
       @Override
-      public void onError(Throwable throwable) {
-        // no-op for test fake
-      }
+      public void onError(Throwable throwable) {}
 
       @Override
-      public void onCompleted() {
-        // no-op for test fake
-      }
+      public void onCompleted() {}
     };
   }
 }

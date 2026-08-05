@@ -1,13 +1,11 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.support.TokenTestSupport.TEST_SIGNING_KEY;
+import static com.streamarr.server.support.TokenTestSupport.decoder;
+import static com.streamarr.server.support.TokenTestSupport.tokenProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
-import com.nimbusds.jose.proc.JWSVerificationKeySelector;
-import com.nimbusds.jose.proc.SecurityContext;
-import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountProfile;
@@ -30,22 +28,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 @Tag("UnitTest")
 @DisplayName("Access Token Issuer Tests")
 class AccessTokenIssuerTest {
 
-  private static final String TEST_KEY_BASE64 =
-      "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQga+ZKCbAcyZIb7k2FE8rMPFtIpTdzX2dR/csZ8k6A95uhRANCAAQawOmVKMDLAOsboxKLb9khGsWyxwcIikucXDCfX18ME5X9/kqSS2vdMnFfZ6KR12U/Sy/EwOwnc82xFAyFdNbe";
-
-  private final AuthTokenProperties properties =
-      AuthTokenProperties.builder()
-          .signingKey(TEST_KEY_BASE64)
-          .accessTokenTtl(Duration.ofMinutes(10))
-          .refreshTokenTtl(Duration.ofDays(30))
-          .rotationGrace(Duration.ofSeconds(30))
-          .build();
+  private final AuthTokenProperties properties = tokenProperties();
 
   private final FakeHouseholdMembershipRepository membershipRepository =
       new FakeHouseholdMembershipRepository();
@@ -61,7 +49,6 @@ class AccessTokenIssuerTest {
           properties,
           Clock.systemUTC(),
           membershipRepository,
-          profileRepository,
           accountProfileRepository);
 
   @Test
@@ -69,7 +56,7 @@ class AccessTokenIssuerTest {
   void shouldMintConfiguredIssuerWhenOneIsProvided() {
     var urlIssuerProperties =
         AuthTokenProperties.builder()
-            .signingKey(TEST_KEY_BASE64)
+            .signingKey(TEST_SIGNING_KEY)
             .issuer("https://auth.example.test")
             .accessTokenTtl(Duration.ofMinutes(10))
             .refreshTokenTtl(Duration.ofDays(30))
@@ -81,7 +68,6 @@ class AccessTokenIssuerTest {
             urlIssuerProperties,
             Clock.systemUTC(),
             membershipRepository,
-            profileRepository,
             accountProfileRepository);
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
@@ -226,7 +212,6 @@ class AccessTokenIssuerTest {
         properties,
         Clock.fixed(now, ZoneOffset.UTC),
         membershipRepository,
-        profileRepository,
         accountProfileRepository);
   }
 
@@ -320,45 +305,7 @@ class AccessTokenIssuerTest {
         .hasMessage("session");
   }
 
-  @Test
-  @DisplayName("Should reject profile token when profile row missing")
-  void shouldRejectProfileTokenWhenProfileRowMissing() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
-    var householdId = UUID.randomUUID();
-    var missingProfileId = UUID.randomUUID();
-    membershipRepository.grantMembership(
-        HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(householdId)
-            .householdRole(HouseholdRole.OWNER)
-            .build());
-    accountProfileRepository.save(
-        AccountProfile.builder()
-            .accountId(account.getId())
-            .householdId(householdId)
-            .profileId(missingProfileId)
-            .build());
-
-    var context =
-        TokenContext.builder()
-            .account(account)
-            .session(session)
-            .householdId(householdId)
-            .profileId(missingProfileId)
-            .build();
-
-    assertThatThrownBy(() -> issuer.issue(context))
-        .isInstanceOf(ProfileAccessDeniedException.class);
-  }
-
-  private NimbusJwtDecoder buildDecoder() {
-    var keys = cryptoConfig.tokenSigningKeys(properties);
-    var processor = new DefaultJWTProcessor<SecurityContext>();
-    processor.setJWSKeySelector(
-        new JWSVerificationKeySelector<>(
-            JWSAlgorithm.ES256, new ImmutableJWKSet<>(keys.verificationKeys())));
-    processor.setJWTClaimsSetVerifier((claims, context) -> {});
-    return new NimbusJwtDecoder(processor);
+  private org.springframework.security.oauth2.jwt.NimbusJwtDecoder buildDecoder() {
+    return decoder(properties);
   }
 }

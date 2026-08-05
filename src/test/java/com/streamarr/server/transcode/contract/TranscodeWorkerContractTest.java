@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.Descriptors.Descriptor;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
-import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
@@ -126,15 +125,19 @@ class TranscodeWorkerContractTest {
   @DisplayName("Should keep the wire vocabulary narrow and secret free")
   void shouldKeepTheWireVocabularyNarrowAndSecretFree() {
     var fields = new HashSet<String>();
-    collectFields(EstablishWorkerSessionRequest.getDescriptor(), fields);
-    collectFields(WorkerRegistration.getDescriptor(), fields);
-    collectFields(StartVariantCommand.getDescriptor(), fields);
-    collectFields(VariantJob.getDescriptor(), fields);
-    collectFields(JobAttemptStarted.getDescriptor(), fields);
-    collectFields(UploadSegmentRequest.getDescriptor(), fields);
+    EstablishWorkerSessionRequest.getDescriptor()
+        .getFile()
+        .getMessageTypes()
+        .forEach(descriptor -> collectFields(descriptor, fields));
 
     assertThat(fields)
-        .contains("worker", "target", "stream_session_id", "job_id", "job_attempt_id")
+        .contains(
+            "worker",
+            "target",
+            "stream_session_id",
+            "job_id",
+            "job_attempt_id",
+            "accepted_length_bytes")
         .doesNotContain(
             "session_id",
             "source_path",

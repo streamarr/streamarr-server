@@ -1,17 +1,20 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.tlsIdentity;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.tlsResource;
+import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
+import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.google.protobuf.ByteString;
-import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
-import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
@@ -24,7 +27,6 @@ import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
-import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.WorkerCapabilities;
@@ -47,13 +49,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLException;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("IntegrationTest")
 @DisplayName("Worker Session Server Integration Tests")
-class WorkerSessionServerIT extends AbstractIntegrationTest {
+class WorkerSessionServerIT {
 
   private static final UUID AUTHENTICATED_WORKER_ID =
       UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
@@ -82,7 +85,9 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   @DisplayName("Should enforce the worker session server lifecycle")
   void shouldEnforceWorkerSessionServerLifecycle() throws Exception {
     try (var server = server()) {
-      assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
+      assertThatThrownBy(() -> server.hasConnectedWorker(SOURCE_NAMESPACE_ID))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessage("Worker session server is not started");
       assertThatThrownBy(server::port)
           .isInstanceOf(IllegalStateException.class)
           .hasMessage("Worker session server is not started");
@@ -130,11 +135,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       try {
         var response = register(channel, UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"));
 
-        assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS))
-            .rootCause()
-            .matches(
-                throwable ->
-                    Status.fromThrowable(throwable).getCode() == Status.Code.PERMISSION_DENIED);
+        assertUploadRejected(response, Status.Code.PERMISSION_DENIED);
       } finally {
         shutdown(channel);
       }
@@ -174,14 +175,11 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
                 channel,
                 EstablishWorkerSessionRequest.newBuilder()
                     .setJobAttemptCompleted(
-                        JobAttemptCompleted.newBuilder().setJobAttemptId(uuid(UUID.randomUUID())))
+                        JobAttemptCompleted.newBuilder()
+                            .setJobAttemptId(toProto(UUID.randomUUID())))
                     .build());
 
-        assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS))
-            .rootCause()
-            .matches(
-                throwable ->
-                    Status.fromThrowable(throwable).getCode() == Status.Code.INVALID_ARGUMENT);
+        assertUploadRejected(response, Status.Code.INVALID_ARGUMENT);
       } finally {
         shutdown(channel);
       }
@@ -199,11 +197,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       try {
         var response = register(channel, AUTHENTICATED_WORKER_ID);
 
-        assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS))
-            .rootCause()
-            .matches(
-                throwable ->
-                    Status.fromThrowable(throwable).getCode() == Status.Code.UNAUTHENTICATED);
+        assertUploadRejected(response, Status.Code.UNAUTHENTICATED);
       } finally {
         shutdown(channel);
       }
@@ -224,7 +218,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         assertThat(server.dispatch(job)).isTrue();
 
         var command = worker.nextResponse().getStartVariant();
-        assertThat(command.getTarget().getWorkerId()).isEqualTo(uuid(AUTHENTICATED_WORKER_ID));
+        assertThat(command.getTarget().getWorkerId()).isEqualTo(toProto(AUTHENTICATED_WORKER_ID));
         assertThat(command.getJob()).isEqualTo(job);
       } finally {
         shutdown(channel);
@@ -266,9 +260,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         var replacement = connect(channel, AUTHENTICATED_WORKER_ID);
         assertThat(replacement.nextResponse().hasSessionAccepted()).isTrue();
 
-        assertThatThrownBy(first::awaitClosed)
-            .rootCause()
-            .matches(throwable -> Status.fromThrowable(throwable).getCode() == Status.Code.ABORTED);
+        assertUploadRejected(first::awaitClosed, Status.Code.ABORTED);
         var job = variantJob();
 
         assertThat(server.dispatch(job)).isTrue();
@@ -359,30 +351,31 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       var identity = workerIdentity(UUID.randomUUID());
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
-        assertThat(server.stopVariant(UUID.randomUUID())).isFalse();
+        assertThat(server.stopVariant(UUID.randomUUID(), "720p")).isFalse();
         assertThat(server.dispatch(variantJob().toBuilder().clearSource().build())).isFalse();
-        assertThat(server.isRunning(UUID.randomUUID())).isFalse();
+        assertThat(server.isRunning(UUID.randomUUID(), "720p")).isFalse();
 
         var job = variantJob();
         assertThat(server.dispatch(job)).isTrue();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
-        assertThat(server.isRunning(uuid(job.getStreamSessionId()), "missing")).isFalse();
+        assertThat(server.isRunning(fromProto(job.getStreamSessionId()), "missing")).isFalse();
         var metadata =
             segmentMetadata(workerSession, identity, job).setContentLengthBytes(1).build();
         var unownedMetadata =
             List.of(
-                metadata.toBuilder().setWorkerSessionId(uuid(UUID.randomUUID())).build(),
+                metadata.toBuilder().setWorkerSessionId(toProto(UUID.randomUUID())).build(),
                 metadata.toBuilder().setWorker(workerIdentity(UUID.randomUUID())).build(),
-                metadata.toBuilder().setJobAttemptId(uuid(UUID.randomUUID())).build(),
-                metadata.toBuilder().setStreamSessionId(uuid(UUID.randomUUID())).build(),
-                metadata.toBuilder().setJobId(uuid(UUID.randomUUID())).build(),
+                metadata.toBuilder().setJobAttemptId(toProto(UUID.randomUUID())).build(),
+                metadata.toBuilder().setStreamSessionId(toProto(UUID.randomUUID())).build(),
+                metadata.toBuilder().setJobId(toProto(UUID.randomUUID())).build(),
                 metadata.toBuilder().setVariantLabel("other").build());
 
         unownedMetadata.forEach(
             unowned ->
                 assertUploadRejected(
                     upload(channel, unowned, new byte[] {1}), Status.Code.PERMISSION_DENIED));
-        assertThat(segmentStore.segmentExists(uuid(job.getStreamSessionId()), "720p/segment0.ts"))
+        assertThat(
+                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
             .isFalse();
       } finally {
         shutdown(channel);
@@ -408,21 +401,16 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
 
         var replacement = connect(channel, workerIdentity(UUID.randomUUID()));
         assertThat(replacement.nextResponse().hasSessionAccepted()).isTrue();
-        assertThatThrownBy(first::awaitClosed)
-            .rootCause()
-            .matches(throwable -> Status.fromThrowable(throwable).getCode() == Status.Code.ABORTED);
+        assertUploadRejected(first::awaitClosed, Status.Code.ABORTED);
         var segmentData = "stale segment".getBytes();
         var metadata =
             segmentMetadata(firstSession, firstIdentity, job)
                 .setContentLengthBytes(segmentData.length)
                 .build();
 
-        assertThatThrownBy(() -> upload(channel, metadata, segmentData).get(5, TimeUnit.SECONDS))
-            .rootCause()
-            .matches(
-                throwable ->
-                    Status.fromThrowable(throwable).getCode() == Status.Code.PERMISSION_DENIED);
-        assertThat(segmentStore.segmentExists(uuid(job.getStreamSessionId()), "720p/segment0.ts"))
+        assertUploadRejected(upload(channel, metadata, segmentData), Status.Code.PERMISSION_DENIED);
+        assertThat(
+                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
             .isFalse();
         replacement.close();
       } finally {
@@ -452,12 +440,9 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
                 .setContentLengthBytes(segmentData.length + 1L)
                 .build();
 
-        assertThatThrownBy(() -> upload(channel, metadata, segmentData).get(5, TimeUnit.SECONDS))
-            .rootCause()
-            .matches(
-                throwable ->
-                    Status.fromThrowable(throwable).getCode() == Status.Code.INVALID_ARGUMENT);
-        assertThat(segmentStore.segmentExists(uuid(job.getStreamSessionId()), "720p/segment0.ts"))
+        assertUploadRejected(upload(channel, metadata, segmentData), Status.Code.INVALID_ARGUMENT);
+        assertThat(
+                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
             .isFalse();
         worker.close();
       } finally {
@@ -530,7 +515,8 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
                         .setData(ByteString.copyFromUtf8("too long"))
                         .build())),
             Status.Code.INVALID_ARGUMENT);
-        assertThat(segmentStore.segmentExists(uuid(job.getStreamSessionId()), "720p/segment0.ts"))
+        assertThat(
+                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
             .isFalse();
       } finally {
         shutdown(channel);
@@ -560,7 +546,8 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
 
         assertUploadRejected(
             upload(channel, metadata, segmentData), Status.Code.RESOURCE_EXHAUSTED);
-        assertThat(segmentStore.segmentExists(uuid(job.getStreamSessionId()), "720p/segment0.ts"))
+        assertThat(
+                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
             .isFalse();
 
         var validSegment = "complete segment".getBytes();
@@ -610,7 +597,10 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         invalidMetadata.forEach(
             unsafe ->
                 assertUploadRejectedAsInvalidMetadata(upload(channel, unsafe, new byte[] {1})));
-        assertThat(server.stopVariant(uuid(job.getJobAttemptId()))).isTrue();
+        assertThat(
+                server.stopVariant(
+                    fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
+            .isTrue();
         assertThat(worker.nextResponse().hasStopVariant()).isTrue();
 
         for (var unsafeName : List.of(" ", "..", "720/p", "720\\p")) {
@@ -624,10 +614,15 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
               segmentMetadata(workerSession, identity, unsafeJob).setContentLengthBytes(1).build();
 
           assertUploadRejectedAsInvalidMetadata(upload(channel, unsafe, new byte[] {1}));
-          assertThat(server.stopVariant(uuid(unsafeJob.getJobAttemptId()))).isTrue();
+          assertThat(
+                  server.stopVariant(
+                      fromProto(unsafeJob.getStreamSessionId()),
+                      unsafeJob.getVariant().getVariantLabel()))
+              .isTrue();
           assertThat(worker.nextResponse().hasStopVariant()).isTrue();
         }
-        assertThat(segmentStore.segmentExists(uuid(job.getStreamSessionId()), "720p/segment0.ts"))
+        assertThat(
+                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
             .isFalse();
       } finally {
         shutdown(channel);
@@ -690,13 +685,12 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
 
         var replacement = connect(channel, workerIdentity(UUID.randomUUID()));
         assertThat(replacement.nextResponse().hasSessionAccepted()).isTrue();
-        assertThatThrownBy(worker::awaitClosed)
-            .rootCause()
-            .matches(throwable -> Status.fromThrowable(throwable).getCode() == Status.Code.ABORTED);
+        assertUploadRejected(worker::awaitClosed, Status.Code.ABORTED);
         upload.requests().onCompleted();
 
         assertUploadRejected(upload.response(), Status.Code.PERMISSION_DENIED);
-        assertThat(segmentStore.segmentExists(uuid(job.getStreamSessionId()), "720p/segment0.ts"))
+        assertThat(
+                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
             .isFalse();
         replacement.close();
       } finally {
@@ -727,12 +721,16 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         var upload = upload(channel, metadata, data);
         assertThat(segmentStore.awaitPreparation(Duration.ofSeconds(5))).isTrue();
 
-        assertThat(server.stopVariant(uuid(job.getJobAttemptId()))).isTrue();
+        assertThat(
+                server.stopVariant(
+                    fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
+            .isTrue();
         assertThat(worker.nextResponse().hasStopVariant()).isTrue();
         segmentStore.continuePreparation();
 
         assertUploadRejected(upload, Status.Code.PERMISSION_DENIED);
-        assertThat(segmentStore.segmentExists(uuid(job.getStreamSessionId()), "720p/segment0.ts"))
+        assertThat(
+                segmentStore.segmentExists(fromProto(job.getStreamSessionId()), "720p/segment0.ts"))
             .isFalse();
       } finally {
         segmentStore.continuePreparation();
@@ -752,7 +750,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var expectedTarget =
-            new ExecutionTargetId(uuid(workerSession.getWorkerSessionId()).toString());
+            new ExecutionTargetId(fromProto(workerSession.getWorkerSessionId()).toString());
 
         assertThat(server.eligibleWorkers(SOURCE_NAMESPACE_ID)).containsExactly(expectedTarget);
         assertThat(server.eligibleWorkers(UUID.randomUUID())).isEmpty();
@@ -794,9 +792,9 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         var handle = executor.start(request);
 
         // The attempt identity is minted once, upstream: the dispatched job, the returned handle,
-        // and any later failure evidence all name the same attempt.
+        // and any later failure result all name the same attempt.
         var job = worker.nextResponse().getStartVariant().getJob();
-        assertThat(uuid(job.getJobAttemptId())).isEqualTo(handle.attemptId());
+        assertThat(fromProto(job.getJobAttemptId())).isEqualTo(handle.attemptId());
         assertThat(handle.attemptId()).isEqualTo(request.attemptId());
       } finally {
         shutdown(channel);
@@ -816,7 +814,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
-        var streamSessionId = uuid(job.getStreamSessionId());
+        var streamSessionId = fromProto(job.getStreamSessionId());
         assertThat(server.dispatch(job)).isTrue();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
 
@@ -853,7 +851,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
         var completedJob = variantJob();
-        var completedSession = uuid(completedJob.getStreamSessionId());
+        var completedSession = fromProto(completedJob.getStreamSessionId());
         assertThat(server.dispatch(completedJob)).isTrue();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(completedJob);
         worker.send(
@@ -867,7 +865,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
             .until(() -> !server.isRunning(completedSession, "720p"));
 
         var stoppedJob = variantJob();
-        var stoppedSession = uuid(stoppedJob.getStreamSessionId());
+        var stoppedSession = fromProto(stoppedJob.getStreamSessionId());
         assertThat(server.dispatch(stoppedJob)).isTrue();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(stoppedJob);
         assertThat(server.stopVariant(stoppedSession, "720p")).isTrue();
@@ -901,7 +899,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         var worker = connect(channel, AUTHENTICATED_WORKER_ID);
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
         var job = variantJob();
-        var streamSessionId = uuid(job.getStreamSessionId());
+        var streamSessionId = fromProto(job.getStreamSessionId());
         assertThat(server.dispatch(job)).isTrue();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
 
@@ -919,18 +917,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   private WorkerSessionServer server(FakeSegmentStore segmentStore) throws URISyntaxException {
-    var configuration =
-        WorkerSessionServerConfiguration.builder()
-            .port(0)
-            .trustDomain("streamarr.test")
-            .tlsIdentity(
-                PemTlsIdentity.builder()
-                    .certificate(resource("server-cert.pem"))
-                    .privateKey(resource("server-key.fixture"))
-                    .trustBundle(resource("ca-cert.pem"))
-                    .build())
-            .build();
-    return new WorkerSessionServer(configuration, segmentStore);
+    return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
   }
 
   private ManagedChannel workerChannel(int port) throws Exception {
@@ -939,12 +926,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
 
   private ManagedChannel workerChannel(int port, String certificate, String privateKey)
       throws Exception {
-    var identity =
-        PemTlsIdentity.builder()
-            .certificate(resource(certificate))
-            .privateKey(resource(privateKey))
-            .trustBundle(resource("ca-cert.pem"))
-            .build();
+    var identity = tlsIdentity(certificate, privateKey);
     var sslContext =
         GrpcSslContexts.forClient()
             .keyManager(identity.certificate().toFile(), identity.privateKey().toFile())
@@ -955,7 +937,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
 
   private ManagedChannel unauthenticatedChannel(int port) throws Exception {
     var sslContext =
-        GrpcSslContexts.forClient().trustManager(resource("ca-cert.pem").toFile()).build();
+        GrpcSslContexts.forClient().trustManager(tlsResource("ca-cert.pem").toFile()).build();
     return NettyChannelBuilder.forAddress("localhost", port).sslContext(sslContext).build();
   }
 
@@ -995,12 +977,12 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
 
   private VariantJob variantJob() {
     return VariantJob.newBuilder()
-        .setStreamSessionId(uuid(UUID.randomUUID()))
-        .setJobId(uuid(UUID.randomUUID()))
-        .setJobAttemptId(uuid(UUID.randomUUID()))
+        .setStreamSessionId(toProto(UUID.randomUUID()))
+        .setJobId(toProto(UUID.randomUUID()))
+        .setJobAttemptId(toProto(UUID.randomUUID()))
         .setSource(
             MediaSourceRef.newBuilder()
-                .setSourceNamespaceId(uuid(SOURCE_NAMESPACE_ID))
+                .setSourceNamespaceId(toProto(SOURCE_NAMESPACE_ID))
                 .setRelativeKey("movie.mkv"))
         .setVariant(VariantSpec.newBuilder().setVariantLabel("720p"))
         .build();
@@ -1021,7 +1003,8 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
             WorkerRegistration.newBuilder()
                 .setWorker(worker)
                 .setCapabilities(
-                    WorkerCapabilities.newBuilder().addSourceNamespaceIds(uuid(sourceNamespaceId)))
+                    WorkerCapabilities.newBuilder()
+                        .addSourceNamespaceIds(toProto(sourceNamespaceId)))
                 .setAvailableSlots(1))
         .build();
   }
@@ -1031,7 +1014,10 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   private WorkerIdentity workerIdentity(UUID workerId, UUID bootId) {
-    return WorkerIdentity.newBuilder().setWorkerId(uuid(workerId)).setBootId(uuid(bootId)).build();
+    return WorkerIdentity.newBuilder()
+        .setWorkerId(toProto(workerId))
+        .setBootId(toProto(bootId))
+        .build();
   }
 
   private SegmentUploadMetadata.Builder segmentMetadata(
@@ -1072,9 +1058,12 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
     return new SegmentUploadAttempt(requests, response);
   }
 
-  private void assertUploadRejected(
-      CompletableFuture<UploadSegmentResponse> response, Status.Code expectedStatus) {
-    assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS))
+  private void assertUploadRejected(CompletableFuture<?> response, Status.Code expectedStatus) {
+    assertUploadRejected(() -> response.get(5, TimeUnit.SECONDS), expectedStatus);
+  }
+
+  private void assertUploadRejected(ThrowingCallable operation, Status.Code expectedStatus) {
+    assertThatThrownBy(operation)
         .rootCause()
         .matches(throwable -> Status.fromThrowable(throwable).getCode() == expectedStatus);
   }
@@ -1089,22 +1078,6 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
               return status.getCode() == Status.Code.INVALID_ARGUMENT
                   && status.getDescription().equals("Segment metadata is invalid");
             });
-  }
-
-  private Uuid uuid(UUID value) {
-    return Uuid.newBuilder()
-        .setMostSignificantBits(value.getMostSignificantBits())
-        .setLeastSignificantBits(value.getLeastSignificantBits())
-        .build();
-  }
-
-  private UUID uuid(Uuid value) {
-    return new UUID(value.getMostSignificantBits(), value.getLeastSignificantBits());
-  }
-
-  private Path resource(String name) throws URISyntaxException {
-    var url = Objects.requireNonNull(getClass().getResource("/tls/" + name));
-    return Path.of(url.toURI());
   }
 
   private void shutdown(ManagedChannel channel) throws InterruptedException {

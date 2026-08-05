@@ -52,10 +52,6 @@ public class FfmpegTranscodeEngine {
     processManager.stopProcess(sessionId, variantLabel);
   }
 
-  public boolean isRunning(UUID sessionId) {
-    return processManager.isRunning(sessionId);
-  }
-
   public boolean isRunning(UUID sessionId, String variantLabel) {
     return processManager.isRunning(sessionId, variantLabel);
   }

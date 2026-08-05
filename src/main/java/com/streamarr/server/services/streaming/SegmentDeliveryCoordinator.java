@@ -5,7 +5,6 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
-import com.streamarr.server.services.streaming.ProducerLifecycleService.ExhaustResult;
 import com.streamarr.server.services.streaming.ProducerLifecycleService.ReplaceProducerCommand;
 import com.streamarr.server.services.streaming.ProducerLifecycleService.ReplaceResult;
 import com.streamarr.server.services.streaming.ProducerLifecycleService.ReplacementReason;
@@ -26,12 +25,11 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Owns the segment wait loop and producer recovery (ADR 0019, issue #252). A request for an
  * advertised-but-missing segment waits on producer liveness and publication progress — never a wall
- * clock — and a dead or stalled producer is replaced at the requested segment's offset, trying each
- * currently eligible execution target at most once per recovery window. The window resets on
- * publication progress and whenever the eligible-target set gains a never-attempted member, so a
- * target that accepts and immediately dies again may consume more than one attempt overall. Only
- * when no eligible target remains untried does the variant become terminally {@code FAILED}; a
- * target never attempted in the failed window, or a genuine seek, revives it.
+ * clock — and a dead or stalled producer is replaced at the requested segment's offset. Every pass
+ * derives the live execution targets and tries the first target absent from the attempted-target
+ * log. Publication progress clears that log; changing fleet membership does not. Only when no live
+ * target remains untried does the variant become terminally {@code FAILED}; a target never
+ * attempted in the failed window, or a genuine seek, revives it.
  *
  * <p>Coordinator state is the per-variant {@code states} map, each entry guarded by its own
  * monitor. Producer mutation is serialized by {@link ProducerLifecycleService}'s per-session mutex,
@@ -102,9 +100,12 @@ public class SegmentDeliveryCoordinator {
 
     // A variant's delivery state is created only for validated requests, so post-destroy retries
     // cannot re-grow entries that forgetSession already dropped.
-    var state =
-        states.computeIfAbsent(
-            new VariantKey(sessionId, variantLabel), _ -> new VariantDeliveryState());
+    var variantKey = new VariantKey(sessionId, variantLabel);
+    var state = states.computeIfAbsent(variantKey, _ -> new VariantDeliveryState());
+    if (runtimeRegistry.findById(sessionId).isEmpty()) {
+      states.remove(variantKey, state);
+      return new SegmentDelivery.SessionEnded();
+    }
 
     if (handle.status() == TranscodeStatus.FAILED) {
       return resolveFailedVariant(
@@ -124,7 +125,9 @@ public class SegmentDeliveryCoordinator {
       return null;
     }
 
-    return recover(state, pending, replacementReason(producerAlive, positioned, session));
+    var reason = replacementReason(producerAlive, positioned, session);
+    logProducerEnd(pending, state.trackedAttempt(), reason);
+    return attemptReplacements(state, pending, reason);
   }
 
   private static ReplacementReason replacementReason(
@@ -161,9 +164,8 @@ public class SegmentDeliveryCoordinator {
     try {
       return new SegmentDelivery.Ready(segmentStore.readSegment(sessionId, segmentName));
     } catch (TranscodeException e) {
-      // A concurrent destroy can win between the existence check and the read; the next
-      // iteration classifies the session state instead of surfacing a server error. Logged so a
-      // store failing for any other reason stays observable in this poll loop.
+      // A concurrent destroy can remove the segment between the existence check and the read. The
+      // store reports that disappearance as TranscodeException, so re-observe the session state.
       log.debug(
           "Segment read raced a concurrent destroy: session {} name {}", sessionId, segmentName, e);
       return null;
@@ -237,16 +239,7 @@ public class SegmentDeliveryCoordinator {
     }
   }
 
-  /**
-   * The producer is dead or stalled: try the first live execution target not yet attempted since
-   * the last publication progress. Returns null to resume polling, or a terminal outcome.
-   */
-  private SegmentDelivery recover(
-      VariantDeliveryState state, PendingSegment pending, ReplacementReason reason) {
-    logProducerEnd(pending, state.trackedAttempt(), reason);
-    return attemptReplacements(state, pending, reason);
-  }
-
+  /** Tries live execution targets not attempted since the last publication progress. */
   private SegmentDelivery attemptReplacements(
       VariantDeliveryState state, PendingSegment pending, ReplacementReason reason) {
     while (true) {
@@ -279,7 +272,10 @@ public class SegmentDeliveryCoordinator {
 
       switch (result) {
         case ReplaceResult.Replaced(UUID newAttemptId) -> {
-          state.recordReplacement(target, newAttemptId, pending.requestedIndex(), clock.instant());
+          if (!state.recordReplacement(
+              target, expectedAttemptId, newAttemptId, pending.requestedIndex(), clock.instant())) {
+            return null;
+          }
           log.info(
               "Replaced producer for session {} variant {} on target {} at segment {} (attempt {})",
               pending.sessionId(),
@@ -310,16 +306,9 @@ public class SegmentDeliveryCoordinator {
 
   private SegmentDelivery exhaust(
       VariantDeliveryState state, PendingSegment pending, UUID expectedAttemptId) {
-    var result =
-        producerLifecycle.markExhausted(
-            pending.sessionId(), pending.variantLabel(), expectedAttemptId);
-    switch (result) {
-      case ExhaustResult.Superseded() -> {
-        return null;
-      }
-      case ExhaustResult.Exhausted() -> {
-        // fall through to the terminal checks below
-      }
+    if (!producerLifecycle.tryMarkExhausted(
+        pending.sessionId(), pending.variantLabel(), expectedAttemptId)) {
+      return null;
     }
 
     if (segmentStore.segmentExists(pending.sessionId(), pending.segmentName())) {
@@ -376,33 +365,21 @@ public class SegmentDeliveryCoordinator {
   }
 
   private void logProducerEnd(PendingSegment pending, UUID attemptId, ReplacementReason reason) {
-    if (reason == ReplacementReason.STALLED) {
-      log.warn(
-          "Producer stalled for session {} variant {} (attempt {}): no publication within {}",
-          pending.sessionId(),
-          pending.variantLabel(),
-          attemptId,
-          properties.producerStallThreshold());
-      return;
-    }
-
-    if (reason == ReplacementReason.RESUME_FAILED) {
-      log.warn(
-          "Resume could not start a producer for session {} variant {} (attempt {}); recovering"
-              + " across execution targets",
-          pending.sessionId(),
-          pending.variantLabel(),
-          attemptId);
-      return;
-    }
-
-    // The death site (process manager or worker registry) has already logged its own detail.
-    log.warn(
-        "Producer died for session {} variant {} (attempt {}); recovering across execution"
-            + " targets",
-        pending.sessionId(),
-        pending.variantLabel(),
-        attemptId);
+    var message =
+        switch (reason) {
+          case STALLED ->
+              "Producer stalled for session {} variant {} (attempt {}): no publication within "
+                  + properties.producerStallThreshold()
+                  + "; recovering across execution targets";
+          case RESUME_FAILED ->
+              "Resume could not start a producer for session {} variant {} (attempt {});"
+                  + " recovering across execution targets";
+          // The death site (process manager or worker registry) has already logged its detail.
+          case DEAD ->
+              "Producer died for session {} variant {} (attempt {}); recovering across execution"
+                  + " targets";
+        };
+    log.warn(message, pending.sessionId(), pending.variantLabel(), attemptId);
   }
 
   /** One advertised segment being pursued: where it belongs and the index it maps to. */
@@ -491,13 +468,21 @@ public class SegmentDeliveryCoordinator {
       return new ReplacementTicket(trackedAttemptId, target);
     }
 
-    private synchronized void recordReplacement(
-        ExecutionTargetId target, UUID newAttemptId, int requestedIndex, Instant now) {
+    private synchronized boolean recordReplacement(
+        ExecutionTargetId target,
+        UUID expectedAttemptId,
+        UUID newAttemptId,
+        int requestedIndex,
+        Instant now) {
+      if (!Objects.equals(trackedAttemptId, expectedAttemptId)) {
+        return false;
+      }
       attemptedSinceProgress.add(target);
       trackedAttemptId = newAttemptId;
       runStart = requestedIndex;
       frontier = requestedIndex;
       lastProgressAt = now;
+      return true;
     }
 
     /**

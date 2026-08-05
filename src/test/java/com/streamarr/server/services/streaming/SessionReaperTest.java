@@ -6,19 +6,16 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
-import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.fixtures.StreamingRigFixture;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Collection;
-import java.util.Optional;
-import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -29,14 +26,14 @@ import org.junit.jupiter.api.Test;
 class SessionReaperTest {
 
   private FakeTranscodeExecutor executor;
-  private InMemoryStreamingService streamingService;
+  private FakeStreamingService streamingService;
   private SessionReaper reaper;
 
   @BeforeEach
   void setUp() {
     executor = new FakeTranscodeExecutor();
     var runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
-    streamingService = new InMemoryStreamingService(runtimeRegistry);
+    streamingService = new FakeStreamingService(runtimeRegistry);
     var properties =
         StreamingProperties.builder()
             .targetSegmentDuration(Duration.ofSeconds(6))
@@ -44,13 +41,13 @@ class SessionReaperTest {
             .sessionRetention(Duration.ofHours(24))
             .build();
     var producerLifecycle =
-        ProducerLifecycleService.builder()
+        StreamingRigFixture.streamingRigBuilder()
             .transcodeExecutor(executor)
             .segmentStore(new FakeSegmentStore())
             .properties(properties)
             .runtimeRegistry(runtimeRegistry)
-            .sessionMutex(new MutexFactory<>())
-            .build();
+            .build()
+            .lifecycle();
     reaper = new SessionReaper(streamingService, properties, producerLifecycle);
   }
 
@@ -91,7 +88,7 @@ class SessionReaperTest {
   @DisplayName("Should not suspend session when already suspended")
   void shouldNotSuspendSessionWhenAlreadySuspended() {
     var session = buildSession(Instant.now().minusSeconds(120));
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    session.setHandle(StreamSessionFixture.mintHandle(1L, TranscodeStatus.SUSPENDED));
     streamingService.addSession(session);
 
     reaper.reapSessions();
@@ -104,7 +101,7 @@ class SessionReaperTest {
   @DisplayName("Should not suspend session when handles are failed")
   void shouldNotSuspendSessionWhenHandlesAreFailed() {
     var session = buildSession(Instant.now().minusSeconds(120));
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.FAILED));
+    session.setHandle(StreamSessionFixture.mintHandle(1L, TranscodeStatus.FAILED));
     streamingService.addSession(session);
 
     reaper.reapSessions();
@@ -139,7 +136,7 @@ class SessionReaperTest {
   @DisplayName("Should leave dead producer handles untouched when session is recently accessed")
   void shouldLeaveDeadProducerHandlesUntouchedWhenSessionIsRecentlyAccessed() {
     var session = buildSession(Instant.now().minusSeconds(10));
-    session.setHandle(new TranscodeHandle(1234L, TranscodeStatus.ACTIVE));
+    session.setHandle(StreamSessionFixture.mintHandle(1234L, TranscodeStatus.ACTIVE));
     streamingService.addSession(session);
     executor.markDead(session.getSessionId());
 
@@ -168,8 +165,9 @@ class SessionReaperTest {
   @DisplayName("Should skip already failed handles when suspending idle session")
   void shouldSkipAlreadyFailedHandlesWhenSuspendingIdleSession() {
     var session = buildSession(Instant.now().minusSeconds(120));
-    session.setVariantHandle("1080p", new TranscodeHandle(100L, TranscodeStatus.ACTIVE));
-    session.setVariantHandle("720p", new TranscodeHandle(101L, TranscodeStatus.FAILED));
+    session.setVariantHandle(
+        "1080p", StreamSessionFixture.mintHandle(100L, TranscodeStatus.ACTIVE));
+    session.setVariantHandle("720p", StreamSessionFixture.mintHandle(101L, TranscodeStatus.FAILED));
 
     executor.start(
         com.streamarr.server.domain.streaming.TranscodeRequest.builder()
@@ -219,8 +217,9 @@ class SessionReaperTest {
     var session = StreamSessionFixture.buildMpegtsSession();
     session.setLastAccessedAt(lastAccessedAt);
 
-    session.setVariantHandle("1080p", new TranscodeHandle(100L, TranscodeStatus.ACTIVE));
-    session.setVariantHandle("720p", new TranscodeHandle(101L, TranscodeStatus.ACTIVE));
+    session.setVariantHandle(
+        "1080p", StreamSessionFixture.mintHandle(100L, TranscodeStatus.ACTIVE));
+    session.setVariantHandle("720p", StreamSessionFixture.mintHandle(101L, TranscodeStatus.ACTIVE));
 
     executor.start(
         com.streamarr.server.domain.streaming.TranscodeRequest.builder()
@@ -250,47 +249,5 @@ class SessionReaperTest {
             .build());
 
     return session;
-  }
-
-  /**
-   * Backed by the same registry the producer lifecycle reads, as in production — the reaper hands
-   * the lifecycle a session id and the lifecycle re-fetches it under the session mutex.
-   */
-  private record InMemoryStreamingService(FakeRuntimeStreamSessionRegistry registry)
-      implements StreamingService {
-
-    void addSession(StreamSession session) {
-      registry.save(session);
-    }
-
-    @Override
-    public StreamSession createSession(CreateStreamSessionCommand command) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Optional<StreamSession> accessSession(PlaybackRequest request) {
-      return registry.findById(request.streamSessionId());
-    }
-
-    @Override
-    public void destroySession(UUID sessionId) {
-      registry.removeById(sessionId);
-    }
-
-    @Override
-    public void destroySession(UUID sessionId, UUID profileId) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Collection<StreamSession> getAllSessions() {
-      return registry.findAll();
-    }
-
-    @Override
-    public int getActiveSessionCount() {
-      return registry.count();
-    }
   }
 }

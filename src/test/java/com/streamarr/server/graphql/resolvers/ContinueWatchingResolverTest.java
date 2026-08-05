@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -35,6 +36,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       PaginationService.class,
       SecurityContextAuthorizationService.class
     })
+@Tag("UnitTest")
 @DisplayName("Continue Watching Resolver Tests")
 class ContinueWatchingResolverTest {
 

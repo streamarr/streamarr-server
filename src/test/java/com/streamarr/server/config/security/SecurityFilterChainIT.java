@@ -11,12 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.fixtures.StreamSessionFixture;
-import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.support.AuthTestSupport;
 import jakarta.servlet.http.Cookie;
-import java.time.Duration;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
@@ -31,7 +27,6 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** The permit/deny matrix as executable specification — changes here are contract changes. */
@@ -45,8 +40,6 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
 
   @Autowired private AuthTestSupport authTestSupport;
-  @Autowired private PlaybackTokenIssuer playbackTokenIssuer;
-  @Autowired private JwtDecoder jwtDecoder;
 
   @Autowired private ApplicationContext applicationContext;
 
@@ -523,15 +516,6 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   private String playbackBearer(UUID streamSessionId) {
-    var authenticatedIdentity =
-        AuthenticatedIdentity.fromJwt(jwtDecoder.decode(authTestSupport.profileBearer(identity)));
-    var ownedSession =
-        StreamSessionFixture.defaultSessionBuilder()
-            .sessionId(streamSessionId)
-            .authority(authenticatedIdentity.playbackAuthority())
-            .build();
-    return playbackTokenIssuer
-        .issue(authenticatedIdentity, ownedSession, Duration.ofHours(1))
-        .value();
+    return authTestSupport.playbackBearer(identity, streamSessionId);
   }
 }

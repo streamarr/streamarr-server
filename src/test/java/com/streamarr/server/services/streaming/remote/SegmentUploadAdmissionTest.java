@@ -3,11 +3,8 @@ package com.streamarr.server.services.streaming.remote;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.time.Clock;
+import com.streamarr.server.fakes.MutableClock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -176,29 +173,5 @@ class SegmentUploadAdmissionTest {
         .as("a reclaimed ticket must not hand back capacity a second time")
         .isEmpty();
     successor.close();
-  }
-
-  private static final class MutableClock extends Clock {
-
-    private Instant instant = Instant.parse("2026-01-01T00:00:00Z");
-
-    void advance(Duration duration) {
-      instant = instant.plus(duration);
-    }
-
-    @Override
-    public ZoneId getZone() {
-      return ZoneOffset.UTC;
-    }
-
-    @Override
-    public Clock withZone(ZoneId zone) {
-      return this;
-    }
-
-    @Override
-    public Instant instant() {
-      return instant;
-    }
   }
 }

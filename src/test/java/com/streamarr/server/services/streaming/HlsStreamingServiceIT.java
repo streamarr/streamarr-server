@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
+import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -10,7 +11,6 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
@@ -143,13 +143,14 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
     var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
 
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    session.setHandle(mintHandle(1L, TranscodeStatus.SUSPENDED));
     FAKE_EXECUTOR.markDead(session.getSessionId());
 
     producerLifecycle.ensurePositioned(session.getSessionId(), "segment0.ts");
 
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
-    assertThat(FAKE_EXECUTOR.isRunning(session.getSessionId())).isTrue();
+    assertThat(FAKE_EXECUTOR.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
+        .isTrue();
   }
 
   private StreamingOptions defaultOptions() {

@@ -1,15 +1,13 @@
 package com.streamarr.transcode.worker;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
-import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
-import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
-import com.streamarr.transcode.tls.PemTlsIdentity;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -18,7 +16,6 @@ import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -75,52 +72,19 @@ class TranscodeWorkerKeepaliveIT {
   }
 
   private WorkerSessionServer server(LocalSegmentStore segmentStore) throws URISyntaxException {
-    var configuration =
-        WorkerSessionServerConfiguration.builder()
-            .port(0)
-            .trustDomain("streamarr.test")
-            .tlsIdentity(
-                PemTlsIdentity.builder()
-                    .certificate(resource("server-cert.pem"))
-                    .privateKey(resource("server-key.fixture"))
-                    .trustBundle(resource("ca-cert.pem"))
-                    .build())
-            .build();
-    return new WorkerSessionServer(configuration, segmentStore);
+    return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
   }
 
   private TranscodeWorker worker(Path mediaRoot) throws URISyntaxException {
     var configuration =
-        TranscodeWorkerConfiguration.builder()
-            .workerId(WORKER_ID)
-            .bootId(UUID.randomUUID())
+        workerConfigurationBuilder()
             .availableSlots(1)
-            .tlsIdentity(
-                PemTlsIdentity.builder()
-                    .certificate(resource("worker-cert.pem"))
-                    .privateKey(resource("worker-key.fixture"))
-                    .trustBundle(resource("ca-cert.pem"))
-                    .build())
             .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, mediaRoot))
             .segmentBasePath(tempDir.resolve("worker-segments"))
             .keepAliveTime(Duration.ofSeconds(10))
             .keepAliveTimeout(Duration.ofSeconds(2))
             .build();
-    var engine =
-        new FfmpegTranscodeEngine(
-            new FfmpegCommandBuilder("ffmpeg"),
-            new FakeFfmpegProcessManager(),
-            new TranscodeCapabilityService(
-                "ffmpeg",
-                _ -> {
-                  throw new IllegalStateException("Not used");
-                }));
-    return new TranscodeWorker(configuration, engine);
-  }
-
-  private Path resource(String name) throws URISyntaxException {
-    var url = Objects.requireNonNull(getClass().getResource("/tls/" + name));
-    return Path.of(url.toURI());
+    return new TranscodeWorker(configuration, remuxEngine(new FakeFfmpegProcessManager()));
   }
 
   private static final class FreezableRelay implements AutoCloseable {

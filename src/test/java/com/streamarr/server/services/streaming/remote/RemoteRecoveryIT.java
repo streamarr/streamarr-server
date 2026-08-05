@@ -1,10 +1,12 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
@@ -17,25 +19,17 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
-import com.streamarr.server.services.concurrency.MutexFactory;
-import com.streamarr.server.services.streaming.ProducerLifecycleService;
+import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
-import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
-import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.worker.TranscodeWorker;
-import com.streamarr.transcode.worker.TranscodeWorkerConfiguration;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
@@ -50,7 +44,7 @@ import org.junit.jupiter.api.io.TempDir;
  */
 @Tag("IntegrationTest")
 @DisplayName("Remote Recovery Integration Tests")
-class RemoteRecoveryIT extends AbstractIntegrationTest {
+class RemoteRecoveryIT {
 
   private static final UUID WORKER_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =
@@ -76,7 +70,9 @@ class RemoteRecoveryIT extends AbstractIntegrationTest {
         failingWorker.start("localhost", server.port());
         var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
         rig.session().setHandle(handle);
-        await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
+        await()
+            .atMost(5, TimeUnit.SECONDS)
+            .until(() -> !server.isRunning(streamSessionId, StreamSession.defaultVariant()));
       }
 
       try (var healthyWorker =
@@ -117,7 +113,9 @@ class RemoteRecoveryIT extends AbstractIntegrationTest {
 
       var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
       rig.session().setHandle(handle);
-      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> !server.isRunning(streamSessionId, StreamSession.defaultVariant()));
 
       var delivery =
           rig.coordinator().deliver(streamSessionId, StreamSession.defaultVariant(), "segment0.ts");
@@ -151,68 +149,30 @@ class RemoteRecoveryIT extends AbstractIntegrationTest {
             .targetSegmentDuration(Duration.ofSeconds(6))
             .producerStallThreshold(Duration.ofSeconds(3))
             .build();
-    var lifecycle =
-        ProducerLifecycleService.builder()
-            .transcodeExecutor(executor)
-            .segmentStore(segmentStore)
-            .properties(properties)
-            .runtimeRegistry(registry)
-            .sessionMutex(new MutexFactory<>())
-            .build();
-    var coordinator =
-        SegmentDeliveryCoordinator.builder()
-            .runtimeRegistry(registry)
+    var rig =
+        StreamingRigFixture.streamingRigBuilder()
             .segmentStore(segmentStore)
             .transcodeExecutor(executor)
-            .producerLifecycle(lifecycle)
             .properties(properties)
-            .clock(Clock.systemUTC())
+            .runtimeRegistry(registry)
             .pollInterval(Duration.ofMillis(50))
             .build();
-    return new RecoveryRig(coordinator, session);
+    return new RecoveryRig(rig.coordinator(), session);
   }
 
   private WorkerSessionServer server(LocalSegmentStore segmentStore) throws URISyntaxException {
-    var configuration =
-        WorkerSessionServerConfiguration.builder()
-            .port(0)
-            .trustDomain("streamarr.test")
-            .tlsIdentity(
-                PemTlsIdentity.builder()
-                    .certificate(resource("server-cert.pem"))
-                    .privateKey(resource("server-key.fixture"))
-                    .trustBundle(resource("ca-cert.pem"))
-                    .build())
-            .build();
-    return new WorkerSessionServer(configuration, segmentStore);
+    return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
   }
 
   private TranscodeWorker worker(Path mediaRoot, FakeFfmpegProcessManager processManager)
       throws URISyntaxException {
     var configuration =
-        TranscodeWorkerConfiguration.builder()
-            .workerId(WORKER_ID)
-            .bootId(UUID.randomUUID())
+        workerConfigurationBuilder()
             .availableSlots(1)
-            .tlsIdentity(
-                PemTlsIdentity.builder()
-                    .certificate(resource("worker-cert.pem"))
-                    .privateKey(resource("worker-key.fixture"))
-                    .trustBundle(resource("ca-cert.pem"))
-                    .build())
             .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, mediaRoot))
             .segmentBasePath(tempDir.resolve("worker-segments"))
             .build();
-    var engine =
-        new FfmpegTranscodeEngine(
-            new FfmpegCommandBuilder("ffmpeg"),
-            processManager,
-            new TranscodeCapabilityService(
-                "ffmpeg",
-                _ -> {
-                  throw new IllegalStateException("Not used for remux");
-                }));
-    return new TranscodeWorker(configuration, engine);
+    return new TranscodeWorker(configuration, remuxEngine(processManager));
   }
 
   private TranscodeRequest transcodeRequest(UUID streamSessionId, Path mediaFile) {
@@ -238,11 +198,6 @@ class RemoteRecoveryIT extends AbstractIntegrationTest {
         .containerFormat(ContainerFormat.MPEGTS)
         .needsKeyframeAlignment(true)
         .build();
-  }
-
-  private Path resource(String name) throws URISyntaxException {
-    var url = Objects.requireNonNull(getClass().getResource("/tls/" + name));
-    return Path.of(url.toURI());
   }
 
   private static final class FailingFfmpegProcessManager extends FakeFfmpegProcessManager {

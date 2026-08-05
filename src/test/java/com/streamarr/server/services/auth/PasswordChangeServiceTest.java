@@ -87,6 +87,35 @@ class PasswordChangeServiceTest {
     assertThat(tokenRepository.findAll()).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should reject a password change when the caller session belongs to another account")
+  void shouldRejectPasswordChangeWhenCallerSessionBelongsToAnotherAccount() {
+    var currentPassword = UUID.randomUUID().toString();
+    var originalPasswordHash = passwordEncoder.encode(currentPassword);
+    var account =
+        accountRepository.save(
+            AccountFixture.defaultAccountBuilder().passwordHash(originalPasswordHash).build());
+    var otherAccount = accountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var otherAccountSession =
+        sessionRepository.save(
+            AuthSession.builder()
+                .accountId(otherAccount.getId())
+                .deviceName("another-account")
+                .build());
+    var command =
+        commandBuilder()
+            .accountId(account.getId())
+            .sessionId(otherAccountSession.getId())
+            .currentPassword(currentPassword)
+            .build();
+
+    assertThatThrownBy(() -> service.changePassword(command))
+        .isInstanceOf(AuthenticationRequiredException.class);
+    assertThat(accountRepository.findById(account.getId()).orElseThrow().getPasswordHash())
+        .isEqualTo(originalPasswordHash);
+    assertThat(tokenRepository.findAll()).isEmpty();
+  }
+
   private ChangePasswordCommand.ChangePasswordCommandBuilder commandBuilder() {
     return ChangePasswordCommand.builder()
         .currentPassword(UUID.randomUUID().toString())

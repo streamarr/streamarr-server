@@ -1,22 +1,21 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
-import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
-import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.fixtures.StreamingRigFixture;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,7 +39,7 @@ class ProducerLifecycleServiceTest {
     segmentStore = new FakeSegmentStore();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
     lifecycle =
-        ProducerLifecycleService.builder()
+        StreamingRigFixture.streamingRigBuilder()
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)
             .properties(
@@ -50,8 +49,8 @@ class ProducerLifecycleServiceTest {
                     .sessionTimeout(Duration.ofSeconds(60))
                     .build())
             .runtimeRegistry(runtimeRegistry)
-            .sessionMutex(new MutexFactory<>())
-            .build();
+            .build()
+            .lifecycle();
   }
 
   private StreamSession startedSession() {
@@ -62,23 +61,7 @@ class ProducerLifecycleServiceTest {
   }
 
   private StreamSession startedAbrSession() {
-    var session =
-        defaultSessionBuilder()
-            .variants(
-                List.of(
-                    defaultVariantBuilder()
-                        .width(1920)
-                        .height(1080)
-                        .videoBitrate(5_000_000L)
-                        .label("1080p")
-                        .build(),
-                    defaultVariantBuilder()
-                        .width(1280)
-                        .height(720)
-                        .videoBitrate(3_000_000L)
-                        .label("720p")
-                        .build()))
-            .build();
+    var session = abrSessionBuilder().build();
     runtimeRegistry.save(session);
     lifecycle.startAll(session, 0, 0);
     return session;
@@ -92,7 +75,7 @@ class ProducerLifecycleServiceTest {
   }
 
   private void suspendHandle(StreamSession session) {
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    session.setHandle(mintHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
   }
 
@@ -106,18 +89,6 @@ class ProducerLifecycleServiceTest {
 
     // Segments are addressed on the absolute timeline, so earlier segments stay valid.
     assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.ts")).isTrue();
-  }
-
-  @Test
-  @DisplayName("Should restart FFmpeg when segment is missing from suspended session")
-  void shouldRestartFfmpegWhenSegmentIsMissingFromSuspendedSession() {
-    var session = startedSession();
-    suspendHandle(session);
-
-    lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
-
-    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isTrue();
-    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @Test
@@ -165,7 +136,12 @@ class ProducerLifecycleServiceTest {
 
   @ParameterizedTest(name = "{0} → startNumber={1}, seek={2}")
   @DisplayName("Should resume with correct start number when segment name encodes an index")
-  @CsvSource({"segment5.ts, 5, 30", "segment12.m4s, 12, 72", "720p/segment3.ts, 3, 18"})
+  @CsvSource({
+    "segment0.ts, 0, 0",
+    "segment5.ts, 5, 30",
+    "segment12.m4s, 12, 72",
+    "720p/segment3.ts, 3, 18"
+  })
   void shouldResumeWithCorrectStartNumberWhenSegmentNameEncodesIndex(
       String segmentName, int startNumber, int seekPosition) {
     var session = startedSession();
@@ -173,6 +149,8 @@ class ProducerLifecycleServiceTest {
 
     lifecycle.ensurePositioned(session.getSessionId(), segmentName);
 
+    assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
+        .isTrue();
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.startSequenceNumber()).isEqualTo(startNumber);
@@ -220,27 +198,13 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should resume at beginning when segment is first")
-  void shouldResumeAtBeginningWhenSegmentIsFirst() {
-    var session = startedSession();
-    suspendHandle(session);
-
-    lifecycle.ensurePositioned(session.getSessionId(), "segment0.ts");
-
-    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
-    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lastRequest.startSequenceNumber()).isZero();
-    assertThat(lastRequest.seekPosition()).isZero();
-  }
-
-  @Test
   @DisplayName("Should restart all variant transcodes when ABR session is resumed")
   void shouldRestartAllVariantTranscodesWhenAbrSessionIsResumed() {
     var session = startedAbrSession();
     var variantLabels = session.getVariants().stream().map(v -> v.label()).toList();
 
     for (var label : variantLabels) {
-      session.setVariantHandle(label, new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+      session.setVariantHandle(label, mintHandle(1L, TranscodeStatus.SUSPENDED));
       transcodeExecutor.markDead(session.getSessionId(), label);
     }
 
@@ -327,20 +291,6 @@ class ProducerLifecycleServiceTest {
     lifecycle.ensurePositioned(session.getSessionId(), "segment10.ts");
 
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
-  }
-
-  @Test
-  @DisplayName("Should resume at the absolute segment position when resuming")
-  void shouldResumeAtTheAbsoluteSegmentPositionWhenResuming() {
-    var session = startedSession();
-    suspendHandle(session);
-
-    lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
-
-    // The timeline is absolute: segment5 always covers [30s, 36s).
-    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lastRequest.seekPosition()).isEqualTo(30);
-    assertThat(lastRequest.startSequenceNumber()).isEqualTo(5);
   }
 
   @Test
@@ -443,7 +393,8 @@ class ProducerLifecycleServiceTest {
     assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
     assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
     assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptBefore);
-    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isTrue();
+    assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
+        .isTrue();
   }
 
   @Test
@@ -469,13 +420,13 @@ class ProducerLifecycleServiceTest {
     lifecycle.suspend(session.getSessionId());
 
     var result =
-        lifecycle.markExhausted(
+        lifecycle.tryMarkExhausted(
             session.getSessionId(),
             StreamSession.defaultVariant(),
             session.getHandle().orElseThrow().attemptId());
 
     // Reached only when nothing — not even a resume — can produce the segment.
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ExhaustResult.Exhausted.class);
+    assertThat(result).isTrue();
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
   }
 
@@ -557,11 +508,11 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should supersede exhaustion when the session was destroyed")
   void shouldSupersedeExhaustionWhenTheSessionWasDestroyed() {
     var result =
-        lifecycle.markExhausted(
+        lifecycle.tryMarkExhausted(
             UUID.randomUUID(), StreamSession.defaultVariant(), UUID.randomUUID());
 
     // A destroy racing recovery must never be reported as a fresh exhaustion.
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ExhaustResult.Superseded.class);
+    assertThat(result).isFalse();
   }
 
   @Test
@@ -625,11 +576,11 @@ class ProducerLifecycleServiceTest {
   void shouldReplaceFailedHandleWithMatchingAttemptForTheNewTargetReset() {
     var session = startedSession();
     var exhausted =
-        lifecycle.markExhausted(
+        lifecycle.tryMarkExhausted(
             session.getSessionId(),
             StreamSession.defaultVariant(),
             session.getHandle().orElseThrow().attemptId());
-    assertThat(exhausted).isInstanceOf(ProducerLifecycleService.ExhaustResult.Exhausted.class);
+    assertThat(exhausted).isTrue();
 
     var result = lifecycle.replaceProducer(replaceCommand(session).build());
 
@@ -656,17 +607,18 @@ class ProducerLifecycleServiceTest {
     var session = startedSession();
 
     var result =
-        lifecycle.markExhausted(
+        lifecycle.tryMarkExhausted(
             session.getSessionId(),
             StreamSession.defaultVariant(),
             session.getHandle().orElseThrow().attemptId());
 
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ExhaustResult.Exhausted.class);
+    assertThat(result).isTrue();
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
     // FAILED promises "no producer": the final stalled-but-alive attempt must not keep running.
     assertThat(transcodeExecutor.getStoppedVariants())
         .contains(session.getSessionId() + "/" + StreamSession.defaultVariant());
-    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isFalse();
+    assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
+        .isFalse();
   }
 
   @Test
@@ -678,11 +630,11 @@ class ProducerLifecycleServiceTest {
     lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
 
     var result =
-        lifecycle.markExhausted(
+        lifecycle.tryMarkExhausted(
             session.getSessionId(), StreamSession.defaultVariant(), staleAttempt);
 
     // The resumed producer must never inherit a stale 503.
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ExhaustResult.Superseded.class);
+    assertThat(result).isFalse();
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
@@ -694,6 +646,7 @@ class ProducerLifecycleServiceTest {
     lifecycle.stopForDestroy(session.getSessionId());
 
     assertThat(transcodeExecutor.getStopped()).contains(session.getSessionId());
-    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isFalse();
+    assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
+        .isFalse();
   }
 }

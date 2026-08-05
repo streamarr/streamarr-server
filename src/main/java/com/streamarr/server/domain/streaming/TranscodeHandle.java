@@ -19,14 +19,6 @@ public record TranscodeHandle(
     Objects.requireNonNull(status, "status is required");
   }
 
-  public TranscodeHandle(long processId, TranscodeStatus status) {
-    this(processId, status, 0);
-  }
-
-  public TranscodeHandle(long processId, TranscodeStatus status, int startSequenceNumber) {
-    this(OptionalLong.of(processId), UUID.randomUUID(), status, startSequenceNumber);
-  }
-
   public TranscodeHandle(
       long processId, UUID attemptId, TranscodeStatus status, int startSequenceNumber) {
     this(OptionalLong.of(processId), attemptId, status, startSequenceNumber);

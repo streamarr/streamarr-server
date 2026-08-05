@@ -3,7 +3,6 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
-import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import java.time.Clock;
@@ -37,9 +36,6 @@ public class PlaybackTokenIssuer {
 
   public AccessToken issue(
       AuthenticatedIdentity identity, StreamSession streamSession, Duration validity) {
-    if (identity.profileId() == null || identity.householdId() == null) {
-      throw new ProfileRequiredException();
-    }
     if (!authorityGate.allows(identity.playbackAuthority())) {
       throw new AuthenticationRequiredException();
     }

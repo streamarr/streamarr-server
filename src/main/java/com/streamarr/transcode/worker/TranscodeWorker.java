@@ -29,6 +29,8 @@ import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.ManagedChannel;
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
+import io.grpc.stub.ClientCallStreamObserver;
+import io.grpc.stub.ClientResponseObserver;
 import io.grpc.stub.StreamObserver;
 import java.io.IOException;
 import java.io.InputStream;
@@ -253,22 +255,32 @@ public final class TranscodeWorker implements AutoCloseable {
       throws IOException, InterruptedException, ExecutionException, TimeoutException {
     var segmentLength = Files.size(segmentPath);
     var response = new CompletableFuture<UploadSegmentResponse>();
-    var upload =
-        TranscodeWorkerServiceGrpc.newStub(channel)
-            .uploadSegment(new SegmentUploadResponseObserver(response));
-    upload.onNext(
-        UploadSegmentRequest.newBuilder()
-            .setMetadata(segmentMetadata(job, segmentName, segmentLength))
-            .build());
-    try (InputStream input = Files.newInputStream(segmentPath)) {
-      byte[] chunk;
-      while ((chunk = input.readNBytes(SEGMENT_CHUNK_BYTES)).length > 0) {
-        upload.onNext(
-            UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(chunk)).build());
+    var responseObserver = new SegmentUploadResponseObserver(response);
+    var upload = TranscodeWorkerServiceGrpc.newStub(channel).uploadSegment(responseObserver);
+    UploadSegmentResponse accepted;
+    try {
+      upload.onNext(
+          UploadSegmentRequest.newBuilder()
+              .setMetadata(segmentMetadata(job, segmentName, segmentLength))
+              .build());
+      try (InputStream input = Files.newInputStream(segmentPath)) {
+        byte[] chunk;
+        while ((chunk = input.readNBytes(SEGMENT_CHUNK_BYTES)).length > 0) {
+          upload.onNext(
+              UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(chunk)).build());
+        }
       }
+      upload.onCompleted();
+      accepted = response.get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    } catch (IOException
+        | InterruptedException
+        | ExecutionException
+        | TimeoutException
+        | RuntimeException failure) {
+      responseObserver.cancel(failure);
+      throw failure;
     }
-    upload.onCompleted();
-    var accepted = response.get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
     if (accepted.getAcceptedLengthBytes() != segmentLength) {
       throw new WorkerJobException("Server accepted an incomplete segment");
     }
@@ -318,22 +330,14 @@ public final class TranscodeWorker implements AutoCloseable {
   }
 
   private static String segmentName(VariantJob job, int segmentNumber) {
-    var extension =
-        switch (job.getDecision().getContainer()) {
-          case CONTAINER_FORMAT_MPEG_TS -> ".ts";
-          case CONTAINER_FORMAT_FMP4 -> ".m4s";
-          case CONTAINER_FORMAT_UNSPECIFIED, UNRECOGNIZED ->
-              throw new WorkerJobException("Container format is required");
-        };
-    return "segment" + segmentNumber + extension;
+    var container = WorkerVariantJobMapper.container(job.getDecision().getContainer());
+    return "segment" + segmentNumber + container.segmentExtension();
   }
 
   private static SegmentContentType contentType(VariantJob job) {
-    return switch (job.getDecision().getContainer()) {
-      case CONTAINER_FORMAT_MPEG_TS -> SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T;
-      case CONTAINER_FORMAT_FMP4 -> SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4;
-      case CONTAINER_FORMAT_UNSPECIFIED, UNRECOGNIZED ->
-          throw new WorkerJobException("Container format is required");
+    return switch (WorkerVariantJobMapper.container(job.getDecision().getContainer())) {
+      case MPEGTS -> SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T;
+      case FMP4 -> SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4;
     };
   }
 
@@ -478,7 +482,9 @@ public final class TranscodeWorker implements AutoCloseable {
       }
       if (response.hasStopVariant()) {
         stopVariant(response.getStopVariant());
+        return;
       }
+      log.warn("Worker received unexpected control command {}", response.getCommandCase());
     }
 
     @Override
@@ -500,8 +506,24 @@ public final class TranscodeWorker implements AutoCloseable {
     }
   }
 
-  private record SegmentUploadResponseObserver(CompletableFuture<UploadSegmentResponse> response)
-      implements StreamObserver<UploadSegmentResponse> {
+  private static final class SegmentUploadResponseObserver
+      implements ClientResponseObserver<UploadSegmentRequest, UploadSegmentResponse> {
+
+    private final CompletableFuture<UploadSegmentResponse> response;
+    private ClientCallStreamObserver<UploadSegmentRequest> call;
+
+    private SegmentUploadResponseObserver(CompletableFuture<UploadSegmentResponse> response) {
+      this.response = response;
+    }
+
+    @Override
+    public void beforeStart(ClientCallStreamObserver<UploadSegmentRequest> call) {
+      this.call = call;
+    }
+
+    private void cancel(Throwable failure) {
+      call.cancel("Segment upload failed", failure);
+    }
 
     @Override
     public void onNext(UploadSegmentResponse value) {

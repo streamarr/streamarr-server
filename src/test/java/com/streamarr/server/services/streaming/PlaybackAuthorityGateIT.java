@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountProfile;
+import com.streamarr.server.domain.auth.HouseholdMembership;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
@@ -58,6 +60,34 @@ class PlaybackAuthorityGateIT extends AbstractIntegrationTest {
   @DisplayName("Should allow current playback authority")
   void shouldAllowCurrentPlaybackAuthority() {
     assertThat(authorityGate.allows(authority)).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should deny prior playback authority after the session switches active profile")
+  void shouldDenyPriorPlaybackAuthorityAfterSessionSwitchesActiveProfile() {
+    var alternate = authTestSupport.createIdentity();
+    try {
+      membershipRepository.grantMembership(
+          HouseholdMembership.builder()
+              .accountId(identity.account().getId())
+              .householdId(alternate.household().getId())
+              .householdRole(HouseholdRole.MEMBER)
+              .build());
+      accountProfileRepository.linkProfile(
+          AccountProfile.builder()
+              .accountId(identity.account().getId())
+              .householdId(alternate.household().getId())
+              .profileId(alternate.profile().getId())
+              .build());
+      identity.session().setActiveHouseholdId(alternate.household().getId());
+      identity.session().setActiveProfileId(alternate.profile().getId());
+
+      assertThat(authSessionRepository.updateSelectionIfLive(identity.session(), Instant.now()))
+          .isTrue();
+      assertThat(authorityGate.allows(authority)).isFalse();
+    } finally {
+      authTestSupport.deleteIdentity(alternate);
+    }
   }
 
   @ParameterizedTest
@@ -134,7 +164,7 @@ class PlaybackAuthorityGateIT extends AbstractIntegrationTest {
   }
 
   private <T> T awaitThen(CyclicBarrier barrier, Callable<T> action) throws Exception {
-    barrier.await();
+    barrier.await(5, TimeUnit.SECONDS);
     return action.call();
   }
 

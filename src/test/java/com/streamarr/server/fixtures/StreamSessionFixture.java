@@ -36,6 +36,24 @@ public final class StreamSessionFixture {
         .createdAt(Instant.now());
   }
 
+  public static StreamSession.StreamSessionBuilder abrSessionBuilder() {
+    return defaultSessionBuilder()
+        .variants(
+            List.of(
+                defaultVariantBuilder()
+                    .width(1920)
+                    .height(1080)
+                    .videoBitrate(5_000_000L)
+                    .label("1080p")
+                    .build(),
+                defaultVariantBuilder()
+                    .width(1280)
+                    .height(720)
+                    .videoBitrate(3_000_000L)
+                    .label("720p")
+                    .build()));
+  }
+
   public static MediaProbe.MediaProbeBuilder defaultProbeBuilder() {
     return MediaProbe.builder()
         .duration(Duration.ofMinutes(120))
@@ -102,9 +120,13 @@ public final class StreamSessionFixture {
     return QualityVariant.builder().audioBitrate(128_000L);
   }
 
+  public static TranscodeHandle mintHandle(long processId, TranscodeStatus status) {
+    return new TranscodeHandle(processId, UUID.randomUUID(), status, 0);
+  }
+
   public static StreamSession withActiveVariantHandles(StreamSession session) {
     for (var variant : session.getVariants()) {
-      session.setVariantHandle(variant.label(), new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+      session.setVariantHandle(variant.label(), mintHandle(1L, TranscodeStatus.ACTIVE));
     }
     return session;
   }
@@ -115,7 +137,7 @@ public final class StreamSessionFixture {
 
   public static StreamSession buildMpegtsSessionOwnedBy(UUID profileId) {
     var session = defaultSessionBuilder().authority(playbackAuthorityFor(profileId)).build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    session.setHandle(mintHandle(1L, TranscodeStatus.ACTIVE));
     return session;
   }
 

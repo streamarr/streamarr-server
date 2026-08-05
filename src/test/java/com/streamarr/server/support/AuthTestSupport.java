@@ -13,23 +13,28 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.CreateAuthSessionCommand;
+import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.TokenContext;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
@@ -40,7 +45,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @RequiredArgsConstructor
 public class AuthTestSupport {
 
-  public static final String PASSWORD = "correct horse battery staple";
+  private final String password = UUID.randomUUID().toString();
 
   private final UserAccountRepository userAccountRepository;
   private final HouseholdRepository householdRepository;
@@ -50,6 +55,8 @@ public class AuthTestSupport {
   private final RefreshTokenService refreshTokenService;
   private final AccessTokenIssuer accessTokenIssuer;
   private final AccessTokenIssuer expiredTokenIssuer;
+  private final JwtDecoder jwtDecoder;
+  private final PlaybackTokenIssuer playbackTokenIssuer;
   private final PasswordEncoder passwordEncoder;
 
   public TestIdentity createIdentity() {
@@ -60,12 +67,16 @@ public class AuthTestSupport {
     return createIdentity(AccountRole.ADMIN);
   }
 
+  public String password() {
+    return password;
+  }
+
   private TestIdentity createIdentity(AccountRole role) {
     var account =
         userAccountRepository.save(
             AccountFixture.defaultAccountBuilder()
                 .accountRole(role)
-                .passwordHash(passwordEncoder.encode(PASSWORD))
+                .passwordHash(passwordEncoder.encode(password))
                 .build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
     membershipRepository.grantMembership(
@@ -116,6 +127,19 @@ public class AuthTestSupport {
     return accessTokenIssuer.issue(contextBuilder(identity).build()).value();
   }
 
+  public String playbackBearer(TestIdentity identity, UUID streamSessionId) {
+    var authenticatedIdentity =
+        AuthenticatedIdentity.fromJwt(jwtDecoder.decode(profileBearer(identity)));
+    var ownedSession =
+        StreamSessionFixture.defaultSessionBuilder()
+            .sessionId(streamSessionId)
+            .authority(authenticatedIdentity.playbackAuthority())
+            .build();
+    return playbackTokenIssuer
+        .issue(authenticatedIdentity, ownedSession, Duration.ofHours(1))
+        .value();
+  }
+
   /** A well-formed profile token whose lifetime already elapsed — minted on a fixed past clock. */
   public String expiredProfileBearer(TestIdentity identity) {
     return expiredTokenIssuer.issue(contextBuilder(identity).build()).value();
@@ -137,7 +161,6 @@ public class AuthTestSupport {
   static AccessTokenIssuer expiredIssuer(
       AuthTokenProperties properties,
       HouseholdMembershipRepository membershipRepository,
-      ProfileRepository profileRepository,
       AccountProfileRepository accountProfileRepository) {
     var cryptoConfig = new TokenCryptoConfig();
     // Rewind past the configured TTL so the minted token is expired even when
@@ -151,7 +174,6 @@ public class AuthTestSupport {
         properties,
         pastClock,
         membershipRepository,
-        profileRepository,
         accountProfileRepository);
   }
 

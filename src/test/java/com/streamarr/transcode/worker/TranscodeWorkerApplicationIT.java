@@ -1,12 +1,12 @@
 package com.streamarr.transcode.worker;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.tlsResource;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
-import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
-import com.streamarr.transcode.tls.PemTlsIdentity;
 import java.lang.management.ManagementFactory;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
@@ -15,7 +15,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
@@ -94,9 +93,9 @@ class TranscodeWorkerApplicationIT {
                 "TRANSCODE_WORKER_ID", WORKER_ID.toString(),
                 "TRANSCODE_WORKER_SOURCE_NAMESPACE_ID", SOURCE_NAMESPACE_ID.toString(),
                 "TRANSCODE_WORKER_SOURCE_ROOT", tempDir.toString(),
-                "TRANSCODE_WORKER_TLS_CERTIFICATE", resource("worker-cert.pem").toString(),
-                "TRANSCODE_WORKER_TLS_PRIVATE_KEY", resource("worker-key.fixture").toString(),
-                "TRANSCODE_WORKER_TLS_TRUST_BUNDLE", resource("ca-cert.pem").toString(),
+                "TRANSCODE_WORKER_TLS_CERTIFICATE", tlsResource("worker-cert.pem").toString(),
+                "TRANSCODE_WORKER_TLS_PRIVATE_KEY", tlsResource("worker-key.fixture").toString(),
+                "TRANSCODE_WORKER_TLS_TRUST_BUNDLE", tlsResource("ca-cert.pem").toString(),
                 "TRANSCODE_WORKER_FFMPEG_PATH", ffmpeg.toString()));
     return process;
   }
@@ -122,18 +121,7 @@ class TranscodeWorkerApplicationIT {
   }
 
   private WorkerSessionServer server() throws URISyntaxException {
-    var configuration =
-        WorkerSessionServerConfiguration.builder()
-            .port(0)
-            .trustDomain("streamarr.test")
-            .tlsIdentity(
-                PemTlsIdentity.builder()
-                    .certificate(resource("server-cert.pem"))
-                    .privateKey(resource("server-key.fixture"))
-                    .trustBundle(resource("ca-cert.pem"))
-                    .build())
-            .build();
-    return new WorkerSessionServer(configuration, new FakeSegmentStore());
+    return new WorkerSessionServer(serverConfigurationBuilder().build(), new FakeSegmentStore());
   }
 
   private String failureOutput(Process process) {
@@ -145,10 +133,5 @@ class TranscodeWorkerApplicationIT {
     } catch (Exception e) {
       return e.getMessage();
     }
-  }
-
-  private Path resource(String name) throws URISyntaxException {
-    var url = Objects.requireNonNull(getClass().getResource("/tls/" + name));
-    return Path.of(url.toURI());
   }
 }

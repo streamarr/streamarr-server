@@ -69,6 +69,21 @@ docker compose \
   up -d
 ----
 
+Hardware transcoding is a separate opt-in overlay. Find the numeric group id that owns the host's
+`/dev/dri/render*` device, export it as `STREAMARR_RENDER_GID`, and add the hardware file:
+
+[source,bash]
+----
+STREAMARR_RENDER_GID=109 docker compose \
+  -f docker-compose.yml \
+  -f deploy/compose/distributed-transcoding.yml \
+  -f deploy/compose/hardware-transcoding.yml \
+  up -d
+----
+
+The group id is host-specific; `109` is only an example. The overlay passes `/dev/dri` only to the
+worker and leaves the default local-only and distributed CPU paths unchanged.
+
 The release image exposes `web` as its default process and `worker` as a second Cloud Native Buildpacks process type.
 To add Compose workers, give every worker a distinct UUID and matching certificate; duplicating the example service unchanged intentionally replaces the prior connection for that identity.
 
@@ -96,6 +111,21 @@ Apply the adapted manifest with:
 ----
 kubectl apply -f deploy/kubernetes/distributed-transcoding.yaml
 ----
+
+For direct-rendering hardware on Kubernetes nodes, first edit the example group id in
+`deploy/kubernetes/hardware-transcoding-patch.yaml` to match the group that owns
+`/dev/dri/render*` on those nodes. After applying the base manifest, opt in with:
+
+[source,bash]
+----
+kubectl patch deployment streamarr-transcode-worker \
+  --type strategic \
+  --patch-file deploy/kubernetes/hardware-transcoding-patch.yaml
+----
+
+The patch mounts the node's `/dev/dri` directory only into worker pods. A device plugin is usually
+preferable in a heterogeneous or managed cluster; use its advertised resource instead of this
+host-path example when one is installed.
 
 The manifest uses cert-manager only as an example external issuer adapter.
 Static Secrets, Vault, a cloud CA, or another platform mechanism are equally valid when they mount the same three PEM files and preserve the worker URI identity contract.

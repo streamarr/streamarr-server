@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -29,6 +30,7 @@ import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -40,6 +42,27 @@ import org.slf4j.LoggerFactory;
 @Tag("UnitTest")
 @DisplayName("Worker Session gRPC Service Tests")
 class WorkerSessionGrpcServiceTest {
+
+  @Test
+  @DisplayName("Should retry registration when sending the acceptance response fails")
+  void shouldRetryRegistrationWhenSendingAcceptanceResponseFails() throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var registry = new LiveWorkerConnectionRegistry();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var session = workerSession(service, workerId, new FailingOnceResponseObserver());
+    var registration =
+        EstablishWorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build();
+
+    assertThatThrownBy(() -> session.onNext(registration))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("Simulated response delivery failure");
+    session.onNext(registration);
+
+    assertThat(registry.hasConnectedWorker(sourceNamespaceId)).isTrue();
+  }
 
   @Test
   @DisplayName("Should log the reported failure reason when a worker fails a job attempt")
@@ -70,7 +93,7 @@ class WorkerSessionGrpcServiceTest {
       detach(warnings);
     }
 
-    assertThat(registry.isRunning(streamSessionId)).isFalse();
+    assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isFalse();
     assertThat(warnings.list)
         .extracting(ILoggingEvent::getFormattedMessage)
         .anyMatch(
@@ -206,6 +229,48 @@ class WorkerSessionGrpcServiceTest {
   }
 
   @Test
+  @DisplayName("Should preserve every byte when a segment arrives in multiple frames")
+  void shouldPreserveEveryByteWhenSegmentArrivesInMultipleFrames() throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var worker = worker(workerId);
+    var registry = new LiveWorkerConnectionRegistry();
+    var workerSessionId =
+        registry.register(
+            workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isTrue();
+    var segmentStore = new FakeSegmentStore();
+    var service = new WorkerSessionGrpcService(registry, segmentStore);
+    var response = new SuccessfulUploadResponseObserver();
+    var firstFrame = new byte[64 * 1024];
+    Arrays.fill(firstFrame, (byte) 1);
+    var secondFrame = new byte[4096];
+    Arrays.fill(secondFrame, (byte) 2);
+    var segmentData = ByteString.copyFrom(firstFrame).concat(ByteString.copyFrom(secondFrame));
+    var upload = upload(service, workerId, response);
+
+    upload.onNext(
+        UploadSegmentRequest.newBuilder()
+            .setMetadata(metadata(workerSessionId, worker, job, segmentData.size()))
+            .build());
+    upload.onNext(
+        UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(firstFrame)).build());
+    upload.onNext(
+        UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(secondFrame)).build());
+    upload.onCompleted();
+
+    assertThat(response.error()).isNull();
+    assertThat(response.completed()).isTrue();
+    assertThat(response.response().getAcceptedLengthBytes()).isEqualTo(segmentData.size());
+    assertThat(
+            segmentStore.readSegment(
+                fromProto(job.getStreamSessionId()),
+                job.getVariant().getVariantLabel() + "/segment0.ts"))
+        .isEqualTo(segmentData.toByteArray());
+  }
+
+  @Test
   @DisplayName("Should reject an upload when ownership is lost during publication")
   void shouldRejectUploadWhenOwnershipIsLostDuringPublication() throws Exception {
     var segmentStore = new BlockingSegmentStore();
@@ -276,7 +341,7 @@ class WorkerSessionGrpcServiceTest {
   private static StreamObserver<UploadSegmentRequest> upload(
       WorkerSessionGrpcService service,
       UUID workerId,
-      RecordingUploadResponseObserver responseObserver)
+      StreamObserver<UploadSegmentResponse> responseObserver)
       throws Exception {
     return Context.current()
         .withValue(WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID, workerId)
@@ -378,6 +443,41 @@ class WorkerSessionGrpcServiceTest {
     }
   }
 
+  private static final class SuccessfulUploadResponseObserver
+      implements StreamObserver<UploadSegmentResponse> {
+
+    private UploadSegmentResponse response;
+    private Throwable error;
+    private boolean completed;
+
+    @Override
+    public void onNext(UploadSegmentResponse value) {
+      response = value;
+    }
+
+    @Override
+    public void onError(Throwable throwable) {
+      error = throwable;
+    }
+
+    @Override
+    public void onCompleted() {
+      completed = true;
+    }
+
+    private UploadSegmentResponse response() {
+      return response;
+    }
+
+    private Throwable error() {
+      return error;
+    }
+
+    private boolean completed() {
+      return completed;
+    }
+  }
+
   private static final class IgnoringResponseObserver
       implements StreamObserver<EstablishWorkerSessionResponse> {
 
@@ -397,6 +497,32 @@ class WorkerSessionGrpcServiceTest {
     @Override
     public void onCompleted() {
       throw new AssertionError("Registered worker should remain connected");
+    }
+  }
+
+  private static final class FailingOnceResponseObserver
+      implements StreamObserver<EstablishWorkerSessionResponse> {
+
+    private boolean failed;
+
+    @Override
+    public void onNext(EstablishWorkerSessionResponse value) {
+      if (!failed) {
+        failed = true;
+        throw new IllegalStateException("Simulated response delivery failure");
+      }
+      assertThat(value.getCommandCase())
+          .isEqualTo(EstablishWorkerSessionResponse.CommandCase.SESSION_ACCEPTED);
+    }
+
+    @Override
+    public void onError(Throwable throwable) {
+      throw new AssertionError("Registration retry should remain connected", throwable);
+    }
+
+    @Override
+    public void onCompleted() {
+      throw new AssertionError("Registration retry should remain connected");
     }
   }
 }

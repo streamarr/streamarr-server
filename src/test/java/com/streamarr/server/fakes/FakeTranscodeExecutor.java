@@ -95,11 +95,6 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public boolean isRunning(UUID sessionId) {
-    return running.stream().anyMatch(key -> key.sessionId().equals(sessionId));
-  }
-
-  @Override
   public boolean isRunning(UUID sessionId, String variantLabel) {
     livenessChecks.incrementAndGet();
     return running.contains(new ProcessKey(sessionId, variantLabel));

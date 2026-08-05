@@ -5,7 +5,6 @@ import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
-import com.streamarr.server.repositories.auth.ProfileRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -27,7 +26,6 @@ public class AccessTokenIssuer {
   private final AuthTokenProperties properties;
   private final Clock clock;
   private final HouseholdMembershipRepository membershipRepository;
-  private final ProfileRepository profileRepository;
   private final AccountProfileRepository accountProfileRepository;
 
   public AccessToken issue(TokenContext context) {
@@ -113,8 +111,6 @@ public class AccessTokenIssuer {
         .findByAccountIdAndHouseholdIdAndProfileId(
             context.account().getId(), context.householdId(), context.profileId())
         .orElseThrow(ProfileAccessDeniedException::new);
-
-    profileRepository.findById(context.profileId()).orElseThrow(ProfileAccessDeniedException::new);
 
     claims.claim(TokenClaims.PROFILE_ID, context.profileId().toString());
   }

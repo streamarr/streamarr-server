@@ -1,5 +1,10 @@
 package com.streamarr.transcode.worker;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
+import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
+import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
@@ -11,13 +16,8 @@ import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
 import com.streamarr.server.services.streaming.SegmentStore;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
-import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
-import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
-import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
 import com.streamarr.transcode.v1.ContainerFormat;
@@ -27,19 +27,16 @@ import com.streamarr.transcode.v1.SubtitleMode;
 import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.TranscodeMode;
-import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import io.grpc.StatusRuntimeException;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -59,24 +56,10 @@ class TranscodeWorkerIT {
 
   @TempDir Path tempDir;
 
-  @Test
-  @DisplayName("Should run a dispatched variant through the shared FFmpeg engine")
-  void shouldRunDispatchedVariantThroughSharedFfmpegEngine() throws Exception {
+  private Path preparedMediaRoot() throws IOException {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var processManager = new FakeFfmpegProcessManager();
-    var streamSessionId = UUID.randomUUID();
-
-    try (var server = server();
-        var worker = worker(processManager, mediaRoot)) {
-      server.start();
-      worker.start("localhost", server.port());
-
-      assertThat(server.dispatch(variantJob(streamSessionId))).isTrue();
-      await()
-          .atMost(5, TimeUnit.SECONDS)
-          .until(() -> processManager.getStarted().contains(streamSessionId));
-    }
+    return mediaRoot;
   }
 
   @Test
@@ -99,8 +82,7 @@ class TranscodeWorkerIT {
   @Test
   @DisplayName("Should stop its running variant when the worker closes")
   void shouldStopRunningVariantWhenWorkerCloses() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaRoot = preparedMediaRoot();
     var processManager = new FakeFfmpegProcessManager();
     var streamSessionId = UUID.randomUUID();
 
@@ -122,8 +104,7 @@ class TranscodeWorkerIT {
   @Test
   @DisplayName("Should log the unreported job failure when the worker closes mid-upload")
   void shouldLogTheUnreportedJobFailureWhenTheWorkerClosesMidUpload() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaRoot = preparedMediaRoot();
     var processManager =
         new FakeSegmentProducingFfmpegProcessManager("segment0.ts", "segment".getBytes());
     var uploadEntered = new CountDownLatch(1);
@@ -167,8 +148,7 @@ class TranscodeWorkerIT {
   @Test
   @DisplayName("Should log abandoned job attempts when the control plane disconnects")
   void shouldLogAbandonedJobAttemptsWhenTheControlPlaneDisconnects() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaRoot = preparedMediaRoot();
     var processManager = new FakeFfmpegProcessManager();
     var streamSessionId = UUID.randomUUID();
     var appender = attachWorkerAppender();
@@ -196,27 +176,24 @@ class TranscodeWorkerIT {
   }
 
   @Test
-  @DisplayName("Should stop its running variant when the control plane disconnects")
-  void shouldStopRunningVariantWhenControlPlaneDisconnects() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var processManager = new FakeFfmpegProcessManager();
+  @DisplayName("Should stop a just-started variant before deleting its output on disconnect")
+  void shouldStopJustStartedVariantBeforeDeletingItsOutputOnDisconnect() throws Exception {
+    var mediaRoot = preparedMediaRoot();
     var streamSessionId = UUID.randomUUID();
+    var server = server();
+    var processManager = new StartDisconnectingProcessManager(server);
 
-    try (var server = server();
+    try (server;
         var worker = worker(processManager, mediaRoot)) {
       server.start();
       worker.start("localhost", server.port());
+
       assertThat(server.dispatch(variantJob(streamSessionId))).isTrue();
-      await()
-          .atMost(5, TimeUnit.SECONDS)
-          .until(() -> processManager.getStarted().contains(streamSessionId));
-
-      server.close();
 
       await()
-          .atMost(5, TimeUnit.SECONDS)
+          .atMost(10, TimeUnit.SECONDS)
           .until(() -> processManager.getStopped().contains(streamSessionId));
+      assertThat(processManager.outputExistedWhenStopped()).isTrue();
     }
   }
 
@@ -242,8 +219,7 @@ class TranscodeWorkerIT {
   @Test
   @DisplayName("Should stop the dispatched variant requested by the control plane")
   void shouldStopDispatchedVariantRequestedByControlPlane() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaRoot = preparedMediaRoot();
     var processManager = new FakeFfmpegProcessManager();
     var streamSessionId = UUID.randomUUID();
     var stoppedJob = variantJob(streamSessionId, "720p");
@@ -262,7 +238,7 @@ class TranscodeWorkerIT {
                   processManager.isRunning(streamSessionId, "720p")
                       && processManager.isRunning(streamSessionId, "1080p"));
 
-      assertThat(server.stopVariant(uuid(stoppedJob.getJobAttemptId()))).isTrue();
+      assertThat(server.stopVariant(streamSessionId, "720p")).isTrue();
 
       await()
           .atMost(5, TimeUnit.SECONDS)
@@ -274,8 +250,7 @@ class TranscodeWorkerIT {
   @Test
   @DisplayName("Should preserve control-plane order when replacing a variant")
   void shouldPreserveControlPlaneOrderWhenReplacingVariant() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaRoot = preparedMediaRoot();
     var processManager = new FakeFfmpegProcessManager();
     var streamSessionId = UUID.randomUUID();
     var currentJob = variantJob(streamSessionId, "720p");
@@ -290,7 +265,7 @@ class TranscodeWorkerIT {
           .until(() -> processManager.isRunning(streamSessionId, "720p"));
 
       for (var replacement = 0; replacement < 100; replacement++) {
-        assertThat(server.stopVariant(uuid(currentJob.getJobAttemptId()))).isTrue();
+        assertThat(server.stopVariant(streamSessionId, "720p")).isTrue();
         currentJob = variantJob(streamSessionId, "720p");
         assertThat(server.dispatch(currentJob)).isTrue();
       }
@@ -305,8 +280,7 @@ class TranscodeWorkerIT {
   @Test
   @DisplayName("Should upload a produced segment through the worker connection")
   void shouldUploadProducedSegmentThroughWorkerConnection() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaRoot = preparedMediaRoot();
     var segmentData = "remote segment".getBytes();
     var processManager = new FakeSegmentProducingFfmpegProcessManager("segment0.ts", segmentData);
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
@@ -332,7 +306,7 @@ class TranscodeWorkerIT {
                   Files.notExists(
                       tempDir
                           .resolve("segments")
-                          .resolve(uuid(job.getJobAttemptId()).toString())
+                          .resolve(fromProto(job.getJobAttemptId()).toString())
                           .resolve("segment0.ts")));
     }
   }
@@ -340,8 +314,7 @@ class TranscodeWorkerIT {
   @Test
   @DisplayName("Should complete a variant after uploading all produced segments")
   void shouldCompleteVariantAfterUploadingAllProducedSegments() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaRoot = preparedMediaRoot();
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
     var processManager =
@@ -354,9 +327,9 @@ class TranscodeWorkerIT {
       worker.start("localhost", server.port());
 
       assertThat(server.dispatch(job)).isTrue();
-      assertThat(server.isRunning(streamSessionId)).isTrue();
+      assertThat(server.isRunning(streamSessionId, "720p")).isTrue();
 
-      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
+      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
       assertThat(segmentStore.readSegment(streamSessionId, "720p/segment0.ts"))
           .isEqualTo("complete segment".getBytes());
       await()
@@ -364,15 +337,16 @@ class TranscodeWorkerIT {
           .until(
               () ->
                   Files.notExists(
-                      tempDir.resolve("segments").resolve(uuid(job.getJobAttemptId()).toString())));
+                      tempDir
+                          .resolve("segments")
+                          .resolve(fromProto(job.getJobAttemptId()).toString())));
     }
   }
 
   @Test
   @DisplayName("Should upload the init segment and media segments for an fMP4 variant")
   void shouldUploadTheInitSegmentAndMediaSegmentsForAnFmp4Variant() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaRoot = preparedMediaRoot();
     var initData = "fmp4 init".getBytes();
     var mediaData = "fmp4 media".getBytes();
     var processManager =
@@ -394,15 +368,14 @@ class TranscodeWorkerIT {
       assertThat(segmentStore.readSegment(streamSessionId, "720p/init.mp4")).isEqualTo(initData);
       assertThat(segmentStore.readSegment(streamSessionId, "720p/segment0.m4s"))
           .isEqualTo(mediaData);
-      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
+      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
     }
   }
 
   @Test
   @DisplayName("Should number uploads from the job's start sequence when resuming mid-timeline")
   void shouldNumberUploadsFromTheJobsStartSequenceWhenResumingMidTimeline() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaRoot = preparedMediaRoot();
     var segmentData = "resumed segment".getBytes();
     var processManager = new EndingFfmpegProcessManager(Map.of("segment7.ts", segmentData));
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
@@ -428,15 +401,14 @@ class TranscodeWorkerIT {
       assertThat(segmentStore.readSegment(streamSessionId, "720p/segment7.ts"))
           .isEqualTo(segmentData);
       assertThat(segmentStore.segmentExists(streamSessionId, "720p/segment0.ts")).isFalse();
-      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
+      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
     }
   }
 
   @Test
   @DisplayName("Should stop a variant when the control plane rejects segment storage")
   void shouldStopVariantWhenControlPlaneRejectsSegmentStorage() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaRoot = preparedMediaRoot();
     var streamSessionId = UUID.randomUUID();
     var processManager =
         new FakeSegmentProducingFfmpegProcessManager("segment0.ts", "segment".getBytes());
@@ -452,7 +424,7 @@ class TranscodeWorkerIT {
       await()
           .atMost(5, TimeUnit.SECONDS)
           .until(() -> processManager.getStopped().contains(streamSessionId));
-      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
+      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
       assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
     }
   }
@@ -460,8 +432,7 @@ class TranscodeWorkerIT {
   @Test
   @DisplayName("Should fail a variant when FFmpeg exits without producing media")
   void shouldFailVariantWhenFfmpegExitsWithoutProducingMedia() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaRoot = preparedMediaRoot();
     var streamSessionId = UUID.randomUUID();
     var processManager = new EndingFfmpegProcessManager(Map.of());
 
@@ -474,17 +445,16 @@ class TranscodeWorkerIT {
               server.dispatch(
                   variantJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS)))
           .isTrue();
-      assertThat(server.isRunning(streamSessionId)).isTrue();
+      assertThat(server.isRunning(streamSessionId, "720p")).isTrue();
 
-      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
+      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
     }
   }
 
   @Test
   @DisplayName("Should release worker capacity when a variant fails to start")
   void shouldReleaseWorkerCapacityWhenVariantFailsToStart() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaRoot = preparedMediaRoot();
     var processManager = new StartupFailingProcessManager();
 
     try (var server = server();
@@ -503,8 +473,7 @@ class TranscodeWorkerIT {
   @Test
   @DisplayName("Should reject malformed variant decisions without poisoning worker capacity")
   void shouldRejectMalformedVariantDecisionsWithoutPoisoningWorkerCapacity() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaRoot = preparedMediaRoot();
     var processManager = new FakeFfmpegProcessManager();
 
     try (var server = server();
@@ -518,14 +487,15 @@ class TranscodeWorkerIT {
             .atMost(5, TimeUnit.SECONDS)
             .until(() -> server.availableSlots(SOURCE_NAMESPACE_ID) == 2);
         assertThat(processManager.getStarted())
-            .doesNotContain(uuid(malformedJob.getStreamSessionId()));
+            .doesNotContain(fromProto(malformedJob.getStreamSessionId()));
       }
 
       var validJob = variantJob(UUID.randomUUID());
       assertThat(server.dispatch(validJob)).isTrue();
       await()
           .atMost(5, TimeUnit.SECONDS)
-          .until(() -> processManager.getStarted().contains(uuid(validJob.getStreamSessionId())));
+          .until(
+              () -> processManager.getStarted().contains(fromProto(validJob.getStreamSessionId())));
     }
   }
 
@@ -534,46 +504,18 @@ class TranscodeWorkerIT {
   }
 
   private WorkerSessionServer server(SegmentStore segmentStore) throws URISyntaxException {
-    var configuration =
-        WorkerSessionServerConfiguration.builder()
-            .port(0)
-            .trustDomain("streamarr.test")
-            .tlsIdentity(
-                PemTlsIdentity.builder()
-                    .certificate(resource("server-cert.pem"))
-                    .privateKey(resource("server-key.fixture"))
-                    .trustBundle(resource("ca-cert.pem"))
-                    .build())
-            .build();
-    return new WorkerSessionServer(configuration, segmentStore);
+    return new WorkerSessionServer(serverConfigurationBuilder().build(), segmentStore);
   }
 
   private TranscodeWorker worker(FakeFfmpegProcessManager processManager, Path mediaRoot)
       throws URISyntaxException {
     var configuration =
-        TranscodeWorkerConfiguration.builder()
-            .workerId(WORKER_ID)
-            .bootId(UUID.randomUUID())
+        workerConfigurationBuilder()
             .availableSlots(2)
-            .tlsIdentity(
-                PemTlsIdentity.builder()
-                    .certificate(resource("worker-cert.pem"))
-                    .privateKey(resource("worker-key.fixture"))
-                    .trustBundle(resource("ca-cert.pem"))
-                    .build())
             .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, mediaRoot))
             .segmentBasePath(tempDir.resolve("segments"))
             .build();
-    var engine =
-        new FfmpegTranscodeEngine(
-            new FfmpegCommandBuilder("ffmpeg"),
-            processManager,
-            new TranscodeCapabilityService(
-                "ffmpeg",
-                _ -> {
-                  throw new IllegalStateException("Not used for remux");
-                }));
-    return new TranscodeWorker(configuration, engine);
+    return new TranscodeWorker(configuration, remuxEngine(processManager));
   }
 
   private VariantJob variantJob(UUID streamSessionId) {
@@ -587,12 +529,12 @@ class TranscodeWorkerIT {
   private VariantJob variantJob(
       UUID streamSessionId, String variantLabel, ContainerFormat containerFormat) {
     return VariantJob.newBuilder()
-        .setStreamSessionId(uuid(streamSessionId))
-        .setJobId(uuid(UUID.randomUUID()))
-        .setJobAttemptId(uuid(UUID.randomUUID()))
+        .setStreamSessionId(toProto(streamSessionId))
+        .setJobId(toProto(UUID.randomUUID()))
+        .setJobAttemptId(toProto(UUID.randomUUID()))
         .setSource(
             MediaSourceRef.newBuilder()
-                .setSourceNamespaceId(uuid(SOURCE_NAMESPACE_ID))
+                .setSourceNamespaceId(toProto(SOURCE_NAMESPACE_ID))
                 .setRelativeKey("movie.mkv"))
         .setDecision(
             TranscodeDecision.newBuilder()
@@ -676,22 +618,6 @@ class TranscodeWorkerIT {
             .build());
   }
 
-  private Uuid uuid(UUID value) {
-    return Uuid.newBuilder()
-        .setMostSignificantBits(value.getMostSignificantBits())
-        .setLeastSignificantBits(value.getLeastSignificantBits())
-        .build();
-  }
-
-  private UUID uuid(Uuid value) {
-    return new UUID(value.getMostSignificantBits(), value.getLeastSignificantBits());
-  }
-
-  private Path resource(String name) throws URISyntaxException {
-    var url = Objects.requireNonNull(getClass().getResource("/tls/" + name));
-    return Path.of(url.toURI());
-  }
-
   private static ListAppender<ILoggingEvent> attachWorkerAppender() {
     var logger = (Logger) LoggerFactory.getLogger(TranscodeWorker.class);
     logger.setLevel(Level.DEBUG);
@@ -713,6 +639,35 @@ class TranscodeWorkerIT {
     public Process startProcess(
         UUID sessionId, String variantLabel, List<String> command, Path workingDirectory) {
       throw new IllegalStateException("FFmpeg failed to start");
+    }
+  }
+
+  private static final class StartDisconnectingProcessManager extends FakeFfmpegProcessManager {
+
+    private final WorkerSessionServer server;
+    private volatile Path outputDirectory;
+    private volatile boolean outputExistedWhenStopped;
+
+    private StartDisconnectingProcessManager(WorkerSessionServer server) {
+      this.server = server;
+    }
+
+    @Override
+    public Process startProcess(
+        UUID sessionId, String variantLabel, List<String> command, Path workingDirectory) {
+      outputDirectory = workingDirectory;
+      server.close();
+      return super.startProcess(sessionId, variantLabel, command, workingDirectory);
+    }
+
+    @Override
+    public void stopProcess(UUID sessionId, String variantLabel) {
+      outputExistedWhenStopped = Files.exists(outputDirectory);
+      super.stopProcess(sessionId, variantLabel);
+    }
+
+    private boolean outputExistedWhenStopped() {
+      return outputExistedWhenStopped;
     }
   }
 
@@ -755,25 +710,17 @@ class TranscodeWorkerIT {
     }
   }
 
-  private static final class EndingFfmpegProcessManager extends FakeFfmpegProcessManager {
-
-    private final Map<String, byte[]> segments;
+  private static final class EndingFfmpegProcessManager
+      extends FakeSegmentProducingFfmpegProcessManager {
 
     private EndingFfmpegProcessManager(Map<String, byte[]> segments) {
-      this.segments = segments;
+      super(segments);
     }
 
     @Override
     public Process startProcess(
         UUID sessionId, String variantLabel, List<String> command, Path workingDirectory) {
       var process = super.startProcess(sessionId, variantLabel, command, workingDirectory);
-      try {
-        for (var segment : segments.entrySet()) {
-          Files.write(workingDirectory.resolve(segment.getKey()), segment.getValue());
-        }
-      } catch (IOException e) {
-        throw new UncheckedIOException(e);
-      }
       stopProcess(sessionId, variantLabel);
       return process;
     }

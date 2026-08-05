@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -158,7 +159,7 @@ class LocalTranscodeExecutorTest {
 
     executor.stop(request.sessionId());
 
-    assertThat(executor.isRunning(request.sessionId())).isFalse();
+    assertThat(executor.isRunning(request.sessionId(), StreamSession.defaultVariant())).isFalse();
     assertThat(processManager.getStopped()).contains(request.sessionId());
   }
 
@@ -168,13 +169,13 @@ class LocalTranscodeExecutorTest {
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264");
     executor.start(request);
 
-    assertThat(executor.isRunning(request.sessionId())).isTrue();
+    assertThat(executor.isRunning(request.sessionId(), StreamSession.defaultVariant())).isTrue();
   }
 
   @Test
   @DisplayName("Should report not running when session is unknown")
   void shouldReportNotRunningWhenSessionIsUnknown() {
-    assertThat(executor.isRunning(UUID.randomUUID())).isFalse();
+    assertThat(executor.isRunning(UUID.randomUUID(), StreamSession.defaultVariant())).isFalse();
   }
 
   @Test
@@ -223,15 +224,6 @@ class LocalTranscodeExecutorTest {
 
     var variantDir = tempDir.resolve(request.sessionId().toString()).resolve("720p");
     assertThat(variantDir).exists().isDirectory();
-  }
-
-  @Test
-  @DisplayName("Should report running by session ID when variant is active")
-  void shouldReportRunningBySessionIdWhenVariantIsActive() {
-    var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264", "720p");
-    executor.start(request);
-
-    assertThat(executor.isRunning(request.sessionId())).isTrue();
   }
 
   @Test

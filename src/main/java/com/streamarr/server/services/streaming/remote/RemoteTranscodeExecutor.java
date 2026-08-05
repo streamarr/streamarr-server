@@ -56,11 +56,6 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public boolean isRunning(UUID sessionId) {
-    return workerServer.isRunning(sessionId);
-  }
-
-  @Override
   public boolean isRunning(UUID sessionId, String variantLabel) {
     return workerServer.isRunning(sessionId, variantLabel);
   }

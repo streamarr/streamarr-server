@@ -22,8 +22,6 @@ public interface TranscodeExecutor {
 
   void stopVariant(UUID sessionId, String variantLabel);
 
-  boolean isRunning(UUID sessionId);
-
   boolean isRunning(UUID sessionId, String variantLabel);
 
   boolean isHealthy();

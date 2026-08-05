@@ -42,11 +42,6 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public boolean isRunning(UUID sessionId) {
-    return engine.isRunning(sessionId);
-  }
-
-  @Override
   public boolean isRunning(UUID sessionId, String variantLabel) {
     return engine.isRunning(sessionId, variantLabel);
   }

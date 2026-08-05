@@ -21,8 +21,8 @@ import lombok.extern.slf4j.Slf4j;
  * <p>A ticket is also time-bounded. gRPC imposes no deadline on an inbound stream, so a worker that
  * sends metadata and then stops — its upload loop threw, or its process wedged — would otherwise
  * hold a slot and a full declared-length reservation for as long as the connection survives, and
- * four such streams exhaust the whole byte budget. Expired tickets are reclaimed at the moment
- * capacity is needed, which is the only moment the answer changes.
+ * enough such streams can exhaust the configured byte budget. Expired tickets are reclaimed at the
+ * moment capacity is needed, which is the only moment the answer changes.
  */
 @Slf4j
 final class SegmentUploadAdmission {
@@ -88,7 +88,7 @@ final class SegmentUploadAdmission {
             "Reclaiming segment upload from worker {} that exceeded {}",
             ticket.workerId(),
             maximumUploadAge);
-        ticket.close();
+        ticket.reclaim();
       }
     }
   }
@@ -142,6 +142,8 @@ final class SegmentUploadAdmission {
     private final Instant admittedAt;
     private long heldBytes;
     private boolean closed;
+    private boolean reclaimed;
+    private Runnable reclaimHandler;
 
     private Ticket(UUID workerId, Instant admittedAt) {
       this.workerId = workerId;
@@ -174,6 +176,35 @@ final class SegmentUploadAdmission {
 
       heldBytes = declaredBytes;
       return true;
+    }
+
+    void onReclaimed(Runnable handler) {
+      boolean runNow;
+      synchronized (this) {
+        if (reclaimHandler != null) {
+          throw new IllegalStateException("Ticket already has a reclaim handler");
+        }
+        reclaimHandler = handler;
+        runNow = reclaimed;
+      }
+      if (runNow) {
+        handler.run();
+      }
+    }
+
+    private void reclaim() {
+      Runnable handler;
+      synchronized (this) {
+        if (closed) {
+          return;
+        }
+        reclaimed = true;
+        handler = reclaimHandler;
+        close();
+      }
+      if (handler != null) {
+        handler.run();
+      }
     }
 
     @Override

@@ -56,6 +56,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.web.servlet.MockMvc;
@@ -90,6 +91,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   @Autowired private RefreshTokenService refreshTokenService;
 
   @Autowired private JwtEncoder jwtEncoder;
+  @Autowired private JwtDecoder jwtDecoder;
 
   @Autowired
   private com.streamarr.server.repositories.auth.ServerBootstrapRepository
@@ -1266,17 +1268,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   private org.springframework.security.oauth2.jwt.Jwt decodeToken(String token) {
-    var keys =
-        new com.streamarr.server.config.security.TokenCryptoConfig()
-            .tokenSigningKeys(tokenProperties);
-    var processor =
-        new com.nimbusds.jwt.proc.DefaultJWTProcessor<com.nimbusds.jose.proc.SecurityContext>();
-    processor.setJWSKeySelector(
-        new com.nimbusds.jose.proc.JWSVerificationKeySelector<>(
-            com.nimbusds.jose.JWSAlgorithm.ES256,
-            new com.nimbusds.jose.jwk.source.ImmutableJWKSet<>(keys.verificationKeys())));
-    processor.setJWTClaimsSetVerifier((claims, context) -> {});
-    return new org.springframework.security.oauth2.jwt.NimbusJwtDecoder(processor).decode(token);
+    return jwtDecoder.decode(token);
   }
 
   private String signedAccessToken(
@@ -1313,7 +1305,6 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             tokenProperties,
             pastClock,
             membershipRepository,
-            profileRepository,
             accountProfileRepository);
 
     return pastIssuer

@@ -36,8 +36,8 @@ The advertise-ahead deviation from §6.2.1 is intentional and is recorded here r
 === Segment waits are bounded by producer liveness, not a wall clock
 
 A request for an advertised-but-unproduced segment waits while a producer for that segment is alive and making progress; a producer that publishes nothing within the configured stall threshold is classified stalled and replaced.
-The threshold applies uniformly, including a fresh producer's cold start (seek plus first-segment encode): hardware that cannot publish a first segment inside the default 10 seconds cannot sustain just-in-time playback either, and the degradation path — replacement attempts, then a terminal failure that pushes the player's adaptive-bitrate switch — is the designed reaction; deployments with slower encoders tune `streaming.producer-stall-threshold` rather than receiving a separate cold-start budget.
-Segments are published atomically (a temporary file moved into its final name), so a segment that exists is complete — existence is readiness, and no successor-segment inference is needed or permitted.
+A fresh producer's cold start (seek plus first-segment encode) receives the configured stall threshold plus one target-segment duration; after the first publication, the steady-state stall threshold applies by itself.
+The local store writes every segment completely to a temporary file before moving it into its final name. It requests an atomic replacement, but falls back to a same-filesystem replacement when the filesystem does not support atomic moves. Under the segment-store contract, only the final name is observable as ready; supported deployments must therefore provide rename visibility consistent with that contract. No successor-segment inference is needed or permitted.
 The wait ends when the segment is ready, when no producer can be made to produce it, or on request cancellation — never on a fixed wall-clock timeout.
 A slow or resource-starved transcode must not surface to the client as a missing segment.
 
@@ -54,20 +54,18 @@ A seek is a planned restart, not recovery: a relocation-distance request revives
 When the transcode executor is distributed, a variant whose producer fails is re-dispatched, on the next request that needs it, to another available worker for the same source namespace; the pool of workers is the recovery redundancy.
 Recovery is attempt-bounded, never wall-clock-bounded: each variant carries a replacement budget sized by the currently eligible execution targets — locally the single local runner, remotely each live worker connection (its `worker_session_id`, per ADR 0018's live-connection fence).
 Every replacement consults the live target set at dispatch time; no snapshot of fleet membership is retained across the recovery window.
-The budget resets on publication progress (the frontier advancing is the one success signal) and whenever the eligible-target set changes.
+Publication progress clears the attempted-target log (the frontier advancing is the one success signal). Fleet membership is re-derived on every pass; changing it does not clear an active window, but a currently eligible target not yet attempted in a failed window can revive recovery.
 Only when the budget is exhausted does the failure surface, as a terminal `503 Service Unavailable` with no body and no `Retry-After`; the client's own retry budget and its adaptive-bitrate switch to a healthy variant are the last-resort recovery.
 The terminal state is sticky for same-window retries and cleared by exactly two events: a currently eligible execution target that was never attempted in the failed window (a reconnecting worker is a new target by construction), or a genuine seek's planned restart.
-Within one death window the budget does not guarantee each target is tried at most once — a target that accepts and immediately dies again may consume more than one attempt; this is accepted because it requires two or more remote workers churning within a single recovery window and self-corrects through the target-set-change reset.
-Attempt identity is a write-point fence, not per-request bookkeeping: `ProducerLifecycleService`'s mutex-guarded predicate compares the expected attempt exactly once, at the replacement write, so a late or superseded replacement can never clobber a newer producer's state.
+Within one recovery window, each live target is tried at most once; departed targets stop mattering and newly appearing targets can be tried without resetting the attempted-target log.
+Attempt identity is a write-point fence, not per-request state: `ProducerLifecycleService`'s mutex-guarded predicate compares the expected attempt exactly once, at the replacement write, so a late or superseded replacement can never clobber a newer producer's state.
 Worst-case pre-terminal latency is `budget × stall threshold` plus dispatch overhead; in a large worker pool that can exceed one viewer's patience, which is accepted — every attempt is a genuine recovery chance and the player's variant switch proceeds in parallel.
 Transient upload back-pressure is a self-classifying condition: the producer retries the affected segment with bounded back-off rather than failing the whole variant (worker-side retry tracked in https://github.com/streamarr/streamarr-server/issues/253[issue #253]; until it lands, a back-pressure failure consumes one replacement attempt).
 
 === A playlist structure suite gates the advertised representation
 
-A spec-cited in-repo suite runs inside the standard build and the continuous-integration gate and asserts the structure of generated playlists.
-It does not claim to prove segment availability from playlist text, and the advertise-ahead deviation is recorded in this ADR rather than as a disabled, tautological test.
-The recovery implementation tracked by issue 252 must add service-level behavioral tests with controllable producer and segment-store fakes for successful delivery, failover, cancellation, final-segment completion, and recovery exhaustion.
-It must also add a small real-FFmpeg integration test that crosses a producer boundary and validates timestamp and container continuity; a fake cannot prove that property.
+An in-repo HLS conformance suite runs inside the standard build and the continuous-integration gate, asserting playlist structure and the delivery obligations above against generated playlists and a controllable segment-producing fake.
+Intentional deviations from the standard — advertise-ahead first among them — are recorded in this ADR and exercised by the relevant playlist and delivery tests, so the deviation remains reviewable rather than tribal knowledge.
 A deeper platform-specific stream validator remains an optional local check outside the portable gate.
 
 * Explicitly deferred:
@@ -92,7 +90,7 @@ The costs are added producer-lifecycle and liveness logic in the streaming layer
 * A fixed wall-clock segment-wait timeout returning `404` before liveness-driven recovery — converts slow production into spurious failures and papers over the missing recovery instead of providing it.
 * Signaling a dead variant immediately through a distinct HTTP status or an advertised playlist gap — the standard forbids withdrawing a listed segment and the client cannot reconstruct or skip an advertised segment URL. A terminal `503 Service Unavailable` is reserved for finite recovery exhaustion; the playlist remains immutable.
 * Per-segment isolated transcoding on demand — independent single-segment encodes glitch at audio and video boundaries; a contiguous run per producer is required.
-* A per-cycle snapshot of eligible execution targets with at-most-once-per-target replacement — the snapshot is a retained copy of live fleet state that must be defended against every concurrent mutation (supersession fences, exhausted-cycle retention, new-target set-difference); review found two high-severity staleness-of-the-copy defects in exactly that machinery, and its only behavioral difference from the live-consulted budget requires two or more remote workers churning within a single recovery window.
+* A per-window snapshot of eligible execution targets — the snapshot is a retained copy of live fleet state that must be defended against every concurrent mutation (supersession fences, exhausted-window retention, new-target set-difference); review found two high-severity staleness-of-the-copy defects in exactly that machinery, while live consultation admits newly eligible targets without retaining a second copy of fleet membership.
 * Producer lifetime driven by subscription-style demand handles (a producer runs only while a delivery holds a handle) — stateless HLS clients hold no standing connection to hang a handle on; last-request-time reaping is the honest demand signal for HTTP delivery.
 * A push-based media transport (Media over QUIC) in place of HLS — dissolves the wait-for-segment inference class entirely, but clients speak HLS; per the settled transport-experiment rule this belongs on a spike branch, revisited when WebTransport reaches consumer playback devices.
 

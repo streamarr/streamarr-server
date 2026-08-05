@@ -34,7 +34,7 @@ class PlaybackTokenRevocationIT extends AbstractIntegrationTest {
           ChangePasswordCommand.builder()
               .accountId(identity.account().getId())
               .sessionId(identity.session().getId())
-              .currentPassword(AuthTestSupport.PASSWORD)
+              .currentPassword(authTestSupport.password())
               .newPassword("a brand new passphrase!")
               .build());
 

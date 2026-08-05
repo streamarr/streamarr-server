@@ -1,9 +1,8 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import java.util.List;
@@ -20,14 +19,7 @@ class AuthenticatedIdentityTest {
   @Test
   @DisplayName("Should reject account scope carrying household or profile identity")
   void shouldRejectAccountScopeCarryingHouseholdOrProfileIdentity() {
-    var identity =
-        AuthenticatedIdentity.builder()
-            .accountId(UUID.randomUUID())
-            .role(AccountRole.USER)
-            .authSessionId(UUID.randomUUID())
-            .scope(TokenScope.ACCOUNT)
-            .householdId(UUID.randomUUID())
-            .householdRole(HouseholdRole.MEMBER);
+    var identity = defaultIdentityBuilder().scope(TokenScope.ACCOUNT).streamSessionId(null);
 
     assertThatThrownBy(identity::build)
         .isInstanceOf(IllegalArgumentException.class)
@@ -37,15 +29,7 @@ class AuthenticatedIdentityTest {
   @Test
   @DisplayName("Should reject household scope carrying profile identity")
   void shouldRejectHouseholdScopeCarryingProfileIdentity() {
-    var identity =
-        AuthenticatedIdentity.builder()
-            .accountId(UUID.randomUUID())
-            .role(AccountRole.USER)
-            .authSessionId(UUID.randomUUID())
-            .scope(TokenScope.HOUSEHOLD)
-            .householdId(UUID.randomUUID())
-            .householdRole(HouseholdRole.MEMBER)
-            .profileId(UUID.randomUUID());
+    var identity = defaultIdentityBuilder().scope(TokenScope.HOUSEHOLD).streamSessionId(null);
 
     assertThatThrownBy(identity::build)
         .isInstanceOf(IllegalArgumentException.class)
@@ -56,13 +40,7 @@ class AuthenticatedIdentityTest {
   @DisplayName("Should reject profile scope without profile identity")
   void shouldRejectProfileScopeWithoutProfileIdentity() {
     var identity =
-        AuthenticatedIdentity.builder()
-            .accountId(UUID.randomUUID())
-            .role(AccountRole.USER)
-            .authSessionId(UUID.randomUUID())
-            .scope(TokenScope.PROFILE)
-            .householdId(UUID.randomUUID())
-            .householdRole(HouseholdRole.MEMBER);
+        defaultIdentityBuilder().scope(TokenScope.PROFILE).profileId(null).streamSessionId(null);
 
     assertThatThrownBy(identity::build)
         .isInstanceOf(IllegalArgumentException.class)
@@ -73,12 +51,7 @@ class AuthenticatedIdentityTest {
   @DisplayName("Should reject profile identity without household context")
   void shouldRejectProfileIdentityWithoutHouseholdContext() {
     var identity =
-        AuthenticatedIdentity.builder()
-            .accountId(UUID.randomUUID())
-            .role(AccountRole.USER)
-            .authSessionId(UUID.randomUUID())
-            .scope(TokenScope.PROFILE)
-            .profileId(UUID.randomUUID());
+        defaultIdentityBuilder().scope(TokenScope.PROFILE).householdId(null).streamSessionId(null);
 
     assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
   }
@@ -87,13 +60,10 @@ class AuthenticatedIdentityTest {
   @DisplayName("Should reject profile identity without household role")
   void shouldRejectProfileIdentityWithoutHouseholdRole() {
     var identity =
-        AuthenticatedIdentity.builder()
-            .accountId(UUID.randomUUID())
-            .role(AccountRole.USER)
-            .authSessionId(UUID.randomUUID())
+        defaultIdentityBuilder()
             .scope(TokenScope.PROFILE)
-            .householdId(UUID.randomUUID())
-            .profileId(UUID.randomUUID());
+            .householdRole(null)
+            .streamSessionId(null);
 
     assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
   }
@@ -101,15 +71,7 @@ class AuthenticatedIdentityTest {
   @Test
   @DisplayName("Should reject playback identity without profile identity")
   void shouldRejectPlaybackIdentityWithoutProfileIdentity() {
-    var identity =
-        AuthenticatedIdentity.builder()
-            .accountId(UUID.randomUUID())
-            .role(AccountRole.USER)
-            .authSessionId(UUID.randomUUID())
-            .scope(TokenScope.PLAYBACK)
-            .householdId(UUID.randomUUID())
-            .householdRole(HouseholdRole.MEMBER)
-            .streamSessionId(UUID.randomUUID());
+    var identity = defaultIdentityBuilder().profileId(null);
 
     assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
   }
@@ -117,15 +79,7 @@ class AuthenticatedIdentityTest {
   @Test
   @DisplayName("Should reject playback identity without stream session")
   void shouldRejectPlaybackIdentityWithoutStreamSession() {
-    var identity =
-        AuthenticatedIdentity.builder()
-            .accountId(UUID.randomUUID())
-            .role(AccountRole.USER)
-            .authSessionId(UUID.randomUUID())
-            .scope(TokenScope.PLAYBACK)
-            .householdId(UUID.randomUUID())
-            .householdRole(HouseholdRole.MEMBER)
-            .profileId(UUID.randomUUID());
+    var identity = defaultIdentityBuilder().streamSessionId(null);
 
     assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
   }
@@ -134,15 +88,7 @@ class AuthenticatedIdentityTest {
   @DisplayName("Should reject non-playback identity carrying a stream session")
   void shouldRejectNonPlaybackIdentityCarryingStreamSession() {
     var identity =
-        AuthenticatedIdentity.builder()
-            .accountId(UUID.randomUUID())
-            .role(AccountRole.USER)
-            .authSessionId(UUID.randomUUID())
-            .scope(TokenScope.PROFILE)
-            .householdId(UUID.randomUUID())
-            .householdRole(HouseholdRole.MEMBER)
-            .profileId(UUID.randomUUID())
-            .streamSessionId(UUID.randomUUID());
+        defaultIdentityBuilder().scope(TokenScope.PROFILE).streamSessionId(UUID.randomUUID());
 
     assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
   }
@@ -179,11 +125,12 @@ class AuthenticatedIdentityTest {
   @DisplayName("Should reject building a playback authority for an account-scoped identity")
   void shouldRejectPlaybackAuthorityForAccountScopedIdentity() {
     var identity =
-        AuthenticatedIdentity.builder()
-            .accountId(UUID.randomUUID())
-            .role(AccountRole.USER)
-            .authSessionId(UUID.randomUUID())
+        defaultIdentityBuilder()
             .scope(TokenScope.ACCOUNT)
+            .householdId(null)
+            .householdRole(null)
+            .profileId(null)
+            .streamSessionId(null)
             .build();
 
     assertThatThrownBy(identity::playbackAuthority).isInstanceOf(ProfileRequiredException.class);

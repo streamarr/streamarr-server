@@ -23,6 +23,8 @@ import org.yaml.snakeyaml.Yaml;
 class KubernetesManifestContractTest {
 
   private static final Path MANIFEST = Path.of("deploy/kubernetes/distributed-transcoding.yaml");
+  private static final Path HARDWARE_PATCH =
+      Path.of("deploy/kubernetes/hardware-transcoding-patch.yaml");
 
   private static Map<String, Object> serverDeployment;
   private static Map<String, Object> workerDeployment;
@@ -107,6 +109,23 @@ class KubernetesManifestContractTest {
           .containsKey("csi.cert-manager.io/duration")
           .containsKey("csi.cert-manager.io/renew-before");
     }
+  }
+
+  @Test
+  @DisplayName("Should ship opt-in DRI passthrough for the transcode worker")
+  void shouldShipOptInDriPassthroughForTranscodeWorker() throws IOException {
+    var patch = asMap(new Yaml().load(Files.readString(HARDWARE_PATCH)));
+    var podSpec = asMap(asMap(asMap(patch.get("spec")).get("template")).get("spec"));
+    var worker = asMap(((List<?>) podSpec.get("containers")).getFirst());
+    var volumeMount = asMap(((List<?>) worker.get("volumeMounts")).getFirst());
+    var volume = asMap(((List<?>) podSpec.get("volumes")).getFirst());
+
+    assertThat(asMap(patch.get("metadata"))).containsEntry("name", "streamarr-transcode-worker");
+    assertThat(volumeMount).containsEntry("name", "dri").containsEntry("mountPath", "/dev/dri");
+    assertThat(asMap(volume.get("hostPath")))
+        .containsEntry("path", "/dev/dri")
+        .containsEntry("type", "Directory");
+    assertThat(asMap(podSpec.get("securityContext"))).containsKey("supplementalGroups");
   }
 
   private static Map<String, Object> container(Map<String, Object> deployment) {

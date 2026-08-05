@@ -12,7 +12,6 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fixtures.StreamSessionFixture;
@@ -50,36 +49,7 @@ class HlsPlaylistServiceTest {
 
   private StreamSession createSession(
       ContainerFormat container, TranscodeMode mode, int durationSeconds) {
-    var session =
-        StreamSession.builder()
-            .sessionId(UUID.randomUUID())
-            .mediaFileId(UUID.randomUUID())
-            .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
-            .sourcePath(Path.of("/media/test.mkv"))
-            .mediaProbe(
-                MediaProbe.builder()
-                    .duration(Duration.ofSeconds(durationSeconds))
-                    .framerate(23.976)
-                    .width(1920)
-                    .height(1080)
-                    .videoCodec("h264")
-                    .audioCodec("aac")
-                    .bitrate(5_000_000L)
-                    .build())
-            .transcodeDecision(
-                TranscodeDecision.builder()
-                    .transcodeMode(mode)
-                    .videoCodecFamily(container == ContainerFormat.FMP4 ? "av1" : "h264")
-                    .audioDecision(AudioDecision.stereoAac())
-                    .subtitleDecision(SubtitleDecision.exclude())
-                    .containerFormat(container)
-                    .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
-                    .build())
-            .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
-            .createdAt(Instant.now())
-            .build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
-    return session;
+    return createSessionWithDuration(container, mode, Duration.ofSeconds(durationSeconds));
   }
 
   private StreamSession createSessionWithDuration(
@@ -112,7 +82,7 @@ class HlsPlaylistServiceTest {
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
             .createdAt(Instant.now())
             .build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    session.setHandle(StreamSessionFixture.mintHandle(1L, TranscodeStatus.ACTIVE));
     return session;
   }
 
@@ -146,7 +116,7 @@ class HlsPlaylistServiceTest {
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
             .createdAt(Instant.now())
             .build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    session.setHandle(StreamSessionFixture.mintHandle(1L, TranscodeStatus.ACTIVE));
     return session;
   }
 
@@ -206,7 +176,8 @@ class HlsPlaylistServiceTest {
             .build();
 
     for (var variant : variants) {
-      session.setVariantHandle(variant.label(), new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+      session.setVariantHandle(
+          variant.label(), StreamSessionFixture.mintHandle(1L, TranscodeStatus.ACTIVE));
     }
     return session;
   }
@@ -650,7 +621,8 @@ class HlsPlaylistServiceTest {
               .variants(List.of(variant))
               .createdAt(Instant.now())
               .build();
-      session.setVariantHandle("1080p", new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+      session.setVariantHandle(
+          "1080p", StreamSessionFixture.mintHandle(1L, TranscodeStatus.ACTIVE));
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
 

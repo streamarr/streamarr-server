@@ -73,7 +73,7 @@ class LiveWorkerConnectionRegistryTest {
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var dispatching = executor.submit(() -> registry.dispatch(job));
-      // The dispatcher is inside tryDispatch, mid-send, before its bookkeeping put.
+      // The dispatcher is inside tryDispatch, mid-send, before its active-attempt put.
       assertThat(observer.dispatchReached.await(5, TimeUnit.SECONDS)).isTrue();
 
       registry.disconnect(WORKER_ID, workerSessionId);
@@ -82,7 +82,7 @@ class LiveWorkerConnectionRegistryTest {
       // The job must not be reported as dispatched while tracked nowhere: the race resolves to
       // an honest dispatch failure and recovery moves on to another target.
       assertThat(dispatching.get(5, TimeUnit.SECONDS)).isFalse();
-      assertThat(registry.isRunning(streamSessionId)).isFalse();
+      assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isFalse();
     }
   }
 
@@ -99,7 +99,10 @@ class LiveWorkerConnectionRegistryTest {
     var dispatched = registry.dispatch(job);
 
     assertThat(dispatched).isFalse();
-    assertThat(registry.isRunning(fromProto(job.getStreamSessionId()))).isFalse();
+    assertThat(
+            registry.isRunning(
+                fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
+        .isFalse();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
   }
 
@@ -117,6 +120,20 @@ class LiveWorkerConnectionRegistryTest {
   }
 
   @Test
+  @DisplayName("Should total available capacity across distinct workers")
+  void shouldTotalAvailableCapacityAcrossDistinctWorkers() {
+    var registry = new LiveWorkerConnectionRegistry();
+    var secondWorkerId = UUID.randomUUID();
+    registry.register(WORKER_ID, registration(WORKER_ID, 1), new CancellableObserver());
+    registry.register(secondWorkerId, registration(secondWorkerId, 2), new CancellableObserver());
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(3);
+
+    assertThat(registry.dispatch(variantJob())).isTrue();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
+  }
+
+  @Test
   @DisplayName(
       "Should survive stopping a session whose worker call is cancelled but not yet reaped")
   void shouldSurviveStoppingSessionWhoseWorkerCallIsCancelledButNotYetReaped() {
@@ -130,7 +147,7 @@ class LiveWorkerConnectionRegistryTest {
 
     registry.stopStreamSession(streamSessionId);
 
-    assertThat(registry.isRunning(streamSessionId)).isFalse();
+    assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isFalse();
   }
 
   @Test
@@ -170,7 +187,9 @@ class LiveWorkerConnectionRegistryTest {
         () -> {
           inPublish.countDown();
           try {
-            releasePublish.await();
+            if (!releasePublish.await(5, TimeUnit.SECONDS)) {
+              throw new AssertionError("Timed out waiting to release segment publication");
+            }
           } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
           }
@@ -214,15 +233,41 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(registry.dispatch(variantJob())).isTrue();
   }
 
+  @Test
+  @DisplayName("Should ignore a stale result after the worker connection was replaced")
+  void shouldIgnoreAStaleResultAfterTheWorkerConnectionWasReplaced() {
+    var registry = new LiveWorkerConnectionRegistry();
+    var staleSessionId = registry.register(WORKER_ID, registration(), new CancellableObserver());
+    registry.register(WORKER_ID, registration(), collecting(new CopyOnWriteArrayList<>()));
+    var replacementJob = variantJob();
+    assertThat(registry.dispatch(replacementJob)).isTrue();
+
+    var released =
+        registry.releaseJobAttempt(
+            WORKER_ID, staleSessionId, fromProto(replacementJob.getJobAttemptId()));
+
+    assertThat(released).isEmpty();
+    assertThat(
+            registry.isRunning(
+                fromProto(replacementJob.getStreamSessionId()),
+                replacementJob.getVariant().getVariantLabel()))
+        .isTrue();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
+  }
+
   private static WorkerRegistration registration() {
+    return registration(WORKER_ID, 1);
+  }
+
+  private static WorkerRegistration registration(UUID workerId, int availableSlots) {
     return WorkerRegistration.newBuilder()
         .setWorker(
             WorkerIdentity.newBuilder()
-                .setWorkerId(toProto(WORKER_ID))
+                .setWorkerId(toProto(workerId))
                 .setBootId(toProto(UUID.randomUUID())))
         .setCapabilities(
             WorkerCapabilities.newBuilder().addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID)))
-        .setAvailableSlots(1)
+        .setAvailableSlots(availableSlots)
         .build();
   }
 
@@ -329,7 +374,9 @@ class LiveWorkerConnectionRegistryTest {
     public void onError(Throwable throwable) {
       closing.countDown();
       try {
-        continueClosing.await();
+        if (!continueClosing.await(5, TimeUnit.SECONDS)) {
+          throw new AssertionError("Timed out waiting to finish replacement close");
+        }
       } catch (InterruptedException _) {
         Thread.currentThread().interrupt();
       }

@@ -1,10 +1,10 @@
 package com.streamarr.transcode.worker;
 
+import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.transcode.v1.MediaSourceRef;
-import com.streamarr.transcode.v1.Uuid;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +14,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Worker Media Source Resolver Tests")
@@ -22,6 +24,18 @@ class WorkerMediaSourceResolverTest {
   private static final UUID SOURCE_NAMESPACE_ID = UUID.randomUUID();
 
   @TempDir Path tempDir;
+
+  @ParameterizedTest
+  @ValueSource(strings = {"", "/movie.mkv"})
+  @DisplayName("Should reject an empty or leading-slash media source key")
+  void shouldRejectEmptyOrLeadingSlashMediaSourceKey(String relativeKey) throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+
+    assertThatThrownBy(() -> resolver.resolve(source(relativeKey)))
+        .isInstanceOf(WorkerJobException.class)
+        .hasMessage("Media source key contains an unsafe path segment");
+  }
 
   @Test
   @DisplayName("Should reject a relative key with an empty path segment")
@@ -98,7 +112,7 @@ class WorkerMediaSourceResolverTest {
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
     var unknownSource =
         MediaSourceRef.newBuilder()
-            .setSourceNamespaceId(uuid(UUID.randomUUID()))
+            .setSourceNamespaceId(toProto(UUID.randomUUID()))
             .setRelativeKey("movie.mkv")
             .build();
 
@@ -155,17 +169,21 @@ class WorkerMediaSourceResolverTest {
     assertThatThrownBy(() -> resolver.resolve(source)).isInstanceOf(WorkerJobException.class);
   }
 
-  private MediaSourceRef source(String relativeKey) {
-    return MediaSourceRef.newBuilder()
-        .setSourceNamespaceId(uuid(SOURCE_NAMESPACE_ID))
-        .setRelativeKey(relativeKey)
-        .build();
+  @Test
+  @DisplayName("Should resolve a symlink whose target remains inside its source namespace")
+  void shouldResolveSymlinkWhoseTargetRemainsInsideSourceNamespace() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var target = Files.writeString(mediaRoot.resolve("stored-movie.mkv"), "test media");
+    Files.createSymbolicLink(mediaRoot.resolve("movie.mkv"), target);
+    var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+
+    assertThat(resolver.resolve(source("movie.mkv"))).isEqualTo(target.toRealPath());
   }
 
-  private Uuid uuid(UUID value) {
-    return Uuid.newBuilder()
-        .setMostSignificantBits(value.getMostSignificantBits())
-        .setLeastSignificantBits(value.getLeastSignificantBits())
+  private MediaSourceRef source(String relativeKey) {
+    return MediaSourceRef.newBuilder()
+        .setSourceNamespaceId(toProto(SOURCE_NAMESPACE_ID))
+        .setRelativeKey(relativeKey)
         .build();
   }
 }

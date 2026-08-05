@@ -1,17 +1,13 @@
 package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthorityFor;
+import static com.streamarr.server.support.TokenTestSupport.decode;
+import static com.streamarr.server.support.TokenTestSupport.tokenProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
-import com.nimbusds.jose.proc.JWSVerificationKeySelector;
-import com.nimbusds.jose.proc.SecurityContext;
-import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
@@ -56,7 +52,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 @Tag("UnitTest")
 @EnableDgsTest
@@ -69,9 +64,6 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
     })
 @DisplayName("Streaming Resolver Tests")
 class StreamingResolverTest {
-
-  private static final String TEST_KEY_BASE64 =
-      "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQga+ZKCbAcyZIb7k2FE8rMPFtIpTdzX2dR/csZ8k6A95uhRANCAAQawOmVKMDLAOsboxKLb9khGsWyxwcIikucXDCfX18ME5X9/kqSS2vdMnFfZ6KR12U/Sy/EwOwnc82xFAyFdNbe";
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
 
@@ -250,23 +242,7 @@ class StreamingResolverTest {
   }
 
   private static org.springframework.security.oauth2.jwt.Jwt decodeToken(String token) {
-    var keys = new TokenCryptoConfig().tokenSigningKeys(tokenProperties());
-    var processor = new DefaultJWTProcessor<SecurityContext>();
-    processor.setJWSKeySelector(
-        new JWSVerificationKeySelector<>(
-            JWSAlgorithm.ES256, new ImmutableJWKSet<>(keys.verificationKeys())));
-    processor.setJWTClaimsSetVerifier((claims, context) -> {});
-    return new NimbusJwtDecoder(processor).decode(token);
-  }
-
-  private static AuthTokenProperties tokenProperties() {
-    return AuthTokenProperties.builder()
-        .signingKey(TEST_KEY_BASE64)
-        .verificationKeys(List.of())
-        .accessTokenTtl(Duration.ofMinutes(10))
-        .refreshTokenTtl(Duration.ofDays(30))
-        .rotationGrace(Duration.ofSeconds(30))
-        .build();
+    return decode(token, tokenProperties());
   }
 
   @Test

@@ -2,6 +2,7 @@ package com.streamarr.server.domain.streaming;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.buildMpegtsSession;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -64,7 +65,7 @@ class StreamSessionTest {
   void shouldReflectHandleUpdatesThroughExposedVariantHandleMap() {
     var session = buildMpegtsSession();
 
-    session.setVariantHandle("720p", new TranscodeHandle(7L, TranscodeStatus.ACTIVE));
+    session.setVariantHandle("720p", mintHandle(7L, TranscodeStatus.ACTIVE));
 
     assertThat(session.getVariantHandles()).containsKey("720p");
   }

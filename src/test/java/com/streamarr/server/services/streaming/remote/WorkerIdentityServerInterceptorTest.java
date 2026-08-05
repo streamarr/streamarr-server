@@ -20,6 +20,7 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Objects;
 import javax.net.ssl.SSLSession;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,18 @@ import org.slf4j.LoggerFactory;
 @Tag("UnitTest")
 @DisplayName("Worker Identity Server Interceptor Tests")
 class WorkerIdentityServerInterceptorTest {
+
+  private ListAppender<ILoggingEvent> appender;
+
+  @AfterEach
+  void detachAppender() {
+    if (appender == null) {
+      return;
+    }
+    interceptorLogger().detachAppender(appender);
+    appender.stop();
+    assertThat(interceptorLogger().isAttached(appender)).isFalse();
+  }
 
   @Test
   @DisplayName("Should propagate downstream failure without rejecting authenticated call")
@@ -140,12 +153,15 @@ class WorkerIdentityServerInterceptorTest {
             });
   }
 
-  private static ListAppender<ILoggingEvent> attachAppender() {
-    var logger = (Logger) LoggerFactory.getLogger(WorkerIdentityServerInterceptor.class);
-    var appender = new ListAppender<ILoggingEvent>();
+  private ListAppender<ILoggingEvent> attachAppender() {
+    appender = new ListAppender<>();
     appender.start();
-    logger.addAppender(appender);
+    interceptorLogger().addAppender(appender);
     return appender;
+  }
+
+  private static Logger interceptorLogger() {
+    return (Logger) LoggerFactory.getLogger(WorkerIdentityServerInterceptor.class);
   }
 
   private static SSLSession throwingSslSession() {

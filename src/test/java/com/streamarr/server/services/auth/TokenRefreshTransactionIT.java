@@ -14,7 +14,6 @@ import com.streamarr.server.jooq.generated.enums.RefreshTokenStatus;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
-import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.time.Clock;
 import java.time.Duration;
@@ -83,15 +82,9 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
         AuthTokenProperties properties,
         Clock clock,
         HouseholdMembershipRepository membershipRepository,
-        ProfileRepository profileRepository,
         AccountProfileRepository accountProfileRepository) {
       return new GatedAccessTokenIssuer(
-          jwtEncoder,
-          properties,
-          clock,
-          membershipRepository,
-          profileRepository,
-          accountProfileRepository);
+          jwtEncoder, properties, clock, membershipRepository, accountProfileRepository);
     }
   }
 
@@ -106,15 +99,8 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
         AuthTokenProperties properties,
         Clock clock,
         HouseholdMembershipRepository membershipRepository,
-        ProfileRepository profileRepository,
         AccountProfileRepository accountProfileRepository) {
-      super(
-          jwtEncoder,
-          properties,
-          clock,
-          membershipRepository,
-          profileRepository,
-          accountProfileRepository);
+      super(jwtEncoder, properties, clock, membershipRepository, accountProfileRepository);
     }
 
     @Override

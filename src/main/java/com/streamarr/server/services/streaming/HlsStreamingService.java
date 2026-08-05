@@ -15,7 +15,6 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import java.time.Instant;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -167,7 +166,7 @@ public class HlsStreamingService implements StreamingService {
   private List<QualityVariant> resolveVariants(
       MediaProbe probe, StreamingOptions options, TranscodeDecision decision) {
     if (!isAutoQuality(options) || !requiresVideoTranscode(decision.transcodeMode())) {
-      return Collections.emptyList();
+      return List.of();
     }
 
     return qualityLadderService.generateVariants(probe, options);
