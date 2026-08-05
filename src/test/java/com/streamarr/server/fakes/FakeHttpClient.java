@@ -9,12 +9,13 @@ import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
 import java.net.http.WebSocket;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -23,18 +24,11 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSession;
 
-/**
- * An {@link HttpClient} that answers from a canned outcome instead of the network. An unresponsive
- * fake honours {@link HttpRequest#timeout()} the way the JDK client does — it waits out the
- * per-request timeout and then throws {@link HttpTimeoutException} — so a caller that leaves its
- * request unbounded waits {@link #UNBOUNDED_WAIT} instead.
- */
+/** An {@link HttpClient} that answers from a canned outcome instead of the network. */
 public class FakeHttpClient extends HttpClient {
 
-  public static final Duration UNBOUNDED_WAIT = Duration.ofSeconds(10);
-  private static final CountDownLatch NEVER_RESPONDS = new CountDownLatch(1);
-
   private final Outcome outcome;
+  private final List<HttpRequest> sentRequests = new CopyOnWriteArrayList<>();
   private final AtomicInteger sendCount = new AtomicInteger();
 
   private FakeHttpClient(Outcome outcome) {
@@ -53,10 +47,6 @@ public class FakeHttpClient extends HttpClient {
     return new FakeHttpClient(new InterruptedFailure(exception));
   }
 
-  public static FakeHttpClient unresponsive() {
-    return new FakeHttpClient(new Unresponsive());
-  }
-
   public static ControlledResponses respondingWithBlockedFirst(
       int firstStatusCode, int subsequentStatusCode) {
     var firstRequestStarted = new CountDownLatch(1);
@@ -72,23 +62,22 @@ public class FakeHttpClient extends HttpClient {
     return sendCount.get();
   }
 
+  public List<HttpRequest> sentRequests() {
+    return List.copyOf(sentRequests);
+  }
+
   @Override
   public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> bodyHandler)
       throws IOException, InterruptedException {
+    sentRequests.add(request);
     var requestNumber = sendCount.incrementAndGet();
 
     return switch (outcome) {
       case Responding(int statusCode) -> new FakeHttpResponse<>(statusCode, request);
       case IoFailure(IOException exception) -> throw exception;
       case InterruptedFailure(InterruptedException exception) -> throw exception;
-      case Unresponsive _ -> throw waitOutTimeout(request);
       case BlockedFirstResponse response -> response.answer(requestNumber, request);
     };
-  }
-
-  private IOException waitOutTimeout(HttpRequest request) throws InterruptedException {
-    NEVER_RESPONDS.await(request.timeout().orElse(UNBOUNDED_WAIT).toNanos(), TimeUnit.NANOSECONDS);
-    return new HttpTimeoutException("request timed out");
   }
 
   @Override
@@ -156,15 +145,13 @@ public class FakeHttpClient extends HttpClient {
   }
 
   private sealed interface Outcome
-      permits Responding, IoFailure, InterruptedFailure, Unresponsive, BlockedFirstResponse {}
+      permits Responding, IoFailure, InterruptedFailure, BlockedFirstResponse {}
 
   private record Responding(int statusCode) implements Outcome {}
 
   private record IoFailure(IOException exception) implements Outcome {}
 
   private record InterruptedFailure(InterruptedException exception) implements Outcome {}
-
-  private record Unresponsive() implements Outcome {}
 
   private record BlockedFirstResponse(
       int firstStatusCode,

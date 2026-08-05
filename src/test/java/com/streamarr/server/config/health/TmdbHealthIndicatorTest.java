@@ -10,6 +10,7 @@ import com.streamarr.server.fakes.FakeHttpClient;
 import com.streamarr.server.fakes.MutableClock;
 import java.io.IOException;
 import java.net.http.HttpClient;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.Callable;
@@ -98,16 +99,27 @@ class TmdbHealthIndicatorTest {
   }
 
   @Test
-  @DisplayName("Should report DEGRADED within the probe timeout when TMDB never responds")
-  void shouldReportDegradedWithinProbeTimeoutWhenTmdbNeverResponds() {
-    var indicator = indicatorFor(FakeHttpClient.unresponsive());
+  @DisplayName("Should report DEGRADED when health probe times out")
+  void shouldReportDegradedWhenHealthProbeTimesOut() {
+    var indicator =
+        indicatorFor(FakeHttpClient.failingWith(new HttpTimeoutException("request timed out")));
 
-    var startedAt = System.nanoTime();
     var health = indicator.health();
-    var elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
 
     assertThat(health.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
-    assertThat(elapsed).isLessThan(Duration.ofSeconds(5));
+  }
+
+  @Test
+  @DisplayName("Should apply probe timeout when health queried")
+  void shouldApplyProbeTimeoutWhenHealthQueried() {
+    var client = FakeHttpClient.respondingWith(200);
+    var indicator = indicatorFor(client);
+
+    indicator.health();
+
+    assertThat(client.sentRequests())
+        .singleElement()
+        .satisfies(request -> assertThat(request.timeout()).contains(PROBE_TIMEOUT));
   }
 
   @Test
@@ -125,9 +137,9 @@ class TmdbHealthIndicatorTest {
   }
 
   @Test
-  @DisplayName("Should cache degraded verdict when TMDB is unresponsive")
-  void shouldCacheDegradedVerdictWhenTmdbIsUnresponsive() {
-    var client = FakeHttpClient.unresponsive();
+  @DisplayName("Should cache DEGRADED verdict when health probe times out")
+  void shouldCacheDegradedVerdictWhenHealthProbeTimesOut() {
+    var client = FakeHttpClient.failingWith(new HttpTimeoutException("request timed out"));
     var indicator = indicatorFor(client);
 
     var firstHealth = indicator.health();
