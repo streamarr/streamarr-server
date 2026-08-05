@@ -59,3 +59,6 @@ src/test/resources/BigBuckBunny_320x180.mp4
 ### Claude Code local state (skills stay tracked) ###
 .claude/settings.local.json
 .claude/worktrees/
+
+### Local PR review artifacts ###
+/pr-review-handoffs/
