@@ -40,7 +40,8 @@ class AuthInsecureCookieIT extends AbstractIntegrationTest {
                           {"email": "%s", "password": "%s", "deviceName": "it-device", \
                           "cookieMode": true}
                           """
-                              .formatted(identity.account().getEmail(), authTestSupport.password())))
+                              .formatted(
+                                  identity.account().getEmail(), authTestSupport.password())))
               .andExpect(status().isOk())
               .andReturn()
               .getResponse();
