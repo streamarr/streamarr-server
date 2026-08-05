@@ -882,6 +882,7 @@ class SegmentDeliveryCoordinatorTest {
                 rig.coordinator()
                     .deliver(sessionId, StreamSession.defaultVariant(), "segment1.ts"));
     gatingExecutor.awaitStartedTargetCount(1);
+    awaitLivenessChecks(gatingExecutor, 1);
     var attemptY = session.getHandle().orElseThrow().attemptId();
 
     gatingExecutor.releaseRecoveryEntry();
