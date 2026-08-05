@@ -17,6 +17,7 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
@@ -174,7 +175,7 @@ class HlsStreamingSmokeTest {
   private MediaFile seedMediaFile() {
     var file =
         MediaFile.builder()
-            .filepathUri(TEST_VIDEO.toString())
+            .filepathUri(FilepathCodec.encode(TEST_VIDEO))
             .filename("BigBuckBunny_320x180.mp4")
             .status(MediaFileStatus.MATCHED)
             .size(TEST_VIDEO.toFile().length())
