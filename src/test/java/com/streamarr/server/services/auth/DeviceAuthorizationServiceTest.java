@@ -129,7 +129,6 @@ class DeviceAuthorizationServiceTest {
           tokenProperties,
           clock,
           membershipRepository,
-          profileRepository,
           accountProfileRepository);
 
   private DeviceAuthorizationService service;
