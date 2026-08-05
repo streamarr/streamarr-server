@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -47,6 +48,7 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
 
   private final List<UUID> accountIds = new ArrayList<>();
 
+  @BeforeEach
   @AfterEach
   void deleteSeededRows() {
     authorizationRepository.deleteAll();

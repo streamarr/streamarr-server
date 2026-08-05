@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import jakarta.servlet.http.Cookie;
 import java.util.UUID;
@@ -41,12 +42,15 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
 
   @Autowired private AuthTestSupport authTestSupport;
 
+  @Autowired private DeviceAuthorizationRepository deviceAuthorizationRepository;
+
   @Autowired private ApplicationContext applicationContext;
 
   private AuthTestSupport.TestIdentity identity;
 
   @AfterEach
-  void deleteIdentity() {
+  void deleteIdentityAndDeviceAuthorizations() {
+    deviceAuthorizationRepository.deleteAll();
     if (identity != null) {
       authTestSupport.deleteIdentity(identity);
     }
