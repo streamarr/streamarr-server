@@ -15,8 +15,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Encodes paths as filesystem-provider URIs while continuing to read legacy raw paths. URI text
- * decoding is strict UTF-8; decoding to {@link Path} preserves filesystem bytes. See ADR 0012.
+ * Encodes paths as filesystem-provider URIs. URI text decoding is strict UTF-8; decoding to {@link
+ * Path} preserves filesystem bytes. See ADR 0012.
  */
 public final class FilepathCodec {
 
@@ -33,10 +33,7 @@ public final class FilepathCodec {
   }
 
   public static Path decode(FileSystem fileSystem, String filepathUri) {
-    return switch (parse(filepathUri)) {
-      case EncodedUri(URI uri) -> decodeUri(fileSystem, uri, filepathUri);
-      case LegacyPath(String value) -> fileSystem.getPath(value);
-    };
+    return decodeUri(fileSystem, parse(filepathUri), filepathUri);
   }
 
   public static String filenameOf(String filepathUri) {
@@ -76,36 +73,22 @@ public final class FilepathCodec {
   }
 
   private static String decodedPathComponentOf(String filepathUri) {
-    return switch (parse(filepathUri)) {
-      case EncodedUri(URI uri) -> decodeUtf8Path(uri, filepathUri);
-      case LegacyPath(String value) -> value;
-    };
+    return decodeUtf8Path(parse(filepathUri), filepathUri);
   }
 
-  private static ParsedFilepath parse(String filepathUri) {
+  private static URI parse(String filepathUri) {
     URI uri;
 
     try {
       uri = URI.create(filepathUri);
     } catch (IllegalArgumentException exception) {
-      if (hasFileScheme(filepathUri)) {
-        throw invalidFilepathUri(filepathUri, exception);
-      }
-      return new LegacyPath(filepathUri);
+      throw invalidFilepathUri(filepathUri, exception);
     }
 
     validateFileUriStructure(uri, filepathUri);
 
-    if (uri.getScheme() == null || hasWindowsDrivePrefix(filepathUri)) {
-      return new LegacyPath(filepathUri);
-    }
-
-    if (uri.isOpaque()) {
-      return new LegacyPath(filepathUri);
-    }
-
-    if (hasSupportedFileSystemScheme(uri)) {
-      return new EncodedUri(uri);
+    if (isSupportedFileSystemUri(uri)) {
+      return uri;
     }
 
     throw invalidFilepathUri(filepathUri);
@@ -115,16 +98,10 @@ public final class FilepathCodec {
     return value.regionMatches(true, 0, "file:", 0, "file:".length());
   }
 
-  private static boolean hasWindowsDrivePrefix(String value) {
-    return value.length() >= 3
-        && Character.isLetter(value.charAt(0))
-        && value.charAt(1) == ':'
-        && value.charAt(2) == '/';
-  }
-
-  private static boolean hasSupportedFileSystemScheme(URI uri) {
-    return FileSystemProvider.installedProviders().stream()
-        .anyMatch(provider -> provider.getScheme().equalsIgnoreCase(uri.getScheme()));
+  private static boolean isSupportedFileSystemUri(URI uri) {
+    return !uri.isOpaque()
+        && FileSystemProvider.installedProviders().stream()
+            .anyMatch(provider -> provider.getScheme().equalsIgnoreCase(uri.getScheme()));
   }
 
   private static void validateFileUriStructure(URI uri, String filepathUri) {
@@ -233,10 +210,4 @@ public final class FilepathCodec {
       return Path.of(uri);
     }
   }
-
-  private sealed interface ParsedFilepath permits EncodedUri, LegacyPath {}
-
-  private record EncodedUri(URI uri) implements ParsedFilepath {}
-
-  private record LegacyPath(String value) implements ParsedFilepath {}
 }

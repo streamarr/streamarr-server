@@ -77,7 +77,7 @@ class FileEventProcessorTest {
             .name("Movies")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepathUri("/media/movies")
+            .filepathUri("file:///media/movies")
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.MOVIE)
             .build();
@@ -88,7 +88,7 @@ class FileEventProcessorTest {
             .name("Special Movies")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepathUri("/media/movies/special")
+            .filepathUri("file:///media/movies/special")
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.MOVIE)
             .build();
@@ -99,7 +99,7 @@ class FileEventProcessorTest {
             .name("TV Shows")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepathUri("/media/shows")
+            .filepathUri("file:///media/shows")
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.SERIES)
             .build();
@@ -518,7 +518,7 @@ class FileEventProcessorTest {
             .name("Anime")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepathUri("/media/anime")
+            .filepathUri("file:///media/anime")
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.MOVIE)
             .build();

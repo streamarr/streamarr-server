@@ -63,7 +63,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
             .libraryId(library.getId())
             .status(MediaFileStatus.MATCHED)
             .filename("movie-" + UUID.randomUUID() + ".mkv")
-            .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
+            .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
             .build();
 
     var movie =

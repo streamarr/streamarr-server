@@ -473,7 +473,7 @@ class LibraryManagementServiceTest {
                 .name("Other Type Library")
                 .backend(LibraryBackend.LOCAL)
                 .status(LibraryStatus.HEALTHY)
-                .filepathUri("/library/" + UUID.randomUUID())
+                .filepathUri("file:///library/" + UUID.randomUUID())
                 .externalAgentStrategy(ExternalAgentStrategy.TMDB)
                 .type(MediaType.OTHER)
                 .build());

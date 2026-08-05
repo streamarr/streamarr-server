@@ -10,7 +10,7 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -73,13 +73,16 @@ public class OrphanedMediaFileCleanupService {
   }
 
   private boolean isFileStillOnDisk(MediaFile file) {
+    Path path;
+
     try {
-      var path = FilepathCodec.decode(fileSystem, file.getFilepathUri());
-      return Files.exists(path);
-    } catch (InvalidPathException | SecurityException _) {
+      path = FilepathCodec.decode(fileSystem, file.getFilepathUri());
+    } catch (IllegalArgumentException _) {
       log.warn("MediaFile id: {} has unmappable filepath — treating as orphaned.", file.getId());
       return false;
     }
+
+    return Files.exists(path);
   }
 
   private void deleteMoviesWithNoRemainingFiles(Set<UUID> movieIds) {

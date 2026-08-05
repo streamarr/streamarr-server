@@ -174,7 +174,7 @@ class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
             .mediaId(movie.getId())
             .libraryId(library.getId())
             .filename("cascade-test.mkv")
-            .filepathUri("/test/cascade-test.mkv")
+            .filepathUri("file:///test/cascade-test.mkv")
             .status(MediaFileStatus.MATCHED)
             .size(1000L)
             .build());

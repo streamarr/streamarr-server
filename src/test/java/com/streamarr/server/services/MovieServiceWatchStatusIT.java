@@ -97,7 +97,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
             .libraryId(library.getId())
             .status(MediaFileStatus.MATCHED)
             .filename(title.toLowerCase().replace(' ', '-') + ".mkv")
-            .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
+            .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
             .build();
 
     return movieRepository.saveAndFlush(
@@ -261,7 +261,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
               .libraryId(lib.getId())
               .status(MediaFileStatus.MATCHED)
               .filename(title.toLowerCase() + ".mkv")
-              .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
+              .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
               .build();
 
       var movie =

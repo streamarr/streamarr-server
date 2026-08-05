@@ -13,6 +13,7 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.SecurityExceptionFileSystem;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -89,7 +90,7 @@ class OrphanedMediaFileCleanupServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(library.getId())
-                .filepathUri("/library/nonexistent/movie.mkv")
+                .filepathUri("file:///library/nonexistent/movie.mkv")
                 .filename("movie.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -127,7 +128,7 @@ class OrphanedMediaFileCleanupServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(otherLibraryId)
-                .filepathUri("/other/library/nonexistent.mkv")
+                .filepathUri("file:///other/library/nonexistent.mkv")
                 .filename("nonexistent.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -146,7 +147,7 @@ class OrphanedMediaFileCleanupServiceTest {
         MediaFile.builder()
             .libraryId(library.getId())
             .mediaId(movie.getId())
-            .filepathUri("/library/nonexistent/gone-movie.mkv")
+            .filepathUri("file:///library/nonexistent/gone-movie.mkv")
             .filename("gone-movie.mkv")
             .status(MediaFileStatus.MATCHED)
             .build());
@@ -176,7 +177,7 @@ class OrphanedMediaFileCleanupServiceTest {
         MediaFile.builder()
             .libraryId(library.getId())
             .mediaId(movie.getId())
-            .filepathUri("/library/nonexistent/surviving-movie-copy.mkv")
+            .filepathUri("file:///library/nonexistent/surviving-movie-copy.mkv")
             .filename("surviving-movie-copy.mkv")
             .status(MediaFileStatus.MATCHED)
             .build());
@@ -192,7 +193,7 @@ class OrphanedMediaFileCleanupServiceTest {
     fakeMediaFileRepository.save(
         MediaFile.builder()
             .libraryId(library.getId())
-            .filepathUri("/library/nonexistent/movie.mkv")
+            .filepathUri("file:///library/nonexistent/movie.mkv")
             .filename("movie.mkv")
             .status(MediaFileStatus.MATCHED)
             .build());
@@ -221,7 +222,7 @@ class OrphanedMediaFileCleanupServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(library.getId())
-                .filepathUri("/library/movie\u0000corrupted.mkv")
+                .filepathUri("file:///library/movie%00corrupted.mkv")
                 .filename("corrupted.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -237,7 +238,7 @@ class OrphanedMediaFileCleanupServiceTest {
     fakeMediaFileRepository.save(
         MediaFile.builder()
             .libraryId(library.getId())
-            .filepathUri("/library/movie\u0000corrupted.mkv")
+            .filepathUri("file:///library/movie%00corrupted.mkv")
             .filename("corrupted.mkv")
             .status(MediaFileStatus.MATCHED)
             .build());
@@ -246,7 +247,7 @@ class OrphanedMediaFileCleanupServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(library.getId())
-                .filepathUri("/library/nonexistent/valid-orphan.mkv")
+                .filepathUri("file:///library/nonexistent/valid-orphan.mkv")
                 .filename("valid-orphan.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -254,6 +255,30 @@ class OrphanedMediaFileCleanupServiceTest {
     orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
 
     assertThat(fakeMediaFileRepository.findById(validOrphan.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should preserve media files when filesystem access is denied")
+  void shouldPreserveMediaFilesWhenFilesystemAccessDenied() {
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("file:///library/retained.mkv")
+                .filename("retained.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+    var serviceWithDeniedAccess =
+        new OrphanedMediaFileCleanupService(
+            fakeLibraryRepository,
+            fakeMediaFileRepository,
+            movieService,
+            new SecurityExceptionFileSystem(fileSystem),
+            noOpTransactionTemplate());
+
+    serviceWithDeniedAccess.onScanCompleted(new ScanCompletedEvent(library.getId()));
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId())).isPresent();
   }
 
   @Test

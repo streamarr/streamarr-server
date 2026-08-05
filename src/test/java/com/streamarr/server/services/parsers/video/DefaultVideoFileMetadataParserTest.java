@@ -304,13 +304,14 @@ class DefaultVideoFileMetadataParserTest {
   }
 
   @Nested
-  @DisplayName("Should successfully extract a title from filename")
+  @DisplayName("Title-Only Extraction Tests")
   class SuccessfulTitleExtractionTests {
 
     record TestCase(String title, String filename) {}
 
     @TestFactory
-    Stream<DynamicNode> tests() {
+    @DisplayName("Should extract title without year when filename has no extractable release year")
+    Stream<DynamicNode> shouldExtractTitleWithoutYearWhenFilenameHasNoExtractableReleaseYear() {
       return Stream.of(
               new TestCase("a", " a "),
               new TestCase("$", " $ "),

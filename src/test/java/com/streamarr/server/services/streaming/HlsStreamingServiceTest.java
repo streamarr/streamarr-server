@@ -88,7 +88,7 @@ class HlsStreamingServiceTest {
   private MediaFile seedMediaFile() {
     var file =
         MediaFile.builder()
-            .filepathUri("/media/movies/test.mkv")
+            .filepathUri("file:///media/movies/test.mkv")
             .filename("test.mkv")
             .status(MediaFileStatus.MATCHED)
             .size(1_000_000L)

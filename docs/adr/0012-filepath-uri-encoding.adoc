@@ -29,11 +29,14 @@ without first converting the path through `Path.toString()` and `sun.jnu.encodin
 Hierarchical URI values are accepted only when their scheme belongs to an installed filesystem
 provider and are decoded through that provider. Local `file:` URIs with an authority are rejected
 because local filesystem providers cannot resolve them. Unsupported schemes fail rather than being
-interpreted differently by the text and filesystem views. Legacy Windows drive paths and opaque
-colon-containing raw names remain plain paths.
+interpreted differently by the text and filesystem views. Scheme-less paths, Windows drive paths,
+and opaque URIs are rejected so every `filepathUri` value has one unambiguous representation.
 
 == Consequences
 
 * Frontend consumers parse every filepath field the same way (standard URI decoding).
 * Non-ASCII filenames round-trip safely through the database and GraphQL schema.
-* `FilepathCodec.decode` includes a plain-string fallback for pre-migration data. `file://` URIs resolve correctly against Jimfs via the `decodeUri` path-extraction fallback, tests use production-like URIs.
+* Raw library paths are encoded before persistence, and V036 normalizes rows created before this
+  contract. `FilepathCodec` does not retain a runtime fallback for raw persisted paths.
+* `file://` URIs resolve correctly against Jimfs via the `decodeUri` path-extraction fallback, and
+  tests use production-like URIs.

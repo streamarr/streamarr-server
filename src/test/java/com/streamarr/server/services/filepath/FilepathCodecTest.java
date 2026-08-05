@@ -100,16 +100,6 @@ class FilepathCodecTest {
   }
 
   @Test
-  @DisplayName("Should fall back to plain path when no URI scheme present")
-  void shouldFallBackToPlainPathWhenNoUriScheme() throws IOException {
-    try (FileSystem jimfs = Jimfs.newFileSystem(Configuration.unix())) {
-      var path = FilepathCodec.decode(jimfs, "/plain/path");
-
-      assertThat(path).isEqualTo(jimfs.getPath("/plain/path"));
-    }
-  }
-
-  @Test
   @DisplayName("Should decode filename as UTF-8 when platform charset would mangle the path")
   void shouldDecodeFilenameAsUtf8WhenPlatformCharsetWouldMangleThePath() {
     var filenameOnDisk = "Déjà Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
@@ -142,12 +132,6 @@ class FilepathCodecTest {
   void shouldExtractFinalSegmentWhenUriDenotesDirectoryWithTrailingSlash() {
     assertThat(FilepathCodec.filenameOf("file:///media/Am%C3%A9lie%20(2001)/"))
         .isEqualTo("Amélie (2001)");
-  }
-
-  @Test
-  @DisplayName("Should extract final segment when given a plain path without a URI scheme")
-  void shouldExtractFinalSegmentWhenGivenPlainPathWithoutUriScheme() {
-    assertThat(FilepathCodec.filenameOf("/media/movies/movie.mkv")).isEqualTo("movie.mkv");
   }
 
   @Test
@@ -188,30 +172,30 @@ class FilepathCodecTest {
   }
 
   @Test
-  @DisplayName("Should name directories when given a plain path without a URI scheme")
-  void shouldNameDirectoriesWhenGivenPlainPathWithoutUriScheme() {
-    assertThat(FilepathCodec.parentNameOf("/media/movies/movie.mkv")).contains("movies");
-    assertThat(FilepathCodec.grandparentNameOf("/media/movies/movie.mkv")).contains("media");
-  }
-
-  @Test
   @DisplayName("Should decode the whole path as UTF-8 when given a filepath URI")
   void shouldDecodeWholePathAsUtf8WhenGivenFilepathUri() {
     assertThat(FilepathCodec.pathOf("file:///media/D%C3%A9j%C3%A0%20Vu%20(2006)/movie.mkv"))
         .isEqualTo("/media/Déjà Vu (2006)/movie.mkv");
   }
 
-  @Test
-  @DisplayName("Should return the path unchanged when given a plain path without a URI scheme")
-  void shouldReturnPathUnchangedWhenGivenPlainPathWithoutUriScheme() {
-    assertThat(FilepathCodec.pathOf("/media/Déjà Vu (2006)/movie.mkv"))
-        .isEqualTo("/media/Déjà Vu (2006)/movie.mkv");
-  }
-
-  @Test
-  @DisplayName("Should return legacy Windows path unchanged when it uses forward slashes")
-  void shouldReturnLegacyWindowsPathUnchangedWhenItUsesForwardSlashes() {
-    assertThat(FilepathCodec.pathOf("C:/Movies/Amélie.mkv")).isEqualTo("C:/Movies/Amélie.mkv");
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "/library/sample.mkv",
+        "/media/Café Meridian (2006)/sample.mkv",
+        "C:/Media/Café Meridian.mkv",
+        "C:\\Media\\Café Meridian.mkv",
+        "Copper:Lantern.mkv",
+        "jar:file:///tmp/archive.zip!/sample.mkv"
+      })
+  @DisplayName("Should reject noncanonical filepath across text and filesystem views")
+  void shouldRejectNoncanonicalFilepathAcrossTextAndFilesystemViews(String filepath) {
+    assertThatThrownBy(() -> FilepathCodec.pathOf(filepath))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(filepath);
+    assertThatThrownBy(() -> FilepathCodec.decode(filepath))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(filepath);
   }
 
   @Test
@@ -334,20 +318,5 @@ class FilepathCodecTest {
 
     assertThat(FilepathCodec.filenameOf(FilepathCodec.encode(Path.of("/media", filename))))
         .isEqualTo(filename);
-  }
-
-  @Test
-  @DisplayName("Should treat plain filename as a legacy path when it contains a colon")
-  void shouldTreatPlainFilenameAsLegacyPathWhenItContainsColon() {
-    assertThat(FilepathCodec.filenameOf("Frost:Nixon.mkv")).isEqualTo("Frost:Nixon.mkv");
-  }
-
-  @Test
-  @DisplayName("Should treat opaque provider URI as a legacy path when reading and decoding")
-  void shouldTreatOpaqueProviderUriAsLegacyPathWhenReadingAndDecoding() {
-    var filepathUri = "jar:file:///tmp/a.zip!/b.mkv";
-
-    assertThat(FilepathCodec.pathOf(filepathUri)).isEqualTo(filepathUri);
-    assertThat(FilepathCodec.decode(filepathUri)).isEqualTo(Path.of(filepathUri));
   }
 }

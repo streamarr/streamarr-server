@@ -338,7 +338,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
               .libraryId(lib.getId())
               .status(MediaFileStatus.MATCHED)
               .filename(title.toLowerCase().replace(' ', '-') + "-s01e0" + i + ".mkv")
-              .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
+              .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
               .build();
 
       var episode =
