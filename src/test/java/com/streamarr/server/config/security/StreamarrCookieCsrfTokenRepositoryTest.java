@@ -48,10 +48,10 @@ class StreamarrCookieCsrfTokenRepositoryTest {
   @DisplayName("Should expire the policy-specific csrf cookie when removing its token")
   void shouldExpirePolicySpecificCsrfCookieWhenRemovingItsToken(
       AuthCookiePolicy policy, String expectedCookieName, boolean expectedSecure) {
-    var repository = new StreamarrCookieCsrfTokenRepository(Duration.ofDays(30), policy);
+    var policyRepository = new StreamarrCookieCsrfTokenRepository(Duration.ofDays(30), policy);
     var response = new MockHttpServletResponse();
 
-    repository.saveToken(null, new MockHttpServletRequest(), response);
+    policyRepository.saveToken(null, new MockHttpServletRequest(), response);
 
     var header = response.getHeader(HttpHeaders.SET_COOKIE);
     assertThat(header)
