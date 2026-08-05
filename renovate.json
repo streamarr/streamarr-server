@@ -10,6 +10,28 @@
     "labels": ["dependencies", "security"],
     "schedule": ["at any time"]
   },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update the Pack builder used by container-image workflows",
+      "managerFilePatterns": ["/^\\.github/actions/pack-build/action\\.yml$/"],
+      "matchStrings": [
+        "--builder (?<depName>paketobuildpacks/builder-jammy-full):(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Update pinned Paketo buildpacks used by container-image workflows",
+      "managerFilePatterns": ["/^\\.github/actions/pack-build/action\\.yml$/"],
+      "matchStrings": [
+        "--buildpack (?<depName>paketo-buildpacks/(?:apt|procfile))@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "buildpacks-registry",
+      "versioningTemplate": "semver"
+    }
+  ],
   "packageRules": [
     {
       "description": "Group patch updates and automerge when CI passes",

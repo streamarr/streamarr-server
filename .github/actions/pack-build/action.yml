@@ -43,14 +43,12 @@ runs:
           publish_flag="--publish"
         fi
 
-        # procfile is pinned because builder-jammy-full carries four copies of it (5.10.1,
-        # 5.13.2, 5.13.5, 5.13.6), pulled in transitively by other buildpacks, and an unversioned
-        # reference cannot resolve against more than one. apt and java need no pin: java appears
-        # exactly once, and apt is not in the builder at all — pack fetches it from the registry.
+        # Pin independently resolved Pack inputs. Procfile must be versioned because jammy-full
+        # includes several versions, making an unversioned reference ambiguous.
         pack build index.docker.io/streamarr/streamarr-server \
             ${tag_args} \
-            --builder paketobuildpacks/builder-jammy-full \
-            --buildpack paketo-buildpacks/apt \
+            --builder paketobuildpacks/builder-jammy-full:0.3.639 \
+            --buildpack paketo-buildpacks/apt@0.2.0 \
             --buildpack paketo-buildpacks/java \
             --buildpack paketo-buildpacks/procfile@5.13.6 \
             --env BP_JVM_VERSION=25 \

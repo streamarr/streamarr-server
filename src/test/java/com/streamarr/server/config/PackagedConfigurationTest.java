@@ -8,6 +8,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -16,6 +18,7 @@ import org.springframework.boot.test.context.ConfigDataApplicationContextInitial
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
 import org.yaml.snakeyaml.Yaml;
+import tools.jackson.databind.ObjectMapper;
 
 @Tag("UnitTest")
 @DisplayName("Packaged Configuration Tests")
@@ -78,6 +81,43 @@ class PackagedConfigurationTest {
             "worker: java -Dloader.main=com.streamarr.transcode.worker.TranscodeWorkerApplication "
                 + "org.springframework.boot.loader.launch.PropertiesLauncher");
     assertThat(buildAction).contains("--buildpack paketo-buildpacks/procfile");
+  }
+
+  @Test
+  @DisplayName(
+      "Should pin and track independently versioned Pack inputs when packaging container images")
+  void shouldPinAndTrackIndependentlyVersionedPackInputsWhenPackagingContainerImages()
+      throws IOException {
+    var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
+    var renovateConfig = new ObjectMapper().readTree(Files.readString(Path.of("renovate.json")));
+    var packDependencies =
+        buildAction
+            .lines()
+            .map(String::strip)
+            .filter(
+                line ->
+                    line.startsWith("--builder paketobuildpacks/builder-jammy-full")
+                        || line.startsWith("--buildpack paketo-buildpacks/apt")
+                        || line.startsWith("--buildpack paketo-buildpacks/procfile"))
+            .toList();
+    var renovateMatchers =
+        StreamSupport.stream(renovateConfig.path("customManagers").spliterator(), false)
+            .flatMap(
+                manager -> StreamSupport.stream(manager.path("matchStrings").spliterator(), false))
+            .map(node -> Pattern.compile(node.asString()))
+            .toList();
+
+    assertThat(packDependencies)
+        .hasSize(3)
+        .allMatch(
+            dependency ->
+                dependency.matches(
+                    "--(?:builder|buildpack) [^\\s\\\\]+(?:[:@])\\d+\\.\\d+\\.\\d+ \\\\"));
+    assertThat(packDependencies)
+        .allSatisfy(
+            dependency ->
+                assertThat(renovateMatchers)
+                    .anyMatch(matcher -> matcher.matcher(dependency).find()));
   }
 
   @Test
