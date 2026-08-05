@@ -2,8 +2,11 @@ package com.streamarr.server.config.security;
 
 import static com.streamarr.server.support.AuthTestSupport.bearer;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -15,12 +18,17 @@ import com.streamarr.server.support.AuthTestSupport;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -32,6 +40,7 @@ import org.springframework.test.web.servlet.MockMvc;
 class SecurityFilterChainIT extends AbstractIntegrationTest {
 
   private static final String ACCOUNT_QUERY = "{\"query\": \"{ me { accountId } }\"}";
+  private static final String CSRF_HEADER = AuthCookies.CSRF_HEADER;
 
   @Autowired private MockMvc mockMvc;
 
@@ -145,6 +154,18 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should not grant cross-origin json preflight when the origin is hostile")
+  void shouldNotGrantCrossOriginJsonPreflightWhenOriginIsHostile() throws Exception {
+    mockMvc
+        .perform(
+            options("/api/auth/login")
+                .header("Origin", "https://attacker.example")
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "content-type"))
+        .andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
+  }
+
+  @Test
   @DisplayName("Should serve jwks unauthenticated")
   void shouldServeJwksUnauthenticated() throws Exception {
     // Public verification keys are public: the transcode tier fetches them with no credentials.
@@ -207,6 +228,301 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   @DisplayName("Should publish scope hierarchy for security auto detection")
   void shouldPublishScopeHierarchyForSecurityAutoDetection() {
     assertThat(applicationContext.getBeanProvider(RoleHierarchy.class).getIfUnique()).isNotNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Should issue a host-bound script-readable csrf cookie when status is requested unauthenticated")
+  void shouldIssueHostBoundScriptReadableCsrfCookieWhenStatusRequestedUnauthenticated()
+      throws Exception {
+    // The SPA's boot request. Everything below depends on this: a browser holds the host-bound
+    // anti-CSRF nonce before it can ever POST a login, and a native client never asks for one.
+    var cookie =
+        mockMvc
+            .perform(get("/api/auth/status"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getCookie("__Host-XSRF-TOKEN");
+
+    assertThat(cookie).isNotNull();
+    assertThat(cookie.isHttpOnly()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should issue a host-prefixed csrf cookie when a token is requested")
+  void shouldIssueHostPrefixedCsrfCookieWhenTokenIsRequested() throws Exception {
+    var cookie = freshCsrfCookie();
+
+    assertAll(
+        () -> assertThat(cookie.getName()).isEqualTo("__Host-XSRF-TOKEN"),
+        () -> assertThat(cookie.getSecure()).isTrue(),
+        () -> assertThat(cookie.getPath()).isEqualTo("/"),
+        () -> assertThat(cookie.getDomain()).isNull(),
+        () -> assertThat(cookie.getAttribute("SameSite")).isEqualTo("Lax"));
+  }
+
+  @Test
+  @DisplayName("Should reject a cookie-bearing login when no csrf token accompanies it")
+  void shouldRejectCookieBearingLoginWhenNoCsrfTokenAccompaniesIt() throws Exception {
+    // Login-CSRF: the credential is in the body, so no auth cookie rides the request — but the
+    // browser holds the origin's CSRF cookie, and that is the population CSRF must cover.
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .cookie(freshCsrfCookie())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(loginBody("nobody-" + UUID.randomUUID() + "@example.com", true)))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("CSRF_TOKEN_REQUIRED"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject graphql and remint its csrf cookie when cookie authentication lacks a token")
+  void shouldRejectGraphQlAndRemintCsrfCookieWhenCookieAuthenticationLacksToken() throws Exception {
+    identity = authTestSupport.createIdentity();
+
+    var response =
+        mockMvc
+            .perform(
+                post("/graphql")
+                    .cookie(
+                        new Cookie(
+                            AuthCookies.ACCESS_COOKIE, authTestSupport.accountBearer(identity)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(ACCOUNT_QUERY))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.code").value("CSRF_TOKEN_REQUIRED"))
+            .andReturn()
+            .getResponse();
+
+    assertThat(response.getCookie(AuthCookies.CSRF_COOKIE)).isNotNull();
+  }
+
+  @Test
+  @DisplayName("Should reject a request when only an unprefixed csrf cookie is echoed")
+  void shouldRejectRequestWhenOnlyUnprefixedCsrfCookieIsEchoed() throws Exception {
+    identity = authTestSupport.createIdentity();
+    var attackerChosenToken = "attacker-chosen-token";
+
+    mockMvc
+        .perform(
+            post("/graphql")
+                .cookie(
+                    new Cookie(AuthCookies.ACCESS_COOKIE, authTestSupport.accountBearer(identity)),
+                    new Cookie("XSRF-TOKEN", attackerChosenToken))
+                .header(CSRF_HEADER, attackerChosenToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(ACCOUNT_QUERY))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("CSRF_TOKEN_REQUIRED"));
+  }
+
+  @Test
+  @DisplayName("Should reject setup when a csrf cookie is not echoed")
+  void shouldRejectSetupWhenCsrfCookieIsNotEchoed() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/setup")
+                .cookie(freshCsrfCookie())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"email": "admin@example.com", "displayName": "Admin", \
+                    "password": "test-password", "householdName": "Home", \
+                    "profileName": "Admin", "cookieMode": true} \
+                    """))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("CSRF_TOKEN_REQUIRED"));
+  }
+
+  @Test
+  @DisplayName("Should permit cookie-mode login when csrf accompanies a stale access cookie")
+  void shouldPermitCookieModeLoginWhenCsrfAccompaniesStaleAccessCookie() throws Exception {
+    identity = authTestSupport.createIdentity();
+    var csrfCookie = freshCsrfCookie();
+
+    // The wedge: a stale access cookie must not lock a user out of the one call that replaces it.
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .cookie(csrfCookie, new Cookie(AuthCookies.ACCESS_COOKIE, "stale-access-token"))
+                    .header(CSRF_HEADER, csrfCookie.getValue())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(identity.account().getEmail(), true)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andReturn()
+            .getResponse();
+
+    assertThat(response.getHeaders(HttpHeaders.SET_COOKIE))
+        .anySatisfy(header -> assertThat(header).startsWith(AuthCookies.ACCESS_COOKIE + "="));
+  }
+
+  @Test
+  @DisplayName("Should permit a bearer-mode login when no cookies and no csrf token ride it")
+  void shouldPermitBearerModeLoginWhenNoCookiesAndNoCsrfTokenRideIt() throws Exception {
+    identity = authTestSupport.createIdentity();
+
+    // The native/tvOS shape. Tokens come back in the body only, so nothing ambient is established.
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(identity.account().getEmail(), false)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.accessToken").isNotEmpty())
+            .andExpect(jsonPath("$.refreshToken").isNotEmpty())
+            .andReturn()
+            .getResponse();
+
+    // The filter offers a CSRF token to everyone, so the contract is that no *credential* cookie
+    // is written: a native client that ignores Set-Cookie stays exempt on its next login.
+    assertThat(response.getHeaders(HttpHeaders.SET_COOKIE))
+        .noneSatisfy(header -> assertThat(header).startsWith(AuthCookies.ACCESS_COOKIE + "="))
+        .noneSatisfy(header -> assertThat(header).startsWith(AuthCookies.REFRESH_COOKIE + "="));
+  }
+
+  @Test
+  @DisplayName("Should permit bearer-mode login when a retained csrf cookie is echoed")
+  void shouldPermitBearerModeLoginWhenRetainedCsrfCookieIsEchoed() throws Exception {
+    identity = authTestSupport.createIdentity();
+    var csrfCookie = freshCsrfCookie();
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .cookie(csrfCookie)
+                .header(CSRF_HEADER, csrfCookie.getValue())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(loginBody(identity.account().getEmail(), false)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.accessToken").isNotEmpty())
+        .andExpect(jsonPath("$.refreshToken").isNotEmpty());
+  }
+
+  @Test
+  @DisplayName("Should permit a bearer-mode refresh when no cookies and no csrf token ride it")
+  void shouldPermitBearerModeRefreshWhenNoCookiesAndNoCsrfTokenRideIt() throws Exception {
+    identity = authTestSupport.createIdentity();
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"refreshToken\": \"%s\"}".formatted(identity.rawRefreshToken())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.accessToken").isNotEmpty());
+  }
+
+  @ParameterizedTest(name = "Should reject {1} on {0}")
+  @MethodSource("nonJsonAuthRequests")
+  @DisplayName("Should reject an auth mutation when its content type is simple cross-origin")
+  void shouldRejectAuthMutationWhenContentTypeIsSimpleCrossOrigin(
+      String path, MediaType contentType, String body) throws Exception {
+    mockMvc
+        .perform(post(path).contentType(contentType).content(body))
+        .andExpect(status().isUnsupportedMediaType());
+  }
+
+  @Test
+  @DisplayName(
+      "Should not expire the csrf cookie before auth cookies when cookie-mode login succeeds")
+  void shouldNotExpireCsrfCookieBeforeAuthCookiesWhenCookieModeLoginSucceeds() throws Exception {
+    identity = authTestSupport.createIdentity();
+    var csrfCookie = freshCsrfCookie();
+
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .cookie(csrfCookie)
+                    .header(CSRF_HEADER, csrfCookie.getValue())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(identity.account().getEmail(), true)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+
+    // A session-scoped guard outlived by a 30-day credential is the wedge: close the browser and
+    // the token dies while the auth cookies survive, so an unsafe request made before the next
+    // safe boot request receives a recoverable 403.
+    var accessCookie = response.getCookie(AuthCookies.ACCESS_COOKIE);
+    var refreshCookie = response.getCookie(AuthCookies.REFRESH_COOKIE);
+    assertThat(accessCookie).isNotNull();
+    assertThat(refreshCookie).isNotNull();
+    assertThat(csrfCookie.getMaxAge())
+        .isGreaterThanOrEqualTo(accessCookie.getMaxAge())
+        .isGreaterThanOrEqualTo(refreshCookie.getMaxAge());
+  }
+
+  @Test
+  @DisplayName("Should renew the csrf cookie when the refresh cookie rotates")
+  void shouldRenewCsrfCookieWhenRefreshCookieRotates() throws Exception {
+    identity = authTestSupport.createIdentity();
+    var csrfCookie = freshCsrfCookie();
+    var loginResponse =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .cookie(csrfCookie)
+                    .header(CSRF_HEADER, csrfCookie.getValue())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(identity.account().getEmail(), true)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    var refreshCookie = loginResponse.getCookie(AuthCookies.REFRESH_COOKIE);
+    assertThat(refreshCookie).isNotNull();
+
+    var refreshResponse =
+        mockMvc
+            .perform(
+                post("/api/auth/refresh")
+                    .cookie(csrfCookie, refreshCookie)
+                    .header(CSRF_HEADER, csrfCookie.getValue())
+                    .contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+
+    var renewedCsrfCookie = refreshResponse.getCookie(AuthCookies.CSRF_COOKIE);
+    assertThat(renewedCsrfCookie).isNotNull();
+    assertThat(renewedCsrfCookie.getValue()).isEqualTo(csrfCookie.getValue());
+    assertThat(renewedCsrfCookie.getMaxAge()).isEqualTo(refreshCookie.getMaxAge());
+  }
+
+  private Cookie freshCsrfCookie() throws Exception {
+    var cookie =
+        mockMvc
+            .perform(get("/api/auth/status"))
+            .andReturn()
+            .getResponse()
+            .getCookie(AuthCookies.CSRF_COOKIE);
+    assertThat(cookie).isNotNull();
+    return cookie;
+  }
+
+  private static String loginBody(String email, boolean cookieMode) {
+    return """
+        {"email": "%s", "password": "%s", "deviceName": "Test", "cookieMode": %s}"""
+        .formatted(email, AuthTestSupport.PASSWORD, cookieMode);
+  }
+
+  private static Stream<Arguments> nonJsonAuthRequests() {
+    return Stream.of(
+        Arguments.of("/api/auth/setup", MediaType.TEXT_PLAIN, "not-json"),
+        Arguments.of("/api/auth/setup", MediaType.APPLICATION_FORM_URLENCODED, "email=a"),
+        Arguments.of("/api/auth/setup", MediaType.MULTIPART_FORM_DATA, "not-a-multipart-body"),
+        Arguments.of("/api/auth/login", MediaType.TEXT_PLAIN, "not-json"),
+        Arguments.of("/api/auth/login", MediaType.APPLICATION_FORM_URLENCODED, "email=a"),
+        Arguments.of("/api/auth/login", MediaType.MULTIPART_FORM_DATA, "not-a-multipart-body"),
+        Arguments.of("/api/auth/refresh", MediaType.TEXT_PLAIN, "not-json"),
+        Arguments.of("/api/auth/refresh", MediaType.APPLICATION_FORM_URLENCODED, "token=a"),
+        Arguments.of("/api/auth/refresh", MediaType.MULTIPART_FORM_DATA, "not-a-multipart-body"));
   }
 
   private String playbackBearer(UUID streamSessionId) {

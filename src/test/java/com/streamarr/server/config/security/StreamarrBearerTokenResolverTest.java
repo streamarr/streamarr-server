@@ -78,6 +78,16 @@ class StreamarrBearerTokenResolverTest {
   }
 
   @Test
+  @DisplayName("Should suppress bearer resolution when auth path contains matrix parameters")
+  void shouldSuppressBearerResolutionWhenAuthPathContainsMatrixParameters() {
+    var request = requestFor("/api/auth/login;source=test");
+    request.addHeader("Authorization", "Bearer header-token");
+    request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "cookie-token"));
+
+    assertThat(resolver.resolve(request)).isNull();
+  }
+
+  @Test
   @DisplayName("Should suppress auth cookie on unauthenticated auth path below a context path")
   void shouldSuppressAuthCookieOnUnauthenticatedAuthPathBelowContextPath() {
     var request = requestFor("/streamarr/api/auth/refresh");
