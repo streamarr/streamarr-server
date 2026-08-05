@@ -66,8 +66,8 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
         mediaFileRepository.saveAndFlush(
             MediaFile.builder()
                 .libraryId(libraryId)
-                .filepathUri("file:///media/D%C3%A9j%C3%A0%20Vu%20(2006).mkv")
-                .filename("D��j�� Vu (2006).mkv")
+                .filepathUri("file:///media/Caf%C3%A9%20Meridian%20(2006).mkv")
+                .filename("Caf�� Meridian (2006).mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
     mediaFileId = mediaFile.getId();
@@ -79,7 +79,7 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
     entityManager.clear();
 
     assertThat(mediaFileRepository.findById(mediaFileId).orElseThrow().getFilename())
-        .isEqualTo("Déjà Vu (2006).mkv");
+        .isEqualTo("Café Meridian (2006).mkv");
   }
 
   @Test
@@ -93,8 +93,8 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
         mediaFileRepository.saveAndFlush(
             MediaFile.builder()
                 .libraryId(libraryId)
-                .filepathUri("file:///media/Am%C3%A9lie%20(2001).mkv")
-                .filename("Amélie (2001).mkv")
+                .filepathUri("file:///media/Caf%C3%A9%20Meridian%20(2001).mkv")
+                .filename("Café Meridian (2001).mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
     mediaFileId = mediaFile.getId();
@@ -129,8 +129,8 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
         mediaFileRepository.saveAndFlush(
             MediaFile.builder()
                 .libraryId(libraryId)
-                .filepathUri("file:///media/Am%C3%A9lie%20(2001).mkv")
-                .filename("Am��lie (2001).mkv")
+                .filepathUri("file:///media/Caf%C3%A9%20Meridian%20(2001).mkv")
+                .filename("Caf�� Meridian (2001).mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
     additionalMediaFileId = validMediaFile.getId();
@@ -141,7 +141,7 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
     assertThat(mediaFileRepository.findById(mediaFileId).orElseThrow().getFilename())
         .isEqualTo("legacy-undecodable-name.mkv");
     assertThat(mediaFileRepository.findById(additionalMediaFileId).orElseThrow().getFilename())
-        .isEqualTo("Amélie (2001).mkv");
+        .isEqualTo("Café Meridian (2001).mkv");
   }
 
   @Test
@@ -189,8 +189,8 @@ class MediaFileFilenameMigrationIT extends AbstractIntegrationTest {
         mediaFileRepository.saveAndFlush(
             MediaFile.builder()
                 .libraryId(libraryId)
-                .filepathUri("file:///media/Am%C3%A9lie%20(2001).mkv")
-                .filename("Am��lie (2001).mkv")
+                .filepathUri("file:///media/Caf%C3%A9%20Meridian%20(2001).mkv")
+                .filename("Caf�� Meridian (2001).mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
     additionalMediaFileId = validMediaFile.getId();

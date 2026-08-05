@@ -767,18 +767,19 @@ class LibraryManagementServiceTest {
   @Test
   @DisplayName("Should search with URI-derived movie metadata when processing discovered file")
   void shouldSearchWithUriDerivedMovieMetadataWhenProcessingDiscoveredFile() throws IOException {
-    var expectedSearch = VideoFileParserResult.builder().title("Amélie").year("2001").build();
+    var expectedSearch =
+        VideoFileParserResult.builder().title("Café Meridian").year("2001").build();
     var searchResult =
         RemoteSearchResult.builder()
-            .title("Amélie")
-            .externalId("194")
+            .title("Café Meridian")
+            .externalId("1001")
             .externalSourceType(ExternalSourceType.TMDB)
             .build();
     var metadataProvider = new RecordingMetadataProvider<Movie>();
     metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
     var service =
         libraryManagementServiceWith(movieFileProcessorWith(metadataProvider), seriesFileProcessor);
-    var filepathUri = "file:///library/Am%C3%A9lie%20(2001)/movie.mkv";
+    var filepathUri = "file:///library/Caf%C3%A9%20Meridian%20(2001)/movie.mkv";
     var moviePath = pathWithDisplayName(filepathUri, "movie.mkv");
 
     service.processDiscoveredFile(savedLibraryId, moviePath);
@@ -791,15 +792,15 @@ class LibraryManagementServiceTest {
   void shouldSearchWithExternalIdFromFilepathUriWhenStoredFilenameIsMangled() {
     var expectedSearch =
         VideoFileParserResult.builder()
-            .title("Inception")
+            .title("Iron Harbor")
             .year("2010")
-            .externalId("tt1375666")
+            .externalId("tt7654321")
             .externalSource(ExternalSourceType.IMDB)
             .build();
     var searchResult =
         RemoteSearchResult.builder()
-            .title("Inception")
-            .externalId("27205")
+            .title("Iron Harbor")
+            .externalId("1002")
             .externalSourceType(ExternalSourceType.TMDB)
             .build();
     var metadataProvider = new RecordingMetadataProvider<Movie>();
@@ -807,7 +808,8 @@ class LibraryManagementServiceTest {
     var service =
         libraryManagementServiceWith(movieFileProcessorWith(metadataProvider), seriesFileProcessor);
     var filepathUri =
-        "file:///library/Inception%20(2010)/" + "Inception%20(2010)%20%5Bimdb-tt1375666%5D.mkv";
+        "file:///library/Iron%20Harbor%20(2010)/"
+            + "Iron%20Harbor%20(2010)%20%5Bimdb-tt7654321%5D.mkv";
     fakeMediaFileRepository.save(
         MediaFile.builder()
             .libraryId(savedLibraryId)
@@ -871,21 +873,21 @@ class LibraryManagementServiceTest {
   @DisplayName("Should search with URI-derived series metadata when processing root season file")
   void shouldSearchWithUriDerivedSeriesMetadataWhenProcessingRootSeasonFile() throws IOException {
     var library = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeSeriesLibrary());
-    var expectedSearch = VideoFileParserResult.builder().title("The Simpsons").build();
+    var expectedSearch = VideoFileParserResult.builder().title("Harbor Relay").build();
     var searchResult =
         RemoteSearchResult.builder()
-            .title("The Simpsons")
-            .externalId("456")
+            .title("Harbor Relay")
+            .externalId("2001")
             .externalSourceType(ExternalSourceType.TMDB)
             .build();
     var metadataProvider = new RecordingSeriesMetadataProvider();
     metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
-    when(seriesService.findByTmdbId("456")).thenReturn(Optional.empty());
+    when(seriesService.findByTmdbId("2001")).thenReturn(Optional.empty());
     var service =
         libraryManagementServiceWith(movieFileProcessor, seriesFileProcessorWith(metadataProvider));
     var seriesPath =
         pathWithDisplayName(
-            "file:///Season%2025/The%20Simpsons.S25E09.mkv", "The Simpsons.S25E09.mkv");
+            "file:///Season%2025/Harbor%20Relay.S25E09.mkv", "Harbor Relay.S25E09.mkv");
 
     service.processDiscoveredFile(library.getId(), seriesPath);
 
@@ -898,21 +900,21 @@ class LibraryManagementServiceTest {
   void shouldSearchWithAccentedSeriesFolderTitleWhenFilepathUriHasSeasonFolder()
       throws IOException {
     var library = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeSeriesLibrary());
-    var expectedSearch = VideoFileParserResult.builder().title("Amélie Chronicles").build();
+    var expectedSearch = VideoFileParserResult.builder().title("Lumière Harbor").build();
     var searchResult =
         RemoteSearchResult.builder()
-            .title("Amélie Chronicles")
-            .externalId("777")
+            .title("Lumière Harbor")
+            .externalId("2002")
             .externalSourceType(ExternalSourceType.TMDB)
             .build();
     var metadataProvider = new RecordingSeriesMetadataProvider();
     metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
-    when(seriesService.findByTmdbId("777")).thenReturn(Optional.empty());
+    when(seriesService.findByTmdbId("2002")).thenReturn(Optional.empty());
     var service =
         libraryManagementServiceWith(movieFileProcessor, seriesFileProcessorWith(metadataProvider));
     var filepathUri =
-        "file:///library/Am%C3%A9lie%20Chronicles/S%C3%A6son%203/" + "Amelie.Chronicles.S03E05.mkv";
-    var seriesPath = pathWithDisplayName(filepathUri, "Amelie.Chronicles.S03E05.mkv");
+        "file:///library/Lumi%C3%A8re%20Harbor/S%C3%A6son%203/" + "Lumiere.Harbor.S03E05.mkv";
+    var seriesPath = pathWithDisplayName(filepathUri, "Lumiere.Harbor.S03E05.mkv");
 
     service.processDiscoveredFile(library.getId(), seriesPath);
 
@@ -922,11 +924,11 @@ class LibraryManagementServiceTest {
   @Test
   @DisplayName("Should persist filename from filepath URI when Path display text is mangled")
   void shouldPersistFilenameFromFilepathUriWhenPathDisplayTextIsMangled() throws IOException {
-    var movieFilename = "Déjà Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+    var movieFilename = "Café Meridian (2006) - [BLURAY-1080p][DTS 5.1].mkv";
     var filepathUri =
-        "file:///library/D%C3%A9j%C3%A0%20Vu%20(2006)/"
-            + "D%C3%A9j%C3%A0%20Vu%20(2006)%20-%20%5BBLURAY-1080p%5D%5BDTS%205.1%5D.mkv";
-    var mangledFilename = "D��j�� Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+        "file:///library/Caf%C3%A9%20Meridian%20(2006)/"
+            + "Caf%C3%A9%20Meridian%20(2006)%20-%20%5BBLURAY-1080p%5D%5BDTS%205.1%5D.mkv";
+    var mangledFilename = "Caf�� Meridian (2006) - [BLURAY-1080p][DTS 5.1].mkv";
     var moviePath = pathWithDisplayName(filepathUri, mangledFilename);
 
     libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
@@ -940,16 +942,16 @@ class LibraryManagementServiceTest {
   @Test
   @DisplayName("Should repair existing mangled filename from filepath URI when rescanned")
   void shouldRepairExistingMangledFilenameFromFilepathUriWhenRescanned() throws IOException {
-    var movieFilename = "Déjà Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+    var movieFilename = "Café Meridian (2006) - [BLURAY-1080p][DTS 5.1].mkv";
     var rootPath = createRootLibraryDirectory();
-    var moviePath = createMovieFile(rootPath, "Déjà Vu (2006)", movieFilename);
+    var moviePath = createMovieFile(rootPath, "Café Meridian (2006)", movieFilename);
     var filepathUri = FilepathCodec.encode(moviePath);
 
     fakeMediaFileRepository.save(
         MediaFile.builder()
             .libraryId(savedLibraryId)
             .filepathUri(filepathUri)
-            .filename("D��j�� Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv")
+            .filename("Caf�� Meridian (2006) - [BLURAY-1080p][DTS 5.1].mkv")
             .status(MediaFileStatus.MATCHED)
             .build());
 

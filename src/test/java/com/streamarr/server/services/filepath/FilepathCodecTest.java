@@ -84,10 +84,10 @@ class FilepathCodecTest {
   @Test
   @DisplayName("Should read and decode file URI when scheme uses mixed case")
   void shouldReadAndDecodeFileUriWhenSchemeUsesMixedCase() {
-    var filepathUri = "FiLe:///media/Am%C3%A9lie.mkv";
+    var filepathUri = "FiLe:///media/Caf%C3%A9%20Meridian.mkv";
 
-    assertThat(FilepathCodec.pathOf(filepathUri)).isEqualTo("/media/Amélie.mkv");
-    assertThat(FilepathCodec.decode(filepathUri)).isEqualTo(Path.of("/media/Amélie.mkv"));
+    assertThat(FilepathCodec.pathOf(filepathUri)).isEqualTo("/media/Café Meridian.mkv");
+    assertThat(FilepathCodec.decode(filepathUri)).isEqualTo(Path.of("/media/Café Meridian.mkv"));
   }
 
   @Test
@@ -102,14 +102,14 @@ class FilepathCodecTest {
   @Test
   @DisplayName("Should decode filename as UTF-8 when platform charset would mangle the path")
   void shouldDecodeFilenameAsUtf8WhenPlatformCharsetWouldMangleThePath() {
-    var filenameOnDisk = "Déjà Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+    var filenameOnDisk = "Café Meridian (2006) - [BLURAY-1080p][DTS 5.1].mkv";
     var whatPathToStringYieldsUnderAnAsciiLocale =
         new String(filenameOnDisk.getBytes(StandardCharsets.UTF_8), StandardCharsets.US_ASCII);
 
     var filenameFromUri =
         FilepathCodec.filenameOf(
             "file:///mpool/media/movies/"
-                + "D%C3%A9j%C3%A0%20Vu%20(2006)%20-%20%5BBLURAY-1080p%5D%5BDTS%205.1%5D.mkv");
+                + "Caf%C3%A9%20Meridian%20(2006)%20-%20%5BBLURAY-1080p%5D%5BDTS%205.1%5D.mkv");
 
     assertThat(filenameFromUri)
         .isEqualTo(filenameOnDisk)
@@ -120,18 +120,18 @@ class FilepathCodecTest {
   @DisplayName("Should extract filename when given URI encoded from a non-ASCII path")
   void shouldExtractFilenameWhenGivenUriEncodedFromNonAsciiPath() throws IOException {
     try (FileSystem jimfs = Jimfs.newFileSystem(Configuration.unix())) {
-      var path = jimfs.getPath("/media/movies/Alien³ (1992).mkv");
+      var path = jimfs.getPath("/media/movies/Harbor³ (1992).mkv");
 
       assertThat(FilepathCodec.filenameOf(FilepathCodec.encode(path)))
-          .isEqualTo("Alien³ (1992).mkv");
+          .isEqualTo("Harbor³ (1992).mkv");
     }
   }
 
   @Test
   @DisplayName("Should extract final segment when URI denotes a directory with a trailing slash")
   void shouldExtractFinalSegmentWhenUriDenotesDirectoryWithTrailingSlash() {
-    assertThat(FilepathCodec.filenameOf("file:///media/Am%C3%A9lie%20(2001)/"))
-        .isEqualTo("Amélie (2001)");
+    assertThat(FilepathCodec.filenameOf("file:///media/Caf%C3%A9%20Meridian%20(2001)/"))
+        .isEqualTo("Café Meridian (2001)");
   }
 
   @Test
@@ -139,8 +139,8 @@ class FilepathCodecTest {
   void shouldDecodeContainingDirectoryNameWhenGivenFilepathUri() {
     assertThat(
             FilepathCodec.parentNameOf(
-                "file:///media/movies/D%C3%A9j%C3%A0%20Vu%20(2006)/movie.mkv"))
-        .contains("Déjà Vu (2006)");
+                "file:///media/movies/Caf%C3%A9%20Meridian%20(2006)/movie.mkv"))
+        .contains("Café Meridian (2006)");
   }
 
   @Test
@@ -148,8 +148,8 @@ class FilepathCodecTest {
   void shouldDecodeGrandparentDirectoryNameWhenGivenFilepathUri() {
     assertThat(
             FilepathCodec.grandparentNameOf(
-                "file:///media/Am%C3%A9lie%20(2001)/S%C3%A6son%203/episode.mkv"))
-        .contains("Amélie (2001)");
+                "file:///media/Lumi%C3%A8re%20Harbor%20(2001)/S%C3%A6son%203/episode.mkv"))
+        .contains("Lumière Harbor (2001)");
   }
 
   @Test
@@ -167,15 +167,15 @@ class FilepathCodecTest {
   @Test
   @DisplayName("Should ignore a trailing slash when naming the containing directory")
   void shouldIgnoreTrailingSlashWhenNamingContainingDirectory() {
-    assertThat(FilepathCodec.parentNameOf("file:///media/movies/Am%C3%A9lie%20(2001)/"))
+    assertThat(FilepathCodec.parentNameOf("file:///media/movies/Caf%C3%A9%20Meridian%20(2001)/"))
         .contains("movies");
   }
 
   @Test
   @DisplayName("Should decode the whole path as UTF-8 when given a filepath URI")
   void shouldDecodeWholePathAsUtf8WhenGivenFilepathUri() {
-    assertThat(FilepathCodec.pathOf("file:///media/D%C3%A9j%C3%A0%20Vu%20(2006)/movie.mkv"))
-        .isEqualTo("/media/Déjà Vu (2006)/movie.mkv");
+    assertThat(FilepathCodec.pathOf("file:///media/Caf%C3%A9%20Meridian%20(2006)/movie.mkv"))
+        .isEqualTo("/media/Café Meridian (2006)/movie.mkv");
   }
 
   @ParameterizedTest
@@ -201,7 +201,7 @@ class FilepathCodecTest {
   @Test
   @DisplayName("Should reject unsupported URI scheme when reading path text")
   void shouldRejectUnsupportedUriSchemeWhenReadingPathText() {
-    var filepathUri = "https://example.test/Movies/Am%C3%A9lie.mkv";
+    var filepathUri = "https://example.test/Movies/Caf%C3%A9%20Meridian.mkv";
 
     assertThatThrownBy(() -> FilepathCodec.pathOf(filepathUri))
         .isInstanceOf(IllegalArgumentException.class)
@@ -211,7 +211,7 @@ class FilepathCodecTest {
   @Test
   @DisplayName("Should reject unsupported URI scheme when decoding to path")
   void shouldRejectUnsupportedUriSchemeWhenDecodingToPath() {
-    var filepathUri = "https://example.test/Movies/Am%C3%A9lie.mkv";
+    var filepathUri = "https://example.test/Movies/Caf%C3%A9%20Meridian.mkv";
 
     assertThatThrownBy(() -> FilepathCodec.decode(filepathUri))
         .isInstanceOf(IllegalArgumentException.class)

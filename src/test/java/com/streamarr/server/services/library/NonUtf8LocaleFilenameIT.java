@@ -37,23 +37,19 @@ class NonUtf8LocaleFilenameIT {
           "eclipse-temurin:25-jdk@sha256:12e44624adee6808a36d962717e1656e0afeeeff5a100f9cb00e0136513558f0");
 
   private static final String MOVIE_ROOT = "/media/movies";
-  private static final String MOVIE_FOLDER = "Déjà Vu (2006)";
-  private static final String MOVIE_FILENAME = "Déjà Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+  private static final String MOVIE_FOLDER = "Café Meridian (2006)";
+  private static final String MOVIE_FILENAME = "Café Meridian (2006) - [BLURAY-1080p][DTS 5.1].mkv";
 
   private static final String SERIES_ROOT = "/media/series";
-  private static final String SERIES_FOLDER = "Amélie Chronicles (2001)";
+  private static final String SERIES_FOLDER = "Lumière Harbor (2001)";
   private static final String SEASON_FOLDER = "Sæson 3";
-  private static final String EPISODE_FILENAME = "Amelie.Chronicles.S03E05.mkv";
+  private static final String EPISODE_FILENAME = "Lumiere.Harbor.S03E05.mkv";
 
   // Path.toString() emits one U+FFFD per byte the platform charset cannot map, so an accented
   // character read back from UTF-8 bytes becomes two of them.
   private static final String REPLACEMENT_CHAR = Character.toString(0xFFFD);
   private static final String MANGLED_MOVIE_FILENAME =
-      "D"
-          + REPLACEMENT_CHAR.repeat(2)
-          + "j"
-          + REPLACEMENT_CHAR.repeat(2)
-          + " Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+      "Caf" + REPLACEMENT_CHAR.repeat(2) + " Meridian (2006) - [BLURAY-1080p][DTS 5.1].mkv";
 
   private static final String MANGLED_SEASON_FOLDER = "S" + REPLACEMENT_CHAR.repeat(2) + "son 3";
 
@@ -111,8 +107,8 @@ class NonUtf8LocaleFilenameIT {
     assertThat(movieReport)
         .containsEntry(
             "codec.uri",
-            "file:///media/movies/D%C3%A9j%C3%A0%20Vu%20(2006)/"
-                + "D%C3%A9j%C3%A0%20Vu%20(2006)%20-%20%5BBLURAY-1080p%5D%5BDTS%205.1%5D.mkv");
+            "file:///media/movies/Caf%C3%A9%20Meridian%20(2006)/"
+                + "Caf%C3%A9%20Meridian%20(2006)%20-%20%5BBLURAY-1080p%5D%5BDTS%205.1%5D.mkv");
   }
 
   @Test
@@ -170,7 +166,7 @@ class NonUtf8LocaleFilenameIT {
   @Test
   @DisplayName("Should hand out the real series title when the folder name came from the URI")
   void shouldHandOutRealSeriesTitleWhenFolderNameCameFromUri() {
-    assertThat(seriesReport).containsEntry("seriesTitle.fromCodecName", "Amélie Chronicles");
+    assertThat(seriesReport).containsEntry("seriesTitle.fromCodecName", "Lumière Harbor");
   }
 
   /**
