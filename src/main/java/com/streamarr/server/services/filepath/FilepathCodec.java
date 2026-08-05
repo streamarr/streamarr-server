@@ -157,34 +157,53 @@ public final class FilepathCodec {
 
     try {
       while (index < rawPath.length()) {
-        var percentIndex = rawPath.indexOf('%', index);
-        if (percentIndex < 0) {
-          decoded.append(rawPath, index, rawPath.length());
-          break;
-        }
-
-        decoded.append(rawPath, index, percentIndex);
-        var bytes = new byte[(rawPath.length() - percentIndex) / 3];
-        var byteCount = 0;
-        index = percentIndex;
-
-        while (index + 2 < rawPath.length() && rawPath.charAt(index) == '%') {
-          bytes[byteCount++] = (byte) Integer.parseInt(rawPath, index + 1, index + 3, 16);
-          index += 3;
-        }
-
-        var decoder =
-            StandardCharsets.UTF_8
-                .newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT);
-        decoded.append(decoder.decode(ByteBuffer.wrap(bytes, 0, byteCount)));
+        index = appendNextDecodedChunk(rawPath, index, decoded);
       }
     } catch (CharacterCodingException exception) {
       throw invalidFilepathUri(filepathUri, exception);
     }
 
     return decoded.toString();
+  }
+
+  private static int appendNextDecodedChunk(String rawPath, int startIndex, StringBuilder decoded)
+      throws CharacterCodingException {
+    var percentIndex = rawPath.indexOf('%', startIndex);
+
+    if (percentIndex < 0) {
+      decoded.append(rawPath, startIndex, rawPath.length());
+      return rawPath.length();
+    }
+
+    decoded.append(rawPath, startIndex, percentIndex);
+    return appendPercentEncodedRun(rawPath, percentIndex, decoded);
+  }
+
+  private static int appendPercentEncodedRun(String rawPath, int startIndex, StringBuilder decoded)
+      throws CharacterCodingException {
+    var bytes = new byte[(rawPath.length() - startIndex) / 3];
+    var byteCount = 0;
+    var index = startIndex;
+
+    for (; isPercentEncodedByteAt(rawPath, index); index += 3) {
+      bytes[byteCount++] = decodePercentEncodedByte(rawPath, index);
+    }
+
+    var decoder =
+        StandardCharsets.UTF_8
+            .newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT);
+    decoded.append(decoder.decode(ByteBuffer.wrap(bytes, 0, byteCount)));
+    return index;
+  }
+
+  private static boolean isPercentEncodedByteAt(String rawPath, int index) {
+    return index + 2 < rawPath.length() && rawPath.charAt(index) == '%';
+  }
+
+  private static byte decodePercentEncodedByte(String rawPath, int index) {
+    return (byte) Integer.parseInt(rawPath, index + 1, index + 3, 16);
   }
 
   private static Path decodeUri(FileSystem fileSystem, URI uri, String filepathUri) {
