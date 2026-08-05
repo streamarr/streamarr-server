@@ -192,7 +192,9 @@ class TranscodeWorkerUploadCancellationIT {
         }
 
         @Override
-        public void onError(Throwable throwable) {}
+        public void onError(Throwable throwable) {
+          // Cancellation is asserted through the upload stream.
+        }
 
         @Override
         public void onCompleted() {
@@ -208,7 +210,9 @@ class TranscodeWorkerUploadCancellationIT {
           .setOnCancelHandler(uploadCancelled::countDown);
       return new StreamObserver<>() {
         @Override
-        public void onNext(UploadSegmentRequest request) {}
+        public void onNext(UploadSegmentRequest request) {
+          // Uploaded frames are irrelevant; only cancellation matters.
+        }
 
         @Override
         public void onError(Throwable throwable) {

@@ -31,8 +31,9 @@ class WorkerMediaSourceResolverTest {
   void shouldRejectEmptyOrLeadingSlashMediaSourceKey(String relativeKey) throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+    var mediaSource = source(relativeKey);
 
-    assertThatThrownBy(() -> resolver.resolve(source(relativeKey)))
+    assertThatThrownBy(() -> resolver.resolve(mediaSource))
         .isInstanceOf(WorkerJobException.class)
         .hasMessage("Media source key contains an unsafe path segment");
   }

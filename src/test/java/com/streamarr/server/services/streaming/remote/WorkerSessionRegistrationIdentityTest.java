@@ -58,7 +58,9 @@ class WorkerSessionRegistrationIdentityTest {
     private Throwable error;
 
     @Override
-    public void onNext(EstablishWorkerSessionResponse value) {}
+    public void onNext(EstablishWorkerSessionResponse value) {
+      // This failure-path test records only the terminal error.
+    }
 
     @Override
     public void onError(Throwable throwable) {
@@ -66,6 +68,8 @@ class WorkerSessionRegistrationIdentityTest {
     }
 
     @Override
-    public void onCompleted() {}
+    public void onCompleted() {
+      // This failure-path test records only the terminal error.
+    }
   }
 }

@@ -209,9 +209,13 @@ class Pr247DispatchFlowControlValidationIT {
     }
 
     @Override
-    public void onError(Throwable throwable) {}
+    public void onError(Throwable throwable) {
+      // Only the stalled onNext path is relevant to this validation.
+    }
 
     @Override
-    public void onCompleted() {}
+    public void onCompleted() {
+      // Only the stalled onNext path is relevant to this validation.
+    }
   }
 }

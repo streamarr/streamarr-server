@@ -53,7 +53,6 @@ import org.junit.jupiter.api.io.TempDir;
 @DisplayName("Remote Playback Integration Tests")
 class RemotePlaybackIT {
 
-  private static final UUID WORKER_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 

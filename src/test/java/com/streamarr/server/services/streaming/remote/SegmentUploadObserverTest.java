@@ -78,7 +78,9 @@ class SegmentUploadObserverTest {
       AtomicReference<Throwable> error) {
     return new StreamObserver<>() {
       @Override
-      public void onNext(UploadSegmentResponse value) {}
+      public void onNext(UploadSegmentResponse value) {
+        // This observer records only terminal errors.
+      }
 
       @Override
       public void onError(Throwable throwable) {
@@ -86,20 +88,28 @@ class SegmentUploadObserverTest {
       }
 
       @Override
-      public void onCompleted() {}
+      public void onCompleted() {
+        // This observer records only terminal errors.
+      }
     };
   }
 
   private static StreamObserver<UploadSegmentResponse> noOpResponseObserver() {
     return new StreamObserver<>() {
       @Override
-      public void onNext(UploadSegmentResponse value) {}
+      public void onNext(UploadSegmentResponse value) {
+        // No response is expected in this logging test.
+      }
 
       @Override
-      public void onError(Throwable throwable) {}
+      public void onError(Throwable throwable) {
+        // No response is expected in this logging test.
+      }
 
       @Override
-      public void onCompleted() {}
+      public void onCompleted() {
+        // No response is expected in this logging test.
+      }
     };
   }
 }

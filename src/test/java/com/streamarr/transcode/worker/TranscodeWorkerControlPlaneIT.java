@@ -221,7 +221,9 @@ class TranscodeWorkerControlPlaneIT {
         }
 
         @Override
-        public void onError(Throwable throwable) {}
+        public void onError(Throwable throwable) {
+          // The control-plane assertions observe queued events instead.
+        }
 
         @Override
         public void onCompleted() {

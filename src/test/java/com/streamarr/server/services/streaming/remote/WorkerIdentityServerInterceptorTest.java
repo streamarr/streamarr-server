@@ -76,13 +76,13 @@ class WorkerIdentityServerInterceptorTest {
     var call = new RecordingServerCall(attributes);
     var interceptor =
         new WorkerIdentityServerInterceptor(new WorkerSpiffeIdentityMapper("streamarr.test"));
-    var appender = attachAppender();
+    var attachedAppender = attachAppender();
 
     interceptor.interceptCall(call, new Metadata(), (_, _) -> new ServerCall.Listener<>() {});
 
     assertThat(call.closedStatus().getCode()).isEqualTo(Status.Code.UNAUTHENTICATED);
     assertThat(call.closedStatus().getDescription()).isNull();
-    assertThat(appender.list)
+    assertThat(attachedAppender.list)
         .anySatisfy(
             event -> {
               assertThat(event.getLevel()).isEqualTo(Level.WARN);
@@ -98,12 +98,12 @@ class WorkerIdentityServerInterceptorTest {
     var call = new RecordingServerCall(attributes);
     var interceptor =
         new WorkerIdentityServerInterceptor(new WorkerSpiffeIdentityMapper("streamarr.test"));
-    var appender = attachAppender();
+    var attachedAppender = attachAppender();
 
     interceptor.interceptCall(call, new Metadata(), (_, _) -> new ServerCall.Listener<>() {});
 
     assertThat(call.closedStatus().getCode()).isEqualTo(Status.Code.UNAUTHENTICATED);
-    assertThat(appender.list)
+    assertThat(attachedAppender.list)
         .anySatisfy(
             event -> {
               assertThat(event.getLevel()).isEqualTo(Level.ERROR);

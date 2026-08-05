@@ -50,7 +50,6 @@ import org.slf4j.LoggerFactory;
 @DisplayName("Transcode Worker Integration Tests")
 class TranscodeWorkerIT {
 
-  private static final UUID WORKER_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 

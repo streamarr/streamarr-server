@@ -124,7 +124,9 @@ class SegmentUploadReclaimTest {
       AtomicReference<Throwable> error) {
     return new StreamObserver<>() {
       @Override
-      public void onNext(UploadSegmentResponse value) {}
+      public void onNext(UploadSegmentResponse value) {
+        // This observer records only terminal errors.
+      }
 
       @Override
       public void onError(Throwable throwable) {
@@ -132,20 +134,28 @@ class SegmentUploadReclaimTest {
       }
 
       @Override
-      public void onCompleted() {}
+      public void onCompleted() {
+        // This observer records only terminal errors.
+      }
     };
   }
 
   private static <T> StreamObserver<T> noOpResponseObserver() {
     return new StreamObserver<>() {
       @Override
-      public void onNext(T value) {}
+      public void onNext(T value) {
+        // No response is relevant to this reclaim test.
+      }
 
       @Override
-      public void onError(Throwable throwable) {}
+      public void onError(Throwable throwable) {
+        // No response is relevant to this reclaim test.
+      }
 
       @Override
-      public void onCompleted() {}
+      public void onCompleted() {
+        // No response is relevant to this reclaim test.
+      }
     };
   }
 

@@ -94,12 +94,18 @@ class WorkerSessionUnknownResultLoggingTest {
       implements StreamObserver<EstablishWorkerSessionResponse> {
 
     @Override
-    public void onNext(EstablishWorkerSessionResponse value) {}
+    public void onNext(EstablishWorkerSessionResponse value) {
+      // This test intentionally ignores service responses.
+    }
 
     @Override
-    public void onError(Throwable throwable) {}
+    public void onError(Throwable throwable) {
+      // This test intentionally ignores service responses.
+    }
 
     @Override
-    public void onCompleted() {}
+    public void onCompleted() {
+      // This test intentionally ignores service responses.
+    }
   }
 }

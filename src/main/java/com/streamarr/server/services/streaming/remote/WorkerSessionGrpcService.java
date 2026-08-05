@@ -28,13 +28,19 @@ final class WorkerSessionGrpcService
   private static final StreamObserver<UploadSegmentRequest> IGNORED_UPLOAD_OBSERVER =
       new StreamObserver<>() {
         @Override
-        public void onNext(UploadSegmentRequest value) {}
+        public void onNext(UploadSegmentRequest value) {
+          // The response has already ended with an error.
+        }
 
         @Override
-        public void onError(Throwable throwable) {}
+        public void onError(Throwable throwable) {
+          // The response has already ended with an error.
+        }
 
         @Override
-        public void onCompleted() {}
+        public void onCompleted() {
+          // The response has already ended with an error.
+        }
       };
 
   // A ladder's variants upload in parallel, so the allowance has to clear a full ladder; it is a
