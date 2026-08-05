@@ -25,7 +25,7 @@ Spring Boot offers no property to keep a contributor out of the root aggregate.
 
 The TMDB health probe is bounded and cached, and its verdict is an enrichment signal rather than a traffic-admission signal.
 
-* The probe uses a dedicated `tmdbHealth` Methanol client with no cache, retry interceptor or rate-limit interceptor. `tmdb.health.probe-timeout` (2s by default) applies to connection establishment, the client-level request timeout and the explicit request timeout. The enrichment client keeps its longer budgets and interceptors.
+* The probe uses a dedicated `tmdbHealth` Methanol client with no cache, retry interceptor or rate-limit interceptor. It appends `/configuration` to the enrichment client's `tmdb.api.base-url`. `tmdb.health.probe-timeout` (2s by default) applies to connection establishment, the client-level request timeout and the explicit request timeout. The enrichment client keeps its longer budgets and interceptors.
 * The verdict is held for `tmdb.health.cache-ttl` (30s by default, one day maximum) in an `AtomicReference`. Expiry starts after the probe completes, and interruption-derived verdicts are not cached.
 * Cache misses are deliberately unsynchronized, so simultaneous misses may probe in parallel. Cache publication uses `compareAndSet` against the snapshot that triggered the probe. The first completed probe wins, and an older delayed result cannot overwrite it. This avoids holding coordination across external I/O.
 * A `200` or unauthenticated `401` proves reachability. Network failures and other HTTP responses produce `DEGRADED`, never `DOWN`, because TMDB availability affects metadata enrichment rather than traffic admission.

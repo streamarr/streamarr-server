@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
@@ -61,8 +62,11 @@ class TmdbHealthAggregationTest {
 
     @Bean
     TmdbHealthIndicator tmdbHealthIndicator(
-        @Qualifier("tmdbHealth") HttpClient client, TmdbHealthProperties properties, Clock clock) {
-      return new TmdbHealthIndicator(client, properties, clock);
+        @Qualifier("tmdbHealth") HttpClient client,
+        TmdbHealthProperties properties,
+        Clock clock,
+        @Value("${tmdb.api.base-url}") String tmdbApiBaseUrl) {
+      return new TmdbHealthIndicator(client, properties, clock, tmdbApiBaseUrl);
     }
   }
 

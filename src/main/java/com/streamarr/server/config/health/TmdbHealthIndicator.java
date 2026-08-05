@@ -7,34 +7,39 @@ import java.net.http.HttpResponse;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicReference;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.boot.health.contributor.Status;
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class TmdbHealthIndicator implements HealthIndicator {
 
-  private static final URI CONFIGURATION_URI =
-      URI.create("https://api.themoviedb.org/3/configuration");
-
-  // Not DOWN: an unreachable TMDB degrades metadata enrichment while playback, auth and browsing
-  // keep serving. management.endpoint.health.status.order ranks DEGRADED below UP so it cannot
-  // outrank an UP contributor in the aggregate, and the metadata health group surfaces it alone.
   static final Status DEGRADED = new Status("DEGRADED", "TMDB metadata service is unavailable");
 
-  @Qualifier("tmdbHealth")
   private final HttpClient client;
-
   private final TmdbHealthProperties properties;
   private final Clock clock;
+  private final URI configurationUri;
 
   private final AtomicReference<CachedProbe> lastProbe = new AtomicReference<>(CachedProbe.stale());
+
+  public TmdbHealthIndicator(
+      @Qualifier("tmdbHealth") HttpClient client,
+      TmdbHealthProperties properties,
+      Clock clock,
+      @Value("${tmdb.api.base-url}") String tmdbApiBaseUrl) {
+    this.client = client;
+    this.properties = properties;
+    this.clock = clock;
+    this.configurationUri =
+        UriComponentsBuilder.fromUriString(tmdbApiBaseUrl).path("/configuration").build().toUri();
+  }
 
   @Override
   public Health health() {
@@ -72,7 +77,7 @@ public class TmdbHealthIndicator implements HealthIndicator {
   private HttpRequest probeRequest() {
     // Keep the request budget explicit even though the dedicated client carries the same timeout.
     return HttpRequest.newBuilder()
-        .uri(CONFIGURATION_URI)
+        .uri(configurationUri)
         .timeout(properties.probeTimeout())
         .GET()
         .build();

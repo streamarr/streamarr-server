@@ -31,15 +31,9 @@ management:
         include: health
   endpoint:
     health:
-      # /actuator/health answers "should this instance take traffic or be restarted", so a
-      # third party we merely enrich metadata from must not decide it. Spring has no way to keep
-      # a contributor out of the root aggregate, so TMDB reports DEGRADED and DEGRADED is ordered
-      # below UP: it can never pull the aggregate down, and orchestrators stop restarting a
-      # healthy server because TMDB metadata is unavailable.
       status:
         order: DOWN,OUT_OF_SERVICE,UP,DEGRADED,UNKNOWN
       group:
-        # Where TMDB reachability stays visible and alertable on its own.
         metadata:
           include: tmdb
           status:
@@ -51,6 +45,7 @@ management:
 
 tmdb:
   api:
+    base-url: ${TMDB_API_BASE_URL:https://api.themoviedb.org/3}
     token: ${TMDB_API_TOKEN:}
     cache-size-mb: ${TMDB_API_CACHE_SIZE_MB:200}
     requests-per-second: ${TMDB_API_REQUESTS_PER_SECOND:35}

@@ -239,6 +239,7 @@ class TmdbHealthIndicatorTest {
     return new TmdbHealthIndicator(
         client,
         TmdbHealthProperties.builder().probeTimeout(PROBE_TIMEOUT).cacheTtl(CACHE_TTL).build(),
-        clock);
+        clock,
+        "https://api.themoviedb.org/3");
   }
 }
