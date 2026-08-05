@@ -23,8 +23,9 @@ class DeviceCodeGeneratorTest {
 
     var deviceCode = generator.generate();
 
-    assertThat(deviceCode).isEqualTo(Base64.getUrlEncoder().withoutPadding().encodeToString(bytes));
-    assertThat(deviceCode).hasSize(43);
+    assertThat(deviceCode)
+        .isEqualTo(Base64.getUrlEncoder().withoutPadding().encodeToString(bytes))
+        .hasSize(43);
   }
 
   private static SecureRandom fixedRandom(byte[] entropy) {

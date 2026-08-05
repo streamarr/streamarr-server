@@ -2,6 +2,7 @@ package com.streamarr.server.services.auth;
 
 import java.security.SecureRandom;
 import java.util.Base64;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -11,6 +12,7 @@ final class DeviceCodeGenerator {
 
   private final SecureRandom secureRandom;
 
+  @Autowired
   DeviceCodeGenerator() {
     this(new SecureRandom());
   }
