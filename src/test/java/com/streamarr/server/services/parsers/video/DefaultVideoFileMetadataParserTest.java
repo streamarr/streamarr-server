@@ -33,6 +33,18 @@ class DefaultVideoFileMetadataParserTest {
                 .isEqualTo(filename));
   }
 
+  @Test
+  @DisplayName("Should parse promptly when a year follows an unsupported separator")
+  void shouldParsePromptlyWhenYearFollowsUnsupportedSeparator() {
+    var filename = "A" + " ".repeat(30_000) + ",2010";
+
+    assertTimeoutPreemptively(
+        Duration.ofMillis(500),
+        () ->
+            assertThat(defaultVideoFileMetadataParser.parse(filename).orElseThrow().title())
+                .isEqualTo(filename));
+  }
+
   @Nested
   @DisplayName("Should successfully extract both title and year from filename")
   class SuccessfulTitleAndYearExtractionTests {

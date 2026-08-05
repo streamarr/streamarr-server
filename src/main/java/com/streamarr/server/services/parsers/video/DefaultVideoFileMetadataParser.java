@@ -1,7 +1,6 @@
 package com.streamarr.server.services.parsers.video;
 
 import com.streamarr.server.services.parsers.MetadataParser;
-import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import org.apache.commons.lang3.StringUtils;
@@ -13,11 +12,10 @@ import org.springframework.stereotype.Service;
 public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileParserResult> {
 
   private static final String TRAILING_SYMBOLS = "-–—";
+  private static final String PREFERRED_YEAR_SEPARATORS = "_.()[]-";
+  private static final String SUPPORTED_YEAR_SEPARATORS = " _.()[]-";
+  private static final String INVALID_TITLE_ENDINGS = "_,.-";
   private static final Pattern YEAR_REGEX = Pattern.compile("(?:19|20)\\d{2}");
-  private static final List<Pattern> TITLE_BEFORE_YEAR_REGEXES =
-      List.of(
-          Pattern.compile("(.*[^_,.\\-])[_.()\\[\\]\\-]$"),
-          Pattern.compile("(.*[^_,.\\-])[ _.()\\[\\]\\-]+$"));
   private static final Pattern INVALID_YEAR_SUFFIX_REGEX =
       Pattern.compile("\\d|[xX]\\d{3}|\\W\\d{2}\\W\\d{2}");
   private static final Pattern TAG_REGEX =
@@ -59,8 +57,8 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
   }
 
   private Optional<ExtractedMetadata> extractTitleAndYear(String filename) {
-    for (var titleRegex : TITLE_BEFORE_YEAR_REGEXES) {
-      var extractedMetadata = findLastYear(filename, titleRegex);
+    for (var separatorMode : YearSeparatorMode.values()) {
+      var extractedMetadata = findLastYear(filename, separatorMode);
 
       if (extractedMetadata.isPresent()) {
         return extractedMetadata;
@@ -70,7 +68,8 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
     return Optional.empty();
   }
 
-  private Optional<ExtractedMetadata> findLastYear(String filename, Pattern titleRegex) {
+  private Optional<ExtractedMetadata> findLastYear(
+      String filename, YearSeparatorMode separatorMode) {
     var yearMatcher = YEAR_REGEX.matcher(filename);
     ExtractedMetadata lastMatch = null;
 
@@ -79,14 +78,62 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
         continue;
       }
 
-      var titleMatcher = titleRegex.matcher(filename.substring(0, yearMatcher.start()));
+      var rawTitle = rawTitleBeforeYear(filename.substring(0, yearMatcher.start()), separatorMode);
 
-      if (titleMatcher.matches()) {
-        lastMatch = new ExtractedMetadata(titleMatcher.group(1), yearMatcher.group());
+      if (rawTitle.isPresent()) {
+        lastMatch = new ExtractedMetadata(rawTitle.orElseThrow(), yearMatcher.group());
       }
     }
 
     return Optional.ofNullable(lastMatch);
+  }
+
+  private Optional<String> rawTitleBeforeYear(String value, YearSeparatorMode separatorMode) {
+    return switch (separatorMode) {
+      case PREFERRED -> rawTitleBeforePreferredSeparator(value);
+      case SUPPORTED -> rawTitleBeforeSupportedSeparator(value);
+    };
+  }
+
+  private Optional<String> rawTitleBeforePreferredSeparator(String value) {
+    var separatorIndex = value.length() - 1;
+
+    if (separatorIndex <= 0 || !contains(PREFERRED_YEAR_SEPARATORS, value.charAt(separatorIndex))) {
+      return Optional.empty();
+    }
+
+    if (contains(INVALID_TITLE_ENDINGS, value.charAt(separatorIndex - 1))) {
+      return Optional.empty();
+    }
+
+    return Optional.of(value.substring(0, separatorIndex));
+  }
+
+  private Optional<String> rawTitleBeforeSupportedSeparator(String value) {
+    var separatorIndex = value.length() - 1;
+
+    if (separatorIndex <= 0 || !contains(SUPPORTED_YEAR_SEPARATORS, value.charAt(separatorIndex))) {
+      return Optional.empty();
+    }
+
+    while (separatorIndex > 0
+        && contains(INVALID_TITLE_ENDINGS, value.charAt(separatorIndex - 1))) {
+      if (!contains(SUPPORTED_YEAR_SEPARATORS, value.charAt(separatorIndex - 1))) {
+        return Optional.empty();
+      }
+
+      separatorIndex--;
+    }
+
+    if (separatorIndex == 0) {
+      return Optional.empty();
+    }
+
+    return Optional.of(value.substring(0, separatorIndex));
+  }
+
+  private boolean contains(String characters, char candidate) {
+    return characters.indexOf(candidate) >= 0;
   }
 
   private boolean hasInvalidYearSuffix(String filename, int yearEnd) {
@@ -138,4 +185,9 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
   }
 
   private record ExtractedMetadata(String rawTitle, String year) {}
+
+  private enum YearSeparatorMode {
+    PREFERRED,
+    SUPPORTED
+  }
 }
