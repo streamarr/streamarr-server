@@ -58,6 +58,7 @@ public final class WorkerSessionServer implements AutoCloseable {
         new WorkerIdentityServerInterceptor(
             new WorkerSpiffeIdentityMapper(configuration.trustDomain()));
     var startingExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    var executorTransferred = false;
     try {
       server =
           NettyServerBuilder.forPort(configuration.port())
@@ -76,9 +77,11 @@ public final class WorkerSessionServer implements AutoCloseable {
               .build()
               .start();
       executor = startingExecutor;
-    } catch (IOException | RuntimeException e) {
-      startingExecutor.shutdownNow();
-      throw e;
+      executorTransferred = true;
+    } finally {
+      if (!executorTransferred) {
+        startingExecutor.shutdownNow();
+      }
     }
   }
 
