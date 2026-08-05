@@ -286,12 +286,12 @@ class DeviceAuthorizationServiceTest {
   @DisplayName("Should fail fast when the cumulative polling interval would overflow")
   void shouldFailFastWhenCumulativePollingIntervalWouldOverflow() {
     var issued = service.issue("Apple TV");
+    var deviceCode = issued.deviceCode();
     var authorization = authorizationRepository.findAll().getFirst();
     authorization.setPollIntervalSeconds(Integer.MAX_VALUE - 4);
     authorization.setNextPollAt(clock.instant().plusSeconds(1));
 
-    assertThatThrownBy(() -> service.redeem(issued.deviceCode()))
-        .isInstanceOf(ArithmeticException.class);
+    assertThatThrownBy(() -> service.redeem(deviceCode)).isInstanceOf(ArithmeticException.class);
     assertThat(storedInterval()).isEqualTo(Integer.MAX_VALUE - 4);
   }
 
