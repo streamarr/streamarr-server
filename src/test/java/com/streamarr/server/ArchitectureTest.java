@@ -2,17 +2,26 @@ package com.streamarr.server;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
+import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.services.RootServiceCycleFixture;
+import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.library.dependencies.SliceAssignment;
+import com.tngtech.archunit.library.dependencies.SliceIdentifier;
 import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.springframework.transaction.annotation.Transactional;
 
 @Tag("UnitTest")
@@ -21,6 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
     packages = "com.streamarr.server",
     importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
+
+  private static final String SERVICES_PACKAGE = "com.streamarr.server.services";
 
   @ArchTest
   static final ArchRule domainMustNotDependOnOuterLayers =
@@ -142,5 +153,57 @@ class ArchitectureTest {
         .areAssignableTo(Path.class)
         .as("Media metadata must derive text from the filepath URI, not Path display text")
         .check(classes);
+  }
+
+  @ArchTest
+  @DisplayName("Should keep service domains acyclic when dependencies cross domain boundaries")
+  static void shouldKeepServiceDomainsAcyclicWhenDependenciesCrossDomainBoundaries(
+      JavaClasses classes) {
+    serviceDomainsMustBeFreeOfCycles().check(classes);
+  }
+
+  @Test
+  @DisplayName("Should reject service domain cycle when root service depends on subdomain")
+  void shouldRejectServiceDomainCycleWhenRootServiceDependsOnSubdomain() {
+    var cyclicServiceDomains =
+        new ClassFileImporter()
+            .importClasses(RootServiceCycleFixture.class, SubdomainServiceCycleFixture.class);
+    var serviceDomainRule = serviceDomainsMustBeFreeOfCycles();
+
+    assertThatThrownBy(() -> serviceDomainRule.check(cyclicServiceDomains))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("Cycle detected");
+  }
+
+  private static ArchRule serviceDomainsMustBeFreeOfCycles() {
+    return slices()
+        .assignedFrom(new ServiceDomainSliceAssignment())
+        .should()
+        .beFreeOfCycles()
+        .as(
+            "Service domains must form a directed acyclic graph — a cycle means neither domain"
+                + " can be understood, tested, or extracted without the other, and it lets a"
+                + " change in one silently reach back through the other");
+  }
+
+  private static final class ServiceDomainSliceAssignment implements SliceAssignment {
+
+    @Override
+    public SliceIdentifier getIdentifierOf(JavaClass javaClass) {
+      var packageName = javaClass.getPackageName();
+      if (packageName.equals(SERVICES_PACKAGE)) {
+        return SliceIdentifier.of("root");
+      }
+      if (!packageName.startsWith(SERVICES_PACKAGE + ".")) {
+        return SliceIdentifier.ignore();
+      }
+      return SliceIdentifier.of(
+          packageName.substring(SERVICES_PACKAGE.length() + 1).split("\\.", 2)[0]);
+    }
+
+    @Override
+    public String getDescription() {
+      return "service domains including root services";
+    }
   }
 }

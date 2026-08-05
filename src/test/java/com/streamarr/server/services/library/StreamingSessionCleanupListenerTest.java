@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.services.library.events.LibraryRemovedEvent;
+import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.util.Collection;
 import java.util.Optional;

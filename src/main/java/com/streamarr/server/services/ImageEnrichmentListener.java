@@ -1,9 +1,9 @@
-package com.streamarr.server.services.metadata;
+package com.streamarr.server.services;
 
-import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.ImageService.ProcessedImage;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
@@ -57,9 +57,7 @@ public class ImageEnrichmentListener {
 
         downloadAllImages(event);
       } finally {
-        if (mutex.isHeldByCurrentThread()) {
-          mutex.unlock();
-        }
+        mutex.unlock();
       }
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
@@ -77,7 +75,7 @@ public class ImageEnrichmentListener {
     }
 
     var processedResults =
-        futures.stream().map(ImageEnrichmentListener::getQuietly).filter(Objects::nonNull).toList();
+        futures.stream().map(Future::resultNow).filter(Objects::nonNull).toList();
 
     if (processedResults.isEmpty()) {
       return;
@@ -116,17 +114,6 @@ public class ImageEnrichmentListener {
           event.entityId(),
           event.entityType(),
           e);
-      return null;
-    }
-  }
-
-  private static ProcessedImage getQuietly(Future<ProcessedImage> future) {
-    try {
-      return future.get();
-    } catch (InterruptedException _) {
-      Thread.currentThread().interrupt();
-      return null;
-    } catch (Exception _) {
       return null;
     }
   }

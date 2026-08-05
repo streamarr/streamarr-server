@@ -2,9 +2,9 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.events.library.LibraryAddedEvent;
+import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
-import com.streamarr.server.services.library.events.LibraryAddedEvent;
-import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryWatcher;

@@ -1,4 +1,4 @@
-package com.streamarr.server.services.library.events;
+package com.streamarr.server.services.events.library;
 
 import java.util.Set;
 import java.util.UUID;

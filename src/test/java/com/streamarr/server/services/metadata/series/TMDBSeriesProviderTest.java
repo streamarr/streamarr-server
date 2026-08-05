@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
-import com.streamarr.server.services.library.events.RefreshEndedEvent;
-import com.streamarr.server.services.library.events.ScanEndedEvent;
+import com.streamarr.server.services.events.library.RefreshEndedEvent;
+import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.metadata.TmdbSearchDelegate;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResult;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResults;
