@@ -617,6 +617,55 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("Should keep landing page content when an earlier title sort starts lowercase")
+    void shouldKeepLandingPageContentWhenEarlierTitleSortStartsLowercase() {
+      var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+      seriesRepository.saveAllAndFlush(
+          List.of(
+              Series.builder().title("Beta Show").titleSort("Beta Show").library(library).build(),
+              Series.builder()
+                  .title("alpha show")
+                  .titleSort("alpha show")
+                  .library(library)
+                  .build()));
+      var filter =
+          MediaFilter.builder().libraryId(library.getId()).startLetter(AlphabetLetter.B).build();
+
+      var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
+
+      assertThat(result.items())
+          .extracting(pageItem -> pageItem.item().getTitle())
+          .containsExactly("Beta Show");
+    }
+
+    @Test
+    @DisplayName("Should land on title sort when display titles precede letter")
+    void shouldLandOnTitleSortWhenDisplayTitlesPrecedeLetter() {
+      var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+      seriesRepository.saveAllAndFlush(
+          List.of(
+              Series.builder()
+                  .title("Aardvark Display")
+                  .titleSort("beta sort")
+                  .library(library)
+                  .build(),
+              Series.builder()
+                  .title("Apple Display")
+                  .titleSort("Charlie Sort")
+                  .library(library)
+                  .build()));
+      var filter =
+          MediaFilter.builder().libraryId(library.getId()).startLetter(AlphabetLetter.B).build();
+
+      var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
+
+      assertThat(result.items())
+          .extracting(pageItem -> pageItem.item().getTitle())
+          .containsExactly("Aardvark Display", "Apple Display");
+      assertThat(result.hasPreviousPage()).isFalse();
+    }
+
+    @Test
     @DisplayName("Should return all series when start letter is hash")
     void shouldReturnAllSeriesWhenStartLetterIsHash() {
       var filter =
@@ -663,6 +712,69 @@ class SeriesServiceIT extends AbstractIntegrationTest {
               .map(pi -> pi.item().getTitle())
               .toList();
       assertThat(allTitles).containsExactly("Batman Show", "Beta Show", "Gamma Show", "Zorro Show");
+    }
+
+    @Test
+    @DisplayName("Should report previous page when letter jump has titles above the anchor")
+    void shouldReportPreviousPageWhenLetterJumpHasTitlesAboveAnchor() {
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .build();
+
+      var landing = seriesService.getSeriesWithFilter(buildForwardOptions(2, filter));
+
+      var titles = landing.items().stream().map(pi -> pi.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Batman Show", "Beta Show");
+      assertThat(landing.hasPreviousPage()).isTrue();
+      assertThat(landing.hasNextPage()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should page backward past the start letter when sort is TITLE")
+    void shouldPageBackwardPastStartLetterWhenSortIsTitle() {
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .build();
+
+      var landing = seriesService.getSeriesWithFilter(buildForwardOptions(2, filter));
+      assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("Batman Show");
+
+      var backfill =
+          seriesService.getSeriesWithFilter(
+              buildBackwardContinuation(2, filter, landing.items().getFirst()));
+
+      var titles = backfill.items().stream().map(pi -> pi.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Alpha Show", "Avengers Show");
+      assertThat(backfill.hasNextPage()).isTrue();
+      assertThat(backfill.hasPreviousPage()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should page backward past the start letter when sort is TITLE DESC")
+    void shouldPageBackwardPastStartLetterWhenSortIsTitleDesc() {
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .sortDirection(SortOrder.DESC)
+              .build();
+
+      var landing = seriesService.getSeriesWithFilter(buildForwardOptions(2, filter));
+      assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("Beta Show");
+      assertThat(landing.hasPreviousPage()).isTrue();
+
+      var backfill =
+          seriesService.getSeriesWithFilter(
+              buildBackwardContinuation(2, filter, landing.items().getFirst()));
+
+      var titles = backfill.items().stream().map(pageItem -> pageItem.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Zorro Show", "Gamma Show");
+      assertThat(backfill.hasNextPage()).isTrue();
+      assertThat(backfill.hasPreviousPage()).isFalse();
     }
 
     @Test
@@ -779,6 +891,51 @@ class SeriesServiceIT extends AbstractIntegrationTest {
 
       var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
       assertThat(titles).containsExactlyInAnyOrder("Batman Show", "Beta Show");
+    }
+
+    @Test
+    @DisplayName("Should keep title sort letter bucket when continuing non-TITLE pagination")
+    void shouldKeepTitleSortLetterBucketWhenContinuingNonTitlePagination() {
+      var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+      seriesRepository.saveAllAndFlush(
+          List.of(
+              Series.builder()
+                  .title("Alpha First")
+                  .titleSort("Beta First")
+                  .firstAirDate(LocalDate.of(2000, 1, 1))
+                  .library(library)
+                  .build(),
+              Series.builder()
+                  .title("Excluded")
+                  .titleSort("Alpha Excluded")
+                  .firstAirDate(LocalDate.of(2005, 1, 1))
+                  .library(library)
+                  .build(),
+              Series.builder()
+                  .title("Alpha Second")
+                  .titleSort("Beta Second")
+                  .firstAirDate(LocalDate.of(2010, 1, 1))
+                  .library(library)
+                  .build()));
+      var filter =
+          MediaFilter.builder()
+              .libraryId(library.getId())
+              .startLetter(AlphabetLetter.B)
+              .sortBy(OrderMediaBy.RELEASE_DATE)
+              .build();
+
+      var firstPage = seriesService.getSeriesWithFilter(buildForwardOptions(1, filter));
+      var secondPage =
+          seriesService.getSeriesWithFilter(
+              buildForwardContinuation(1, filter, firstPage.items().getLast()));
+
+      assertThat(firstPage.items())
+          .extracting(pageItem -> pageItem.item().getTitle())
+          .containsExactly("Alpha First");
+      assertThat(secondPage.items())
+          .extracting(pageItem -> pageItem.item().getTitle())
+          .containsExactly("Alpha Second");
+      assertThat(secondPage.hasNextPage()).isFalse();
     }
   }
 

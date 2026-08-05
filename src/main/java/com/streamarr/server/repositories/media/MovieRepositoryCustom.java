@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import java.time.Instant;
 import java.util.Collection;
@@ -14,6 +15,8 @@ public interface MovieRepositoryCustom {
   List<Movie> seekWithFilter(MediaPaginationOptions options);
 
   List<Movie> findFirstWithFilter(MediaPaginationOptions options);
+
+  Optional<Movie> findLetterJumpPredecessor(MediaFilter filter);
 
   Optional<Movie> findByTmdbId(String tmdbId);
 

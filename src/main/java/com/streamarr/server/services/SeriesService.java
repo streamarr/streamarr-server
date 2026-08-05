@@ -20,6 +20,7 @@ import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
+import com.streamarr.server.services.pagination.LetterJumpResolver;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
@@ -301,12 +302,15 @@ public class SeriesService {
   }
 
   public MediaPage<Series> getSeriesWithFilter(MediaPaginationOptions options) {
-    var seriesList =
-        options.getCursorId().isPresent()
-            ? seriesRepository.seekWithFilter(options)
-            : seriesRepository.findFirstWithFilter(options);
+    var resolvedOptions =
+        LetterJumpResolver.resolve(options, seriesRepository::findLetterJumpPredecessor);
 
-    var lastWatchedBySeriesId = lastWatchedFor(options.getMediaFilter(), seriesList);
+    var seriesList =
+        resolvedOptions.getCursorId().isPresent()
+            ? seriesRepository.seekWithFilter(resolvedOptions)
+            : seriesRepository.findFirstWithFilter(resolvedOptions);
+
+    var lastWatchedBySeriesId = lastWatchedFor(resolvedOptions.getMediaFilter(), seriesList);
 
     var pageItems =
         seriesList.stream()
@@ -314,11 +318,12 @@ public class SeriesService {
                 series ->
                     new PageItem<>(
                         series,
-                        getOrderByValue(options.getMediaFilter(), series, lastWatchedBySeriesId)))
+                        getOrderByValue(
+                            resolvedOptions.getMediaFilter(), series, lastWatchedBySeriesId)))
             .toList();
 
     return paginationService.buildMediaPage(
-        pageItems, options.getPaginationOptions(), options.getCursorId());
+        pageItems, resolvedOptions.getPaginationOptions(), resolvedOptions.getCursorId());
   }
 
   private Map<UUID, Instant> lastWatchedFor(MediaFilter filter, List<Series> seriesList) {
