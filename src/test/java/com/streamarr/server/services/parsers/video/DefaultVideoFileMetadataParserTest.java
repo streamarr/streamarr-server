@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -70,12 +71,14 @@ class DefaultVideoFileMetadataParserTest {
     assertThat(result.year()).isEqualTo("2012");
   }
 
-  @Test
-  @DisplayName("Should preserve filename as title when year has no valid title prefix")
-  void shouldPreserveFilenameAsTitleWhenYearHasNoValidTitlePrefix() {
-    var result = defaultVideoFileMetadataParser.parse("--- 2012").orElseThrow();
+  @ParameterizedTest(name = "{0}")
+  @CsvSource({"'--- 2012', '--- 2012'", "'2012 Title', '2012 Title'", "'[2012] Title', Title"})
+  @DisplayName("Should not extract year when filename lacks supported release-year placement")
+  void shouldNotExtractYearWhenFilenameLacksSupportedReleaseYearPlacement(
+      String filename, String expectedTitle) {
+    var result = defaultVideoFileMetadataParser.parse(filename).orElseThrow();
 
-    assertThat(result.title()).isEqualTo("--- 2012");
+    assertThat(result.title()).isEqualTo(expectedTitle);
     assertThat(result.year()).isNull();
   }
 
@@ -115,24 +118,6 @@ class DefaultVideoFileMetadataParserTest {
 
     assertThat(result.title()).isEqualTo("(2012) Title");
     assertThat(result.year()).isEqualTo("2020");
-  }
-
-  @Test
-  @DisplayName("Should preserve bare leading year as title text")
-  void shouldPreserveBareLeadingYearAsTitleText() {
-    var result = defaultVideoFileMetadataParser.parse("2012 Title").orElseThrow();
-
-    assertThat(result.title()).isEqualTo("2012 Title");
-    assertThat(result.year()).isNull();
-  }
-
-  @Test
-  @DisplayName("Should treat bracketed leading year as a removable tag rather than release year")
-  void shouldTreatBracketedLeadingYearAsRemovableTagRatherThanReleaseYear() {
-    var result = defaultVideoFileMetadataParser.parse("[2012] Title").orElseThrow();
-
-    assertThat(result.title()).isEqualTo("Title");
-    assertThat(result.year()).isNull();
   }
 
   @ParameterizedTest(name = "{0}")
@@ -200,7 +185,7 @@ class DefaultVideoFileMetadataParserTest {
     @Builder
     record TestCase(String title, String year, String filename) {}
 
-    private TestCase.TestCaseBuilder testCase() {
+    private TestCase.TestCaseBuilder aCase() {
       return TestCase.builder();
     }
 
@@ -208,99 +193,99 @@ class DefaultVideoFileMetadataParserTest {
     @DisplayName("Should extract title and year when filename contains release metadata")
     Stream<DynamicNode> shouldExtractTitleAndYearWhenFilenameContainsReleaseMetadata() {
       return Stream.of(
-              testCase().title("Garnet Vale").year("2002").filename("Garnet Vale 2002").build(),
-              testCase().title("Garnet Vale").year("2002").filename("Garnet Vale (2002)").build(),
-              testCase().title("Veldane").year("1988").filename("Veldane 1988").build(),
-              testCase().title("Veldane").year("1988").filename("Veldane (1988)").build(),
-              testCase().title("$").year("1973").filename("$ 1973").build(),
-              testCase().title("$").year("1973").filename("$ (1973)").build(),
-              testCase()
+              aCase().title("Garnet Vale").year("2002").filename("Garnet Vale 2002").build(),
+              aCase().title("Garnet Vale").year("2002").filename("Garnet Vale (2002)").build(),
+              aCase().title("Veldane").year("1988").filename("Veldane 1988").build(),
+              aCase().title("Veldane").year("1988").filename("Veldane (1988)").build(),
+              aCase().title("$").year("1973").filename("$ 1973").build(),
+              aCase().title("$").year("1973").filename("$ (1973)").build(),
+              aCase()
                   .title("Tricky Movie Name 2001")
                   .year("2012")
                   .filename("Tricky Movie Name 2001 2012")
                   .build(),
-              testCase()
+              aCase()
                   .title("Tricky Movie Name 2001")
                   .year("2012")
                   .filename("Tricky Movie Name 2001 (2012)")
                   .build(),
-              testCase()
+              aCase()
                   .title("Marsh Warden")
                   .year("2018")
                   .filename("Marsh Warden [Multi-Subs] 2018")
                   .build(),
-              testCase()
+              aCase()
                   .title("Marsh Warden")
                   .year("2018")
                   .filename("Marsh Warden [Multi-Subs] [2018]")
                   .build(),
-              testCase()
+              aCase()
                   .title("Marsh Warden")
                   .year("2018")
                   .filename("Marsh Warden [Multi-Subs] (2018)")
                   .build(),
-              testCase()
+              aCase()
                   .title("A Breezy Picture")
                   .year("1995")
                   .filename("[Multi-Subs] A Breezy Picture (1995)")
                   .build(),
-              testCase()
+              aCase()
                   .title("The.Improbable.Mass.of.Gentle.Static")
                   .year("2022")
                   .filename("The.Improbable.Mass.of.Gentle.Static.2022.HDR.2160p.WEB.H265")
                   .build(),
-              testCase()
+              aCase()
                   .title("The Movie Title")
                   .year("2010")
                   .filename(
                       "The Movie Title (2010) Ultimate Extended Edition [imdb-tt5203941][IMAX HYBRID][Bluray-1080p Proper][3D][DV HDR10][DTS 5.1][x264]")
                   .build(),
-              testCase()
+              aCase()
                   .title("Home Movie 2012-12-12")
                   .year("2012")
                   .filename("Home Movie 2012-12-12 2012")
                   .build(),
-              testCase()
+              aCase()
                   .title("3 nights to sail")
                   .year("2014")
                   .filename("3 nights to sail (2014)")
                   .build(),
-              testCase()
+              aCase()
                   .title("3.Nights.to.Sail")
                   .year("2014")
                   .filename("3.Nights.to.Sail.2014.720p.BluRay.x264.PELT")
                   .build(),
-              testCase()
+              aCase()
                   .title("Fern Warden")
                   .year("1988")
                   .filename("Fern Warden 1988 REMASTERED 1080p BluRay x264 AAC - Quill")
                   .build(),
-              testCase()
+              aCase()
                   .title("A Movie")
                   .year("1996")
                   .filename("A Movie (1996) - AnotherTitle 2019.mp4")
                   .build(),
-              testCase()
+              aCase()
                   .title("Meridian Glide")
                   .year("2016")
                   .filename("Meridian Glide - 2016 - WEBDL-1080p - x264 AC3")
                   .build(),
-              testCase().title("No Space").year("2000").filename("No Space(2000)").build(),
-              testCase().title("Mr. Bramble").year("2019").filename("Mr. Bramble 2019").build(),
-              testCase().title("512").year("2006").filename("512 (2006)").build(),
-              testCase().title("512 2").year("2006").filename("512 2 (2006)").build(),
-              testCase().title("512 - 2").year("2006").filename("512 - 2 (2006)").build(),
-              testCase()
+              aCase().title("No Space").year("2000").filename("No Space(2000)").build(),
+              aCase().title("Mr. Bramble").year("2019").filename("Mr. Bramble 2019").build(),
+              aCase().title("512").year("2006").filename("512 (2006)").build(),
+              aCase().title("512 2").year("2006").filename("512 2 (2006)").build(),
+              aCase().title("512 - 2").year("2006").filename("512 - 2 (2006)").build(),
+              aCase()
                   .title("[HUM]")
                   .year("2007")
                   .filename("[HUM] (2007) - [REMUX-1080p][AC3 5.1].mkv")
                   .build(),
-              testCase()
+              aCase()
                   .title("Glint")
                   .year("2022")
                   .filename("Glint (2022) [WEBDL-1080p][EAC3 5.1][h264]-KLV.mkv")
                   .build(),
-              testCase()
+              aCase()
                   .title("3 Anchors")
                   .year("2009")
                   .filename("3 Anchors - (2009) - [Bluray-1080p][DTS-HD MA 5.1].mkv")

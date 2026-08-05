@@ -30,7 +30,7 @@ class EpisodePathMetadataParserTest {
     @Builder
     record TestCase(String filename, String seriesName, int season, int episode) {}
 
-    private TestCase.TestCaseBuilder testCase() {
+    private TestCase.TestCaseBuilder aCase() {
       return TestCase.builder();
     }
 
@@ -40,202 +40,202 @@ class EpisodePathMetadataParserTest {
     Stream<DynamicNode>
         shouldExtractCompleteEpisodeMetadataWhenPathContainsSeriesSeasonAndEpisode() {
       return Stream.of(
-              testCase()
+              aCase()
                   .filename("/media/Foo/Foo-S01E01")
                   .seriesName("Foo")
                   .season(1)
                   .episode(1)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/media/Foo - S04E011")
                   .seriesName("Foo")
                   .season(4)
                   .episode(11)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/media/Foo/Foo s01x01")
                   .seriesName("Foo")
                   .season(1)
                   .episode(1)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/media/Foo (2019)/Season 4/Foo 2019.S04E03")
                   .seriesName("Foo 2019")
                   .season(4)
                   .episode(3)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/media/Foo (2019)/Season 4/Foo (2019).S04E03")
                   .seriesName("Foo (2019)")
                   .season(4)
                   .episode(3)
                   .build(),
-              testCase()
+              aCase()
                   .filename("D:\\\\media\\\\Foo-S01E01")
                   .seriesName("Foo")
                   .season(1)
                   .episode(1)
                   .build(),
-              testCase()
+              aCase()
                   .filename("D:\\\\media\\\\Foo - S04E011")
                   .seriesName("Foo")
                   .season(4)
                   .episode(11)
                   .build(),
-              testCase()
+              aCase()
                   .filename("D:\\\\media\\\\Foo\\\\Foo s01x01")
                   .seriesName("Foo")
                   .season(1)
                   .episode(1)
                   .build(),
-              testCase()
+              aCase()
                   .filename("D:\\\\media\\\\Foo (2019)\\\\Season 4\\\\Foo 2019.S04E03")
                   .seriesName("Foo 2019")
                   .season(4)
                   .episode(3)
                   .build(),
-              testCase()
+              aCase()
                   .filename("D:\\\\media\\\\Foo (2019)\\\\Season 4\\\\Foo (2019).S04E03")
                   .seriesName("Foo (2019)")
                   .season(4)
                   .episode(3)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/Season 1/seriesname S01E02 blah")
                   .seriesName("seriesname")
                   .season(1)
                   .episode(2)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/Season 1/seriesname 01x02 blah")
                   .seriesName("seriesname")
                   .season(1)
                   .episode(2)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/Season 1/seriesname S01x02 blah")
                   .seriesName("seriesname")
                   .season(1)
                   .episode(2)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/Season 1/seriesname S01xE02 blah")
                   .seriesName("seriesname")
                   .season(1)
                   .episode(2)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/Season 2009/seriesname 2009x02 blah")
                   .seriesName("seriesname")
                   .season(2009)
                   .episode(2)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/Season 2009/seriesname S2009E02 blah")
                   .seriesName("seriesname")
                   .season(2009)
                   .episode(2)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/Season 2009/seriesname S2009x02 blah")
                   .seriesName("seriesname")
                   .season(2009)
                   .episode(2)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/Season 2009/seriesname S2009xE02 blah")
                   .seriesName("seriesname")
                   .season(2009)
                   .episode(2)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/server/anything_s01e02")
                   .seriesName("anything")
                   .season(1)
                   .episode(2)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/server/anything_s1e2")
                   .seriesName("anything")
                   .season(1)
                   .episode(2)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/server/anything_s01.e02")
                   .seriesName("anything")
                   .season(1)
                   .episode(2)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/server/anything_1x02")
                   .seriesName("anything")
                   .season(1)
                   .episode(2)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/server/anything_102")
                   .seriesName("anything")
                   .season(1)
                   .episode(2)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/Harbor Relay/Harbor Relay S2017E368")
                   .seriesName("Harbor Relay")
                   .season(2017)
                   .episode(368)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/server/The Wandering Peak 4x01")
                   .seriesName("The Wandering Peak")
                   .season(4)
                   .episode(1)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Series/Bay Q, Pt. 1_s06e32")
                   .seriesName("Bay Q, Pt. 1")
                   .season(6)
                   .episode(32)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/server/the_greenfields-s02e01_18536.mp4")
                   .seriesName("the_greenfields")
                   .season(2)
                   .episode(1)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/Season 25/The Greenfields.S25E09.Mend this antenna.mp4")
                   .seriesName("The Greenfields")
                   .season(25)
                   .episode(9)
                   .build(),
-              testCase()
+              aCase()
                   .filename(
                       "/The Meadow Years/The.Meadow.Years.S04.PDTV.x264-VXK/The Meadow Years s04e07 Christmas Party NTSC PDTV.avi")
                   .seriesName("The Meadow Years")
                   .season(4)
                   .episode(7)
                   .build(),
-              testCase()
+              aCase()
                   .filename(
                       "/Foo/The.Series.Name.S01E04.WEBRip.x264-Baz[Bar]/the.series.name.s01e04.webrip.x264-Baz[Bar].mkv")
                   .seriesName("the.series.name")
                   .season(1)
                   .episode(4)
                   .build(),
-              testCase()
+              aCase()
                   .filename(
                       "Rust.Dust.and.Orbits.S01.1080p.NF.WEB-DL.DDP5.1.x264-QRZ/Rust.Dust.and.Orbits.S01E01.Copper.Ledge.1080p.NF.WEB-DL.DDP5.1.x264-QRZ.mkv")
                   .seriesName("Rust.Dust.and.Orbits")
                   .season(1)
                   .episode(1)
                   .build(),
-              testCase()
+              aCase()
                   .filename("The Greenfields/The Greenfields.S25E08.Mend this antenna.mp4")
                   .seriesName("The Greenfields")
                   .season(25)
                   .episode(8)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Cold Ledger (1996-2007)/Cold Ledger - 317.mkv")
                   .seriesName("Cold Ledger")
                   .season(3)
@@ -243,25 +243,25 @@ class EpisodePathMetadataParserTest {
                   .build(),
 
               // Verbose "Season X Episode Y" format
-              testCase()
+              aCase()
                   .filename("/media/My Show Season 1 Episode 3.mkv")
                   .seriesName("My Show")
                   .season(1)
                   .episode(3)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/media/Show S02 Episode 05 - Title.mkv")
                   .seriesName("Show")
                   .season(2)
                   .episode(5)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/media/show season 2 episode 10.mkv")
                   .seriesName("show")
                   .season(2)
                   .episode(10)
                   .build(),
-              testCase()
+              aCase()
                   .filename("/media/Show Season01 Episode03.mkv")
                   .seriesName("Show")
                   .season(1)
@@ -269,7 +269,7 @@ class EpisodePathMetadataParserTest {
                   .build(),
 
               // Version marker (anime fansub releases)
-              testCase()
+              aCase()
                   .filename("/media/Show/Show.S01E01v2.mkv")
                   .seriesName("Show")
                   .season(1)
@@ -625,7 +625,7 @@ class EpisodePathMetadataParserTest {
     @Builder
     record TestCase(String filename, String seriesName, int endingEpisode) {}
 
-    private TestCase.TestCaseBuilder testCase() {
+    private TestCase.TestCaseBuilder aCase() {
       return TestCase.builder();
     }
 
@@ -633,144 +633,144 @@ class EpisodePathMetadataParserTest {
     @DisplayName("Should extract ending episode when path describes multiple episodes")
     Stream<DynamicNode> shouldExtractEndingEpisodeWhenPathDescribesMultipleEpisodes() {
       return Stream.of(
-              testCase()
+              aCase()
                   .filename("Season 02/Rudimentary - 02x03x04x15 - Ep Name.mp4")
                   .seriesName("Rudimentary")
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2/Rudimentary - 02x03 - 02x04 - 02x15 - Ep Name.mp4")
                   .seriesName("Rudimentary")
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2/02x03 - 02x04 - 02x15 - Ep Name.mp4")
                   .seriesName(null)
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2/02x03-04-15 - Ep Name.mp4")
                   .seriesName(null)
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 1/S01E23-E24-E26 - The Lantern.mp4")
                   .seriesName(null)
                   .endingEpisode(26)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 02/02x03-E15 - Ep Name.mp4")
                   .seriesName(null)
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2/Rudimentary - 02x03-04-15 - Ep Name.mp4")
                   .seriesName("Rudimentary")
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 1/Rudimentary - S01E23-E24-E26 - The Lantern.mp4")
                   .seriesName("Rudimentary")
                   .endingEpisode(26)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 02/Rudimentary - 02x03-E15 - Ep Name.mp4")
                   .seriesName("Rudimentary")
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 02/02x03 - x04 - x15 - Ep Name.mp4")
                   .seriesName(null)
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 02/Rudimentary - 02x03 - x04 - x15 - Ep Name.mp4")
                   .seriesName("Rudimentary")
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 02/02x03x04x15 - Ep Name.mp4")
                   .seriesName(null)
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2009/Rudimentary - 2009x03x04x15 - Ep Name.mp4")
                   .seriesName("Rudimentary")
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2009/Rudimentary - 2009x03 - 2009x04 - 2009x15 - Ep Name.mp4")
                   .seriesName("Rudimentary")
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2009/2009x03 - 2009x04 - 2009x15 - Ep Name.mp4")
                   .seriesName(null)
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2009/2009x03-04-15 - Ep Name.mp4")
                   .seriesName(null)
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2009/S2009E23-E24-E26 - The Lantern.mp4")
                   .seriesName(null)
                   .endingEpisode(26)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2009/2009x03-E15 - Ep Name.mp4")
                   .seriesName(null)
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2009/Rudimentary - 2009x03-04-15 - Ep Name.mp4")
                   .seriesName("Rudimentary")
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2009/Rudimentary - S2009E23-E24-E26 - The Lantern.mp4")
                   .seriesName("Rudimentary")
                   .endingEpisode(26)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2009/Rudimentary - 2009x03-E15 - Ep Name.mp4")
                   .seriesName("Rudimentary")
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2009/2009x03 - x04 - x15 - Ep Name.mp4")
                   .seriesName(null)
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2009/Rudimentary - 2009x03 - x04 - x15 - Ep Name.mp4")
                   .seriesName("Rudimentary")
                   .endingEpisode(15)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2009/02x03x04x15 - Ep Name.mp4")
                   .seriesName(null)
                   .endingEpisode(15)
                   .build(),
-              testCase().filename("/Season 1/foo 03-06").seriesName("foo").endingEpisode(6).build(),
-              testCase()
+              aCase().filename("/Season 1/foo 03-06").seriesName("foo").endingEpisode(6).build(),
+              aCase()
                   .filename("Season 1/02-03 - blah.avi")
                   .seriesName(null)
                   .endingEpisode(3)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 2/02-04 - blah 14 blah.avi")
                   .seriesName(null)
                   .endingEpisode(4)
                   .build(),
-              testCase()
+              aCase()
                   .filename("Season 1/02-05 - blah-02 a.avi")
                   .seriesName(null)
                   .endingEpisode(5)
                   .build(),
-              testCase().filename("Season 2/02-04.avi").seriesName(null).endingEpisode(4).build(),
-              testCase()
+              aCase().filename("Season 2/02-04.avi").seriesName(null).endingEpisode(4).build(),
+              aCase()
                   .filename("Season 1/WAYFARING_s01e01-e04")
                   .seriesName("WAYFARING")
                   .endingEpisode(4)

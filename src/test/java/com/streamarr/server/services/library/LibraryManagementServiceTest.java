@@ -788,7 +788,7 @@ class LibraryManagementServiceTest {
 
   @Test
   @DisplayName("Should search with external ID from filepath URI when stored filename is mangled")
-  void shouldSearchWithExternalIdFromFilepathUriWhenStoredFilenameIsMangled() throws IOException {
+  void shouldSearchWithExternalIdFromFilepathUriWhenStoredFilenameIsMangled() {
     var expectedSearch =
         VideoFileParserResult.builder()
             .title("Inception")
