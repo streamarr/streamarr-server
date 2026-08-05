@@ -17,21 +17,21 @@ class CanonicalBaseUrlTest {
   @ParameterizedTest(name = "Should report absent for [{index}]")
   @NullAndEmptySource
   @ValueSource(strings = {"   "})
-  @DisplayName("Should treat a missing value as an explicit absence rather than an error")
-  void shouldTreatMissingValueAsExplicitAbsence(String rawBaseUrl) {
+  @DisplayName("Should treat the value as explicitly absent when the base URL is missing")
+  void shouldTreatValueAsExplicitlyAbsentWhenBaseUrlMissing(String rawBaseUrl) {
     assertThat(CanonicalBaseUrl.of(rawBaseUrl, false).isConfigured()).isFalse();
   }
 
   @Test
-  @DisplayName("Should accept an https URL and normalize a single trailing slash")
-  void shouldAcceptHttpsUrlAndNormalizeSingleTrailingSlash() {
+  @DisplayName("Should normalize a single trailing slash when the base URL uses https")
+  void shouldNormalizeSingleTrailingSlashWhenBaseUrlUsesHttps() {
     assertThat(CanonicalBaseUrl.of("https://home.example.com/", false).value())
         .isEqualTo("https://home.example.com");
   }
 
   @Test
-  @DisplayName("Should join the verification path beneath a configured base path")
-  void shouldJoinVerificationPathBeneathConfiguredBasePath() {
+  @DisplayName("Should join the verification path when the base URL contains a path")
+  void shouldJoinVerificationPathWhenBaseUrlContainsPath() {
     assertThat(CanonicalBaseUrl.of("https://home.example.com/streamarr", false).resolve("/link"))
         .isEqualTo("https://home.example.com/streamarr/link");
   }
@@ -49,20 +49,24 @@ class CanonicalBaseUrlTest {
         "https://home.example.com/a%2Fb",
         "https:///nohost"
       })
-  @DisplayName("Should fail startup on a base URL that is not a bare endpoint")
-  void shouldFailStartupOnBaseUrlThatIsNotBareEndpoint(String rawBaseUrl) {
+  @DisplayName("Should fail startup when the base URL is not a bare endpoint")
+  void shouldFailStartupWhenBaseUrlIsNotBareEndpoint(String rawBaseUrl) {
     assertThatThrownBy(() -> CanonicalBaseUrl.of(rawBaseUrl, false))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("STREAMARR_BASE_URL");
   }
 
   @Test
-  @DisplayName("Should refuse cleartext http unless insecure transport is unlocked")
-  void shouldRefuseCleartextHttpUnlessInsecureTransportUnlocked() {
+  @DisplayName("Should refuse cleartext http when insecure transport is not unlocked")
+  void shouldRefuseCleartextHttpWhenInsecureTransportNotUnlocked() {
     assertThatThrownBy(() -> CanonicalBaseUrl.of("http://home.example.com", false))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("must use https");
+  }
 
+  @Test
+  @DisplayName("Should accept cleartext http when insecure transport is unlocked")
+  void shouldAcceptCleartextHttpWhenInsecureTransportUnlocked() {
     assertThat(CanonicalBaseUrl.of("http://home.example.com", true).value())
         .isEqualTo("http://home.example.com");
   }
@@ -76,8 +80,8 @@ class CanonicalBaseUrlTest {
   }
 
   @Test
-  @DisplayName("Should refuse to resolve a path that is not absolute")
-  void shouldRefuseToResolvePathThatIsNotAbsolute() {
+  @DisplayName("Should refuse to resolve a path when it is not absolute")
+  void shouldRefuseToResolvePathWhenPathIsNotAbsolute() {
     var baseUrl = CanonicalBaseUrl.of("https://home.example.com", false);
 
     assertThatThrownBy(() -> baseUrl.resolve("link"))

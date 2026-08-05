@@ -25,8 +25,9 @@ class DeviceAuthUnconfiguredContractIT extends AbstractIntegrationTest {
   @Autowired private ObjectMapper objectMapper;
 
   @Test
-  @DisplayName("Should advertise disabled pairing and reject issuance with the expected body")
-  void shouldAdvertiseDisabledPairingAndRejectIssuanceWithPinnedBody() throws Exception {
+  @DisplayName(
+      "Should advertise disabled pairing and reject issuance when the base URL is unconfigured")
+  void shouldAdvertiseDisabledPairingAndRejectIssuanceWhenBaseUrlUnconfigured() throws Exception {
     var statusBody =
         objectMapper.readTree(
             mockMvc

@@ -29,8 +29,8 @@ class DeviceAuthorizationSweeperTest {
       new DeviceAuthorizationSweeper(repository, clock);
 
   @Test
-  @DisplayName("Should delete every row past its lifetime regardless of terminal status")
-  void shouldDeleteEveryRowPastItsLifetimeRegardlessOfTerminalStatus() {
+  @DisplayName("Should delete every row regardless of terminal status when its lifetime has passed")
+  void shouldDeleteEveryRowRegardlessOfTerminalStatusWhenLifetimePassed() {
     save(DeviceAuthorizationStatus.PENDING, Duration.ofMinutes(-1));
     save(DeviceAuthorizationStatus.APPROVED, Duration.ofMinutes(-1));
     save(DeviceAuthorizationStatus.DENIED, Duration.ofMinutes(-1));
@@ -46,8 +46,8 @@ class DeviceAuthorizationSweeperTest {
   }
 
   @Test
-  @DisplayName("Should leave unexpired rows alone")
-  void shouldLeaveUnexpiredRowsAlone() {
+  @DisplayName("Should leave rows alone when they have not expired")
+  void shouldLeaveRowsAloneWhenNotExpired() {
     save(DeviceAuthorizationStatus.PENDING, Duration.ofMinutes(10));
 
     sweeper.sweep();

@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Test;
 class DevicePollResultTest {
 
   @Test
-  @DisplayName("Should require both credentials in a successful poll result")
-  void shouldRequireBothCredentialsInSuccessfulPollResult() {
+  @DisplayName("Should require both credentials when constructing a successful poll result")
+  void shouldRequireBothCredentialsWhenConstructingSuccessfulPollResult() {
     var accessToken = new AccessToken("access", Instant.EPOCH, TokenScope.ACCOUNT);
 
     assertThatNullPointerException()

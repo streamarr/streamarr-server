@@ -14,34 +14,34 @@ import org.junit.jupiter.params.provider.ValueSource;
 class DeviceNameTest {
 
   @Test
-  @DisplayName("Should keep an ordinary device name unchanged")
-  void shouldKeepOrdinaryDeviceNameUnchanged() {
+  @DisplayName("Should keep the device name unchanged when it contains ordinary characters")
+  void shouldKeepDeviceNameUnchangedWhenCharactersOrdinary() {
     assertThat(DeviceName.sanitize("Apple TV")).isEqualTo("Apple TV");
   }
 
   @Test
-  @DisplayName("Should keep non-ASCII device names intact")
-  void shouldKeepNonAsciiDeviceNamesIntact() {
+  @DisplayName("Should keep the device name intact when it contains non-ASCII characters")
+  void shouldKeepDeviceNameIntactWhenCharactersNonAscii() {
     // Output encoding, not an input whitelist, is the defence on the page that renders this.
     assertThat(DeviceName.sanitize("Salón TV")).isEqualTo("Salón TV");
     assertThat(DeviceName.sanitize("居間のテレビ")).isEqualTo("居間のテレビ");
   }
 
   @Test
-  @DisplayName("Should normalize a decomposed device name to NFC")
-  void shouldNormalizeDecomposedDeviceNameToNfc() {
+  @DisplayName("Should normalize the device name to NFC when its characters are decomposed")
+  void shouldNormalizeDeviceNameToNfcWhenCharactersDecomposed() {
     assertThat(DeviceName.sanitize("Cafe\u0301 TV")).isEqualTo("Café TV");
   }
 
   @Test
-  @DisplayName("Should trim surrounding whitespace without changing internal spacing")
-  void shouldTrimSurroundingWhitespaceWithoutChangingInternalSpacing() {
+  @DisplayName("Should trim only surrounding whitespace when the device name has internal spacing")
+  void shouldTrimOnlySurroundingWhitespaceWhenDeviceNameHasInternalSpacing() {
     assertThat(DeviceName.sanitize("  Living Room TV  ")).isEqualTo("Living Room TV");
   }
 
   @Test
-  @DisplayName("Should strip control characters that could forge log lines")
-  void shouldStripControlCharactersThatCouldForgeLogLines() {
+  @DisplayName("Should strip control characters when they could forge log lines")
+  void shouldStripControlCharactersWhenTheyCouldForgeLogLines() {
     assertThat(DeviceName.sanitize("Living\nRoom\tTV\0")).isEqualTo("LivingRoomTV");
   }
 
@@ -51,16 +51,16 @@ class DeviceNameTest {
         0x061C, 0x200E, 0x200F, 0x202A, 0x202B, 0x202C,
         0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069
       })
-  @DisplayName("Should strip bidi controls that can spoof displayed names")
-  void shouldStripBidiControlsThatCanSpoofDisplayedNames(int bidiControl) {
+  @DisplayName("Should strip bidi controls when they could spoof displayed names")
+  void shouldStripBidiControlsWhenTheyCouldSpoofDisplayedNames(int bidiControl) {
     var spoofed = "Living" + Character.toString(bidiControl) + "Room TV";
 
     assertThat(DeviceName.sanitize(spoofed)).isEqualTo("LivingRoom TV");
   }
 
   @Test
-  @DisplayName("Should keep legitimate format characters used by emoji")
-  void shouldKeepLegitimateFormatCharactersUsedByEmoji() {
+  @DisplayName("Should keep format characters when they are used by emoji")
+  void shouldKeepFormatCharactersWhenUsedByEmoji() {
     var familyTv = "Family 👨‍👩‍👧‍👦 TV";
 
     assertThat(DeviceName.sanitize(familyTv)).isEqualTo(familyTv);
@@ -75,8 +75,8 @@ class DeviceNameTest {
   }
 
   @Test
-  @DisplayName("Should cap long names without splitting a character")
-  void shouldCapLongNamesWithoutSplittingCharacter() {
+  @DisplayName("Should cap the name without splitting a character when it exceeds the limit")
+  void shouldCapNameWithoutSplittingCharacterWhenLimitExceeded() {
     var sanitized = DeviceName.sanitize("🎬".repeat(80));
 
     assertThat(sanitized.codePointCount(0, sanitized.length())).isEqualTo(64);
@@ -84,8 +84,8 @@ class DeviceNameTest {
   }
 
   @Test
-  @DisplayName("Should keep a name exactly at the code-point limit")
-  void shouldKeepNameExactlyAtCodePointLimit() {
+  @DisplayName("Should keep the name unchanged when it is exactly at the code-point limit")
+  void shouldKeepNameUnchangedWhenExactlyAtCodePointLimit() {
     var boundary = "🎬".repeat(64);
 
     assertThat(DeviceName.sanitize(boundary)).isEqualTo(boundary);

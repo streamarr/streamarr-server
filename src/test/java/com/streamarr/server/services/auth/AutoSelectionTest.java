@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Test;
 class AutoSelectionTest {
 
   @Test
-  @DisplayName("Should reject a profile without its owning household")
-  void shouldRejectProfileWithoutOwningHousehold() {
+  @DisplayName("Should reject a profile when its owning household is absent")
+  void shouldRejectProfileWhenOwningHouseholdAbsent() {
     var profileId = UUID.randomUUID();
 
     assertThatThrownBy(() -> new AutoSelection(null, profileId))

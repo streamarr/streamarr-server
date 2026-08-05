@@ -29,8 +29,8 @@ class DeviceAuthorizationSweeperIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should delete expired rows of every status and keep live ones")
-  void shouldDeleteExpiredRowsOfEveryStatusAndKeepLiveOnes() {
+  @DisplayName("Should delete rows of every status and keep live ones when the sweeper runs")
+  void shouldDeleteRowsOfEveryStatusAndKeepLiveOnesWhenSweeperRuns() {
     save(DeviceAuthorizationStatus.PENDING, Duration.ofMinutes(-5));
     save(DeviceAuthorizationStatus.APPROVED, Duration.ofMinutes(-5));
     save(DeviceAuthorizationStatus.DENIED, Duration.ofMinutes(-5));
@@ -48,8 +48,8 @@ class DeviceAuthorizationSweeperIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should free a user code for reuse once its row is swept")
-  void shouldFreeUserCodeForReuseOnceItsRowIsSwept() {
+  @DisplayName("Should free a user code for reuse when its expired row is swept")
+  void shouldFreeUserCodeForReuseWhenExpiredRowSwept() {
     var userCode = "BCDFGHJK";
     saveWithUserCode(userCode, Duration.ofMinutes(-5));
 

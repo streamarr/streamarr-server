@@ -64,8 +64,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should report both required status flags")
-  void shouldReportBothRequiredStatusFlags() throws Exception {
+  @DisplayName("Should report both required status flags when authentication status is requested")
+  void shouldReportBothRequiredStatusFlagsWhenAuthenticationStatusRequested() throws Exception {
     var body =
         readJson(
             mockMvc
@@ -79,8 +79,9 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should issue an absolute verification URI and the server's own timings")
-  void shouldIssueAbsoluteVerificationUriAndServersOwnTimings() throws Exception {
+  @DisplayName(
+      "Should issue an absolute verification URI and server timings when pairing is configured")
+  void shouldIssueAbsoluteVerificationUriAndServerTimingsWhenPairingConfigured() throws Exception {
     var body = issueCode("Apple TV");
 
     assertThat(fieldNamesOf(body))
@@ -149,8 +150,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should answer an un-approved poll with the pinned pending body on HTTP 400")
-  void shouldAnswerUnapprovedPollWithPinnedPendingBodyOnBadRequest() throws Exception {
+  @DisplayName("Should answer with the pinned pending body when an unapproved grant is polled")
+  void shouldAnswerWithPinnedPendingBodyWhenUnapprovedGrantPolled() throws Exception {
     var deviceCode = issueCode("Apple TV").get("deviceCode").asString();
 
     // RFC 8628 §3.2: the interval is the wait between polls, so the first one is never too soon.
@@ -161,8 +162,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should answer a too-soon poll with the pinned slow-down body on HTTP 400")
-  void shouldAnswerTooSoonPollWithPinnedSlowDownBodyOnBadRequest() throws Exception {
+  @DisplayName("Should answer with the pinned slow-down body when a grant is polled too soon")
+  void shouldAnswerWithPinnedSlowDownBodyWhenGrantPolledTooSoon() throws Exception {
     var deviceCode = issueCode("Apple TV").get("deviceCode").asString();
     pollExpectingBadRequest(deviceCode);
 
@@ -174,8 +175,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should answer an unknown device code with the pinned expired body")
-  void shouldAnswerUnknownDeviceCodeWithPinnedExpiredBody() throws Exception {
+  @DisplayName("Should answer with the pinned expired body when the device code is unknown")
+  void shouldAnswerWithPinnedExpiredBodyWhenDeviceCodeUnknown() throws Exception {
     assertErrorBody(
         pollExpectingBadRequest("not-a-device-code"),
         "expired_token",
@@ -183,8 +184,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should answer a denied request with its own terminal body, never a 403")
-  void shouldAnswerDeniedRequestWithItsOwnTerminalBodyNeverForbidden() throws Exception {
+  @DisplayName("Should answer with the denied terminal body when the pairing request is denied")
+  void shouldAnswerWithDeniedTerminalBodyWhenPairingRequestDenied() throws Exception {
     var issued = issueCode("Apple TV");
     var approver = seedAccount();
     decide(approver, issued.get("userCode").asString(), "DENY");
@@ -196,8 +197,9 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return the standard tokens response to the winning poll")
-  void shouldReturnStandardTokensResponseToWinningPoll() throws Exception {
+  @DisplayName(
+      "Should return the standard tokens response when the winning poll consumes the grant")
+  void shouldReturnStandardTokensResponseWhenWinningPollConsumesGrant() throws Exception {
     var issued = issueCode("Apple TV");
     var approver = seedAccount();
     decide(approver, issued.get("userCode").asString(), "APPROVE");
@@ -218,8 +220,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should show the requesting device to a signed-in approver")
-  void shouldShowRequestingDeviceToSignedInApprover() throws Exception {
+  @DisplayName("Should show the requesting device when a signed-in approver looks up the code")
+  void shouldShowRequestingDeviceWhenSignedInApproverLooksUpCode() throws Exception {
     var issued = issueCode("Living Room Apple TV");
     var approver = seedAccount();
 
@@ -242,8 +244,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should accept a typed code without its separator")
-  void shouldAcceptTypedCodeWithoutItsSeparator() throws Exception {
+  @DisplayName("Should accept a typed code when its display separator is omitted")
+  void shouldAcceptTypedCodeWhenDisplaySeparatorOmitted() throws Exception {
     var issued = issueCode("Apple TV");
     var approver = seedAccount();
     var typed =
@@ -259,8 +261,9 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
 
   @ParameterizedTest(name = "Should show {1} after {0}")
   @CsvSource({"APPROVE, APPROVED", "DENY, DENIED"})
-  @DisplayName("Should show the decided status on lookup")
-  void shouldShowDecidedStatusOnLookup(String decision, String expectedStatus) throws Exception {
+  @DisplayName("Should show the decided status when the code is looked up after a decision")
+  void shouldShowDecidedStatusWhenCodeLookedUpAfterDecision(String decision, String expectedStatus)
+      throws Exception {
     var issued = issueCode("Apple TV");
     var approver = seedAccount();
     decide(approver, issued.get("userCode").asString(), decision);
@@ -271,8 +274,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should show consumed after the approved device redeems the grant")
-  void shouldShowConsumedAfterApprovedDeviceRedeemsGrant() throws Exception {
+  @DisplayName("Should show consumed when the approved device has redeemed the grant")
+  void shouldShowConsumedWhenApprovedDeviceHasRedeemedGrant() throws Exception {
     var issued = issueCode("Apple TV");
     var approver = seedAccount();
     decide(approver, issued.get("userCode").asString(), "APPROVE");
@@ -285,8 +288,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
 
   @ParameterizedTest(name = "Should echo {1} after {0}")
   @CsvSource({"APPROVE, APPROVED", "DENY, DENIED"})
-  @DisplayName("Should echo the decision that actually happened")
-  void shouldEchoDecisionThatActuallyHappened(String decision, String expectedStatus)
+  @DisplayName("Should echo the decision that happened when an approver decides the grant")
+  void shouldEchoActualDecisionWhenApproverDecidesGrant(String decision, String expectedStatus)
       throws Exception {
     var issued = issueCode("Apple TV");
     var approver = seedAccount();
@@ -299,8 +302,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject an unknown decision value before touching the code")
-  void shouldRejectUnknownDecisionValueBeforeTouchingCode() throws Exception {
+  @DisplayName("Should reject the request before touching the code when the decision is unknown")
+  void shouldRejectRequestBeforeTouchingCodeWhenDecisionUnknown() throws Exception {
     var approver = seedAccount();
 
     var body =
@@ -316,8 +319,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject a missing decision before touching the code")
-  void shouldRejectMissingDecisionBeforeTouchingCode() throws Exception {
+  @DisplayName("Should reject the request before touching the code when the decision is missing")
+  void shouldRejectRequestBeforeTouchingCodeWhenDecisionMissing() throws Exception {
     var approver = seedAccount();
 
     var body =
@@ -334,8 +337,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject a malformed user code with the pinned body")
-  void shouldRejectMalformedUserCodeWithPinnedBody() throws Exception {
+  @DisplayName("Should reject with the pinned body when the lookup user code is malformed")
+  void shouldRejectWithPinnedBodyWhenLookupUserCodeMalformed() throws Exception {
     var approver = seedAccount();
 
     var body =
@@ -351,8 +354,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject a malformed user code on decision with the pinned body")
-  void shouldRejectMalformedUserCodeOnDecisionWithPinnedBody() throws Exception {
+  @DisplayName("Should reject with the pinned body when the decision user code is malformed")
+  void shouldRejectWithPinnedBodyWhenDecisionUserCodeMalformed() throws Exception {
     var approver = seedAccount();
 
     var body =
@@ -369,8 +372,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should collapse an unknown code into not-found on lookup")
-  void shouldCollapseUnknownCodeIntoNotFoundOnLookup() throws Exception {
+  @DisplayName("Should collapse the result into not-found when lookup receives an unknown code")
+  void shouldCollapseResultIntoNotFoundWhenLookupReceivesUnknownCode() throws Exception {
     var approver = seedAccount();
 
     var body =
@@ -387,8 +390,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should collapse an unknown code into not-found on decision")
-  void shouldCollapseUnknownCodeIntoNotFoundOnDecision() throws Exception {
+  @DisplayName("Should collapse the result into not-found when decision receives an unknown code")
+  void shouldCollapseResultIntoNotFoundWhenDecisionReceivesUnknownCode() throws Exception {
     var approver = seedAccount();
 
     var body =
@@ -405,8 +408,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse a second decision with a conflict rather than a silent overwrite")
-  void shouldRefuseSecondDecisionWithConflictRatherThanSilentOverwrite() throws Exception {
+  @DisplayName("Should return conflict rather than overwrite when a second decision is submitted")
+  void shouldReturnConflictRatherThanOverwriteWhenSecondDecisionSubmitted() throws Exception {
     var issued = issueCode("Apple TV");
     var approver = seedAccount();
     decide(approver, issued.get("userCode").asString(), "APPROVE");
@@ -425,8 +428,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should answer an expired decision with its exact approver-facing body")
-  void shouldAnswerExpiredDecisionWithExactApproverFacingBody() throws Exception {
+  @DisplayName("Should answer with the exact approver-facing body when the code has expired")
+  void shouldAnswerWithExactApproverFacingBodyWhenCodeExpired() throws Exception {
     var issued = issueCode("Apple TV");
     var authorization =
         authorizationRepository
@@ -453,8 +456,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse lookup and decision to an unauthenticated caller")
-  void shouldRefuseLookupAndDecisionToUnauthenticatedCaller() throws Exception {
+  @DisplayName("Should refuse lookup and decision when the caller is unauthenticated")
+  void shouldRefuseLookupAndDecisionWhenCallerUnauthenticated() throws Exception {
     mockMvc
         .perform(
             post("/api/auth/device/authorizations/lookup")

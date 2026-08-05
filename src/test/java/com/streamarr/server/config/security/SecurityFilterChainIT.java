@@ -163,8 +163,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should permit device issuance and polling without credentials")
-  void shouldPermitDeviceIssuanceAndPollingWithoutCredentials() throws Exception {
+  @DisplayName("Should permit device issuance and polling when the caller has no credentials")
+  void shouldPermitDeviceIssuanceAndPollingWhenCallerHasNoCredentials() throws Exception {
     // A TV has no session yet, so these two must be reachable anonymously — and, unlike the
     // authenticated pairing endpoints, they carry no cookies for CSRF to protect.
     mockMvc
@@ -183,8 +183,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should never 401 a device endpoint on a stale access cookie alone")
-  void shouldNeverUnauthorizeDeviceEndpointOnStaleAccessCookieAlone() throws Exception {
+  @DisplayName("Should never 401 a device endpoint when only a stale access cookie is present")
+  void shouldNeverUnauthorizeDeviceEndpointWhenOnlyStaleAccessCookiePresent() throws Exception {
     // permitAll settles authentication, not CSRF. The Path=/ access cookie rides every same-origin
     // request, so the manually wired credential-shaped CSRF filter still covers these routes — but
     // the refusal must come from CSRF (403), never from the bearer resolver expiring the cookie.
@@ -208,8 +208,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should exempt a bearer-carrying device poll from CSRF")
-  void shouldExemptBearerCarryingDevicePollFromCsrf() throws Exception {
+  @DisplayName("Should exempt a device poll from CSRF when it carries a bearer token")
+  void shouldExemptDevicePollFromCsrfWhenBearerTokenPresent() throws Exception {
     // The TV's own shape: an Authorization header and no cookies, which is never CSRF-able.
     mockMvc
         .perform(
@@ -221,8 +221,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should require authentication for pairing lookup and decision")
-  void shouldRequireAuthenticationForPairingLookupAndDecision() throws Exception {
+  @DisplayName("Should require authentication when pairing lookup or decision is requested")
+  void shouldRequireAuthenticationWhenPairingLookupOrDecisionRequested() throws Exception {
     mockMvc
         .perform(
             post("/api/auth/device/authorizations/lookup")
@@ -239,8 +239,9 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject a cookie-authenticated pairing decision without a CSRF token")
-  void shouldRejectCookieAuthenticatedPairingDecisionWithoutCsrfToken() throws Exception {
+  @DisplayName(
+      "Should reject a cookie-authenticated pairing decision when the CSRF token is missing")
+  void shouldRejectCookieAuthenticatedPairingDecisionWhenCsrfTokenMissing() throws Exception {
     identity = authTestSupport.createIdentity();
 
     // Cookie-carried credentials are the ambient ones CSRF exists to cover; the manually wired

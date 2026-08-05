@@ -13,8 +13,9 @@ import org.junit.jupiter.api.Test;
 class DeviceCodeGeneratorTest {
 
   @Test
-  @DisplayName("Should encode all 256 random bits as canonical base64url")
-  void shouldEncodeAll256RandomBitsAsCanonicalBase64url() {
+  @DisplayName(
+      "Should encode all 256 random bits as canonical base64url when generating a device code")
+  void shouldEncodeAll256RandomBitsAsCanonicalBase64urlWhenGeneratingDeviceCode() {
     var bytes = new byte[32];
     for (var index = 0; index < bytes.length; index++) {
       bytes[index] = (byte) index;

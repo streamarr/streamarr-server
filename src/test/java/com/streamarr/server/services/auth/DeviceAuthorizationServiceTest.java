@@ -141,8 +141,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should return an absolute verification URI and the server's own timings")
-  void shouldReturnAbsoluteVerificationUriAndServersOwnTimings() {
+  @DisplayName("Should return an absolute verification URI and server timings when issuing a code")
+  void shouldReturnAbsoluteVerificationUriAndServerTimingsWhenIssuingCode() {
     var issued = service.issue("Apple TV");
 
     assertThat(issued.verificationUri()).isEqualTo(BASE_URL + "/link");
@@ -153,8 +153,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should return non-default configured timings")
-  void shouldReturnNonDefaultConfiguredTimings() {
+  @DisplayName("Should return non-default timings when custom values are configured")
+  void shouldReturnNonDefaultTimingsWhenCustomValuesConfigured() {
     var configuredProperties =
         DeviceAuthProperties.builder()
             .codeTtl(Duration.ofMinutes(17))
@@ -174,8 +174,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should issue a canonical base64url device code with 256 bits")
-  void shouldIssueCanonicalBase64urlDeviceCodeWith256Bits() {
+  @DisplayName("Should return a canonical 256-bit base64url device code when issuing a grant")
+  void shouldReturnCanonical256BitBase64urlDeviceCodeWhenIssuingGrant() {
     var issued = service.issue("Apple TV");
 
     var decoded = Base64.getUrlDecoder().decode(issued.deviceCode());
@@ -186,8 +186,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should store only the SHA-256 digest of the device code")
-  void shouldStoreOnlySha256DigestOfDeviceCode() throws Exception {
+  @DisplayName("Should store only the SHA-256 digest when persisting a device code")
+  void shouldStoreOnlySha256DigestWhenPersistingDeviceCode() throws Exception {
     var issued = service.issue("Apple TV");
     var expectedDigest =
         Base64.getUrlEncoder()
@@ -213,8 +213,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should let an already-issued grant finish after issuance is disabled")
-  void shouldLetAlreadyIssuedGrantFinishAfterIssuanceDisabled() {
+  @DisplayName("Should let an existing grant finish when new issuance is disabled")
+  void shouldLetExistingGrantFinishWhenNewIssuanceDisabled() {
     var issued = service.issue("Apple TV");
 
     // Only new issuance is gated; a code already shown to a person must never be stranded.
@@ -228,8 +228,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should report pending until the code is approved")
-  void shouldReportPendingUntilCodeIsApproved() {
+  @DisplayName("Should report pending when the code has not been approved")
+  void shouldReportPendingWhenCodeNotApproved() {
     var issued = service.issue("Apple TV");
 
     advanceClock(Duration.ofSeconds(5));
@@ -243,8 +243,9 @@ class DeviceAuthorizationServiceTest {
    * charging it a permanent cumulative penalty would halve how often it notices its own approval.
    */
   @Test
-  @DisplayName("Should allow the first poll immediately and leave the interval untouched")
-  void shouldAllowFirstPollImmediatelyAndLeaveIntervalUntouched() {
+  @DisplayName(
+      "Should allow an immediate poll and leave the interval untouched when no poll preceded it")
+  void shouldAllowImmediatePollAndLeaveIntervalUntouchedWhenNoPollPrecededIt() {
     var issued = service.issue("Apple TV");
 
     assertThat(service.redeem(issued.deviceCode())).isInstanceOf(DevicePollResult.Pending.class);
@@ -252,8 +253,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should slow down a caller that polls before the cadence allows")
-  void shouldSlowDownCallerThatPollsBeforeCadenceAllows() {
+  @DisplayName("Should slow down the caller when a poll arrives before the cadence allows")
+  void shouldSlowDownCallerWhenPollArrivesBeforeCadenceAllows() {
     var issued = service.issue("Apple TV");
     service.redeem(issued.deviceCode());
 
@@ -261,8 +262,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should raise the interval five seconds per early poll, cumulatively")
-  void shouldRaiseIntervalFiveSecondsPerEarlyPollCumulatively() {
+  @DisplayName("Should raise the interval by five cumulative seconds when polls arrive early")
+  void shouldRaiseIntervalByFiveCumulativeSecondsWhenPollsArriveEarly() {
     var issued = service.issue("Apple TV");
 
     // Issued at t=0, and the gate opens on the poll before, so the first one is never early.
@@ -296,8 +297,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should mint a session at the winning poll rather than at approval")
-  void shouldMintSessionAtWinningPollRatherThanAtApproval() {
+  @DisplayName("Should mint a session at the winning poll when the grant is approved")
+  void shouldMintSessionAtWinningPollWhenGrantApproved() {
     var issued = service.issue("Apple TV");
     approve(issued.userCode());
 
@@ -349,8 +350,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should report expired once the grant has been consumed")
-  void shouldReportExpiredOnceGrantHasBeenConsumed() {
+  @DisplayName("Should report expired when the grant has already been consumed")
+  void shouldReportExpiredWhenGrantAlreadyConsumed() {
     var issued = service.issue("Apple TV");
     approve(issued.userCode());
     service.redeem(issued.deviceCode());
@@ -360,8 +361,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should report denial as its own terminal state")
-  void shouldReportDenialAsItsOwnTerminalState() {
+  @DisplayName("Should report denial as its own terminal state when the request was denied")
+  void shouldReportDenialAsOwnTerminalStateWhenRequestDenied() {
     var issued = service.issue("Apple TV");
     decide(issued.userCode(), DeviceDecision.DENY);
 
@@ -370,8 +371,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should remain pending immediately before the code lifetime ends")
-  void shouldRemainPendingImmediatelyBeforeCodeLifetimeEnds() {
+  @DisplayName("Should remain pending when immediately before the code lifetime ends")
+  void shouldRemainPendingWhenImmediatelyBeforeCodeLifetimeEnds() {
     var issued = service.issue("Apple TV");
 
     advanceClock(properties.codeTtl().minusNanos(1));
@@ -380,8 +381,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should report expired at the exact code lifetime boundary")
-  void shouldReportExpiredAtExactCodeLifetimeBoundary() {
+  @DisplayName("Should report expired when the exact code lifetime boundary is reached")
+  void shouldReportExpiredWhenExactCodeLifetimeBoundaryReached() {
     var issued = service.issue("Apple TV");
 
     advanceClock(properties.codeTtl());
@@ -391,8 +392,9 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should report expired for a malformed device code without touching the database")
-  void shouldReportExpiredForMalformedDeviceCodeWithoutTouchingDatabase() {
+  @DisplayName(
+      "Should report expired without touching the database when the device code is malformed")
+  void shouldReportExpiredWithoutDatabaseAccessWhenDeviceCodeMalformed() {
     var inaccessibleRepository =
         new FakeDeviceAuthorizationRepository() {
           @Override
@@ -408,8 +410,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should show the requesting device before an approver commits")
-  void shouldShowRequestingDeviceBeforeApproverCommits() {
+  @DisplayName("Should show the requesting device when an approver looks up a pending code")
+  void shouldShowRequestingDeviceWhenApproverLooksUpPendingCode() {
     var issued = service.issue("Living Room Apple TV");
 
     var view = service.lookup(issued.userCode(), approver.getId());
@@ -421,8 +423,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should accept a typed code in any case with or without the separator")
-  void shouldAcceptTypedCodeInAnyCaseWithOrWithoutSeparator() {
+  @DisplayName("Should accept a typed code when case and separator formatting vary")
+  void shouldAcceptTypedCodeWhenCaseAndSeparatorFormattingVary() {
     var issued = service.issue("Apple TV");
 
     assertThat(service.lookup(issued.userCode().toLowerCase(Locale.ROOT), approver.getId()))
@@ -431,8 +433,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should collapse an expired code into not-found on lookup")
-  void shouldCollapseExpiredCodeIntoNotFoundOnLookup() {
+  @DisplayName("Should collapse the result into not-found when lookup receives an expired code")
+  void shouldCollapseResultIntoNotFoundWhenLookupReceivesExpiredCode() {
     var issued = service.issue("Apple TV");
 
     advanceClock(Duration.ofMinutes(11));
@@ -446,8 +448,9 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should tell an approver that a code expired rather than that it is unknown")
-  void shouldTellApproverThatCodeExpiredRatherThanThatItIsUnknown() {
+  @DisplayName(
+      "Should report expiration rather than unknown when an approver decides an expired code")
+  void shouldReportExpirationRatherThanUnknownWhenApproverDecidesExpiredCode() {
     var issued = service.issue("Apple TV");
 
     advanceClock(Duration.ofMinutes(11));
@@ -458,8 +461,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject a second decision on an already decided request")
-  void shouldRejectSecondDecisionOnAlreadyDecidedRequest() {
+  @DisplayName("Should reject a decision when the request was already decided")
+  void shouldRejectDecisionWhenRequestAlreadyDecided() {
     var issued = service.issue("Apple TV");
     approve(issued.userCode());
 
@@ -470,8 +473,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject a malformed user code before looking anything up")
-  void shouldRejectMalformedUserCodeBeforeLookingAnythingUp() {
+  @DisplayName("Should reject before lookup when the user code is malformed")
+  void shouldRejectBeforeLookupWhenUserCodeMalformed() {
     var approverId = approver.getId();
 
     assertThatThrownBy(() -> service.lookup("NOPE", approverId))
@@ -479,8 +482,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should echo the decision that actually happened")
-  void shouldEchoDecisionThatActuallyHappened() {
+  @DisplayName("Should echo the decision that happened when the request is decided")
+  void shouldEchoActualDecisionWhenRequestDecided() {
     var issued = service.issue("Apple TV");
 
     var view = decide(issued.userCode(), DeviceDecision.DENY);
@@ -491,8 +494,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should record who decided, for a denial as much as an approval")
-  void shouldRecordWhoDecidedForDenialAsMuchAsApproval() {
+  @DisplayName("Should record who decided when the outcome is approval or denial")
+  void shouldRecordWhoDecidedWhenOutcomeApprovalOrDenial() {
     var issued = service.issue("Apple TV");
     decide(issued.userCode(), DeviceDecision.DENY);
 
@@ -506,8 +509,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse issuance once the outstanding-code cap is reached")
-  void shouldRefuseIssuanceOnceOutstandingCodeCapReached() {
+  @DisplayName("Should refuse issuance when the outstanding-code cap is reached")
+  void shouldRefuseIssuanceWhenOutstandingCodeCapReached() {
     service.issue("One");
     service.issue("Two");
     service.issue("Three");
@@ -522,8 +525,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should free issuance capacity once outstanding codes expire")
-  void shouldFreeIssuanceCapacityOnceOutstandingCodesExpire() {
+  @DisplayName("Should free issuance capacity when outstanding codes expire")
+  void shouldFreeIssuanceCapacityWhenOutstandingCodesExpire() {
     service.issue("One");
     service.issue("Two");
     service.issue("Three");
@@ -563,8 +566,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should base the capacity retry on the oldest outstanding expiry")
-  void shouldBaseCapacityRetryOnOldestOutstandingExpiry() {
+  @DisplayName("Should base the capacity retry on the oldest expiry when the cap is reached")
+  void shouldBaseCapacityRetryOnOldestExpiryWhenCapReached() {
     service.issue("Oldest");
     advanceClock(Duration.ofMinutes(2));
     service.issue("Middle");
@@ -580,9 +583,10 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should rethrow an integrity failure unrelated to the user-code constraint")
-  void shouldRethrowIntegrityFailureUnrelatedToUserCodeConstraint() {
-    var failure = constraintViolation("uq_device_authorization_device_code_digest");
+  @DisplayName(
+      "Should rethrow an integrity failure when it is unrelated to the user-code constraint")
+  void shouldRethrowIntegrityFailureWhenUnrelatedToUserCodeConstraint() {
+    var failure = constraintViolation("uq_unrelated_integrity");
     var throwingRepository =
         new FakeDeviceAuthorizationRepository() {
           @Override
@@ -597,8 +601,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should retry a collision on the user-code constraint")
-  void shouldRetryCollisionOnUserCodeConstraint() {
+  @DisplayName("Should retry issuance when the user-code constraint reports a collision")
+  void shouldRetryIssuanceWhenUserCodeConstraintReportsCollision() {
     var candidates = new ArrayDeque<>(List.of("BBBBBBBB", "BBBBBBBB", "CCCCCCCC"));
     var collidingService =
         serviceWith(
@@ -697,8 +701,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse a grant whose approver has since been disabled")
-  void shouldRefuseGrantWhoseApproverHasSinceBeenDisabled() {
+  @DisplayName("Should refuse the grant when its approver has since been disabled")
+  void shouldRefuseGrantWhenApproverSinceDisabled() {
     var issued = service.issue("Apple TV");
     approve(issued.userCode());
 

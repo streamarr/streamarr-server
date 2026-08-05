@@ -46,8 +46,8 @@ class DeviceGuessThrottleTest {
   private final DeviceGuessThrottle throttle = new DeviceGuessThrottle(properties, clock);
 
   @Test
-  @DisplayName("Should allow attempts up to the configured budget")
-  void shouldAllowAttemptsUpToConfiguredBudget() {
+  @DisplayName("Should allow an attempt when the configured budget is not exhausted")
+  void shouldAllowAttemptWhenConfiguredBudgetNotExhausted() {
     var accountId = UUID.randomUUID();
 
     assertThatCode(
@@ -60,8 +60,8 @@ class DeviceGuessThrottleTest {
   }
 
   @Test
-  @DisplayName("Should let attempts through at the exact window boundary")
-  void shouldLetAttemptsThroughAtExactWindowBoundary() {
+  @DisplayName("Should let an attempt through when the exact window boundary is reached")
+  void shouldLetAttemptThroughWhenExactWindowBoundaryReached() {
     var accountId = UUID.randomUUID();
     exhaustBudget(accountId);
 
@@ -71,8 +71,8 @@ class DeviceGuessThrottleTest {
   }
 
   @Test
-  @DisplayName("Should budget each account separately")
-  void shouldBudgetEachAccountSeparately() {
+  @DisplayName("Should use a separate guessing budget when the account changes")
+  void shouldUseSeparateGuessingBudgetWhenAccountChanges() {
     var exhausted = UUID.randomUUID();
     exhaustBudget(exhausted);
 
@@ -82,8 +82,8 @@ class DeviceGuessThrottleTest {
   }
 
   @Test
-  @DisplayName("Should serialize concurrent attempts against the same account budget")
-  void shouldSerializeConcurrentAttemptsAgainstSameAccountBudget() throws Exception {
+  @DisplayName("Should serialize attempts when they concurrently use the same account budget")
+  void shouldSerializeAttemptsWhenConcurrentlyUsingSameAccountBudget() throws Exception {
     var accountId = UUID.randomUUID();
     var gatedClock = new GatedClock(clock);
     var concurrentThrottle = new DeviceGuessThrottle(properties, gatedClock);
@@ -122,8 +122,8 @@ class DeviceGuessThrottleTest {
   }
 
   @Test
-  @DisplayName("Should not extend a lockout with attempts made while already blocked")
-  void shouldNotExtendLockoutWithAttemptsMadeWhileAlreadyBlocked() {
+  @DisplayName("Should not extend the lockout when attempts arrive while already blocked")
+  void shouldNotExtendLockoutWhenAttemptsArriveWhileAlreadyBlocked() {
     var accountId = UUID.randomUUID();
     exhaustBudget(accountId);
 

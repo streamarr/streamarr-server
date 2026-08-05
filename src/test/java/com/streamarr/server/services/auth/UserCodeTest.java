@@ -18,8 +18,8 @@ class UserCodeTest {
   @ParameterizedTest(name = "Should normalize \"{0}\" to the stored form")
   @ValueSource(
       strings = {"BCDFGHJK", "bcdfghjk", "BCDF-GHJK", "bcdf-ghjk", "  BCDF-GHJK  ", "BCDF GHJK"})
-  @DisplayName("Should accept what a person actually types")
-  void shouldAcceptWhatPersonActuallyTypes(String typed) {
+  @DisplayName("Should accept the code when it matches a form a person actually types")
+  void shouldAcceptCodeWhenMatchingFormPersonActuallyTypes(String typed) {
     assertThat(UserCode.normalize(typed)).isEqualTo("BCDFGHJK");
   }
 
@@ -36,21 +36,21 @@ class UserCodeTest {
         "BCDF1HJK",
         "BCDFGHJ!"
       })
-  @DisplayName("Should reject codes outside the alphabet or length")
-  void shouldRejectCodesOutsideAlphabetOrLength(String typed) {
+  @DisplayName("Should reject the code when it violates the alphabet or length")
+  void shouldRejectCodeWhenViolatingAlphabetOrLength(String typed) {
     assertThatThrownBy(() -> UserCode.normalize(typed))
         .isInstanceOf(InvalidUserCodeException.class);
   }
 
   @Test
-  @DisplayName("Should group the stored form into fours for display")
-  void shouldGroupStoredFormIntoFoursForDisplay() {
+  @DisplayName("Should group the stored form into fours when formatting for display")
+  void shouldGroupStoredFormIntoFoursWhenFormattingForDisplay() {
     assertThat(UserCode.forDisplay("BCDFGHJK")).isEqualTo("BCDF-GHJK");
   }
 
   @Test
-  @DisplayName("Should exclude vowels and ambiguous digits from the alphabet")
-  void shouldExcludeVowelsAndAmbiguousDigitsFromAlphabet() {
+  @DisplayName("Should exclude vowels and ambiguous digits when defining the alphabet")
+  void shouldExcludeVowelsAndAmbiguousDigitsWhenDefiningAlphabet() {
     assertThat(UserCode.ALPHABET)
         .doesNotContain("A", "E", "I", "O", "U", "0", "1")
         .hasSize(20)

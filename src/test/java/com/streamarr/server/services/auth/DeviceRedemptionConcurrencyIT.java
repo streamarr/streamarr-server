@@ -334,8 +334,8 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should advance the cadence exactly once per poll under concurrency")
-  void shouldAdvanceCadenceExactlyOncePerPollUnderConcurrency() throws Exception {
+  @DisplayName("Should advance the cadence exactly once per poll when polls arrive concurrently")
+  void shouldAdvanceCadenceExactlyOncePerPollWhenPollsArriveConcurrently() throws Exception {
     seedApprover();
     var issued = deviceAuthorizationService.issue("Apple TV");
 

@@ -13,8 +13,8 @@ import org.junit.jupiter.api.Test;
 class UserCodeGeneratorTest {
 
   @Test
-  @DisplayName("Should build the code from eight bounded random selections")
-  void shouldBuildCodeFromEightBoundedRandomSelections() {
+  @DisplayName("Should build the code from eight bounded selections when generating a user code")
+  void shouldBuildCodeFromEightBoundedSelectionsWhenGeneratingUserCode() {
     var selection = new AtomicInteger();
     var generator = new UserCodeGenerator(indexedRandom(selection));
 

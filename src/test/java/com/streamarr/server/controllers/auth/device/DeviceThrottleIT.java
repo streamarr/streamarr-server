@@ -55,8 +55,8 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should throttle decision once lookup has spent the shared guessing budget")
-  void shouldThrottleDecisionOnceLookupHasSpentSharedGuessingBudget() throws Exception {
+  @DisplayName("Should throttle a decision when lookup has spent the shared guessing budget")
+  void shouldThrottleDecisionWhenLookupHasSpentSharedGuessingBudget() throws Exception {
     var approver = seedAccount();
     var bearer = bearerFor(approver);
 
@@ -96,8 +96,8 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse issuance with a retry hint once the outstanding cap is reached")
-  void shouldRefuseIssuanceWithRetryHintOnceOutstandingCapReached() throws Exception {
+  @DisplayName("Should refuse issuance with a retry hint when the outstanding cap is reached")
+  void shouldRefuseIssuanceWithRetryHintWhenOutstandingCapReached() throws Exception {
     for (var issued = 0; issued < properties.maxOutstandingCodes(); issued++) {
       mockMvc.perform(issueCode()).andExpect(status().isOk());
     }
