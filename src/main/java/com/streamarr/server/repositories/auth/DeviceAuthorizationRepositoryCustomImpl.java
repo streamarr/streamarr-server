@@ -28,6 +28,8 @@ public class DeviceAuthorizationRepositoryCustomImpl
   /** Arbitrary but fixed: only issuance takes this lock, so it contends with nothing else. */
   private static final long ISSUANCE_LOCK_KEY = 0x5354524D_44455601L;
 
+  private static final String DEVICE_CODE_UNIQUE_CONSTRAINT =
+      "uq_device_authorization_device_code_digest";
   private static final String USER_CODE_UNIQUE_CONSTRAINT = "uq_device_authorization_user_code";
 
   private final DSLContext dsl;
@@ -119,6 +121,9 @@ public class DeviceAuthorizationRepositoryCustomImpl
           .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_BY, currentAuditor())
           .execute();
     } catch (DuplicateKeyException e) {
+      if (isDeviceCodeCollision(e)) {
+        throw new DeviceCodeCollisionException(e);
+      }
       if (isUserCodeCollision(e)) {
         throw new UserCodeCollisionException(e);
       }
@@ -173,12 +178,20 @@ public class DeviceAuthorizationRepositoryCustomImpl
   }
 
   private static boolean isUserCodeCollision(DuplicateKeyException exception) {
+    return hasConstraint(exception, USER_CODE_UNIQUE_CONSTRAINT);
+  }
+
+  private static boolean isDeviceCodeCollision(DuplicateKeyException exception) {
+    return hasConstraint(exception, DEVICE_CODE_UNIQUE_CONSTRAINT);
+  }
+
+  private static boolean hasConstraint(DuplicateKeyException exception, String constraintName) {
     if (!(exception.getMostSpecificCause() instanceof PSQLException postgresException)) {
       return false;
     }
 
     var serverError = postgresException.getServerErrorMessage();
-    return serverError != null && USER_CODE_UNIQUE_CONSTRAINT.equals(serverError.getConstraint());
+    return serverError != null && constraintName.equals(serverError.getConstraint());
   }
 
   private static DeviceAuthorizationStatus generatedStatusOf(

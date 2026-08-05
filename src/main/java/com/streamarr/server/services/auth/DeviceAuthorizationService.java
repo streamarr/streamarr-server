@@ -13,6 +13,7 @@ import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import com.streamarr.server.repositories.auth.DeviceCodeCollisionException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.auth.UserCodeCollisionException;
 import java.nio.charset.StandardCharsets;
@@ -36,6 +37,7 @@ public class DeviceAuthorizationService {
 
   private static final int DEVICE_CODE_BYTES = 32;
   private static final int DEVICE_CODE_CHARACTERS = 43;
+  private static final int DEVICE_CODE_ATTEMPTS = 5;
   private static final int SLOW_DOWN_INCREMENT_SECONDS = 5;
   private static final int USER_CODE_ATTEMPTS = 5;
 
@@ -65,17 +67,28 @@ public class DeviceAuthorizationService {
     }
 
     var now = clock.instant();
-    var deviceCode = deviceCodeGenerator.generate();
     var interval = properties.pollIntervalSeconds();
-    var userCode = saveWithUniqueUserCode(deviceCode, rawDeviceName, interval, now);
+    DeviceCodeCollisionException lastCollision = null;
+    for (var attempt = 0; attempt < DEVICE_CODE_ATTEMPTS; attempt++) {
+      var deviceCode = deviceCodeGenerator.generate();
+      try {
+        var userCode = saveWithUniqueUserCode(deviceCode, rawDeviceName, interval, now);
+        return IssuedDeviceCode.builder()
+            .deviceCode(deviceCode)
+            .userCode(UserCode.forDisplay(userCode))
+            .verificationUri(baseUrl.resolve(properties.verificationPath()))
+            .interval(interval)
+            .expiresIn(properties.codeTtl().toSeconds())
+            .build();
+      } catch (DeviceCodeCollisionException e) {
+        lastCollision = e;
+        log.warn("Device code collided with an outstanding pairing code; retrying.");
+      }
+    }
 
-    return IssuedDeviceCode.builder()
-        .deviceCode(deviceCode)
-        .userCode(UserCode.forDisplay(userCode))
-        .verificationUri(baseUrl.resolve(properties.verificationPath()))
-        .interval(interval)
-        .expiresIn(properties.codeTtl().toSeconds())
-        .build();
+    throw new IllegalStateException(
+        "Could not mint a unique device code in %d attempts.".formatted(DEVICE_CODE_ATTEMPTS),
+        lastCollision);
   }
 
   /**

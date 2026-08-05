@@ -82,8 +82,23 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should budget each approver separately")
-  void shouldBudgetEachApproverSeparately() throws Exception {
+  @DisplayName("Should preserve the guessing budget when the decision value is invalid")
+  void shouldPreserveGuessingBudgetWhenDecisionValueInvalid() throws Exception {
+    var bearer = bearerFor(seedAccount());
+
+    for (var attempt = 0; attempt < properties.maxGuessAttempts(); attempt++) {
+      mockMvc
+          .perform(decision(bearer, "BCDF-GHJK", "MAYBE"))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.code").value("INVALID_DECISION"));
+    }
+
+    mockMvc.perform(lookup(bearer, "BCDF-GHJK")).andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("Should use a separate guessing budget when the approver changes")
+  void shouldUseSeparateGuessingBudgetWhenApproverChanges() throws Exception {
     var exhausted = bearerFor(seedAccount());
     var untouched = bearerFor(seedAccount());
 
@@ -130,6 +145,16 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
     return authenticated(bearer, post("/api/auth/device/authorizations/lookup"))
         .contentType(MediaType.APPLICATION_JSON)
         .content("{\"userCode\": \"%s\"}".formatted(userCode));
+  }
+
+  private MockHttpServletRequestBuilder decision(String bearer, String userCode, String decision) {
+    return authenticated(bearer, post("/api/auth/device/authorizations/decision"))
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(
+            """
+            {"userCode": "%s", "decision": "%s"}
+            """
+                .formatted(userCode, decision));
   }
 
   private static MockHttpServletRequestBuilder authenticated(

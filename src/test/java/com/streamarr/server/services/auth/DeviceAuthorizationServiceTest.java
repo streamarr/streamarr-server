@@ -33,6 +33,7 @@ import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertResult;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import com.streamarr.server.repositories.auth.DeviceCodeCollisionException;
 import com.streamarr.server.repositories.auth.UserCodeCollisionException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -617,6 +618,27 @@ class DeviceAuthorizationServiceTest {
     assertThat(collidingService.issue("First").userCode()).isEqualTo("BBBB-BBBB");
     assertThat(collidingService.issue("Second").userCode()).isEqualTo("CCCC-CCCC");
     assertThat(authorizationRepository.findAll()).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should retain the final device-code collision when retries are exhausted")
+  void shouldRetainFinalDeviceCodeCollisionWhenRetriesExhausted() {
+    var collision =
+        new DeviceCodeCollisionException(
+            constraintViolation("uq_device_authorization_device_code_digest"));
+    var collidingRepository =
+        new FakeDeviceAuthorizationRepository() {
+          @Override
+          public DeviceAuthorizationInsertResult tryInsertWithinCap(
+              DeviceAuthorizationInsertCommand command) {
+            throw collision;
+          }
+        };
+    var collidingService = serviceWith(collidingRepository, new UserCodeGenerator());
+
+    assertThatThrownBy(() -> collidingService.issue("Apple TV"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasCause(collision);
   }
 
   @Test
