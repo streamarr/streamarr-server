@@ -168,8 +168,9 @@ class ArchitectureTest {
     var cyclicServiceDomains =
         new ClassFileImporter()
             .importClasses(RootServiceCycleFixture.class, SubdomainServiceCycleFixture.class);
+    var serviceDomainRule = serviceDomainsMustBeFreeOfCycles();
 
-    assertThatThrownBy(() -> serviceDomainsMustBeFreeOfCycles().check(cyclicServiceDomains))
+    assertThatThrownBy(() -> serviceDomainRule.check(cyclicServiceDomains))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("Cycle detected");
   }
