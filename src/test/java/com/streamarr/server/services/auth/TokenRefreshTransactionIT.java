@@ -208,6 +208,21 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return access token only when recovered successor was superseded")
+  void shouldReturnAccessTokenOnlyWhenRecoveredSuccessorWasSuperseded() {
+    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var issued = refreshTokenService.createSession(account, "tx-device");
+    var firstRotation = tokenRefreshService.refresh(issued.rawToken());
+    tokenRefreshService.refresh(firstRotation.rawRefreshToken());
+
+    var recovered = tokenRefreshService.refresh(issued.rawToken());
+
+    assertThat(recovered.accessToken()).isNotNull();
+    assertThat(recovered.carriesRefreshToken()).isFalse();
+    assertThat(recovered.rawRefreshToken()).isNull();
+  }
+
+  @Test
   @DisplayName("Should hold session lock through issuance when logout races refresh")
   void shouldHoldSessionLockThroughIssuanceWhenLogoutRacesRefresh() throws Exception {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());

@@ -60,6 +60,28 @@ class WorkerSessionServerRuntimeTest {
   }
 
   @Test
+  @DisplayName("Should reject a second start without replacing the server or leaking its executor")
+  void shouldRejectSecondStartWithoutReplacingServerOrLeakingItsExecutor() throws Exception {
+    var originalServer = new ControllableServer(AwaitOutcome.TIMES_OUT);
+    var originalExecutor = Executors.newSingleThreadExecutor();
+    var rejectedExecutor = Executors.newSingleThreadExecutor();
+    var runtime = startedRuntime(originalServer, originalExecutor);
+
+    try {
+      assertThatThrownBy(() -> runtime.start(rejectedExecutor, _ -> new ControllableServer(null)))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessage("Worker session server is already started");
+
+      assertThat(runtime.server()).isSameAs(originalServer);
+      assertThat(originalExecutor.isShutdown()).isFalse();
+      assertThat(rejectedExecutor.isShutdown()).isTrue();
+    } finally {
+      runtime.close();
+      rejectedExecutor.shutdownNow();
+    }
+  }
+
+  @Test
   @DisplayName("Should warn and release resources when server shutdown times out")
   void shouldWarnAndReleaseResourcesWhenServerShutdownTimesOut() throws Exception {
     var server = new ControllableServer(AwaitOutcome.TIMES_OUT);

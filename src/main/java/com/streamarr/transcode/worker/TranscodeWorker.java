@@ -489,20 +489,20 @@ public final class TranscodeWorker implements AutoCloseable {
 
     @Override
     public void onError(Throwable throwable) {
+      accepted.completeExceptionally(throwable);
       logAbandonedAttempts();
       stopActiveVariants();
       disconnected.completeExceptionally(throwable);
-      accepted.completeExceptionally(throwable);
     }
 
     @Override
     public void onCompleted() {
-      logAbandonedAttempts();
-      stopActiveVariants();
-      disconnected.complete(null);
       if (!accepted.isDone()) {
         accepted.completeExceptionally(new IllegalStateException("Worker session closed"));
       }
+      logAbandonedAttempts();
+      stopActiveVariants();
+      disconnected.complete(null);
     }
   }
 
@@ -537,9 +537,7 @@ public final class TranscodeWorker implements AutoCloseable {
 
     @Override
     public void onCompleted() {
-      if (!response.isDone()) {
-        response.completeExceptionally(new IllegalStateException("Segment upload closed"));
-      }
+      // gRPC routes a client-streaming close without its single response through onError.
     }
   }
 

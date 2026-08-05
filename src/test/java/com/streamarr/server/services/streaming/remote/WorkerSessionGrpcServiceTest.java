@@ -157,6 +157,24 @@ class WorkerSessionGrpcServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject an upload when no authenticated worker identity is present")
+  void shouldRejectUploadWhenNoAuthenticatedWorkerIdentityIsPresent() {
+    var service =
+        new WorkerSessionGrpcService(new LiveWorkerConnectionRegistry(), new FakeSegmentStore());
+    var response = new RecordingUploadResponseObserver();
+
+    var rejectedUpload = service.uploadSegment(response);
+    rejectedUpload.onNext(UploadSegmentRequest.getDefaultInstance());
+    rejectedUpload.onError(Status.CANCELLED.asRuntimeException());
+    rejectedUpload.onCompleted();
+
+    assertThat(response.error()).isNotNull();
+    assertThat(Status.fromThrowable(response.error()).getCode())
+        .isEqualTo(Status.Code.UNAUTHENTICATED);
+    assertThat(response.errorCount()).isEqualTo(1);
+  }
+
+  @Test
   @DisplayName("Should reject an upload when the global concurrent upload limit is exhausted")
   void shouldRejectUploadWhenGlobalConcurrentUploadLimitIsExhausted() throws Exception {
     var service =

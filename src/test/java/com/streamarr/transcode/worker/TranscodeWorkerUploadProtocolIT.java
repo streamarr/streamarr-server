@@ -1,5 +1,6 @@
 package com.streamarr.transcode.worker;
 
+import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -13,6 +14,8 @@ import com.streamarr.transcode.v1.AudioMode;
 import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.JobAttemptFailed;
+import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.StartVariantCommand;
 import com.streamarr.transcode.v1.SubtitleDecision;
@@ -49,8 +52,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 @Tag("IntegrationTest")
-@DisplayName("Transcode Worker Upload Cancellation Integration Tests")
-class TranscodeWorkerUploadCancellationIT {
+@DisplayName("Transcode Worker Upload Protocol Integration Tests")
+class TranscodeWorkerUploadProtocolIT {
 
   private static final UUID WORKER_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =
@@ -65,7 +68,7 @@ class TranscodeWorkerUploadCancellationIT {
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var processManager =
         new FakeSegmentProducingFfmpegProcessManager("segment0.ts", "segment".getBytes());
-    var service = new WithholdingUploadService();
+    var service = ControllableUploadService.leavesUploadRpcOpen();
 
     try (var server = new TestServer(service);
         var worker = worker(processManager, mediaRoot)) {
@@ -80,6 +83,59 @@ class TranscodeWorkerUploadCancellationIT {
       assertThat(service.uploadCancelled.await(1, TimeUnit.SECONDS))
           .as("abandoned upload must be cancelled once the acknowledgement times out")
           .isTrue();
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail a variant when the server acknowledges fewer bytes than the worker uploaded")
+  void shouldFailVariantWhenServerAcknowledgesFewerBytesThanWorkerUploaded() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var processManager =
+        new FakeSegmentProducingFfmpegProcessManager("segment0.ts", "segment".getBytes());
+    var service = ControllableUploadService.acknowledgesFewerBytes();
+    var job = variantJob();
+
+    try (var server = new TestServer(service);
+        var worker = worker(processManager, mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+      service.dispatch(job);
+
+      assertThat(service.failureReported.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(service.failure.get().getJobAttemptId()).isEqualTo(job.getJobAttemptId());
+      assertThat(service.failure.get().getFailure())
+          .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+      assertThat(processManager.getStopped()).contains(fromProto(job.getStreamSessionId()));
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail a variant promptly when the upload stream closes before acknowledgement")
+  void shouldFailVariantPromptlyWhenUploadStreamClosesBeforeAcknowledgement() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var processManager =
+        new FakeSegmentProducingFfmpegProcessManager("segment0.ts", "segment".getBytes());
+    var service = ControllableUploadService.closesWithoutResponse();
+    var job = variantJob();
+
+    try (var server = new TestServer(service);
+        var worker = worker(processManager, mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+      service.dispatch(job);
+
+      assertThat(service.uploadCompleted.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(service.failureReported.await(2, TimeUnit.SECONDS))
+          .as("a clean close must fail before the upload acknowledgement timeout")
+          .isTrue();
+      assertThat(service.failure.get().getJobAttemptId()).isEqualTo(job.getJobAttemptId());
+      assertThat(service.failure.get().getFailure())
+          .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+      assertThat(processManager.getStopped()).contains(fromProto(job.getStreamSessionId()));
     }
   }
 
@@ -158,16 +214,34 @@ class TranscodeWorkerUploadCancellationIT {
     return Path.of(url.toURI());
   }
 
-  private static final class WithholdingUploadService
+  private static final class ControllableUploadService
       extends TranscodeWorkerServiceGrpc.TranscodeWorkerServiceImplBase {
 
+    private final UploadResponseBehavior uploadResponseBehavior;
     private final AtomicReference<StreamObserver<EstablishWorkerSessionResponse>> control =
         new AtomicReference<>();
     private final AtomicReference<WorkerIdentity> worker = new AtomicReference<>();
+    private final AtomicReference<JobAttemptFailed> failure = new AtomicReference<>();
     private final CountDownLatch registered = new CountDownLatch(1);
     private final CountDownLatch uploadCompleted = new CountDownLatch(1);
     private final CountDownLatch uploadCancelled = new CountDownLatch(1);
     private final CountDownLatch failureReported = new CountDownLatch(1);
+
+    private ControllableUploadService(UploadResponseBehavior uploadResponseBehavior) {
+      this.uploadResponseBehavior = uploadResponseBehavior;
+    }
+
+    private static ControllableUploadService leavesUploadRpcOpen() {
+      return new ControllableUploadService(UploadResponseBehavior.LEAVES_RPC_OPEN);
+    }
+
+    private static ControllableUploadService acknowledgesFewerBytes() {
+      return new ControllableUploadService(UploadResponseBehavior.ACKNOWLEDGES_FEWER_BYTES);
+    }
+
+    private static ControllableUploadService closesWithoutResponse() {
+      return new ControllableUploadService(UploadResponseBehavior.CLOSES_WITHOUT_RESPONSE);
+    }
 
     @Override
     public StreamObserver<EstablishWorkerSessionRequest> establishWorkerSession(
@@ -187,6 +261,7 @@ class TranscodeWorkerUploadCancellationIT {
             registered.countDown();
           }
           if (request.hasJobAttemptFailed()) {
+            failure.set(request.getJobAttemptFailed());
             failureReported.countDown();
           }
         }
@@ -222,6 +297,15 @@ class TranscodeWorkerUploadCancellationIT {
         @Override
         public void onCompleted() {
           uploadCompleted.countDown();
+          switch (uploadResponseBehavior) {
+            case LEAVES_RPC_OPEN -> {}
+            case ACKNOWLEDGES_FEWER_BYTES -> {
+              responseObserver.onNext(
+                  UploadSegmentResponse.newBuilder().setAcceptedLengthBytes(0).build());
+              responseObserver.onCompleted();
+            }
+            case CLOSES_WITHOUT_RESPONSE -> responseObserver.onCompleted();
+          }
         }
       };
     }
@@ -243,14 +327,20 @@ class TranscodeWorkerUploadCancellationIT {
           .setLeastSignificantBits(value.getLeastSignificantBits())
           .build();
     }
+
+    private enum UploadResponseBehavior {
+      LEAVES_RPC_OPEN,
+      ACKNOWLEDGES_FEWER_BYTES,
+      CLOSES_WITHOUT_RESPONSE
+    }
   }
 
   private final class TestServer implements AutoCloseable {
 
-    private final WithholdingUploadService service;
+    private final ControllableUploadService service;
     private Server server;
 
-    private TestServer(WithholdingUploadService service) {
+    private TestServer(ControllableUploadService service) {
       this.service = service;
     }
 

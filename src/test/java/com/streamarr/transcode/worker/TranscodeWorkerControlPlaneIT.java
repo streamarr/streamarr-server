@@ -4,8 +4,10 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPAC
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.tlsResource;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.workerConfigurationBuilder;
+import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import ch.qos.logback.classic.Level;
@@ -22,6 +24,7 @@ import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.StartVariantCommand;
+import com.streamarr.transcode.v1.StopVariantCommand;
 import com.streamarr.transcode.v1.SubtitleDecision;
 import com.streamarr.transcode.v1.SubtitleMode;
 import com.streamarr.transcode.v1.TranscodeDecision;
@@ -45,6 +48,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -60,6 +64,23 @@ import org.slf4j.LoggerFactory;
 class TranscodeWorkerControlPlaneIT {
 
   @TempDir Path tempDir;
+
+  @Test
+  @DisplayName("Should fail startup when the control stream closes before registration is accepted")
+  void shouldFailStartupWhenControlStreamClosesBeforeRegistrationIsAccepted() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var service = ControllableWorkerService.closingBeforeRegistration();
+
+    try (var server = new TestServer(service);
+        var worker = worker(mediaRoot)) {
+      server.start();
+
+      assertThatThrownBy(() -> worker.start("localhost", server.port()))
+          .isInstanceOf(ExecutionException.class)
+          .hasRootCauseInstanceOf(IllegalStateException.class)
+          .hasRootCauseMessage("Worker session closed");
+    }
+  }
 
   @Test
   @DisplayName("Should warn when the control plane sends an unknown command")
@@ -107,6 +128,23 @@ class TranscodeWorkerControlPlaneIT {
         target -> target.toBuilder().setBootId(toProto(UUID.randomUUID())).build());
   }
 
+  @Test
+  @DisplayName(
+      "Should ignore a stop command addressed to another worker when handling a stop command")
+  void shouldIgnoreStopCommandAddressedToAnotherWorkerWhenHandlingStopCommand() throws Exception {
+    assertIgnoresStopCommand(
+        target -> target.toBuilder().setWorkerId(toProto(UUID.randomUUID())).build());
+  }
+
+  @Test
+  @DisplayName(
+      "Should ignore a stop command addressed to an earlier worker boot when handling a stop command")
+  void shouldIgnoreStopCommandAddressedToEarlierWorkerBootWhenHandlingStopCommand()
+      throws Exception {
+    assertIgnoresStopCommand(
+        target -> target.toBuilder().setBootId(toProto(UUID.randomUUID())).build());
+  }
+
   private void assertRejectsStartCommand(UnaryOperator<WorkerIdentity> changeTarget)
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
@@ -127,6 +165,35 @@ class TranscodeWorkerControlPlaneIT {
       assertThat(failure.getFailure())
           .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION);
       assertThat(processManager.getStarted()).isEmpty();
+    }
+  }
+
+  private void assertIgnoresStopCommand(UnaryOperator<WorkerIdentity> changeTarget)
+      throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var service = new ControllableWorkerService();
+    var processManager = new FakeFfmpegProcessManager();
+    var protectedJob = variantJob();
+    var orderingBarrierJob = variantJob();
+
+    try (var server = new TestServer(service);
+        var worker = worker(mediaRoot, processManager)) {
+      server.start();
+      worker.start("localhost", server.port());
+      service.sendStart(service.registeredWorker(), protectedJob);
+      service.awaitStarted(protectedJob);
+
+      service.sendStop(changeTarget.apply(service.registeredWorker()), protectedJob);
+      service.sendStart(service.registeredWorker(), orderingBarrierJob);
+      service.awaitStarted(orderingBarrierJob);
+
+      assertThat(
+              processManager.isRunning(
+                  fromProto(protectedJob.getStreamSessionId()),
+                  protectedJob.getVariant().getVariantLabel()))
+          .as("a command for another worker must not stop this worker's active attempt")
+          .isTrue();
     }
   }
 
@@ -197,10 +264,23 @@ class TranscodeWorkerControlPlaneIT {
   private static final class ControllableWorkerService
       extends TranscodeWorkerServiceGrpc.TranscodeWorkerServiceImplBase {
 
+    private final boolean closeBeforeRegistration;
     private final CountDownLatch registered = new CountDownLatch(1);
     private final AtomicReference<WorkerIdentity> worker = new AtomicReference<>();
     private final BlockingQueue<EstablishWorkerSessionRequest> events = new LinkedBlockingQueue<>();
     private StreamObserver<EstablishWorkerSessionResponse> responses;
+
+    private ControllableWorkerService() {
+      this(false);
+    }
+
+    private ControllableWorkerService(boolean closeBeforeRegistration) {
+      this.closeBeforeRegistration = closeBeforeRegistration;
+    }
+
+    private static ControllableWorkerService closingBeforeRegistration() {
+      return new ControllableWorkerService(true);
+    }
 
     @Override
     public StreamObserver<EstablishWorkerSessionRequest> establishWorkerSession(
@@ -211,6 +291,10 @@ class TranscodeWorkerControlPlaneIT {
         public void onNext(EstablishWorkerSessionRequest request) {
           if (!request.hasRegistration()) {
             events.add(request);
+            return;
+          }
+          if (closeBeforeRegistration) {
+            responseObserver.onCompleted();
             return;
           }
           worker.set(request.getRegistration().getWorker());
@@ -255,6 +339,25 @@ class TranscodeWorkerControlPlaneIT {
           EstablishWorkerSessionResponse.newBuilder()
               .setStartVariant(StartVariantCommand.newBuilder().setTarget(target).setJob(job))
               .build());
+    }
+
+    private void sendStop(WorkerIdentity target, VariantJob job) throws InterruptedException {
+      send(
+          EstablishWorkerSessionResponse.newBuilder()
+              .setStopVariant(
+                  StopVariantCommand.newBuilder()
+                      .setTarget(target)
+                      .setJobAttemptId(job.getJobAttemptId()))
+              .build());
+    }
+
+    private void awaitStarted(VariantJob job) throws InterruptedException {
+      var event = events.poll(5, TimeUnit.SECONDS);
+      assertThat(event).isNotNull();
+      assertThat(event.hasJobAttemptStarted())
+          .as("the next worker event must acknowledge the ordering-barrier start command")
+          .isTrue();
+      assertThat(event.getJobAttemptStarted().getJobAttemptId()).isEqualTo(job.getJobAttemptId());
     }
 
     private JobAttemptFailed awaitFailure() throws InterruptedException {

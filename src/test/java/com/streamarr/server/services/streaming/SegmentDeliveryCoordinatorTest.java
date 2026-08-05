@@ -23,6 +23,7 @@ import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -78,13 +79,18 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   private StreamingRig rigWith(FakeTranscodeExecutor executor, FakeSegmentStore store) {
+    return rigWith(executor, store, Duration.ofMillis(20));
+  }
+
+  private StreamingRig rigWith(
+      FakeTranscodeExecutor executor, FakeSegmentStore store, Duration pollInterval) {
     return StreamingRigFixture.streamingRigBuilder()
         .transcodeExecutor(executor)
         .segmentStore(store)
         .properties(properties)
         .runtimeRegistry(runtimeRegistry)
         .clock(clock)
-        .pollInterval(Duration.ofMillis(20))
+        .pollInterval(pollInterval)
         .build();
   }
 
@@ -154,6 +160,45 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
     assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
         .isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should return session ended without entering recovery when destruction follows the initial session lookup")
+  void shouldReturnSessionEndedWithoutEnteringRecoveryWhenDestructionFollowsInitialSessionLookup()
+      throws Exception {
+    var destroyRaceRegistry = new DestroyAfterLookupRegistry();
+    runtimeRegistry = destroyRaceRegistry;
+    var rig = rigWith(transcodeExecutor, segmentStore, Duration.ofDays(1));
+    var session = defaultSessionBuilder().build();
+    var sessionId = session.getSessionId();
+    runtimeRegistry.save(session);
+    rig.lifecycle().startAll(session, 0, 0);
+    destroyRaceRegistry.destroyAfterNextLookup(
+        () -> {
+          runtimeRegistry.removeById(sessionId);
+          rig.coordinator().forgetSession(sessionId);
+        });
+
+    var outcome = new AtomicReference<SegmentDelivery>();
+    var delivery =
+        Thread.ofVirtual()
+            .name("delivery-destroy-race")
+            .start(
+                () ->
+                    outcome.set(
+                        rig.coordinator()
+                            .deliver(sessionId, StreamSession.defaultVariant(), "segment0.ts")));
+
+    try {
+      delivery.join(2000);
+
+      assertThat(delivery.isAlive()).isFalse();
+      assertThat(outcome.get()).isInstanceOf(SegmentDelivery.SessionEnded.class);
+    } finally {
+      delivery.interrupt();
+      delivery.join(2000);
+    }
   }
 
   @Test
@@ -1070,6 +1115,29 @@ class SegmentDeliveryCoordinatorTest {
         }
       }
       return super.segmentExists(sessionId, segmentName);
+    }
+  }
+
+  /**
+   * Removes a session immediately after returning one lookup result, reproducing a destroy race.
+   */
+  private static final class DestroyAfterLookupRegistry extends FakeRuntimeStreamSessionRegistry {
+
+    private Runnable destroyAction;
+
+    private void destroyAfterNextLookup(Runnable action) {
+      destroyAction = action;
+    }
+
+    @Override
+    public Optional<StreamSession> findById(UUID sessionId) {
+      var result = super.findById(sessionId);
+      var action = destroyAction;
+      if (action != null) {
+        destroyAction = null;
+        action.run();
+      }
+      return result;
     }
   }
 

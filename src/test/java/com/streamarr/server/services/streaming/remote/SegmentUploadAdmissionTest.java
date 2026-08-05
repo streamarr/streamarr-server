@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.fakes.MutableClock;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -177,5 +178,24 @@ class SegmentUploadAdmissionTest {
         .as("a reclaimed ticket must not hand back capacity a second time")
         .isEmpty();
     successor.close();
+  }
+
+  @Test
+  @DisplayName(
+      "Should invoke the reclaim handler immediately when its ticket was already reclaimed")
+  void shouldInvokeReclaimHandlerImmediatelyWhenTicketWasAlreadyReclaimed() {
+    var clock = new MutableClock();
+    var admission = new SegmentUploadAdmission(1, 100, 8, Duration.ofSeconds(30), clock);
+    var reclaimedTicket = admission.tryAdmit(WORKER_A).orElseThrow();
+    var handlerInvoked = new AtomicBoolean();
+    clock.advance(Duration.ofSeconds(31));
+
+    try (var successor = admission.tryAdmit(WORKER_B).orElseThrow()) {
+      reclaimedTicket.onReclaimed(() -> handlerInvoked.set(true));
+
+      assertThat(handlerInvoked)
+          .as("a late handler must still observe the reclamation that already happened")
+          .isTrue();
+    }
   }
 }

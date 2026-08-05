@@ -29,11 +29,11 @@ final class WorkerSessionServerRuntime {
       throws IOException {
     Objects.requireNonNull(startingExecutor);
     Objects.requireNonNull(starter);
-    if (server != null) {
-      throw new IllegalStateException("Worker session server is already started");
-    }
     var executorTransferred = false;
     try {
+      if (server != null) {
+        throw new IllegalStateException("Worker session server is already started");
+      }
       server = starter.start(startingExecutor);
       executor = startingExecutor;
       executorTransferred = true;

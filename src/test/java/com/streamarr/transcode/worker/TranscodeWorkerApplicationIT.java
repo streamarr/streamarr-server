@@ -83,8 +83,28 @@ class TranscodeWorkerApplicationIT {
     }
   }
 
+  @Test
+  @DisplayName("Should exit immediately when FFmpeg is unavailable")
+  void shouldExitImmediatelyWhenFfmpegIsUnavailable() throws Exception {
+    var process = workerProcess(1, tempDir.resolve("missing-ffmpeg")).start();
+    try {
+      assertThat(process.waitFor(5, TimeUnit.SECONDS))
+          .withFailMessage("Worker process remained alive without FFmpeg")
+          .isTrue();
+      var output = failureOutput(process);
+
+      assertThat(process.exitValue()).isNotZero();
+      assertThat(output).contains("FFmpeg is not available to the transcode worker");
+    } finally {
+      process.destroyForcibly();
+    }
+  }
+
   private ProcessBuilder workerProcess(int port) throws Exception {
-    var ffmpeg = fakeFfmpeg();
+    return workerProcess(port, fakeFfmpeg());
+  }
+
+  private ProcessBuilder workerProcess(int port, Path ffmpeg) throws Exception {
     var process = new ProcessBuilder(workerCommand()).redirectErrorStream(true);
     process
         .environment()
