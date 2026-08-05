@@ -1,7 +1,7 @@
 # Contains data adapted from "UTF-8 decoder capability and stress test" by Markus Kuhn, 2015-08-28.
 # Source: https://www.cl.cam.ac.uk/~mgk25/ucs/examples/UTF-8-test.txt
 # Original license: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
-# License text: LICENSES/CC-BY-4.0.txt
+# License text: src/test/resources/filepath-codec/licenses/CC-BY-4.0.txt
 # Changes by Streamarr contributors: selected RFC 3629 boundary sequences, renamed cases, represented bytes as uppercase %HH, and represented expected code points as hex.
 # Full attribution and notices: THIRD_PARTY_NOTICES.md
 first-two-byte-code-point|%C2%80|0080

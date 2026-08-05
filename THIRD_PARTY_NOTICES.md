@@ -16,7 +16,7 @@ Original attribution:
 
 Source: <https://www.cl.cam.ac.uk/~mgk25/ucs/examples/UTF-8-test.txt>
 
-License: Creative Commons Attribution 4.0 International. The complete license text is in `LICENSES/CC-BY-4.0.txt`; the canonical license URI is <https://creativecommons.org/licenses/by/4.0/>.
+License: Creative Commons Attribution 4.0 International. The complete license text is in `src/test/resources/filepath-codec/licenses/CC-BY-4.0.txt`; the canonical license URI is <https://creativecommons.org/licenses/by/4.0/>.
 
 Modifications by Streamarr contributors: selected malformed and boundary sequences; split compound cases; renamed cases; converted bytes to uppercase `%HH` URI escapes; and represented expected code points as hexadecimal values. The original material remains available under CC BY 4.0.
 
@@ -37,7 +37,7 @@ Eclipse Jetty and Jetty are trademarks of the Eclipse Foundation.
 
 Source: <https://github.com/jetty/jetty.project/blob/2812785776c320d511ab382d2cdc25cf6cf47b29/jetty-core/jetty-util/src/test/java/org/eclipse/jetty/util/URIUtilTest.java>
 
-Jetty offers this material under `EPL-2.0 OR Apache-2.0`. Streamarr elects the Apache License 2.0 option. The complete license text is in `LICENSES/Apache-2.0.txt`; the canonical license URI is <https://www.apache.org/licenses/LICENSE-2.0>.
+Jetty offers this material under `EPL-2.0 OR Apache-2.0`. Streamarr elects the Apache License 2.0 option. The complete license text is in `src/test/resources/filepath-codec/licenses/Apache-2.0.txt`; the canonical license URI is <https://www.apache.org/licenses/LICENSE-2.0>.
 
 Modifications by Streamarr contributors: selected and deduplicated inputs; renamed cases; represented inputs as filepath URI suffixes; and supplied assertions for Streamarr's strict-rejection contract rather than Jetty's behavior.
 
@@ -53,6 +53,6 @@ Authors identified by the source file: Arjen Poutsma, Juergen Hoeller, and Med B
 
 Source: <https://github.com/spring-projects/spring-framework/blob/e8729d043887bf0d0baf91e062e909b56eb2b708/spring-web/src/test/java/org/springframework/web/util/UriUtilsTests.java>
 
-License: Apache License 2.0. The complete license text is in `LICENSES/Apache-2.0.txt`; the canonical license URI is <https://www.apache.org/licenses/LICENSE-2.0>.
+License: Apache License 2.0. The complete license text is in `src/test/resources/filepath-codec/licenses/Apache-2.0.txt`; the canonical license URI is <https://www.apache.org/licenses/LICENSE-2.0>.
 
 Modifications by Streamarr contributors: selected and deduplicated inputs; renamed cases; represented inputs as filepath URI suffixes; and supplied assertions for Streamarr's strict-rejection contract rather than Spring Framework's behavior.
