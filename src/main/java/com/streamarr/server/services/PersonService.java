@@ -28,6 +28,8 @@ public class PersonService {
       return List.of();
     }
 
+    persons.forEach(PersonService::requireSourceId);
+
     var savedBySourceId = new HashMap<String, Person>();
     persons.stream()
         .sorted(Comparator.comparing(Person::getSourceId))
@@ -41,10 +43,6 @@ public class PersonService {
 
   private Person findOrCreatePerson(
       Person person, Map<String, List<ImageSource>> imageSourcesBySourceId) {
-    if (person.getSourceId() == null) {
-      throw new IllegalArgumentException("Person sourceId must not be null");
-    }
-
     var imageSources = imageSourcesBySourceId.getOrDefault(person.getSourceId(), List.of());
 
     boolean inserted = personRepository.insertIfAbsent(person.getSourceId(), person.getName());
@@ -62,6 +60,12 @@ public class PersonService {
       publishImageEvent(saved, imageSources);
     }
     return saved;
+  }
+
+  private static void requireSourceId(Person person) {
+    if (person.getSourceId() == null) {
+      throw new IllegalArgumentException("Person sourceId must not be null");
+    }
   }
 
   private void publishImageEvent(Person person, List<ImageSource> imageSources) {

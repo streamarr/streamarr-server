@@ -148,6 +148,18 @@ class PersonServiceTest {
   }
 
   @Test
+  @DisplayName("Should throw when batch contains a null person source ID")
+  void shouldThrowWhenBatchContainsNullPersonSourceId() {
+    var persons =
+        List.of(
+            Person.builder().name("Valid Actor").sourceId("actor-1").build(),
+            Person.builder().name("Invalid Actor").sourceId(null).build());
+
+    assertThatThrownBy(() -> personService.getOrCreatePersons(persons, Map.of()))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   @DisplayName("Should return empty list when input is null")
   void shouldReturnEmptyListWhenInputIsNull() {
     var result = personService.getOrCreatePersons(null, Map.of());
