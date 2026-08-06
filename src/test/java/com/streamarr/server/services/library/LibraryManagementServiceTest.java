@@ -62,6 +62,8 @@ import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
@@ -101,6 +103,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 
@@ -272,7 +276,7 @@ class LibraryManagementServiceTest {
               if (parsedFile.title().equals("Completing Movie")) {
                 completingTaskStarted.countDown();
                 releaseCompletingTask.await();
-                return Optional.empty();
+                return new NotFound();
               }
 
               assertThat(completingTaskStarted.await(5, TimeUnit.SECONDS)).isTrue();
@@ -298,7 +302,7 @@ class LibraryManagementServiceTest {
                 .findFirstByFilepathUri(FilepathCodec.encode(completingMoviePath))
                 .orElseThrow()
                 .getStatus())
-        .isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+        .isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
   }
 
   @Test
@@ -324,7 +328,7 @@ class LibraryManagementServiceTest {
                 workerInterrupted.set(true);
                 throw exception;
               }
-              return Optional.empty();
+              return new NotFound();
             });
 
     var scanThread =
@@ -610,7 +614,7 @@ class LibraryManagementServiceTest {
 
     when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
         .thenReturn(
-            Optional.of(
+            new Found(
                 RemoteSearchResult.builder()
                     .title("Inception")
                     .externalId("27205")
@@ -672,7 +676,7 @@ class LibraryManagementServiceTest {
 
     when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
         .thenReturn(
-            Optional.of(
+            new Found(
                 RemoteSearchResult.builder()
                     .title(movieFolder)
                     .externalId("123")
@@ -693,10 +697,12 @@ class LibraryManagementServiceTest {
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
   }
 
-  @Test
-  @DisplayName(
-      "Should match media file when provided a library containing an existing unmatched movie")
-  void shouldMatchMediaFileWhenProvidedLibraryContainingExistingUnmatchedMovie()
+  @ParameterizedTest(name = "Should match existing retryable media file when status is {0}")
+  @EnumSource(
+      value = MediaFileStatus.class,
+      names = {"UNMATCHED", "METADATA_NOT_FOUND", "METADATA_UNAVAILABLE"})
+  @DisplayName("Should match existing retryable media file when status is retryable")
+  void shouldMatchExistingRetryableMediaFileWhenStatusIsRetryable(MediaFileStatus retryableStatus)
       throws IOException {
     var movieFolder = "About Time";
     var movieFilename = "About Time (2013).mkv";
@@ -710,12 +716,13 @@ class LibraryManagementServiceTest {
                 .libraryId(savedLibraryId)
                 .filepathUri(FilepathCodec.encode(moviePath))
                 .filename(movieFilename)
-                .status(MediaFileStatus.UNMATCHED)
+                .status(retryableStatus)
                 .build());
 
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
     when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
         .thenReturn(
-            Optional.of(RemoteSearchResult.builder().title(movieFolder).externalId("123").build()));
+            new Found(RemoteSearchResult.builder().title(movieFolder).externalId("123").build()));
 
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
         .thenReturn(
@@ -727,7 +734,9 @@ class LibraryManagementServiceTest {
     var mediaFileAfterRefresh =
         fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
-    assertThat(mediaFileAfterRefresh).contains(mediaFileBeforeRefresh);
+    assertThat(mediaFileAfterRefresh).isPresent();
+    assertThat(mediaFileAfterRefresh.get()).isSameAs(mediaFileBeforeRefresh);
+    assertThat(mediaFileAfterRefresh.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
   }
 
   @Test
@@ -743,7 +752,7 @@ class LibraryManagementServiceTest {
 
     when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
         .thenReturn(
-            Optional.of(
+            new Found(
                 RemoteSearchResult.builder()
                     .title(movieFolder)
                     .externalId("456")

@@ -6,6 +6,8 @@ import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.services.metadata.MetadataResult;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProvider;
@@ -191,8 +193,8 @@ class DateBasedEpisodeResolverTest {
     }
 
     @Override
-    public Optional<RemoteSearchResult> search(VideoFileParserResult parserResult) {
-      return Optional.empty();
+    public MetadataSearchOutcome search(VideoFileParserResult parserResult) {
+      return new NotFound();
     }
 
     @Override

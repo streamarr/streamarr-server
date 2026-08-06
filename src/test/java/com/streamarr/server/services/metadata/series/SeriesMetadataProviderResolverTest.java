@@ -7,6 +7,9 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.services.metadata.MetadataResult;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.List;
@@ -42,14 +45,18 @@ class SeriesMetadataProviderResolverTest {
 
     var result = resolver.search(library, parserResult);
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Breaking Bad");
-    assertThat(result.get().externalId()).isEqualTo("1396");
+    assertThat(result)
+        .isInstanceOfSatisfying(
+            Found.class,
+            found -> {
+              assertThat(found.result().title()).isEqualTo("Breaking Bad");
+              assertThat(found.result().externalId()).isEqualTo("1396");
+            });
   }
 
   @Test
-  @DisplayName("Should return empty when no provider matches library strategy for search")
-  void shouldReturnEmptyWhenNoProviderMatchesLibraryStrategyForSearch() {
+  @DisplayName("Should return unavailable when no provider matches library strategy for search")
+  void shouldReturnUnavailableWhenNoProviderMatchesLibraryStrategyForSearch() {
     var resolver = new SeriesMetadataProviderResolver(List.of());
 
     var library =
@@ -58,7 +65,7 @@ class SeriesMetadataProviderResolverTest {
 
     var result = resolver.search(library, parserResult);
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(TemporarilyUnavailable.class);
   }
 
   @Test
@@ -203,8 +210,13 @@ class SeriesMetadataProviderResolverTest {
     }
 
     @Override
-    public Optional<RemoteSearchResult> search(VideoFileParserResult parserResult) {
-      return Optional.ofNullable(searchResult);
+    public MetadataSearchOutcome search(VideoFileParserResult parserResult) {
+      return Optional.ofNullable(searchResult)
+          .<MetadataSearchOutcome>map(Found::new)
+          .orElseGet(
+              () ->
+                  new TemporarilyUnavailable(
+                      new IllegalStateException("No fake search result configured")));
     }
 
     @Override

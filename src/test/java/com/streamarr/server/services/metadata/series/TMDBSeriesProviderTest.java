@@ -6,6 +6,7 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.TmdbSearchDelegate;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResult;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResults;
@@ -261,9 +262,13 @@ class TMDBSeriesProviderTest {
 
     var result = provider.search(videoInfo);
 
-    assertThat(result).isPresent();
-    assertThat(result.get().externalId()).isEqualTo("56484");
-    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+    assertThat(result)
+        .isInstanceOfSatisfying(
+            Found.class,
+            found -> {
+              assertThat(found.result().externalId()).isEqualTo("56484");
+              assertThat(found.result().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+            });
   }
 
   @Test

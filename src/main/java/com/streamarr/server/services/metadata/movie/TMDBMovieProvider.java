@@ -8,6 +8,7 @@ import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
 import com.streamarr.server.services.metadata.TmdbMetadataMapper;
@@ -40,7 +41,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
 
   @Getter private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
 
-  public Optional<RemoteSearchResult> search(VideoFileParserResult videoInformation) {
+  public MetadataSearchOutcome search(VideoFileParserResult videoInformation) {
     return searchDelegate.search(
         videoInformation,
         this::extractFindResult,
@@ -72,7 +73,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
         .build();
   }
 
-  private Optional<RemoteSearchResult> searchByText(VideoFileParserResult videoInformation) {
+  private MetadataSearchOutcome searchByText(VideoFileParserResult videoInformation) {
     return searchDelegate.searchByText(
         videoInformation,
         info -> theMovieDatabaseHttpService.searchForMovie(info).getResults(),

@@ -4,6 +4,8 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.List;
@@ -19,7 +21,7 @@ public class MovieMetadataProviderResolver {
 
   private final List<MetadataProvider<Movie>> movieProviders;
 
-  public Optional<RemoteSearchResult> search(
+  public MetadataSearchOutcome search(
       Library library, VideoFileParserResult videoFileParserResult) {
     var optionalProvider = getProviderForLibrary(library);
 
@@ -28,7 +30,10 @@ public class MovieMetadataProviderResolver {
           "No metadata provider found for {} library while searching for {}",
           library.getName(),
           videoFileParserResult.title());
-      return Optional.empty();
+      return new TemporarilyUnavailable(
+          new IllegalStateException(
+              "No metadata provider configured for strategy "
+                  + library.getExternalAgentStrategy()));
     }
 
     var provider = optionalProvider.get();

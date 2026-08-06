@@ -197,7 +197,7 @@ class SeriesScanningIT extends AbstractWireMockIntegrationTest {
     var mediaFile =
         mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
-    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
   }
 
   @Test
@@ -542,7 +542,7 @@ class SeriesScanningIT extends AbstractWireMockIntegrationTest {
     var mediaFile =
         mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
-    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
   }
 
   @Test

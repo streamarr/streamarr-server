@@ -15,6 +15,10 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.metadata.MetadataResult;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
@@ -89,15 +93,15 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
     var result =
         provider.search(VideoFileParserResult.builder().title("Inception").year("2010").build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Inception");
-    assertThat(result.get().externalId()).isEqualTo("27205");
-    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+    var found = requireFound(result);
+    assertThat(found.title()).isEqualTo("Inception");
+    assertThat(found.externalId()).isEqualTo("27205");
+    assertThat(found.externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
   }
 
   @Test
-  @DisplayName("Should return empty when TMDB returns no results")
-  void shouldReturnEmptyWhenTmdbReturnsNoResults() {
+  @DisplayName("Should return not found when TMDB returns no results")
+  void shouldReturnNotFoundWhenTmdbReturnsNoResults() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .willReturn(
@@ -117,12 +121,12 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
     var result =
         provider.search(VideoFileParserResult.builder().title("Nonexistent Movie").build());
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(NotFound.class);
   }
 
   @Test
-  @DisplayName("Should return empty when TMDB search API returns error")
-  void shouldReturnEmptyWhenTmdbSearchApiReturnsError() {
+  @DisplayName("Should return unavailable when TMDB search API returns error")
+  void shouldReturnUnavailableWhenTmdbSearchApiReturnsError() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .willReturn(
@@ -140,7 +144,7 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
 
     var result = provider.search(VideoFileParserResult.builder().title("Test").build());
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(TemporarilyUnavailable.class);
   }
 
   @Test
@@ -178,10 +182,10 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.IMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Inception");
-    assertThat(result.get().externalId()).isEqualTo("27205");
-    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+    var found = requireFound(result);
+    assertThat(found.title()).isEqualTo("Inception");
+    assertThat(found.externalId()).isEqualTo("27205");
+    assertThat(found.externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
   }
 
   @Test
@@ -197,10 +201,10 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.TMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().externalId()).isEqualTo("27205");
-    assertThat(result.get().title()).isEqualTo("Inception");
-    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+    var found = requireFound(result);
+    assertThat(found.externalId()).isEqualTo("27205");
+    assertThat(found.title()).isEqualTo("Inception");
+    assertThat(found.externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
   }
 
   @Test
@@ -255,9 +259,9 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.IMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Some Movie");
-    assertThat(result.get().externalId()).isEqualTo("8888");
+    var found = requireFound(result);
+    assertThat(found.title()).isEqualTo("Some Movie");
+    assertThat(found.externalId()).isEqualTo("8888");
   }
 
   @Test
@@ -273,8 +277,7 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.OMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Test Movie");
+    assertThat(requireFound(result).title()).isEqualTo("Test Movie");
   }
 
   @Test
@@ -293,8 +296,7 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.IMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Fallback Movie");
+    assertThat(requireFound(result).title()).isEqualTo("Fallback Movie");
   }
 
   @Test
@@ -312,8 +314,7 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.TMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Fallback Movie");
+    assertThat(requireFound(result).title()).isEqualTo("Fallback Movie");
   }
 
   // --- getMetadata() tests ---
@@ -570,6 +571,11 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
   }
 
   // --- Helpers ---
+
+  private RemoteSearchResult requireFound(MetadataSearchOutcome outcome) {
+    assertThat(outcome).isInstanceOf(Found.class);
+    return ((Found) outcome).result();
+  }
 
   private MetadataResult<Movie> getFullMetadataResult() {
     stubFullMovieResponse();

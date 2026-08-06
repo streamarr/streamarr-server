@@ -16,6 +16,10 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataResult;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
@@ -89,15 +93,15 @@ class TMDBSeriesProviderIT extends AbstractWireMockIntegrationTest {
 
     var result = provider.search(VideoFileParserResult.builder().title("Breaking Bad").build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Breaking Bad");
-    assertThat(result.get().externalId()).isEqualTo("1396");
-    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+    var found = requireFound(result);
+    assertThat(found.title()).isEqualTo("Breaking Bad");
+    assertThat(found.externalId()).isEqualTo("1396");
+    assertThat(found.externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
   }
 
   @Test
-  @DisplayName("Should return empty when TMDB returns no TV results")
-  void shouldReturnEmptyWhenTmdbReturnsTvNoResults() {
+  @DisplayName("Should return not found when TMDB returns no TV results")
+  void shouldReturnNotFoundWhenTmdbReturnsTvNoResults() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/tv"))
             .willReturn(
@@ -116,12 +120,12 @@ class TMDBSeriesProviderIT extends AbstractWireMockIntegrationTest {
 
     var result = provider.search(VideoFileParserResult.builder().title("Nonexistent Show").build());
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(NotFound.class);
   }
 
   @Test
-  @DisplayName("Should return empty when TMDB TV search API returns error")
-  void shouldReturnEmptyWhenTmdbTvSearchApiReturnsError() {
+  @DisplayName("Should return unavailable when TMDB TV search API returns error")
+  void shouldReturnUnavailableWhenTmdbTvSearchApiReturnsError() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/tv"))
             .willReturn(
@@ -139,7 +143,7 @@ class TMDBSeriesProviderIT extends AbstractWireMockIntegrationTest {
 
     var result = provider.search(VideoFileParserResult.builder().title("Test").build());
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(TemporarilyUnavailable.class);
   }
 
   @Test
@@ -178,10 +182,10 @@ class TMDBSeriesProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.IMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Breaking Bad");
-    assertThat(result.get().externalId()).isEqualTo("1396");
-    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+    var found = requireFound(result);
+    assertThat(found.title()).isEqualTo("Breaking Bad");
+    assertThat(found.externalId()).isEqualTo("1396");
+    assertThat(found.externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
   }
 
   @Test
@@ -236,9 +240,9 @@ class TMDBSeriesProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.IMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Some Show");
-    assertThat(result.get().externalId()).isEqualTo("5555");
+    var found = requireFound(result);
+    assertThat(found.title()).isEqualTo("Some Show");
+    assertThat(found.externalId()).isEqualTo("5555");
   }
 
   @Test
@@ -254,10 +258,10 @@ class TMDBSeriesProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.TMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().externalId()).isEqualTo("1396");
-    assertThat(result.get().title()).isEqualTo("Breaking Bad");
-    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+    var found = requireFound(result);
+    assertThat(found.externalId()).isEqualTo("1396");
+    assertThat(found.title()).isEqualTo("Breaking Bad");
+    assertThat(found.externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
   }
 
   @Test
@@ -273,8 +277,7 @@ class TMDBSeriesProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.OMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Test Show");
+    assertThat(requireFound(result).title()).isEqualTo("Test Show");
   }
 
   @Test
@@ -293,8 +296,7 @@ class TMDBSeriesProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.IMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Fallback Show");
+    assertThat(requireFound(result).title()).isEqualTo("Fallback Show");
   }
 
   @Test
@@ -312,8 +314,7 @@ class TMDBSeriesProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.TMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Fallback Show");
+    assertThat(requireFound(result).title()).isEqualTo("Fallback Show");
   }
 
   // --- getMetadata() tests ---
@@ -759,6 +760,11 @@ class TMDBSeriesProviderIT extends AbstractWireMockIntegrationTest {
   }
 
   // --- Helpers ---
+
+  private RemoteSearchResult requireFound(MetadataSearchOutcome outcome) {
+    assertThat(outcome).isInstanceOf(Found.class);
+    return ((Found) outcome).result();
+  }
 
   private MetadataResult<Series> getFullMetadataResult() {
     stubFullSeriesResponse();

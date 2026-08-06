@@ -21,12 +21,16 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.MetadataProvider;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -91,7 +95,7 @@ class MovieFileProcessorTest {
 
     when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
         .thenReturn(
-            Optional.of(
+            new Found(
                 RemoteSearchResult.builder()
                     .title("About Time")
                     .externalId("123")
@@ -133,12 +137,12 @@ class MovieFileProcessorTest {
 
     when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
 
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(Optional.empty());
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(new NotFound());
 
     when(tmdbMovieProvider.search(
             argThat(r -> "Inception".equals(r.title()) && "2010".equals(r.year()))))
         .thenReturn(
-            Optional.of(
+            new Found(
                 RemoteSearchResult.builder()
                     .title("Inception")
                     .externalId("27205")
@@ -155,8 +159,8 @@ class MovieFileProcessorTest {
   }
 
   @Test
-  @DisplayName("Should mark metadata search failed when provider finds no match")
-  void shouldMarkMetadataSearchFailedWhenProviderFindsNoMatch() {
+  @DisplayName("Should mark metadata not found when provider finds no match")
+  void shouldMarkMetadataNotFoundWhenProviderFindsNoMatch() {
     var library = LibraryFixtureCreator.buildFakeLibrary();
 
     var mediaFile =
@@ -169,11 +173,35 @@ class MovieFileProcessorTest {
                 .build());
 
     when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(Optional.empty());
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(new NotFound());
 
     movieFileProcessor.process(library, mediaFile);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+        .isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("Should mark metadata unavailable when provider is temporarily unavailable")
+  void shouldMarkMetadataUnavailableWhenProviderIsTemporarilyUnavailable() {
+    var library = LibraryFixtureCreator.buildFakeLibrary();
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("file:///library/Cop%20Land%20(1997)/Cop.Land.1997.mkv")
+                .filename("Cop.Land.1997.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+    var timeout = new IOException("Connection timed out");
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(new TemporarilyUnavailable(timeout));
+
+    movieFileProcessor.process(library, mediaFile);
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.METADATA_UNAVAILABLE);
   }
 }
