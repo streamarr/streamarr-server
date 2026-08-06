@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import jakarta.servlet.http.Cookie;
 import java.util.UUID;
@@ -41,12 +42,15 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
 
   @Autowired private AuthTestSupport authTestSupport;
 
+  @Autowired private DeviceAuthorizationRepository deviceAuthorizationRepository;
+
   @Autowired private ApplicationContext applicationContext;
 
   private AuthTestSupport.TestIdentity identity;
 
   @AfterEach
-  void deleteIdentity() {
+  void deleteIdentityAndDeviceAuthorizations() {
+    deviceAuthorizationRepository.deleteAll();
     if (identity != null) {
       authTestSupport.deleteIdentity(identity);
     }
@@ -160,6 +164,100 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   void shouldServeJwksUnauthenticated() throws Exception {
     // Public verification keys are public: the transcode tier fetches them with no credentials.
     mockMvc.perform(get("/.well-known/jwks.json")).andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("Should permit device issuance and polling when the caller has no credentials")
+  void shouldPermitDeviceIssuanceAndPollingWhenCallerHasNoCredentials() throws Exception {
+    // A TV has no session yet, so these two must be reachable anonymously — and, unlike the
+    // authenticated pairing endpoints, they carry no cookies for CSRF to protect.
+    mockMvc
+        .perform(
+            post("/api/auth/device/code")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"deviceName\": \"Apple TV\"}"))
+        .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
+
+    mockMvc
+        .perform(
+            post("/api/auth/device/token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"deviceCode\": \"unknown\"}"))
+        .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
+  }
+
+  @Test
+  @DisplayName("Should never 401 a device endpoint when only a stale access cookie is present")
+  void shouldNeverUnauthorizeDeviceEndpointWhenOnlyStaleAccessCookiePresent() throws Exception {
+    // permitAll settles authentication, not CSRF. The Path=/ access cookie rides every same-origin
+    // request, so the manually wired credential-shaped CSRF filter still covers these routes — but
+    // the refusal must come from CSRF (403), never from the bearer resolver expiring the cookie.
+    var staleAccessCookie = new Cookie(AuthCookies.ACCESS_COOKIE, "stale-access-token");
+
+    mockMvc
+        .perform(
+            post("/api/auth/device/code")
+                .cookie(staleAccessCookie)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"deviceName\": \"Apple TV\"}"))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(
+            post("/api/auth/device/token")
+                .cookie(staleAccessCookie)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"deviceCode\": \"unknown\"}"))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("Should exempt a device poll from CSRF when it carries a bearer token")
+  void shouldExemptDevicePollFromCsrfWhenBearerTokenPresent() throws Exception {
+    // The TV's own shape: an Authorization header and no cookies, which is never CSRF-able.
+    mockMvc
+        .perform(
+            post("/api/auth/device/token")
+                .header("Authorization", "Bearer not-a-real-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"deviceCode\": \"unknown\"}"))
+        .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
+  }
+
+  @Test
+  @DisplayName("Should require authentication when pairing lookup or decision is requested")
+  void shouldRequireAuthenticationWhenPairingLookupOrDecisionRequested() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/device/authorizations/lookup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"userCode\": \"BCDF-GHJK\"}"))
+        .andExpect(status().isUnauthorized());
+
+    mockMvc
+        .perform(
+            post("/api/auth/device/authorizations/decision")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"userCode\": \"BCDF-GHJK\", \"decision\": \"APPROVE\"}"))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a cookie-authenticated pairing decision when the CSRF token is missing")
+  void shouldRejectCookieAuthenticatedPairingDecisionWhenCsrfTokenMissing() throws Exception {
+    identity = authTestSupport.createIdentity();
+
+    // Cookie-carried credentials are the ambient ones CSRF exists to cover; the manually wired
+    // filter must reach this route.
+    mockMvc
+        .perform(
+            post("/api/auth/device/authorizations/decision")
+                .cookie(
+                    new Cookie(AuthCookies.ACCESS_COOKIE, authTestSupport.accountBearer(identity)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"userCode\": \"BCDF-GHJK\", \"decision\": \"APPROVE\"}"))
+        .andExpect(status().isForbidden());
   }
 
   @Test

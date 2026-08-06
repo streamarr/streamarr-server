@@ -7,6 +7,7 @@ import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.services.auth.AccessToken;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.ChangePasswordCommand;
+import com.streamarr.server.services.auth.DeviceAuthorizationService;
 import com.streamarr.server.services.auth.LoginCommand;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordChangeService;
@@ -43,11 +44,19 @@ public class AuthController {
   private final AccessTokenIssuer accessTokenIssuer;
   private final AuthorizationService authorizationService;
   private final PasswordChangeService passwordChangeService;
+  private final DeviceAuthorizationService deviceAuthorizationService;
   private final AuthCookieWriter cookieWriter;
 
+  /**
+   * The bootstrap a client reads before it can do anything else. Both flags are required in v1: a
+   * client that cannot see whether pairing is available would loop against a 503 forever.
+   */
   @GetMapping("/status")
-  public StatusResponse status() {
-    return new StatusResponse(setupService.isSetupComplete());
+  public ResponseEntity<StatusResponse> status() {
+    return ResponseEntity.ok()
+        .body(
+            new StatusResponse(
+                setupService.isSetupComplete(), deviceAuthorizationService.isPairingEnabled()));
   }
 
   @PostMapping("/logout")

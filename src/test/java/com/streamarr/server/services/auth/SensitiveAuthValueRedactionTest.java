@@ -7,12 +7,21 @@ import com.streamarr.server.controllers.auth.ChangePasswordRequest;
 import com.streamarr.server.controllers.auth.LoginRequest;
 import com.streamarr.server.controllers.auth.RefreshRequest;
 import com.streamarr.server.controllers.auth.SetupRequest;
+import com.streamarr.server.controllers.auth.device.DeviceAuthorizationResponse;
+import com.streamarr.server.controllers.auth.device.DeviceCodeResponse;
+import com.streamarr.server.controllers.auth.device.DeviceDecisionRequest;
+import com.streamarr.server.controllers.auth.device.DeviceLookupRequest;
+import com.streamarr.server.controllers.auth.device.DeviceTokenRequest;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -24,10 +33,10 @@ class SensitiveAuthValueRedactionTest {
 
   private static final String SECRET_MARKER = UUID.randomUUID().toString();
 
-  @ParameterizedTest(name = "Should not expose secret-bearing auth value {index}")
+  @ParameterizedTest(name = "Should hide secrets when rendering {0}")
   @MethodSource("secretBearingValues")
-  @DisplayName("Should not expose secrets in auth value string representations")
-  void shouldNotExposeSecretsInAuthValueStringRepresentations(Object value) {
+  @DisplayName("Should not expose secrets when rendering an auth value as a string")
+  void shouldNotExposeSecretsWhenRenderingAuthValueAsString(Object value) {
     assertThat(value.toString()).doesNotContain(SECRET_MARKER);
   }
 
@@ -55,45 +64,111 @@ class SensitiveAuthValueRedactionTest {
         .doesNotContain(SECRET_MARKER, "%s");
   }
 
-  private static Stream<Object> secretBearingValues() {
+  private static Stream<Named<Object>> secretBearingValues() {
     var account = AccountFixture.defaultAccountBuilder().build();
     var session = AuthSession.builder().accountId(UUID.randomUUID()).deviceName("device").build();
 
     return Stream.of(
-        new LoginRequest("user@example.com", SECRET_MARKER, "device", false),
-        new SetupRequest("user@example.com", "User", SECRET_MARKER, "Home", "Profile", false),
-        new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER),
-        new RefreshRequest(SECRET_MARKER),
-        new TokenRefreshService.RefreshedTokens(null, SECRET_MARKER),
-        ChangePasswordCommand.builder().currentPassword(SECRET_MARKER).newPassword(SECRET_MARKER),
-        PasswordChangeCompletionCommand.builder()
-            .expectedPasswordHash(SECRET_MARKER)
-            .newPasswordHash(SECRET_MARKER),
-        PasswordChangeResult.builder().rawRefreshToken(SECRET_MARKER),
-        AuthTokensResponse.builder().accessToken(SECRET_MARKER).refreshToken(SECRET_MARKER),
-        ChangePasswordCommand.builder()
-            .accountId(UUID.randomUUID())
-            .sessionId(UUID.randomUUID())
-            .currentPassword(SECRET_MARKER)
-            .newPassword(SECRET_MARKER)
-            .build(),
-        PasswordChangeCompletionCommand.builder()
-            .accountId(UUID.randomUUID())
-            .sessionId(UUID.randomUUID())
-            .expectedPasswordHash(SECRET_MARKER)
-            .newPasswordHash(SECRET_MARKER)
-            .build(),
-        PasswordChangeResult.builder()
-            .account(account)
-            .session(session)
-            .rawRefreshToken(SECRET_MARKER)
-            .build(),
-        AuthTokensResponse.builder()
-            .accessToken(SECRET_MARKER)
-            .accessTokenExpiresAt(Instant.now())
-            .scope("account")
-            .refreshToken(SECRET_MARKER)
-            .build());
+            new LoginRequest("user@example.com", SECRET_MARKER, "device", false),
+            new SetupRequest("user@example.com", "User", SECRET_MARKER, "Home", "Profile", false),
+            new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER),
+            new RefreshRequest(SECRET_MARKER),
+            new TokenRefreshService.RefreshedTokens(null, SECRET_MARKER),
+            // Pairing credentials: the device code is polled with, and the user code is low-entropy
+            // enough that a log line naming it is a guess an attacker never has to make. Lombok's
+            // generated builder toString is its own leakage surface, so unbuilt builders are here
+            // too.
+            new DeviceTokenRequest(SECRET_MARKER),
+            new DeviceLookupRequest(SECRET_MARKER),
+            new DeviceDecisionRequest(SECRET_MARKER, "APPROVE"),
+            DeviceCodeResponse.builder().deviceCode(SECRET_MARKER).userCode(SECRET_MARKER),
+            IssuedDeviceCode.builder().deviceCode(SECRET_MARKER).userCode(SECRET_MARKER),
+            DeviceAuthorizationResponse.builder().userCode(SECRET_MARKER).deviceName("Apple TV"),
+            DeviceAuthorizationResponse.builder()
+                .userCode(SECRET_MARKER)
+                .deviceName("Apple TV")
+                .status("PENDING")
+                .build(),
+            DeviceAuthorizationView.builder().userCode(SECRET_MARKER).deviceName("Apple TV"),
+            DeviceAuthorizationView.builder()
+                .userCode(SECRET_MARKER)
+                .deviceName("Apple TV")
+                .status(DeviceAuthorizationStatus.PENDING)
+                .build(),
+            DeviceDecisionCommand.builder()
+                .userCode(SECRET_MARKER)
+                .decision(DeviceDecision.APPROVE),
+            DeviceDecisionCommand.builder()
+                .userCode(SECRET_MARKER)
+                .decision(DeviceDecision.APPROVE)
+                .decidedByAccountId(UUID.randomUUID())
+                .build(),
+            DeviceAuthorizationDecisionCommand.builder()
+                .userCode(SECRET_MARKER)
+                .status(DeviceAuthorizationStatus.APPROVED),
+            DeviceAuthorizationDecisionCommand.builder()
+                .userCode(SECRET_MARKER)
+                .status(DeviceAuthorizationStatus.APPROVED)
+                .decidedByAccountId(UUID.randomUUID())
+                .now(Instant.now())
+                .build(),
+            DeviceAuthorizationInsertCommand.builder()
+                .deviceCodeDigest(SECRET_MARKER)
+                .userCode(SECRET_MARKER),
+            DeviceAuthorizationInsertCommand.builder()
+                .deviceCodeDigest(SECRET_MARKER)
+                .userCode(SECRET_MARKER)
+                .deviceName("Apple TV")
+                .expiresAt(Instant.now())
+                .build(),
+            DeviceCodeResponse.builder()
+                .deviceCode(SECRET_MARKER)
+                .userCode(SECRET_MARKER)
+                .verificationUri("https://home.example.com/link")
+                .interval(5)
+                .expiresIn(600)
+                .build(),
+            IssuedDeviceCode.builder()
+                .deviceCode(SECRET_MARKER)
+                .userCode(SECRET_MARKER)
+                .verificationUri("https://home.example.com/link")
+                .interval(5)
+                .expiresIn(600)
+                .build(),
+            new DevicePollResult.Success(
+                new AccessToken(SECRET_MARKER, Instant.now(), TokenScope.ACCOUNT), SECRET_MARKER),
+            ChangePasswordCommand.builder()
+                .currentPassword(SECRET_MARKER)
+                .newPassword(SECRET_MARKER),
+            PasswordChangeCompletionCommand.builder()
+                .expectedPasswordHash(SECRET_MARKER)
+                .newPasswordHash(SECRET_MARKER),
+            PasswordChangeResult.builder().rawRefreshToken(SECRET_MARKER),
+            AuthTokensResponse.builder().accessToken(SECRET_MARKER).refreshToken(SECRET_MARKER),
+            ChangePasswordCommand.builder()
+                .accountId(UUID.randomUUID())
+                .sessionId(UUID.randomUUID())
+                .currentPassword(SECRET_MARKER)
+                .newPassword(SECRET_MARKER)
+                .build(),
+            PasswordChangeCompletionCommand.builder()
+                .accountId(UUID.randomUUID())
+                .sessionId(UUID.randomUUID())
+                .expectedPasswordHash(SECRET_MARKER)
+                .newPasswordHash(SECRET_MARKER)
+                .build(),
+            PasswordChangeResult.builder()
+                .account(account)
+                .session(session)
+                .rawRefreshToken(SECRET_MARKER)
+                .build(),
+            AuthTokensResponse.builder()
+                .accessToken(SECRET_MARKER)
+                .accessTokenExpiresAt(Instant.now())
+                .scope("account")
+                .refreshToken(SECRET_MARKER)
+                .build())
+        .map(value -> Named.of(value.getClass().getSimpleName(), value));
   }
 
   private static Stream<Object> passwordBearingValues() {

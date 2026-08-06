@@ -43,6 +43,11 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
   }
 
   @Override
+  public boolean hasRow(UUID sessionId) {
+    return findById(sessionId).isPresent();
+  }
+
+  @Override
   public boolean updateSelectionIfLive(AuthSession session, Instant now) {
     return findById(session.getId())
         .filter(stored -> stored.getRevokedAt() == null)

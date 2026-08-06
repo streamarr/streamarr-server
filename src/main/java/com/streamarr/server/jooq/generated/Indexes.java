@@ -7,6 +7,7 @@ package com.streamarr.server.jooq.generated;
 import com.streamarr.server.jooq.generated.tables.AccountProfile;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
+import com.streamarr.server.jooq.generated.tables.DeviceAuthorization;
 import com.streamarr.server.jooq.generated.tables.Episode;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
@@ -58,6 +59,7 @@ public class Indexes {
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_CREATED_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_created_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.CREATED_ON, BaseCollectable.BASE_COLLECTABLE.ID }, false);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID }, false);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_TITLE_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_title_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.TITLE, BaseCollectable.BASE_COLLECTABLE.ID }, false);
+    public static final Index IDX_DEVICE_AUTHORIZATION_EXPIRES_AT = Internal.createIndex(DSL.name("idx_device_authorization_expires_at"), DeviceAuthorization.DEVICE_AUTHORIZATION, new OrderField[] { DeviceAuthorization.DEVICE_AUTHORIZATION.EXPIRES_AT }, false);
     public static final Index IDX_EPISODE_SEASON_ID = Internal.createIndex(DSL.name("idx_episode_season_id"), Episode.EPISODE, new OrderField[] { Episode.EPISODE.SEASON_ID }, false);
     public static final Index IDX_EXTERNAL_IDENTIFIER_ENTITY_ID = Internal.createIndex(DSL.name("idx_external_identifier_entity_id"), ExternalIdentifier.EXTERNAL_IDENTIFIER, new OrderField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ENTITY_ID }, false);
     public static final Index IDX_HOUSEHOLD_MEMBERSHIP_HOUSEHOLD_ID = Internal.createIndex(DSL.name("idx_household_membership_household_id"), HouseholdMembership.HOUSEHOLD_MEMBERSHIP, new OrderField[] { HouseholdMembership.HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID }, false);

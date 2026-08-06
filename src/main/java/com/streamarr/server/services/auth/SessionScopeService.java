@@ -6,6 +6,7 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.UnwrittenAuthSessionException;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
@@ -37,22 +38,43 @@ public class SessionScopeService {
    * arriving with a stale selection has it cleared rather than carried into the minted token.
    */
   @Transactional
-  public TokenContext autoSelectContext(UserAccount account, AuthSession session) {
+  public AutoSelection resolveAutoSelection(UserAccount account) {
+    return determineAutoSelection(account);
+  }
+
+  private AutoSelection determineAutoSelection(UserAccount account) {
     var memberships = membershipRepository.findByAccountId(account.getId());
     if (memberships.size() != 1) {
-      return TokenContext.builder().account(account).session(session).build();
+      return AutoSelection.none();
     }
 
     var householdId = memberships.getFirst().getHouseholdId();
-    session.setActiveHouseholdId(householdId);
-    session.setActiveProfileId(soleSelectableProfileId(account.getId(), householdId).orElse(null));
+    var links =
+        accountProfileRepository.findByAccountIdAndHouseholdId(account.getId(), householdId);
+    if (links.size() != 1) {
+      return AutoSelection.household(householdId);
+    }
+
+    return AutoSelection.householdAndProfile(householdId, links.getFirst().getProfileId());
+  }
+
+  /** Applies the auto-selection to a session that already exists. */
+  @Transactional
+  public TokenContext autoSelectContext(UserAccount account, AuthSession session) {
+    var selection = determineAutoSelection(account);
+    if (!selection.hasHousehold()) {
+      return TokenContext.builder().account(account).session(session).build();
+    }
+
+    session.setActiveHouseholdId(selection.householdId());
+    session.setActiveProfileId(selection.profileId());
 
     persistSelection(session);
 
     return TokenContext.builder()
         .account(account)
         .session(session)
-        .householdId(householdId)
+        .householdId(selection.householdId())
         .profileId(session.getActiveProfileId())
         .build();
   }
@@ -201,8 +223,24 @@ public class SessionScopeService {
   }
 
   private void persistSelection(AuthSession session) {
-    if (!sessionRepository.updateSelectionIfLive(session, clock.instant())) {
-      throw new AuthenticationRequiredException();
+    if (sessionRepository.updateSelectionIfLive(session, clock.instant())) {
+      return;
     }
+
+    throw classifyLostSelection(session.getId());
+  }
+
+  /**
+   * Zero rows updated has two causes and only one of them is an authentication failure: a revoked
+   * session is genuinely unauthenticated, while a session with no row at all is a caller whose
+   * insert is still queued behind this write. Answering the second as the first told a paired
+   * device to authenticate over a fault it could do nothing about.
+   */
+  private RuntimeException classifyLostSelection(UUID sessionId) {
+    if (sessionRepository.hasRow(sessionId)) {
+      return new AuthenticationRequiredException();
+    }
+
+    return new UnwrittenAuthSessionException(sessionId);
   }
 }

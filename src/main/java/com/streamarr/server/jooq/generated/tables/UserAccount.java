@@ -8,6 +8,7 @@ import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.AccountRole;
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
+import com.streamarr.server.jooq.generated.tables.DeviceAuthorization.DeviceAuthorizationPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
 import com.streamarr.server.jooq.generated.tables.HouseholdMembership.HouseholdMembershipPath;
 import com.streamarr.server.jooq.generated.tables.ServerBootstrap.ServerBootstrapPath;
@@ -194,6 +195,19 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
             _authSession = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACCOUNT.getInverseKey());
 
         return _authSession;
+    }
+
+    private transient DeviceAuthorizationPath _deviceAuthorization;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.device_authorization</code> table
+     */
+    public DeviceAuthorizationPath deviceAuthorization() {
+        if (_deviceAuthorization == null)
+            _deviceAuthorization = new DeviceAuthorizationPath(this, null, Keys.DEVICE_AUTHORIZATION__FK_DEVICE_AUTHORIZATION_DECIDED_BY.getInverseKey());
+
+        return _deviceAuthorization;
     }
 
     private transient HouseholdMembershipPath _householdMembership;

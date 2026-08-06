@@ -14,6 +14,7 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.UnwrittenAuthSessionException;
 import com.streamarr.server.fakes.FakeAccountProfileRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
@@ -77,6 +78,19 @@ class SessionScopeServiceTest {
   }
 
   @Test
+  @DisplayName("Should auto select the sole household when no profiles are selectable")
+  void shouldAutoSelectSoleHouseholdWhenNoProfilesSelectable() {
+    var f = fixture();
+
+    var context = service.autoSelectContext(f.account, f.session);
+
+    assertThat(context.householdId()).isEqualTo(f.household.getId());
+    assertThat(context.profileId()).isNull();
+    assertThat(reloadSession(f).getActiveHouseholdId()).isEqualTo(f.household.getId());
+    assertThat(reloadSession(f).getActiveProfileId()).isNull();
+  }
+
+  @Test
   @DisplayName("Should stay account scoped when membership is not unique")
   void shouldStayAccountScopedWhenMembershipIsNotUnique() {
     var f = fixture();
@@ -116,6 +130,32 @@ class SessionScopeServiceTest {
     assertThat(context.householdId()).isEqualTo(f.household.getId());
     assertThat(context.profileId()).isNull();
     assertThat(reloadSession(f).getActiveProfileId()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should refuse the selection as unauthenticated when the session is revoked")
+  void shouldRefuseSelectionAsUnauthenticatedWhenSessionIsRevoked() {
+    var f = fixture();
+    linkProfile(f);
+    f.session.setRevokedAt(Instant.now());
+
+    assertThatThrownBy(() -> service.autoSelectContext(f.account, f.session))
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should name the fault when the session has no row to select onto")
+  void shouldNameFaultWhenSessionHasNoRowToSelectOnto() {
+    var f = fixture();
+    linkProfile(f);
+    // The shape a caller produces by composing session creation and selection inside one
+    // transaction: the insert is queued, and the selection's jOOQ update never sees it.
+    var unwritten = AuthSession.builder().accountId(f.account.getId()).build();
+    unwritten.setId(UUID.randomUUID());
+
+    assertThatThrownBy(() -> service.autoSelectContext(f.account, unwritten))
+        .isInstanceOf(UnwrittenAuthSessionException.class)
+        .hasMessageContaining(unwritten.getId().toString());
   }
 
   // --- revalidateStoredContext ---

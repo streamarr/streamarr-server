@@ -1,0 +1,54 @@
+= Discovery Contract v1
+
+Normative Bonjour/mDNS profile for Streamarr servers.
+The record shape is defined here; whether a packaged deployment can advertise at all is a separate, spike-gated question.
+link:adr/0021-device-pairing-over-streamarr-transport.adoc[ADR 0021] defers authenticated server identity and a discovery TXT `id`, not implementation of the responder.
+
+Manual endpoint entry is always supported. Discovery is a convenience, never a requirement.
+
+== Service
+
+----
+service:  _streamarr._tcp.local.
+TXT[0]:   txtvers=1
+TXT:      baseurl=<absolute canonical base URL>
+TXT:      name=<configured display name>
+----
+
+Nothing else.
+The SRV port is the *effective port from `baseurl`*, not the container-internal `server.port` — a container advertising its internal port would publish an address nothing on the LAN can reach.
+
+== No server identity
+
+There is deliberately no `id` key, and no server-identity schema in v1.
+
+TXT records are unauthenticated. A spoofed `id` paired with an attacker-controlled `baseurl` would let an attacker impersonate a server a client already trusts and collect credentials issued for it.
+Clients therefore bind credentials to the *normalized endpoint*, never to discovery metadata.
+
+== `baseurl` is a hint
+
+Treat the discovered value as untrusted pre-fill:
+
+* Canonicalize it using the endpoint rules below. Discovered values get **no** manual-input scheme completion — a value without a scheme is invalid, not a typo to fix.
+* Validate the endpoint against `GET /api/auth/status` before storing anything against it.
+* Never attach existing credentials to a newly discovered endpoint on the strength of the record alone.
+
+== Endpoint normalization
+
+Clients normalize manually entered, discovered, and restored URLs to `{scheme, host, effectivePort, basePath}` before binding credentials:
+
+* `scheme` is lowercase and exactly `http` or `https`.
+* `host` is lowercase; IPv6 literals retain brackets.
+* `effectivePort` is explicit, or 443 for `https` and 80 for `http`.
+* `basePath` has no trailing slash; the root path becomes an empty string.
+
+The normalized endpoint is equal only when all four values match.
+Clients reject protocol-relative URLs, unsupported schemes, userinfo, queries, fragments, percent-encoding, and dot segments.
+Manual-entry UI may prepend `https://` before normalization when a person omits the scheme; discovered and restored URLs must already be absolute.
+
+== Advertisement rules
+
+* Advertise only with a configured, policy-accepted canonical base URL. Never guess an address — silence plus manual entry beats a wrong `baseurl`.
+* Instance label at most 63 bytes UTF-8; each full `key=value` string at most 255 bytes.
+* An overlong value *disables advertisement* with an actionable log rather than truncating: a truncated `baseurl` is a wrong address.
+* Discovery must never fail startup. Register after the web server is ready, unregister on shutdown, log and continue on failure.
