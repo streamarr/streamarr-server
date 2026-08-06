@@ -156,8 +156,8 @@ class PersonServiceTest {
   }
 
   @Test
-  @DisplayName("Should return persons sorted by source ID when input is unordered")
-  void shouldReturnPersonsSortedBySourceIdWhenInputIsUnordered() {
+  @DisplayName("Should preserve input order when persons are processed")
+  void shouldPreserveInputOrderWhenPersonsAreProcessed() {
     var persons =
         List.of(
             Person.builder().name("Actor C").sourceId("300").build(),
@@ -166,7 +166,7 @@ class PersonServiceTest {
 
     var result = personService.getOrCreatePersons(persons, Map.of());
 
-    assertThat(result).extracting(Person::getSourceId).containsExactly("100", "200", "300");
+    assertThat(result).extracting(Person::getSourceId).containsExactly("300", "100", "200");
   }
 
   @Test
