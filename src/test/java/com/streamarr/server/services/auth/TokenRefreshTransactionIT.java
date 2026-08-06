@@ -14,7 +14,6 @@ import com.streamarr.server.jooq.generated.enums.RefreshTokenStatus;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
-import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.time.Clock;
 import java.time.Duration;
@@ -83,15 +82,9 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
         AuthTokenProperties properties,
         Clock clock,
         HouseholdMembershipRepository membershipRepository,
-        ProfileRepository profileRepository,
         AccountProfileRepository accountProfileRepository) {
       return new GatedAccessTokenIssuer(
-          jwtEncoder,
-          properties,
-          clock,
-          membershipRepository,
-          profileRepository,
-          accountProfileRepository);
+          jwtEncoder, properties, clock, membershipRepository, accountProfileRepository);
     }
   }
 
@@ -106,15 +99,8 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
         AuthTokenProperties properties,
         Clock clock,
         HouseholdMembershipRepository membershipRepository,
-        ProfileRepository profileRepository,
         AccountProfileRepository accountProfileRepository) {
-      super(
-          jwtEncoder,
-          properties,
-          clock,
-          membershipRepository,
-          profileRepository,
-          accountProfileRepository);
+      super(jwtEncoder, properties, clock, membershipRepository, accountProfileRepository);
     }
 
     @Override
@@ -219,6 +205,21 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     refreshTokenService.logout(issued.session().getId());
 
     assertThat(activeTokenCount(issued.session().getId())).isZero();
+  }
+
+  @Test
+  @DisplayName("Should return access token only when recovered successor was superseded")
+  void shouldReturnAccessTokenOnlyWhenRecoveredSuccessorWasSuperseded() {
+    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var issued = refreshTokenService.createSession(account, "tx-device");
+    var firstRotation = tokenRefreshService.refresh(issued.rawToken());
+    tokenRefreshService.refresh(firstRotation.rawRefreshToken());
+
+    var recovered = tokenRefreshService.refresh(issued.rawToken());
+
+    assertThat(recovered.accessToken()).isNotNull();
+    assertThat(recovered.carriesRefreshToken()).isFalse();
+    assertThat(recovered.rawRefreshToken()).isNull();
   }
 
   @Test

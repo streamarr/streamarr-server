@@ -4,22 +4,28 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
+import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
+import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.QualityLadderService;
+import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
+import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.SegmentStore;
-import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegProcessManager;
+import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
 import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
-import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRepository;
+import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.time.Clock;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import tools.jackson.databind.ObjectMapper;
@@ -76,18 +82,60 @@ public class StreamingConfig {
   }
 
   @Bean
-  public TranscodeExecutor transcodeExecutor(
+  public FfmpegTranscodeEngine ffmpegTranscodeEngine(
       FfmpegCommandBuilder commandBuilder,
       FfmpegProcessManager processManager,
-      LocalSegmentStore segmentStore,
       TranscodeCapabilityService capabilityService) {
-    return new LocalTranscodeExecutor(
-        commandBuilder, processManager, segmentStore, capabilityService);
+    return new FfmpegTranscodeEngine(commandBuilder, processManager, capabilityService);
   }
 
   @Bean
-  public StreamSessionRepository streamSessionRepository() {
-    return new InMemoryStreamSessionRepository();
+  @ConditionalOnProperty(
+      prefix = "streaming.remote",
+      name = "enabled",
+      havingValue = "false",
+      matchIfMissing = true)
+  public TranscodeExecutor transcodeExecutor(
+      FfmpegTranscodeEngine engine, LocalSegmentStore segmentStore) {
+    return new LocalTranscodeExecutor(engine, segmentStore);
+  }
+
+  @Bean
+  public RuntimeStreamSessionRegistry runtimeStreamSessionRegistry() {
+    return new InMemoryStreamSessionRegistry();
+  }
+
+  @Bean
+  public ProducerLifecycleService producerLifecycleService(
+      TranscodeExecutor transcodeExecutor,
+      SegmentStore segmentStore,
+      StreamingProperties properties,
+      RuntimeStreamSessionRegistry runtimeRegistry,
+      MutexFactoryProvider mutexFactoryProvider) {
+    return ProducerLifecycleService.builder()
+        .transcodeExecutor(transcodeExecutor)
+        .segmentStore(segmentStore)
+        .properties(properties)
+        .runtimeRegistry(runtimeRegistry)
+        .sessionMutex(mutexFactoryProvider.getMutexFactory())
+        .build();
+  }
+
+  @Bean
+  public SegmentDeliveryCoordinator segmentDeliveryCoordinator(
+      RuntimeStreamSessionRegistry runtimeRegistry,
+      SegmentStore segmentStore,
+      TranscodeExecutor transcodeExecutor,
+      ProducerLifecycleService producerLifecycleService,
+      StreamingProperties properties) {
+    return SegmentDeliveryCoordinator.builder()
+        .runtimeRegistry(runtimeRegistry)
+        .segmentStore(segmentStore)
+        .transcodeExecutor(transcodeExecutor)
+        .producerLifecycle(producerLifecycleService)
+        .properties(properties)
+        .clock(Clock.systemUTC())
+        .build();
   }
 
   @Bean
@@ -99,17 +147,22 @@ public class StreamingConfig {
       TranscodeDecisionService transcodeDecisionService,
       QualityLadderService qualityLadderService,
       StreamingProperties properties,
-      StreamSessionRepository streamSessionRepository,
-      MutexFactoryProvider mutexFactoryProvider) {
-    return new HlsStreamingService(
-        mediaFileRepository,
-        transcodeExecutor,
-        segmentStore,
-        ffprobeService,
-        transcodeDecisionService,
-        qualityLadderService,
-        properties,
-        streamSessionRepository,
-        mutexFactoryProvider.getMutexFactory());
+      PlaybackAuthorityGate authorityGate,
+      RuntimeStreamSessionRegistry runtimeRegistry,
+      ProducerLifecycleService producerLifecycleService,
+      SegmentDeliveryCoordinator segmentDeliveryCoordinator) {
+    return HlsStreamingService.builder()
+        .mediaFileRepository(mediaFileRepository)
+        .transcodeExecutor(transcodeExecutor)
+        .segmentStore(segmentStore)
+        .ffprobeService(ffprobeService)
+        .transcodeDecisionService(transcodeDecisionService)
+        .qualityLadderService(qualityLadderService)
+        .properties(properties)
+        .authorityGate(authorityGate)
+        .runtimeRegistry(runtimeRegistry)
+        .producerLifecycle(producerLifecycleService)
+        .deliveryCoordinator(segmentDeliveryCoordinator)
+        .build();
   }
 }

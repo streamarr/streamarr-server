@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import java.time.Instant;
 import java.util.Optional;
@@ -9,6 +10,11 @@ import java.util.UUID;
 
 public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
     implements AuthSessionRepository {
+
+  @Override
+  public boolean hasLivePlaybackAuthority(PlaybackAuthority authority) {
+    throw new UnsupportedOperationException("Live playback authority is not configured");
+  }
 
   @Override
   public java.util.List<AuthSession> findByAccountId(UUID accountId) {
@@ -24,27 +30,16 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
   }
 
   @Override
-  public Optional<Long> revoke(UUID sessionId, SessionRevocationReason reason, Instant now) {
+  public boolean revoke(UUID sessionId, SessionRevocationReason reason, Instant now) {
     return findById(sessionId)
         .filter(session -> session.getRevokedAt() == null)
         .map(
             session -> {
               session.setRevokedAt(now);
               session.setRevokedReason(reason);
-              session.setSessionVersion(session.getSessionVersion() + 1);
-              return session.getSessionVersion();
-            });
-  }
-
-  @Override
-  public Optional<Long> bumpVersion(UUID sessionId, Instant now) {
-    return findById(sessionId)
-        .filter(session -> session.getRevokedAt() == null)
-        .map(
-            session -> {
-              session.setSessionVersion(session.getSessionVersion() + 1);
-              return session.getSessionVersion();
-            });
+              return true;
+            })
+        .orElse(false);
   }
 
   @Override

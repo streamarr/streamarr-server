@@ -5,11 +5,13 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.NonNull;
 
 @Getter
 @Builder
@@ -17,16 +19,16 @@ public class StreamSession {
 
   private static final String DEFAULT_VARIANT = "default";
 
-  private final UUID sessionId;
-  private final UUID mediaFileId;
-  // The owning profile, stamped at creation — playback tokens bind to it.
-  private final UUID profileId;
+  @NonNull private final UUID sessionId;
+  @NonNull private final UUID mediaFileId;
+  @NonNull private final PlaybackAuthority authority;
   private final Path sourcePath;
   private final MediaProbe mediaProbe;
   private final TranscodeDecision transcodeDecision;
   private final StreamingOptions options;
   private final Instant createdAt;
 
+  @Getter(lombok.AccessLevel.NONE)
   @Builder.Default
   private final Map<String, TranscodeHandle> variantHandles = new ConcurrentHashMap<>();
 
@@ -38,7 +40,7 @@ public class StreamSession {
       new AtomicReference<>(new PlaybackSnapshot(0, PlaybackState.STOPPED, Instant.now()));
 
   public boolean isOwnedBy(UUID candidateProfileId) {
-    return profileId != null && profileId.equals(candidateProfileId);
+    return authority.profileId().equals(candidateProfileId);
   }
 
   public void updatePlaybackState(int positionSeconds, PlaybackState state) {
@@ -59,8 +61,13 @@ public class StreamSession {
         current -> new PlaybackSnapshot(current.positionSeconds(), current.state(), accessedAt));
   }
 
-  public TranscodeHandle getHandle() {
-    return variantHandles.get(DEFAULT_VARIANT);
+  /** Live view — reflects concurrent handle mutations; not a snapshot. */
+  public Map<String, TranscodeHandle> getVariantHandles() {
+    return Collections.unmodifiableMap(variantHandles);
+  }
+
+  public Optional<TranscodeHandle> getHandle() {
+    return getVariantHandle(DEFAULT_VARIANT);
   }
 
   public void setHandle(TranscodeHandle handle) {
@@ -71,8 +78,8 @@ public class StreamSession {
     variantHandles.put(variantLabel, handle);
   }
 
-  public TranscodeHandle getVariantHandle(String variantLabel) {
-    return variantHandles.get(variantLabel);
+  public Optional<TranscodeHandle> getVariantHandle(String variantLabel) {
+    return Optional.ofNullable(variantHandles.get(variantLabel));
   }
 
   public boolean isSuspended() {

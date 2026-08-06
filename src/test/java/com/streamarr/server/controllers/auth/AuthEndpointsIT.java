@@ -33,12 +33,12 @@ import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.TokenClaims;
 import com.streamarr.server.services.auth.TokenContext;
-import com.streamarr.server.services.auth.TokenContract;
 import jakarta.servlet.http.Cookie;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
@@ -56,6 +56,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.web.servlet.MockMvc;
@@ -90,6 +91,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   @Autowired private RefreshTokenService refreshTokenService;
 
   @Autowired private JwtEncoder jwtEncoder;
+  @Autowired private JwtDecoder jwtDecoder;
 
   @Autowired
   private com.streamarr.server.repositories.auth.ServerBootstrapRepository
@@ -330,8 +332,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject existing profile token when profile link revoked")
-  void shouldRejectExistingProfileTokenWhenProfileLinkRevoked() throws Exception {
+  @DisplayName("Should accept issued profile token until expiry when profile link revoked")
+  void shouldAcceptIssuedProfileTokenUntilExpiryWhenProfileLinkRevoked() throws Exception {
     seedSingleProfileIdentity();
     var loginResponse =
         mockMvc
@@ -359,13 +361,12 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             .profileId(profile.getId())
             .build());
 
-    // The membership counter bump makes every outstanding profile token stale immediately.
+    // Authorization changes take effect on refresh; an issued API token keeps its bounded TTL.
     mockMvc
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
                 .header("Authorization", "Bearer " + accessToken))
-        .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+        .andExpect(status().isNotFound());
   }
 
   @Test
@@ -854,7 +855,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should revoke all other sessions when password changed")
+  @DisplayName("Should revoke all other refresh sessions when password changed")
   void shouldRevokeAllOtherSessionsWhenPasswordChanged() throws Exception {
     seedSingleProfileIdentity();
     var deviceA = objectMapper.readTree(loginResponseBody());
@@ -863,13 +864,12 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     changePassword(deviceA.get("accessToken").asString(), PASSWORD, "a brand new passphrase!")
         .andExpect(status().isOk());
 
-    // Device B's access token dies immediately (account-wide sv bump) and its refresh is revoked.
+    // Short-lived API access remains valid until expiry; refresh authority ends immediately.
     mockMvc
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
                 .header("Authorization", "Bearer " + deviceB.get("accessToken").asString()))
-        .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+        .andExpect(status().isNotFound());
     mockMvc
         .perform(
             post("/api/auth/refresh")
@@ -880,8 +880,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep caller session with fresh tokens when password changed")
-  void shouldKeepCallerSessionWithFreshTokensWhenPasswordChanged() throws Exception {
+  @DisplayName("Should replace caller session with fresh tokens when password changed")
+  void shouldReplaceCallerSessionWithFreshTokensWhenPasswordChanged() throws Exception {
     seedSingleProfileIdentity();
     var login = objectMapper.readTree(loginResponseBody());
     var oldAccessToken = login.get("accessToken").asString();
@@ -898,7 +898,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .getResponse()
                 .getContentAsString());
 
-    // The fresh tokens work; every pre-change credential is dead — including the caller's own.
+    // The replacement credentials work. The old refresh authority is dead, while the short-lived
+    // API token remains valid until its strict expiry.
     mockMvc
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
@@ -908,15 +909,13 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
                 .header("Authorization", "Bearer " + oldAccessToken))
-        .andExpect(status().isUnauthorized());
+        .andExpect(status().isNotFound());
     mockMvc
         .perform(
             post("/api/auth/refresh")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(refreshBody(changed.get("refreshToken").asString())))
         .andExpect(status().isOk());
-    // Last on purpose: replaying the swept pre-change refresh token is reuse detection, which
-    // revokes the caller's session and its fresh family (fail-closed) — nothing works after this.
     mockMvc
         .perform(
             post("/api/auth/refresh")
@@ -1070,12 +1069,13 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(logoutResponse.getCookie("streamarr_access").getMaxAge()).isZero();
     assertThat(logoutResponse.getCookie("streamarr_refresh").getMaxAge()).isZero();
 
-    // The session-version bump kills the outstanding access token; the refresh family is revoked.
+    // Logout revokes refresh and playback authority immediately. The short-lived API token keeps
+    // its bounded TTL.
     mockMvc
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
                 .header("Authorization", "Bearer " + accessToken))
-        .andExpect(status().isUnauthorized());
+        .andExpect(status().isNotFound());
     mockMvc
         .perform(
             post("/api/auth/refresh")
@@ -1268,17 +1268,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   private org.springframework.security.oauth2.jwt.Jwt decodeToken(String token) {
-    var keys =
-        new com.streamarr.server.config.security.TokenCryptoConfig()
-            .tokenSigningKeys(tokenProperties);
-    var processor =
-        new com.nimbusds.jwt.proc.DefaultJWTProcessor<com.nimbusds.jose.proc.SecurityContext>();
-    processor.setJWSKeySelector(
-        new com.nimbusds.jose.proc.JWSVerificationKeySelector<>(
-            com.nimbusds.jose.JWSAlgorithm.ES256,
-            new com.nimbusds.jose.jwk.source.ImmutableJWKSet<>(keys.verificationKeys())));
-    processor.setJWTClaimsSetVerifier((claims, context) -> {});
-    return new org.springframework.security.oauth2.jwt.NimbusJwtDecoder(processor).decode(token);
+    return jwtDecoder.decode(token);
   }
 
   private String signedAccessToken(
@@ -1286,14 +1276,14 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var now = Instant.now();
     var claims =
         JwtClaimsSet.builder()
-            .issuer(TokenContract.ISSUER)
+            .issuer("streamarr")
+            .audience(List.of("streamarr"))
             .subject(account.getId().toString())
             .issuedAt(now)
             .expiresAt(now.plus(Duration.ofMinutes(10)))
             .id(UUID.randomUUID().toString())
-            .claim(TokenClaims.ROLE, account.getAccountRole().name())
+            .claim(TokenClaims.ROLES, List.of(account.getAccountRole().name()))
             .claim(TokenClaims.SESSION_ID, session.getId().toString())
-            .claim(TokenClaims.SESSION_VERSION, session.getSessionVersion())
             .claim(TokenClaims.SCOPE, "account");
     customizeClaims.accept(claims);
 
@@ -1315,7 +1305,6 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             tokenProperties,
             pastClock,
             membershipRepository,
-            profileRepository,
             accountProfileRepository);
 
     return pastIssuer

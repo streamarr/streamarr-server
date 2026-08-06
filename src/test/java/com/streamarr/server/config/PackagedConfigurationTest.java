@@ -7,6 +7,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -15,6 +18,7 @@ import org.springframework.boot.test.context.ConfigDataApplicationContextInitial
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
 import org.yaml.snakeyaml.Yaml;
+import tools.jackson.databind.ObjectMapper;
 
 @Tag("UnitTest")
 @DisplayName("Packaged Configuration Tests")
@@ -63,5 +67,91 @@ class PackagedConfigurationTest {
           assertThat(properties.iterations()).isGreaterThanOrEqualTo(MIN_ITERATIONS);
           assertThat(properties.parallelism()).isGreaterThanOrEqualTo(MIN_PARALLELISM);
         });
+  }
+
+  @Test
+  @DisplayName("Should ship separate server and transcode worker process types when packaged")
+  void shouldShipSeparateServerAndTranscodeWorkerProcessTypesWhenPackaged() throws IOException {
+    var processes = Set.copyOf(Files.readAllLines(Path.of("Procfile")));
+    var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
+
+    assertThat(processes)
+        .contains(
+            "web: java org.springframework.boot.loader.launch.JarLauncher",
+            "worker: java -Dloader.main=com.streamarr.transcode.worker.TranscodeWorkerApplication "
+                + "org.springframework.boot.loader.launch.PropertiesLauncher");
+    assertThat(buildAction).contains("--buildpack paketo-buildpacks/procfile");
+  }
+
+  @Test
+  @DisplayName(
+      "Should pin and track independently versioned Pack inputs when packaging container images")
+  void shouldPinAndTrackIndependentlyVersionedPackInputsWhenPackagingContainerImages()
+      throws IOException {
+    var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
+    var renovateConfig = new ObjectMapper().readTree(Files.readString(Path.of("renovate.json")));
+    var packDependencies =
+        buildAction
+            .lines()
+            .map(String::strip)
+            .filter(
+                line ->
+                    line.startsWith("--builder paketobuildpacks/builder-jammy-full")
+                        || line.startsWith("--buildpack paketo-buildpacks/apt")
+                        || line.startsWith("--buildpack paketo-buildpacks/procfile"))
+            .toList();
+    var renovateMatchers =
+        StreamSupport.stream(renovateConfig.path("customManagers").spliterator(), false)
+            .flatMap(
+                manager -> StreamSupport.stream(manager.path("matchStrings").spliterator(), false))
+            .map(node -> Pattern.compile(node.asString()))
+            .toList();
+
+    assertThat(packDependencies)
+        .hasSize(3)
+        .allMatch(
+            dependency ->
+                dependency.matches(
+                    "--(?:builder|buildpack) [^\\s\\\\]+(?:[:@])\\d+\\.\\d+\\.\\d+ \\\\"))
+        .allSatisfy(
+            dependency ->
+                assertThat(renovateMatchers)
+                    .anyMatch(matcher -> matcher.matcher(dependency).find()));
+  }
+
+  @Test
+  @DisplayName("Should ship an opt-in Docker Compose worker path when packaged")
+  void shouldShipOptInDockerComposeWorkerPathWhenPackaged() throws IOException {
+    var deployment = Files.readString(Path.of("deploy/compose/distributed-transcoding.yml"));
+
+    assertThat(deployment)
+        .contains(
+            "entrypoint: worker",
+            "STREAMING_REMOTE_ENABLED: \"true\"",
+            "TRANSCODE_WORKER_CONTROL_PLANE_HOST: streamarr-server");
+  }
+
+  @Test
+  @DisplayName(
+      "Should ship opt-in hardware transcoding for the Docker Compose worker when packaged")
+  void shouldShipOptInHardwareTranscodingForDockerComposeWorkerWhenPackaged() throws IOException {
+    var deployment = Files.readString(Path.of("deploy/compose/hardware-transcoding.yml"));
+
+    assertThat(deployment).contains("transcode-worker:", "devices:", "/dev/dri:/dev/dri");
+  }
+
+  @Test
+  @DisplayName(
+      "Should ship a single-server Kubernetes path with per-pod worker identity when packaged")
+  void shouldShipSingleServerKubernetesPathWithPerPodWorkerIdentityWhenPackaged()
+      throws IOException {
+    var deployment = Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml"));
+
+    assertThat(deployment)
+        .contains(
+            "replicas: 1",
+            "replicas: 2",
+            "fieldPath: metadata.uid",
+            "spiffe://streamarr.example/streamarr/worker/${POD_UID}");
   }
 }

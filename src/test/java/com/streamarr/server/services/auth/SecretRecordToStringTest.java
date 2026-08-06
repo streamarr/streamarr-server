@@ -32,8 +32,8 @@ class SecretRecordToStringTest {
   }
 
   @Test
-  @DisplayName("Should not expose plaintext secrets in string representations")
-  void shouldNotExposePlaintextSecretsInStringRepresentations() {
+  @DisplayName("Should not expose plaintext secrets in string representations when rendered")
+  void shouldNotExposePlaintextSecretsInStringRepresentationsWhenRendered() {
     var secret = "review-secret-value";
     var renderedValues =
         List.of(
@@ -47,7 +47,7 @@ class SecretRecordToStringTest {
             LoginResult.builder().rawRefreshToken(secret).build().toString(),
             new IssuedRefreshToken(secret, null).toString(),
             new RefreshResult.Rotated(secret, null).toString(),
-            new RefreshResult.Replayed(secret, null).toString(),
+            new RefreshResult.GraceRetry(secret, null).toString(),
             AccessToken.builder()
                 .value(secret)
                 .expiresAt(Instant.EPOCH)

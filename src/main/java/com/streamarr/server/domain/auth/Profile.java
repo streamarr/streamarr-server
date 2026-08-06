@@ -22,7 +22,4 @@ public class Profile extends BaseAuditableEntity<Profile> {
   private UUID householdId;
 
   private String name;
-
-  // Policy version counter — bumped on content-restriction changes to invalidate issued tokens.
-  private long policyVersion;
 }

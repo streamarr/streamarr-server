@@ -1,13 +1,11 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.support.TokenTestSupport.TEST_SIGNING_KEY;
+import static com.streamarr.server.support.TokenTestSupport.decoder;
+import static com.streamarr.server.support.TokenTestSupport.tokenProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
-import com.nimbusds.jose.proc.JWSVerificationKeySelector;
-import com.nimbusds.jose.proc.SecurityContext;
-import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountProfile;
@@ -30,28 +28,18 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 @Tag("UnitTest")
 @DisplayName("Access Token Issuer Tests")
 class AccessTokenIssuerTest {
 
-  private static final String TEST_KEY_BASE64 =
-      "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQga+ZKCbAcyZIb7k2FE8rMPFtIpTdzX2dR/csZ8k6A95uhRANCAAQawOmVKMDLAOsboxKLb9khGsWyxwcIikucXDCfX18ME5X9/kqSS2vdMnFfZ6KR12U/Sy/EwOwnc82xFAyFdNbe";
-
-  private final AuthTokenProperties properties =
-      AuthTokenProperties.builder()
-          .signingKey(TEST_KEY_BASE64)
-          .accessTokenTtl(Duration.ofMinutes(10))
-          .refreshTokenTtl(Duration.ofDays(30))
-          .rotationGrace(Duration.ofSeconds(30))
-          .build();
+  private final AuthTokenProperties properties = tokenProperties();
 
   private final FakeHouseholdMembershipRepository membershipRepository =
       new FakeHouseholdMembershipRepository();
   private final FakeProfileRepository profileRepository = new FakeProfileRepository();
   private final FakeAccountProfileRepository accountProfileRepository =
-      new FakeAccountProfileRepository(membershipRepository);
+      new FakeAccountProfileRepository();
 
   private final TokenCryptoConfig cryptoConfig = new TokenCryptoConfig();
 
@@ -61,33 +49,50 @@ class AccessTokenIssuerTest {
           properties,
           Clock.systemUTC(),
           membershipRepository,
-          profileRepository,
           accountProfileRepository);
+
+  @Test
+  @DisplayName("Should mint the configured issuer when one is provided")
+  void shouldMintConfiguredIssuerWhenOneIsProvided() {
+    var urlIssuerProperties =
+        AuthTokenProperties.builder()
+            .signingKey(TEST_SIGNING_KEY)
+            .issuer("https://auth.example.test")
+            .accessTokenTtl(Duration.ofMinutes(10))
+            .refreshTokenTtl(Duration.ofDays(30))
+            .rotationGrace(Duration.ofSeconds(30))
+            .build();
+    var urlIssuer =
+        new AccessTokenIssuer(
+            cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(urlIssuerProperties)),
+            urlIssuerProperties,
+            Clock.systemUTC(),
+            membershipRepository,
+            accountProfileRepository);
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
+
+    var token = urlIssuer.issue(TokenContext.builder().account(account).session(session).build());
+
+    var decoded = buildDecoder().decode(token.value());
+    assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo("https://auth.example.test");
+  }
 
   @Test
   @DisplayName("Should nest scopes when issuing profile token")
   void shouldNestScopesWhenIssuingProfileToken() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session =
-        AuthSession.builder()
-            .id(UUID.randomUUID())
-            .accountId(account.getId())
-            .sessionVersion(7)
-            .build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     var householdId = UUID.randomUUID();
-    var membership =
-        membershipRepository.grantMembership(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(householdId)
-                .householdRole(HouseholdRole.OWNER)
-                .build());
+    membershipRepository.grantMembership(
+        HouseholdMembership.builder()
+            .accountId(account.getId())
+            .householdId(householdId)
+            .householdRole(HouseholdRole.OWNER)
+            .build());
     var profile =
         profileRepository.save(
-            ProfileFixture.defaultProfileBuilder()
-                .householdId(householdId)
-                .policyVersion(5)
-                .build());
+            ProfileFixture.defaultProfileBuilder().householdId(householdId).build());
     accountProfileRepository.save(
         AccountProfile.builder()
             .accountId(account.getId())
@@ -107,21 +112,18 @@ class AccessTokenIssuerTest {
     assertThat(token.scope()).isEqualTo(TokenScope.PROFILE);
 
     var decoded = buildDecoder().decode(token.value());
-    assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo(TokenContract.ISSUER);
+    assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo("streamarr");
+    assertThat(decoded.getAudience()).containsExactly("streamarr");
     assertThat(decoded.getSubject()).isEqualTo(account.getId().toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SESSION_ID))
         .isEqualTo(session.getId().toString());
-    assertThat(decoded.<Long>getClaim(TokenClaims.SESSION_VERSION)).isEqualTo(7L);
     assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("profile");
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
         .isEqualTo(householdId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("OWNER");
-    assertThat(decoded.<Long>getClaim(TokenClaims.MEMBERSHIP_VERSION))
-        .isEqualTo(membership.version());
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID))
         .isEqualTo(profile.getId().toString());
-    assertThat(decoded.<Long>getClaim(TokenClaims.POLICY_VERSION)).isEqualTo(5L);
-    assertThat(decoded.getClaimAsString(TokenClaims.ROLE)).isEqualTo("USER");
+    assertThat(decoded.getClaimAsStringList("roles")).containsExactly("USER");
     assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
         .isEqualTo(properties.accessTokenTtl());
     assertThat(token.expiresAt()).isEqualTo(decoded.getExpiresAt());
@@ -166,12 +168,7 @@ class AccessTokenIssuerTest {
   @DisplayName("Should issue account scoped token when no context selected")
   void shouldIssueAccountScopedTokenWhenNoContextSelected() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session =
-        AuthSession.builder()
-            .id(UUID.randomUUID())
-            .accountId(account.getId())
-            .sessionVersion(2)
-            .build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
 
     var token = issuer.issue(TokenContext.builder().account(account).session(session).build());
 
@@ -215,18 +212,12 @@ class AccessTokenIssuerTest {
         properties,
         Clock.fixed(now, ZoneOffset.UTC),
         membershipRepository,
-        profileRepository,
         accountProfileRepository);
   }
 
   private TokenContext accountContext() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session =
-        AuthSession.builder()
-            .id(UUID.randomUUID())
-            .accountId(account.getId())
-            .sessionVersion(1)
-            .build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     return TokenContext.builder().account(account).session(session).build();
   }
 
@@ -236,13 +227,12 @@ class AccessTokenIssuerTest {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     var householdId = UUID.randomUUID();
-    var membership =
-        membershipRepository.grantMembership(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(householdId)
-                .householdRole(HouseholdRole.PARENT)
-                .build());
+    membershipRepository.grantMembership(
+        HouseholdMembership.builder()
+            .accountId(account.getId())
+            .householdId(householdId)
+            .householdRole(HouseholdRole.PARENT)
+            .build());
 
     var token =
         issuer.issue(
@@ -259,8 +249,6 @@ class AccessTokenIssuerTest {
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
         .isEqualTo(householdId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("PARENT");
-    assertThat(decoded.<Long>getClaim(TokenClaims.MEMBERSHIP_VERSION))
-        .isEqualTo(membership.version());
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isNull();
   }
 
@@ -317,45 +305,7 @@ class AccessTokenIssuerTest {
         .hasMessage("session");
   }
 
-  @Test
-  @DisplayName("Should reject profile token when profile row missing")
-  void shouldRejectProfileTokenWhenProfileRowMissing() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
-    var householdId = UUID.randomUUID();
-    var missingProfileId = UUID.randomUUID();
-    membershipRepository.grantMembership(
-        HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(householdId)
-            .householdRole(HouseholdRole.OWNER)
-            .build());
-    accountProfileRepository.save(
-        AccountProfile.builder()
-            .accountId(account.getId())
-            .householdId(householdId)
-            .profileId(missingProfileId)
-            .build());
-
-    var context =
-        TokenContext.builder()
-            .account(account)
-            .session(session)
-            .householdId(householdId)
-            .profileId(missingProfileId)
-            .build();
-
-    assertThatThrownBy(() -> issuer.issue(context))
-        .isInstanceOf(ProfileAccessDeniedException.class);
-  }
-
-  private NimbusJwtDecoder buildDecoder() {
-    var keys = cryptoConfig.tokenSigningKeys(properties);
-    var processor = new DefaultJWTProcessor<SecurityContext>();
-    processor.setJWSKeySelector(
-        new JWSVerificationKeySelector<>(
-            JWSAlgorithm.ES256, new ImmutableJWKSet<>(keys.verificationKeys())));
-    processor.setJWTClaimsSetVerifier((claims, context) -> {});
-    return new NimbusJwtDecoder(processor);
+  private org.springframework.security.oauth2.jwt.NimbusJwtDecoder buildDecoder() {
+    return decoder(properties);
   }
 }

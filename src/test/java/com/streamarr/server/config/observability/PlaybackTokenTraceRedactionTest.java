@@ -32,8 +32,8 @@ class PlaybackTokenTraceRedactionTest {
   private static final AttributeKey<String> URL_QUERY = AttributeKey.stringKey("url.query");
 
   @Test
-  @DisplayName("Should redact playback token from trace while preserving request parameter")
-  void shouldRedactPlaybackTokenFromTraceWhilePreservingRequestParameter() throws Exception {
+  @DisplayName("Should redact playback token and preserve request parameter when tracing a request")
+  void shouldRedactPlaybackTokenAndPreserveRequestParameterWhenTracingRequest() throws Exception {
     var exporter = new CapturingSpanExporter();
     var tracerProvider =
         SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(exporter)).build();
@@ -41,7 +41,7 @@ class PlaybackTokenTraceRedactionTest {
     var telemetryFilter = SpringWebMvcTelemetry.create(openTelemetry).createServletFilter();
     var request =
         new MockHttpServletRequest(
-            "GET", "/api/stream/21a268d7-6e6a-48fd-a9cc-93bbc1ee85de/master.m3u8");
+            "GET", "/api/stream/21a268d7-6e6a-48fd-a9cc-93bbc1ee85de/multivariant.m3u8");
     request.setQueryString("quality=auto&t=secret-playback-token&offset=12");
     request.addParameter("quality", "auto");
     request.addParameter("t", "secret-playback-token");

@@ -13,9 +13,7 @@ import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.streamarr.server.services.auth.StrictJwtExpiryValidator;
-import com.streamarr.server.services.auth.TokenContract;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
-import com.streamarr.server.services.auth.TokenVersionValidator;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.interfaces.ECPrivateKey;
@@ -35,6 +33,8 @@ import org.bouncycastle.jce.ECNamedCurveTable;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
@@ -74,15 +74,15 @@ public class TokenCryptoConfig {
   }
 
   /**
-   * Identity and version validation run inside the decoder, so malformed or stale tokens never
-   * become an Authentication. The key selector is pinned to ES256: HMAC or unsigned tokens never
-   * reach validation.
+   * Identity validation runs inside the decoder, so malformed tokens never become an
+   * Authentication. The key selector is pinned to ES256: HMAC or unsigned tokens never reach
+   * validation.
    */
   @Bean
   public JwtDecoder jwtDecoder(
       TokenSigningKeys keys,
       TokenIdentityValidator identityValidator,
-      TokenVersionValidator versionValidator) {
+      AuthTokenProperties properties) {
     var processor = new DefaultJWTProcessor<SecurityContext>();
     processor.setJWSKeySelector(
         new JWSVerificationKeySelector<>(
@@ -96,10 +96,14 @@ public class TokenCryptoConfig {
     // mandatory with zero leeway, overriding the default 60s-skew expiry tolerance.
     decoder.setJwtValidator(
         new DelegatingOAuth2TokenValidator<>(
-            JwtValidators.createDefaultWithIssuer(TokenContract.ISSUER),
+            JwtValidators.createDefaultWithIssuer(properties.issuer()),
+            // RFC 9068 §4: the resource server MUST validate that aud contains an identifier
+            // it expects for itself.
+            new JwtClaimValidator<List<String>>(
+                JwtClaimNames.AUD,
+                audience -> audience != null && audience.contains(properties.audience())),
             new StrictJwtExpiryValidator(Clock.systemUTC()),
-            identityValidator,
-            versionValidator));
+            identityValidator));
     return decoder;
   }
 

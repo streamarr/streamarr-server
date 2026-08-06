@@ -121,87 +121,73 @@ public class AuthSessionRecord extends UpdatableRecordImpl<AuthSessionRecord> {
     }
 
     /**
-     * Setter for <code>public.auth_session.session_version</code>.
-     */
-    public void setSessionVersion(Long value) {
-        set(7, value);
-    }
-
-    /**
-     * Getter for <code>public.auth_session.session_version</code>.
-     */
-    public Long getSessionVersion() {
-        return (Long) get(7);
-    }
-
-    /**
      * Setter for <code>public.auth_session.active_household_id</code>.
      */
     public void setActiveHouseholdId(UUID value) {
-        set(8, value);
+        set(7, value);
     }
 
     /**
      * Getter for <code>public.auth_session.active_household_id</code>.
      */
     public UUID getActiveHouseholdId() {
-        return (UUID) get(8);
+        return (UUID) get(7);
     }
 
     /**
      * Setter for <code>public.auth_session.active_profile_id</code>.
      */
     public void setActiveProfileId(UUID value) {
-        set(9, value);
+        set(8, value);
     }
 
     /**
      * Getter for <code>public.auth_session.active_profile_id</code>.
      */
     public UUID getActiveProfileId() {
-        return (UUID) get(9);
+        return (UUID) get(8);
     }
 
     /**
      * Setter for <code>public.auth_session.revoked_at</code>.
      */
     public void setRevokedAt(OffsetDateTime value) {
-        set(10, value);
+        set(9, value);
     }
 
     /**
      * Getter for <code>public.auth_session.revoked_at</code>.
      */
     public OffsetDateTime getRevokedAt() {
-        return (OffsetDateTime) get(10);
+        return (OffsetDateTime) get(9);
     }
 
     /**
      * Setter for <code>public.auth_session.revoked_reason</code>.
      */
     public void setRevokedReason(SessionRevocationReason value) {
-        set(11, value);
+        set(10, value);
     }
 
     /**
      * Getter for <code>public.auth_session.revoked_reason</code>.
      */
     public SessionRevocationReason getRevokedReason() {
-        return (SessionRevocationReason) get(11);
+        return (SessionRevocationReason) get(10);
     }
 
     /**
      * Setter for <code>public.auth_session.last_used_at</code>.
      */
     public void setLastUsedAt(OffsetDateTime value) {
-        set(12, value);
+        set(11, value);
     }
 
     /**
      * Getter for <code>public.auth_session.last_used_at</code>.
      */
     public OffsetDateTime getLastUsedAt() {
-        return (OffsetDateTime) get(12);
+        return (OffsetDateTime) get(11);
     }
 
     // -------------------------------------------------------------------------
@@ -227,7 +213,7 @@ public class AuthSessionRecord extends UpdatableRecordImpl<AuthSessionRecord> {
     /**
      * Create a detached, initialised AuthSessionRecord
      */
-    public AuthSessionRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID accountId, String deviceName, Long sessionVersion, UUID activeHouseholdId, UUID activeProfileId, OffsetDateTime revokedAt, SessionRevocationReason revokedReason, OffsetDateTime lastUsedAt) {
+    public AuthSessionRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID accountId, String deviceName, UUID activeHouseholdId, UUID activeProfileId, OffsetDateTime revokedAt, SessionRevocationReason revokedReason, OffsetDateTime lastUsedAt) {
         super(AuthSession.AUTH_SESSION);
 
         setId(id);
@@ -237,7 +223,6 @@ public class AuthSessionRecord extends UpdatableRecordImpl<AuthSessionRecord> {
         setLastModifiedBy(lastModifiedBy);
         setAccountId(accountId);
         setDeviceName(deviceName);
-        setSessionVersion(sessionVersion);
         setActiveHouseholdId(activeHouseholdId);
         setActiveProfileId(activeProfileId);
         setRevokedAt(revokedAt);

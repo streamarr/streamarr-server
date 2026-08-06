@@ -13,6 +13,7 @@ import com.streamarr.server.graphql.dto.StreamSessionDto;
 import com.streamarr.server.graphql.dto.StreamingOptionsInput;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
@@ -36,9 +37,15 @@ public class StreamingResolver {
   public StreamSessionDto createStreamSession(
       @InputArgument String mediaFileId, @InputArgument StreamingOptionsInput options) {
     var opts = mapOptions(options);
+    authorizationService.requireProfile();
+    var identity = authorizationService.currentIdentity();
     var session =
         streamingService.createSession(
-            parseUuid(mediaFileId), authorizationService.requireProfile(), opts);
+            CreateStreamSessionCommand.builder()
+                .mediaFileId(parseUuid(mediaFileId))
+                .authority(identity.playbackAuthority())
+                .options(opts)
+                .build());
 
     try {
       return toDto(session);
@@ -127,7 +134,7 @@ public class StreamingResolver {
         .streamUrl(
             "/api/stream/"
                 + session.getSessionId()
-                + "/master.m3u8?t="
+                + "/multivariant.m3u8?t="
                 + playbackTokenIssuer
                     .issue(
                         authorizationService.currentIdentity(),

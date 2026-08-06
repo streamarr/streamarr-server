@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
@@ -32,6 +33,7 @@ import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.streaming.FfprobeService;
+import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
@@ -83,6 +85,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   @TestBean TranscodeExecutor transcodeExecutor;
   @TestBean FfprobeService ffprobeService;
   @TestBean SegmentStore segmentStore;
+  @TestBean PlaybackAuthorityGate authorityGate;
 
   private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
   private static final FakeFfprobeService FAKE_FFPROBE = new FakeFfprobeService();
@@ -98,6 +101,10 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   static SegmentStore segmentStore() {
     return FAKE_SEGMENT_STORE;
+  }
+
+  static PlaybackAuthorityGate authorityGate() {
+    return _ -> true;
   }
 
   @BeforeEach
@@ -246,7 +253,9 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
             .quality(VideoQuality.AUTO)
             .supportedCodecs(List.of("h264"))
             .build();
-    var session = streamingService.createSession(mediaFile.getId(), UUID.randomUUID(), options);
+    var session =
+        streamingService.createSession(
+            createStreamSessionCommand(mediaFile.getId(), UUID.randomUUID(), options));
 
     assertThat(streamingService.getActiveSessionCount()).isEqualTo(1);
 

@@ -34,7 +34,7 @@ class SecurityAuditorAwareTest {
         AuthenticatedIdentity.builder()
             .accountId(accountId)
             .role(AccountRole.USER)
-            .sessionId(UUID.randomUUID())
+            .authSessionId(UUID.randomUUID())
             .scope(TokenScope.ACCOUNT)
             .build();
     SecurityContextHolder.getContext()

@@ -15,15 +15,20 @@ public sealed interface RefreshResult {
     }
   }
 
-  /** An honest grace replay that recovers the still-active rotation successor. */
-  record Replayed(String rawRefreshToken, AuthSession session) implements RefreshResult {
+  /**
+   * An honest retry within the rotation grace window; RFC 9700 reserves "replay" for the attack.
+   */
+  record GraceRetry(String rawRefreshToken, AuthSession session) implements RefreshResult {
 
     @Override
     public String toString() {
-      return "Replayed[session=%s]".formatted(session);
+      return "GraceRetry[session=%s]".formatted(session);
     }
   }
 
-  /** A grace replay whose derived successor has already been superseded. */
-  record SupersededReplay(AuthSession session) implements RefreshResult {}
+  /**
+   * A grace-window replay whose derived successor has itself already rotated: reissuing it would
+   * hand back a dead credential, so the caller receives a fresh access token only.
+   */
+  record SupersededRetry(AuthSession session) implements RefreshResult {}
 }

@@ -8,7 +8,7 @@ import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
-import com.streamarr.server.services.streaming.StreamSessionRepository;
+import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.watchprogress.events.ItemWatchedEvent;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
 import java.time.Instant;
@@ -24,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SessionProgressService {
 
-  private final StreamSessionRepository sessionRepository;
+  private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final SessionProgressRepository sessionProgressRepository;
   private final MediaFileRepository mediaFileRepository;
   private final WatchProgressProperties properties;
@@ -39,7 +39,7 @@ public class SessionProgressService {
     }
 
     var session =
-        sessionRepository
+        runtimeRegistry
             .findById(sessionId)
             .orElseThrow(() -> new SessionNotFoundException(sessionId));
     // Unowned reads as missing — same SessionNotFound as a vanished session, never an

@@ -36,7 +36,7 @@ class PlaybackTokenQueryRedactionFilterTest {
   private String redactedQueryOf(String queryString) throws Exception {
     var request =
         new MockHttpServletRequest(
-            "GET", "/api/stream/21a268d7-6e6a-48fd-a9cc-93bbc1ee85de/master.m3u8");
+            "GET", "/api/stream/21a268d7-6e6a-48fd-a9cc-93bbc1ee85de/multivariant.m3u8");
     request.setQueryString(queryString);
 
     var observedQuery = new AtomicReference<String>();

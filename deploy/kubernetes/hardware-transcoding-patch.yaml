@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamarr-transcode-worker
+spec:
+  template:
+    spec:
+      securityContext:
+        # Replace with the group id that owns /dev/dri/render* on worker nodes.
+        supplementalGroups:
+          - 109
+      containers:
+        - name: worker
+          volumeMounts:
+            - name: dri
+              mountPath: /dev/dri
+      volumes:
+        - name: dri
+          hostPath:
+            path: /dev/dri
+            type: Directory

@@ -40,8 +40,8 @@ public class TokenRefreshService {
     var rawRefreshToken =
         switch (result) {
           case RefreshResult.Rotated(String successor, _) -> successor;
-          case RefreshResult.Replayed(String successor, _) -> successor;
-          case RefreshResult.SupersededReplay _ -> null;
+          case RefreshResult.GraceRetry(String successor, _) -> successor;
+          case RefreshResult.SupersededRetry _ -> null;
         };
 
     return new RefreshedTokens(accessToken, rawRefreshToken);

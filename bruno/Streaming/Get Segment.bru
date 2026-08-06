@@ -1,0 +1,26 @@
+meta {
+  name: Get Segment
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{BASE_URL}}/api/stream/{{STREAM_SESSION_ID}}/{{SEGMENT_PATH}}
+  body: none
+  auth: none
+}
+
+docs {
+  Run Get Media Playlist first to capture SEGMENT_PATH. Delivery is
+  just-in-time: the server holds the response until FFmpeg publishes
+  the segment, so the first fetch can take a few seconds. A name
+  outside the segment naming scheme returns 404; 503 means recovery
+  exhausted every execution target (ADR 0019).
+}
+
+tests {
+  test("Should return the segment bytes", function() {
+    expect(res.status).to.equal(200);
+    expect(["video/mp2t", "video/mp4"]).to.include(res.headers["content-type"]);
+  });
+}

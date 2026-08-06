@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
+@DisplayName("Standard Error Drainer Tests")
 class StderrDrainerTest {
 
   @Test
@@ -40,9 +41,23 @@ class StderrDrainerTest {
     var input = new ByteArrayInputStream(new byte[0]);
 
     try (var drainer = new StderrDrainer(input)) {
-      await().pollDelay(Duration.ofMillis(100)).until(() -> true);
+      assertThat(drainer.awaitRecentOutput(Duration.ofSeconds(2))).isEmpty();
+    }
+  }
 
-      assertThat(drainer.getRecentOutput()).isEmpty();
+  @Test
+  @DisplayName("Should capture the complete bounded tail when awaiting output after end of stream")
+  void shouldCaptureCompleteBoundedTailWhenAwaitingOutputAfterEndOfStream() throws Exception {
+    var output = new PipedOutputStream();
+    var input = new PipedInputStream(output);
+
+    try (var drainer = new StderrDrainer(input, 2)) {
+      output.write("discarded\nfirst\nlast\n".getBytes(StandardCharsets.UTF_8));
+      output.flush();
+      output.close();
+
+      // No retry loop: awaiting is the contract — the read must not race the drain thread.
+      assertThat(drainer.awaitRecentOutput(Duration.ofSeconds(2))).containsExactly("first", "last");
     }
   }
 

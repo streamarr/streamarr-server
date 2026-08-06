@@ -10,7 +10,6 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeAccountProfileRepository;
-import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -23,6 +22,7 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -36,6 +36,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       PaginationService.class,
       SecurityContextAuthorizationService.class
     })
+@Tag("UnitTest")
 @DisplayName("Continue Watching Resolver Tests")
 class ContinueWatchingResolverTest {
 
@@ -128,14 +129,13 @@ class ContinueWatchingResolverTest {
   class TypeResolverTests {
 
     @Test
-    @DisplayName("Should throw for unsupported media type")
-    void shouldThrowForUnsupportedMediaType() {
+    @DisplayName("Should throw when media type is unsupported")
+    void shouldThrowWhenMediaTypeIsUnsupported() {
       var resolver =
           new ContinueWatchingResolver(
               mock(ContinueWatchingService.class),
               new SecurityContextAuthorizationService(
-                  new FakeProfileRepository(),
-                  new FakeAccountProfileRepository(new FakeHouseholdMembershipRepository())),
+                  new FakeProfileRepository(), new FakeAccountProfileRepository()),
               new PaginationService());
       var unsupported = new Object();
 

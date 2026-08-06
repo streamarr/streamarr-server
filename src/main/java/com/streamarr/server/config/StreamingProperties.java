@@ -12,23 +12,38 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties(prefix = "streaming")
 public record StreamingProperties(
-    int maxConcurrentTranscodes,
-    Duration segmentDuration,
+    Integer maxConcurrentTranscodes,
+    Duration targetSegmentDuration,
     Duration sessionTimeout,
     // Session retention contributes the playback token's pause/slow-playback slack; reject a
     // non-positive value at startup rather than minting unusable tokens.
     @NotNull @DurationMin(seconds = 0, inclusive = false) Duration sessionRetention,
+    // A producer that publishes nothing for this long is classified stalled and replaced; the
+    // recovery budget is attempt-bounded (targets × threshold), never a wall clock.
+    Duration producerStallThreshold,
     String segmentBasePath,
     String ffmpegPath,
     String ffprobePath) {
 
   public StreamingProperties {
-    if (maxConcurrentTranscodes <= 0) {
+    if (maxConcurrentTranscodes == null) {
       maxConcurrentTranscodes = 8;
     }
 
-    if (segmentDuration == null) {
-      segmentDuration = Duration.ofSeconds(6);
+    if (maxConcurrentTranscodes <= 0) {
+      throw new IllegalArgumentException(
+          "streaming.max-concurrent-transcodes must be positive, got " + maxConcurrentTranscodes);
+    }
+
+    if (targetSegmentDuration == null) {
+      targetSegmentDuration = Duration.ofSeconds(6);
+    }
+
+    // Segment duration divides the relocation gap and scales every seek offset; zero divides by
+    // zero on the segment-request path.
+    if (targetSegmentDuration.isZero() || targetSegmentDuration.isNegative()) {
+      throw new IllegalArgumentException(
+          "streaming.target-segment-duration must be positive, got " + targetSegmentDuration);
     }
 
     if (sessionTimeout == null) {
@@ -37,6 +52,17 @@ public record StreamingProperties(
 
     if (sessionRetention == null) {
       sessionRetention = Duration.ofHours(24);
+    }
+
+    if (producerStallThreshold == null) {
+      producerStallThreshold = Duration.ofSeconds(10);
+    }
+
+    // A zero threshold classifies every producer stalled on its first poll, replacing healthy
+    // producers until every execution target is exhausted.
+    if (producerStallThreshold.isZero() || producerStallThreshold.isNegative()) {
+      throw new IllegalArgumentException(
+          "streaming.producer-stall-threshold must be positive, got " + producerStallThreshold);
     }
 
     if (segmentBasePath == null || segmentBasePath.isBlank()) {

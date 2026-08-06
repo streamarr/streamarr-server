@@ -13,7 +13,6 @@ import com.streamarr.server.exceptions.TokenReuseDetectedException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
-import com.streamarr.server.fakes.FakeVersionCounterReader;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
 import java.time.Duration;
@@ -50,7 +49,7 @@ class AuthSecurityEventLoggingTest {
             clock,
             new TokenReuseRevoker(
                 new TokenReuseRevocationWriter(sessionRepository, tokenRepository)));
-    var account = AccountFixture.defaultAccountBuilder().build();
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var issued = service.createSession(account, "security-log-test");
     service.redeem(issued.rawToken());
     currentTime.updateAndGet(instant -> instant.plusSeconds(31));
@@ -79,39 +78,6 @@ class AuthSecurityEventLoggingTest {
           .isInstanceOf(TooManyLoginAttemptsException.class);
 
       assertThat(logs.events()).anyMatch(event -> event.getLevel().isGreaterOrEqual(Level.WARN));
-    }
-  }
-
-  @Test
-  @DisplayName("Should correlate version lookup failure without logging token")
-  void shouldCorrelateVersionLookupFailureWithoutLoggingToken() {
-    var accountId = UUID.randomUUID();
-    var sessionId = UUID.randomUUID();
-    var reader = new FakeVersionCounterReader();
-    reader.sessionVersions.put(sessionId, 0L);
-    reader.failWith(new IllegalStateException("database unavailable"));
-    var validator = new TokenVersionValidator(new TokenVersionCache(reader));
-    var now = Instant.now();
-    var token =
-        Jwt.withTokenValue("sensitive-token")
-            .header("alg", "HS256")
-            .subject(accountId.toString())
-            .issuedAt(now)
-            .expiresAt(now.plusSeconds(600))
-            .claim(TokenClaims.SESSION_ID, sessionId.toString())
-            .claim(TokenClaims.SESSION_VERSION, 0L)
-            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
-            .build();
-
-    try (var logs = LogCapture.forClass(TokenVersionValidator.class)) {
-      assertThat(validator.validate(token).hasErrors()).isTrue();
-
-      assertThat(logs.events())
-          .anySatisfy(
-              event ->
-                  assertThat(event.getFormattedMessage())
-                      .contains(accountId.toString(), sessionId.toString())
-                      .doesNotContain("sensitive-token"));
     }
   }
 

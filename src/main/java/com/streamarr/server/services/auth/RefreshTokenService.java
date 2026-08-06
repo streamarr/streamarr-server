@@ -45,9 +45,27 @@ public class RefreshTokenService {
 
   @Transactional
   public IssuedRefreshToken createSession(UserAccount account, String deviceName) {
+    return createSessionAndToken(
+        CreateAuthSessionCommand.builder()
+            .accountId(account.getId())
+            .deviceName(deviceName)
+            .build());
+  }
+
+  @Transactional
+  public IssuedRefreshToken createSession(CreateAuthSessionCommand command) {
+    return createSessionAndToken(command);
+  }
+
+  private IssuedRefreshToken createSessionAndToken(CreateAuthSessionCommand command) {
     var session =
         sessionRepository.save(
-            AuthSession.builder().accountId(account.getId()).deviceName(deviceName).build());
+            AuthSession.builder()
+                .accountId(command.accountId())
+                .deviceName(command.deviceName())
+                .activeHouseholdId(command.activeHouseholdId())
+                .activeProfileId(command.activeProfileId())
+                .build());
 
     var rawToken = generateRawToken();
     tokenRepository.save(buildActiveToken(session, rawToken, clock.instant()));
@@ -55,7 +73,6 @@ public class RefreshTokenService {
     return new IssuedRefreshToken(rawToken, session);
   }
 
-  /** Revokes the session and its whole token family; the version bump kills live access tokens. */
   @Transactional
   public void logout(java.util.UUID sessionId) {
     var now = clock.instant();
@@ -63,25 +80,9 @@ public class RefreshTokenService {
     tokenRepository.revokeAllForSession(sessionId, now);
   }
 
-  /**
-   * Replaces the session's refresh token family with one fresh ACTIVE token — the one-ACTIVE
-   * invariant holds because everything else is revoked first.
-   */
-  @Transactional
-  public IssuedRefreshToken reissueFor(AuthSession session) {
-    var now = clock.instant();
-    tokenRepository.revokeAllForSession(session.getId(), now);
-
-    var rawToken = generateRawToken();
-    tokenRepository.save(buildActiveToken(session, rawToken, now));
-
-    return new IssuedRefreshToken(rawToken, session);
-  }
-
-  // Reuse detection must survive its own exception and any enclosing rollback: the family
-  // revocation and version bump are deferred to an after-completion REQUIRES_NEW transaction
-  // (TokenReuseRevoker), so they persist even though this exception rolls back the joined
-  // refresh transaction. The throw is only the caller's signal.
+  // The family revocation must outlive this method's rollback: TokenReuseRevoker applies it in
+  // an after-completion REQUIRES_NEW transaction; the thrown exception is only the caller's
+  // signal.
   @Transactional(noRollbackFor = TokenReuseDetectedException.class)
   public RefreshResult redeem(String rawToken) {
     var digest = digestOf(rawToken);
@@ -133,9 +134,9 @@ public class RefreshTokenService {
     if (isWithinGrace(token, now)) {
       var rawSuccessor = deriveSuccessor(rawToken, token.getId());
       if (tokenRepository.isActiveToken(session.getId(), digestOf(rawSuccessor), now)) {
-        return new RefreshResult.Replayed(rawSuccessor, session);
+        return new RefreshResult.GraceRetry(rawSuccessor, session);
       }
-      return new RefreshResult.SupersededReplay(session);
+      return new RefreshResult.SupersededRetry(session);
     }
 
     if (token.getStatus() != RefreshTokenStatus.ROTATED) {

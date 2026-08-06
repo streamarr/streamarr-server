@@ -24,8 +24,8 @@ class PlaybackTokenRevocationIT extends AbstractIntegrationTest {
   @Autowired private PlaybackTokenIssuer playbackTokenIssuer;
 
   @Test
-  @DisplayName("Should not mint usable playback token after authenticated authority becomes stale")
-  void shouldNotMintUsablePlaybackTokenAfterAuthenticatedAuthorityBecomesStale() {
+  @DisplayName("Should not mint a usable playback token when authenticated authority is stale")
+  void shouldNotMintUsablePlaybackTokenWhenAuthenticatedAuthorityIsStale() {
     var identity = authTestSupport.createIdentity();
 
     try {
@@ -34,16 +34,17 @@ class PlaybackTokenRevocationIT extends AbstractIntegrationTest {
           ChangePasswordCommand.builder()
               .accountId(identity.account().getId())
               .sessionId(identity.session().getId())
-              .currentPassword(AuthTestSupport.PASSWORD)
+              .currentPassword(authTestSupport.password())
               .newPassword("a brand new passphrase!")
               .build());
 
+      var staleIdentity = AuthenticatedIdentity.fromJwt(authenticatedSource);
       var streamSession =
           StreamSession.builder()
               .sessionId(UUID.randomUUID())
-              .profileId(identity.profile().getId())
+              .mediaFileId(UUID.randomUUID())
+              .authority(staleIdentity.playbackAuthority())
               .build();
-      var staleIdentity = AuthenticatedIdentity.fromJwt(authenticatedSource);
       var playbackTtl = Duration.ofHours(1);
 
       assertThatThrownBy(() -> playbackTokenIssuer.issue(staleIdentity, streamSession, playbackTtl))

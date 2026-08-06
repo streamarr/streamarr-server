@@ -11,12 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.fixtures.StreamSessionFixture;
-import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.support.AuthTestSupport;
 import jakarta.servlet.http.Cookie;
-import java.time.Duration;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
@@ -31,7 +27,6 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** The permit/deny matrix as executable specification — changes here are contract changes. */
@@ -45,8 +40,6 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
 
   @Autowired private AuthTestSupport authTestSupport;
-  @Autowired private PlaybackTokenIssuer playbackTokenIssuer;
-  @Autowired private JwtDecoder jwtDecoder;
 
   @Autowired private ApplicationContext applicationContext;
 
@@ -121,7 +114,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
     // Streams demand SCOPE_PLAYBACK carried in the ?t= parameter — headers and cookies never
     // reach them, and API tokens never authorize playback.
     mockMvc
-        .perform(get("/api/stream/{id}/master.m3u8", UUID.randomUUID()))
+        .perform(get("/api/stream/{id}/multivariant.m3u8", UUID.randomUUID()))
         .andExpect(status().isUnauthorized());
   }
 
@@ -147,10 +140,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
     // The contract is reachability, not health: a DOWN indicator answers 503, never 401/403.
     mockMvc
         .perform(get("/actuator/health"))
-        .andExpect(
-            result ->
-                org.assertj.core.api.Assertions.assertThat(result.getResponse().getStatus())
-                    .isNotIn(401, 403));
+        .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
   }
 
   @Test
@@ -506,10 +496,10 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
     return cookie;
   }
 
-  private static String loginBody(String email, boolean cookieMode) {
+  private String loginBody(String email, boolean cookieMode) {
     return """
         {"email": "%s", "password": "%s", "deviceName": "Test", "cookieMode": %s}"""
-        .formatted(email, AuthTestSupport.PASSWORD, cookieMode);
+        .formatted(email, authTestSupport.password(), cookieMode);
   }
 
   private static Stream<Arguments> nonJsonAuthRequests() {
@@ -526,15 +516,6 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   private String playbackBearer(UUID streamSessionId) {
-    var authenticatedIdentity =
-        AuthenticatedIdentity.fromJwt(jwtDecoder.decode(authTestSupport.profileBearer(identity)));
-    var ownedSession =
-        StreamSessionFixture.defaultSessionBuilder()
-            .sessionId(streamSessionId)
-            .profileId(identity.profile().getId())
-            .build();
-    return playbackTokenIssuer
-        .issue(authenticatedIdentity, ownedSession, Duration.ofHours(1))
-        .value();
+    return authTestSupport.playbackBearer(identity, streamSessionId);
   }
 }

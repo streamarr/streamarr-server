@@ -2,35 +2,26 @@ package com.streamarr.server.controllers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.auth.CounterKind;
-import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
-import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.PlaybackTokenIssuer;
-import com.streamarr.server.services.auth.TokenVersionCache;
+import com.streamarr.server.services.events.library.LibraryRemovedEvent;
+import com.streamarr.server.services.library.StreamingSessionCleanupListener;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.support.AuthTestSupport;
 import jakarta.servlet.http.Cookie;
-import java.time.Duration;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -38,18 +29,14 @@ import org.springframework.test.web.servlet.MockMvc;
 @DisplayName("Stream Controller Integration Tests")
 class StreamControllerIT extends AbstractIntegrationTest {
 
-  private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
+  private static final FakeStreamingService STUB_SERVICE = new FakeStreamingService();
   private static final FakeSegmentStore FAKE_SEGMENT_STORE = new FakeSegmentStore();
   private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
 
   @Autowired private MockMvc mockMvc;
 
-  @Autowired private PlaybackTokenIssuer playbackTokenIssuer;
-  @Autowired private TokenVersionCache tokenVersionCache;
-
   @Autowired private AuthTestSupport authTestSupport;
-
-  @Autowired private JwtDecoder jwtDecoder;
+  @Autowired private StreamingSessionCleanupListener streamingSessionCleanupListener;
 
   private AuthTestSupport.TestIdentity identity;
 
@@ -64,17 +51,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   private String playbackToken(java.util.UUID streamSessionId) {
-    var authenticatedIdentity =
-        AuthenticatedIdentity.fromJwt(jwtDecoder.decode(authTestSupport.profileBearer(identity)));
-    // Minted against a session the caller owns — the issuer refuses anything else.
-    var ownedSession =
-        StreamSessionFixture.defaultSessionBuilder()
-            .sessionId(streamSessionId)
-            .profileId(identity.profile().getId())
-            .build();
-    return playbackTokenIssuer
-        .issue(authenticatedIdentity, ownedSession, Duration.ofHours(1))
-        .value();
+    return authTestSupport.playbackBearer(identity, streamSessionId);
   }
 
   @TestBean StreamingService streamingService;
@@ -94,15 +71,15 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return master playlist with correct content type when session exists")
-  void shouldReturnMasterPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
+  @DisplayName("Should return multivariant playlist with correct content type when session exists")
+  void shouldReturnMultivariantPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
     var session = StreamSessionFixture.buildMpegtsSession();
     STUB_SERVICE.addSession(session);
 
     var result =
         mockMvc
             .perform(
-                get("/api/stream/{id}/master.m3u8", session.getSessionId())
+                get("/api/stream/{id}/multivariant.m3u8", session.getSessionId())
                     .param("t", playbackToken(session.getSessionId())))
             .andExpect(status().isOk())
             .andReturn();
@@ -112,12 +89,27 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return 404 for the retired master playlist alias when requested over HTTP")
+  void shouldReturn404ForTheRetiredMasterPlaylistAliasWhenRequestedOverHttp() throws Exception {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    STUB_SERVICE.addSession(session);
+
+    // The pre-release master.m3u8 alias was removed deliberately: sessions are in-memory and
+    // playback tokens minutes-lived, so no minted URL can outlive a deploy — nothing to alias for.
+    mockMvc
+        .perform(
+            get("/api/stream/{id}/master.m3u8", session.getSessionId())
+                .param("t", playbackToken(session.getSessionId())))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
   @DisplayName("Should return 404 when session not found")
   void shouldReturn404WhenSessionNotFound() throws Exception {
     var missingSessionId = UUID.randomUUID();
     mockMvc
         .perform(
-            get("/api/stream/{id}/master.m3u8", missingSessionId)
+            get("/api/stream/{id}/multivariant.m3u8", missingSessionId)
                 .param("t", playbackToken(missingSessionId)))
         .andExpect(status().isNotFound());
   }
@@ -156,13 +148,36 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should return 404 for a produced segment after its media is deleted when requested over HTTP")
+  void shouldReturn404ForProducedSegmentAfterItsMediaIsDeletedWhenRequestedOverHttp()
+      throws Exception {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
+    STUB_SERVICE.addSession(session);
+    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.ts", segmentData);
+    var token = playbackToken(session.getSessionId());
+
+    mockMvc
+        .perform(get("/api/stream/{id}/segment0.ts", session.getSessionId()).param("t", token))
+        .andExpect(status().isOk());
+
+    streamingSessionCleanupListener.onLibraryRemoved(
+        new LibraryRemovedEvent("/media", Set.of(session.getMediaFileId())));
+
+    mockMvc
+        .perform(get("/api/stream/{id}/segment0.ts", session.getSessionId()).param("t", token))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
   @DisplayName("Should reject segment request when token missing")
   void shouldRejectSegmentRequestWhenTokenMissing() throws Exception {
     var session = StreamSessionFixture.buildMpegtsSession();
     STUB_SERVICE.addSession(session);
 
     mockMvc
-        .perform(get("/api/stream/{id}/master.m3u8", session.getSessionId()))
+        .perform(get("/api/stream/{id}/multivariant.m3u8", session.getSessionId()))
         .andExpect(status().isUnauthorized());
   }
 
@@ -174,7 +189,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
     // An empty ?t= is no credential at all — it must not reach the decoder as one.
     mockMvc
-        .perform(get("/api/stream/{id}/master.m3u8", session.getSessionId()).param("t", ""))
+        .perform(get("/api/stream/{id}/multivariant.m3u8", session.getSessionId()).param("t", ""))
         .andExpect(status().isUnauthorized());
   }
 
@@ -189,26 +204,9 @@ class StreamControllerIT extends AbstractIntegrationTest {
     // A captured URL is worth exactly one stream session — never a different one.
     mockMvc
         .perform(
-            get("/api/stream/{id}/master.m3u8", sessionB.getSessionId())
+            get("/api/stream/{id}/multivariant.m3u8", sessionB.getSessionId())
                 .param("t", playbackToken(sessionA.getSessionId())))
         .andExpect(status().isForbidden());
-  }
-
-  @Test
-  @DisplayName("Should reject playback on stream path after session version bumped")
-  void shouldRejectPlaybackOnStreamPathAfterSessionVersionBumped() throws Exception {
-    var session = StreamSessionFixture.buildMpegtsSession();
-    STUB_SERVICE.addSession(session);
-    var token = playbackToken(session.getSessionId());
-    tokenVersionCache.update(
-        CounterKind.SESSION,
-        identity.session().getId().toString(),
-        identity.session().getSessionVersion() + 1);
-
-    mockMvc
-        .perform(get("/api/stream/{id}/master.m3u8", session.getSessionId()).param("t", token))
-        .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
   }
 
   @Test
@@ -256,49 +254,5 @@ class StreamControllerIT extends AbstractIntegrationTest {
     mockMvc
         .perform(get("/api/stream/{id}/{variant}/stream.m3u8", UUID.randomUUID(), ".."))
         .andExpect(status().isBadRequest());
-  }
-
-  private static class StubStreamingService implements StreamingService {
-
-    private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
-
-    void addSession(StreamSession session) {
-      sessions.put(session.getSessionId(), session);
-    }
-
-    @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Optional<StreamSession> accessSession(UUID sessionId) {
-      return Optional.ofNullable(sessions.get(sessionId));
-    }
-
-    @Override
-    public void destroySession(UUID sessionId) {
-      sessions.remove(sessionId);
-    }
-
-    @Override
-    public void destroySession(UUID sessionId, UUID profileId) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Collection<StreamSession> getAllSessions() {
-      return Collections.unmodifiableCollection(sessions.values());
-    }
-
-    @Override
-    public int getActiveSessionCount() {
-      return sessions.size();
-    }
-
-    @Override
-    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
-      // no-op for test fake
-    }
   }
 }

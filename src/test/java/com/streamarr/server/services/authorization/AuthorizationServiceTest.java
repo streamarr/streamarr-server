@@ -13,7 +13,6 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.fakes.FakeAccountProfileRepository;
-import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -38,7 +37,7 @@ class AuthorizationServiceTest {
 
   private final FakeProfileRepository profileRepository = new FakeProfileRepository();
   private final FakeAccountProfileRepository accountProfileRepository =
-      new FakeAccountProfileRepository(new FakeHouseholdMembershipRepository());
+      new FakeAccountProfileRepository();
 
   private final AuthorizationService authorizationService =
       new SecurityContextAuthorizationService(profileRepository, accountProfileRepository);
@@ -315,7 +314,7 @@ class AuthorizationServiceTest {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .role(role)
-        .sessionId(UUID.randomUUID())
+        .authSessionId(UUID.randomUUID())
         .scope(TokenScope.PROFILE)
         .householdId(householdId)
         .householdRole(householdRole)
@@ -327,7 +326,7 @@ class AuthorizationServiceTest {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .role(AccountRole.USER)
-        .sessionId(UUID.randomUUID())
+        .authSessionId(UUID.randomUUID())
         .scope(TokenScope.ACCOUNT)
         .build();
   }

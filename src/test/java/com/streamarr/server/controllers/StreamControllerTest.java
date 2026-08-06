@@ -1,9 +1,11 @@
 package com.streamarr.server.controllers;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
+import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.withActiveVariantHandles;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -11,23 +13,23 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeStreamingService;
+import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.TokenScope;
-import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
-import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +38,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -50,38 +54,59 @@ class StreamControllerTest {
 
   private MockMvc mockMvc;
   private final AtomicReference<UUID> boundStreamSession = new AtomicReference<>(SESSION_ID);
-  private StubStreamingService streamingService;
+  private FakeStreamingService streamingService;
   private FakeSegmentStore segmentStore;
+  private FakeRuntimeStreamSessionRegistry runtimeRegistry;
+  private FakeTranscodeExecutor transcodeExecutor;
+  private StreamingProperties properties;
   private HlsPlaylistService playlistService;
   private StreamController controller;
 
   @BeforeEach
   void setUp() {
-    streamingService = new StubStreamingService();
+    streamingService = new FakeStreamingService();
     segmentStore = new FakeSegmentStore();
-    playlistService =
-        new HlsPlaylistService(
-            StreamingProperties.builder()
-                .maxConcurrentTranscodes(8)
-                .segmentDuration(Duration.ofSeconds(6))
-                .sessionTimeout(Duration.ofSeconds(60))
-                .build());
+    runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
+    transcodeExecutor = new FakeTranscodeExecutor();
+    properties =
+        StreamingProperties.builder()
+            .maxConcurrentTranscodes(8)
+            .targetSegmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
+            .producerStallThreshold(Duration.ofMillis(200))
+            .build();
+    playlistService = new HlsPlaylistService(properties);
     boundStreamSession.set(SESSION_ID);
     controller =
         new StreamController(
-            streamingService, playlistService, segmentStore, new BoundAuthorizationService());
+            streamingService,
+            playlistService,
+            coordinatorOver(segmentStore),
+            new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN));
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
   }
 
+  private SegmentDeliveryCoordinator coordinatorOver(FakeSegmentStore store) {
+    return StreamingRigFixture.streamingRigBuilder()
+        .segmentStore(store)
+        .transcodeExecutor(transcodeExecutor)
+        .properties(properties)
+        .runtimeRegistry(runtimeRegistry)
+        .pollInterval(Duration.ofMillis(10))
+        .build()
+        .coordinator();
+  }
+
   @Test
-  @DisplayName("Should return master playlist with correct content type when session exists")
-  void shouldReturnMasterPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
+  @DisplayName("Should return multivariant playlist with correct content type when session exists")
+  void shouldReturnMultivariantPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
     streamingService.setSession(buildMpegtsSession());
 
     var result =
         mockMvc
             .perform(
-                get("/api/stream/{sessionId}/master.m3u8", SESSION_ID).param("t", "unit-token"))
+                get("/api/stream/{sessionId}/multivariant.m3u8", SESSION_ID)
+                    .param("t", "unit-token"))
             .andExpect(status().isOk())
             .andReturn();
 
@@ -90,8 +115,20 @@ class StreamControllerTest {
     assertThat(result.getResponse().getContentAsString()).contains("#EXT-X-STREAM-INF:");
   }
 
+  @Test
+  @DisplayName(
+      "Should return 404 for the retired master playlist alias when handling a playback request")
+  void shouldReturn404ForTheRetiredMasterPlaylistAliasWhenHandlingPlaybackRequest()
+      throws Exception {
+    streamingService.setSession(buildMpegtsSession());
+
+    mockMvc
+        .perform(get("/api/stream/{sessionId}/master.m3u8", SESSION_ID).param("t", "unit-token"))
+        .andExpect(status().isNotFound());
+  }
+
   @ParameterizedTest
-  @ValueSource(strings = {"master.m3u8", "stream.m3u8"})
+  @ValueSource(strings = {"multivariant.m3u8", "stream.m3u8"})
   @DisplayName(
       "Should embed the validated token in playlists when the request parameter is spoofed")
   void shouldEmbedValidatedTokenInPlaylistsWhenRequestParameterIsSpoofed(String path)
@@ -130,7 +167,7 @@ class StreamControllerTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"master.m3u8", "stream.m3u8", "segment0.ts", "init.mp4"})
+  @ValueSource(strings = {"multivariant.m3u8", "stream.m3u8", "segment0.ts", "init.mp4"})
   @DisplayName("Should reject stream request when token is bound to another stream session")
   void shouldRejectStreamRequestWhenTokenIsBoundToAnotherStreamSession(String path) {
     streamingService.setSession(buildMpegtsSession());
@@ -144,7 +181,16 @@ class StreamControllerTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"master.m3u8", "stream.m3u8", "segment0.ts", "init.mp4"})
+  @ValueSource(
+      strings = {
+        "multivariant.m3u8",
+        "stream.m3u8",
+        "segment0.ts",
+        "init.mp4",
+        "720p/stream.m3u8",
+        "720p/init.mp4",
+        "720p/segment0.ts"
+      })
   @DisplayName("Should return 404 when session not found")
   void shouldReturn404WhenSessionNotFound(String path) throws Exception {
     var missingId = UUID.randomUUID();
@@ -207,13 +253,118 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should return 404 when segment not ready within timeout")
-  void shouldReturn404WhenSegmentNotReadyWithinTimeout() throws Exception {
+  @DisplayName("Should return 404 when the runtime session has ended and the segment is missing")
+  void shouldReturn404WhenTheRuntimeSessionHasEndedAndTheSegmentIsMissing() throws Exception {
     streamingService.setSession(buildMpegtsSession());
 
     mockMvc
         .perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID))
         .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName(
+      "Should return 404 without disturbing the producer when the segment name matches no naming"
+          + " scheme")
+  void shouldReturn404WithoutDisturbingTheProducerWhenTheSegmentNameMatchesNoNamingScheme()
+      throws Exception {
+    var session = buildMpegtsSession();
+    streamingService.setSession(session);
+    var handle =
+        transcodeExecutor.start(
+            TranscodeRequest.builder()
+                .sessionId(SESSION_ID)
+                .sourcePath(session.getSourcePath())
+                .transcodeDecision(session.getTranscodeDecision())
+                .build());
+    session.setHandle(handle);
+    runtimeRegistry.save(session);
+
+    mockMvc
+        .perform(get("/api/stream/{sessionId}/foo.ts", SESSION_ID))
+        .andExpect(status().isNotFound());
+
+    assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
+    assertThat(transcodeExecutor.isRunning(SESSION_ID, StreamSession.defaultVariant())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should return 503 when delivery is cancelled by server shutdown")
+  void shouldReturn503WhenDeliveryIsCancelledByServerShutdown() throws Exception {
+    var session = buildMpegtsSession();
+    streamingService.setSession(session);
+    session.setHandle(mintHandle(1L, TranscodeStatus.ACTIVE));
+    runtimeRegistry.save(session);
+
+    var response = new AtomicReference<ResponseEntity<byte[]>>();
+    var worker =
+        new Thread(
+            () -> {
+              // A pre-set interrupt makes the first delivery wait observe the shutdown signal.
+              Thread.currentThread().interrupt();
+              response.set(controller.getSegment(SESSION_ID, "segment1.ts"));
+            });
+    worker.start();
+    worker.join(Duration.ofSeconds(2).toMillis());
+
+    assertThat(response.get()).isNotNull();
+    assertThat(response.get().getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+  }
+
+  @Test
+  @DisplayName("Should return 404 when the segment index does not fit the naming scheme")
+  void shouldReturn404WhenTheSegmentIndexDoesNotFitTheNamingScheme() throws Exception {
+    var session = buildMpegtsSession();
+    streamingService.setSession(session);
+    session.setHandle(mintHandle(1L, TranscodeStatus.ACTIVE));
+    runtimeRegistry.save(session);
+
+    mockMvc
+        .perform(get("/api/stream/{sessionId}/segment99999999999999999999.ts", SESSION_ID))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("Should return 404 when segment vanishes between the existence check and the read")
+  void shouldReturn404WhenSegmentVanishesBetweenTheExistenceCheckAndTheRead() throws Exception {
+    streamingService.setSession(buildMpegtsSession());
+    var throwingStore =
+        new FakeSegmentStore() {
+          @Override
+          public byte[] readSegment(UUID sessionId, String segmentName) {
+            throw new TranscodeException("Segment not found: " + segmentName);
+          }
+        };
+    throwingStore.addSegment(SESSION_ID, "segment0.ts", new byte[] {0x47});
+    var raceController =
+        new StreamController(
+            streamingService,
+            playlistService,
+            coordinatorOver(throwingStore),
+            new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN));
+    var raceMockMvc = MockMvcBuilders.standaloneSetup(raceController).build();
+
+    raceMockMvc
+        .perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("Should return 503 with no body when recovery is exhausted")
+  void shouldReturn503WithNoBodyWhenRecoveryExhausted() throws Exception {
+    var session = buildMpegtsSession();
+    streamingService.setSession(session);
+    session.setHandle(mintHandle(1L, TranscodeStatus.FAILED));
+    runtimeRegistry.save(session);
+
+    var result =
+        mockMvc
+            .perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID))
+            .andExpect(status().isServiceUnavailable())
+            .andReturn();
+
+    assertThat(result.getResponse().getContentLength()).isZero();
+    assertThat(result.getResponse().getHeader("Retry-After")).isNull();
   }
 
   @Test
@@ -423,112 +574,7 @@ class StreamControllerTest {
         .andExpect(status().isBadRequest());
   }
 
-  private class BoundAuthorizationService implements AuthorizationService {
-
-    @Override
-    public AuthenticatedIdentity currentIdentity() {
-      return AuthenticatedIdentity.builder()
-          .accountId(UUID.randomUUID())
-          .role(AccountRole.USER)
-          .sessionId(UUID.randomUUID())
-          .scope(TokenScope.PLAYBACK)
-          .householdId(UUID.randomUUID())
-          .householdRole(HouseholdRole.MEMBER)
-          .profileId(UUID.randomUUID())
-          .streamSessionId(boundStreamSession.get())
-          .build();
-    }
-
-    @Override
-    public String currentTokenValue() {
-      return VALIDATED_TOKEN;
-    }
-
-    @Override
-    public Instant currentTokenExpiry() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public UUID requireAccountId() {
-      return currentIdentity().accountId();
-    }
-
-    @Override
-    public UUID requireHousehold() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public UUID requireProfile() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean isServerAdmin() {
-      return false;
-    }
-
-    @Override
-    public void requireServerAdmin() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void requireHouseholdRole(com.streamarr.server.domain.auth.HouseholdRole minimum) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean canViewActivityOf(UUID profileId) {
-      return false;
-    }
-  }
-
-  private static class StubStreamingService implements StreamingService {
-
-    private StreamSession session;
-
-    void setSession(StreamSession session) {
-      this.session = session;
-    }
-
-    @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
-      return session;
-    }
-
-    @Override
-    public Optional<StreamSession> accessSession(UUID sessionId) {
-      if (session != null && session.getSessionId().equals(sessionId)) {
-        return Optional.of(session);
-      }
-      return Optional.empty();
-    }
-
-    @Override
-    public void destroySession(UUID sessionId) {
-      // no-op for test fake
-    }
-
-    @Override
-    public void destroySession(UUID sessionId, UUID profileId) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Collection<StreamSession> getAllSessions() {
-      return session != null ? List.of(session) : Collections.emptyList();
-    }
-
-    @Override
-    public int getActiveSessionCount() {
-      return session != null ? 1 : 0;
-    }
-
-    @Override
-    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
-      // no-op for test fake
-    }
+  private AuthenticatedIdentity boundIdentity() {
+    return defaultIdentityBuilder().streamSessionId(boundStreamSession.get()).build();
   }
 }

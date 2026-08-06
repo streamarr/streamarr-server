@@ -111,13 +111,24 @@ See link:adr/0007-transcode-first-with-smart-remux.adoc[ADR 0007],
 link:adr/0009-h264-plus-av1-codec-strategy.adoc[ADR 0009],
 link:adr/0013-stream-decision-architecture.adoc[ADR 0013].
 
+=== Distributed Transcoding Direction
+
+link:adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] keeps local playback as the default and preserves independent variant failure through one shared FFmpeg engine.
+An optional worker opens an outbound, long-lived mTLS gRPC `WorkerSession`; the live connection owns registration, capacity accounting, commands, and job-attempt fencing.
+Segment uploads use separate bounded HTTP/2 streams over the same channel, and media is addressed by opaque `MediaSourceRef(source_namespace_id, relative_key)` values rather than host paths.
+The initial topology is one Streamarr server and zero or more workers; workers have no database access or inbound listener, and multi-server coordination is deferred.
+
 == Authentication and Invalidation
 
 Identity, sessions, and token security follow
 link:adr/0015-authorization-profiles-and-content-controls.adoc[ADR 0015] and
 link:adr/0016-authentication-mechanisms-and-session-security.adoc[ADR 0016]: ES256-signed access
-tokens with nested scopes, digest-only rotating refresh tokens, and per-request version-counter
-checks that fail closed. The browser client is same-origin by construction -- development
+tokens with nested scopes, mandatory strict expiry, and digest-only rotating refresh tokens.
+Ordinary API claims remain valid only until their short expiry; refresh revalidates live session,
+account, and context authority. Playback additionally checks live authority on stream creation and
+every playlist and segment request, as
+link:adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] specifies.
+The browser client is same-origin by construction -- development
 tooling proxies the API paths and production serves the client from the application origin --
 so no CORS configuration exists and none should be added (recorded as a rejected alternative in
 ADR 0016).
@@ -139,30 +150,14 @@ recover through refresh).
 ES256 exists for the planned transcode split: horizontally scaled transcode nodes running
 FFmpeg are the most exposed tier and must never hold a token-minting secret. Signature
 verification alone never authorizes a request, though -- revocation is authoritative state,
-not signature checking. During the version-counter transition that means the per-request
-counter checks below; after the counters retire (issue #213), playback revocation rides the
-persisted stream-session enforcement authority (ADR 0017), and under the recommended proxy
-topology for the transcode split (issue #76) workers never verify playback tokens at all.
+not signature checking. Playback revocation is one indexed live-authority query rather than token
+counters or a persisted stream-session state machine. Workers never verify
+playback tokens; the server remains the playback request gate and segment proxy.
 The public verification keys are served at `/.well-known/jwks.json` (ADR 0016).
 
-NOTE: The version-counter invalidation described below is transitional -- normative and
-load-bearing until the counter retirement (issue #213, PR-B2) lands, retired with it. The
-target revocation model is recorded in ADR 0016 and ADR 0017.
-
-Cross-instance token invalidation rides PostgreSQL LISTEN/NOTIFY: counter bumps call
-`pg_notify` inside the bumping transaction, and each instance's `CounterNotificationListener`
-applies them to its local version cache over one dedicated (non-Hikari) connection. The listener
-suspends caching on startup and every connection loss, so every counter lookup reads through to
-PostgreSQL while notifications might be missed; caching resumes from an empty state only after
-`LISTEN` succeeds. A `SELECT 1` liveness probe per poll (with TCP keepalive and a bounded socket
-timeout) turns a silently dead connection into a reconnect, and a health indicator reports the
-feed's state.
-
-CAUTION: PgBouncer in transaction-pooling mode does not deliver LISTEN/NOTIFY. The listener's
-dedicated connection must reach PostgreSQL directly (or through session-mode pooling), even when
-application traffic goes through a transaction-mode pooler -- set
-`AUTH_COUNTER_LISTENER_JDBC_URL` (and credentials, if they differ) to give the listener its own
-endpoint.
+V049 removed the version claims, cache, PostgreSQL notification feed, counter columns, and
+pooler-mode exception. Ordinary API tokens retain issued authority until strict expiry; refresh
+checks the live authorization session and context, and every playback request checks live authority.
 
 == Key Design Decisions
 

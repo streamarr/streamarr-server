@@ -1,0 +1,6 @@
+services:
+  transcode-worker:
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - ${STREAMARR_RENDER_GID:?Set the host group id that owns the DRI render device}

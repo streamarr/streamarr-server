@@ -7,10 +7,12 @@ import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
+import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 @TestConfiguration
 public class AuthTestSupportConfig {
@@ -24,6 +26,8 @@ public class AuthTestSupportConfig {
       AccountProfileRepository accountProfileRepository,
       RefreshTokenService refreshTokenService,
       AccessTokenIssuer accessTokenIssuer,
+      JwtDecoder jwtDecoder,
+      PlaybackTokenIssuer playbackTokenIssuer,
       AuthTokenProperties tokenProperties,
       PasswordEncoder passwordEncoder) {
     return new AuthTestSupport(
@@ -35,7 +39,9 @@ public class AuthTestSupportConfig {
         refreshTokenService,
         accessTokenIssuer,
         AuthTestSupport.expiredIssuer(
-            tokenProperties, membershipRepository, profileRepository, accountProfileRepository),
+            tokenProperties, membershipRepository, accountProfileRepository),
+        jwtDecoder,
+        playbackTokenIssuer,
         passwordEncoder);
   }
 }

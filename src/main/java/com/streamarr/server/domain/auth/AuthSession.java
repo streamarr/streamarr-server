@@ -28,9 +28,6 @@ public class AuthSession extends BaseAuditableEntity<AuthSession> {
 
   private String deviceName;
 
-  // Session version counter ("sv" claim) — bumped on revocation, not JPA @Version.
-  private long sessionVersion;
-
   private UUID activeHouseholdId;
 
   private UUID activeProfileId;

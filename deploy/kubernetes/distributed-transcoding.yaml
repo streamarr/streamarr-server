@@ -1,0 +1,229 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: streamarr-server
+spec:
+  selector:
+    app.kubernetes.io/name: streamarr-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: worker-grpc
+      port: 9090
+      targetPort: worker-grpc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamarr-server
+  labels:
+    app.kubernetes.io/name: streamarr-server
+    app.kubernetes.io/component: control-plane
+spec:
+  replicas: 1
+  # The in-memory session and worker registries require exactly one server; a rolling update
+  # would briefly run two servers behind the same Service and split-brain both registries.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: streamarr-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: streamarr-server
+        app.kubernetes.io/component: control-plane
+    spec:
+      containers:
+        - name: server
+          # Replace with the release you are deploying; :latest breaks rollback.
+          image: streamarr/streamarr-server:vX.Y.Z
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 2Gi
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: worker-grpc
+              containerPort: 9090
+          # Spring Boot exposes these probe groups automatically on Kubernetes. Do not add the
+          # transcodeExecutor health indicator to either group: readiness failure would unroute
+          # the worker-grpc port on this shared Service, so a zero-worker server could never
+          # become ready again.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 2
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+          env:
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: streamarr-runtime
+                  key: datasource-url
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: streamarr-runtime
+                  key: datasource-username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: streamarr-runtime
+                  key: datasource-password
+            - name: STREAMING_REMOTE_ENABLED
+              value: "true"
+            - name: STREAMING_REMOTE_TRUST_DOMAIN
+              value: streamarr.example
+            - name: STREAMING_REMOTE_SOURCE_NAMESPACE_ID
+              value: cccccccc-cccc-cccc-cccc-cccccccccccc
+            - name: STREAMING_REMOTE_SOURCE_ROOT
+              value: /media
+            - name: STREAMING_REMOTE_CERTIFICATE
+              value: /run/secrets/streamarr/tls.crt
+            - name: STREAMING_REMOTE_PRIVATE_KEY
+              value: /run/secrets/streamarr/tls.key
+            - name: STREAMING_REMOTE_TRUST_BUNDLE
+              value: /run/secrets/streamarr/ca.crt
+          volumeMounts:
+            - name: media
+              mountPath: /media
+              readOnly: true
+            - name: workload-identity
+              mountPath: /run/secrets/streamarr
+              readOnly: true
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: streamarr-media
+        - name: workload-identity
+          csi:
+            driver: csi.cert-manager.io
+            readOnly: true
+            volumeAttributes:
+              csi.cert-manager.io/issuer-name: streamarr-ca
+              csi.cert-manager.io/issuer-kind: ClusterIssuer
+              csi.cert-manager.io/dns-names: streamarr-server,streamarr-server.${POD_NAMESPACE}.svc,streamarr-server.${POD_NAMESPACE}.svc.cluster.local
+              csi.cert-manager.io/key-usages: digital signature,key encipherment,server auth
+              # Certificates are read once at process start (no hot reload yet), so the lifetime
+              # must exceed the pod's expected uptime. Restart the pod before the 90-day expiry;
+              # the renewed file is on disk from day 60.
+              csi.cert-manager.io/duration: 2160h
+              csi.cert-manager.io/renew-before: 720h
+              csi.cert-manager.io/certificate-file: tls.crt
+              csi.cert-manager.io/privatekey-file: tls.key
+              csi.cert-manager.io/ca-file: ca.crt
+              csi.cert-manager.io/fs-group: "1000"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamarr-transcode-worker
+  labels:
+    app.kubernetes.io/name: streamarr-transcode-worker
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: streamarr-transcode-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: streamarr-transcode-worker
+        app.kubernetes.io/component: worker
+    spec:
+      containers:
+        - name: worker
+          # Replace with the release you are deploying; :latest breaks rollback.
+          image: streamarr/streamarr-server:vX.Y.Z
+          command:
+            - worker
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: "1"
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          env:
+            - name: TRANSCODE_WORKER_CONTROL_PLANE_HOST
+              value: streamarr-server
+            - name: TRANSCODE_WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: TRANSCODE_WORKER_SOURCE_NAMESPACE_ID
+              value: cccccccc-cccc-cccc-cccc-cccccccccccc
+            - name: TRANSCODE_WORKER_SOURCE_ROOT
+              value: /media
+            - name: TRANSCODE_WORKER_SLOTS
+              value: "1"
+            - name: TRANSCODE_WORKER_TLS_CERTIFICATE
+              value: /run/secrets/streamarr/tls.crt
+            - name: TRANSCODE_WORKER_TLS_PRIVATE_KEY
+              value: /run/secrets/streamarr/tls.key
+            - name: TRANSCODE_WORKER_TLS_TRUST_BUNDLE
+              value: /run/secrets/streamarr/ca.crt
+          volumeMounts:
+            - name: media
+              mountPath: /media
+              readOnly: true
+            - name: workload-identity
+              mountPath: /run/secrets/streamarr
+              readOnly: true
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: streamarr-media
+        - name: workload-identity
+          csi:
+            driver: csi.cert-manager.io
+            readOnly: true
+            volumeAttributes:
+              csi.cert-manager.io/issuer-name: streamarr-ca
+              csi.cert-manager.io/issuer-kind: ClusterIssuer
+              csi.cert-manager.io/uri-sans: spiffe://streamarr.example/streamarr/worker/${POD_UID}
+              csi.cert-manager.io/key-usages: digital signature,key encipherment,client auth
+              # Certificates are read once at process start (no hot reload yet); see the server
+              # volume note. Worker pods are cattle — replacing a pod also refreshes its identity.
+              csi.cert-manager.io/duration: 2160h
+              csi.cert-manager.io/renew-before: 720h
+              csi.cert-manager.io/certificate-file: tls.crt
+              csi.cert-manager.io/privatekey-file: tls.key
+              csi.cert-manager.io/ca-file: ca.crt
+              csi.cert-manager.io/fs-group: "1000"

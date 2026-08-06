@@ -12,9 +12,9 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,7 +41,7 @@ class HlsPlaylistServiceTest {
   void setUp() {
     properties =
         StreamingProperties.builder()
-            .segmentDuration(Duration.ofSeconds(6))
+            .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
     service = new HlsPlaylistService(properties);
@@ -49,35 +49,7 @@ class HlsPlaylistServiceTest {
 
   private StreamSession createSession(
       ContainerFormat container, TranscodeMode mode, int durationSeconds) {
-    var session =
-        StreamSession.builder()
-            .sessionId(UUID.randomUUID())
-            .mediaFileId(UUID.randomUUID())
-            .sourcePath(Path.of("/media/test.mkv"))
-            .mediaProbe(
-                MediaProbe.builder()
-                    .duration(Duration.ofSeconds(durationSeconds))
-                    .framerate(23.976)
-                    .width(1920)
-                    .height(1080)
-                    .videoCodec("h264")
-                    .audioCodec("aac")
-                    .bitrate(5_000_000L)
-                    .build())
-            .transcodeDecision(
-                TranscodeDecision.builder()
-                    .transcodeMode(mode)
-                    .videoCodecFamily(container == ContainerFormat.FMP4 ? "av1" : "h264")
-                    .audioDecision(AudioDecision.stereoAac())
-                    .subtitleDecision(SubtitleDecision.exclude())
-                    .containerFormat(container)
-                    .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
-                    .build())
-            .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
-            .createdAt(Instant.now())
-            .build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
-    return session;
+    return createSessionWithDuration(container, mode, Duration.ofSeconds(durationSeconds));
   }
 
   private StreamSession createSessionWithDuration(
@@ -86,6 +58,7 @@ class HlsPlaylistServiceTest {
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
             .mediaFileId(UUID.randomUUID())
+            .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
             .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
@@ -109,7 +82,7 @@ class HlsPlaylistServiceTest {
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
             .createdAt(Instant.now())
             .build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    session.setHandle(StreamSessionFixture.mintHandle(1L, TranscodeStatus.ACTIVE));
     return session;
   }
 
@@ -119,6 +92,7 @@ class HlsPlaylistServiceTest {
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
             .mediaFileId(UUID.randomUUID())
+            .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
             .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
@@ -142,7 +116,7 @@ class HlsPlaylistServiceTest {
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
             .createdAt(Instant.now())
             .build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    session.setHandle(StreamSessionFixture.mintHandle(1L, TranscodeStatus.ACTIVE));
     return session;
   }
 
@@ -175,6 +149,7 @@ class HlsPlaylistServiceTest {
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
             .mediaFileId(UUID.randomUUID())
+            .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
             .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
@@ -201,28 +176,29 @@ class HlsPlaylistServiceTest {
             .build();
 
     for (var variant : variants) {
-      session.setVariantHandle(variant.label(), new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+      session.setVariantHandle(
+          variant.label(), StreamSessionFixture.mintHandle(1L, TranscodeStatus.ACTIVE));
     }
     return session;
   }
 
   @Test
-  @DisplayName("Should start with EXTM3U when generating master playlist")
-  void shouldStartWithExtm3uWhenGeneratingMasterPlaylist() {
+  @DisplayName("Should start with EXTM3U when generating multivariant playlist")
+  void shouldStartWithExtm3uWhenGeneratingMultivariantPlaylist() {
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
 
-    var playlist = service.generateMasterPlaylist(session, "test-token");
+    var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
     assertThat(playlist).startsWith("#EXTM3U\n");
   }
 
   @Test
   @DisplayName(
-      "Should include stream inf with bandwidth and resolution when generating master playlist")
-  void shouldIncludeStreamInfWithBandwidthAndResolutionWhenGeneratingMasterPlaylist() {
+      "Should include stream inf with bandwidth and resolution when generating multivariant playlist")
+  void shouldIncludeStreamInfWithBandwidthAndResolutionWhenGeneratingMultivariantPlaylist() {
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
 
-    var playlist = service.generateMasterPlaylist(session, "test-token");
+    var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
     assertThat(playlist)
         .contains("#EXT-X-STREAM-INF:")
@@ -231,11 +207,11 @@ class HlsPlaylistServiceTest {
   }
 
   @Test
-  @DisplayName("Should point to stream playlist URL when generating master playlist")
-  void shouldPointToStreamPlaylistUrlWhenGeneratingMasterPlaylist() {
+  @DisplayName("Should point to stream playlist URL when generating multivariant playlist")
+  void shouldPointToStreamPlaylistUrlWhenGeneratingMultivariantPlaylist() {
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
 
-    var playlist = service.generateMasterPlaylist(session, "test-token");
+    var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
     assertThat(playlist).contains("stream.m3u8?t=test-token");
   }
@@ -358,18 +334,18 @@ class HlsPlaylistServiceTest {
   }
 
   @Test
-  @DisplayName("Should include codecs attribute when generating master playlist")
-  void shouldIncludeCodecsAttributeWhenGeneratingMasterPlaylist() {
+  @DisplayName("Should include codecs attribute when generating multivariant playlist")
+  void shouldIncludeCodecsAttributeWhenGeneratingMultivariantPlaylist() {
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 30);
 
-    var playlist = service.generateMasterPlaylist(session, "test-token");
+    var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
     assertThat(playlist).contains("CODECS=");
   }
 
   @Test
-  @DisplayName("Should not contain master playlist tags when generating media playlist")
-  void shouldNotContainMasterPlaylistTagsWhenGeneratingMediaPlaylist() {
+  @DisplayName("Should not contain multivariant playlist tags when generating media playlist")
+  void shouldNotContainMultivariantPlaylistTagsWhenGeneratingMediaPlaylist() {
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 30);
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
@@ -468,7 +444,7 @@ class HlsPlaylistServiceTest {
     void shouldGenerateOneStreamInfPerVariantWhenSessionHasMultipleVariants() {
       var session = createAbrSession(120);
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       var streamInfLines =
           playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
@@ -484,12 +460,12 @@ class HlsPlaylistServiceTest {
     void shouldIncludeCorrectBandwidthWhenSessionHasMultipleVariants() {
       var session = createAbrSession(120);
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       assertThat(playlist)
-          .contains("BANDWIDTH=5128000")
-          .contains("BANDWIDTH=3128000")
-          .contains("BANDWIDTH=1628000");
+          .contains("BANDWIDTH=6153600,AVERAGE-BANDWIDTH=5128000")
+          .contains("BANDWIDTH=3753600,AVERAGE-BANDWIDTH=3128000")
+          .contains("BANDWIDTH=1953600,AVERAGE-BANDWIDTH=1628000");
     }
 
     @Test
@@ -497,7 +473,7 @@ class HlsPlaylistServiceTest {
     void shouldPointEachVariantToLabeledUrlWhenSessionHasMultipleVariants() {
       var session = createAbrSession(120);
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       assertThat(playlist)
           .contains("1080p/stream.m3u8?t=test-token")
@@ -510,7 +486,7 @@ class HlsPlaylistServiceTest {
     void shouldKeepSingleVariantFormatWhenSessionHasNoVariantList() {
       var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       var streamInfLines =
           playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
@@ -524,7 +500,7 @@ class HlsPlaylistServiceTest {
     void shouldIncludeCodecsAttributeOnEachVariantWhenSessionHasMultipleVariants() {
       var session = createAbrSession(120);
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       var streamInfLines =
           playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
@@ -540,12 +516,13 @@ class HlsPlaylistServiceTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("audioPlaylistAttributes")
-    @DisplayName("Should include expected audio attribute in master playlist when codec is present")
-    void shouldIncludeExpectedAudioAttributeInMasterPlaylistWhenCodecIsPresent(
+    @DisplayName(
+        "Should include expected audio attribute in multivariant playlist when codec is present")
+    void shouldIncludeExpectedAudioAttributeInMultivariantPlaylistWhenCodecIsPresent(
         String scenario, AudioDecision audio, String expectedFragment) {
       var session = createSessionWithAudio(audio, "h264");
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       assertThat(playlist).contains(expectedFragment);
     }
@@ -568,7 +545,7 @@ class HlsPlaylistServiceTest {
       var audio = AudioDecision.stereoAac();
       var session = createSessionWithAudio(audio, "h264");
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       var streamInfLines =
           playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
@@ -584,7 +561,7 @@ class HlsPlaylistServiceTest {
       var audio = AudioDecision.none();
       var session = createSessionWithAudio(audio, "h264");
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       assertThat(playlist)
           .contains("CODECS=\"avc1.640028\"")
@@ -597,7 +574,7 @@ class HlsPlaylistServiceTest {
       var audio = AudioDecision.stereoAac();
       var session = createSessionWithAudio(audio, "h264");
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       assertThat(playlist).contains("CODECS=\"avc1.640028,mp4a.40.2\"");
     }
@@ -619,6 +596,7 @@ class HlsPlaylistServiceTest {
           StreamSession.builder()
               .sessionId(UUID.randomUUID())
               .mediaFileId(UUID.randomUUID())
+              .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
               .sourcePath(Path.of("/media/test.mkv"))
               .mediaProbe(
                   MediaProbe.builder()
@@ -643,11 +621,12 @@ class HlsPlaylistServiceTest {
               .variants(List.of(variant))
               .createdAt(Instant.now())
               .build();
-      session.setVariantHandle("1080p", new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+      session.setVariantHandle(
+          "1080p", StreamSessionFixture.mintHandle(1L, TranscodeStatus.ACTIVE));
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
-      assertThat(playlist).contains("BANDWIDTH=5384000");
+      assertThat(playlist).contains("BANDWIDTH=6460800,AVERAGE-BANDWIDTH=5384000");
     }
   }
 
@@ -660,7 +639,7 @@ class HlsPlaylistServiceTest {
     void shouldIncludeExtXMediaWithChannelsWhenAudioIsStereo() {
       var session = createSessionWithAudio(AudioDecision.stereoAac(), "h264");
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       assertThat(playlist)
           .contains(
@@ -673,7 +652,7 @@ class HlsPlaylistServiceTest {
     void shouldIncludeExtXMediaWithChannelsWhenAudioIsSurround() {
       var session = createSessionWithAudio(AudioDecision.copy("ac3", 6, 384_000L), "h264");
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       assertThat(playlist)
           .contains(
@@ -686,7 +665,7 @@ class HlsPlaylistServiceTest {
     void shouldIncludeAudioGroupReferenceOnStreamInfWhenAudioExists() {
       var session = createSessionWithAudio(AudioDecision.stereoAac(), "h264");
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       var streamInfLines =
           playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
@@ -701,7 +680,7 @@ class HlsPlaylistServiceTest {
     void shouldNotIncludeExtXMediaWhenAudioModeIsNone() {
       var session = createSessionWithAudio(AudioDecision.none(), "h264");
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       assertThat(playlist).doesNotContain("#EXT-X-MEDIA:TYPE=AUDIO");
     }
@@ -711,7 +690,7 @@ class HlsPlaylistServiceTest {
     void shouldNotIncludeAudioGroupReferenceWhenAudioModeIsNone() {
       var session = createSessionWithAudio(AudioDecision.none(), "h264");
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       assertThat(playlist).doesNotContain("AUDIO=\"audio\"");
     }
@@ -721,7 +700,7 @@ class HlsPlaylistServiceTest {
     void shouldEmitExtXMediaBeforeStreamInfWhenAudioExists() {
       var session = createSessionWithAudio(AudioDecision.stereoAac(), "h264");
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       var mediaIndex = playlist.indexOf("#EXT-X-MEDIA:TYPE=AUDIO");
       var streamInfIndex = playlist.indexOf("#EXT-X-STREAM-INF:");
@@ -737,7 +716,7 @@ class HlsPlaylistServiceTest {
     void shouldNotIncludeChannelsOnStreamInfWhenAudioIsSurround() {
       var session = createSessionWithAudio(AudioDecision.copy("ac3", 6, 384_000L), "h264");
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       var streamInfLines =
           playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
@@ -752,7 +731,7 @@ class HlsPlaylistServiceTest {
     void shouldIncludeAudioGroupReferenceOnAllVariantsWhenAbrSessionHasAudio() {
       var session = createAbrSession(120);
 
-      var playlist = service.generateMasterPlaylist(session, "test-token");
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       var streamInfLines =
           playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();

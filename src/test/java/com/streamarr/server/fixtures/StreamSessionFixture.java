@@ -3,6 +3,7 @@ package com.streamarr.server.fixtures;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -11,6 +12,8 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
+import com.streamarr.server.services.streaming.PlaybackRequest;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -25,12 +28,30 @@ public final class StreamSessionFixture {
     return StreamSession.builder()
         .sessionId(UUID.randomUUID())
         .mediaFileId(UUID.randomUUID())
-        .profileId(UUID.randomUUID())
+        .authority(defaultPlaybackAuthorityBuilder().build())
         .sourcePath(Path.of("/media/movie.mkv"))
         .mediaProbe(defaultProbeBuilder().build())
         .transcodeDecision(remuxMpegtsDecision())
         .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
         .createdAt(Instant.now());
+  }
+
+  public static StreamSession.StreamSessionBuilder abrSessionBuilder() {
+    return defaultSessionBuilder()
+        .variants(
+            List.of(
+                defaultVariantBuilder()
+                    .width(1920)
+                    .height(1080)
+                    .videoBitrate(5_000_000L)
+                    .label("1080p")
+                    .build(),
+                defaultVariantBuilder()
+                    .width(1280)
+                    .height(720)
+                    .videoBitrate(3_000_000L)
+                    .label("720p")
+                    .build()));
   }
 
   public static MediaProbe.MediaProbeBuilder defaultProbeBuilder() {
@@ -42,6 +63,34 @@ public final class StreamSessionFixture {
         .videoCodec("h264")
         .audioCodec("aac")
         .bitrate(5_000_000);
+  }
+
+  public static PlaybackAuthority.PlaybackAuthorityBuilder defaultPlaybackAuthorityBuilder() {
+    return PlaybackAuthority.builder()
+        .authSessionId(UUID.randomUUID())
+        .accountId(UUID.randomUUID())
+        .householdId(UUID.randomUUID())
+        .profileId(UUID.randomUUID());
+  }
+
+  public static PlaybackAuthority playbackAuthorityFor(UUID profileId) {
+    return defaultPlaybackAuthorityBuilder().profileId(profileId).build();
+  }
+
+  public static CreateStreamSessionCommand createStreamSessionCommand(
+      UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    return CreateStreamSessionCommand.builder()
+        .mediaFileId(mediaFileId)
+        .authority(playbackAuthorityFor(profileId))
+        .options(options)
+        .build();
+  }
+
+  public static PlaybackRequest playbackRequest(StreamSession session) {
+    return PlaybackRequest.builder()
+        .streamSessionId(session.getSessionId())
+        .authority(session.getAuthority())
+        .build();
   }
 
   public static TranscodeDecision remuxMpegtsDecision() {
@@ -71,9 +120,13 @@ public final class StreamSessionFixture {
     return QualityVariant.builder().audioBitrate(128_000L);
   }
 
+  public static TranscodeHandle mintHandle(long processId, TranscodeStatus status) {
+    return new TranscodeHandle(processId, UUID.randomUUID(), status, 0);
+  }
+
   public static StreamSession withActiveVariantHandles(StreamSession session) {
     for (var variant : session.getVariants()) {
-      session.setVariantHandle(variant.label(), new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+      session.setVariantHandle(variant.label(), mintHandle(1L, TranscodeStatus.ACTIVE));
     }
     return session;
   }
@@ -83,8 +136,8 @@ public final class StreamSessionFixture {
   }
 
   public static StreamSession buildMpegtsSessionOwnedBy(UUID profileId) {
-    var session = defaultSessionBuilder().profileId(profileId).build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    var session = defaultSessionBuilder().authority(playbackAuthorityFor(profileId)).build();
+    session.setHandle(mintHandle(1L, TranscodeStatus.ACTIVE));
     return session;
   }
 

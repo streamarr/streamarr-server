@@ -7,7 +7,8 @@ import java.util.UUID;
 import org.springframework.data.repository.Repository;
 
 /**
- * Deliberately narrowed so membership grants and revocations cannot bypass version invalidation.
+ * Extends bare {@code Repository} on purpose — inheriting {@code JpaRepository} would add blind
+ * {@code save}/{@code delete}, bypassing the conditional operations that report their outcome.
  */
 public interface HouseholdMembershipRepository
     extends Repository<HouseholdMembership, UUID>, HouseholdMembershipRepositoryCustom {
