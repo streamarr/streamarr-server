@@ -1,5 +1,7 @@
 package com.streamarr.server.repositories;
 
+import static com.streamarr.server.jooq.generated.tables.MovieDirector.MOVIE_DIRECTOR;
+import static com.streamarr.server.jooq.generated.tables.MoviePerson.MOVIE_PERSON;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -17,6 +19,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import java.util.List;
 import java.util.Set;
+import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -37,6 +40,7 @@ class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
   @Autowired private RatingRepository ratingRepository;
   @Autowired private ReviewRepository reviewRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
+  @Autowired private DSLContext dsl;
 
   private Movie savedMovie;
 
@@ -93,6 +97,85 @@ class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
 
     assertThat(directors).hasSize(1);
     assertThat(directors.getFirst().getName()).isEqualTo("Christopher Nolan");
+  }
+
+  @Test
+  @DisplayName("Should find cast by movie ID in ordinal order with null ordinals last")
+  void shouldFindCastByMovieIdInOrdinalOrderWithNullOrdinalsLast() {
+    var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+    var unrankedActor =
+        personRepository.save(
+            Person.builder().name("Unranked Actor").sourceId("unranked-actor-1").build());
+    var leadActor =
+        personRepository.save(Person.builder().name("Lead Actor").sourceId("lead-actor-1").build());
+    var movie =
+        movieRepository.saveAndFlush(
+            Movie.builder()
+                .title("Ordered Cast Movie")
+                .library(library)
+                .cast(List.of(unrankedActor, leadActor))
+                .build());
+    dsl.update(MOVIE_PERSON)
+        .setNull(MOVIE_PERSON.ORDINAL)
+        .where(
+            MOVIE_PERSON
+                .MOVIE_ID
+                .eq(movie.getId())
+                .and(MOVIE_PERSON.PERSON_ID.eq(unrankedActor.getId())))
+        .execute();
+    dsl.update(MOVIE_PERSON)
+        .set(MOVIE_PERSON.ORDINAL, 0)
+        .where(
+            MOVIE_PERSON
+                .MOVIE_ID
+                .eq(movie.getId())
+                .and(MOVIE_PERSON.PERSON_ID.eq(leadActor.getId())))
+        .execute();
+
+    var cast = personRepository.findCastByMovieId(movie.getId());
+
+    assertThat(cast).extracting(Person::getName).containsExactly("Lead Actor", "Unranked Actor");
+  }
+
+  @Test
+  @DisplayName("Should find directors by movie ID in ordinal order")
+  void shouldFindDirectorsByMovieIdInOrdinalOrder() {
+    var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+    var secondDirector =
+        personRepository.save(
+            Person.builder().name("Second Director").sourceId("second-director-1").build());
+    var firstDirector =
+        personRepository.save(
+            Person.builder().name("First Director").sourceId("first-director-1").build());
+    var movie =
+        movieRepository.saveAndFlush(
+            Movie.builder()
+                .title("Ordered Directors Movie")
+                .library(library)
+                .directors(List.of(secondDirector, firstDirector))
+                .build());
+    dsl.update(MOVIE_DIRECTOR)
+        .set(MOVIE_DIRECTOR.ORDINAL, 1)
+        .where(
+            MOVIE_DIRECTOR
+                .MOVIE_ID
+                .eq(movie.getId())
+                .and(MOVIE_DIRECTOR.PERSON_ID.eq(secondDirector.getId())))
+        .execute();
+    dsl.update(MOVIE_DIRECTOR)
+        .set(MOVIE_DIRECTOR.ORDINAL, 0)
+        .where(
+            MOVIE_DIRECTOR
+                .MOVIE_ID
+                .eq(movie.getId())
+                .and(MOVIE_DIRECTOR.PERSON_ID.eq(firstDirector.getId())))
+        .execute();
+
+    var directors = personRepository.findDirectorsByMovieId(movie.getId());
+
+    assertThat(directors)
+        .extracting(Person::getName)
+        .containsExactly("First Director", "Second Director");
   }
 
   @Test
