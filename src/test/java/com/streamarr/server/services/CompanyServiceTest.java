@@ -122,9 +122,10 @@ class CompanyServiceTest {
   }
 
   @Test
-  @DisplayName("Should not publish event when company already exists")
-  void shouldNotPublishEventWhenCompanyAlreadyExists() {
-    companyRepository.save(Company.builder().name("Existing").sourceId("wb-123").build());
+  @DisplayName("Should publish image event when existing company has image sources")
+  void shouldPublishImageEventWhenExistingCompanyHasImageSources() {
+    var existing =
+        companyRepository.save(Company.builder().name("Existing").sourceId("wb-123").build());
 
     var updated = Company.builder().name("Updated").sourceId("wb-123").build();
     var imageSources =
@@ -134,7 +135,9 @@ class CompanyServiceTest {
     companyService.getOrCreateCompanies(Set.of(updated), imageSources);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events).isEmpty();
+    assertThat(events)
+        .singleElement()
+        .satisfies(event -> assertThat(event.entityId()).isEqualTo(existing.getId()));
   }
 
   @Test

@@ -45,7 +45,7 @@ public class PersonService {
       Person person, Map<String, List<ImageSource>> imageSourcesBySourceId) {
     var imageSources = imageSourcesBySourceId.getOrDefault(person.getSourceId(), List.of());
 
-    boolean inserted = personRepository.insertIfAbsent(person.getSourceId(), person.getName());
+    personRepository.insertIfAbsent(person.getSourceId(), person.getName());
     var saved =
         personRepository
             .findPersonBySourceId(person.getSourceId())
@@ -56,9 +56,7 @@ public class PersonService {
 
     saved.setName(person.getName());
 
-    if (inserted) {
-      publishImageEvent(saved, imageSources);
-    }
+    publishImageEvent(saved, imageSources);
     return saved;
   }
 
