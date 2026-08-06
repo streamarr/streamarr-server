@@ -11,8 +11,11 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Stream;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -137,90 +140,111 @@ class SeriesRelationshipRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should find cast in ordinal order when series has multiple cast members")
-  void shouldFindCastInOrdinalOrderWhenSeriesHasMultipleCastMembers() {
+  @DisplayName("Should find series cast by ordinal then person ID")
+  void shouldFindSeriesCastByOrdinalThenPersonId() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
-    var secondActor =
+    var tiedActorA =
         personRepository.save(
-            Person.builder().name("Second Series Actor").sourceId("second-series-actor-1").build());
-    var firstActor =
+            Person.builder().name("Tied Series Actor A").sourceId("tied-series-actor-a-1").build());
+    var tiedActorB =
         personRepository.save(
-            Person.builder().name("First Series Actor").sourceId("first-series-actor-1").build());
+            Person.builder().name("Tied Series Actor B").sourceId("tied-series-actor-b-1").build());
+    var laterActor =
+        personRepository.save(
+            Person.builder().name("Later Series Actor").sourceId("later-series-actor-1").build());
     var series =
         seriesRepository.saveAndFlush(
             Series.builder()
                 .title("Ordered Cast Series")
                 .library(library)
-                .cast(List.of(secondActor, firstActor))
+                .cast(List.of(tiedActorA, laterActor, tiedActorB))
                 .build());
-    dsl.update(SERIES_PERSON)
-        .set(SERIES_PERSON.ORDINAL, 1)
-        .where(
-            SERIES_PERSON
-                .SERIES_ID
-                .eq(series.getId())
-                .and(SERIES_PERSON.PERSON_ID.eq(secondActor.getId())))
-        .execute();
     dsl.update(SERIES_PERSON)
         .set(SERIES_PERSON.ORDINAL, 0)
         .where(
             SERIES_PERSON
                 .SERIES_ID
                 .eq(series.getId())
-                .and(SERIES_PERSON.PERSON_ID.eq(firstActor.getId())))
+                .and(SERIES_PERSON.PERSON_ID.in(tiedActorA.getId(), tiedActorB.getId())))
+        .execute();
+    dsl.update(SERIES_PERSON)
+        .set(SERIES_PERSON.ORDINAL, 1)
+        .where(
+            SERIES_PERSON
+                .SERIES_ID
+                .eq(series.getId())
+                .and(SERIES_PERSON.PERSON_ID.eq(laterActor.getId())))
         .execute();
 
     var cast = personRepository.findCastBySeriesId(series.getId());
+    var expectedIds =
+        Stream.concat(
+                idsInPostgresOrder(tiedActorA, tiedActorB).stream(), Stream.of(laterActor.getId()))
+            .toList();
 
-    assertThat(cast)
-        .extracting(Person::getName)
-        .containsExactly("First Series Actor", "Second Series Actor");
+    assertThat(cast).extracting(Person::getId).containsExactlyElementsOf(expectedIds);
   }
 
   @Test
-  @DisplayName("Should find directors in ordinal order when series has multiple directors")
-  void shouldFindDirectorsInOrdinalOrderWhenSeriesHasMultipleDirectors() {
+  @DisplayName("Should find series directors by ordinal then person ID")
+  void shouldFindSeriesDirectorsByOrdinalThenPersonId() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
-    var secondDirector =
+    var tiedDirectorA =
         personRepository.save(
             Person.builder()
-                .name("Second Series Director")
-                .sourceId("second-series-director-1")
+                .name("Tied Series Director A")
+                .sourceId("tied-series-director-a-1")
                 .build());
-    var firstDirector =
+    var tiedDirectorB =
         personRepository.save(
             Person.builder()
-                .name("First Series Director")
-                .sourceId("first-series-director-1")
+                .name("Tied Series Director B")
+                .sourceId("tied-series-director-b-1")
+                .build());
+    var laterDirector =
+        personRepository.save(
+            Person.builder()
+                .name("Later Series Director")
+                .sourceId("later-series-director-1")
                 .build());
     var series =
         seriesRepository.saveAndFlush(
             Series.builder()
                 .title("Ordered Directors Series")
                 .library(library)
-                .directors(List.of(secondDirector, firstDirector))
+                .directors(List.of(tiedDirectorA, laterDirector, tiedDirectorB))
                 .build());
-    dsl.update(SERIES_DIRECTOR)
-        .set(SERIES_DIRECTOR.ORDINAL, 1)
-        .where(
-            SERIES_DIRECTOR
-                .SERIES_ID
-                .eq(series.getId())
-                .and(SERIES_DIRECTOR.PERSON_ID.eq(secondDirector.getId())))
-        .execute();
     dsl.update(SERIES_DIRECTOR)
         .set(SERIES_DIRECTOR.ORDINAL, 0)
         .where(
             SERIES_DIRECTOR
                 .SERIES_ID
                 .eq(series.getId())
-                .and(SERIES_DIRECTOR.PERSON_ID.eq(firstDirector.getId())))
+                .and(SERIES_DIRECTOR.PERSON_ID.in(tiedDirectorA.getId(), tiedDirectorB.getId())))
+        .execute();
+    dsl.update(SERIES_DIRECTOR)
+        .set(SERIES_DIRECTOR.ORDINAL, 1)
+        .where(
+            SERIES_DIRECTOR
+                .SERIES_ID
+                .eq(series.getId())
+                .and(SERIES_DIRECTOR.PERSON_ID.eq(laterDirector.getId())))
         .execute();
 
     var directors = personRepository.findDirectorsBySeriesId(series.getId());
+    var expectedIds =
+        Stream.concat(
+                idsInPostgresOrder(tiedDirectorA, tiedDirectorB).stream(),
+                Stream.of(laterDirector.getId()))
+            .toList();
 
-    assertThat(directors)
-        .extracting(Person::getName)
-        .containsExactly("First Series Director", "Second Series Director");
+    assertThat(directors).extracting(Person::getId).containsExactlyElementsOf(expectedIds);
+  }
+
+  private static List<UUID> idsInPostgresOrder(Person... persons) {
+    return Stream.of(persons)
+        .map(Person::getId)
+        .sorted(Comparator.comparing(UUID::toString))
+        .toList();
   }
 }
