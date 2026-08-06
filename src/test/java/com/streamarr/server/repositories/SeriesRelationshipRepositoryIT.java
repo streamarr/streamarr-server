@@ -31,6 +31,41 @@ class SeriesRelationshipRepositoryIT extends AbstractIntegrationTest {
   @Autowired private DSLContext dsl;
 
   @Test
+  @DisplayName("Should return empty relationships when series has no associated metadata")
+  void shouldReturnEmptyRelationshipsWhenSeriesHasNoAssociatedMetadata() {
+    var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+    var studio =
+        companyRepository.save(
+            Company.builder().name("Control Studio").sourceId("control-studio-1").build());
+    var genre =
+        genreRepository.save(
+            Genre.builder().name("Control Genre").sourceId("control-genre-1").build());
+    var actor =
+        personRepository.save(
+            Person.builder().name("Control Actor").sourceId("control-actor-1").build());
+    var director =
+        personRepository.save(
+            Person.builder().name("Control Director").sourceId("control-director-1").build());
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Populated Control Series")
+            .library(library)
+            .studios(Set.of(studio))
+            .genres(Set.of(genre))
+            .cast(List.of(actor))
+            .directors(List.of(director))
+            .build());
+    var emptySeries =
+        seriesRepository.saveAndFlush(
+            Series.builder().title("Empty Target Series").library(library).build());
+
+    assertThat(companyRepository.findBySeriesId(emptySeries.getId())).isEmpty();
+    assertThat(genreRepository.findBySeriesId(emptySeries.getId())).isEmpty();
+    assertThat(personRepository.findCastBySeriesId(emptySeries.getId())).isEmpty();
+    assertThat(personRepository.findDirectorsBySeriesId(emptySeries.getId())).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should find studios when series ID has associated studios")
   void shouldFindStudiosWhenSeriesIdHasAssociatedStudios() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
