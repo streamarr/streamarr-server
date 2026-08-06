@@ -14,6 +14,7 @@ import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -182,6 +183,26 @@ class PersonServiceTest {
   }
 
   @Test
+  @DisplayName("Should process opposite-order batches in the same canonical order")
+  void shouldProcessOppositeOrderBatchesInSameCanonicalOrder() {
+    var ascending =
+        List.of(
+            Person.builder().name("Actor A").sourceId("100").build(),
+            Person.builder().name("Actor B").sourceId("200").build(),
+            Person.builder().name("Actor C").sourceId("300").build());
+    var ascendingRepository = new RecordingPersonRepository();
+    var descendingRepository = new RecordingPersonRepository();
+
+    new PersonService(ascendingRepository, new CapturingEventPublisher())
+        .getOrCreatePersons(ascending, Map.of());
+    new PersonService(descendingRepository, new CapturingEventPublisher())
+        .getOrCreatePersons(ascending.reversed(), Map.of());
+
+    assertThat(descendingRepository.processedSourceIds())
+        .isEqualTo(ascendingRepository.processedSourceIds());
+  }
+
+  @Test
   @DisplayName("Should throw when person not found after upsert")
   void shouldThrowWhenPersonNotFoundAfterUpsert() {
     var stubRepository = mock(PersonRepository.class);
@@ -195,5 +216,20 @@ class PersonServiceTest {
     assertThatThrownBy(() -> service.getOrCreatePersons(persons, emptyImageSources))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not found after upsert");
+  }
+
+  private static final class RecordingPersonRepository extends FakePersonRepository {
+
+    private final List<String> processedSourceIds = new ArrayList<>();
+
+    @Override
+    public boolean insertIfAbsent(String sourceId, String name) {
+      processedSourceIds.add(sourceId);
+      return super.insertIfAbsent(sourceId, name);
+    }
+
+    private List<String> processedSourceIds() {
+      return List.copyOf(processedSourceIds);
+    }
   }
 }
