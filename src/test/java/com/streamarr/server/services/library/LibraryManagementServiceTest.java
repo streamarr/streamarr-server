@@ -64,6 +64,7 @@ import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
@@ -739,6 +740,25 @@ class LibraryManagementServiceTest {
   }
 
   @Test
+  @DisplayName("Should mark metadata unavailable when TMDB search is temporarily unavailable")
+  void shouldMarkMetadataUnavailableWhenTmdbSearchIsTemporarilyUnavailable() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    var moviePath = createMovieFile(rootPath, "Cop Land", "Cop Land (1997).mkv");
+    var timeout = new IOException("Connection timed out");
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(new TemporarilyUnavailable(timeout));
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
+        .get()
+        .extracting(MediaFile::getStatus)
+        .isEqualTo(MediaFileStatus.METADATA_UNAVAILABLE);
+  }
+
+  @Test
   @DisplayName("Should process discovered file when library exists")
   void shouldProcessDiscoveredFileWhenLibraryExists() throws IOException {
     var movieFolder = "About Time";
@@ -773,8 +793,8 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should search with URI-derived movie metadata when processing discovered file")
-  void shouldSearchWithUriDerivedMovieMetadataWhenProcessingDiscoveredFile() throws IOException {
+  @DisplayName("Should use folder title when movie filename lacks title and year")
+  void shouldUseFolderTitleWhenMovieFilenameLacksTitleAndYear() throws IOException {
     var expectedSearch =
         VideoFileParserResult.builder().title("Café Meridian").year("2001").build();
     var searchResult =

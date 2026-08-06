@@ -149,6 +149,9 @@ class ImageEnrichmentListenerTest {
   @DisplayName("Should download only missing image types when some images already exist")
   void shouldDownloadOnlyMissingImageTypesWhenSomeImagesAlreadyExist() throws InterruptedException {
     var entityId = UUID.randomUUID();
+    var completionTrackingRepository = new CompletionTrackingImageRepository();
+    imageRepository = completionTrackingRepository;
+    completionTrackingRepository.expectImagesFor(entityId);
     imageRepository.save(
         Image.builder()
             .entityId(entityId)
@@ -174,15 +177,10 @@ class ImageEnrichmentListenerTest {
     testListener.onMetadataEnriched(event);
 
     assertThat(imageDownloader.awaitDownloadStarted("/backdrop.jpg")).isTrue();
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () ->
-                assertThat(
-                        imageRepository.findByEntityIdAndEntityType(
-                            entityId, ImageEntityType.MOVIE))
-                    .extracting(Image::getImageType)
-                    .containsOnly(ImageType.POSTER, ImageType.BACKDROP));
+    assertThat(completionTrackingRepository.awaitImagesFor(entityId)).isTrue();
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .extracting(Image::getImageType)
+        .containsOnly(ImageType.POSTER, ImageType.BACKDROP);
     assertThat(imageDownloader.downloadedPaths()).containsExactly("/backdrop.jpg");
   }
 

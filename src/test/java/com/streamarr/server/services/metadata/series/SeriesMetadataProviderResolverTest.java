@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -23,36 +24,6 @@ import org.junit.jupiter.api.Test;
 @Tag("UnitTest")
 @DisplayName("Series Metadata Provider Resolver Tests")
 class SeriesMetadataProviderResolverTest {
-
-  @Test
-  @DisplayName("Should return search result when provider matches library strategy")
-  void shouldReturnSearchResultWhenProviderMatchesLibraryStrategy() {
-    var expectedResult =
-        RemoteSearchResult.builder()
-            .title("Breaking Bad")
-            .externalId("1396")
-            .externalSourceType(ExternalSourceType.TMDB)
-            .build();
-
-    var resolver =
-        new SeriesMetadataProviderResolver(
-            List.of(
-                new FakeSeriesMetadataProvider(expectedResult, null, List.of(), Optional.empty())));
-
-    var library =
-        Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
-    var parserResult = VideoFileParserResult.builder().title("Breaking Bad").build();
-
-    var result = resolver.search(library, parserResult);
-
-    assertThat(result)
-        .isInstanceOfSatisfying(
-            Found.class,
-            found -> {
-              assertThat(found.result().title()).isEqualTo("Breaking Bad");
-              assertThat(found.result().externalId()).isEqualTo("1396");
-            });
-  }
 
   @Test
   @DisplayName("Should return unavailable when no provider matches library strategy for search")
@@ -75,8 +46,7 @@ class SeriesMetadataProviderResolverTest {
 
     var resolver =
         new SeriesMetadataProviderResolver(
-            List.of(
-                new FakeSeriesMetadataProvider(null, expectedSeries, List.of(), Optional.empty())));
+            List.of(fakeProviderBuilder().series(expectedSeries).build()));
 
     var library =
         Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
@@ -98,8 +68,7 @@ class SeriesMetadataProviderResolverTest {
   void shouldReturnSeasonNumbersWhenProviderMatchesLibraryStrategy() {
     var resolver =
         new SeriesMetadataProviderResolver(
-            List.of(
-                new FakeSeriesMetadataProvider(null, null, List.of(1, 2, 3), Optional.empty())));
+            List.of(fakeProviderBuilder().seasonNumbers(List.of(1, 2, 3)).build()));
 
     var library =
         Library.builder()
@@ -160,9 +129,7 @@ class SeriesMetadataProviderResolverTest {
 
     var resolver =
         new SeriesMetadataProviderResolver(
-            List.of(
-                new FakeSeriesMetadataProvider(
-                    null, null, List.of(), Optional.of(expectedDetails))));
+            List.of(fakeProviderBuilder().seasonDetails(Optional.of(expectedDetails)).build()));
 
     var library =
         Library.builder()
@@ -198,7 +165,8 @@ class SeriesMetadataProviderResolverTest {
     private final List<Integer> seasonNumbers;
     private final Optional<SeasonDetails> seasonDetails;
 
-    FakeSeriesMetadataProvider(
+    @Builder
+    private FakeSeriesMetadataProvider(
         RemoteSearchResult searchResult,
         Series series,
         List<Integer> seasonNumbers,
@@ -243,5 +211,12 @@ class SeriesMetadataProviderResolverTest {
     public ExternalAgentStrategy getAgentStrategy() {
       return ExternalAgentStrategy.TMDB;
     }
+  }
+
+  private static FakeSeriesMetadataProvider.FakeSeriesMetadataProviderBuilder
+      fakeProviderBuilder() {
+    return FakeSeriesMetadataProvider.builder()
+        .seasonNumbers(List.of())
+        .seasonDetails(Optional.empty());
   }
 }

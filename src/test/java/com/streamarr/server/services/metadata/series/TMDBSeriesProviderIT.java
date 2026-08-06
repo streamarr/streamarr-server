@@ -4,16 +4,15 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.mizosoft.methanol.HttpCache;
-import com.streamarr.server.AbstractWireMockIntegrationTest;
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome;
@@ -21,40 +20,56 @@ import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
+import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
+import com.streamarr.server.services.metadata.TmdbSearchDelegate;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
-import java.io.IOException;
+import java.net.http.HttpClient;
 import java.time.LocalDate;
+import java.util.UUID;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import org.springframework.beans.factory.annotation.Autowired;
+import tools.jackson.databind.ObjectMapper;
 
 @Tag("IntegrationTest")
 @DisplayName("TMDB Series Provider Integration Tests")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class TMDBSeriesProviderIT extends AbstractWireMockIntegrationTest {
+class TMDBSeriesProviderIT {
 
-  @Autowired private TMDBSeriesProvider provider;
+  private final WireMockServer wireMock = new WireMockServer(wireMockConfig().dynamicPort());
 
-  @Autowired private HttpCache tmdbHttpCache;
-
-  @Autowired private LibraryRepository libraryRepository;
-
+  private TMDBSeriesProvider provider;
   private Library savedLibrary;
 
   @BeforeAll
   void setupLibrary() {
-    savedLibrary = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+    wireMock.start();
+    var httpService =
+        new TheMovieDatabaseHttpService(
+            "test-api-token",
+            wireMock.baseUrl(),
+            wireMock.baseUrl(),
+            HttpClient.newHttpClient(),
+            new ObjectMapper());
+    provider = new TMDBSeriesProvider(httpService, new TmdbSearchDelegate(httpService));
+    savedLibrary =
+        LibraryFixtureCreator.buildFakeSeriesLibrary().toBuilder().id(UUID.randomUUID()).build();
+  }
+
+  @AfterAll
+  void stopWireMock() {
+    wireMock.stop();
   }
 
   @BeforeEach
-  void resetStubs() throws IOException {
+  void resetStubs() {
     wireMock.resetAll();
-    tmdbHttpCache.clear();
     provider.onScanEnded(new ScanEndedEvent(savedLibrary.getId()));
   }
 
@@ -143,7 +158,17 @@ class TMDBSeriesProviderIT extends AbstractWireMockIntegrationTest {
 
     var result = provider.search(VideoFileParserResult.builder().title("Test").build());
 
-    assertThat(result).isInstanceOf(TemporarilyUnavailable.class);
+    assertThat(result)
+        .isInstanceOfSatisfying(
+            TemporarilyUnavailable.class,
+            unavailable ->
+                assertThat(unavailable.cause())
+                    .isInstanceOfSatisfying(
+                        TmdbApiException.class,
+                        failure -> {
+                          assertThat(failure.getStatusCode()).isEqualTo(500);
+                          assertThat(failure).hasMessageContaining("Internal error.");
+                        }));
   }
 
   @Test

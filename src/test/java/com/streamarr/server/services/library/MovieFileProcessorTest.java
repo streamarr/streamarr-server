@@ -2,7 +2,6 @@ package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -32,7 +31,6 @@ import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataPa
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -118,44 +116,6 @@ class MovieFileProcessorTest {
       // Clear the interrupt flag so it doesn't affect other tests
       Thread.interrupted();
     }
-  }
-
-  @Test
-  @DisplayName(
-      "Should use folder title for TMDB search when filename lacks year but folder has year")
-  void shouldUseFolderTitleForTmdbSearchWhenFilenameLacksYearButFolderHasYear() {
-    var library = LibraryFixtureCreator.buildFakeLibrary();
-
-    var mediaFile =
-        fakeMediaFileRepository.save(
-            MediaFile.builder()
-                .libraryId(library.getId())
-                .filepathUri("file:///library/Inception%20(2010)/movie.mkv")
-                .filename("movie.mkv")
-                .status(MediaFileStatus.UNMATCHED)
-                .build());
-
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(new NotFound());
-
-    when(tmdbMovieProvider.search(
-            argThat(r -> "Inception".equals(r.title()) && "2010".equals(r.year()))))
-        .thenReturn(
-            new Found(
-                RemoteSearchResult.builder()
-                    .title("Inception")
-                    .externalId("27205")
-                    .externalSourceType(ExternalSourceType.TMDB)
-                    .build()));
-
-    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(Optional.empty());
-
-    movieFileProcessor.process(library, mediaFile);
-
-    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isEqualTo(MediaFileStatus.UNMATCHED);
   }
 
   @Test
