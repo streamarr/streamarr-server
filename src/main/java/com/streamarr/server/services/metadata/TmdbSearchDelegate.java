@@ -15,7 +15,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
-import tools.jackson.core.JacksonException;
 
 @Slf4j
 @Component
@@ -131,7 +130,7 @@ public class TmdbSearchDelegate {
           .apply(findResults)
           .<MetadataSearchOutcome>map(Found::new)
           .orElseGet(NotFound::new);
-    } catch (IOException | JacksonException ex) {
+    } catch (IOException ex) {
       log.warn(
           "TMDB /find failed for external ID '{}', falling back to text search",
           videoInformation.externalId(),
@@ -158,7 +157,7 @@ public class TmdbSearchDelegate {
           videoInformation.externalId(),
           ex);
       return new TemporarilyUnavailable(ex);
-    } catch (IOException | JacksonException ex) {
+    } catch (IOException ex) {
       log.warn(
           "TMDB direct lookup failed for ID '{}', falling back to text search",
           videoInformation.externalId(),
