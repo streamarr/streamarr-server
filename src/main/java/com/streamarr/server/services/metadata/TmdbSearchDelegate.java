@@ -4,6 +4,7 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
+import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbFindResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
@@ -147,6 +148,16 @@ public class TmdbSearchDelegate {
       VideoFileParserResult videoInformation, DirectLookup directLookup) {
     try {
       return new Found(directLookup.lookup(videoInformation.externalId()));
+    } catch (TmdbApiException ex) {
+      if (ex.getStatusCode() == 404) {
+        return new NotFound();
+      }
+
+      log.warn(
+          "TMDB direct lookup failed for ID '{}', falling back to text search",
+          videoInformation.externalId(),
+          ex);
+      return new TemporarilyUnavailable(ex);
     } catch (IOException | JacksonException ex) {
       log.warn(
           "TMDB direct lookup failed for ID '{}', falling back to text search",
