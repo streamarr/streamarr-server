@@ -33,8 +33,8 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
   @TempDir Path libraryPath;
 
   @Test
-  @DisplayName("Should delete only movies with no files remaining after orphan cleanup")
-  void shouldDeleteOnlyMoviesWithNoFilesRemainingAfterOrphanCleanup() throws IOException {
+  @DisplayName("Should delete only movies with no files remaining when orphans are cleaned up")
+  void shouldDeleteOnlyMoviesWithNoFilesRemainingWhenOrphansAreCleanedUp() throws IOException {
     var library =
         libraryRepository.saveAndFlush(
             LibraryFixtureCreator.buildFakeLibrary().toBuilder()
@@ -50,14 +50,22 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
 
     var deletedMovieOrphan =
         mediaFileRepository.saveAndFlush(
-            mediaFile(library.getId(), deletedMovie.getId(), libraryPath.resolve("deleted.mkv")));
+            mediaFileBuilder(libraryPath.resolve("deleted.mkv"))
+                .libraryId(library.getId())
+                .mediaId(deletedMovie.getId())
+                .build());
     var retainedMovieOrphan =
         mediaFileRepository.saveAndFlush(
-            mediaFile(
-                library.getId(), retainedMovie.getId(), libraryPath.resolve("missing-copy.mkv")));
+            mediaFileBuilder(libraryPath.resolve("missing-copy.mkv"))
+                .libraryId(library.getId())
+                .mediaId(retainedMovie.getId())
+                .build());
     var retainedMovieFile =
         mediaFileRepository.saveAndFlush(
-            mediaFile(library.getId(), retainedMovie.getId(), retainedPath));
+            mediaFileBuilder(retainedPath)
+                .libraryId(library.getId())
+                .mediaId(retainedMovie.getId())
+                .build());
 
     orphanedMediaFileCleanupService.onScanCompleted(new ScanCompletedEvent(library.getId()));
 
@@ -68,13 +76,10 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
     assertThat(mediaFileRepository.findById(retainedMovieFile.getId())).isPresent();
   }
 
-  private static MediaFile mediaFile(java.util.UUID libraryId, java.util.UUID movieId, Path path) {
+  private static MediaFile.MediaFileBuilder<?, ?> mediaFileBuilder(Path path) {
     return MediaFile.builder()
-        .libraryId(libraryId)
-        .mediaId(movieId)
         .filepathUri(FilepathCodec.encode(path))
         .filename(path.getFileName().toString())
-        .status(MediaFileStatus.MATCHED)
-        .build();
+        .status(MediaFileStatus.MATCHED);
   }
 }

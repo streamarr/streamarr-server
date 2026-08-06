@@ -34,13 +34,34 @@ class MetadataRefreshOrderingIT extends AbstractIntegrationTest {
   @Autowired private EntityManager entityManager;
 
   @Test
-  @DisplayName("Should persist refreshed movie cast and directors in billing order")
-  void shouldPersistRefreshedMovieCastAndDirectorsInBillingOrder() {
+  @DisplayName(
+      "Should persist movie cast and directors in billing order when metadata is refreshed")
+  void shouldPersistMovieCastAndDirectorsInBillingOrderWhenMetadataIsRefreshed() {
     var sourceSuffix = UUID.randomUUID();
-    var firstActor = person("First Billed Actor", "z-first-actor-" + sourceSuffix);
-    var secondActor = person("Second Billed Actor", "a-second-actor-" + sourceSuffix);
-    var firstDirector = person("First Billed Director", "z-first-director-" + sourceSuffix);
-    var secondDirector = person("Second Billed Director", "a-second-director-" + sourceSuffix);
+    var firstActor =
+        savePerson(
+            Person.builder()
+                .name("First Billed Actor")
+                .sourceId("z-first-actor-" + sourceSuffix)
+                .build());
+    var secondActor =
+        savePerson(
+            Person.builder()
+                .name("Second Billed Actor")
+                .sourceId("a-second-actor-" + sourceSuffix)
+                .build());
+    var firstDirector =
+        savePerson(
+            Person.builder()
+                .name("First Billed Director")
+                .sourceId("z-first-director-" + sourceSuffix)
+                .build());
+    var secondDirector =
+        savePerson(
+            Person.builder()
+                .name("Second Billed Director")
+                .sourceId("a-second-director-" + sourceSuffix)
+                .build());
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var movie =
         movieRepository.saveAndFlush(
@@ -70,15 +91,34 @@ class MetadataRefreshOrderingIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should persist refreshed series cast and directors in billing order")
-  void shouldPersistRefreshedSeriesCastAndDirectorsInBillingOrder() {
+  @DisplayName(
+      "Should persist series cast and directors in billing order when metadata is refreshed")
+  void shouldPersistSeriesCastAndDirectorsInBillingOrderWhenMetadataIsRefreshed() {
     var sourceSuffix = UUID.randomUUID();
-    var firstActor = person("First Billed Series Actor", "z-first-series-actor-" + sourceSuffix);
-    var secondActor = person("Second Billed Series Actor", "a-second-series-actor-" + sourceSuffix);
+    var firstActor =
+        savePerson(
+            Person.builder()
+                .name("First Billed Series Actor")
+                .sourceId("z-first-series-actor-" + sourceSuffix)
+                .build());
+    var secondActor =
+        savePerson(
+            Person.builder()
+                .name("Second Billed Series Actor")
+                .sourceId("a-second-series-actor-" + sourceSuffix)
+                .build());
     var firstDirector =
-        person("First Billed Series Director", "z-first-series-director-" + sourceSuffix);
+        savePerson(
+            Person.builder()
+                .name("First Billed Series Director")
+                .sourceId("z-first-series-director-" + sourceSuffix)
+                .build());
     var secondDirector =
-        person("Second Billed Series Director", "a-second-series-director-" + sourceSuffix);
+        savePerson(
+            Person.builder()
+                .name("Second Billed Series Director")
+                .sourceId("a-second-series-director-" + sourceSuffix)
+                .build());
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var series =
         seriesRepository.saveAndFlush(
@@ -107,8 +147,8 @@ class MetadataRefreshOrderingIT extends AbstractIntegrationTest {
         .containsExactly("First Billed Series Director", "Second Billed Series Director");
   }
 
-  private Person person(String name, String sourceId) {
-    return personRepository.save(Person.builder().name(name).sourceId(sourceId).build());
+  private Person savePerson(Person person) {
+    return personRepository.save(person);
   }
 
   private static Person snapshot(Person person) {

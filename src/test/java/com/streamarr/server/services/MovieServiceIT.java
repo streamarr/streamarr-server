@@ -136,8 +136,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should expose cast in billing order")
-  void shouldExposeCastInBillingOrder() {
+  @DisplayName("Should expose cast in billing order when movie has multiple cast members")
+  void shouldExposeCastInBillingOrderWhenMovieHasMultipleCastMembers() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var secondActor =
         personRepository.save(

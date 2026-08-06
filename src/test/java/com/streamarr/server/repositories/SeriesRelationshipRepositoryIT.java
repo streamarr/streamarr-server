@@ -31,8 +31,8 @@ class SeriesRelationshipRepositoryIT extends AbstractIntegrationTest {
   @Autowired private DSLContext dsl;
 
   @Test
-  @DisplayName("Should find studios by series ID")
-  void shouldFindStudiosBySeriesId() {
+  @DisplayName("Should find studios when series ID has associated studios")
+  void shouldFindStudiosWhenSeriesIdHasAssociatedStudios() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var studio =
         companyRepository.save(
@@ -51,8 +51,8 @@ class SeriesRelationshipRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should find genres by series ID")
-  void shouldFindGenresBySeriesId() {
+  @DisplayName("Should find genres when series ID has associated genres")
+  void shouldFindGenresWhenSeriesIdHasAssociatedGenres() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var genre =
         genreRepository.save(Genre.builder().name("Crime").sourceId("series-crime-1").build());
@@ -66,8 +66,8 @@ class SeriesRelationshipRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should find cast by series ID")
-  void shouldFindCastBySeriesId() {
+  @DisplayName("Should find cast when series ID has associated cast")
+  void shouldFindCastWhenSeriesIdHasAssociatedCast() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var actor =
         personRepository.save(
@@ -82,8 +82,8 @@ class SeriesRelationshipRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should find directors by series ID")
-  void shouldFindDirectorsBySeriesId() {
+  @DisplayName("Should find directors when series ID has associated directors")
+  void shouldFindDirectorsWhenSeriesIdHasAssociatedDirectors() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var director =
         personRepository.save(
@@ -102,8 +102,8 @@ class SeriesRelationshipRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should find cast by series ID in ordinal order")
-  void shouldFindCastBySeriesIdInOrdinalOrder() {
+  @DisplayName("Should find cast in ordinal order when series has multiple cast members")
+  void shouldFindCastInOrdinalOrderWhenSeriesHasMultipleCastMembers() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var secondActor =
         personRepository.save(
@@ -143,8 +143,8 @@ class SeriesRelationshipRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should find directors by series ID in ordinal order")
-  void shouldFindDirectorsBySeriesIdInOrdinalOrder() {
+  @DisplayName("Should find directors in ordinal order when series has multiple directors")
+  void shouldFindDirectorsInOrdinalOrderWhenSeriesHasMultipleDirectors() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var secondDirector =
         personRepository.save(

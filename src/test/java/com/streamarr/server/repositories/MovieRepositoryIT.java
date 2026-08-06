@@ -121,8 +121,8 @@ class MovieRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should load external identifiers with movies by library ID")
-  void shouldLoadExternalIdentifiersWithMoviesByLibraryId() {
+  @DisplayName("Should load external identifiers when finding movies by library ID")
+  void shouldLoadExternalIdentifiersWhenFindingMoviesByLibraryId() {
     var externalId =
         ExternalIdentifier.builder()
             .externalId("eager-movie-1")

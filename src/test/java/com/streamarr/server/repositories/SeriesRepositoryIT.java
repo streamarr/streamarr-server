@@ -22,8 +22,8 @@ class SeriesRepositoryIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
 
   @Test
-  @DisplayName("Should load external identifiers with series by library ID")
-  void shouldLoadExternalIdentifiersWithSeriesByLibraryId() {
+  @DisplayName("Should load external identifiers when finding series by library ID")
+  void shouldLoadExternalIdentifiersWhenFindingSeriesByLibraryId() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var externalId =
         ExternalIdentifier.builder()

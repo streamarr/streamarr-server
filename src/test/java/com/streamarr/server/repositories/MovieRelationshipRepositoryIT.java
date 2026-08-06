@@ -100,8 +100,9 @@ class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should find cast by movie ID in ordinal order with null ordinals last")
-  void shouldFindCastByMovieIdInOrdinalOrderWithNullOrdinalsLast() {
+  @DisplayName(
+      "Should find cast in ordinal order with null ordinals last when movie has ranked and unranked cast members")
+  void shouldFindCastInOrdinalOrderWithNullOrdinalsLastWhenMovieHasRankedAndUnrankedCastMembers() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var unrankedActor =
         personRepository.save(
@@ -138,8 +139,8 @@ class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should find directors by movie ID in ordinal order")
-  void shouldFindDirectorsByMovieIdInOrdinalOrder() {
+  @DisplayName("Should find directors in ordinal order when movie has multiple directors")
+  void shouldFindDirectorsInOrdinalOrderWhenMovieHasMultipleDirectors() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var secondDirector =
         personRepository.save(
