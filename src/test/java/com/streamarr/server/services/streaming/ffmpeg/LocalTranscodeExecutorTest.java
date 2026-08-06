@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
@@ -10,6 +11,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.nio.file.Path;
@@ -207,6 +209,32 @@ class LocalTranscodeExecutorTest {
             segmentStore);
 
     assertThat(executor.isHealthy()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should reject producer start when FFmpeg lacks required HLS capabilities")
+  void shouldRejectProducerStartWhenFfmpegLacksRequiredHlsCapabilities() {
+    var capabilityService =
+        new TranscodeCapabilityService(
+            "ffmpeg",
+            command -> {
+              if (String.join(" ", command).contains("muxer=hls")) {
+                return new FakeProcess("Muxer hls [Apple HTTP Live Streaming]:", 0);
+              }
+              return new FakeProcess("ffmpeg version 4.4.2", 0);
+            });
+    capabilityService.detectCapabilities();
+    executor =
+        new LocalTranscodeExecutor(
+            new FfmpegTranscodeEngine(
+                new FfmpegCommandBuilder("ffmpeg"), processManager, capabilityService),
+            segmentStore);
+    var request = createRequest(TranscodeMode.FULL_TRANSCODE, "av1");
+
+    var thrown = catchThrowable(() -> executor.start(request));
+
+    assertThat(processManager.getStarted()).doesNotContain(request.sessionId());
+    assertThat(thrown).isInstanceOf(TranscodeException.class);
   }
 
   @Test

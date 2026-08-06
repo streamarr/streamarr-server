@@ -16,7 +16,7 @@
       "description": "Update the Pack builder used by container-image workflows",
       "managerFilePatterns": ["/^\\.github/actions/pack-build/action\\.yml$/"],
       "matchStrings": [
-        "--builder (?<depName>paketobuildpacks/builder-jammy-full):(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+        "--builder (?<depName>paketobuildpacks/ubuntu-noble-builder):(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
@@ -30,6 +30,19 @@
       ],
       "datasourceTemplate": "buildpacks-registry",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Track pinned BtbN FFmpeg runtime releases",
+      "managerFilePatterns": [
+        "/^\\.github/actions/pack-build/install-ffmpeg\\.sh$/"
+      ],
+      "matchStrings": [
+        "release=(?<currentValue>autobuild-\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2})"
+      ],
+      "depNameTemplate": "BtbN/FFmpeg-Builds",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "regex:^autobuild-(?<major>\\d{4})-(?<minor>\\d{2})-(?<patch>\\d{2})-(?<build>\\d{2})-(?<revision>\\d{2})$"
     }
   ],
   "packageRules": [

@@ -1,13 +1,11 @@
 package com.streamarr.transcode.worker;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.remuxEngine;
 import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
-import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
-import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
@@ -156,16 +154,7 @@ class TranscodeWorkerUploadProtocolIT {
             .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, mediaRoot))
             .segmentBasePath(tempDir.resolve("segments"))
             .build();
-    var engine =
-        new FfmpegTranscodeEngine(
-            new FfmpegCommandBuilder("ffmpeg"),
-            processManager,
-            new TranscodeCapabilityService(
-                "ffmpeg",
-                _ -> {
-                  throw new IllegalStateException("Not used for remux");
-                }));
-    return new TranscodeWorker(configuration, engine);
+    return new TranscodeWorker(configuration, remuxEngine(processManager));
   }
 
   private VariantJob variantJob() {

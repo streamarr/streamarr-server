@@ -7,8 +7,13 @@ import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.worker.TranscodeWorkerConfiguration;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -51,13 +56,54 @@ public final class RemoteWorkerFixtures {
   }
 
   public static FfmpegTranscodeEngine remuxEngine(FfmpegProcessManager processManager) {
-    return new FfmpegTranscodeEngine(
-        new FfmpegCommandBuilder("ffmpeg"),
-        processManager,
+    var capabilityService =
         new TranscodeCapabilityService(
             "ffmpeg",
-            _ -> {
-              throw new IllegalStateException("Not used for remux");
-            }));
+            command ->
+                new CompatibleFfmpegProcess(
+                    Arrays.asList(command).contains("muxer=hls") ? "hls_segment_options" : ""));
+    capabilityService.detectCapabilities();
+
+    return new FfmpegTranscodeEngine(
+        new FfmpegCommandBuilder("ffmpeg"), processManager, capabilityService);
+  }
+
+  private static class CompatibleFfmpegProcess extends Process {
+
+    private final InputStream inputStream;
+
+    CompatibleFfmpegProcess(String stdout) {
+      inputStream = new ByteArrayInputStream(stdout.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public OutputStream getOutputStream() {
+      return OutputStream.nullOutputStream();
+    }
+
+    @Override
+    public InputStream getInputStream() {
+      return inputStream;
+    }
+
+    @Override
+    public InputStream getErrorStream() {
+      return InputStream.nullInputStream();
+    }
+
+    @Override
+    public int waitFor() {
+      return 0;
+    }
+
+    @Override
+    public int exitValue() {
+      return 0;
+    }
+
+    @Override
+    public void destroy() {
+      // no-op for test fake
+    }
   }
 }

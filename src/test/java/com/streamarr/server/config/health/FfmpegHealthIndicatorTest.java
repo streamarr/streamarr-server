@@ -58,6 +58,27 @@ class FfmpegHealthIndicatorTest {
     assertThat(health.getStatus()).isEqualTo(Status.DOWN);
   }
 
+  @Test
+  @DisplayName("Should explain missing HLS capability when FFmpeg is installed but incompatible")
+  void shouldExplainMissingHlsCapabilityWhenFfmpegIsInstalledButIncompatible() {
+    var service =
+        new TranscodeCapabilityService(
+            "ffmpeg",
+            command -> {
+              if (String.join(" ", command).contains("muxer=hls")) {
+                return new FakeTestProcess("Muxer hls [Apple HTTP Live Streaming]:", 0);
+              }
+              return new FakeTestProcess("ffmpeg version 4.4.2", 0);
+            });
+    service.detectCapabilities();
+    var indicator = new FfmpegHealthIndicator(service);
+
+    var health = indicator.health();
+
+    assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+    assertThat(health.getDetails()).containsEntry("reason", "Missing hls_segment_options");
+  }
+
   private TranscodeCapabilityService createCapabilityService(
       boolean ffmpegAvailable, boolean gpuAvailable, Set<String> encoders, String accelerator) {
     var encoderOutput = new StringBuilder();

@@ -10,8 +10,17 @@ permissions:
   contents: read
 
 jobs:
-  publish_release:
-    runs-on: ubuntu-latest
+  build_release_images:
+    name: Build and verify ${{ matrix.architecture }} image
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -29,8 +38,49 @@ jobs:
         uses: ./.github/actions/pack-build
         with:
           tags: >-
-            streamarr/streamarr-server:latest
-            streamarr/streamarr-server:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+            streamarr/streamarr-server:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}-${{ matrix.architecture }}
           publish: "true"
           dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  publish_release:
+    name: Publish multi-architecture release image
+    needs: build_release_images
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Docker Metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: streamarr/streamarr-server
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Publish immutable multi-architecture image
+        env:
+          IMAGE_VERSION: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+        run: |
+          immutable_image="index.docker.io/streamarr/streamarr-server:${IMAGE_VERSION}"
+          docker buildx imagetools create \
+            --tag "${immutable_image}" \
+            "index.docker.io/streamarr/streamarr-server:${IMAGE_VERSION}-amd64" \
+            "index.docker.io/streamarr/streamarr-server:${IMAGE_VERSION}-arm64"
+
+          platforms="$(docker buildx imagetools inspect --raw "${immutable_image}" \
+            | jq -r '.manifests[].platform | "\(.os)/\(.architecture)"')"
+          grep -Fx "linux/amd64" <<<"${platforms}" >/dev/null
+          grep -Fx "linux/arm64" <<<"${platforms}" >/dev/null
+
+      - name: Publish latest multi-architecture image
+        env:
+          IMAGE_VERSION: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+        run: |
+          docker buildx imagetools create \
+            --tag "index.docker.io/streamarr/streamarr-server:latest" \
+            "index.docker.io/streamarr/streamarr-server:${IMAGE_VERSION}-amd64" \
+            "index.docker.io/streamarr/streamarr-server:${IMAGE_VERSION}-arm64"

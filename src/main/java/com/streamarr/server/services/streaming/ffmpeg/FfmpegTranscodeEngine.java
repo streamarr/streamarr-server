@@ -5,6 +5,7 @@ import com.streamarr.server.domain.streaming.TranscodeJob;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.exceptions.TranscodeException;
 import java.nio.file.Path;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,10 @@ public class FfmpegTranscodeEngine {
   private final TranscodeCapabilityService capabilityService;
 
   public TranscodeHandle start(TranscodeRequest request, Path outputDirectory) {
+    if (!capabilityService.isFfmpegAvailable()) {
+      throw new TranscodeException("FFmpeg is unavailable or lacks required HLS capabilities");
+    }
+
     var job =
         TranscodeJob.builder()
             .request(request)

@@ -84,6 +84,38 @@ class PackagedConfigurationTest {
   }
 
   @Test
+  @DisplayName("Should publish Pack builds that use a registry cache")
+  void shouldPublishPackBuildsThatUseARegistryCache() throws IOException {
+    var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
+    var packBuildStart = buildAction.indexOf("pack build");
+    var packBuild =
+        buildAction.substring(packBuildStart, buildAction.indexOf("\n\n", packBuildStart));
+
+    assertThat(packBuild.contains("--cache-image") && !packBuild.contains("--publish"))
+        .as("Pack cannot use --cache-image without --publish")
+        .isFalse();
+  }
+
+  @Test
+  @DisplayName("Should publish immutable release tag before latest")
+  void shouldPublishImmutableReleaseTagBeforeLatest() throws IOException {
+    var releaseWorkflow = Files.readString(Path.of(".github/workflows/publish-release.yml"));
+    var latestTag = releaseWorkflow.indexOf("streamarr/streamarr-server:latest");
+    var immutableTag = releaseWorkflow.indexOf("streamarr/streamarr-server:${{ fromJSON");
+
+    assertThat(immutableTag).isLessThan(latestTag);
+  }
+
+  @Test
+  @DisplayName("Should not ship an Apt manifest when packaging without the Apt buildpack")
+  void shouldNotShipAnAptManifestWhenPackagingWithoutTheAptBuildpack() throws IOException {
+    var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
+
+    assertThat(buildAction).doesNotContain("paketo-buildpacks/apt");
+    assertThat(Path.of("apt.yml")).doesNotExist();
+  }
+
+  @Test
   @DisplayName(
       "Should pin and track independently versioned Pack inputs when packaging container images")
   void shouldPinAndTrackIndependentlyVersionedPackInputsWhenPackagingContainerImages()
@@ -96,7 +128,7 @@ class PackagedConfigurationTest {
             .map(String::strip)
             .filter(
                 line ->
-                    line.startsWith("--builder paketobuildpacks/builder-jammy-full")
+                    line.startsWith("--builder paketobuildpacks/ubuntu-noble-builder")
                         || line.startsWith("--buildpack paketo-buildpacks/procfile"))
             .toList();
     var renovateMatchers =
@@ -110,12 +142,57 @@ class PackagedConfigurationTest {
         .hasSize(2)
         .allMatch(
             dependency ->
-                dependency.matches(
-                    "--(?:builder|buildpack) [^\\s\\\\]+(?:[:@])\\d+\\.\\d+\\.\\d+ \\\\"))
+                dependency.matches("--(?:builder|buildpack) [^\\s\\\\]+(?:[:@])\\d+\\.\\d+\\.\\d+"))
         .allSatisfy(
             dependency ->
                 assertThat(renovateMatchers)
                     .anyMatch(matcher -> matcher.matcher(dependency).find()));
+  }
+
+  @Test
+  @DisplayName("Should track the pinned FFmpeg runtime when packaging container images")
+  void shouldTrackThePinnedFfmpegRuntimeWhenPackagingContainerImages() throws IOException {
+    var renovateConfig = new ObjectMapper().readTree(Files.readString(Path.of("renovate.json")));
+    var customManagers =
+        StreamSupport.stream(renovateConfig.path("customManagers").spliterator(), false).toList();
+
+    assertThat(customManagers)
+        .anySatisfy(
+            manager -> {
+              assertThat(manager.path("managerFilePatterns").toString()).contains("install-ffmpeg");
+              assertThat(manager.path("datasourceTemplate").asString())
+                  .isEqualTo("github-releases");
+              assertThat(manager.path("depNameTemplate").asString())
+                  .isEqualTo("BtbN/FFmpeg-Builds");
+            });
+  }
+
+  @Test
+  @DisplayName("Should exercise every supported FFmpeg architecture before publishing releases")
+  void shouldExerciseEverySupportedFfmpegArchitectureBeforePublishingReleases() throws IOException {
+    var installer = Files.readString(Path.of(".github/actions/pack-build/install-ffmpeg.sh"));
+    var releaseWorkflow = Files.readString(Path.of(".github/workflows/publish-release.yml"));
+    var supportsArm64 = installer.contains("platform=linuxarm64");
+    var buildsOnArm64 =
+        Pattern.compile("ubuntu-(?:22|24|26)\\.04-arm").matcher(releaseWorkflow).find();
+
+    assertThat(supportsArm64 && !buildsOnArm64)
+        .as("linuxarm64 is declared but the release workflow has no ARM64 runner")
+        .isFalse();
+    assertThat(releaseWorkflow)
+        .contains(
+            "architecture: amd64",
+            "architecture: arm64",
+            "needs: build_release_images",
+            "docker buildx imagetools create");
+  }
+
+  @Test
+  @DisplayName("Should use a multi-architecture builder when packaging release architectures")
+  void shouldUseMultiArchitectureBuilderWhenPackagingReleaseArchitectures() throws IOException {
+    var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
+
+    assertThat(buildAction).contains("--builder paketobuildpacks/ubuntu-noble-builder:");
   }
 
   @Test

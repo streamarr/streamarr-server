@@ -35,6 +35,7 @@ public class TranscodeCapabilityService {
   private final String ffmpegPath;
   private final ProcessFactory processFactory;
   @Getter private boolean ffmpegAvailable;
+  @Getter private String unavailableReason = "FFmpeg not found";
 
   @Getter
   private HardwareEncodingCapability hardwareEncodingCapability =
@@ -46,12 +47,18 @@ public class TranscodeCapabilityService {
   }
 
   public void detectCapabilities() {
-    ffmpegAvailable = checkFfmpegVersion() && supportsRequiredHlsOptions();
-    if (!ffmpegAvailable) {
-      log.warn("FFmpeg is unavailable or lacks required HLS capabilities.");
+    if (!checkFfmpegVersion()) {
+      markUnavailable("FFmpeg not found");
       return;
     }
 
+    if (!supportsRequiredHlsOptions()) {
+      markUnavailable("Missing " + REQUIRED_HLS_OPTION);
+      return;
+    }
+
+    ffmpegAvailable = true;
+    unavailableReason = "";
     var hwEncoders = detectHardwareEncoders();
     var hasGpu = !hwEncoders.isEmpty();
     var accelerator = hasGpu ? detectAccelerator() : "";
@@ -68,6 +75,12 @@ public class TranscodeCapabilityService {
         hasGpu,
         hwEncoders,
         accelerator);
+  }
+
+  private void markUnavailable(String reason) {
+    ffmpegAvailable = false;
+    unavailableReason = reason;
+    log.warn("FFmpeg capability detection failed: {}", reason);
   }
 
   public String resolveEncoder(String codecFamily) {

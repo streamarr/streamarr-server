@@ -34,26 +34,28 @@ runs:
     - name: Build with pack CLI
       shell: bash
       env:
-        INPUT_TAGS: ${{ inputs.tags }}
+        INPUT_PUBLISH: ${{ inputs.publish }}
       run: |
-        tag_args=""
-        for tag in ${INPUT_TAGS}; do
-          tag_args="${tag_args} --tag ${tag}"
-        done
+        build_arch="$(uname -m)"
+        build_image="index.docker.io/streamarr/streamarr-server:build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${build_arch}"
+        pack_args=(
+          --builder paketobuildpacks/ubuntu-noble-builder:0.0.164
+          --buildpack paketo-buildpacks/java
+          --buildpack paketo-buildpacks/procfile@5.13.6
+          --env BP_JVM_VERSION=25
+          --env BP_INCLUDE_FILES=.profile:Procfile:.ffmpeg/bin/*:.ffmpeg/LICENSE.txt:.ffmpeg/SOURCE.txt
+          --path .
+        )
 
-        build_image="index.docker.io/streamarr/streamarr-server:build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-
-        # Pin independently resolved Pack inputs. Procfile must be versioned because jammy-full
+        # Pin independently resolved Pack inputs. Procfile must be versioned because the builder
         # includes several versions, making an unversioned reference ambiguous.
-        pack build "${build_image}" \
-            ${tag_args} \
-            --builder paketobuildpacks/builder-jammy-full:0.3.639 \
-            --buildpack paketo-buildpacks/java \
-            --buildpack paketo-buildpacks/procfile@5.13.6 \
-            --env BP_JVM_VERSION=25 \
-            --env BP_INCLUDE_FILES=.profile:Procfile:.ffmpeg/bin/*:.ffmpeg/LICENSE.txt:.ffmpeg/SOURCE.txt \
-            --path . \
-            --cache-image index.docker.io/streamarr/spring-boot-buildpack-paketo-cache-image:latest
+        if [[ "${INPUT_PUBLISH}" == "true" ]]; then
+          pack build "${build_image}" "${pack_args[@]}" \
+              --publish \
+              --cache-image "index.docker.io/streamarr/spring-boot-buildpack-paketo-cache-image:latest-${build_arch}"
+        else
+          pack build "${build_image}" "${pack_args[@]}"
+        fi
 
         .github/actions/pack-build/verify-ffmpeg-image.sh "${build_image}"
 
@@ -63,6 +65,9 @@ runs:
       env:
         INPUT_TAGS: ${{ inputs.tags }}
       run: |
+        build_arch="$(uname -m)"
+        build_image="index.docker.io/streamarr/streamarr-server:build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${build_arch}"
         for tag in ${INPUT_TAGS}; do
+          docker tag "${build_image}" "${tag}"
           docker push "${tag}"
         done
