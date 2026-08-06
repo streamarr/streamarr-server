@@ -209,7 +209,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
   }
 
   @Override
-  public List<Movie> findByLibraryIdWithExternalIds(UUID libraryId) {
+  public List<Movie> findWithExternalIdsByLibrary_Id(UUID libraryId) {
     return findByLibrary_Id(libraryId);
   }
 

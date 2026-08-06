@@ -41,7 +41,7 @@ public class LibraryRefreshService {
   }
 
   private void refreshSeriesLibrary(Library library) {
-    var seriesList = seriesRepository.findByLibraryIdWithExternalIds(library.getId());
+    var seriesList = seriesRepository.findWithExternalIdsByLibrary_Id(library.getId());
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (var series : seriesList) {
@@ -93,7 +93,7 @@ public class LibraryRefreshService {
   }
 
   private void refreshMovieLibrary(Library library) {
-    var movies = movieRepository.findByLibraryIdWithExternalIds(library.getId());
+    var movies = movieRepository.findWithExternalIdsByLibrary_Id(library.getId());
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (var movie : movies) {
