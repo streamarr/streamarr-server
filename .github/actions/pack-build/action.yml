@@ -8,6 +8,9 @@ inputs:
   publish:
     description: Whether to publish the image to the registry
     required: true
+  image-version:
+    description: Version recorded in the OCI image metadata
+    required: true
   dockerhub-username:
     description: Docker Hub username
     required: false
@@ -28,14 +31,11 @@ runs:
     - name: Install pack CLI
       uses: buildpacks/github-actions/setup-pack@e3b14c6e906f91da358e01dc2849ce068188107f # v5.12.5
 
-    - name: Install pinned FFmpeg runtime
-      shell: bash
-      run: .github/actions/pack-build/install-ffmpeg.sh .ffmpeg
-
     - name: Build with pack CLI
       shell: bash
       env:
         INPUT_PUBLISH: ${{ inputs.publish }}
+        INPUT_IMAGE_VERSION: ${{ inputs.image-version }}
       run: |
         build_arch="$(uname -m)"
         build_image="index.docker.io/streamarr/streamarr-server:build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${build_arch}"
@@ -43,8 +43,12 @@ runs:
           --builder paketobuildpacks/ubuntu-noble-builder:0.0.164
           --buildpack paketo-buildpacks/java
           --buildpack paketo-buildpacks/procfile@5.13.6
+          --buildpack ./buildpacks/ffmpeg
           --env BP_JVM_VERSION=25
-          --env BP_INCLUDE_FILES=.profile:Procfile:.ffmpeg/bin/*:.ffmpeg/LICENSE.txt:.ffmpeg/SOURCE.txt
+          --env BP_INCLUDE_FILES=Procfile
+          --env "BP_OCI_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          --env "BP_OCI_REVISION=${GITHUB_SHA}"
+          --env "BP_OCI_VERSION=${INPUT_IMAGE_VERSION}"
           --path .
         )
 
@@ -58,7 +62,11 @@ runs:
           pack build "${build_image}" "${pack_args[@]}"
         fi
 
-        .github/actions/pack-build/verify-ffmpeg-image.sh "${build_image}"
+        .github/actions/pack-build/verify-ffmpeg-image.sh \
+          "${build_image}" \
+          "${INPUT_IMAGE_VERSION}" \
+          "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+          "${GITHUB_SHA}"
 
     - name: Publish verified image tags
       if: inputs.publish == 'true'

@@ -105,3 +105,4 @@ jobs:
         with:
           tags: streamarr/streamarr-server:ci-${{ github.run_id }}-${{ matrix.architecture }}
           publish: "false"
+          image-version: ${{ github.sha }}

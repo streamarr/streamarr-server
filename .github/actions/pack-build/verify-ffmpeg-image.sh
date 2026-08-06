@@ -2,11 +2,36 @@
 
 set -euo pipefail
 
-image="${1:?Usage: verify-ffmpeg-image.sh <image>}"
+image="${1:?Usage: verify-ffmpeg-image.sh <image> <version> <source> <revision>}"
+expected_version="${2:?Usage: verify-ffmpeg-image.sh <image> <version> <source> <revision>}"
+expected_source="${3:?Usage: verify-ffmpeg-image.sh <image> <version> <source> <revision>}"
+expected_revision="${4:?Usage: verify-ffmpeg-image.sh <image> <version> <source> <revision>}"
 
-docker run --rm --entrypoint /bin/bash "${image}" -euo pipefail -c '
-  ffmpeg=/workspace/.ffmpeg/bin/ffmpeg
-  ffprobe=/workspace/.ffmpeg/bin/ffprobe
+if ! docker image inspect "${image}" >/dev/null 2>&1; then
+  docker pull "${image}" >/dev/null
+fi
+
+verify_label() {
+  local label="$1"
+  local expected="$2"
+  local actual
+  actual="$(docker image inspect --format "{{ index .Config.Labels \"${label}\" }}" "${image}")"
+  if [[ "${actual}" == "${expected}" ]]; then
+    return
+  fi
+
+  echo "Expected ${label}=${expected} but found ${actual}" >&2
+  exit 1
+}
+
+verify_label org.opencontainers.image.version "${expected_version}"
+verify_label org.opencontainers.image.source "${expected_source}"
+verify_label org.opencontainers.image.revision "${expected_revision}"
+
+docker run --rm --interactive --entrypoint /cnb/lifecycle/launcher "${image}" \
+  /bin/bash -euo pipefail -s <<'SCRIPT'
+  ffmpeg="$(command -v ffmpeg)"
+  ffprobe="$(command -v ffprobe)"
 
   version_output="$(${ffmpeg} -version 2>&1)"
   grep -F "ffmpeg version n8.1.2-34-g9b6c8969e0-20260731" <<<"${version_output}" >/dev/null
@@ -52,7 +77,7 @@ docker run --rm --entrypoint /bin/bash "${image}" -euo pipefail -c '
     -of default=noprint_wrappers=1 \
     "${output_dir}/playlist.m3u8" \
     | grep -F "format_name=hls"
-'
+SCRIPT
 
 docker run --rm --entrypoint /cnb/lifecycle/launcher "${image}" \
   ffmpeg -version >/dev/null

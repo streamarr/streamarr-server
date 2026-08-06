@@ -35,7 +35,7 @@
       "customType": "regex",
       "description": "Track pinned BtbN FFmpeg runtime releases",
       "managerFilePatterns": [
-        "/^\\.github/actions/pack-build/install-ffmpeg\\.sh$/"
+        "/^buildpacks/ffmpeg/bin/build$/"
       ],
       "matchStrings": [
         "release=(?<currentValue>autobuild-\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2})"

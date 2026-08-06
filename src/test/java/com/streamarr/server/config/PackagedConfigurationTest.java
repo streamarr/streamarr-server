@@ -87,6 +87,48 @@ class PackagedConfigurationTest {
   }
 
   @Test
+  @DisplayName("Should package FFmpeg through its launch buildpack when building an image")
+  void shouldPackageFfmpegThroughItsLaunchBuildpackWhenBuildingAnImage() throws IOException {
+    var action = yaml(".github/actions/pack-build/action.yml");
+    var steps = listOfMaps(map(action.get("runs")).get("steps"));
+    var buildStep = stepNamed(steps, "Build with pack CLI");
+    var buildCommand = (String) buildStep.get("run");
+
+    assertThat(buildCommand).contains("--buildpack ./buildpacks/ffmpeg");
+    assertThat(steps).noneMatch(step -> "Install pinned FFmpeg runtime".equals(step.get("name")));
+    assertThat(buildCommand).doesNotContain(".profile", "BP_INCLUDE_FILES=.ffmpeg");
+    assertThat(Path.of(".profile")).doesNotExist();
+    assertThat(Path.of(".github/actions/pack-build/install-ffmpeg.sh")).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should add source revision and version labels when packaging an image")
+  void shouldAddSourceRevisionAndVersionLabelsWhenPackagingAnImage() throws IOException {
+    var action = yaml(".github/actions/pack-build/action.yml");
+    var buildStep =
+        stepNamed(listOfMaps(map(action.get("runs")).get("steps")), "Build with pack CLI");
+    var buildCommand = (String) buildStep.get("run");
+    var releaseWorkflow = yaml(".github/workflows/publish-release.yml");
+    var releaseBuild = map(map(releaseWorkflow.get("jobs")).get("build_release_images"));
+    var releasePackStep =
+        listOfMaps(releaseBuild.get("steps")).stream()
+            .filter(step -> "./.github/actions/pack-build".equals(step.get("uses")))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(map(action.get("inputs"))).containsKey("image-version");
+    assertThat(buildCommand)
+        .contains(
+            "BP_OCI_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}",
+            "BP_OCI_REVISION=${GITHUB_SHA}",
+            "BP_OCI_VERSION=${INPUT_IMAGE_VERSION}");
+    assertThat(map(releasePackStep.get("with")))
+        .containsEntry(
+            "image-version",
+            "${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}");
+  }
+
+  @Test
   @DisplayName("Should build and verify every supported architecture when a pull request changes")
   void shouldBuildAndVerifyEverySupportedArchitectureWhenAPullRequestChanges() throws IOException {
     var workflow = yaml(".github/workflows/ci.yml");
@@ -185,22 +227,22 @@ class PackagedConfigurationTest {
   @Test
   @DisplayName("Should track the pinned FFmpeg runtime when packaging container images")
   void shouldTrackThePinnedFfmpegRuntimeWhenPackagingContainerImages() throws IOException {
-    var installerPath = ".github/actions/pack-build/install-ffmpeg.sh";
-    var installer = Files.readString(Path.of(installerPath));
+    var buildpackPath = "buildpacks/ffmpeg/bin/build";
+    var buildpack = Files.readString(Path.of(buildpackPath));
     var release =
         extractSingle(
             Pattern.compile("^release=(?<currentValue>\\S+)$", Pattern.MULTILINE),
-            installer,
+            buildpack,
             "currentValue");
     var renovateConfig = new ObjectMapper().readTree(Files.readString(Path.of("renovate.json")));
     var manager =
         StreamSupport.stream(renovateConfig.path("customManagers").spliterator(), false)
-            .filter(candidate -> managesFile(candidate, installerPath))
+            .filter(candidate -> managesFile(candidate, buildpackPath))
             .findFirst()
             .orElseThrow();
     var trackedReleases =
         StreamSupport.stream(manager.path("matchStrings").spliterator(), false)
-            .map(node -> Pattern.compile(node.asString()).matcher(installer))
+            .map(node -> Pattern.compile(node.asString()).matcher(buildpack))
             .filter(java.util.regex.Matcher::find)
             .map(matcher -> matcher.group("currentValue"))
             .toList();

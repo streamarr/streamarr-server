@@ -40,6 +40,7 @@ jobs:
           tags: >-
             streamarr/streamarr-server:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}-${{ matrix.architecture }}
           publish: "true"
+          image-version: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
           dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 
