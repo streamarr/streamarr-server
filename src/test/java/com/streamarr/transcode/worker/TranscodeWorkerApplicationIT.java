@@ -94,7 +94,8 @@ class TranscodeWorkerApplicationIT {
       var output = failureOutput(process);
 
       assertThat(process.exitValue()).isNotZero();
-      assertThat(output).contains("FFmpeg is not available to the transcode worker");
+      assertThat(output)
+          .contains("FFmpeg is not available to the transcode worker: FFmpeg not found");
     } finally {
       process.destroyForcibly();
     }
@@ -142,7 +143,7 @@ class TranscodeWorkerApplicationIT {
         """
         #!/bin/sh
         case "$*" in
-          *"muxer=hls"*) printf '%s\n' '  -hls_segment_options <dictionary>' ;;
+          *"muxer=hls"*) printf '%s\\n' '  -hls_segment_options <dictionary>' ;;
         esac
         exit 0
         """);

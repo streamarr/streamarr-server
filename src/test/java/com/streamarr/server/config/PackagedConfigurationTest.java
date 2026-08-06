@@ -6,6 +6,8 @@ import com.streamarr.server.config.security.Argon2Properties;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -18,6 +20,7 @@ import org.springframework.boot.test.context.ConfigDataApplicationContextInitial
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
 import org.yaml.snakeyaml.Yaml;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @Tag("UnitTest")
@@ -84,26 +87,66 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should publish Pack builds that use a registry cache")
-  void shouldPublishPackBuildsThatUseARegistryCache() throws IOException {
-    var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
-    var packBuildStart = buildAction.indexOf("pack build");
-    var packBuild =
-        buildAction.substring(packBuildStart, buildAction.indexOf("\n\n", packBuildStart));
+  @DisplayName("Should build and verify every supported architecture when a pull request changes")
+  void shouldBuildAndVerifyEverySupportedArchitectureWhenAPullRequestChanges() throws IOException {
+    var workflow = yaml(".github/workflows/ci.yml");
+    var jobs = map(workflow.get("jobs"));
 
-    assertThat(packBuild.contains("--cache-image") && !packBuild.contains("--publish"))
-        .as("Pack cannot use --cache-image without --publish")
-        .isFalse();
+    assertThat(jobs).containsKey("package_image");
+
+    var packageImage = map(jobs.get("package_image"));
+    var strategy = map(packageImage.get("strategy"));
+    var matrix = map(strategy.get("matrix"));
+    var architectures = listOfMaps(matrix.get("include"));
+    var steps = listOfMaps(packageImage.get("steps"));
+    var packStep =
+        steps.stream()
+            .filter(step -> "./.github/actions/pack-build".equals(step.get("uses")))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(packageImage.get("runs-on")).isEqualTo("${{ matrix.runner }}");
+    assertThat(architectures)
+        .containsExactlyInAnyOrder(
+            Map.of("architecture", "amd64", "runner", "ubuntu-24.04"),
+            Map.of("architecture", "arm64", "runner", "ubuntu-24.04-arm"));
+    assertThat(map(packStep.get("with")))
+        .containsEntry("publish", "false")
+        .doesNotContainKeys("dockerhub-username", "dockerhub-token");
   }
 
   @Test
-  @DisplayName("Should publish immutable release tag before latest")
-  void shouldPublishImmutableReleaseTagBeforeLatest() throws IOException {
-    var releaseWorkflow = Files.readString(Path.of(".github/workflows/publish-release.yml"));
-    var latestTag = releaseWorkflow.indexOf("streamarr/streamarr-server:latest");
-    var immutableTag = releaseWorkflow.indexOf("streamarr/streamarr-server:${{ fromJSON");
+  @DisplayName("Should publish build when registry cache is used")
+  void shouldPublishBuildWhenRegistryCacheIsUsed() throws IOException {
+    var action = yaml(".github/actions/pack-build/action.yml");
+    var buildStep =
+        stepNamed(listOfMaps(map(action.get("runs")).get("steps")), "Build with pack CLI");
+    var cachedBuilds =
+        packBuildCommands((String) buildStep.get("run")).stream()
+            .filter(command -> command.contains("--cache-image"))
+            .toList();
 
-    assertThat(immutableTag).isLessThan(latestTag);
+    assertThat(cachedBuilds)
+        .as("Pack requires every cached build to publish directly to its candidate image")
+        .isNotEmpty()
+        .allMatch(command -> command.contains("--publish"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should publish immutable release image before latest when release architectures are verified")
+  void shouldPublishImmutableReleaseImageBeforeLatestWhenReleaseArchitecturesAreVerified()
+      throws IOException {
+    var workflow = yaml(".github/workflows/publish-release.yml");
+    var publishRelease = map(map(workflow.get("jobs")).get("publish_release"));
+    var stepNames =
+        listOfMaps(publishRelease.get("steps")).stream().map(step -> step.get("name")).toList();
+
+    assertThat(publishRelease.get("needs")).isEqualTo("build_release_images");
+    assertThat(stepNames)
+        .containsSubsequence(
+            "Publish immutable multi-architecture image",
+            "Publish latest multi-architecture image");
   }
 
   @Test
@@ -122,77 +165,70 @@ class PackagedConfigurationTest {
       throws IOException {
     var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
     var renovateConfig = new ObjectMapper().readTree(Files.readString(Path.of("renovate.json")));
-    var packDependencies =
-        buildAction
-            .lines()
-            .map(String::strip)
-            .filter(
-                line ->
-                    line.startsWith("--builder paketobuildpacks/ubuntu-noble-builder")
-                        || line.startsWith("--buildpack paketo-buildpacks/procfile"))
-            .toList();
-    var renovateMatchers =
+    var dependencyPattern =
+        Pattern.compile(
+            "--(?:builder|buildpack) (?<depName>[^\\s\\\\]+?)(?:[:@])"
+                + "(?<currentValue>\\d+\\.\\d+\\.\\d+)");
+    var pinnedDependencies = dependencyPins(dependencyPattern, buildAction);
+    var trackedDependencies =
         StreamSupport.stream(renovateConfig.path("customManagers").spliterator(), false)
-            .flatMap(
-                manager -> StreamSupport.stream(manager.path("matchStrings").spliterator(), false))
-            .map(node -> Pattern.compile(node.asString()))
-            .toList();
+            .filter(manager -> managesFile(manager, ".github/actions/pack-build/action.yml"))
+            .flatMap(manager -> dependencyPins(manager, buildAction).stream())
+            .collect(java.util.stream.Collectors.toSet());
 
-    assertThat(packDependencies)
-        .hasSize(2)
-        .allMatch(
-            dependency ->
-                dependency.matches("--(?:builder|buildpack) [^\\s\\\\]+(?:[:@])\\d+\\.\\d+\\.\\d+"))
-        .allSatisfy(
-            dependency ->
-                assertThat(renovateMatchers)
-                    .anyMatch(matcher -> matcher.matcher(dependency).find()));
+    assertThat(pinnedDependencies)
+        .as("every independently pinned Pack input must be extractable by Renovate")
+        .isNotEmpty()
+        .isEqualTo(trackedDependencies);
   }
 
   @Test
   @DisplayName("Should track the pinned FFmpeg runtime when packaging container images")
   void shouldTrackThePinnedFfmpegRuntimeWhenPackagingContainerImages() throws IOException {
+    var installerPath = ".github/actions/pack-build/install-ffmpeg.sh";
+    var installer = Files.readString(Path.of(installerPath));
+    var release =
+        extractSingle(
+            Pattern.compile("^release=(?<currentValue>\\S+)$", Pattern.MULTILINE),
+            installer,
+            "currentValue");
     var renovateConfig = new ObjectMapper().readTree(Files.readString(Path.of("renovate.json")));
-    var customManagers =
-        StreamSupport.stream(renovateConfig.path("customManagers").spliterator(), false).toList();
+    var manager =
+        StreamSupport.stream(renovateConfig.path("customManagers").spliterator(), false)
+            .filter(candidate -> managesFile(candidate, installerPath))
+            .findFirst()
+            .orElseThrow();
+    var trackedReleases =
+        StreamSupport.stream(manager.path("matchStrings").spliterator(), false)
+            .map(node -> Pattern.compile(node.asString()).matcher(installer))
+            .filter(java.util.regex.Matcher::find)
+            .map(matcher -> matcher.group("currentValue"))
+            .toList();
 
-    assertThat(customManagers)
-        .anySatisfy(
-            manager -> {
-              assertThat(manager.path("managerFilePatterns").toString()).contains("install-ffmpeg");
-              assertThat(manager.path("datasourceTemplate").asString())
-                  .isEqualTo("github-releases");
-              assertThat(manager.path("depNameTemplate").asString())
-                  .isEqualTo("BtbN/FFmpeg-Builds");
-            });
+    assertThat(trackedReleases).containsExactly(release);
+    assertThat(manager.path("datasourceTemplate").asString()).isEqualTo("github-releases");
+    assertThat(manager.path("depNameTemplate").asString()).isEqualTo("BtbN/FFmpeg-Builds");
   }
 
   @Test
-  @DisplayName("Should exercise every supported FFmpeg architecture before publishing releases")
-  void shouldExerciseEverySupportedFfmpegArchitectureBeforePublishingReleases() throws IOException {
-    var installer = Files.readString(Path.of(".github/actions/pack-build/install-ffmpeg.sh"));
-    var releaseWorkflow = Files.readString(Path.of(".github/workflows/publish-release.yml"));
-    var supportsArm64 = installer.contains("platform=linuxarm64");
-    var buildsOnArm64 =
-        Pattern.compile("ubuntu-(?:22|24|26)\\.04-arm").matcher(releaseWorkflow).find();
+  @DisplayName("Should build every supported architecture when publishing a release")
+  void shouldBuildEverySupportedArchitectureWhenPublishingARelease() throws IOException {
+    var workflow = yaml(".github/workflows/publish-release.yml");
+    var buildReleaseImages = map(map(workflow.get("jobs")).get("build_release_images"));
+    var matrix = map(map(buildReleaseImages.get("strategy")).get("matrix"));
+    var architectures = listOfMaps(matrix.get("include"));
+    var buildStep =
+        listOfMaps(buildReleaseImages.get("steps")).stream()
+            .filter(step -> "./.github/actions/pack-build".equals(step.get("uses")))
+            .findFirst()
+            .orElseThrow();
 
-    assertThat(supportsArm64 && !buildsOnArm64)
-        .as("linuxarm64 is declared but the release workflow has no ARM64 runner")
-        .isFalse();
-    assertThat(releaseWorkflow)
-        .contains(
-            "architecture: amd64",
-            "architecture: arm64",
-            "needs: build_release_images",
-            "docker buildx imagetools create");
-  }
-
-  @Test
-  @DisplayName("Should use a multi-architecture builder when packaging release architectures")
-  void shouldUseMultiArchitectureBuilderWhenPackagingReleaseArchitectures() throws IOException {
-    var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
-
-    assertThat(buildAction).contains("--builder paketobuildpacks/ubuntu-noble-builder:");
+    assertThat(buildReleaseImages.get("runs-on")).isEqualTo("${{ matrix.runner }}");
+    assertThat(architectures)
+        .containsExactlyInAnyOrder(
+            Map.of("architecture", "amd64", "runner", "ubuntu-24.04"),
+            Map.of("architecture", "arm64", "runner", "ubuntu-24.04-arm"));
+    assertThat(map(buildStep.get("with"))).containsEntry("publish", "true");
   }
 
   @Test
@@ -229,5 +265,83 @@ class PackagedConfigurationTest {
             "replicas: 2",
             "fieldPath: metadata.uid",
             "spiffe://streamarr.example/streamarr/worker/${POD_UID}");
+  }
+
+  private static Map<String, Object> yaml(String file) throws IOException {
+    try (var input = Files.newInputStream(Path.of(file))) {
+      return new Yaml().load(input);
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, Object> map(Object value) {
+    return (Map<String, Object>) value;
+  }
+
+  @SuppressWarnings("unchecked")
+  private static List<Map<String, Object>> listOfMaps(Object value) {
+    return (List<Map<String, Object>>) value;
+  }
+
+  private static Map<String, Object> stepNamed(
+      List<Map<String, Object>> steps, String expectedName) {
+    return steps.stream()
+        .filter(step -> expectedName.equals(step.get("name")))
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private static List<String> packBuildCommands(String script) {
+    var commands = new ArrayList<String>();
+    var command = new StringBuilder();
+
+    for (var line : script.lines().toList()) {
+      if (command.isEmpty() && !line.stripLeading().startsWith("pack build ")) {
+        continue;
+      }
+
+      command.append(' ').append(line.strip());
+      if (!line.stripTrailing().endsWith("\\")) {
+        commands.add(command.toString());
+        command.setLength(0);
+      }
+    }
+
+    return commands;
+  }
+
+  private static Set<String> dependencyPins(Pattern pattern, String content) {
+    var pins = new java.util.HashSet<String>();
+    var matcher = pattern.matcher(content);
+    while (matcher.find()) {
+      pins.add(matcher.group("depName") + "@" + matcher.group("currentValue"));
+    }
+    return pins;
+  }
+
+  private static Set<String> dependencyPins(JsonNode manager, String content) {
+    return StreamSupport.stream(manager.path("matchStrings").spliterator(), false)
+        .flatMap(node -> dependencyPins(Pattern.compile(node.asString()), content).stream())
+        .collect(java.util.stream.Collectors.toSet());
+  }
+
+  private static boolean managesFile(JsonNode manager, String file) {
+    return StreamSupport.stream(manager.path("managerFilePatterns").spliterator(), false)
+        .map(JsonNode::asString)
+        .map(PackagedConfigurationTest::patternBetweenSlashes)
+        .anyMatch(pattern -> pattern.matcher(file).matches());
+  }
+
+  private static Pattern patternBetweenSlashes(String renovatePattern) {
+    var lastSlash = renovatePattern.lastIndexOf('/');
+    return Pattern.compile(renovatePattern.substring(1, lastSlash));
+  }
+
+  private static String extractSingle(Pattern pattern, String content, String group) {
+    var matcher = pattern.matcher(content);
+    assertThat(matcher.find()).isTrue();
+    var value = matcher.group(group);
+    assertThat(matcher.find()).isFalse();
+    return value;
   }
 }

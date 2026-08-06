@@ -17,7 +17,9 @@ public final class TranscodeWorkerApplication {
             settings.ffmpegPath(), command -> new ProcessBuilder(command).start());
     capabilities.detectCapabilities();
     if (!capabilities.isFfmpegAvailable()) {
-      throw new IllegalStateException("FFmpeg is not available to the transcode worker");
+      throw new IllegalStateException(
+          "FFmpeg is not available to the transcode worker: "
+              + capabilities.getUnavailableReason());
     }
 
     var engine =

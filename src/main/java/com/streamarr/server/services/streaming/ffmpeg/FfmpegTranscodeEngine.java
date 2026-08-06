@@ -21,7 +21,8 @@ public class FfmpegTranscodeEngine {
 
   public TranscodeHandle start(TranscodeRequest request, Path outputDirectory) {
     if (!capabilityService.isFfmpegAvailable()) {
-      throw new TranscodeException("FFmpeg is unavailable or lacks required HLS capabilities");
+      throw new TranscodeException(
+          "FFmpeg is unavailable: " + capabilityService.getUnavailableReason());
     }
 
     var job =

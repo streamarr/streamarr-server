@@ -234,7 +234,9 @@ class LocalTranscodeExecutorTest {
     var thrown = catchThrowable(() -> executor.start(request));
 
     assertThat(processManager.getStarted()).doesNotContain(request.sessionId());
-    assertThat(thrown).isInstanceOf(TranscodeException.class);
+    assertThat(thrown)
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage("FFmpeg is unavailable: Missing hls_segment_options");
   }
 
   @Test

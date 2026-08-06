@@ -5,7 +5,11 @@ import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
+import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
+import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
+import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
@@ -35,6 +39,7 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.grpc.netty.shaded.io.netty.handler.ssl.ClientAuth;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
+import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -137,8 +142,36 @@ class TranscodeWorkerUploadProtocolIT {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should report startup failure when FFmpeg becomes incompatible after worker registration")
+  void shouldReportStartupFailureWhenFfmpegBecomesIncompatibleAfterWorkerRegistration()
+      throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var service = ControllableUploadService.leavesUploadRpcOpen();
+    var job = variantJob();
+
+    try (var server = new TestServer(service);
+        var worker = worker(unavailableEngine(), mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+      service.dispatch(job);
+
+      assertThat(service.failureReported.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(service.failure.get().getJobAttemptId()).isEqualTo(job.getJobAttemptId());
+      assertThat(service.failure.get().getFailure())
+          .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_STARTUP_FAILED);
+    }
+  }
+
   private TranscodeWorker worker(
       FakeSegmentProducingFfmpegProcessManager processManager, Path mediaRoot)
+      throws URISyntaxException {
+    return worker(remuxEngine(processManager), mediaRoot);
+  }
+
+  private TranscodeWorker worker(FfmpegTranscodeEngine engine, Path mediaRoot)
       throws URISyntaxException {
     var configuration =
         TranscodeWorkerConfiguration.builder()
@@ -154,7 +187,19 @@ class TranscodeWorkerUploadProtocolIT {
             .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, mediaRoot))
             .segmentBasePath(tempDir.resolve("segments"))
             .build();
-    return new TranscodeWorker(configuration, remuxEngine(processManager));
+    return new TranscodeWorker(configuration, engine);
+  }
+
+  private FfmpegTranscodeEngine unavailableEngine() {
+    var capabilities =
+        new TranscodeCapabilityService(
+            "ffmpeg",
+            _ -> {
+              throw new IOException("FFmpeg disappeared");
+            });
+    capabilities.detectCapabilities();
+    return new FfmpegTranscodeEngine(
+        new FfmpegCommandBuilder("ffmpeg"), new FakeFfmpegProcessManager(), capabilities);
   }
 
   private VariantJob variantJob() {

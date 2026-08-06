@@ -47,13 +47,15 @@ public class TranscodeCapabilityService {
   }
 
   public void detectCapabilities() {
-    if (!checkFfmpegVersion()) {
-      markUnavailable("FFmpeg not found");
+    var versionProbe = checkFfmpegVersion();
+    if (!versionProbe.successful()) {
+      markUnavailable(versionProbe.unavailableReason());
       return;
     }
 
-    if (!supportsRequiredHlsOptions()) {
-      markUnavailable("Missing " + REQUIRED_HLS_OPTION);
+    var hlsProbe = probeRequiredHlsOptions();
+    if (!hlsProbe.successful()) {
+      markUnavailable(hlsProbe.unavailableReason());
       return;
     }
 
@@ -80,7 +82,7 @@ public class TranscodeCapabilityService {
   private void markUnavailable(String reason) {
     ffmpegAvailable = false;
     unavailableReason = reason;
-    log.warn("FFmpeg capability detection failed: {}", reason);
+    log.warn("FFmpeg capability detection failed for {}: {}", ffmpegPath, reason);
   }
 
   public String resolveEncoder(String codecFamily) {
@@ -104,34 +106,56 @@ public class TranscodeCapabilityService {
     return softwareDefault;
   }
 
-  private boolean checkFfmpegVersion() {
+  private CapabilityProbeResult checkFfmpegVersion() {
     try {
       var process = processFactory.create(new String[] {ffmpegPath, "-version"});
       var exitCode = process.waitFor();
-      return exitCode == 0;
+      return exitCode == 0
+          ? CapabilityProbeResult.success()
+          : CapabilityProbeResult.failure("FFmpeg version probe failed");
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       log.debug("FFmpeg version check interrupted", e);
-      return false;
+      return CapabilityProbeResult.failure("FFmpeg version probe interrupted");
+    } catch (IOException e) {
+      log.debug("FFmpeg executable not found", e);
+      return CapabilityProbeResult.failure("FFmpeg not found");
     } catch (Exception e) {
       log.debug("FFmpeg version check failed", e);
-      return false;
+      return CapabilityProbeResult.failure("FFmpeg version probe failed");
     }
   }
 
-  private boolean supportsRequiredHlsOptions() {
+  private CapabilityProbeResult probeRequiredHlsOptions() {
     try {
       var process =
           processFactory.create(new String[] {ffmpegPath, "-hide_banner", "-h", "muxer=hls"});
       var output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-      return process.waitFor() == 0 && output.contains(REQUIRED_HLS_OPTION);
+      if (process.waitFor() != 0) {
+        return CapabilityProbeResult.failure("FFmpeg HLS capability probe failed");
+      }
+      if (!output.contains(REQUIRED_HLS_OPTION)) {
+        return CapabilityProbeResult.failure("Missing " + REQUIRED_HLS_OPTION);
+      }
+      return CapabilityProbeResult.success();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       log.debug("FFmpeg HLS capability check interrupted", e);
-      return false;
+      return CapabilityProbeResult.failure("FFmpeg HLS capability probe interrupted");
     } catch (Exception e) {
       log.debug("FFmpeg HLS capability check failed", e);
-      return false;
+      return CapabilityProbeResult.failure("FFmpeg HLS capability probe failed");
+    }
+  }
+
+  private record CapabilityProbeResult(boolean successful, String unavailableReason) {
+
+    private static CapabilityProbeResult success() {
+      return new CapabilityProbeResult(true, "");
+    }
+
+    private static CapabilityProbeResult failure(String reason) {
+      return new CapabilityProbeResult(false, reason);
     }
   }
 
