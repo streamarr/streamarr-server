@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.services.ImageService.ProcessedImage;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -49,7 +50,7 @@ public class ImageEnrichmentListener {
       try {
         var existingImages = imageService.findByEntity(event.entityId(), event.entityType());
         var completedTypes =
-            existingImages.stream().map(image -> image.getImageType()).collect(Collectors.toSet());
+            existingImages.stream().map(Image::getImageType).collect(Collectors.toSet());
         var pendingSources =
             event.imageSources().stream()
                 .filter(source -> !completedTypes.contains(source.imageType()))
