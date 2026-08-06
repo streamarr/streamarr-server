@@ -109,45 +109,43 @@ public class SeriesFileProcessor {
 
     var searchOutcome = seriesMetadataProviderResolver.search(library, parserResult);
 
-    if (searchOutcome instanceof NotFound) {
-      markAs(mediaFile, MediaFileStatus.METADATA_NOT_FOUND);
-      log.error(
-          "Failed to find TMDB match for series '{}' from MediaFile id: {} at path: '{}'",
-          parserResult.title(),
-          mediaFile.getId(),
-          mediaFile.getFilepathUri());
-      return;
+    switch (searchOutcome) {
+      case NotFound _ -> {
+        markAs(mediaFile, MediaFileStatus.METADATA_NOT_FOUND);
+        log.error(
+            "Failed to find TMDB match for series '{}' from MediaFile id: {} at path: '{}'",
+            parserResult.title(),
+            mediaFile.getId(),
+            mediaFile.getFilepathUri());
+      }
+      case TemporarilyUnavailable(var cause) -> {
+        markAs(mediaFile, MediaFileStatus.METADATA_UNAVAILABLE);
+        log.error(
+            "Metadata provider unavailable for series '{}' from MediaFile id: {} at path: '{}'",
+            parserResult.title(),
+            mediaFile.getId(),
+            mediaFile.getFilepathUri(),
+            cause);
+      }
+      case Found(var searchResult) -> {
+        if (isDateOnly) {
+          processDateOnlyEpisode(library, mediaFile, searchResult, parsed);
+          return;
+        }
+
+        var episodeNumber = parsed.getEpisodeNumber().getAsInt();
+        var seasonNumber = resolveSeasonNumber(seasonParseResult, parsed);
+
+        log.info(
+            "Parsed series file: series='{}', season={}, episode={} for MediaFile id: {}",
+            parserResult.title(),
+            seasonNumber,
+            episodeNumber,
+            mediaFile.getId());
+
+        enrichSeriesMetadata(library, mediaFile, searchResult, seasonNumber, episodeNumber);
+      }
     }
-
-    if (searchOutcome instanceof TemporarilyUnavailable(var cause)) {
-      markAs(mediaFile, MediaFileStatus.METADATA_UNAVAILABLE);
-      log.error(
-          "Metadata provider unavailable for series '{}' from MediaFile id: {} at path: '{}'",
-          parserResult.title(),
-          mediaFile.getId(),
-          mediaFile.getFilepathUri(),
-          cause);
-      return;
-    }
-
-    var searchResult = ((Found) searchOutcome).result();
-
-    if (isDateOnly) {
-      processDateOnlyEpisode(library, mediaFile, searchResult, parsed);
-      return;
-    }
-
-    var episodeNumber = parsed.getEpisodeNumber().getAsInt();
-    var seasonNumber = resolveSeasonNumber(seasonParseResult, parsed);
-
-    log.info(
-        "Parsed series file: series='{}', season={}, episode={} for MediaFile id: {}",
-        parserResult.title(),
-        seasonNumber,
-        episodeNumber,
-        mediaFile.getId());
-
-    enrichSeriesMetadata(library, mediaFile, searchResult, seasonNumber, episodeNumber);
   }
 
   private void processDateOnlyEpisode(

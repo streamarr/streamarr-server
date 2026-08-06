@@ -70,40 +70,36 @@ public class MovieFileProcessor {
 
     var searchOutcome = movieMetadataProviderResolver.search(library, mediaInformationResult.get());
 
-    if (searchOutcome instanceof NotFound) {
-      mediaFile.setStatus(MediaFileStatus.METADATA_NOT_FOUND);
-      mediaFileRepository.save(mediaFile);
+    switch (searchOutcome) {
+      case NotFound _ -> {
+        mediaFile.setStatus(MediaFileStatus.METADATA_NOT_FOUND);
+        mediaFileRepository.save(mediaFile);
 
-      log.error(
-          "Failed to find matching search result for MediaFile id: {} at path: '{}'",
-          mediaFile.getId(),
-          mediaFile.getFilepathUri());
+        log.error(
+            "Failed to find matching search result for MediaFile id: {} at path: '{}'",
+            mediaFile.getId(),
+            mediaFile.getFilepathUri());
+      }
+      case TemporarilyUnavailable(var cause) -> {
+        mediaFile.setStatus(MediaFileStatus.METADATA_UNAVAILABLE);
+        mediaFileRepository.save(mediaFile);
 
-      return;
+        log.error(
+            "Metadata provider unavailable for MediaFile id: {} at path: '{}'",
+            mediaFile.getId(),
+            mediaFile.getFilepathUri(),
+            cause);
+      }
+      case Found(var movieSearchResult) -> {
+        log.info(
+            "Found metadata search result during enrichment for MediaFile id: {}. Metadata provider: {} and External id: {}",
+            mediaFile.getId(),
+            movieSearchResult.externalSourceType(),
+            movieSearchResult.externalId());
+
+        enrichMovieMetadata(library, mediaFile, movieSearchResult);
+      }
     }
-
-    if (searchOutcome instanceof TemporarilyUnavailable(var cause)) {
-      mediaFile.setStatus(MediaFileStatus.METADATA_UNAVAILABLE);
-      mediaFileRepository.save(mediaFile);
-
-      log.error(
-          "Metadata provider unavailable for MediaFile id: {} at path: '{}'",
-          mediaFile.getId(),
-          mediaFile.getFilepathUri(),
-          cause);
-
-      return;
-    }
-
-    var movieSearchResult = ((Found) searchOutcome).result();
-
-    log.info(
-        "Found metadata search result during enrichment for MediaFile id: {}. Metadata provider: {} and External id: {}",
-        mediaFile.getId(),
-        movieSearchResult.externalSourceType(),
-        movieSearchResult.externalId());
-
-    enrichMovieMetadata(library, mediaFile, movieSearchResult);
   }
 
   private Optional<VideoFileParserResult> parseMediaFileForMovieInfo(MediaFile mediaFile) {
