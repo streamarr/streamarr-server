@@ -137,7 +137,15 @@ class TranscodeWorkerApplicationIT {
 
   private Path fakeFfmpeg() throws Exception {
     var executable = tempDir.resolve("ffmpeg");
-    Files.writeString(executable, "#!/bin/sh\nexit 0\n");
+    Files.writeString(
+        executable,
+        """
+        #!/bin/sh
+        case "$*" in
+          *"muxer=hls"*) printf '%s\n' '  -hls_segment_options <dictionary>' ;;
+        esac
+        exit 0
+        """);
     assertThat(executable.toFile().setExecutable(true)).isTrue();
     return executable;
   }

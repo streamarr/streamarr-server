@@ -97,7 +97,6 @@ class PackagedConfigurationTest {
             .filter(
                 line ->
                     line.startsWith("--builder paketobuildpacks/builder-jammy-full")
-                        || line.startsWith("--buildpack paketo-buildpacks/apt")
                         || line.startsWith("--buildpack paketo-buildpacks/procfile"))
             .toList();
     var renovateMatchers =
@@ -108,7 +107,7 @@ class PackagedConfigurationTest {
             .toList();
 
     assertThat(packDependencies)
-        .hasSize(3)
+        .hasSize(2)
         .allMatch(
             dependency ->
                 dependency.matches(

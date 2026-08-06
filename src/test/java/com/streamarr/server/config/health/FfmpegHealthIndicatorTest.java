@@ -73,6 +73,9 @@ class FfmpegHealthIndicatorTest {
               if (cmdStr.contains("-version")) {
                 return new FakeTestProcess("ffmpeg version 7.0", ffmpegAvailable ? 0 : 1);
               }
+              if (cmdStr.contains("muxer=hls")) {
+                return new FakeTestProcess("-hls_segment_options <dictionary>", 0);
+              }
               if (cmdStr.contains("-hwaccels")) {
                 return new FakeTestProcess(
                     gpuAvailable

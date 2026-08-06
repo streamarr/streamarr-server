@@ -15,6 +15,8 @@ import org.jspecify.annotations.NonNull;
 @Slf4j
 public class TranscodeCapabilityService {
 
+  private static final String REQUIRED_HLS_OPTION = "hls_segment_options";
+
   private static final Pattern HW_ENCODER_PATTERN =
       Pattern.compile("^\\s*V\\S+\\s+(\\w+_(?:nvenc|qsv|amf|vaapi|videotoolbox))\\s+");
 
@@ -44,9 +46,9 @@ public class TranscodeCapabilityService {
   }
 
   public void detectCapabilities() {
-    ffmpegAvailable = checkFfmpegVersion();
+    ffmpegAvailable = checkFfmpegVersion() && supportsRequiredHlsOptions();
     if (!ffmpegAvailable) {
-      log.warn("FFmpeg not found. Transcoding will be unavailable.");
+      log.warn("FFmpeg is unavailable or lacks required HLS capabilities.");
       return;
     }
 
@@ -100,6 +102,22 @@ public class TranscodeCapabilityService {
       return false;
     } catch (Exception e) {
       log.debug("FFmpeg version check failed", e);
+      return false;
+    }
+  }
+
+  private boolean supportsRequiredHlsOptions() {
+    try {
+      var process =
+          processFactory.create(new String[] {ffmpegPath, "-hide_banner", "-h", "muxer=hls"});
+      var output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+      return process.waitFor() == 0 && output.contains(REQUIRED_HLS_OPTION);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      log.debug("FFmpeg HLS capability check interrupted", e);
+      return false;
+    } catch (Exception e) {
+      log.debug("FFmpeg HLS capability check failed", e);
       return false;
     }
   }

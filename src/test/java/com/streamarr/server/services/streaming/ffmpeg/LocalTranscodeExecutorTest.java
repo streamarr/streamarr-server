@@ -265,6 +265,7 @@ class LocalTranscodeExecutorTest {
       var outputs =
           Map.of(
               "ffmpeg", (Process) new FakeProcess("ffmpeg version 7.0", 0),
+              "hls", (Process) new FakeProcess("-hls_segment_options <dictionary>", 0),
               "hwaccels",
                   (Process)
                       new FakeProcess(
@@ -282,6 +283,9 @@ class LocalTranscodeExecutorTest {
                 var cmdStr = String.join(" ", command);
                 if (cmdStr.contains("-version")) {
                   return outputs.get("ffmpeg");
+                }
+                if (cmdStr.contains("muxer=hls")) {
+                  return outputs.get("hls");
                 }
                 if (cmdStr.contains("-hwaccels")) {
                   return outputs.get("hwaccels");

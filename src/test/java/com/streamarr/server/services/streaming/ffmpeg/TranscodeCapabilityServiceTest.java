@@ -22,6 +22,83 @@ class TranscodeCapabilityServiceTest {
   }
 
   @Test
+  @DisplayName("Should report unavailable when FFmpeg lacks required HLS segment options")
+  void shouldReportUnavailableWhenFfmpegLacksRequiredHlsSegmentOptions() {
+    var outputs =
+        Map.of(
+            "ffmpeg", createProcess("ffmpeg version 4.4.2", 0),
+            "hls", createProcess("Muxer hls [Apple HTTP Live Streaming]:", 0));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
+
+    service.detectCapabilities();
+
+    assertThat(service.isFfmpegAvailable()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should report unavailable when required HLS capability probe exits unsuccessfully")
+  void shouldReportUnavailableWhenRequiredHlsCapabilityProbeExitsUnsuccessfully() {
+    var outputs =
+        Map.of(
+            "ffmpeg", createProcess("ffmpeg version 8.1.2", 0),
+            "hls", createProcess("-hls_segment_options <dictionary>", 1));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
+
+    service.detectCapabilities();
+
+    assertThat(service.isFfmpegAvailable()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should report unavailable when required HLS capability probe fails")
+  void shouldReportUnavailableWhenRequiredHlsCapabilityProbeFails() {
+    var service =
+        new TranscodeCapabilityService(
+            "ffmpeg",
+            command -> {
+              if (String.join(" ", command).contains("muxer=hls")) {
+                throw new IllegalStateException("probe failed");
+              }
+              return createProcess("ffmpeg version 8.1.2", 0);
+            });
+
+    service.detectCapabilities();
+
+    assertThat(service.isFfmpegAvailable()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should restore interrupt when required HLS capability probe is interrupted")
+  void shouldRestoreInterruptWhenRequiredHlsCapabilityProbeIsInterrupted() {
+    var interruptedProcess =
+        new FakeProcess("-hls_segment_options <dictionary>", 0) {
+          @Override
+          public int waitFor() throws InterruptedException {
+            throw new InterruptedException("probe interrupted");
+          }
+        };
+    var outputs =
+        Map.of(
+            "ffmpeg",
+            createProcess("ffmpeg version 8.1.2", 0),
+            "hls",
+            (Process) interruptedProcess);
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
+
+    try {
+      service.detectCapabilities();
+
+      assertThat(service.isFfmpegAvailable()).isFalse();
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted();
+    }
+  }
+
+  @Test
   @DisplayName("Should report CPU only when no GPU detected")
   void shouldReportCpuOnlyWhenNoGpuDetected() {
     var outputs =
@@ -145,6 +222,9 @@ class TranscodeCapabilityServiceTest {
     var cmdStr = String.join(" ", command);
     if (cmdStr.contains("-version")) {
       return outputs.get("ffmpeg");
+    }
+    if (cmdStr.contains("muxer=hls")) {
+      return outputs.getOrDefault("hls", createProcess("-hls_segment_options <dictionary>", 0));
     }
     if (cmdStr.contains("-hwaccels")) {
       return outputs.get("hwaccels");

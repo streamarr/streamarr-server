@@ -26,7 +26,7 @@
       "description": "Update pinned Paketo buildpacks used by container-image workflows",
       "managerFilePatterns": ["/^\\.github/actions/pack-build/action\\.yml$/"],
       "matchStrings": [
-        "--buildpack (?<depName>paketo-buildpacks/(?:apt|procfile))@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+        "--buildpack (?<depName>paketo-buildpacks/procfile)@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
       "datasourceTemplate": "buildpacks-registry",
       "versioningTemplate": "semver"

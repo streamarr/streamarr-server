@@ -27,32 +27,42 @@ runs:
     - name: Install pack CLI
       uses: buildpacks/github-actions/setup-pack@e3b14c6e906f91da358e01dc2849ce068188107f # v5.12.5
 
+    - name: Install pinned FFmpeg runtime
+      shell: bash
+      run: .github/actions/pack-build/install-ffmpeg.sh .ffmpeg
+
     - name: Build with pack CLI
       shell: bash
       env:
         INPUT_TAGS: ${{ inputs.tags }}
-        INPUT_PUBLISH: ${{ inputs.publish }}
       run: |
         tag_args=""
         for tag in ${INPUT_TAGS}; do
           tag_args="${tag_args} --tag ${tag}"
         done
 
-        publish_flag=""
-        if [ "${INPUT_PUBLISH}" = "true" ]; then
-          publish_flag="--publish"
-        fi
+        build_image="index.docker.io/streamarr/streamarr-server:build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
         # Pin independently resolved Pack inputs. Procfile must be versioned because jammy-full
         # includes several versions, making an unversioned reference ambiguous.
-        pack build index.docker.io/streamarr/streamarr-server \
+        pack build "${build_image}" \
             ${tag_args} \
             --builder paketobuildpacks/builder-jammy-full:0.3.639 \
-            --buildpack paketo-buildpacks/apt@0.2.0 \
             --buildpack paketo-buildpacks/java \
             --buildpack paketo-buildpacks/procfile@5.13.6 \
             --env BP_JVM_VERSION=25 \
-            --env BP_INCLUDE_FILES=.profile:Procfile \
+            --env BP_INCLUDE_FILES=.profile:Procfile:.ffmpeg/bin/*:.ffmpeg/LICENSE.txt:.ffmpeg/SOURCE.txt \
             --path . \
-            --cache-image index.docker.io/streamarr/spring-boot-buildpack-paketo-cache-image:latest \
-            ${publish_flag}
+            --cache-image index.docker.io/streamarr/spring-boot-buildpack-paketo-cache-image:latest
+
+        .github/actions/pack-build/verify-ffmpeg-image.sh "${build_image}"
+
+    - name: Publish verified image tags
+      if: inputs.publish == 'true'
+      shell: bash
+      env:
+        INPUT_TAGS: ${{ inputs.tags }}
+      run: |
+        for tag in ${INPUT_TAGS}; do
+          docker push "${tag}"
+        done
