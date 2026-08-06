@@ -34,6 +34,8 @@ archive="${download_dir}/${asset}"
 curl \
   --fail \
   --location \
+  --proto '=https' \
+  --proto-redir '=https' \
   --retry 3 \
   --retry-all-errors \
   --silent \
