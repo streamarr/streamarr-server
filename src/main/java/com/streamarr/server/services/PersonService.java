@@ -63,6 +63,10 @@ public class PersonService {
   }
 
   private static void requireSourceId(Person person) {
+    if (person == null) {
+      throw new IllegalArgumentException("Person must not be null");
+    }
+
     if (person.getSourceId() == null) {
       throw new IllegalArgumentException("Person sourceId must not be null");
     }

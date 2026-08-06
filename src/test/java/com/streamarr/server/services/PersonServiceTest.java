@@ -149,15 +149,32 @@ class PersonServiceTest {
   }
 
   @Test
-  @DisplayName("Should throw when batch contains a null person source ID")
-  void shouldThrowWhenBatchContainsNullPersonSourceId() {
+  @DisplayName("Should reject batch without side effects when a person source ID is null")
+  void shouldRejectBatchWithoutSideEffectsWhenPersonSourceIdIsNull() {
     var persons =
         List.of(
             Person.builder().name("Valid Actor").sourceId("actor-1").build(),
             Person.builder().name("Invalid Actor").sourceId(null).build());
+    var imageSources =
+        Map.<String, List<ImageSource>>of(
+            "actor-1", List.of(new TmdbImageSource(ImageType.PROFILE, "/valid.jpg")));
+
+    assertThatThrownBy(() -> personService.getOrCreatePersons(persons, imageSources))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(personRepository.count()).isZero();
+    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject batch without side effects when it contains a null person")
+  void shouldRejectBatchWithoutSideEffectsWhenItContainsNullPerson() {
+    var persons = new ArrayList<Person>();
+    persons.add(Person.builder().name("Valid Actor").sourceId("actor-1").build());
+    persons.add(null);
 
     assertThatThrownBy(() -> personService.getOrCreatePersons(persons, Map.of()))
         .isInstanceOf(IllegalArgumentException.class);
+    assertThat(personRepository.count()).isZero();
   }
 
   @Test
