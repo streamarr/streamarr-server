@@ -8,17 +8,21 @@ inputs:
   publish:
     description: Whether to publish the image to the registry
     required: true
+  image-version:
+    description: Version recorded in the OCI image metadata
+    required: true
   dockerhub-username:
     description: Docker Hub username
-    required: true
+    required: false
   dockerhub-token:
     description: Docker Hub token
-    required: true
+    required: false
 
 runs:
   using: composite
   steps:
     - name: Login to Docker Hub
+      if: inputs.publish == 'true'
       uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
       with:
         username: ${{ inputs.dockerhub-username }}
@@ -30,29 +34,50 @@ runs:
     - name: Build with pack CLI
       shell: bash
       env:
-        INPUT_TAGS: ${{ inputs.tags }}
         INPUT_PUBLISH: ${{ inputs.publish }}
+        INPUT_IMAGE_VERSION: ${{ inputs.image-version }}
       run: |
-        tag_args=""
-        for tag in ${INPUT_TAGS}; do
-          tag_args="${tag_args} --tag ${tag}"
-        done
+        build_arch="$(uname -m)"
+        build_image="index.docker.io/streamarr/streamarr-server:build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${build_arch}"
+        image_revision="$(git rev-parse HEAD)"
+        pack_args=(
+          --builder paketobuildpacks/ubuntu-noble-builder:0.0.164
+          --buildpack paketo-buildpacks/java
+          --buildpack paketo-buildpacks/procfile@5.13.6
+          --buildpack ./buildpacks/ffmpeg
+          --env BP_JVM_VERSION=25
+          --env BP_INCLUDE_FILES=Procfile
+          --env "BP_OCI_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          --env "BP_OCI_REVISION=${image_revision}"
+          --env "BP_OCI_VERSION=${INPUT_IMAGE_VERSION}"
+          --path .
+        )
 
-        publish_flag=""
-        if [ "${INPUT_PUBLISH}" = "true" ]; then
-          publish_flag="--publish"
+        # Pin independently resolved Pack inputs. Procfile must be versioned because the builder
+        # includes several versions, making an unversioned reference ambiguous.
+        if [[ "${INPUT_PUBLISH}" == "true" ]]; then
+          pack build "${build_image}" "${pack_args[@]}" \
+              --publish \
+              --cache-image "index.docker.io/streamarr/spring-boot-buildpack-paketo-cache-image:latest-${build_arch}"
+        else
+          pack build "${build_image}" "${pack_args[@]}"
         fi
 
-        # Pin independently resolved Pack inputs. Procfile must be versioned because jammy-full
-        # includes several versions, making an unversioned reference ambiguous.
-        pack build index.docker.io/streamarr/streamarr-server \
-            ${tag_args} \
-            --builder paketobuildpacks/builder-jammy-full:0.3.639 \
-            --buildpack paketo-buildpacks/apt@0.2.0 \
-            --buildpack paketo-buildpacks/java \
-            --buildpack paketo-buildpacks/procfile@5.13.6 \
-            --env BP_JVM_VERSION=25 \
-            --env BP_INCLUDE_FILES=.profile:Procfile \
-            --path . \
-            --cache-image index.docker.io/streamarr/spring-boot-buildpack-paketo-cache-image:latest \
-            ${publish_flag}
+        .github/actions/pack-build/verify-ffmpeg-image.sh \
+          "${build_image}" \
+          "${INPUT_IMAGE_VERSION}" \
+          "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+          "${image_revision}"
+
+    - name: Publish verified image tags
+      if: inputs.publish == 'true'
+      shell: bash
+      env:
+        INPUT_TAGS: ${{ inputs.tags }}
+      run: |
+        build_arch="$(uname -m)"
+        build_image="index.docker.io/streamarr/streamarr-server:build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${build_arch}"
+        for tag in ${INPUT_TAGS}; do
+          docker tag "${build_image}" "${tag}"
+          docker push "${tag}"
+        done

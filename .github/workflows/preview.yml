@@ -34,11 +34,16 @@ jobs:
           ref: refs/pull/${{ github.event.issue.number }}/head
           persist-credentials: false
 
+      - name: Resolve PR head SHA
+        id: pr_head
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Build and publish preview image
         uses: ./.github/actions/pack-build
         with:
           tags: streamarr/streamarr-server:pr-${{ github.event.issue.number }}
           publish: "true"
+          image-version: ${{ steps.pr_head.outputs.sha }}
           dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 

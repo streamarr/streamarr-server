@@ -15,6 +15,8 @@ import org.jspecify.annotations.NonNull;
 @Slf4j
 public class TranscodeCapabilityService {
 
+  private static final String REQUIRED_HLS_OPTION = "hls_segment_options";
+
   private static final Pattern HW_ENCODER_PATTERN =
       Pattern.compile("^\\s*V\\S+\\s+(\\w+_(?:nvenc|qsv|amf|vaapi|videotoolbox))\\s+");
 
@@ -33,6 +35,7 @@ public class TranscodeCapabilityService {
   private final String ffmpegPath;
   private final ProcessFactory processFactory;
   @Getter private boolean ffmpegAvailable;
+  @Getter private String unavailableReason = "FFmpeg not found";
 
   @Getter
   private HardwareEncodingCapability hardwareEncodingCapability =
@@ -44,12 +47,20 @@ public class TranscodeCapabilityService {
   }
 
   public void detectCapabilities() {
-    ffmpegAvailable = checkFfmpegVersion();
-    if (!ffmpegAvailable) {
-      log.warn("FFmpeg not found. Transcoding will be unavailable.");
+    var versionProbe = checkFfmpegVersion();
+    if (!versionProbe.successful()) {
+      markUnavailable(versionProbe.unavailableReason());
       return;
     }
 
+    var hlsProbe = probeRequiredHlsOptions();
+    if (!hlsProbe.successful()) {
+      markUnavailable(hlsProbe.unavailableReason());
+      return;
+    }
+
+    ffmpegAvailable = true;
+    unavailableReason = "";
     var hwEncoders = detectHardwareEncoders();
     var hasGpu = !hwEncoders.isEmpty();
     var accelerator = hasGpu ? detectAccelerator() : "";
@@ -66,6 +77,12 @@ public class TranscodeCapabilityService {
         hasGpu,
         hwEncoders,
         accelerator);
+  }
+
+  private void markUnavailable(String reason) {
+    ffmpegAvailable = false;
+    unavailableReason = reason;
+    log.warn("FFmpeg capability detection failed for {}: {}", ffmpegPath, reason);
   }
 
   public String resolveEncoder(String codecFamily) {
@@ -89,18 +106,56 @@ public class TranscodeCapabilityService {
     return softwareDefault;
   }
 
-  private boolean checkFfmpegVersion() {
+  private CapabilityProbeResult checkFfmpegVersion() {
     try {
       var process = processFactory.create(new String[] {ffmpegPath, "-version"});
       var exitCode = process.waitFor();
-      return exitCode == 0;
+      return exitCode == 0
+          ? CapabilityProbeResult.success()
+          : CapabilityProbeResult.failure("FFmpeg version probe failed");
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       log.debug("FFmpeg version check interrupted", e);
-      return false;
+      return CapabilityProbeResult.failure("FFmpeg version probe interrupted");
+    } catch (IOException e) {
+      log.debug("FFmpeg executable not found", e);
+      return CapabilityProbeResult.failure("FFmpeg not found");
     } catch (Exception e) {
       log.debug("FFmpeg version check failed", e);
-      return false;
+      return CapabilityProbeResult.failure("FFmpeg version probe failed");
+    }
+  }
+
+  private CapabilityProbeResult probeRequiredHlsOptions() {
+    try {
+      var process =
+          processFactory.create(new String[] {ffmpegPath, "-hide_banner", "-h", "muxer=hls"});
+      var output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+      if (process.waitFor() != 0) {
+        return CapabilityProbeResult.failure("FFmpeg HLS capability probe failed");
+      }
+      if (!output.contains(REQUIRED_HLS_OPTION)) {
+        return CapabilityProbeResult.failure("Missing " + REQUIRED_HLS_OPTION);
+      }
+      return CapabilityProbeResult.success();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      log.debug("FFmpeg HLS capability check interrupted", e);
+      return CapabilityProbeResult.failure("FFmpeg HLS capability probe interrupted");
+    } catch (Exception e) {
+      log.debug("FFmpeg HLS capability check failed", e);
+      return CapabilityProbeResult.failure("FFmpeg HLS capability probe failed");
+    }
+  }
+
+  private record CapabilityProbeResult(boolean successful, String unavailableReason) {
+
+    private static CapabilityProbeResult success() {
+      return new CapabilityProbeResult(true, "");
+    }
+
+    private static CapabilityProbeResult failure(String reason) {
+      return new CapabilityProbeResult(false, reason);
     }
   }
 

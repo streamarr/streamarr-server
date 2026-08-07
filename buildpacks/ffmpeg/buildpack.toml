@@ -1,0 +1,16 @@
+api = "0.10"
+
+[buildpack]
+id = "com.streamarr.ffmpeg"
+version = "1.0.0"
+name = "Streamarr FFmpeg Buildpack"
+homepage = "https://github.com/streamarr/streamarr-server"
+sbom-formats = ["application/vnd.cyclonedx+json"]
+
+[[targets]]
+os = "linux"
+arch = "amd64"
+
+[[targets]]
+os = "linux"
+arch = "arm64"

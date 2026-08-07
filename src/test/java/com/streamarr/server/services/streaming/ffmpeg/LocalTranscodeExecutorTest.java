@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
@@ -10,6 +11,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.nio.file.Path;
@@ -210,6 +212,34 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
+  @DisplayName("Should reject producer start when FFmpeg lacks required HLS capabilities")
+  void shouldRejectProducerStartWhenFfmpegLacksRequiredHlsCapabilities() {
+    var capabilityService =
+        new TranscodeCapabilityService(
+            "ffmpeg",
+            command -> {
+              if (String.join(" ", command).contains("muxer=hls")) {
+                return new FakeProcess("Muxer hls [Apple HTTP Live Streaming]:", 0);
+              }
+              return new FakeProcess("ffmpeg version 4.4.2", 0);
+            });
+    capabilityService.detectCapabilities();
+    executor =
+        new LocalTranscodeExecutor(
+            new FfmpegTranscodeEngine(
+                new FfmpegCommandBuilder("ffmpeg"), processManager, capabilityService),
+            segmentStore);
+    var request = createRequest(TranscodeMode.FULL_TRANSCODE, "av1");
+
+    var thrown = catchThrowable(() -> executor.start(request));
+
+    assertThat(processManager.getStarted()).doesNotContain(request.sessionId());
+    assertThat(thrown)
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage("FFmpeg is unavailable: Missing hls_segment_options");
+  }
+
+  @Test
   @DisplayName("Should start active transcode when mode is remux")
   void shouldStartActiveTranscodeWhenModeIsRemux() {
     var request = createRequest(TranscodeMode.REMUX, "h264");
@@ -265,6 +295,7 @@ class LocalTranscodeExecutorTest {
       var outputs =
           Map.of(
               "ffmpeg", (Process) new FakeProcess("ffmpeg version 7.0", 0),
+              "hls", (Process) new FakeProcess("-hls_segment_options <dictionary>", 0),
               "hwaccels",
                   (Process)
                       new FakeProcess(
@@ -282,6 +313,9 @@ class LocalTranscodeExecutorTest {
                 var cmdStr = String.join(" ", command);
                 if (cmdStr.contains("-version")) {
                   return outputs.get("ffmpeg");
+                }
+                if (cmdStr.contains("muxer=hls")) {
+                  return outputs.get("hls");
                 }
                 if (cmdStr.contains("-hwaccels")) {
                   return outputs.get("hwaccels");

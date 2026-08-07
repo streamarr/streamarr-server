@@ -19,9 +19,10 @@ import org.springframework.boot.health.contributor.Status;
 class FfmpegHealthIndicatorTest {
 
   @Test
-  @DisplayName("Should report UP with GPU details when FFmpeg and GPU available")
-  void shouldReportUpWithGpuDetails() {
-    var service = createCapabilityService(true, true, Set.of("h264_nvenc", "av1_nvenc"), "cuda");
+  @DisplayName("Should report UP with GPU details when FFmpeg and GPU are available")
+  void shouldReportUpWithGpuDetailsWhenFfmpegAndGpuAreAvailable() {
+    var service =
+        capabilityService().encoders(Set.of("h264_nvenc", "av1_nvenc")).accelerator("cuda").build();
 
     var indicator = new FfmpegHealthIndicator(service);
 
@@ -34,9 +35,9 @@ class FfmpegHealthIndicatorTest {
   }
 
   @Test
-  @DisplayName("Should report UP with CPU-only note when FFmpeg available but no GPU")
-  void shouldReportUpWithCpuOnly() {
-    var service = createCapabilityService(true, false, Set.of(), "");
+  @DisplayName("Should report UP with CPU only when FFmpeg is available without GPU")
+  void shouldReportUpWithCpuOnlyWhenFfmpegIsAvailableWithoutGpu() {
+    var service = capabilityService().build();
 
     var indicator = new FfmpegHealthIndicator(service);
 
@@ -47,9 +48,9 @@ class FfmpegHealthIndicatorTest {
   }
 
   @Test
-  @DisplayName("Should report DOWN when FFmpeg unavailable")
-  void shouldReportDownWhenUnavailable() {
-    var service = createCapabilityService(false, false, Set.of(), "");
+  @DisplayName("Should report DOWN when FFmpeg is unavailable")
+  void shouldReportDownWhenFfmpegIsUnavailable() {
+    var service = capabilityService().ffmpegAvailable(false).build();
 
     var indicator = new FfmpegHealthIndicator(service);
 
@@ -58,35 +59,89 @@ class FfmpegHealthIndicatorTest {
     assertThat(health.getStatus()).isEqualTo(Status.DOWN);
   }
 
-  private TranscodeCapabilityService createCapabilityService(
-      boolean ffmpegAvailable, boolean gpuAvailable, Set<String> encoders, String accelerator) {
-    var encoderOutput = new StringBuilder();
-    for (var enc : encoders) {
-      encoderOutput.append(" V....D ").append(enc).append("           ").append(enc).append("\n");
-    }
-
+  @Test
+  @DisplayName("Should explain missing HLS capability when FFmpeg is installed but incompatible")
+  void shouldExplainMissingHlsCapabilityWhenFfmpegIsInstalledButIncompatible() {
     var service =
         new TranscodeCapabilityService(
             "ffmpeg",
             command -> {
-              var cmdStr = String.join(" ", command);
-              if (cmdStr.contains("-version")) {
-                return new FakeTestProcess("ffmpeg version 7.0", ffmpegAvailable ? 0 : 1);
+              if (String.join(" ", command).contains("muxer=hls")) {
+                return new FakeTestProcess("Muxer hls [Apple HTTP Live Streaming]:", 0);
               }
-              if (cmdStr.contains("-hwaccels")) {
-                return new FakeTestProcess(
-                    gpuAvailable
-                        ? "Hardware acceleration methods:\n" + accelerator + "\n"
-                        : "Hardware acceleration methods:\n",
-                    0);
-              }
-              if (cmdStr.contains("-encoders")) {
-                return new FakeTestProcess(encoderOutput.toString(), 0);
-              }
-              return new FakeTestProcess("", 1);
+              return new FakeTestProcess("ffmpeg version 4.4.2", 0);
             });
     service.detectCapabilities();
-    return service;
+    var indicator = new FfmpegHealthIndicator(service);
+
+    var health = indicator.health();
+
+    assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+    assertThat(health.getDetails()).containsEntry("reason", "Missing hls_segment_options");
+  }
+
+  private CapabilityServiceFixture capabilityService() {
+    return new CapabilityServiceFixture();
+  }
+
+  private static final class CapabilityServiceFixture {
+
+    private boolean ffmpegAvailable = true;
+    private Set<String> encoders = Set.of();
+    private String accelerator = "";
+
+    private CapabilityServiceFixture ffmpegAvailable(boolean available) {
+      ffmpegAvailable = available;
+      return this;
+    }
+
+    private CapabilityServiceFixture encoders(Set<String> availableEncoders) {
+      encoders = Set.copyOf(availableEncoders);
+      return this;
+    }
+
+    private CapabilityServiceFixture accelerator(String availableAccelerator) {
+      accelerator = availableAccelerator;
+      return this;
+    }
+
+    private TranscodeCapabilityService build() {
+      var encoderOutput = new StringBuilder();
+      for (var encoder : encoders) {
+        encoderOutput
+            .append(" V....D ")
+            .append(encoder)
+            .append("           ")
+            .append(encoder)
+            .append("\n");
+      }
+
+      var service =
+          new TranscodeCapabilityService(
+              "ffmpeg",
+              command -> {
+                var commandLine = String.join(" ", command);
+                if (commandLine.contains("-version")) {
+                  return new FakeTestProcess("ffmpeg version 7.0", ffmpegAvailable ? 0 : 1);
+                }
+                if (commandLine.contains("muxer=hls")) {
+                  return new FakeTestProcess("-hls_segment_options <dictionary>", 0);
+                }
+                if (commandLine.contains("-hwaccels")) {
+                  var output = "Hardware acceleration methods:\n";
+                  if (!encoders.isEmpty()) {
+                    output += accelerator + "\n";
+                  }
+                  return new FakeTestProcess(output, 0);
+                }
+                if (commandLine.contains("-encoders")) {
+                  return new FakeTestProcess(encoderOutput.toString(), 0);
+                }
+                return new FakeTestProcess("", 1);
+              });
+      service.detectCapabilities();
+      return service;
+    }
   }
 
   private static class FakeTestProcess extends Process {

@@ -1,0 +1,136 @@
+#!/bin/bash
+
+set -euo pipefail
+
+layers_dir="${CNB_LAYERS_DIR:?CNB_LAYERS_DIR is required}"
+target_arch="${CNB_TARGET_ARCH:?CNB_TARGET_ARCH is required}"
+release=autobuild-2026-07-31-14-10
+version=n8.1.2-34-g9b6c8969e0
+source_revision=9b6c8969e0
+build_date=20260731
+
+case "${target_arch}" in
+  amd64 | x86_64)
+    platform=linux64
+    checksum=09fc77be269c7053e438b7e96548e4af97604faf96a42c4a3c56a1ad74c22c0a
+    ;;
+  arm64 | aarch64)
+    platform=linuxarm64
+    checksum=177e40c91564dec3840096f3bf1ffe696b94330585972462cfc739fa29fe0e1a
+    ;;
+  *)
+    echo "Unsupported FFmpeg target architecture: ${target_arch}" >&2
+    exit 1
+    ;;
+esac
+
+asset="ffmpeg-${version}-${platform}-gpl-8.1.tar.xz"
+download_url="https://github.com/BtbN/FFmpeg-Builds/releases/download/${release}/${asset}"
+layer="${layers_dir}/ffmpeg"
+layer_metadata="${layers_dir}/ffmpeg.toml"
+cache_key="${release}/${asset}/${checksum}"
+
+if [[ ! -x "${layer}/bin/ffmpeg" ]] || ! grep -Fq "cache_key = \"${cache_key}\"" "${layer_metadata}" 2>/dev/null; then
+  rm -rf "${layer}"
+  mkdir -p "${layer}"
+
+  download_dir="$(mktemp -d)"
+  trap 'rm -rf "${download_dir}"' EXIT
+  archive="${download_dir}/${asset}"
+
+  curl \
+    --fail \
+    --location \
+    --proto '=https' \
+    --proto-redir '=https' \
+    --retry 3 \
+    --retry-all-errors \
+    --silent \
+    --show-error \
+    "${download_url}" \
+    --output "${archive}"
+  printf '%s  %s\n' "${checksum}" "${archive}" | sha256sum --check --strict
+
+  tar \
+    --extract \
+    --xz \
+    --file "${archive}" \
+    --directory "${layer}" \
+    --strip-components=1 \
+    "ffmpeg-${version}-${platform}-gpl-8.1/bin/ffmpeg" \
+    "ffmpeg-${version}-${platform}-gpl-8.1/bin/ffprobe" \
+    "ffmpeg-${version}-${platform}-gpl-8.1/LICENSE.txt"
+fi
+
+rm -rf "${layer}/env.launch"
+
+version_output="$("${layer}/bin/ffmpeg" -version 2>&1)"
+grep -F "ffmpeg version ${version}-${build_date}" <<<"${version_output}" >/dev/null
+grep -F -- "--enable-gpl" <<<"${version_output}" >/dev/null
+grep -F -- "--disable-libfdk-aac" <<<"${version_output}" >/dev/null
+if grep -Fq -- "--enable-nonfree" <<<"${version_output}"; then
+  echo "FFmpeg must not include nonfree components" >&2
+  exit 1
+fi
+"${layer}/bin/ffmpeg" -hide_banner -h muxer=hls 2>&1 \
+  | grep -F -- "-hls_segment_options" >/dev/null
+
+printf '%s\n' \
+  "FFmpeg ${version}-${build_date}" \
+  "Binary release: https://github.com/BtbN/FFmpeg-Builds/releases/tag/${release}" \
+  "Build source: https://github.com/BtbN/FFmpeg-Builds/tree/${release}" \
+  "FFmpeg source: https://github.com/FFmpeg/FFmpeg/commit/${source_revision}" \
+  >"${layer}/SOURCE.txt"
+
+cat >"${layer_metadata}" <<EOF
+[types]
+launch = true
+cache = true
+
+[metadata]
+cache_key = "${cache_key}"
+version = "${version}"
+release = "${release}"
+source_revision = "${source_revision}"
+EOF
+
+cat >"${layers_dir}/ffmpeg.sbom.cdx.json" <<EOF
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "components": [
+    {
+      "type": "application",
+      "bom-ref": "pkg:generic/ffmpeg@${version}",
+      "name": "FFmpeg",
+      "version": "${version}",
+      "publisher": "BtbN/FFmpeg-Builds",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "${checksum}"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "GPL-3.0-or-later"
+          }
+        }
+      ],
+      "purl": "pkg:generic/ffmpeg@${version}",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "${download_url}"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/FFmpeg/FFmpeg/commit/${source_revision}"
+        }
+      ]
+    }
+  ]
+}
+EOF

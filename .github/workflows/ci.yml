@@ -16,6 +16,28 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect packaging-relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      packaging: ${{ steps.filter.outputs.packaging }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            packaging:
+              - 'buildpacks/**'
+              - '.github/actions/pack-build/**'
+              - '.github/workflows/ci.yml'
+              - 'Procfile'
+
   build:
     runs-on: ubuntu-latest
 
@@ -83,3 +105,28 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./mvnw --batch-mode org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
 
+  package_image:
+    name: Build and verify ${{ matrix.architecture }} package image
+    needs: changes
+    if: needs.changes.outputs.packaging == 'true'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Build and verify package image
+        uses: ./.github/actions/pack-build
+        with:
+          tags: streamarr/streamarr-server:ci-${{ github.run_id }}-${{ matrix.architecture }}
+          publish: "false"
+          image-version: ${{ github.sha }}

@@ -15,7 +15,7 @@ public class FfmpegHealthIndicator implements HealthIndicator {
   @Override
   public Health health() {
     if (!capabilityService.isFfmpegAvailable()) {
-      return Health.down().withDetail("reason", "FFmpeg not found").build();
+      return Health.down().withDetail("reason", capabilityService.getUnavailableReason()).build();
     }
 
     var hwEncoding = capabilityService.getHardwareEncodingCapability();

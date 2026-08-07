@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.ffmpeg;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -14,11 +15,149 @@ class TranscodeCapabilityServiceTest {
   @Test
   @DisplayName("Should report unavailable when FFmpeg not installed")
   void shouldReportUnavailableWhenFfmpegNotInstalled() {
-    var service = new TranscodeCapabilityService("ffmpeg", command -> createProcess("", 1));
+    var service =
+        new TranscodeCapabilityService(
+            "ffmpeg",
+            _ -> {
+              throw new IOException("No such file or directory");
+            });
 
     service.detectCapabilities();
 
     assertThat(service.isFfmpegAvailable()).isFalse();
+    assertThat(service.getUnavailableReason()).isEqualTo("FFmpeg not found");
+  }
+
+  @Test
+  @DisplayName("Should report version probe failure when version probe exits unsuccessfully")
+  void shouldReportVersionProbeFailureWhenVersionProbeExitsUnsuccessfully() {
+    var service = new TranscodeCapabilityService("ffmpeg", _ -> createProcess("", 1));
+
+    service.detectCapabilities();
+
+    assertThat(service.isFfmpegAvailable()).isFalse();
+    assertThat(service.getUnavailableReason()).isEqualTo("FFmpeg version probe failed");
+  }
+
+  @Test
+  @DisplayName("Should report version probe failure when version probe throws")
+  void shouldReportVersionProbeFailureWhenVersionProbeThrows() {
+    var service =
+        new TranscodeCapabilityService(
+            "ffmpeg",
+            _ -> {
+              throw new IllegalStateException("probe failed");
+            });
+
+    service.detectCapabilities();
+
+    assertThat(service.isFfmpegAvailable()).isFalse();
+    assertThat(service.getUnavailableReason()).isEqualTo("FFmpeg version probe failed");
+  }
+
+  @Test
+  @DisplayName("Should restore interrupt when version probe is interrupted")
+  void shouldRestoreInterruptWhenVersionProbeIsInterrupted() {
+    var interruptedProcess =
+        new FakeProcess("", 0) {
+          @Override
+          public int waitFor() throws InterruptedException {
+            throw new InterruptedException("probe interrupted");
+          }
+        };
+    var service = new TranscodeCapabilityService("ffmpeg", _ -> interruptedProcess);
+
+    try {
+      service.detectCapabilities();
+
+      assertThat(service.isFfmpegAvailable()).isFalse();
+      assertThat(service.getUnavailableReason()).isEqualTo("FFmpeg version probe interrupted");
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted();
+    }
+  }
+
+  @Test
+  @DisplayName("Should report unavailable when FFmpeg lacks required HLS segment options")
+  void shouldReportUnavailableWhenFfmpegLacksRequiredHlsSegmentOptions() {
+    var outputs =
+        Map.of(
+            "ffmpeg", createProcess("ffmpeg version 4.4.2", 0),
+            "hls", createProcess("Muxer hls [Apple HTTP Live Streaming]:", 0));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
+
+    service.detectCapabilities();
+
+    assertThat(service.isFfmpegAvailable()).isFalse();
+    assertThat(service.getUnavailableReason()).isEqualTo("Missing hls_segment_options");
+  }
+
+  @Test
+  @DisplayName("Should report HLS probe failure when capability probe exits unsuccessfully")
+  void shouldReportHlsProbeFailureWhenCapabilityProbeExitsUnsuccessfully() {
+    var outputs =
+        Map.of(
+            "ffmpeg", createProcess("ffmpeg version 8.1.2", 0),
+            "hls", createProcess("-hls_segment_options <dictionary>", 1));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
+
+    service.detectCapabilities();
+
+    assertThat(service.isFfmpegAvailable()).isFalse();
+    assertThat(service.getUnavailableReason()).isEqualTo("FFmpeg HLS capability probe failed");
+  }
+
+  @Test
+  @DisplayName("Should report HLS probe failure when capability probe throws")
+  void shouldReportHlsProbeFailureWhenCapabilityProbeThrows() {
+    var service =
+        new TranscodeCapabilityService(
+            "ffmpeg",
+            command -> {
+              if (String.join(" ", command).contains("muxer=hls")) {
+                throw new IllegalStateException("probe failed");
+              }
+              return createProcess("ffmpeg version 8.1.2", 0);
+            });
+
+    service.detectCapabilities();
+
+    assertThat(service.isFfmpegAvailable()).isFalse();
+    assertThat(service.getUnavailableReason()).isEqualTo("FFmpeg HLS capability probe failed");
+  }
+
+  @Test
+  @DisplayName("Should restore interrupt when required HLS capability probe is interrupted")
+  void shouldRestoreInterruptWhenRequiredHlsCapabilityProbeIsInterrupted() {
+    var interruptedProcess =
+        new FakeProcess("-hls_segment_options <dictionary>", 0) {
+          @Override
+          public int waitFor() throws InterruptedException {
+            throw new InterruptedException("probe interrupted");
+          }
+        };
+    var outputs =
+        Map.of(
+            "ffmpeg",
+            createProcess("ffmpeg version 8.1.2", 0),
+            "hls",
+            (Process) interruptedProcess);
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
+
+    try {
+      service.detectCapabilities();
+
+      assertThat(service.isFfmpegAvailable()).isFalse();
+      assertThat(service.getUnavailableReason())
+          .isEqualTo("FFmpeg HLS capability probe interrupted");
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted();
+    }
   }
 
   @Test
@@ -145,6 +284,9 @@ class TranscodeCapabilityServiceTest {
     var cmdStr = String.join(" ", command);
     if (cmdStr.contains("-version")) {
       return outputs.get("ffmpeg");
+    }
+    if (cmdStr.contains("muxer=hls")) {
+      return outputs.getOrDefault("hls", createProcess("-hls_segment_options <dictionary>", 0));
     }
     if (cmdStr.contains("-hwaccels")) {
       return outputs.get("hwaccels");
