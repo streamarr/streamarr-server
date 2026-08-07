@@ -1,5 +1,7 @@
 package com.streamarr.server.repositories;
 
+import static com.streamarr.server.jooq.generated.tables.MovieDirector.MOVIE_DIRECTOR;
+import static com.streamarr.server.jooq.generated.tables.MoviePerson.MOVIE_PERSON;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -15,8 +17,12 @@ import com.streamarr.server.domain.metadata.Review;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Stream;
+import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -37,6 +43,7 @@ class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
   @Autowired private RatingRepository ratingRepository;
   @Autowired private ReviewRepository reviewRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
+  @Autowired private DSLContext dsl;
 
   private Movie savedMovie;
 
@@ -93,6 +100,106 @@ class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
 
     assertThat(directors).hasSize(1);
     assertThat(directors.getFirst().getName()).isEqualTo("Christopher Nolan");
+  }
+
+  @Test
+  @DisplayName("Should find movie cast by ordinal with nulls last and person ID breaking null ties")
+  void shouldFindMovieCastByOrdinalWithNullsLastAndPersonIdBreakingNullTies() {
+    var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+    var unrankedActorA =
+        personRepository.save(
+            Person.builder().name("Unranked Actor A").sourceId("unranked-actor-a-1").build());
+    var unrankedActorB =
+        personRepository.save(
+            Person.builder().name("Unranked Actor B").sourceId("unranked-actor-b-1").build());
+    var leadActor =
+        personRepository.save(Person.builder().name("Lead Actor").sourceId("lead-actor-1").build());
+    var movie =
+        movieRepository.saveAndFlush(
+            Movie.builder()
+                .title("Ordered Cast Movie")
+                .library(library)
+                .cast(List.of(unrankedActorA, leadActor, unrankedActorB))
+                .build());
+    dsl.update(MOVIE_PERSON)
+        .setNull(MOVIE_PERSON.ORDINAL)
+        .where(
+            MOVIE_PERSON
+                .MOVIE_ID
+                .eq(movie.getId())
+                .and(MOVIE_PERSON.PERSON_ID.in(unrankedActorA.getId(), unrankedActorB.getId())))
+        .execute();
+    dsl.update(MOVIE_PERSON)
+        .set(MOVIE_PERSON.ORDINAL, 0)
+        .where(
+            MOVIE_PERSON
+                .MOVIE_ID
+                .eq(movie.getId())
+                .and(MOVIE_PERSON.PERSON_ID.eq(leadActor.getId())))
+        .execute();
+
+    var cast = personRepository.findCastByMovieId(movie.getId());
+    var expectedIds =
+        Stream.concat(
+                Stream.of(leadActor.getId()),
+                idsInPostgresOrder(unrankedActorA, unrankedActorB).stream())
+            .toList();
+
+    assertThat(cast).extracting(Person::getId).containsExactlyElementsOf(expectedIds);
+  }
+
+  @Test
+  @DisplayName("Should find movie directors by ordinal then person ID")
+  void shouldFindMovieDirectorsByOrdinalThenPersonId() {
+    var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+    var tiedDirectorA =
+        personRepository.save(
+            Person.builder().name("Tied Director A").sourceId("tied-director-a-1").build());
+    var tiedDirectorB =
+        personRepository.save(
+            Person.builder().name("Tied Director B").sourceId("tied-director-b-1").build());
+    var laterDirector =
+        personRepository.save(
+            Person.builder().name("Later Director").sourceId("later-director-1").build());
+    var movie =
+        movieRepository.saveAndFlush(
+            Movie.builder()
+                .title("Ordered Directors Movie")
+                .library(library)
+                .directors(List.of(tiedDirectorA, laterDirector, tiedDirectorB))
+                .build());
+    dsl.update(MOVIE_DIRECTOR)
+        .set(MOVIE_DIRECTOR.ORDINAL, 0)
+        .where(
+            MOVIE_DIRECTOR
+                .MOVIE_ID
+                .eq(movie.getId())
+                .and(MOVIE_DIRECTOR.PERSON_ID.in(tiedDirectorA.getId(), tiedDirectorB.getId())))
+        .execute();
+    dsl.update(MOVIE_DIRECTOR)
+        .set(MOVIE_DIRECTOR.ORDINAL, 1)
+        .where(
+            MOVIE_DIRECTOR
+                .MOVIE_ID
+                .eq(movie.getId())
+                .and(MOVIE_DIRECTOR.PERSON_ID.eq(laterDirector.getId())))
+        .execute();
+
+    var directors = personRepository.findDirectorsByMovieId(movie.getId());
+    var expectedIds =
+        Stream.concat(
+                idsInPostgresOrder(tiedDirectorA, tiedDirectorB).stream(),
+                Stream.of(laterDirector.getId()))
+            .toList();
+
+    assertThat(directors).extracting(Person::getId).containsExactlyElementsOf(expectedIds);
+  }
+
+  private static List<UUID> idsInPostgresOrder(Person... persons) {
+    return Stream.of(persons)
+        .map(Person::getId)
+        .sorted(Comparator.comparing(UUID::toString))
+        .toList();
   }
 
   @Test

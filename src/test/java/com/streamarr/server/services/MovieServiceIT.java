@@ -135,6 +135,41 @@ class MovieServiceIT extends AbstractIntegrationTest {
     return MediaFilter.builder().libraryId(library.getId()).build();
   }
 
+  @Test
+  @DisplayName("Should expose cast in billing order when movie has multiple cast members")
+  void shouldExposeCastInBillingOrderWhenMovieHasMultipleCastMembers() {
+    var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+    var secondActor =
+        personRepository.save(
+            Person.builder().name("Second Billed Actor").sourceId("second-billed-actor-1").build());
+    var firstActor =
+        personRepository.save(
+            Person.builder().name("First Billed Actor").sourceId("first-billed-actor-1").build());
+    var movie =
+        movieRepository.saveAndFlush(
+            Movie.builder()
+                .title("Billing Order Movie")
+                .library(library)
+                .cast(List.of(secondActor, firstActor))
+                .build());
+    jdbcTemplate.update(
+        "UPDATE movie_person SET ordinal = ? WHERE movie_id = ? AND person_id = ?",
+        1,
+        movie.getId(),
+        secondActor.getId());
+    jdbcTemplate.update(
+        "UPDATE movie_person SET ordinal = ? WHERE movie_id = ? AND person_id = ?",
+        0,
+        movie.getId(),
+        firstActor.getId());
+
+    var cast = movieService.findCast(movie.getId());
+
+    assertThat(cast)
+        .extracting(Person::getName)
+        .containsExactly("First Billed Actor", "Second Billed Actor");
+  }
+
   @Nested
   @DisplayName("Forward Pagination")
   class ForwardPagination {

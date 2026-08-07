@@ -15,7 +15,6 @@ import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Collection;
@@ -35,7 +34,7 @@ import org.jooq.SortField;
 public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
 
   private final DSLContext context;
-  @PersistenceContext private final EntityManager entityManager;
+  private final EntityManager entityManager;
 
   public List<Series> seekWithFilter(MediaPaginationOptions options) {
 

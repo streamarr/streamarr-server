@@ -5,6 +5,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.services.RootServiceCycleFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
 import com.streamarr.server.services.library.MovieFileProcessor;
@@ -22,6 +23,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.transaction.annotation.Transactional;
 
 @Tag("UnitTest")
@@ -151,6 +153,10 @@ class ArchitectureTest {
           .as("Auth repositories must remain below auth services in the dependency direction");
 
   @ArchTest
+  static final ArchRule repositoryMethodsMustNotUseQueryAnnotations =
+      repositoryMethodsMustNotUseQueryAnnotations();
+
+  @ArchTest
   @DisplayName("Should avoid Path display text when media metadata is processed")
   static void shouldAvoidPathDisplayTextWhenMediaMetadataIsProcessed(JavaClasses classes) {
     noClasses()
@@ -183,6 +189,28 @@ class ArchitectureTest {
     assertThatThrownBy(() -> serviceDomainRule.check(cyclicServiceDomains))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("Cycle detected");
+  }
+
+  @Test
+  @DisplayName("Should reject @Query annotations when repository methods use JPQL")
+  void shouldRejectQueryAnnotationsWhenRepositoryMethodsUseJpql() {
+    var repositoryWithQueryAnnotation =
+        new ClassFileImporter().importClasses(RepositoryQueryFixture.class);
+    var repositoryRule = repositoryMethodsMustNotUseQueryAnnotations();
+
+    assertThatThrownBy(() -> repositoryRule.check(repositoryWithQueryAnnotation))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("Query");
+  }
+
+  private static ArchRule repositoryMethodsMustNotUseQueryAnnotations() {
+    return noMethods()
+        .that()
+        .areDeclaredInClassesThat()
+        .resideInAPackage("..repositories..")
+        .should()
+        .beAnnotatedWith(Query.class)
+        .as("Repository queries must use derived methods or jOOQ custom fragments");
   }
 
   private static ArchRule serviceDomainsMustBeFreeOfCycles() {

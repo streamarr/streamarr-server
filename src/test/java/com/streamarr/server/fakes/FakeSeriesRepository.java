@@ -79,7 +79,7 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
   }
 
   @Override
-  public List<Series> findByLibraryIdWithExternalIds(UUID libraryId) {
+  public List<Series> findWithExternalIdsByLibrary_Id(UUID libraryId) {
     return findByLibrary_Id(libraryId);
   }
 

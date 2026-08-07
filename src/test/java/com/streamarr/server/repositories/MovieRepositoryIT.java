@@ -119,4 +119,33 @@ class MovieRepositoryIT extends AbstractIntegrationTest {
     assertThat(result).isPresent();
     assertThat(result.get().getTitle()).isEqualTo("TMDB Movie");
   }
+
+  @Test
+  @DisplayName("Should load external identifiers when finding movies by library ID")
+  void shouldLoadExternalIdentifiersWhenFindingMoviesByLibraryId() {
+    var externalId =
+        ExternalIdentifier.builder()
+            .externalId("eager-movie-1")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+    var movie =
+        movieRepository.saveAndFlush(
+            Movie.builder()
+                .title("Eager External IDs Movie")
+                .externalIds(Set.of(externalId))
+                .library(savedLibrary)
+                .build());
+
+    var movies = movieRepository.findWithExternalIdsByLibrary_Id(savedLibrary.getId());
+
+    assertThat(movies)
+        .filteredOn(candidate -> candidate.getId().equals(movie.getId()))
+        .singleElement()
+        .satisfies(
+            candidate ->
+                assertThat(candidate.getExternalIds())
+                    .singleElement()
+                    .extracting(ExternalIdentifier::getExternalId)
+                    .isEqualTo("eager-movie-1"));
+  }
 }

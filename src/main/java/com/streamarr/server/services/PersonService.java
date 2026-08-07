@@ -6,6 +6,7 @@ import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -27,18 +28,21 @@ public class PersonService {
       return List.of();
     }
 
-    return persons.stream()
+    persons.forEach(PersonService::requireSourceId);
+
+    var savedBySourceId = new HashMap<String, Person>();
+    persons.stream()
         .sorted(Comparator.comparing(Person::getSourceId))
-        .map(p -> findOrCreatePerson(p, imageSourcesBySourceId))
-        .toList();
+        .forEach(
+            person ->
+                savedBySourceId.put(
+                    person.getSourceId(), findOrCreatePerson(person, imageSourcesBySourceId)));
+
+    return persons.stream().map(person -> savedBySourceId.get(person.getSourceId())).toList();
   }
 
   private Person findOrCreatePerson(
       Person person, Map<String, List<ImageSource>> imageSourcesBySourceId) {
-    if (person.getSourceId() == null) {
-      throw new IllegalArgumentException("Person sourceId must not be null");
-    }
-
     var imageSources = imageSourcesBySourceId.getOrDefault(person.getSourceId(), List.of());
 
     boolean inserted = personRepository.insertIfAbsent(person.getSourceId(), person.getName());
@@ -56,6 +60,16 @@ public class PersonService {
       publishImageEvent(saved, imageSources);
     }
     return saved;
+  }
+
+  private static void requireSourceId(Person person) {
+    if (person == null) {
+      throw new IllegalArgumentException("Person must not be null");
+    }
+
+    if (person.getSourceId() == null) {
+      throw new IllegalArgumentException("Person sourceId must not be null");
+    }
   }
 
   private void publishImageEvent(Person person, List<ImageSource> imageSources) {

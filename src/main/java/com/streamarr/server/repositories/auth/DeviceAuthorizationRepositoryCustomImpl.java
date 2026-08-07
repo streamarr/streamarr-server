@@ -6,7 +6,6 @@ import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.jooq.generated.enums.DeviceAuthorizationStatus;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -35,7 +34,7 @@ public class DeviceAuthorizationRepositoryCustomImpl
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
 
-  @PersistenceContext private final EntityManager entityManager;
+  private final EntityManager entityManager;
 
   @Override
   public Optional<DeviceAuthorization> lockByDeviceCodeDigest(String deviceCodeDigest) {
