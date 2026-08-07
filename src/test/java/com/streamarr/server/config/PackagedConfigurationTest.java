@@ -115,8 +115,8 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should add source revision and version labels when packaging an image")
-  void shouldAddSourceRevisionAndVersionLabelsWhenPackagingAnImage() throws IOException {
+  @DisplayName("Should derive OCI revision from checked out source when packaging an image")
+  void shouldDeriveOciRevisionFromCheckedOutSourceWhenPackagingAnImage() throws IOException {
     var action = yaml(".github/actions/pack-build/action.yml");
     var buildStep =
         stepNamed(listOfMaps(map(action.get("runs")).get("steps")), "Build with pack CLI");
@@ -132,9 +132,12 @@ class PackagedConfigurationTest {
     assertThat(map(action.get("inputs"))).containsKey("image-version");
     assertThat(buildCommand)
         .contains(
+            "image_revision=\"$(git rev-parse HEAD)\"",
             "BP_OCI_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}",
-            "BP_OCI_REVISION=${GITHUB_SHA}",
-            "BP_OCI_VERSION=${INPUT_IMAGE_VERSION}");
+            "BP_OCI_REVISION=${image_revision}",
+            "BP_OCI_VERSION=${INPUT_IMAGE_VERSION}",
+            "\"${image_revision}\"")
+        .doesNotContain("BP_OCI_REVISION=${GITHUB_SHA}");
     assertThat(map(releasePackStep.get("with")))
         .containsEntry(
             "image-version",

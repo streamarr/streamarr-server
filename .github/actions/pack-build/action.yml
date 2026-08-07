@@ -39,6 +39,7 @@ runs:
       run: |
         build_arch="$(uname -m)"
         build_image="index.docker.io/streamarr/streamarr-server:build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${build_arch}"
+        image_revision="$(git rev-parse HEAD)"
         pack_args=(
           --builder paketobuildpacks/ubuntu-noble-builder:0.0.164
           --buildpack paketo-buildpacks/java
@@ -47,7 +48,7 @@ runs:
           --env BP_JVM_VERSION=25
           --env BP_INCLUDE_FILES=Procfile
           --env "BP_OCI_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
-          --env "BP_OCI_REVISION=${GITHUB_SHA}"
+          --env "BP_OCI_REVISION=${image_revision}"
           --env "BP_OCI_VERSION=${INPUT_IMAGE_VERSION}"
           --path .
         )
@@ -66,7 +67,7 @@ runs:
           "${build_image}" \
           "${INPUT_IMAGE_VERSION}" \
           "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
-          "${GITHUB_SHA}"
+          "${image_revision}"
 
     - name: Publish verified image tags
       if: inputs.publish == 'true'
