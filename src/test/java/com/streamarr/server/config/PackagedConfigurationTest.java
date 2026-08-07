@@ -102,6 +102,19 @@ class PackagedConfigurationTest {
   }
 
   @Test
+  @DisplayName("Should grant repository contents access only to release image build job")
+  void shouldGrantRepositoryContentsAccessOnlyToReleaseImageBuildJob() throws IOException {
+    var workflow = yaml(".github/workflows/publish-release.yml");
+    var jobs = map(workflow.get("jobs"));
+    var buildReleaseImages = map(jobs.get("build_release_images"));
+    var publishRelease = map(jobs.get("publish_release"));
+
+    assertThat(map(workflow.get("permissions"))).isEmpty();
+    assertThat(map(buildReleaseImages.get("permissions"))).isEqualTo(Map.of("contents", "read"));
+    assertThat(publishRelease).doesNotContainKey("permissions");
+  }
+
+  @Test
   @DisplayName("Should add source revision and version labels when packaging an image")
   void shouldAddSourceRevisionAndVersionLabelsWhenPackagingAnImage() throws IOException {
     var action = yaml(".github/actions/pack-build/action.yml");

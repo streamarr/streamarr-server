@@ -6,12 +6,13 @@ on:
     types:
       - released
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   build_release_images:
     name: Build and verify ${{ matrix.architecture }} image
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
