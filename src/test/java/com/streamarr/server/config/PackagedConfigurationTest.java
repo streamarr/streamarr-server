@@ -160,7 +160,7 @@ class PackagedConfigurationTest {
             .findFirst()
             .orElseThrow();
 
-    assertThat(packageImage.get("runs-on")).isEqualTo("${{ matrix.runner }}");
+    assertThat(packageImage).containsEntry("runs-on", "${{ matrix.runner }}");
     assertThat(architectures)
         .containsExactlyInAnyOrder(
             Map.of("architecture", "amd64", "runner", "ubuntu-24.04"),
@@ -197,7 +197,7 @@ class PackagedConfigurationTest {
     var stepNames =
         listOfMaps(publishRelease.get("steps")).stream().map(step -> step.get("name")).toList();
 
-    assertThat(publishRelease.get("needs")).isEqualTo("build_release_images");
+    assertThat(publishRelease).containsEntry("needs", "build_release_images");
     assertThat(stepNames)
         .containsSubsequence(
             "Publish immutable multi-architecture image",
@@ -278,7 +278,7 @@ class PackagedConfigurationTest {
             .findFirst()
             .orElseThrow();
 
-    assertThat(buildReleaseImages.get("runs-on")).isEqualTo("${{ matrix.runner }}");
+    assertThat(buildReleaseImages).containsEntry("runs-on", "${{ matrix.runner }}");
     assertThat(architectures)
         .containsExactlyInAnyOrder(
             Map.of("architecture", "amd64", "runner", "ubuntu-24.04"),
