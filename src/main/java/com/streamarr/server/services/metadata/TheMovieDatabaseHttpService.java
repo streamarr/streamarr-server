@@ -191,7 +191,12 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
   private <T> T decodeResponseBody(HttpResponse<String> response, Class<T> responseType)
       throws IOException {
     try {
-      return objectMapper.readValue(response.body(), responseType);
+      var responseBody = objectMapper.readValue(response.body(), responseType);
+      if (responseBody == null) {
+        throw new IOException(
+            "Failed to decode TMDB response body with status " + response.statusCode());
+      }
+      return responseBody;
     } catch (JacksonException ex) {
       throw new IOException(
           "Failed to decode TMDB response body with status " + response.statusCode(), ex);
@@ -201,14 +206,21 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
   private TmdbApiException apiException(HttpResponse<String> response) {
     try {
       var failure = objectMapper.readValue(response.body(), TmdbFailure.class);
+      if (failure == null) {
+        return unparseableApiException(response);
+      }
       return new TmdbApiException(response.statusCode(), failure.getStatusMessage());
     } catch (JacksonException _) {
-      var bodySnippet =
-          StringUtils.abbreviate(
-              StringUtils.normalizeSpace(response.body()), ERROR_BODY_SNIPPET_LENGTH);
-      return new TmdbApiException(
-          response.statusCode(), "Unparseable error response body: " + bodySnippet);
+      return unparseableApiException(response);
     }
+  }
+
+  private TmdbApiException unparseableApiException(HttpResponse<String> response) {
+    var bodySnippet =
+        StringUtils.abbreviate(
+            StringUtils.normalizeSpace(response.body()), ERROR_BODY_SNIPPET_LENGTH);
+    return new TmdbApiException(
+        response.statusCode(), "Unparseable error response body: " + bodySnippet);
   }
 
   private HttpRequest.Builder authenticatedRequest(URI uri) {

@@ -7,7 +7,9 @@ import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
+import com.streamarr.server.services.metadata.TmdbSearchResultScorer.CandidateResult;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
+import com.streamarr.server.services.metadata.tmdb.TmdbFindResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -135,6 +137,107 @@ class TmdbSearchDelegateTest {
             _ -> new NotFound());
 
     assertThat(outcome).isInstanceOf(NotFound.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should return not found when text search candidates do not meet the match threshold")
+  void shouldReturnNotFoundWhenTextSearchCandidatesDoNotMeetMatchThreshold() {
+    var videoInformation = VideoFileParserResult.builder().title("Inception").build();
+    var candidate =
+        RemoteSearchResult.builder()
+            .title("Unrelated Documentary")
+            .externalId("12345")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build();
+
+    var outcome =
+        searchDelegate.searchByText(
+            videoInformation,
+            _ -> List.of(candidate),
+            _ -> new CandidateResult("Unrelated Documentary", null, null, 0.0),
+            Function.identity());
+
+    assertThat(outcome).isInstanceOf(NotFound.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should return temporarily unavailable and preserve interrupt status when text search is interrupted")
+  void shouldReturnTemporarilyUnavailableAndPreserveInterruptStatusWhenTextSearchIsInterrupted() {
+    var interruption = new InterruptedException("TMDB text search interrupted");
+    TmdbSearchDelegate.TextSearch<RemoteSearchResult> textSearch =
+        _ -> {
+          throw interruption;
+        };
+
+    try {
+      var outcome =
+          searchDelegate.searchByText(
+              VideoFileParserResult.builder().title("Interrupted Movie").build(),
+              textSearch,
+              _ -> new CandidateResult("Unused", null, null, 0.0),
+              Function.identity());
+
+      assertThat(outcome)
+          .isInstanceOfSatisfying(
+              TemporarilyUnavailable.class,
+              unavailable -> assertThat(unavailable.cause()).isSameAs(interruption));
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted();
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should return temporarily unavailable, preserve interrupt status, and skip fallback when external ID lookup is interrupted")
+  void shouldReturnTemporarilyUnavailableAndSkipFallbackWhenExternalIdLookupIsInterrupted() {
+    var interruption = new InterruptedException("TMDB external ID lookup interrupted");
+    var interruptingSearchDelegate =
+        new TmdbSearchDelegate(new InterruptingFindTmdbHttpService(interruption));
+    var textSearch = new RecordingTextSearch(new NotFound());
+    var videoInformation =
+        VideoFileParserResult.builder()
+            .title("Interrupted Movie")
+            .externalId("tt99999")
+            .externalSource(ExternalSourceType.IMDB)
+            .build();
+
+    try {
+      var outcome =
+          interruptingSearchDelegate.search(
+              videoInformation,
+              _ -> Optional.empty(),
+              _ -> {
+                throw new AssertionError("Direct TMDB lookup should not be called");
+              },
+              textSearch);
+
+      assertThat(outcome)
+          .isInstanceOfSatisfying(
+              TemporarilyUnavailable.class,
+              unavailable -> assertThat(unavailable.cause()).isSameAs(interruption));
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+      assertThat(textSearch.inputs()).isEmpty();
+    } finally {
+      Thread.interrupted();
+    }
+  }
+
+  private static final class InterruptingFindTmdbHttpService extends FakeTmdbHttpService {
+
+    private final InterruptedException interruption;
+
+    private InterruptingFindTmdbHttpService(InterruptedException interruption) {
+      this.interruption = interruption;
+    }
+
+    @Override
+    public TmdbFindResults findByExternalId(String externalId, String externalSource)
+        throws InterruptedException {
+      throw interruption;
+    }
   }
 
   private static final class RecordingTextSearch

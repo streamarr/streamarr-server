@@ -172,6 +172,33 @@ class TMDBMovieProviderIT {
   }
 
   @Test
+  @DisplayName("Should return unavailable when TMDB search API error body is JSON null")
+  void shouldReturnUnavailableWhenTmdbSearchApiErrorBodyIsJsonNull() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(500)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody("null")));
+
+    var result = provider.search(VideoFileParserResult.builder().title("Test").build());
+
+    assertThat(result)
+        .isInstanceOfSatisfying(
+            TemporarilyUnavailable.class,
+            unavailable ->
+                assertThat(unavailable.cause())
+                    .isInstanceOfSatisfying(
+                        TmdbApiException.class,
+                        failure -> {
+                          assertThat(failure.getStatusCode()).isEqualTo(500);
+                          assertThat(failure)
+                              .hasMessageContaining("Unparseable error response body");
+                        }));
+  }
+
+  @Test
   @DisplayName("Should return unavailable when TMDB search API returns a non-JSON error")
   void shouldReturnUnavailableWhenTmdbSearchApiReturnsNonJsonError() {
     var errorBody = "Gateway    Timeout " + "x".repeat(240) + " TRAILING_SENSITIVE_DIAGNOSTIC";
@@ -241,6 +268,28 @@ class TMDBMovieProviderIT {
                     .withStatus(200)
                     .withHeader("Content-Type", "application/json")
                     .withBody("not-json")));
+
+    var result = provider.search(VideoFileParserResult.builder().title("Test").build());
+
+    assertThat(result)
+        .isInstanceOfSatisfying(
+            TemporarilyUnavailable.class,
+            unavailable ->
+                assertThat(unavailable.cause())
+                    .isInstanceOf(IOException.class)
+                    .hasMessageContaining("decode TMDB response body"));
+  }
+
+  @Test
+  @DisplayName("Should return unavailable when TMDB search API returns JSON null")
+  void shouldReturnUnavailableWhenTmdbSearchApiReturnsJsonNull() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody("null")));
 
     var result = provider.search(VideoFileParserResult.builder().title("Test").build());
 
