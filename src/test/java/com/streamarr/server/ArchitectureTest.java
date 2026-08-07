@@ -196,10 +196,9 @@ class ArchitectureTest {
   void shouldRejectQueryAnnotationsWhenRepositoryMethodsUseJpql() {
     var repositoryWithQueryAnnotation =
         new ClassFileImporter().importClasses(RepositoryQueryFixture.class);
+    var repositoryRule = repositoryMethodsMustNotUseQueryAnnotations();
 
-    assertThatThrownBy(
-            () ->
-                repositoryMethodsMustNotUseQueryAnnotations().check(repositoryWithQueryAnnotation))
+    assertThatThrownBy(() -> repositoryRule.check(repositoryWithQueryAnnotation))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("Query");
   }
