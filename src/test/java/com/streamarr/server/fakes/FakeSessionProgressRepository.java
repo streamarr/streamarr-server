@@ -45,17 +45,6 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   }
 
   @Override
-  public Optional<SessionProgress> findMostRecentByProfileIdAndMediaFileId(
-      UUID profileId, UUID mediaFileId) {
-    return database.values().stream()
-        .filter(
-            sp -> profileId.equals(sp.getProfileId()) && mediaFileId.equals(sp.getMediaFileId()))
-        .max(
-            Comparator.comparing(
-                sp -> sp.getLastModifiedOn() != null ? sp.getLastModifiedOn() : sp.getCreatedOn()));
-  }
-
-  @Override
   public boolean upsertProgress(SaveWatchProgress progress) {
     var existing = findBySessionId(progress.sessionId());
     if (existing.isPresent()) {

@@ -666,19 +666,6 @@ class SessionProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should return most recent session progress for resume")
-    void shouldReturnMostRecentSessionProgressForResume() {
-      var sessions = reportTwoSessionsOnSameMediaFile();
-
-      var resume =
-          sessionProgressRepository.findMostRecentByProfileIdAndMediaFileId(
-              PROFILE_ID, sessions.first().getMediaFileId());
-
-      assertThat(resume).isPresent();
-      assertThat(resume.get().getPositionSeconds()).isEqualTo(600);
-    }
-
-    @Test
     @DisplayName("Should delete only discarded session progress")
     void shouldDeleteOnlyDiscardedSessionProgress() {
       var sessions = reportTwoSessionsOnSameMediaFile();

@@ -116,38 +116,6 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
   @Test
   @Transactional
-  @DisplayName(
-      "Should find most recent progress when multiple rows exist for same user and media file")
-  void shouldFindMostRecentProgressWhenMultipleRowsExistForSameUserAndMediaFile() {
-    var fixture = createMovieWithFile();
-
-    sessionProgressRepository.saveAndFlush(
-        progressBuilder(profileId, fixture.mediaFileId())
-            .positionSeconds(300)
-            .percentComplete(10.0)
-            .durationSeconds(3000)
-            .build());
-
-    entityManager.clear();
-
-    sessionProgressRepository.saveAndFlush(
-        progressBuilder(profileId, fixture.mediaFileId())
-            .positionSeconds(600)
-            .percentComplete(20.0)
-            .durationSeconds(3000)
-            .build());
-
-    entityManager.clear();
-
-    var mostRecent =
-        sessionProgressRepository.findMostRecentByProfileIdAndMediaFileId(
-            profileId, fixture.mediaFileId());
-    assertThat(mostRecent).isPresent();
-    assertThat(mostRecent.get().getPositionSeconds()).isEqualTo(600);
-  }
-
-  @Test
-  @Transactional
   @DisplayName("Should cascade delete watch progress when movie removed")
   void shouldCascadeDeleteWatchProgressWhenMovieRemoved() {
     var fixture = createMovieWithFile();
@@ -160,17 +128,17 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
             .build());
 
     assertThat(
-            sessionProgressRepository.findMostRecentByProfileIdAndMediaFileId(
-                profileId, fixture.mediaFileId()))
-        .isPresent();
+            sessionProgressRepository.findByProfileIdAndMediaFileIdIn(
+                profileId, Set.of(fixture.mediaFileId())))
+        .hasSize(1);
 
     movieRepository.deleteById(fixture.movie().getId());
     movieRepository.flush();
     entityManager.clear();
 
     assertThat(
-            sessionProgressRepository.findMostRecentByProfileIdAndMediaFileId(
-                profileId, fixture.mediaFileId()))
+            sessionProgressRepository.findByProfileIdAndMediaFileIdIn(
+                profileId, Set.of(fixture.mediaFileId())))
         .isEmpty();
   }
 
@@ -196,8 +164,8 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     entityManager.clear();
 
     assertThat(
-            sessionProgressRepository.findMostRecentByProfileIdAndMediaFileId(
-                profileId, fixture.mediaFileId()))
+            sessionProgressRepository.findByProfileIdAndMediaFileIdIn(
+                profileId, Set.of(fixture.mediaFileId())))
         .isEmpty();
   }
 

@@ -2,14 +2,9 @@ package com.streamarr.server.repositories.streaming;
 
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 
-import com.streamarr.server.domain.streaming.SessionProgress;
-import com.streamarr.server.repositories.JooqQueryHelper;
-import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Collection;
-import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
@@ -19,7 +14,6 @@ import org.springframework.data.domain.AuditorAware;
 public class SessionProgressRepositoryCustomImpl implements SessionProgressRepositoryCustom {
 
   private final DSLContext dsl;
-  private final EntityManager entityManager;
   private final AuditorAware<UUID> auditorAware;
 
   @Override
@@ -48,23 +42,6 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
             .set(SESSION_PROGRESS.LAST_MODIFIED_ON, now)
             .execute();
     return rowsAffected > 0;
-  }
-
-  @Override
-  public Optional<SessionProgress> findMostRecentByProfileIdAndMediaFileId(
-      UUID profileId, UUID mediaFileId) {
-    var query =
-        dsl.select(SESSION_PROGRESS.asterisk())
-            .from(SESSION_PROGRESS)
-            .where(SESSION_PROGRESS.PROFILE_ID.eq(profileId))
-            .and(SESSION_PROGRESS.MEDIA_FILE_ID.eq(mediaFileId))
-            .orderBy(SESSION_PROGRESS.LAST_MODIFIED_ON.desc())
-            .limit(1);
-
-    List<SessionProgress> results =
-        JooqQueryHelper.nativeQuery(entityManager, query, SessionProgress.class);
-
-    return results.stream().findFirst();
   }
 
   @Override
