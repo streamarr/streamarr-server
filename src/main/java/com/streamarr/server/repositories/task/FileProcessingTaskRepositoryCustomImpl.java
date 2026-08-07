@@ -7,7 +7,6 @@ import com.streamarr.server.domain.task.FileProcessingTask;
 import com.streamarr.server.jooq.generated.enums.FileProcessingTaskStatus;
 import com.streamarr.server.jooq.generated.tables.records.FileProcessingTaskRecord;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -26,7 +25,7 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
       List.of(FileProcessingTaskStatus.PENDING, FileProcessingTaskStatus.PROCESSING);
 
   private final DSLContext context;
-  @PersistenceContext private final EntityManager entityManager;
+  private final EntityManager entityManager;
 
   @Override
   @Transactional

@@ -6,7 +6,6 @@ import static com.streamarr.server.jooq.generated.tables.SeriesCompany.SERIES_CO
 
 import com.streamarr.server.domain.metadata.Company;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +17,7 @@ public class CompanyRepositoryCustomImpl implements CompanyRepositoryCustom {
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
-  @PersistenceContext private final EntityManager entityManager;
+  private final EntityManager entityManager;
 
   @Override
   public boolean insertIfAbsent(String sourceId, String name) {

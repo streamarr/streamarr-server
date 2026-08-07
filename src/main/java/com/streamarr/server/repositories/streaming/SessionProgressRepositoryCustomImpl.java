@@ -5,7 +5,6 @@ import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Collection;
@@ -20,7 +19,7 @@ import org.springframework.data.domain.AuditorAware;
 public class SessionProgressRepositoryCustomImpl implements SessionProgressRepositoryCustom {
 
   private final DSLContext dsl;
-  @PersistenceContext private final EntityManager entityManager;
+  private final EntityManager entityManager;
   private final AuditorAware<UUID> auditorAware;
 
   @Override
