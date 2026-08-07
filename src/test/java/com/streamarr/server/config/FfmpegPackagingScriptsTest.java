@@ -164,6 +164,7 @@ class FfmpegPackagingScriptsTest {
           'ffmpeg version n8.1.2-34-g9b6c8969e0-20260731' \\
           'configuration: --enable-gpl --disable-libfdk-aac --enable-nonfree'
         """);
+    writeCommand(runtime, "ffprobe", ":");
 
     var result =
         command(IMAGE_VERIFIER)
