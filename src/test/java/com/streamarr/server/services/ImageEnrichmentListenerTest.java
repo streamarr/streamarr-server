@@ -146,6 +146,45 @@ class ImageEnrichmentListenerTest {
   }
 
   @Test
+  @DisplayName("Should download only missing image types when some images already exist")
+  void shouldDownloadOnlyMissingImageTypesWhenSomeImagesAlreadyExist() throws InterruptedException {
+    var entityId = UUID.randomUUID();
+    var completionTrackingRepository = new CompletionTrackingImageRepository();
+    imageRepository = completionTrackingRepository;
+    completionTrackingRepository.expectImagesFor(entityId);
+    imageRepository.save(
+        Image.builder()
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageType(ImageType.POSTER)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278)
+            .path("movie/" + entityId + "/poster/small.jpg")
+            .build());
+    var imageDownloader =
+        BlockingImageDownloader.builder().imageData(createTestImage(600, 900)).build();
+    imageDownloader.expectDownload("/backdrop.jpg");
+    var testListener = createListener(imageDownloader, new MutexFactory<>());
+    var event =
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(
+                new TmdbImageSource(ImageType.POSTER, "/poster.jpg"),
+                new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg")));
+
+    testListener.onMetadataEnriched(event);
+
+    assertThat(imageDownloader.awaitDownloadStarted("/backdrop.jpg")).isTrue();
+    assertThat(completionTrackingRepository.awaitImagesFor(entityId)).isTrue();
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .extracting(Image::getImageType)
+        .containsOnly(ImageType.POSTER, ImageType.BACKDROP);
+    assertThat(imageDownloader.downloadedPaths()).containsExactly("/backdrop.jpg");
+  }
+
+  @Test
   @DisplayName("Should not save images for interrupted source when download is interrupted")
   void shouldNotSaveImagesForInterruptedSourceWhenDownloadIsInterrupted() {
     var entityId = UUID.randomUUID();

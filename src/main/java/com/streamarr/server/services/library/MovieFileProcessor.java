@@ -8,6 +8,9 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
@@ -65,28 +68,38 @@ public class MovieFileProcessor {
         mediaInformationResult.get().title(),
         mediaInformationResult.get().year());
 
-    var movieSearchResult =
-        movieMetadataProviderResolver.search(library, mediaInformationResult.get());
+    var searchOutcome = movieMetadataProviderResolver.search(library, mediaInformationResult.get());
 
-    if (movieSearchResult.isEmpty()) {
-      mediaFile.setStatus(MediaFileStatus.METADATA_SEARCH_FAILED);
-      mediaFileRepository.save(mediaFile);
+    switch (searchOutcome) {
+      case NotFound _ -> {
+        mediaFile.setStatus(MediaFileStatus.METADATA_NOT_FOUND);
+        mediaFileRepository.save(mediaFile);
 
-      log.error(
-          "Failed to find matching search result for MediaFile id: {} at path: '{}'",
-          mediaFile.getId(),
-          mediaFile.getFilepathUri());
+        log.error(
+            "Failed to find matching search result for MediaFile id: {} at path: '{}'",
+            mediaFile.getId(),
+            mediaFile.getFilepathUri());
+      }
+      case TemporarilyUnavailable(var cause) -> {
+        mediaFile.setStatus(MediaFileStatus.METADATA_UNAVAILABLE);
+        mediaFileRepository.save(mediaFile);
 
-      return;
+        log.error(
+            "Metadata provider unavailable for MediaFile id: {} at path: '{}'",
+            mediaFile.getId(),
+            mediaFile.getFilepathUri(),
+            cause);
+      }
+      case Found(var movieSearchResult) -> {
+        log.info(
+            "Found metadata search result during enrichment for MediaFile id: {}. Metadata provider: {} and External id: {}",
+            mediaFile.getId(),
+            movieSearchResult.externalSourceType(),
+            movieSearchResult.externalId());
+
+        enrichMovieMetadata(library, mediaFile, movieSearchResult);
+      }
     }
-
-    log.info(
-        "Found metadata search result during enrichment for MediaFile id: {}. Metadata provider: {} and External id: {}",
-        mediaFile.getId(),
-        movieSearchResult.get().externalSourceType(),
-        movieSearchResult.get().externalId());
-
-    enrichMovieMetadata(library, mediaFile, movieSearchResult.get());
   }
 
   private Optional<VideoFileParserResult> parseMediaFileForMovieInfo(MediaFile mediaFile) {

@@ -13,6 +13,9 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
@@ -104,34 +107,45 @@ public class SeriesFileProcessor {
       return;
     }
 
-    var searchResult = seriesMetadataProviderResolver.search(library, parserResult);
+    var searchOutcome = seriesMetadataProviderResolver.search(library, parserResult);
 
-    if (searchResult.isEmpty()) {
-      markAs(mediaFile, MediaFileStatus.METADATA_SEARCH_FAILED);
-      log.error(
-          "Failed to find TMDB match for series '{}' from MediaFile id: {} at path: '{}'",
-          parserResult.title(),
-          mediaFile.getId(),
-          mediaFile.getFilepathUri());
-      return;
+    switch (searchOutcome) {
+      case NotFound _ -> {
+        markAs(mediaFile, MediaFileStatus.METADATA_NOT_FOUND);
+        log.error(
+            "Failed to find TMDB match for series '{}' from MediaFile id: {} at path: '{}'",
+            parserResult.title(),
+            mediaFile.getId(),
+            mediaFile.getFilepathUri());
+      }
+      case TemporarilyUnavailable(var cause) -> {
+        markAs(mediaFile, MediaFileStatus.METADATA_UNAVAILABLE);
+        log.error(
+            "Metadata provider unavailable for series '{}' from MediaFile id: {} at path: '{}'",
+            parserResult.title(),
+            mediaFile.getId(),
+            mediaFile.getFilepathUri(),
+            cause);
+      }
+      case Found(var searchResult) -> {
+        if (isDateOnly) {
+          processDateOnlyEpisode(library, mediaFile, searchResult, parsed);
+          return;
+        }
+
+        var episodeNumber = parsed.getEpisodeNumber().getAsInt();
+        var seasonNumber = resolveSeasonNumber(seasonParseResult, parsed);
+
+        log.info(
+            "Parsed series file: series='{}', season={}, episode={} for MediaFile id: {}",
+            parserResult.title(),
+            seasonNumber,
+            episodeNumber,
+            mediaFile.getId());
+
+        enrichSeriesMetadata(library, mediaFile, searchResult, seasonNumber, episodeNumber);
+      }
     }
-
-    if (isDateOnly) {
-      processDateOnlyEpisode(library, mediaFile, searchResult.get(), parsed);
-      return;
-    }
-
-    var episodeNumber = parsed.getEpisodeNumber().getAsInt();
-    var seasonNumber = resolveSeasonNumber(seasonParseResult, parsed);
-
-    log.info(
-        "Parsed series file: series='{}', season={}, episode={} for MediaFile id: {}",
-        parserResult.title(),
-        seasonNumber,
-        episodeNumber,
-        mediaFile.getId());
-
-    enrichSeriesMetadata(library, mediaFile, searchResult.get(), seasonNumber, episodeNumber);
   }
 
   private void processDateOnlyEpisode(
@@ -143,7 +157,7 @@ public class SeriesFileProcessor {
         dateBasedEpisodeResolver.resolve(library, searchResult.externalId(), parseResult.getDate());
 
     if (dateResolution.isEmpty()) {
-      markAs(mediaFile, MediaFileStatus.METADATA_SEARCH_FAILED);
+      markAs(mediaFile, MediaFileStatus.METADATA_NOT_FOUND);
       log.error(
           "Failed to resolve date {} to episode for series TMDB id '{}', MediaFile id: {}",
           parseResult.getDate(),

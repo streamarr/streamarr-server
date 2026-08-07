@@ -43,7 +43,7 @@ public class CompanyService {
 
     var imageSources = imageSourcesBySourceId.getOrDefault(company.getSourceId(), List.of());
 
-    boolean inserted = companyRepository.insertIfAbsent(company.getSourceId(), company.getName());
+    companyRepository.insertIfAbsent(company.getSourceId(), company.getName());
     var saved =
         companyRepository
             .findBySourceId(company.getSourceId())
@@ -54,9 +54,7 @@ public class CompanyService {
 
     saved.setName(company.getName());
 
-    if (inserted) {
-      publishImageEvent(saved, imageSources);
-    }
+    publishImageEvent(saved, imageSources);
     return saved;
   }
 

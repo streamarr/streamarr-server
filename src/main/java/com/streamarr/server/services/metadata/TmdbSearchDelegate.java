@@ -1,6 +1,10 @@
 package com.streamarr.server.services.metadata;
 
 import com.streamarr.server.domain.ExternalSourceType;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
+import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbFindResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
@@ -11,7 +15,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
-import tools.jackson.core.JacksonException;
 
 @Slf4j
 @Component
@@ -30,20 +33,34 @@ public class TmdbSearchDelegate {
     List<R> search(VideoFileParserResult videoInfo) throws IOException, InterruptedException;
   }
 
-  public Optional<RemoteSearchResult> search(
+  public MetadataSearchOutcome search(
       VideoFileParserResult videoInformation,
       Function<TmdbFindResults, Optional<RemoteSearchResult>> findResultExtractor,
       DirectLookup directLookup,
-      Function<VideoFileParserResult, Optional<RemoteSearchResult>> textSearch) {
+      Function<VideoFileParserResult, MetadataSearchOutcome> textSearch) {
     var findResult = searchByExternalId(videoInformation, findResultExtractor, directLookup);
-    if (findResult.isPresent()) {
+    if (findResult instanceof Found) {
       return findResult;
     }
 
-    return textSearch.apply(videoInformation);
+    if (findResult instanceof TemporarilyUnavailable(var cause)
+        && cause instanceof InterruptedException) {
+      return findResult;
+    }
+
+    var textResult = textSearch.apply(videoInformation);
+    if (!(textResult instanceof NotFound)) {
+      return textResult;
+    }
+
+    if (findResult instanceof TemporarilyUnavailable) {
+      return findResult;
+    }
+
+    return textResult;
   }
 
-  public <R> Optional<RemoteSearchResult> searchByText(
+  public <R> MetadataSearchOutcome searchByText(
       VideoFileParserResult videoInformation,
       TextSearch<R> textSearch,
       Function<R, TmdbSearchResultScorer.CandidateResult> candidateMapper,
@@ -62,7 +79,7 @@ public class TmdbSearchDelegate {
       }
 
       if (results.isEmpty()) {
-        return Optional.empty();
+        return new NotFound();
       }
 
       var candidates = results.stream().map(candidateMapper).toList();
@@ -71,28 +88,28 @@ public class TmdbSearchDelegate {
               videoInformation.title(), videoInformation.year(), candidates);
 
       if (bestIndex.isEmpty()) {
-        return Optional.empty();
+        return new NotFound();
       }
 
-      return Optional.of(resultMapper.apply(results.get(bestIndex.getAsInt())));
+      return new Found(resultMapper.apply(results.get(bestIndex.getAsInt())));
 
     } catch (IOException ex) {
       log.error("Failure requesting search results:", ex);
+      return new TemporarilyUnavailable(ex);
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error("Search interrupted:", ex);
+      return new TemporarilyUnavailable(ex);
     }
-
-    return Optional.empty();
   }
 
-  private Optional<RemoteSearchResult> searchByExternalId(
+  private MetadataSearchOutcome searchByExternalId(
       VideoFileParserResult videoInformation,
       Function<TmdbFindResults, Optional<RemoteSearchResult>> findResultExtractor,
       DirectLookup directLookup) {
     if (StringUtils.isBlank(videoInformation.externalId())
         || videoInformation.externalSource() == null) {
-      return Optional.empty();
+      return new NotFound();
     }
 
     if (videoInformation.externalSource() == ExternalSourceType.TMDB) {
@@ -102,43 +119,54 @@ public class TmdbSearchDelegate {
     var tmdbSource =
         TheMovieDatabaseHttpService.EXTERNAL_SOURCES.get(videoInformation.externalSource());
     if (tmdbSource == null) {
-      return Optional.empty();
+      return new NotFound();
     }
 
     try {
       var findResults =
           theMovieDatabaseHttpService.findByExternalId(videoInformation.externalId(), tmdbSource);
 
-      return findResultExtractor.apply(findResults);
-    } catch (IOException | JacksonException ex) {
+      return findResultExtractor
+          .apply(findResults)
+          .<MetadataSearchOutcome>map(Found::new)
+          .orElseGet(NotFound::new);
+    } catch (IOException ex) {
       log.warn(
           "TMDB /find failed for external ID '{}', falling back to text search",
           videoInformation.externalId(),
           ex);
+      return new TemporarilyUnavailable(ex);
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error("TMDB /find interrupted for external ID '{}'", videoInformation.externalId(), ex);
-      return Optional.empty();
+      return new TemporarilyUnavailable(ex);
     }
-
-    return Optional.empty();
   }
 
-  private Optional<RemoteSearchResult> searchByDirectTmdbId(
+  private MetadataSearchOutcome searchByDirectTmdbId(
       VideoFileParserResult videoInformation, DirectLookup directLookup) {
     try {
-      return Optional.of(directLookup.lookup(videoInformation.externalId()));
-    } catch (IOException | JacksonException ex) {
+      return new Found(directLookup.lookup(videoInformation.externalId()));
+    } catch (TmdbApiException ex) {
+      if (ex.getStatusCode() == 404) {
+        return new NotFound();
+      }
+
       log.warn(
           "TMDB direct lookup failed for ID '{}', falling back to text search",
           videoInformation.externalId(),
           ex);
+      return new TemporarilyUnavailable(ex);
+    } catch (IOException ex) {
+      log.warn(
+          "TMDB direct lookup failed for ID '{}', falling back to text search",
+          videoInformation.externalId(),
+          ex);
+      return new TemporarilyUnavailable(ex);
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error("TMDB direct lookup interrupted for ID '{}'", videoInformation.externalId(), ex);
-      return Optional.empty();
+      return new TemporarilyUnavailable(ex);
     }
-
-    return Optional.empty();
   }
 }

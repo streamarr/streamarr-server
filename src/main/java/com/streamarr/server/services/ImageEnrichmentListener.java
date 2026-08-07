@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.services.ImageService.ProcessedImage;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -8,9 +9,11 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -46,16 +49,22 @@ public class ImageEnrichmentListener {
 
       try {
         var existingImages = imageService.findByEntity(event.entityId(), event.entityType());
+        var completedTypes =
+            existingImages.stream().map(Image::getImageType).collect(Collectors.toSet());
+        var pendingSources =
+            event.imageSources().stream()
+                .filter(source -> !completedTypes.contains(source.imageType()))
+                .toList();
 
-        if (!existingImages.isEmpty()) {
+        if (pendingSources.isEmpty()) {
           log.debug(
-              "Images already exist for entity {} ({}), skipping",
+              "All image types already exist for entity {} ({}), skipping",
               event.entityId(),
               event.entityType());
           return;
         }
 
-        downloadAllImages(event);
+        downloadAllImages(event, pendingSources);
       } finally {
         mutex.unlock();
       }
@@ -65,11 +74,11 @@ public class ImageEnrichmentListener {
     }
   }
 
-  private void downloadAllImages(MetadataEnrichedEvent event) {
+  private void downloadAllImages(MetadataEnrichedEvent event, List<ImageSource> imageSources) {
     var futures = new ArrayList<Future<ProcessedImage>>();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (var source : event.imageSources()) {
+      for (var source : imageSources) {
         futures.add(executor.submit(() -> downloadAndProcessImage(source, event)));
       }
     }

@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.fakes.TestImages.createTestImageWithMismatchedColorProfile;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -52,6 +53,22 @@ class ImageServiceTest {
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     assertThat(images)
+        .extracting(Image::getVariant)
+        .containsExactlyInAnyOrder(
+            ImageSize.SMALL, ImageSize.MEDIUM, ImageSize.LARGE, ImageSize.ORIGINAL);
+  }
+
+  @Test
+  @DisplayName("Should process JPEG when embedded color profile does not match raster")
+  void shouldProcessJpegWhenEmbeddedColorProfileDoesNotMatchRaster() {
+    var result =
+        imageService.processImage(
+            createTestImageWithMismatchedColorProfile(),
+            ImageType.PROFILE,
+            UUID.randomUUID(),
+            ImageEntityType.PERSON);
+
+    assertThat(result.images())
         .extracting(Image::getVariant)
         .containsExactlyInAnyOrder(
             ImageSize.SMALL, ImageSize.MEDIUM, ImageSize.LARGE, ImageSize.ORIGINAL);

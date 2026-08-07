@@ -7,7 +7,7 @@ import java.util.Optional;
 
 public interface MetadataProvider<T> {
 
-  Optional<RemoteSearchResult> search(VideoFileParserResult parserResult);
+  MetadataSearchOutcome search(VideoFileParserResult parserResult);
 
   Optional<MetadataResult<T>> getMetadata(RemoteSearchResult remoteSearchResult, Library library);
 

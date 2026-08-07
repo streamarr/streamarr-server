@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.TmdbSearchDelegate;
 import com.streamarr.server.services.metadata.tmdb.TmdbSearchResult;
 import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
@@ -46,8 +47,12 @@ class TMDBMovieProviderTest {
 
     var result = provider.search(videoInfo);
 
-    assertThat(result).isPresent();
-    assertThat(result.get().externalId()).isEqualTo("329865");
-    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+    assertThat(result)
+        .isInstanceOfSatisfying(
+            Found.class,
+            found -> {
+              assertThat(found.result().externalId()).isEqualTo("329865");
+              assertThat(found.result().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+            });
   }
 }

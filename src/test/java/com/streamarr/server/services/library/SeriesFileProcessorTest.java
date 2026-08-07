@@ -20,6 +20,9 @@ import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProvider;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
@@ -28,6 +31,7 @@ import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
 import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -81,7 +85,7 @@ class SeriesFileProcessorTest {
 
     when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
         .thenReturn(
-            Optional.of(
+            new Found(
                 RemoteSearchResult.builder()
                     .title("Breaking Bad")
                     .externalId("1396")
@@ -126,7 +130,7 @@ class SeriesFileProcessorTest {
 
     when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
         .thenReturn(
-            Optional.of(
+            new Found(
                 RemoteSearchResult.builder()
                     .title("Breaking Bad")
                     .externalId("1396")
@@ -165,7 +169,7 @@ class SeriesFileProcessorTest {
 
     when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
         .thenReturn(
-            Optional.of(
+            new Found(
                 RemoteSearchResult.builder()
                     .title("The Daily Show")
                     .externalId("2224")
@@ -204,7 +208,7 @@ class SeriesFileProcessorTest {
 
     when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
         .thenReturn(
-            Optional.of(
+            new Found(
                 RemoteSearchResult.builder()
                     .title("Justice League")
                     .externalId("93544")
@@ -243,8 +247,8 @@ class SeriesFileProcessorTest {
   }
 
   @Test
-  @DisplayName("Should mark metadata search failed when provider finds no match")
-  void shouldMarkMetadataSearchFailedWhenProviderFindsNoMatch() {
+  @DisplayName("Should mark metadata not found when provider finds no match")
+  void shouldMarkMetadataNotFoundWhenProviderFindsNoMatch() {
     var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
 
     var mediaFile =
@@ -258,11 +262,34 @@ class SeriesFileProcessorTest {
 
     when(seriesMetadataProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
     when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(Optional.empty());
+        .thenReturn(new NotFound());
 
     seriesFileProcessor.process(library, mediaFile);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+        .isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("Should mark metadata unavailable when provider is temporarily unavailable")
+  void shouldMarkMetadataUnavailableWhenProviderIsTemporarilyUnavailable() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("file:///library/Slow%20Show/Season%2001/Slow.Show.S01E01.mkv")
+                .filename("Slow.Show.S01E01.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    when(seriesMetadataProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(new TemporarilyUnavailable(new IOException("Connection timed out")));
+
+    seriesFileProcessor.process(library, mediaFile);
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.METADATA_UNAVAILABLE);
   }
 }

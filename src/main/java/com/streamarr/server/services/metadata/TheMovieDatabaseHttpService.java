@@ -28,6 +28,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.util.UriBuilder;
 import org.springframework.web.util.UriComponentsBuilder;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
@@ -35,6 +36,7 @@ import tools.jackson.databind.ObjectMapper;
 public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
 
   private static final CacheControl NO_STORE = CacheControl.newBuilder().noStore().build();
+  private static final int ERROR_BODY_SNIPPET_LENGTH = 200;
 
   public static final Map<ExternalSourceType, String> EXTERNAL_SOURCES =
       Map.of(ExternalSourceType.IMDB, "imdb_id", ExternalSourceType.TVDB, "tvdb_id");
@@ -180,11 +182,45 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
     var response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
     if (response.statusCode() == 200) {
-      return objectMapper.readValue(response.body(), responseType);
+      return decodeResponseBody(response, responseType);
     }
 
-    var failure = objectMapper.readValue(response.body(), TmdbFailure.class);
-    throw new TmdbApiException(response.statusCode(), failure.getStatusMessage());
+    throw apiException(response);
+  }
+
+  private <T> T decodeResponseBody(HttpResponse<String> response, Class<T> responseType)
+      throws IOException {
+    try {
+      var responseBody = objectMapper.readValue(response.body(), responseType);
+      if (responseBody == null) {
+        throw new IOException(
+            "Failed to decode TMDB response body with status " + response.statusCode());
+      }
+      return responseBody;
+    } catch (JacksonException ex) {
+      throw new IOException(
+          "Failed to decode TMDB response body with status " + response.statusCode(), ex);
+    }
+  }
+
+  private TmdbApiException apiException(HttpResponse<String> response) {
+    try {
+      var failure = objectMapper.readValue(response.body(), TmdbFailure.class);
+      if (failure == null) {
+        return unparseableApiException(response);
+      }
+      return new TmdbApiException(response.statusCode(), failure.getStatusMessage());
+    } catch (JacksonException _) {
+      return unparseableApiException(response);
+    }
+  }
+
+  private TmdbApiException unparseableApiException(HttpResponse<String> response) {
+    var bodySnippet =
+        StringUtils.abbreviate(
+            StringUtils.normalizeSpace(response.body()), ERROR_BODY_SNIPPET_LENGTH);
+    return new TmdbApiException(
+        response.statusCode(), "Unparseable error response body: " + bodySnippet);
   }
 
   private HttpRequest.Builder authenticatedRequest(URI uri) {

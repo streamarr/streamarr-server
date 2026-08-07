@@ -121,19 +121,37 @@ class PersonServiceTest {
   }
 
   @Test
-  @DisplayName("Should not publish event when person already exists")
-  void shouldNotPublishEventWhenPersonAlreadyExists() {
-    personRepository.save(Person.builder().name("Tom Hanks").sourceId("actor-1").build());
+  @DisplayName("Should publish image event when existing person has image sources")
+  void shouldPublishImageEventWhenExistingPersonHasImageSources() {
+    var existing =
+        personRepository.save(Person.builder().name("Tom Hanks").sourceId("actor-1").build());
 
     var updated = Person.builder().name("Tom Hanks").sourceId("actor-1").build();
-    var imageSources =
-        Map.<String, List<ImageSource>>of(
-            "actor-1", List.of(new TmdbImageSource(ImageType.PROFILE, "/tom.jpg")));
+    var expectedImageSource = new TmdbImageSource(ImageType.PROFILE, "/tom.jpg");
+    var imageSources = Map.<String, List<ImageSource>>of("actor-1", List.of(expectedImageSource));
 
     personService.getOrCreatePersons(List.of(updated), imageSources);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events).isEmpty();
+    assertThat(events)
+        .singleElement()
+        .satisfies(
+            event -> {
+              assertThat(event.entityId()).isEqualTo(existing.getId());
+              assertThat(event.entityType()).isEqualTo(ImageEntityType.PERSON);
+              assertThat(event.imageSources()).containsExactly(expectedImageSource);
+            });
+  }
+
+  @Test
+  @DisplayName("Should not publish image event when existing person has no image sources")
+  void shouldNotPublishImageEventWhenExistingPersonHasNoImageSources() {
+    personRepository.save(Person.builder().name("Tom Hanks").sourceId("actor-1").build());
+    var updated = Person.builder().name("Tom Hanks").sourceId("actor-1").build();
+
+    personService.getOrCreatePersons(List.of(updated), Map.of());
+
+    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
   }
 
   @Test

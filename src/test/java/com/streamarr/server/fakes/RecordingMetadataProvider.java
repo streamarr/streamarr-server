@@ -4,6 +4,9 @@ import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.ArrayList;
@@ -28,9 +31,11 @@ public class RecordingMetadataProvider<T> implements MetadataProvider<T> {
   }
 
   @Override
-  public Optional<RemoteSearchResult> search(VideoFileParserResult parserResult) {
+  public MetadataSearchOutcome search(VideoFileParserResult parserResult) {
     searchRequests.add(parserResult);
-    return Optional.ofNullable(searchResults.get(parserResult));
+    return Optional.ofNullable(searchResults.get(parserResult))
+        .<MetadataSearchOutcome>map(Found::new)
+        .orElseGet(NotFound::new);
   }
 
   @Override

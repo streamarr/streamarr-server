@@ -4,52 +4,70 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.mizosoft.methanol.HttpCache;
-import com.streamarr.server.AbstractWireMockIntegrationTest;
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.metadata.MetadataResult;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
+import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
+import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
+import com.streamarr.server.services.metadata.TmdbSearchDelegate;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
+import java.net.http.HttpClient;
 import java.time.LocalDate;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import org.springframework.beans.factory.annotation.Autowired;
+import tools.jackson.databind.ObjectMapper;
 
 @Tag("IntegrationTest")
 @DisplayName("TMDB Movie Provider Integration Tests")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
+class TMDBMovieProviderIT {
 
-  @Autowired private TMDBMovieProvider provider;
+  private final WireMockServer wireMock = new WireMockServer(wireMockConfig().dynamicPort());
 
-  @Autowired private HttpCache tmdbHttpCache;
-
-  @Autowired private LibraryRepository libraryRepository;
-
+  private TMDBMovieProvider provider;
   private Library savedLibrary;
 
   @BeforeAll
   void setupLibrary() {
-    savedLibrary = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+    wireMock.start();
+    var httpService =
+        new TheMovieDatabaseHttpService(
+            "test-api-token",
+            wireMock.baseUrl(),
+            wireMock.baseUrl(),
+            HttpClient.newHttpClient(),
+            new ObjectMapper());
+    provider = new TMDBMovieProvider(httpService, new TmdbSearchDelegate(httpService));
+    savedLibrary = LibraryFixtureCreator.buildFakeLibrary();
+  }
+
+  @AfterAll
+  void stopWireMock() {
+    wireMock.stop();
   }
 
   @BeforeEach
-  void resetStubs() throws IOException {
+  void resetStubs() {
     wireMock.resetAll();
-    tmdbHttpCache.clear();
   }
 
   // --- search() tests ---
@@ -89,15 +107,15 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
     var result =
         provider.search(VideoFileParserResult.builder().title("Inception").year("2010").build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Inception");
-    assertThat(result.get().externalId()).isEqualTo("27205");
-    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+    var found = requireFound(result);
+    assertThat(found.title()).isEqualTo("Inception");
+    assertThat(found.externalId()).isEqualTo("27205");
+    assertThat(found.externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
   }
 
   @Test
-  @DisplayName("Should return empty when TMDB returns no results")
-  void shouldReturnEmptyWhenTmdbReturnsNoResults() {
+  @DisplayName("Should return not found when TMDB returns no results")
+  void shouldReturnNotFoundWhenTmdbReturnsNoResults() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .willReturn(
@@ -117,12 +135,12 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
     var result =
         provider.search(VideoFileParserResult.builder().title("Nonexistent Movie").build());
 
-    assertThat(result).isEmpty();
+    assertThat(result).isInstanceOf(NotFound.class);
   }
 
   @Test
-  @DisplayName("Should return empty when TMDB search API returns error")
-  void shouldReturnEmptyWhenTmdbSearchApiReturnsError() {
+  @DisplayName("Should return unavailable when TMDB search API returns error")
+  void shouldReturnUnavailableWhenTmdbSearchApiReturnsError() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .willReturn(
@@ -140,7 +158,148 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
 
     var result = provider.search(VideoFileParserResult.builder().title("Test").build());
 
-    assertThat(result).isEmpty();
+    assertThat(result)
+        .isInstanceOfSatisfying(
+            TemporarilyUnavailable.class,
+            unavailable ->
+                assertThat(unavailable.cause())
+                    .isInstanceOfSatisfying(
+                        TmdbApiException.class,
+                        failure -> {
+                          assertThat(failure.getStatusCode()).isEqualTo(500);
+                          assertThat(failure).hasMessageContaining("Internal error.");
+                        }));
+  }
+
+  @Test
+  @DisplayName("Should return unavailable when TMDB search API error body is JSON null")
+  void shouldReturnUnavailableWhenTmdbSearchApiErrorBodyIsJsonNull() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(500)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody("null")));
+
+    var result = provider.search(VideoFileParserResult.builder().title("Test").build());
+
+    assertThat(result)
+        .isInstanceOfSatisfying(
+            TemporarilyUnavailable.class,
+            unavailable ->
+                assertThat(unavailable.cause())
+                    .isInstanceOfSatisfying(
+                        TmdbApiException.class,
+                        failure -> {
+                          assertThat(failure.getStatusCode()).isEqualTo(500);
+                          assertThat(failure)
+                              .hasMessageContaining("Unparseable error response body");
+                        }));
+  }
+
+  @Test
+  @DisplayName("Should return unavailable when TMDB search API returns a non-JSON error")
+  void shouldReturnUnavailableWhenTmdbSearchApiReturnsNonJsonError() {
+    var errorBody = "Gateway    Timeout " + "x".repeat(240) + " TRAILING_SENSITIVE_DIAGNOSTIC";
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(504)
+                    .withHeader("Content-Type", "text/plain")
+                    .withBody(errorBody)));
+
+    var result = provider.search(VideoFileParserResult.builder().title("Test").build());
+
+    assertThat(result)
+        .isInstanceOfSatisfying(
+            TemporarilyUnavailable.class,
+            unavailable ->
+                assertThat(unavailable.cause())
+                    .isInstanceOfSatisfying(
+                        TmdbApiException.class,
+                        failure -> {
+                          assertThat(failure.getStatusCode()).isEqualTo(504);
+                          assertThat(failure).hasMessageContaining("Gateway Timeout");
+                          assertThat(failure).hasMessageNotContaining("Gateway    Timeout");
+                          assertThat(failure)
+                              .hasMessageNotContaining("TRAILING_SENSITIVE_DIAGNOSTIC");
+                        }));
+  }
+
+  @Test
+  @DisplayName("Should return unavailable when TMDB text search endpoint returns not found")
+  void shouldReturnUnavailableWhenTmdbTextSearchEndpointReturnsNotFound() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(404)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "status_message": "Search endpoint unavailable.",
+                          "success": false,
+                          "status_code": 34
+                        }
+                        """)));
+
+    var result = provider.search(VideoFileParserResult.builder().title("Missing Movie").build());
+
+    assertThat(result)
+        .isInstanceOfSatisfying(
+            TemporarilyUnavailable.class,
+            unavailable ->
+                assertThat(unavailable.cause())
+                    .isInstanceOfSatisfying(
+                        TmdbApiException.class,
+                        failure -> assertThat(failure.getStatusCode()).isEqualTo(404)));
+  }
+
+  @Test
+  @DisplayName("Should return unavailable when TMDB search API returns malformed success body")
+  void shouldReturnUnavailableWhenTmdbSearchApiReturnsMalformedSuccessBody() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody("not-json")));
+
+    var result = provider.search(VideoFileParserResult.builder().title("Test").build());
+
+    assertThat(result)
+        .isInstanceOfSatisfying(
+            TemporarilyUnavailable.class,
+            unavailable ->
+                assertThat(unavailable.cause())
+                    .isInstanceOf(IOException.class)
+                    .hasMessageContaining("decode TMDB response body"));
+  }
+
+  @Test
+  @DisplayName("Should return unavailable when TMDB search API returns JSON null")
+  void shouldReturnUnavailableWhenTmdbSearchApiReturnsJsonNull() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody("null")));
+
+    var result = provider.search(VideoFileParserResult.builder().title("Test").build());
+
+    assertThat(result)
+        .isInstanceOfSatisfying(
+            TemporarilyUnavailable.class,
+            unavailable ->
+                assertThat(unavailable.cause())
+                    .isInstanceOf(IOException.class)
+                    .hasMessageContaining("decode TMDB response body"));
   }
 
   @Test
@@ -178,10 +337,10 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.IMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Inception");
-    assertThat(result.get().externalId()).isEqualTo("27205");
-    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+    var found = requireFound(result);
+    assertThat(found.title()).isEqualTo("Inception");
+    assertThat(found.externalId()).isEqualTo("27205");
+    assertThat(found.externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
   }
 
   @Test
@@ -197,10 +356,10 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.TMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().externalId()).isEqualTo("27205");
-    assertThat(result.get().title()).isEqualTo("Inception");
-    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+    var found = requireFound(result);
+    assertThat(found.externalId()).isEqualTo("27205");
+    assertThat(found.title()).isEqualTo("Inception");
+    assertThat(found.externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
   }
 
   @Test
@@ -255,9 +414,9 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.IMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Some Movie");
-    assertThat(result.get().externalId()).isEqualTo("8888");
+    var found = requireFound(result);
+    assertThat(found.title()).isEqualTo("Some Movie");
+    assertThat(found.externalId()).isEqualTo("8888");
   }
 
   @Test
@@ -273,8 +432,7 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.OMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Test Movie");
+    assertThat(requireFound(result).title()).isEqualTo("Test Movie");
   }
 
   @Test
@@ -293,8 +451,7 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.IMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Fallback Movie");
+    assertThat(requireFound(result).title()).isEqualTo("Fallback Movie");
   }
 
   @Test
@@ -312,8 +469,37 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
                 .externalSource(ExternalSourceType.TMDB)
                 .build());
 
-    assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Fallback Movie");
+    assertThat(requireFound(result).title()).isEqualTo("Fallback Movie");
+  }
+
+  @Test
+  @DisplayName("Should return text search result when direct TMDB ID does not exist")
+  void shouldReturnTextSearchResultWhenDirectTmdbIdDoesNotExist() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/movie/99999"))
+            .willReturn(
+                aResponse()
+                    .withStatus(404)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "status_message": "The resource you requested could not be found.",
+                          "success": false,
+                          "status_code": 34
+                        }
+                        """)));
+    stubTextSearchResult("Recovered Movie", 12345);
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Recovered Movie")
+                .externalId("99999")
+                .externalSource(ExternalSourceType.TMDB)
+                .build());
+
+    assertThat(requireFound(result).externalId()).isEqualTo("12345");
   }
 
   // --- getMetadata() tests ---
@@ -487,6 +673,22 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return empty when TMDB metadata API returns a non-JSON error")
+  void shouldReturnEmptyWhenTmdbMetadataApiReturnsNonJsonError() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/movie/27205"))
+            .willReturn(
+                aResponse()
+                    .withStatus(504)
+                    .withHeader("Content-Type", "text/plain")
+                    .withBody("Gateway Timeout")));
+
+    var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
   @DisplayName(
       "Should map original title and compute title sort when TMDB response includes original title")
   void shouldMapOriginalTitleAndComputeTitleSortWhenResponseIncludesOriginalTitle() {
@@ -570,6 +772,11 @@ class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
   }
 
   // --- Helpers ---
+
+  private RemoteSearchResult requireFound(MetadataSearchOutcome outcome) {
+    assertThat(outcome).isInstanceOf(Found.class);
+    return ((Found) outcome).result();
+  }
 
   private MetadataResult<Movie> getFullMetadataResult() {
     stubFullMovieResponse();

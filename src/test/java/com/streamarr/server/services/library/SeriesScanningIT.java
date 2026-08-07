@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -185,8 +186,8 @@ class SeriesScanningIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should mark file as search failed when TMDB returns no results")
-  void shouldMarkFileAsSearchFailedWhenTmdbReturnsNoResults() throws IOException {
+  @DisplayName("Should mark metadata not found when TMDB returns no results")
+  void shouldMarkMetadataNotFoundWhenTmdbReturnsNoResults() throws IOException {
     var library = createSeriesLibrary();
     var file = createSeriesFile("Unknown Show", "Season 01", "unknown.show.s01e01.mkv");
 
@@ -197,7 +198,35 @@ class SeriesScanningIT extends AbstractWireMockIntegrationTest {
     var mediaFile =
         mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
-    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("Should mark metadata unavailable when TMDB search returns server error")
+  void shouldMarkMetadataUnavailableWhenTmdbSearchReturnsServerError() throws IOException {
+    var library = createSeriesLibrary();
+    var file = createSeriesFile("Slow Show", "Season 01", "slow.show.s01e01.mkv");
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/tv"))
+            .willReturn(
+                aResponse()
+                    .withStatus(500)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "status_message": "Internal error.",
+                          "success": false,
+                          "status_code": 11
+                        }
+                        """)));
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString()))
+        .get()
+        .extracting(MediaFile::getStatus)
+        .isEqualTo(MediaFileStatus.METADATA_UNAVAILABLE);
   }
 
   @Test
@@ -505,8 +534,8 @@ class SeriesScanningIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should mark date-only file as search failed when no air date matches")
-  void shouldMarkDateOnlyFileAsSearchFailedWhenNoAirDateMatches() throws IOException {
+  @DisplayName("Should mark metadata not found when no air date matches date-only file")
+  void shouldMarkMetadataNotFoundWhenNoAirDateMatchesDateOnlyFile() throws IOException {
     var library = createSeriesLibrary();
     var showDir = tempDir.resolve("Daily Show");
     Files.createDirectories(showDir);
@@ -542,7 +571,7 @@ class SeriesScanningIT extends AbstractWireMockIntegrationTest {
     var mediaFile =
         mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
-    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
   }
 
   @Test
