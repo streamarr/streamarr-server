@@ -243,22 +243,22 @@ class PackagedConfigurationTest {
   @Test
   @DisplayName("Should track the pinned FFmpeg runtime when packaging container images")
   void shouldTrackThePinnedFfmpegRuntimeWhenPackagingContainerImages() throws IOException {
-    var buildpackPath = "buildpacks/ffmpeg/bin/build";
-    var buildpack = Files.readString(Path.of(buildpackPath));
+    var releasePath = "buildpacks/ffmpeg/release";
+    var releaseInput = Files.readString(Path.of(releasePath));
     var release =
         extractSingle(
-            Pattern.compile("^release=(?<currentValue>\\S+)$", Pattern.MULTILINE),
-            buildpack,
+            Pattern.compile("^(?<currentValue>\\S+)$", Pattern.MULTILINE),
+            releaseInput,
             "currentValue");
     var renovateConfig = new ObjectMapper().readTree(Files.readString(Path.of("renovate.json")));
     var manager =
         StreamSupport.stream(renovateConfig.path("customManagers").spliterator(), false)
-            .filter(candidate -> managesFile(candidate, buildpackPath))
+            .filter(candidate -> managesFile(candidate, releasePath))
             .findFirst()
             .orElseThrow();
     var trackedReleases =
         StreamSupport.stream(manager.path("matchStrings").spliterator(), false)
-            .map(node -> Pattern.compile(node.asString()).matcher(buildpack))
+            .map(node -> Pattern.compile(node.asString()).matcher(releaseInput))
             .filter(java.util.regex.Matcher::find)
             .map(matcher -> matcher.group("currentValue"))
             .toList();

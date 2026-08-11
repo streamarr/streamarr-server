@@ -4,19 +4,35 @@ set -euo pipefail
 
 layers_dir="${CNB_LAYERS_DIR:?CNB_LAYERS_DIR is required}"
 target_arch="${CNB_TARGET_ARCH:?CNB_TARGET_ARCH is required}"
-release=autobuild-2026-07-31-14-10
-version=n8.1.2-34-g9b6c8969e0
-source_revision=9b6c8969e0
-build_date=20260731
+buildpack_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+lock_file="${buildpack_dir}/ffmpeg.lock"
+
+lock_value() {
+  local key="$1"
+  local value
+  value="$(sed -n "s/^${key}=//p" "${lock_file}")"
+  if [[ -z "${value}" || "${value}" == *$'\n'* ]]; then
+    echo "Expected exactly one ${key} entry in ${lock_file}" >&2
+    exit 1
+  fi
+  printf '%s' "${value}"
+}
+
+release="$(lock_value release)"
+version="$(lock_value version)"
+source_revision="$(lock_value source_revision)"
+build_date="$(lock_value build_date)"
 
 case "${target_arch}" in
   amd64 | x86_64)
     platform=linux64
-    checksum=09fc77be269c7053e438b7e96548e4af97604faf96a42c4a3c56a1ad74c22c0a
+    asset="$(lock_value amd64_asset)"
+    checksum="$(lock_value amd64_sha256)"
     ;;
   arm64 | aarch64)
     platform=linuxarm64
-    checksum=177e40c91564dec3840096f3bf1ffe696b94330585972462cfc739fa29fe0e1a
+    asset="$(lock_value arm64_asset)"
+    checksum="$(lock_value arm64_sha256)"
     ;;
   *)
     echo "Unsupported FFmpeg target architecture: ${target_arch}" >&2
@@ -24,7 +40,6 @@ case "${target_arch}" in
     ;;
 esac
 
-asset="ffmpeg-${version}-${platform}-gpl-8.1.tar.xz"
 download_url="https://github.com/BtbN/FFmpeg-Builds/releases/download/${release}/${asset}"
 layer="${layers_dir}/ffmpeg"
 layer_metadata="${layers_dir}/ffmpeg.toml"
