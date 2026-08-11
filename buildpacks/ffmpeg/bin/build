@@ -21,7 +21,6 @@ lock_value() {
 release="$(lock_value release)"
 version="$(lock_value version)"
 source_revision="$(lock_value source_revision)"
-build_date="$(lock_value build_date)"
 
 case "${target_arch}" in
   amd64 | x86_64)
@@ -39,6 +38,12 @@ case "${target_arch}" in
     exit 1
     ;;
 esac
+
+expected_asset="ffmpeg-${version}-${platform}-gpl-8.1.tar.xz"
+if [[ "${asset}" != "${expected_asset}" ]]; then
+  echo "FFmpeg lock asset does not match pinned version ${version} for ${platform}" >&2
+  exit 1
+fi
 
 download_url="https://github.com/BtbN/FFmpeg-Builds/releases/download/${release}/${asset}"
 layer="${layers_dir}/ffmpeg"
@@ -80,7 +85,18 @@ fi
 rm -rf "${layer}/env.launch"
 
 version_output="$("${layer}/bin/ffmpeg" -version 2>&1)"
-grep -F "ffmpeg version ${version}-${build_date}" <<<"${version_output}" >/dev/null
+version_line="${version_output%%$'\n'*}"
+if [[ "${version_line}" != "ffmpeg version ${version}-"* ]]; then
+  echo "Expected FFmpeg runtime version ${version} with an eight-digit build suffix" >&2
+  exit 1
+fi
+runtime_version="${version_line#ffmpeg version }"
+runtime_version="${runtime_version%% *}"
+runtime_build_date="${runtime_version#"${version}-"}"
+if [[ ! "${runtime_build_date}" =~ ^[0-9]{8}$ ]]; then
+  echo "Expected FFmpeg runtime version ${version} with an eight-digit build suffix" >&2
+  exit 1
+fi
 grep -F -- "--enable-gpl" <<<"${version_output}" >/dev/null
 grep -F -- "--disable-libfdk-aac" <<<"${version_output}" >/dev/null
 if grep -Fq -- "--enable-nonfree" <<<"${version_output}"; then
@@ -91,7 +107,7 @@ fi
   | grep -F -- "-hls_segment_options" >/dev/null
 
 printf '%s\n' \
-  "FFmpeg ${version}-${build_date}" \
+  "FFmpeg ${runtime_version}" \
   "Binary release: https://github.com/BtbN/FFmpeg-Builds/releases/tag/${release}" \
   "Build source: https://github.com/BtbN/FFmpeg-Builds/tree/${release}" \
   "FFmpeg source: https://github.com/FFmpeg/FFmpeg/commit/${source_revision}" \

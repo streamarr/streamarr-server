@@ -1,7 +1,6 @@
 release=autobuild-2026-07-31-14-10
 version=n8.1.2-34-g9b6c8969e0
 source_revision=9b6c8969e0
-build_date=20260731
 amd64_asset=ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-gpl-8.1.tar.xz
 amd64_sha256=09fc77be269c7053e438b7e96548e4af97604faf96a42c4a3c56a1ad74c22c0a
 arm64_asset=ffmpeg-n8.1.2-34-g9b6c8969e0-linuxarm64-gpl-8.1.tar.xz

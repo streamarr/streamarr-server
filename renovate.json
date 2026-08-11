@@ -6,6 +6,7 @@
     "schedule:earlyMondays"
   ],
   "labels": ["dependencies"],
+  "gitIgnoredAuthors": ["streamarr-ffmpeg-lock[bot]@users.noreply.github.com"],
   "vulnerabilityAlerts": {
     "labels": ["dependencies", "security"],
     "schedule": ["at any time"]
@@ -56,6 +57,12 @@
       "description": "Group minor updates into a single PR",
       "matchUpdateTypes": ["minor"],
       "groupName": "minor dependencies"
+    },
+    {
+      "description": "Keep FFmpeg runtime updates isolated for lock synchronization",
+      "matchDepNames": ["BtbN/FFmpeg-Builds"],
+      "groupName": "FFmpeg runtime",
+      "automerge": false
     }
   ],
   "prConcurrentLimit": 10

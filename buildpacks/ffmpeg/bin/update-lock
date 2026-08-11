@@ -1,0 +1,210 @@
+#!/bin/bash
+
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repository_root="$(cd "${script_dir}/../../.." && pwd)"
+check_only=false
+requested_release=
+
+usage() {
+  echo "Usage: $0 [--check] [--release TAG] [--root REPOSITORY]" >&2
+  exit 2
+}
+
+while (( $# > 0 )); do
+  case "$1" in
+    --check)
+      check_only=true
+      shift
+      ;;
+    --release)
+      (( $# >= 2 )) || usage
+      requested_release="$2"
+      shift 2
+      ;;
+    --root)
+      (( $# >= 2 )) || usage
+      repository_root="$(cd "$2" && pwd)"
+      shift 2
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+
+release_file="${repository_root}/buildpacks/ffmpeg/release"
+lock_file="${repository_root}/buildpacks/ffmpeg/ffmpeg.lock"
+release="${requested_release}"
+if [[ -z "${release}" ]]; then
+  release="$(sed -n '1p' "${release_file}")"
+  if [[ "$(wc -l <"${release_file}" | tr -d ' ')" != "1" ]]; then
+    echo "Expected ${release_file} to contain exactly one BtbN autobuild tag" >&2
+    exit 1
+  fi
+fi
+if [[ ! "${release}" =~ ^autobuild-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]]; then
+  echo "Expected an exact BtbN autobuild tag, found: ${release}" >&2
+  exit 1
+fi
+
+download() {
+  local url="$1"
+  local destination="$2"
+  local arguments=(
+    --fail
+    --location
+    --proto '=https'
+    --proto-redir '=https'
+    --retry 3
+    --retry-all-errors
+    --silent
+    --show-error
+    --header 'Accept: application/vnd.github+json'
+    --header 'X-GitHub-Api-Version: 2022-11-28'
+    --user-agent 'streamarr-ffmpeg-lock-updater'
+  )
+  if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    arguments+=(--header "Authorization: Bearer ${GITHUB_TOKEN}")
+  fi
+  curl "${arguments[@]}" "${url}" --output "${destination}"
+}
+
+temporary_directory="$(mktemp -d)"
+trap 'rm -rf "${temporary_directory}"' EXIT
+release_json="${temporary_directory}/release.json"
+checksums_file="${temporary_directory}/checksums.sha256"
+
+download \
+  "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/${release}" \
+  "${release_json}"
+
+if ! jq -e --arg release "${release}" \
+  '.tag_name == $release and .draft == false and .prerelease == false' \
+  "${release_json}" >/dev/null; then
+  echo "Expected a published, non-prerelease BtbN release for ${release}" >&2
+  exit 1
+fi
+
+asset_count() {
+  local suffix="$1"
+  jq --arg suffix "${suffix}" \
+    '[.assets[] | select(.name | endswith($suffix))] | length' \
+    "${release_json}"
+}
+
+asset_property() {
+  local suffix="$1"
+  local property="$2"
+  jq -r --arg suffix "${suffix}" --arg property "${property}" \
+    '.assets[] | select(.name | endswith($suffix)) | .[$property]' \
+    "${release_json}"
+}
+
+exact_asset_count() {
+  local name="$1"
+  jq --arg name "${name}" \
+    '[.assets[] | select(.name == $name)] | length' \
+    "${release_json}"
+}
+
+exact_asset_property() {
+  local name="$1"
+  local property="$2"
+  jq -r --arg name "${name}" --arg property "${property}" \
+    '.assets[] | select(.name == $name) | .[$property]' \
+    "${release_json}"
+}
+
+require_single_asset() {
+  local suffix="$1"
+  if [[ "$(asset_count "${suffix}")" != "1" ]]; then
+    echo "Expected exactly one release asset ending in ${suffix}" >&2
+    exit 1
+  fi
+}
+
+checksums_asset="checksums.sha256"
+amd64_suffix="-linux64-gpl-8.1.tar.xz"
+arm64_suffix="-linuxarm64-gpl-8.1.tar.xz"
+if [[ "$(exact_asset_count "${checksums_asset}")" != "1" ]]; then
+  echo "Expected exactly one ${checksums_asset} release asset" >&2
+  exit 1
+fi
+require_single_asset "${amd64_suffix}"
+require_single_asset "${arm64_suffix}"
+
+checksums_url="$(exact_asset_property "${checksums_asset}" browser_download_url)"
+checksums_digest="$(exact_asset_property "${checksums_asset}" digest)"
+amd64_asset="$(asset_property "${amd64_suffix}" name)"
+amd64_digest="$(asset_property "${amd64_suffix}" digest)"
+arm64_asset="$(asset_property "${arm64_suffix}" name)"
+arm64_digest="$(asset_property "${arm64_suffix}" digest)"
+
+download "${checksums_url}" "${checksums_file}"
+
+require_sha256_digest() {
+  local digest="$1"
+  local subject="$2"
+  if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "Expected ${subject} to have a SHA-256 GitHub asset digest" >&2
+    exit 1
+  fi
+}
+
+require_sha256_digest "${checksums_digest}" "${checksums_asset}"
+require_sha256_digest "${amd64_digest}" "${amd64_asset}"
+require_sha256_digest "${arm64_digest}" "${arm64_asset}"
+
+actual_checksums_digest="sha256:$(sha256sum "${checksums_file}" | awk '{print $1}')"
+if [[ "${actual_checksums_digest}" != "${checksums_digest}" ]]; then
+  echo "GitHub digest mismatch for ${checksums_asset}" >&2
+  exit 1
+fi
+
+version="${amd64_asset#ffmpeg-}"
+version="${version%"${amd64_suffix}"}"
+if [[ "${amd64_asset}" != "ffmpeg-${version}${amd64_suffix}" \
+  || "${arm64_asset}" != "ffmpeg-${version}${arm64_suffix}" \
+  || ! "${version}" =~ ^n[A-Za-z0-9.+-]+-g([0-9a-f]{7,40})$ ]]; then
+  echo "Expected matching versioned FFmpeg assets for amd64 and arm64" >&2
+  exit 1
+fi
+source_revision="${BASH_REMATCH[1]}"
+
+manifest_digest() {
+  local asset="$1"
+  awk -v asset="${asset}" '$2 == asset { print $1 }' "${checksums_file}"
+}
+
+amd64_sha256="$(manifest_digest "${amd64_asset}")"
+arm64_sha256="$(manifest_digest "${arm64_asset}")"
+if [[ "${amd64_sha256}" != "${amd64_digest#sha256:}" \
+  || "${arm64_sha256}" != "${arm64_digest#sha256:}" ]]; then
+  echo "GitHub asset digests do not match ${checksums_asset}" >&2
+  exit 1
+fi
+
+temporary_lock="$(mktemp "${lock_file}.tmp.XXXXXX")"
+trap 'rm -rf "${temporary_directory}"; rm -f "${temporary_lock}"' EXIT
+printf '%s\n' \
+  "release=${release}" \
+  "version=${version}" \
+  "source_revision=${source_revision}" \
+  "amd64_asset=${amd64_asset}" \
+  "amd64_sha256=${amd64_sha256}" \
+  "arm64_asset=${arm64_asset}" \
+  "arm64_sha256=${arm64_sha256}" \
+  >"${temporary_lock}"
+
+if [[ "${check_only}" == true ]]; then
+  if cmp -s "${temporary_lock}" "${lock_file}"; then
+    exit 0
+  fi
+  echo "FFmpeg lock is stale; run buildpacks/ffmpeg/bin/update-lock" >&2
+  diff -u "${lock_file}" "${temporary_lock}" || true
+  exit 1
+fi
+
+mv "${temporary_lock}" "${lock_file}"

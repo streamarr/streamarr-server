@@ -269,6 +269,98 @@ class PackagedConfigurationTest {
   }
 
   @Test
+  @DisplayName("Should isolate FFmpeg Renovate updates for lock synchronization")
+  void shouldIsolateFfmpegRenovateUpdatesForLockSynchronization() throws IOException {
+    var renovateConfig = new ObjectMapper().readTree(Files.readString(Path.of("renovate.json")));
+    var ignoredAuthors =
+        StreamSupport.stream(renovateConfig.path("gitIgnoredAuthors").spliterator(), false)
+            .map(node -> node.asString())
+            .toList();
+    var ffmpegRule =
+        StreamSupport.stream(renovateConfig.path("packageRules").spliterator(), false)
+            .filter(
+                rule ->
+                    StreamSupport.stream(rule.path("matchDepNames").spliterator(), false)
+                        .anyMatch(node -> "BtbN/FFmpeg-Builds".equals(node.asString())))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(ignoredAuthors)
+        .containsExactly("streamarr-ffmpeg-lock[bot]@users.noreply.github.com");
+    assertThat(ffmpegRule.path("groupName").asString()).isEqualTo("FFmpeg runtime");
+    assertThat(ffmpegRule.path("automerge").asBoolean()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should synchronize FFmpeg lock from trusted workflow code")
+  void shouldSynchronizeFfmpegLockFromTrustedWorkflowCode() throws IOException {
+    var workflowPath = ".github/workflows/sync-ffmpeg-lock.yml";
+    var workflowSource = Files.readString(Path.of(workflowPath));
+    var workflow = yaml(workflowPath);
+    var job = map(map(workflow.get("jobs")).get("sync_ffmpeg_lock"));
+    var steps = listOfMaps(job.get("steps"));
+    var stepNames = steps.stream().map(step -> step.get("name")).toList();
+    var trustedCheckout = stepNamed(steps, "Check out trusted resolver");
+    var proposedCheckout = stepNamed(steps, "Check out proposed Renovate head");
+    var resolve = stepNamed(steps, "Resolve FFmpeg lock from trusted code");
+    var token = stepNamed(steps, "Mint lock bot token");
+    var push = stepNamed(steps, "Commit synchronized lock");
+
+    assertThat(workflowSource).contains("pull_request_target:", "- 'buildpacks/ffmpeg/release'");
+    assertThat(map(workflow.get("permissions"))).isEqualTo(Map.of("contents", "read"));
+    assertThat((String) job.get("if"))
+        .contains(
+            "github.event.pull_request.user.login == 'renovate[bot]'",
+            "github.event.pull_request.head.repo.full_name == github.repository",
+            "startsWith(github.event.pull_request.head.ref, 'renovate/')");
+    assertThat(map(trustedCheckout.get("with")))
+        .containsEntry("ref", "${{ github.event.pull_request.base.sha }}")
+        .containsEntry("path", "trusted")
+        .containsEntry("persist-credentials", false);
+    assertThat(map(proposedCheckout.get("with")))
+        .containsEntry("ref", "${{ github.event.pull_request.head.sha }}")
+        .containsEntry("path", "proposed")
+        .containsEntry("persist-credentials", false);
+    assertThat((String) resolve.get("run"))
+        .contains(
+            "git -C proposed show \"HEAD:buildpacks/ffmpeg/release\"",
+            "trusted/buildpacks/ffmpeg/bin/update-lock",
+            "--root \"${GITHUB_WORKSPACE}/trusted\"",
+            "--release \"${release}\"")
+        .doesNotContain("--root \"${GITHUB_WORKSPACE}/proposed\"");
+    assertThat(stepNames)
+        .containsSubsequence(
+            "Resolve FFmpeg lock from trusted code",
+            "Prepare synchronized lock",
+            "Verify Renovate head is unchanged",
+            "Mint lock bot token",
+            "Commit synchronized lock");
+    assertThat((String) token.get("uses"))
+        .isEqualTo("actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1");
+    assertThat(map(token.get("with"))).containsEntry("permission-contents", "write");
+    assertThat((String) push.get("run"))
+        .contains(
+            "git update-index --add --cacheinfo",
+            "streamarr-ffmpeg-lock[bot]@users.noreply.github.com",
+            "HEAD:refs/heads/${HEAD_REF}");
+  }
+
+  @Test
+  @DisplayName("Should gate package image builds on a fresh FFmpeg lock")
+  void shouldGatePackageImageBuildsOnAFreshFfmpegLock() throws IOException {
+    var workflow = yaml(".github/workflows/ci.yml");
+    var jobs = map(workflow.get("jobs"));
+    var lockCheck = map(jobs.get("ffmpeg_lock"));
+    var packageImage = map(jobs.get("package_image"));
+    var checkStep = stepNamed(listOfMaps(lockCheck.get("steps")), "Verify FFmpeg lock");
+
+    assertThat((String) checkStep.get("run"))
+        .isEqualTo("buildpacks/ffmpeg/bin/update-lock --check");
+    assertThat(map(checkStep.get("env"))).containsEntry("GITHUB_TOKEN", "${{ github.token }}");
+    assertThat(packageImage).containsEntry("needs", List.of("changes", "ffmpeg_lock"));
+  }
+
+  @Test
   @DisplayName("Should build every supported architecture when publishing a release")
   void shouldBuildEverySupportedArchitectureWhenPublishingARelease() throws IOException {
     var workflow = yaml(".github/workflows/publish-release.yml");
