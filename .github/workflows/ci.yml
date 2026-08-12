@@ -38,7 +38,28 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'Procfile'
 
-  build:
+  ffmpeg_lock:
+    name: Verify FFmpeg lock
+    needs: changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate FFmpeg lock offline
+        run: buildpacks/ffmpeg/bin/update-lock --check
+
+      - name: Verify FFmpeg lock against upstream
+        if: needs.changes.outputs.packaging == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: buildpacks/ffmpeg/bin/update-lock --verify-upstream
+
+  application:
+    name: Build and test application
     runs-on: ubuntu-latest
 
     env:
@@ -107,7 +128,7 @@ jobs:
 
   package_image:
     name: Build and verify ${{ matrix.architecture }} package image
-    needs: changes
+    needs: [ changes, ffmpeg_lock ]
     if: needs.changes.outputs.packaging == 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -130,3 +151,22 @@ jobs:
           tags: streamarr/streamarr-server:ci-${{ github.run_id }}-${{ matrix.architecture }}
           publish: "false"
           image-version: ${{ github.sha }}
+
+  build:
+    name: build
+    needs: [ changes, ffmpeg_lock, application, package_image ]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Verify required checks
+        run: >-
+          .github/actions/verify-required-checks.sh
+          '${{ needs.changes.result }}'
+          '${{ needs.changes.outputs.packaging }}'
+          '${{ needs.ffmpeg_lock.result }}'
+          '${{ needs.application.result }}'
+          '${{ needs.package_image.result }}'

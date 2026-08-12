@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck source-path=SCRIPTDIR
 
 set -euo pipefail
 
@@ -6,6 +7,14 @@ image="${1:?Usage: verify-ffmpeg-image.sh <image> <version> <source> <revision>}
 expected_version="${2:?Usage: verify-ffmpeg-image.sh <image> <version> <source> <revision>}"
 expected_source="${3:?Usage: verify-ffmpeg-image.sh <image> <version> <source> <revision>}"
 expected_revision="${4:?Usage: verify-ffmpeg-image.sh <image> <version> <source> <revision>}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repository_root="$(cd "${script_dir}/../../.." && pwd)"
+lock_file="${repository_root}/buildpacks/ffmpeg/ffmpeg.lock"
+# shellcheck source=../../../buildpacks/ffmpeg/lib/lock.sh
+. "${repository_root}/buildpacks/ffmpeg/lib/lock.sh"
+
+ffmpeg_lock_validate "${lock_file}"
+expected_ffmpeg_version="$(ffmpeg_lock_value "${lock_file}" version)"
 
 if ! docker image inspect "${image}" >/dev/null 2>&1; then
   docker pull "${image}" >/dev/null
@@ -28,13 +37,15 @@ verify_label org.opencontainers.image.version "${expected_version}"
 verify_label org.opencontainers.image.source "${expected_source}"
 verify_label org.opencontainers.image.revision "${expected_revision}"
 
-docker run --rm --interactive --entrypoint /cnb/lifecycle/launcher "${image}" \
+EXPECTED_FFMPEG_VERSION="${expected_ffmpeg_version}" \
+  docker run --rm --interactive --env EXPECTED_FFMPEG_VERSION \
+  --entrypoint /cnb/lifecycle/launcher "${image}" \
   /bin/bash -euo pipefail -s <<'SCRIPT'
   ffmpeg="$(command -v ffmpeg)"
   ffprobe="$(command -v ffprobe)"
 
   version_output="$(${ffmpeg} -version 2>&1)"
-  grep -F "ffmpeg version n8.1.2-34-g9b6c8969e0-20260731" <<<"${version_output}" >/dev/null
+  grep -F "ffmpeg version ${EXPECTED_FFMPEG_VERSION}-" <<<"${version_output}" >/dev/null
   grep -F -- "--enable-gpl" <<<"${version_output}" >/dev/null
   grep -F -- "--disable-libfdk-aac" <<<"${version_output}" >/dev/null
   if grep -F -- "--enable-nonfree" <<<"${version_output}"; then
