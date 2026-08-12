@@ -1,4 +1,4 @@
-package com.streamarr.server.services.metadata.color;
+package com.streamarr.server.domain.media;
 
 import java.util.Objects;
 import lombok.Builder;

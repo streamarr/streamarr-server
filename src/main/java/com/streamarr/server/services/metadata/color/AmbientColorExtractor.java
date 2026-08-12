@@ -21,6 +21,7 @@
  */
 package com.streamarr.server.services.metadata.color;
 
+import com.streamarr.server.domain.media.AmbientColors;
 import java.awt.image.BufferedImage;
 import java.util.Arrays;
 import java.util.Comparator;
