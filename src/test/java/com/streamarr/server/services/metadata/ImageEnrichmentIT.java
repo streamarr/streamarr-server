@@ -10,6 +10,7 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
@@ -61,6 +62,45 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
               var images =
                   imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
               assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.POSTER);
+            });
+  }
+
+  @Test
+  @DisplayName("Should persist ambient colors on small variant when enrichment completes")
+  void shouldPersistAmbientColorsOnSmallVariantWhenEnrichmentCompletes() {
+    var entityId = UUID.randomUUID();
+    stubImageDownload("/backdrop.jpg");
+
+    transactionTemplate.executeWithoutResult(
+        status ->
+            eventPublisher.publishEvent(
+                new MetadataEnrichedEvent(
+                    entityId,
+                    ImageEntityType.MOVIE,
+                    List.of(new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg")))));
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images)
+                  .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
+                  .singleElement()
+                  .satisfies(
+                      small -> {
+                        var ambient = small.getAmbientColors();
+                        assertThat(ambient).isNotNull();
+                        assertThat(
+                                List.of(
+                                    ambient.topLeft(),
+                                    ambient.topRight(),
+                                    ambient.bottomRight(),
+                                    ambient.bottomLeft(),
+                                    ambient.primary()))
+                            .allSatisfy(hex -> assertThat(hex).matches("#[0-9a-f]{6}"));
+                      });
             });
   }
 

@@ -1,8 +1,10 @@
 package com.streamarr.server.services.metadata;
 
+import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.exceptions.ImageProcessingException;
+import com.streamarr.server.services.metadata.color.AmbientColorExtractor;
 import io.trbl.blurhash.BlurHash;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -39,7 +41,12 @@ public class ImageVariantService {
           ImageType.LOGO, Map.of(ImageSize.SMALL, 92, ImageSize.MEDIUM, 185, ImageSize.LARGE, 500));
 
   public record GeneratedVariant(
-      ImageSize variant, byte[] data, int width, int height, String blurHash) {
+      ImageSize variant,
+      byte[] data,
+      int width,
+      int height,
+      String blurHash,
+      AmbientColors ambientColors) {
 
     @Override
     public boolean equals(Object o) {
@@ -51,17 +58,19 @@ public class ImageVariantService {
               var otherData,
               var otherWidth,
               var otherHeight,
-              var otherBlurHash))) return false;
+              var otherBlurHash,
+              var otherAmbientColors))) return false;
       return width == otherWidth
           && height == otherHeight
           && variant == otherVariant
           && Arrays.equals(data, otherData)
-          && Objects.equals(blurHash, otherBlurHash);
+          && Objects.equals(blurHash, otherBlurHash)
+          && Objects.equals(ambientColors, otherAmbientColors);
     }
 
     @Override
     public int hashCode() {
-      int result = Objects.hash(variant, width, height, blurHash);
+      int result = Objects.hash(variant, width, height, blurHash, ambientColors);
       result = 31 * result + Arrays.hashCode(data);
       return result;
     }
@@ -78,6 +87,8 @@ public class ImageVariantService {
           + height
           + ", blurHash="
           + blurHash
+          + ", ambientColors="
+          + ambientColors
           + "]";
     }
   }
@@ -103,9 +114,12 @@ public class ImageVariantService {
       }
       var resized = resize(sourceImage, targetWidth);
       var blurHash = size == ImageSize.SMALL ? computeBlurHash(resized) : null;
+      var ambientColors =
+          size == ImageSize.SMALL ? AmbientColorExtractor.extract(resized).orElse(null) : null;
       var data = toJpegBytes(resized);
       variants.add(
-          new GeneratedVariant(size, data, resized.getWidth(), resized.getHeight(), blurHash));
+          new GeneratedVariant(
+              size, data, resized.getWidth(), resized.getHeight(), blurHash, ambientColors));
     }
 
     variants.add(
@@ -114,6 +128,7 @@ public class ImageVariantService {
             originalImageData,
             sourceImage.getWidth(),
             sourceImage.getHeight(),
+            null,
             null));
 
     return variants;

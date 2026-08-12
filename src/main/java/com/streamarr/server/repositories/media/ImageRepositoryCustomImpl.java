@@ -2,11 +2,13 @@ package com.streamarr.server.repositories.media;
 
 import static com.streamarr.server.jooq.generated.tables.Image.IMAGE;
 
+import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.jooq.generated.enums.ImageEntityType;
 import com.streamarr.server.jooq.generated.enums.ImageSize;
 import com.streamarr.server.jooq.generated.enums.ImageType;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -35,6 +37,10 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
   }
 
   private boolean insertIfAbsent(Image image, UUID auditUser) {
+    var ambient =
+        Optional.ofNullable(image.getAmbientColors())
+            .orElseGet(() -> AmbientColors.builder().build());
+
     return dsl.insertInto(IMAGE)
             .set(IMAGE.ID, image.getId())
             .set(IMAGE.ENTITY_ID, image.getEntityId())
@@ -44,6 +50,11 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
             .set(IMAGE.WIDTH, image.getWidth())
             .set(IMAGE.HEIGHT, image.getHeight())
             .set(IMAGE.BLUR_HASH, image.getBlurHash())
+            .set(IMAGE.AMBIENT_TOP_LEFT, ambient.topLeft())
+            .set(IMAGE.AMBIENT_TOP_RIGHT, ambient.topRight())
+            .set(IMAGE.AMBIENT_BOTTOM_RIGHT, ambient.bottomRight())
+            .set(IMAGE.AMBIENT_BOTTOM_LEFT, ambient.bottomLeft())
+            .set(IMAGE.AMBIENT_PRIMARY, ambient.primary())
             .set(IMAGE.PATH, image.getPath())
             .set(IMAGE.CREATED_BY, auditUser)
             .set(IMAGE.LAST_MODIFIED_BY, auditUser)

@@ -29,6 +29,21 @@ public final class TestImages {
     }
   }
 
+  public static byte[] createSolidPngImage(int width, int height, int rgb) {
+    var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+    var graphics = image.createGraphics();
+    graphics.setColor(new Color(rgb));
+    graphics.fillRect(0, 0, width, height);
+    graphics.dispose();
+
+    try (var outputStream = new ByteArrayOutputStream()) {
+      ImageIO.write(image, "png", outputStream);
+      return outputStream.toByteArray();
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   /** CC0-1.0 synthetic fixture with no third-party creative content. */
   public static byte[] createTestImageWithMismatchedColorProfile() {
     var jpeg = createTestImage(16, 16);

@@ -206,6 +206,76 @@ public class ImageRecord extends UpdatableRecordImpl<ImageRecord> {
         return (String) get(12);
     }
 
+    /**
+     * Setter for <code>public.image.ambient_top_left</code>.
+     */
+    public void setAmbientTopLeft(String value) {
+        set(13, value);
+    }
+
+    /**
+     * Getter for <code>public.image.ambient_top_left</code>.
+     */
+    public String getAmbientTopLeft() {
+        return (String) get(13);
+    }
+
+    /**
+     * Setter for <code>public.image.ambient_top_right</code>.
+     */
+    public void setAmbientTopRight(String value) {
+        set(14, value);
+    }
+
+    /**
+     * Getter for <code>public.image.ambient_top_right</code>.
+     */
+    public String getAmbientTopRight() {
+        return (String) get(14);
+    }
+
+    /**
+     * Setter for <code>public.image.ambient_bottom_right</code>.
+     */
+    public void setAmbientBottomRight(String value) {
+        set(15, value);
+    }
+
+    /**
+     * Getter for <code>public.image.ambient_bottom_right</code>.
+     */
+    public String getAmbientBottomRight() {
+        return (String) get(15);
+    }
+
+    /**
+     * Setter for <code>public.image.ambient_bottom_left</code>.
+     */
+    public void setAmbientBottomLeft(String value) {
+        set(16, value);
+    }
+
+    /**
+     * Getter for <code>public.image.ambient_bottom_left</code>.
+     */
+    public String getAmbientBottomLeft() {
+        return (String) get(16);
+    }
+
+    /**
+     * Setter for <code>public.image.ambient_primary</code>.
+     */
+    public void setAmbientPrimary(String value) {
+        set(17, value);
+    }
+
+    /**
+     * Getter for <code>public.image.ambient_primary</code>.
+     */
+    public String getAmbientPrimary() {
+        return (String) get(17);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -229,7 +299,7 @@ public class ImageRecord extends UpdatableRecordImpl<ImageRecord> {
     /**
      * Create a detached, initialised ImageRecord
      */
-    public ImageRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID entityId, ImageEntityType entityType, ImageType imageType, ImageSize variant, Integer width, Integer height, String blurHash, String path) {
+    public ImageRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID entityId, ImageEntityType entityType, ImageType imageType, ImageSize variant, Integer width, Integer height, String blurHash, String path, String ambientTopLeft, String ambientTopRight, String ambientBottomRight, String ambientBottomLeft, String ambientPrimary) {
         super(Image.IMAGE);
 
         setId(id);
@@ -245,6 +315,11 @@ public class ImageRecord extends UpdatableRecordImpl<ImageRecord> {
         setHeight(height);
         setBlurHash(blurHash);
         setPath(path);
+        setAmbientTopLeft(ambientTopLeft);
+        setAmbientTopRight(ambientTopRight);
+        setAmbientBottomRight(ambientBottomRight);
+        setAmbientBottomLeft(ambientBottomLeft);
+        setAmbientPrimary(ambientPrimary);
         resetTouchedOnNotNull();
     }
 }

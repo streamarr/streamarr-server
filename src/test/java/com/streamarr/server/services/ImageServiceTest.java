@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fakes.TestImages.createTestImageWithMismatchedColorProfile;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,6 +40,22 @@ class ImageServiceTest {
     var imageVariantService = new ImageVariantService();
     imageService =
         new ImageService(imageRepository, imageVariantService, imageProperties, fileSystem);
+  }
+
+  @Test
+  @DisplayName("Should map ambient colors onto small image row when processing image")
+  void shouldMapAmbientColorsOntoSmallImageRowWhenProcessingImage() {
+    var entityId = UUID.randomUUID();
+    var imageData = createSolidPngImage(600, 900, 0x00A0A0);
+
+    var result =
+        imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    imageService.saveImages(result.images());
+
+    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+    var small =
+        images.stream().filter(i -> i.getVariant() == ImageSize.SMALL).findFirst().orElseThrow();
+    assertThat(small.getAmbientColors().primary()).isEqualTo("#00a0a0");
   }
 
   @Test

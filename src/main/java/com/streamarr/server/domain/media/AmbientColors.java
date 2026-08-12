@@ -1,8 +1,10 @@
 package com.streamarr.server.domain.media;
 
+import jakarta.persistence.Embeddable;
 import java.util.Objects;
 import lombok.Builder;
 
+@Embeddable
 @Builder
 public record AmbientColors(
     String topLeft, String topRight, String bottomRight, String bottomLeft, String primary) {
