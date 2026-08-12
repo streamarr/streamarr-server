@@ -1,8 +1,8 @@
 # FFmpeg runtime lock
 
 `release` is the only Renovate-owned input. `ffmpeg.lock` is generated from that exact BtbN
-release and contains the version, source revision, selected GPL asset variant, asset names, and
-SHA-256 digests consumed by the buildpack.
+release and contains the version, full FFmpeg source commit, selected GPL asset variant, asset
+names, and SHA-256 digests consumed by the buildpack.
 
 Regenerate or validate the lock with:
 
@@ -10,11 +10,14 @@ Regenerate or validate the lock with:
 buildpacks/ffmpeg/bin/update-lock
 buildpacks/ffmpeg/bin/update-lock --release autobuild-YYYY-MM-DD-HH-MM
 buildpacks/ffmpeg/bin/update-lock --check
+buildpacks/ffmpeg/bin/update-lock --verify-upstream
 ```
 
 The updater requires Bash, `curl`, `jq`, and `sha256sum`. It accepts only published BtbN releases,
 requires exactly one GPL 8.1 Linux asset for each supported architecture, verifies GitHub's asset
-digests against `checksums.sha256`, and writes the lock atomically.
+digests against `checksums.sha256`, resolves the full FFmpeg source commit, and writes the lock
+atomically. `--check` validates the lock offline; `--verify-upstream` regenerates canonical metadata
+from GitHub and compares it byte-for-byte without modifying the lock.
 
 ## Renovate synchronization
 

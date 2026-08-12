@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck source-path=SCRIPTDIR
 
 set -euo pipefail
 
@@ -7,53 +8,45 @@ target_arch="${CNB_TARGET_ARCH:?CNB_TARGET_ARCH is required}"
 buildpack_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 lock_file="${buildpack_dir}/ffmpeg.lock"
 
-lock_value() {
-  local key="$1"
-  local line
-  local values=()
-  while IFS= read -r line || [[ -n "${line}" ]]; do
-    if [[ "${line}" == "${key}="* ]]; then
-      values+=("${line#*=}")
-    fi
-  done <"${lock_file}"
-  if (( ${#values[@]} != 1 )) || [[ -z "${values[0]}" ]]; then
-    echo "Expected exactly one ${key} entry in ${lock_file}" >&2
-    exit 1
-  fi
-  printf '%s' "${values[0]}"
+# shellcheck source=../lib/http.sh
+. "${buildpack_dir}/lib/http.sh"
+# shellcheck source=../lib/lock.sh
+. "${buildpack_dir}/lib/lock.sh"
+
+download() {
+  local url="$1"
+  local destination="$2"
+  local arguments=(
+    --fail
+    --location
+    --proto '=https'
+    --proto-redir '=https'
+    --retry 3
+    --silent
+    --show-error
+  )
+  ffmpeg_curl "${arguments[@]}" "${url}" --output "${destination}"
 }
 
-release="$(lock_value release)"
-version="$(lock_value version)"
-source_revision="$(lock_value source_revision)"
-asset_variant="$(lock_value asset_variant)"
-if [[ ! "${asset_variant}" =~ ^gpl-[0-9]+\.[0-9]+$ ]]; then
-  echo "Unsupported FFmpeg asset variant: ${asset_variant}" >&2
-  exit 1
-fi
+ffmpeg_lock_validate "${lock_file}"
+release="$(ffmpeg_lock_value "${lock_file}" release)"
+version="$(ffmpeg_lock_value "${lock_file}" version)"
+source_revision="$(ffmpeg_lock_value "${lock_file}" source_revision)"
 
 case "${target_arch}" in
   amd64 | x86_64)
-    platform=linux64
-    asset="$(lock_value amd64_asset)"
-    checksum="$(lock_value amd64_sha256)"
+    asset="$(ffmpeg_lock_value "${lock_file}" amd64_asset)"
+    checksum="$(ffmpeg_lock_value "${lock_file}" amd64_sha256)"
     ;;
   arm64 | aarch64)
-    platform=linuxarm64
-    asset="$(lock_value arm64_asset)"
-    checksum="$(lock_value arm64_sha256)"
+    asset="$(ffmpeg_lock_value "${lock_file}" arm64_asset)"
+    checksum="$(ffmpeg_lock_value "${lock_file}" arm64_sha256)"
     ;;
   *)
     echo "Unsupported FFmpeg target architecture: ${target_arch}" >&2
     exit 1
     ;;
 esac
-
-expected_asset="ffmpeg-${version}-${platform}-${asset_variant}.tar.xz"
-if [[ "${asset}" != "${expected_asset}" ]]; then
-  echo "FFmpeg lock asset does not match pinned version ${version} for ${platform}" >&2
-  exit 1
-fi
 
 download_url="https://github.com/BtbN/FFmpeg-Builds/releases/download/${release}/${asset}"
 layer="${layers_dir}/ffmpeg"
@@ -68,16 +61,7 @@ if [[ ! -x "${layer}/bin/ffmpeg" ]] || ! grep -Fq "cache_key = \"${cache_key}\""
   trap 'rm -rf "${download_dir}"' EXIT
   archive="${download_dir}/${asset}"
 
-  curl \
-    --fail \
-    --location \
-    --proto '=https' \
-    --proto-redir '=https' \
-    --retry 3 \
-    --silent \
-    --show-error \
-    "${download_url}" \
-    --output "${archive}"
+  download "${download_url}" "${archive}"
   printf '%s  %s\n' "${checksum}" "${archive}" | sha256sum --check --strict
 
   archive_root="${asset%.tar.xz}"

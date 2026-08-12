@@ -25,6 +25,10 @@ class FfmpegPackagingScriptsTest {
   private static final Path BUILDPACK = Path.of("buildpacks/ffmpeg/bin/build").toAbsolutePath();
   private static final Path LOCK_UPDATER =
       Path.of("buildpacks/ffmpeg/bin/update-lock").toAbsolutePath();
+  private static final Path LOCK_LIBRARY =
+      Path.of("buildpacks/ffmpeg/lib/lock.sh").toAbsolutePath();
+  private static final Path HTTP_LIBRARY =
+      Path.of("buildpacks/ffmpeg/lib/http.sh").toAbsolutePath();
   private static final Path IMAGE_VERIFIER =
       Path.of(".github/actions/pack-build/verify-ffmpeg-image.sh").toAbsolutePath();
   private static final Path REQUIRED_CHECKS_VERIFIER =
@@ -113,6 +117,22 @@ class FfmpegPackagingScriptsTest {
   }
 
   @Test
+  @DisplayName("Should reject the required CI gate when an optional package image fails")
+  void shouldRejectRequiredCiGateWhenOptionalPackageImageFails() throws Exception {
+    var result =
+        command(REQUIRED_CHECKS_VERIFIER)
+            .argument("success")
+            .argument("false")
+            .argument("success")
+            .argument("success")
+            .argument("failure")
+            .execute();
+
+    assertThat(result.exitCode()).isEqualTo(1);
+    assertThat(result.output()).contains("Unexpected package image result");
+  }
+
+  @Test
   @DisplayName("Should accept the required CI gate when every applicable check succeeds")
   void shouldAcceptRequiredCiGateWhenEveryApplicableCheckSucceeds() throws Exception {
     var withoutPackaging =
@@ -148,7 +168,7 @@ class FfmpegPackagingScriptsTest {
             """
             release=autobuild-2026-08-11-13-11
             version=n8.1.2-34-g9b6c8969e0
-            source_revision=9b6c8969e0
+            source_revision=9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b
             asset_variant=gpl-8.1
             amd64_asset=ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-gpl-8.1.tar.xz
             amd64_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -165,6 +185,21 @@ class FfmpegPackagingScriptsTest {
 
     var result =
         updater.command().argument("--release").argument("autobuild-2026-08-11-13-11").execute();
+
+    assertThat(result.exitCode()).isZero();
+    assertThat(Files.readString(updater.lock())).startsWith("release=autobuild-2026-08-11-13-11\n");
+  }
+
+  @Test
+  @DisplayName("Should resolve FFmpeg release from an explicitly trusted file")
+  void shouldResolveFfmpegReleaseFromExplicitlyTrustedFile() throws Exception {
+    var updater = lockUpdater();
+    Files.writeString(updater.lock().resolveSibling("release"), "not-a-release\n");
+    var trustedRelease = temporaryDirectory.resolve("trusted-release");
+    Files.writeString(trustedRelease, "autobuild-2026-08-11-13-11\n");
+
+    var result =
+        updater.command().argument("--release-file").argument(trustedRelease.toString()).execute();
 
     assertThat(result.exitCode()).isZero();
     assertThat(Files.readString(updater.lock())).startsWith("release=autobuild-2026-08-11-13-11\n");
@@ -221,6 +256,21 @@ class FfmpegPackagingScriptsTest {
   }
 
   @Test
+  @DisplayName("Should reject FFmpeg lock that differs from canonical upstream metadata")
+  void shouldRejectFfmpegLockThatDiffersFromCanonicalUpstreamMetadata() throws Exception {
+    var updater = lockUpdater();
+    assertThat(updater.command().execute().exitCode()).isZero();
+    var noncanonicalLock = Files.readString(updater.lock()).replace("a".repeat(64), "c".repeat(64));
+    Files.writeString(updater.lock(), noncanonicalLock);
+
+    var result = updater.command().argument("--verify-upstream").execute();
+
+    assertThat(result.exitCode()).isEqualTo(1);
+    assertThat(result.output()).contains("FFmpeg lock does not match canonical upstream metadata");
+    assertThat(Files.readString(updater.lock())).isEqualTo(noncanonicalLock);
+  }
+
+  @Test
   @DisplayName("Should reject duplicate FFmpeg lock release when checking")
   void shouldRejectDuplicateFfmpegLockReleaseWhenChecking() throws Exception {
     var updater = lockUpdater();
@@ -246,6 +296,60 @@ class FfmpegPackagingScriptsTest {
 
     assertThat(result.exitCode()).isEqualTo(1);
     assertThat(result.output()).contains("Expected exactly one amd64_sha256 entry");
+  }
+
+  @Test
+  @DisplayName("Should reject FFmpeg lock when source revision contradicts version")
+  void shouldRejectFfmpegLockWhenSourceRevisionContradictsVersion() throws Exception {
+    var updater = lockUpdater();
+    assertThat(updater.command().execute().exitCode()).isZero();
+    var lock = Files.readString(updater.lock());
+    Files.writeString(
+        updater.lock(),
+        lock.replace(
+            "source_revision=9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b",
+            "source_revision=abcdef1234abcdef1234abcdef1234abcdef1234"));
+
+    var result = updater.command().argument("--check").execute();
+
+    assertThat(result.exitCode()).isEqualTo(1);
+    assertThat(result.output()).contains("FFmpeg lock source revision contradicts version");
+  }
+
+  @Test
+  @DisplayName("Should reject FFmpeg lock when asset contradicts version and variant")
+  void shouldRejectFfmpegLockWhenAssetContradictsVersionAndVariant() throws Exception {
+    var updater = lockUpdater();
+    assertThat(updater.command().execute().exitCode()).isZero();
+    var lock = Files.readString(updater.lock());
+    Files.writeString(
+        updater.lock(),
+        lock.replace(
+            "amd64_asset=ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-gpl-8.1.tar.xz",
+            "amd64_asset=unexpected.tar.xz"));
+
+    var result = updater.command().argument("--check").execute();
+
+    assertThat(result.exitCode()).isEqualTo(1);
+    assertThat(result.output()).contains("FFmpeg lock asset contradicts version and variant");
+  }
+
+  @Test
+  @DisplayName("Should reject FFmpeg lock when checksum is not SHA-256")
+  void shouldRejectFfmpegLockWhenChecksumIsNotSha256() throws Exception {
+    var updater = lockUpdater();
+    assertThat(updater.command().execute().exitCode()).isZero();
+    var lock = Files.readString(updater.lock());
+    Files.writeString(
+        updater.lock(),
+        lock.replace(
+            "amd64_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "amd64_sha256=not-a-sha256"));
+
+    var result = updater.command().argument("--check").execute();
+
+    assertThat(result.exitCode()).isEqualTo(1);
+    assertThat(result.output()).contains("FFmpeg lock checksum is not SHA-256");
   }
 
   @Test
@@ -275,9 +379,63 @@ class FfmpegPackagingScriptsTest {
     assertThat(result.exitCode()).isZero();
   }
 
+  @Test
+  @DisplayName("Should retry a transient partial transfer when resolving an FFmpeg lock")
+  void shouldRetryTransientPartialTransferWhenResolvingFfmpegLock() throws Exception {
+    var updater = lockUpdater();
+    var attempts = temporaryDirectory.resolve("updater-curl-attempts");
+
+    var result =
+        updater
+            .command()
+            .environment("FAKE_CURL_TRANSIENT_EXIT", "18")
+            .environment("FAKE_CURL_ATTEMPTS", attempts.toString())
+            .execute();
+
+    assertThat(result.exitCode()).isZero();
+    assertThat(Files.readAllLines(attempts)).hasSize(4);
+  }
+
+  @Test
+  @DisplayName("Should resolve an exact-tag FFmpeg build to its full source revision")
+  void shouldResolveExactTagFfmpegBuildToItsFullSourceRevision() throws Exception {
+    var updater = lockUpdater();
+    var currentVersion = "n8.1.2-34-g9b6c8969e0";
+    var exactTagVersion = "n8.1.3";
+    var checksumsPath = updater.releaseJson().resolveSibling("checksums.sha256");
+    var currentChecksums = Files.readString(checksumsPath);
+    var exactTagChecksums = currentChecksums.replace(currentVersion, exactTagVersion);
+    var exactTagReleaseJson =
+        Files.readString(updater.releaseJson())
+            .replace(currentVersion, exactTagVersion)
+            .replace(sha256(currentChecksums), sha256(exactTagChecksums));
+    Files.writeString(checksumsPath, exactTagChecksums);
+    Files.writeString(updater.releaseJson(), exactTagReleaseJson);
+    var fullRevision = "1234567890abcdef1234567890abcdef12345678";
+
+    var result = updater.command().environment("FAKE_FFMPEG_COMMIT", fullRevision).execute();
+
+    assertThat(result.exitCode()).isZero();
+    assertThat(Files.readString(updater.lock()))
+        .contains("version=" + exactTagVersion, "source_revision=" + fullRevision);
+  }
+
+  @Test
+  @DisplayName("Should expand a git-described FFmpeg build to its full source revision")
+  void shouldExpandGitDescribedFfmpegBuildToItsFullSourceRevision() throws Exception {
+    var updater = lockUpdater();
+    var fullRevision = "9b6c8969e0abcdef1234567890abcdef12345678";
+
+    var result = updater.command().environment("FAKE_FFMPEG_COMMIT", fullRevision).execute();
+
+    assertThat(result.exitCode()).isZero();
+    assertThat(Files.readString(updater.lock())).contains("source_revision=" + fullRevision);
+  }
+
   private LockUpdaterFixture lockUpdater() throws Exception {
     var release = "autobuild-2026-08-11-13-11";
     var version = "n8.1.2-34-g9b6c8969e0";
+    var fullRevision = "9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b";
     var amd64Asset = "ffmpeg-%s-linux64-gpl-8.1.tar.xz".formatted(version);
     var arm64Asset = "ffmpeg-%s-linuxarm64-gpl-8.1.tar.xz".formatted(version);
     var amd64Digest = "a".repeat(64);
@@ -337,6 +495,13 @@ class FfmpegPackagingScriptsTest {
           echo 'Permanent HTTP failures must not be retried' >&2
           exit 1
         fi
+        if [[ -n "${FAKE_CURL_ATTEMPTS:-}" ]]; then
+          echo attempt >>"${FAKE_CURL_ATTEMPTS}"
+          attempts="$(wc -l <"${FAKE_CURL_ATTEMPTS}" | tr -d ' ')"
+          if [[ -n "${FAKE_CURL_TRANSIENT_EXIT:-}" && "${attempts}" == "1" ]]; then
+            exit "${FAKE_CURL_TRANSIENT_EXIT}"
+          fi
+        fi
         output=
         url=
         while (( $# > 0 )); do
@@ -357,6 +522,7 @@ class FfmpegPackagingScriptsTest {
         case "${url}" in
           */releases/tags/*) cp "${FAKE_RELEASE_JSON}" "${output}" ;;
           */checksums.sha256) cp "${FAKE_CHECKSUMS}" "${output}" ;;
+          */repos/FFmpeg/FFmpeg/commits/*) printf '{"sha":"%s"}\n' "${FAKE_FFMPEG_COMMIT}" >"${output}" ;;
           *) echo "Unexpected URL: ${url}" >&2; exit 1 ;;
         esac
         """);
@@ -367,7 +533,8 @@ class FfmpegPackagingScriptsTest {
             .argument(repository.toString())
             .prependPath(commands)
             .environment("FAKE_RELEASE_JSON", releaseJson.toString())
-            .environment("FAKE_CHECKSUMS", checksumFile.toString());
+            .environment("FAKE_CHECKSUMS", checksumFile.toString())
+            .environment("FAKE_FFMPEG_COMMIT", fullRevision);
     return new LockUpdaterFixture(lock, releaseJson, command);
   }
 
@@ -400,14 +567,9 @@ class FfmpegPackagingScriptsTest {
   @DisplayName("Should contribute the FFmpeg version selected by a future runtime lock")
   void shouldContributeFfmpegVersionSelectedByFutureRuntimeLock() throws Exception {
     var buildpackRoot = Files.createDirectories(temporaryDirectory.resolve("future-buildpack"));
-    var buildpackBin = Files.createDirectory(buildpackRoot.resolve("bin"));
-    var buildpackScript = Files.copy(BUILDPACK, buildpackBin.resolve("build"));
-    assertThat(buildpackScript.toFile().setExecutable(true)).isTrue();
+    var buildpackScript = copyBuildpackScript(buildpackRoot);
     var futureVersion = "n8.2.0-1-gabcdef1234";
-    var futureLock =
-        Files.readString(Path.of("buildpacks/ffmpeg/ffmpeg.lock"))
-            .replace("n8.1.2-34-g9b6c8969e0", futureVersion)
-            .replace("9b6c8969e0", "abcdef1234");
+    var futureLock = lockWithVersion(futureVersion, "abcdef1234" + "0".repeat(30));
     Files.writeString(buildpackRoot.resolve("ffmpeg.lock"), futureLock);
     var buildpack = buildpack(buildpackScript);
 
@@ -498,12 +660,27 @@ class FfmpegPackagingScriptsTest {
   }
 
   @Test
+  @DisplayName("Should retry a transient partial transfer when downloading locked FFmpeg asset")
+  void shouldRetryTransientPartialTransferWhenDownloadingLockedFfmpegAsset() throws Exception {
+    var buildpack = buildpack();
+    var attempts = temporaryDirectory.resolve("buildpack-curl-attempts");
+
+    var result =
+        buildpack
+            .command()
+            .environment("FAKE_CURL_TRANSIENT_EXIT", "18")
+            .environment("FAKE_CURL_ATTEMPTS", attempts.toString())
+            .execute();
+
+    assertThat(result.exitCode()).isZero();
+    assertThat(Files.readAllLines(attempts)).hasSize(2);
+  }
+
+  @Test
   @DisplayName("Should reject FFmpeg lock asset that does not match version and architecture")
   void shouldRejectFfmpegLockAssetThatDoesNotMatchVersionAndArchitecture() throws Exception {
     var buildpackRoot = Files.createDirectories(temporaryDirectory.resolve("buildpack"));
-    var buildpackBin = Files.createDirectory(buildpackRoot.resolve("bin"));
-    var buildpackScript = Files.copy(BUILDPACK, buildpackBin.resolve("build"));
-    assertThat(buildpackScript.toFile().setExecutable(true)).isTrue();
+    var buildpackScript = copyBuildpackScript(buildpackRoot);
     var lock = Files.readString(Path.of("buildpacks/ffmpeg/ffmpeg.lock"));
     var amd64Asset = lockValue(Path.of("buildpacks/ffmpeg/ffmpeg.lock"), "amd64_asset");
     Files.writeString(
@@ -513,16 +690,14 @@ class FfmpegPackagingScriptsTest {
     var result = buildpack(buildpackScript).execute();
 
     assertThat(result.exitCode()).isEqualTo(1);
-    assertThat(result.output()).contains("FFmpeg lock asset does not match pinned version");
+    assertThat(result.output()).contains("FFmpeg lock asset contradicts version and variant");
   }
 
   @Test
   @DisplayName("Should reject duplicate FFmpeg lock entries when the second value is empty")
   void shouldRejectDuplicateFfmpegLockEntryWhenSecondValueIsEmpty() throws Exception {
     var buildpackRoot = Files.createDirectories(temporaryDirectory.resolve("buildpack"));
-    var buildpackBin = Files.createDirectory(buildpackRoot.resolve("bin"));
-    var buildpackScript = Files.copy(BUILDPACK, buildpackBin.resolve("build"));
-    assertThat(buildpackScript.toFile().setExecutable(true)).isTrue();
+    var buildpackScript = copyBuildpackScript(buildpackRoot);
     var lock = Files.readString(Path.of("buildpacks/ffmpeg/ffmpeg.lock"));
     Files.writeString(buildpackRoot.resolve("ffmpeg.lock"), lock + "amd64_asset=\n");
 
@@ -536,9 +711,7 @@ class FfmpegPackagingScriptsTest {
   @DisplayName("Should derive FFmpeg archive paths from the asset variant selected by the lock")
   void shouldDeriveFfmpegArchivePathsFromAssetVariantSelectedByLock() throws Exception {
     var buildpackRoot = Files.createDirectories(temporaryDirectory.resolve("variant-buildpack"));
-    var buildpackBin = Files.createDirectory(buildpackRoot.resolve("bin"));
-    var buildpackScript = Files.copy(BUILDPACK, buildpackBin.resolve("build"));
-    assertThat(buildpackScript.toFile().setExecutable(true)).isTrue();
+    var buildpackScript = copyBuildpackScript(buildpackRoot);
     var baseLock = Files.readString(Path.of("buildpacks/ffmpeg/ffmpeg.lock"));
     if (!baseLock.contains("asset_variant=")) {
       baseLock = baseLock.replace("version=", "asset_variant=gpl-8.1\nversion=");
@@ -558,6 +731,16 @@ class FfmpegPackagingScriptsTest {
     return buildpack(BUILDPACK);
   }
 
+  private static Path copyBuildpackScript(Path buildpackRoot) throws IOException {
+    var buildpackBin = Files.createDirectories(buildpackRoot.resolve("bin"));
+    var buildpackLibrary = Files.createDirectories(buildpackRoot.resolve("lib"));
+    var buildpackScript = Files.copy(BUILDPACK, buildpackBin.resolve("build"));
+    Files.copy(LOCK_LIBRARY, buildpackLibrary.resolve("lock.sh"));
+    Files.copy(HTTP_LIBRARY, buildpackLibrary.resolve("http.sh"));
+    assertThat(buildpackScript.toFile().setExecutable(true)).isTrue();
+    return buildpackScript;
+  }
+
   private BuildpackFixture buildpack(Path buildpackScript) throws IOException {
     var ffmpegVersion =
         lockValue(buildpackScript.getParent().getParent().resolve("ffmpeg.lock"), "version");
@@ -573,6 +756,13 @@ class FfmpegPackagingScriptsTest {
           && " $* " == *" --retry-all-errors "* ]]; then
           echo 'Permanent HTTP failures must not be retried' >&2
           exit 1
+        fi
+        if [[ -n "${FAKE_CURL_ATTEMPTS:-}" ]]; then
+          echo attempt >>"${FAKE_CURL_ATTEMPTS}"
+          attempts="$(wc -l <"${FAKE_CURL_ATTEMPTS}" | tr -d ' ')"
+          if [[ -n "${FAKE_CURL_TRANSIENT_EXIT:-}" && "${attempts}" == "1" ]]; then
+            exit "${FAKE_CURL_TRANSIENT_EXIT}"
+          fi
         fi
         while (( $# > 0 )); do
           if [[ "$1" == "--output" ]]; then
@@ -631,7 +821,17 @@ class FfmpegPackagingScriptsTest {
             .map(line -> line.substring(prefix.length()))
             .toList();
     assertThat(values).as("exactly one %s entry in %s", key, lock).hasSize(1);
+    assertThat(values.getFirst()).as("non-empty %s entry in %s", key, lock).isNotEmpty();
     return values.getFirst();
+  }
+
+  private static String lockWithVersion(String version, String sourceRevision) throws IOException {
+    var lock = Path.of("buildpacks/ffmpeg/ffmpeg.lock");
+    var currentVersion = lockValue(lock, "version");
+    var currentSourceRevision = lockValue(lock, "source_revision");
+    return Files.readString(lock)
+        .replace(currentVersion, version)
+        .replace("source_revision=" + currentSourceRevision, "source_revision=" + sourceRevision);
   }
 
   @Test
@@ -658,11 +858,10 @@ class FfmpegPackagingScriptsTest {
         Files.copy(IMAGE_VERIFIER, verifierDirectory.resolve("verify-ffmpeg-image.sh"));
     assertThat(imageVerifier.toFile().setExecutable(true)).isTrue();
     var buildpackDirectory = Files.createDirectories(verifierRoot.resolve("buildpacks/ffmpeg"));
+    var buildpackLibrary = Files.createDirectory(buildpackDirectory.resolve("lib"));
+    Files.copy(LOCK_LIBRARY, buildpackLibrary.resolve("lock.sh"));
     var futureVersion = "n8.2.0-1-gabcdef1234";
-    var futureLock =
-        Files.readString(Path.of("buildpacks/ffmpeg/ffmpeg.lock"))
-            .replace("n8.1.2-34-g9b6c8969e0", futureVersion)
-            .replace("9b6c8969e0", "abcdef1234");
+    var futureLock = lockWithVersion(futureVersion, "abcdef1234" + "0".repeat(30));
     Files.writeString(buildpackDirectory.resolve("ffmpeg.lock"), futureLock);
     var commands = Files.createDirectory(temporaryDirectory.resolve("commands"));
     var runtime = Files.createDirectories(temporaryDirectory.resolve("runtime/bin"));

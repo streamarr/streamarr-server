@@ -38,6 +38,11 @@ jobs:
         id: pr_head
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Verify canonical upstream FFmpeg lock
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: buildpacks/ffmpeg/bin/update-lock --verify-upstream
+
       - name: Build and publish preview image
         uses: ./.github/actions/pack-build
         with:

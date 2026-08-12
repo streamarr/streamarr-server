@@ -136,6 +136,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify canonical upstream FFmpeg lock
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: buildpacks/ffmpeg/bin/update-lock --verify-upstream
+
       - name: Build and verify package image
         uses: ./.github/actions/pack-build
         with:
@@ -146,7 +151,7 @@ jobs:
   build:
     name: build
     needs: [ changes, ffmpeg_lock, application, package_image ]
-    if: ${{ !cancelled() }}
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

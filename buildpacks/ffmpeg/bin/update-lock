@@ -1,15 +1,22 @@
 #!/bin/bash
+# shellcheck source-path=SCRIPTDIR
 
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "${script_dir}/../../.." && pwd)"
+# shellcheck source=../lib/http.sh
+. "${script_dir}/../lib/http.sh"
+# shellcheck source=../lib/lock.sh
+. "${script_dir}/../lib/lock.sh"
 check_only=false
+verify_upstream=false
 requested_release=
 requested_release_set=false
+requested_release_file=
 
 usage() {
-  echo "Usage: $0 [--check] [--release TAG] [--root REPOSITORY]" >&2
+  echo "Usage: $0 [--check | --verify-upstream] [--release TAG | --release-file PATH] [--root REPOSITORY]" >&2
   exit 2
 }
 
@@ -19,10 +26,19 @@ while (( $# > 0 )); do
       check_only=true
       shift
       ;;
+    --verify-upstream)
+      verify_upstream=true
+      shift
+      ;;
     --release)
       (( $# >= 2 )) || usage
       requested_release="$2"
       requested_release_set=true
+      shift 2
+      ;;
+    --release-file)
+      (( $# >= 2 )) || usage
+      requested_release_file="$2"
       shift 2
       ;;
     --root)
@@ -35,8 +51,17 @@ while (( $# > 0 )); do
       ;;
   esac
 done
+if [[ "${check_only}" == true && "${verify_upstream}" == true ]]; then
+  usage
+fi
+if [[ "${requested_release_set}" == true && -n "${requested_release_file}" ]]; then
+  usage
+fi
 
 release_file="${repository_root}/buildpacks/ffmpeg/release"
+if [[ -n "${requested_release_file}" ]]; then
+  release_file="${requested_release_file}"
+fi
 lock_file="${repository_root}/buildpacks/ffmpeg/ffmpeg.lock"
 release="${requested_release}"
 if [[ "${requested_release_set}" == false ]]; then
@@ -55,31 +80,9 @@ if [[ ! "${release}" =~ ^autobuild-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}$
   exit 1
 fi
 
-lock_value() {
-  local key="$1"
-  local line
-  local values=()
-  while IFS= read -r line || [[ -n "${line}" ]]; do
-    if [[ "${line}" == "${key}="* ]]; then
-      values+=("${line#*=}")
-    fi
-  done <"${lock_file}"
-  if (( ${#values[@]} != 1 )) || [[ -z "${values[0]}" ]]; then
-    echo "Expected exactly one ${key} entry in ${lock_file}" >&2
-    exit 1
-  fi
-  printf '%s' "${values[0]}"
-}
-
 if [[ "${check_only}" == true ]]; then
-  locked_release="$(lock_value release)"
-  lock_value version >/dev/null
-  lock_value source_revision >/dev/null
-  lock_value asset_variant >/dev/null
-  lock_value amd64_asset >/dev/null
-  lock_value amd64_sha256 >/dev/null
-  lock_value arm64_asset >/dev/null
-  lock_value arm64_sha256 >/dev/null
+  ffmpeg_lock_validate "${lock_file}"
+  locked_release="$(ffmpeg_lock_value "${lock_file}" release)"
   if [[ "${locked_release}" == "${release}" ]]; then
     exit 0
   fi
@@ -105,13 +108,14 @@ download() {
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
     arguments+=(--header "Authorization: Bearer ${GITHUB_TOKEN}")
   fi
-  curl "${arguments[@]}" "${url}" --output "${destination}"
+  ffmpeg_curl "${arguments[@]}" "${url}" --output "${destination}"
 }
 
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf "${temporary_directory}"' EXIT
 release_json="${temporary_directory}/release.json"
 checksums_file="${temporary_directory}/checksums.sha256"
+commit_json="${temporary_directory}/commit.json"
 
 download \
   "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/${release}" \
@@ -204,12 +208,27 @@ fi
 version="${amd64_asset#ffmpeg-}"
 version="${version%"${amd64_suffix}"}"
 if [[ "${amd64_asset}" != "ffmpeg-${version}${amd64_suffix}" \
-  || "${arm64_asset}" != "ffmpeg-${version}${arm64_suffix}" \
-  || ! "${version}" =~ ^n[A-Za-z0-9.+-]+-g([0-9a-f]{7,40})$ ]]; then
+  || "${arm64_asset}" != "ffmpeg-${version}${arm64_suffix}" ]]; then
   echo "Expected matching versioned FFmpeg assets for amd64 and arm64" >&2
   exit 1
 fi
-source_revision="${BASH_REMATCH[1]}"
+version_revision=
+if [[ "${version}" =~ ^n[A-Za-z0-9.+-]+-g([0-9a-f]{7,40})$ ]]; then
+  version_revision="${BASH_REMATCH[1]}"
+  source_reference="${version_revision}"
+elif [[ "${version}" =~ ^n[0-9]+(\.[0-9]+)+$ ]]; then
+  source_reference="${version}"
+else
+  echo "Expected a versioned FFmpeg release asset, found: ${version}" >&2
+  exit 1
+fi
+download "https://api.github.com/repos/FFmpeg/FFmpeg/commits/${source_reference}" "${commit_json}"
+source_revision="$(jq -r '.sha' "${commit_json}")"
+if [[ ! "${source_revision}" =~ ^[0-9a-f]{40}$ \
+  || ( -n "${version_revision}" && "${source_revision}" != "${version_revision}"* ) ]]; then
+  echo "Expected ${version} to resolve to a matching full FFmpeg source revision" >&2
+  exit 1
+fi
 
 manifest_digest() {
   local asset="$1"
@@ -226,15 +245,17 @@ fi
 
 temporary_lock="$(mktemp "${lock_file}.tmp.XXXXXX")"
 trap 'rm -rf "${temporary_directory}"; rm -f "${temporary_lock}"' EXIT
-printf '%s\n' \
-  "release=${release}" \
-  "version=${version}" \
-  "source_revision=${source_revision}" \
-  "asset_variant=${asset_variant}" \
-  "amd64_asset=${amd64_asset}" \
-  "amd64_sha256=${amd64_sha256}" \
-  "arm64_asset=${arm64_asset}" \
-  "arm64_sha256=${arm64_sha256}" \
-  >"${temporary_lock}"
+for key in "${ffmpeg_lock_keys[@]}"; do
+  printf '%s=%s\n' "${key}" "${!key}"
+done >"${temporary_lock}"
+
+if [[ "${verify_upstream}" == true ]]; then
+  if cmp -s "${temporary_lock}" "${lock_file}"; then
+    exit 0
+  fi
+  echo "FFmpeg lock does not match canonical upstream metadata" >&2
+  diff -u "${lock_file}" "${temporary_lock}" || true
+  exit 1
+fi
 
 mv "${temporary_lock}" "${lock_file}"

@@ -32,3 +32,9 @@ if [[ "${packaging_required}" == "true" && "${package_image_result}" != "success
   echo "Package image verification failed: ${package_image_result}" >&2
   exit 1
 fi
+if [[ "${packaging_required}" == "false" \
+  && "${package_image_result}" != "success" \
+  && "${package_image_result}" != "skipped" ]]; then
+  echo "Unexpected package image result: ${package_image_result}" >&2
+  exit 1
+fi

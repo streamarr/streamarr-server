@@ -256,17 +256,20 @@ class PackagedConfigurationTest {
             .filter(candidate -> managesFile(candidate, releasePath))
             .findFirst()
             .orElseThrow();
-    var trackedReleases =
+    var matchStrings =
         StreamSupport.stream(manager.path("matchStrings").spliterator(), false)
-            .map(
-                node ->
-                    Pattern.compile(node.asString())
-                        .matcher(releaseInput + "renovate-end-sentinel"))
-            .filter(java.util.regex.Matcher::find)
-            .map(matcher -> matcher.group("currentValue"))
+            .map(node -> node.asString())
             .toList();
+    assertThat(matchStrings).hasSize(1);
+    var configuredPattern = Pattern.compile(matchStrings.getFirst());
+    var trackedRelease = configuredPattern.matcher(releaseInput);
 
-    assertThat(trackedReleases).containsExactly(release);
+    assertThat(trackedRelease.find()).isTrue();
+    assertThat(trackedRelease.group("currentValue")).isEqualTo(release);
+    assertThat(configuredPattern.matcher(release).find()).isTrue();
+    assertThat(List.of("prefix" + release + "\n", release + "5\n", release + "\nextra\n"))
+        .allSatisfy(
+            corruptInput -> assertThat(configuredPattern.matcher(corruptInput).find()).isFalse());
     assertThat(manager.path("datasourceTemplate").asString()).isEqualTo("github-releases");
     assertThat(manager.path("depNameTemplate").asString()).isEqualTo("BtbN/FFmpeg-Builds");
   }
@@ -331,13 +334,10 @@ class PackagedConfigurationTest {
     assertThat((String) resolve.get("run"))
         .contains(
             "git -C proposed show \"HEAD:buildpacks/ffmpeg/release\"",
-            "release_lines=()",
-            "release_lines+=(\"${line}\")",
-            "${#release_lines[@]}",
             "trusted/buildpacks/ffmpeg/bin/update-lock",
             "--root \"${GITHUB_WORKSPACE}/trusted\"",
-            "--release \"${release}\"")
-        .doesNotContain("--root \"${GITHUB_WORKSPACE}/proposed\"", "wc -l");
+            "--release-file \"${release_file}\"")
+        .doesNotContain("--root \"${GITHUB_WORKSPACE}/proposed\"", "release_lines", "wc -l");
     assertThat(stepNames)
         .containsSubsequence(
             "Resolve FFmpeg lock from trusted code",
@@ -361,11 +361,19 @@ class PackagedConfigurationTest {
     var lockCheck = map(jobs.get("ffmpeg_lock"));
     var packageImage = map(jobs.get("package_image"));
     var checkStep = stepNamed(listOfMaps(lockCheck.get("steps")), "Verify FFmpeg lock");
+    var packageSteps = listOfMaps(packageImage.get("steps"));
+    var upstreamCheck = stepNamed(packageSteps, "Verify canonical upstream FFmpeg lock");
+    var packageStepNames = packageSteps.stream().map(step -> step.get("name")).toList();
 
     assertThat((String) checkStep.get("run"))
         .isEqualTo("buildpacks/ffmpeg/bin/update-lock --check");
     assertThat(checkStep).doesNotContainKey("env");
     assertThat(packageImage).containsEntry("needs", List.of("changes", "ffmpeg_lock"));
+    assertThat((String) upstreamCheck.get("run"))
+        .isEqualTo("buildpacks/ffmpeg/bin/update-lock --verify-upstream");
+    assertThat(packageStepNames)
+        .containsSubsequence(
+            "Verify canonical upstream FFmpeg lock", "Build and verify package image");
   }
 
   @Test
@@ -380,7 +388,7 @@ class PackagedConfigurationTest {
     assertThat(stepNamed(listOfMaps(application.get("steps")), "Build and test")).isNotEmpty();
     assertThat(build)
         .containsEntry("needs", List.of("changes", "ffmpeg_lock", "application", "package_image"))
-        .containsEntry("if", "${{ !cancelled() }}");
+        .containsEntry("if", "${{ always() }}");
     assertThat((String) gate.get("run"))
         .contains(
             ".github/actions/verify-required-checks.sh",
@@ -413,7 +421,7 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should verify the FFmpeg lock before publishing release images")
+  @DisplayName("Should verify canonical FFmpeg lock before publishing release images")
   void shouldVerifyFfmpegLockBeforePublishingReleaseImages() throws IOException {
     var workflow = yaml(".github/workflows/publish-release.yml");
     var buildReleaseImages = map(map(workflow.get("jobs")).get("build_release_images"));
@@ -422,8 +430,24 @@ class PackagedConfigurationTest {
     var lockCheck = stepNamed(steps, "Verify FFmpeg lock");
 
     assertThat((String) lockCheck.get("run"))
-        .isEqualTo("buildpacks/ffmpeg/bin/update-lock --check");
+        .isEqualTo("buildpacks/ffmpeg/bin/update-lock --verify-upstream");
     assertThat(stepNames).containsSubsequence("Verify FFmpeg lock", "Build and publish");
+  }
+
+  @Test
+  @DisplayName("Should verify canonical FFmpeg lock before publishing preview image")
+  void shouldVerifyCanonicalFfmpegLockBeforePublishingPreviewImage() throws IOException {
+    var workflow = yaml(".github/workflows/preview.yml");
+    var preview = map(map(workflow.get("jobs")).get("build_preview"));
+    var steps = listOfMaps(preview.get("steps"));
+    var stepNames = steps.stream().map(step -> step.get("name")).toList();
+    var lockCheck = stepNamed(steps, "Verify canonical upstream FFmpeg lock");
+
+    assertThat((String) lockCheck.get("run"))
+        .isEqualTo("buildpacks/ffmpeg/bin/update-lock --verify-upstream");
+    assertThat(stepNames)
+        .containsSubsequence(
+            "Verify canonical upstream FFmpeg lock", "Build and publish preview image");
   }
 
   @Test

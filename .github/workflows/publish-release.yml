@@ -30,7 +30,9 @@ jobs:
           persist-credentials: false
 
       - name: Verify FFmpeg lock
-        run: buildpacks/ffmpeg/bin/update-lock --check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: buildpacks/ffmpeg/bin/update-lock --verify-upstream
 
       - name: Docker Metadata
         id: meta

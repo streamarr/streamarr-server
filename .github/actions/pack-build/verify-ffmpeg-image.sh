@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck source-path=SCRIPTDIR
 
 set -euo pipefail
 
@@ -7,25 +8,13 @@ expected_version="${2:?Usage: verify-ffmpeg-image.sh <image> <version> <source> 
 expected_source="${3:?Usage: verify-ffmpeg-image.sh <image> <version> <source> <revision>}"
 expected_revision="${4:?Usage: verify-ffmpeg-image.sh <image> <version> <source> <revision>}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-lock_file="$(cd "${script_dir}/../../.." && pwd)/buildpacks/ffmpeg/ffmpeg.lock"
+repository_root="$(cd "${script_dir}/../../.." && pwd)"
+lock_file="${repository_root}/buildpacks/ffmpeg/ffmpeg.lock"
+# shellcheck source=../../../buildpacks/ffmpeg/lib/lock.sh
+. "${repository_root}/buildpacks/ffmpeg/lib/lock.sh"
 
-lock_value() {
-  local key="$1"
-  local line
-  local values=()
-  while IFS= read -r line || [[ -n "${line}" ]]; do
-    if [[ "${line}" == "${key}="* ]]; then
-      values+=("${line#*=}")
-    fi
-  done <"${lock_file}"
-  if (( ${#values[@]} != 1 )) || [[ -z "${values[0]}" ]]; then
-    echo "Expected exactly one ${key} entry in ${lock_file}" >&2
-    exit 1
-  fi
-  printf '%s' "${values[0]}"
-}
-
-expected_ffmpeg_version="$(lock_value version)"
+ffmpeg_lock_validate "${lock_file}"
+expected_ffmpeg_version="$(ffmpeg_lock_value "${lock_file}" version)"
 
 if ! docker image inspect "${image}" >/dev/null 2>&1; then
   docker pull "${image}" >/dev/null
