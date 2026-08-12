@@ -1,0 +1,111 @@
+name: Sync FFmpeg lock
+
+on:
+  pull_request_target:
+    types: [ opened, synchronize, reopened ]
+    paths:
+      - 'buildpacks/ffmpeg/release'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync_ffmpeg_lock:
+    name: Synchronize FFmpeg lock
+    if: >-
+      github.event.pull_request.user.login == 'renovate[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'renovate/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out trusted resolver
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Check out proposed Renovate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: proposed
+          persist-credentials: false
+
+      - name: Resolve FFmpeg lock from trusted code
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          release_file="${RUNNER_TEMP}/ffmpeg-release"
+          git -C proposed show "HEAD:buildpacks/ffmpeg/release" >"${release_file}"
+          trusted/buildpacks/ffmpeg/bin/update-lock \
+            --root "${GITHUB_WORKSPACE}/trusted" \
+            --release-file "${release_file}"
+
+      - name: Prepare synchronized lock
+        id: changes
+        run: |
+          lock_path='buildpacks/ffmpeg/ffmpeg.lock'
+          generated_lock="${GITHUB_WORKSPACE}/trusted/${lock_path}"
+          lock_blob="$(git -C proposed hash-object -w "${generated_lock}")"
+          current_lock_blob="$(git -C proposed rev-parse "HEAD:${lock_path}" 2>/dev/null || true)"
+          echo "lock-blob=${lock_blob}" >>"${GITHUB_OUTPUT}"
+          if [[ "${lock_blob}" == "${current_lock_blob}" ]]; then
+            echo "changed=false" >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "changed=true" >>"${GITHUB_OUTPUT}"
+
+      - name: Verify Renovate head is unchanged
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git check-ref-format "refs/heads/${HEAD_REF}"
+          checked_out_sha="$(git -C proposed rev-parse HEAD)"
+          current_head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          if [[ "${checked_out_sha}" != "${EXPECTED_HEAD_SHA}" \
+            || "${current_head_sha}" != "${EXPECTED_HEAD_SHA}" ]]; then
+            echo "Renovate head moved while resolving the FFmpeg lock" >&2
+            exit 1
+          fi
+
+      - name: Mint lock bot token
+        if: steps.changes.outputs.changed == 'true'
+        id: lock_bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.FFMPEG_LOCK_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FFMPEG_LOCK_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Commit synchronized lock
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: proposed
+        env:
+          APP_TOKEN: ${{ steps.lock_bot.outputs.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          LOCK_BLOB: ${{ steps.changes.outputs.lock-blob }}
+        run: |
+          git config user.name 'streamarr-ffmpeg-lock[bot]'
+          git config user.email 'streamarr-ffmpeg-lock[bot]@users.noreply.github.com'
+          git update-index --add --cacheinfo \
+            "100644,${LOCK_BLOB},buildpacks/ffmpeg/ffmpeg.lock"
+          staged_files="$(git diff --cached --name-only)"
+          if [[ "${staged_files}" != "buildpacks/ffmpeg/ffmpeg.lock" ]]; then
+            echo "Refusing to commit unexpected files: ${staged_files}" >&2
+            exit 1
+          fi
+          git diff --cached --check
+          git commit -m 'behavioral: synchronize FFmpeg lock'
+          git remote set-url origin \
+            "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          trap 'git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"' EXIT
+          git push origin "HEAD:refs/heads/${HEAD_REF}"

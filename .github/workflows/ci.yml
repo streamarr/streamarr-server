@@ -45,18 +45,28 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Check out trusted resolver
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Check out proposed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: proposed
           persist-credentials: false
 
       - name: Validate FFmpeg lock offline
-        run: buildpacks/ffmpeg/bin/update-lock --check
+        run: trusted/buildpacks/ffmpeg/bin/update-lock --root proposed --check
 
       - name: Verify FFmpeg lock against upstream
         if: needs.changes.outputs.packaging == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: buildpacks/ffmpeg/bin/update-lock --verify-upstream
+        run: trusted/buildpacks/ffmpeg/bin/update-lock --root proposed --verify-upstream
 
   application:
     name: Build and test application
