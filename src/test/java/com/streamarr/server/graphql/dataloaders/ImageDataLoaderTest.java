@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.dataloaders;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
+import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
@@ -88,6 +89,51 @@ class ImageDataLoaderTest {
     var dtos = result.get(key);
     assertThat(dtos).hasSize(1);
     assertThat(dtos.getFirst().blurHash()).isEqualTo("LEHV6nWB2yk8pyo0adR*.7kCMdnj");
+  }
+
+  @Test
+  @DisplayName("Should hoist ambient colors to image level when small variant present")
+  void shouldHoistAmbientColorsToImageLevelWhenSmallVariantPresent() throws Exception {
+    var entityId = UUID.randomUUID();
+    var ambient =
+        AmbientColors.builder()
+            .topLeft("#101010")
+            .topRight("#202020")
+            .bottomRight("#303030")
+            .bottomLeft("#404040")
+            .primary("#00a0a0")
+            .build();
+    imageRepository.save(
+        Image.builder()
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageType(ImageType.POSTER)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278)
+            .ambientColors(ambient)
+            .path("test/path.jpg")
+            .build());
+    saveImage(entityId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.LARGE, 500, 750, null);
+
+    var key = new ImageLoaderKey(entityId, ImageEntityType.MOVIE);
+    var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
+
+    var dtos = result.get(key);
+    assertThat(dtos).hasSize(1);
+    assertThat(dtos.getFirst().ambientColors()).isEqualTo(ambient);
+  }
+
+  @Test
+  @DisplayName("Should return null ambient colors when small variant missing")
+  void shouldReturnNullAmbientColorsWhenSmallVariantMissing() throws Exception {
+    var entityId = UUID.randomUUID();
+    saveImage(entityId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.LARGE, 500, 750, null);
+
+    var key = new ImageLoaderKey(entityId, ImageEntityType.MOVIE);
+    var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
+
+    assertThat(result.get(key).getFirst().ambientColors()).isNull();
   }
 
   @Test

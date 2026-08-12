@@ -2,7 +2,16 @@ type Image {
     imageType: ImageType!
     blurHash: String
     aspectRatio: Float!
+    ambientColors: AmbientColors
     variants: [ImageVariant]!
+}
+
+type AmbientColors {
+    topLeft: String!
+    topRight: String!
+    bottomRight: String!
+    bottomLeft: String!
+    primary: String!
 }
 
 type ImageVariant {
