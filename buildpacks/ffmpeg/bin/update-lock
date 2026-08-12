@@ -6,6 +6,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "${script_dir}/../../.." && pwd)"
 check_only=false
 requested_release=
+requested_release_set=false
 
 usage() {
   echo "Usage: $0 [--check] [--release TAG] [--root REPOSITORY]" >&2
@@ -21,6 +22,7 @@ while (( $# > 0 )); do
     --release)
       (( $# >= 2 )) || usage
       requested_release="$2"
+      requested_release_set=true
       shift 2
       ;;
     --root)
@@ -37,15 +39,51 @@ done
 release_file="${repository_root}/buildpacks/ffmpeg/release"
 lock_file="${repository_root}/buildpacks/ffmpeg/ffmpeg.lock"
 release="${requested_release}"
-if [[ -z "${release}" ]]; then
-  release="$(sed -n '1p' "${release_file}")"
-  if [[ "$(wc -l <"${release_file}" | tr -d ' ')" != "1" ]]; then
+if [[ "${requested_release_set}" == false ]]; then
+  release_lines=()
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    release_lines+=("${line}")
+  done <"${release_file}"
+  if (( ${#release_lines[@]} != 1 )); then
     echo "Expected ${release_file} to contain exactly one BtbN autobuild tag" >&2
     exit 1
   fi
+  release="${release_lines[0]}"
 fi
 if [[ ! "${release}" =~ ^autobuild-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]]; then
   echo "Expected an exact BtbN autobuild tag, found: ${release}" >&2
+  exit 1
+fi
+
+lock_value() {
+  local key="$1"
+  local line
+  local values=()
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    if [[ "${line}" == "${key}="* ]]; then
+      values+=("${line#*=}")
+    fi
+  done <"${lock_file}"
+  if (( ${#values[@]} != 1 )) || [[ -z "${values[0]}" ]]; then
+    echo "Expected exactly one ${key} entry in ${lock_file}" >&2
+    exit 1
+  fi
+  printf '%s' "${values[0]}"
+}
+
+if [[ "${check_only}" == true ]]; then
+  locked_release="$(lock_value release)"
+  lock_value version >/dev/null
+  lock_value source_revision >/dev/null
+  lock_value asset_variant >/dev/null
+  lock_value amd64_asset >/dev/null
+  lock_value amd64_sha256 >/dev/null
+  lock_value arm64_asset >/dev/null
+  lock_value arm64_sha256 >/dev/null
+  if [[ "${locked_release}" == "${release}" ]]; then
+    exit 0
+  fi
+  echo "FFmpeg lock is stale; run buildpacks/ffmpeg/bin/update-lock" >&2
   exit 1
 fi
 
@@ -58,7 +96,6 @@ download() {
     --proto '=https'
     --proto-redir '=https'
     --retry 3
-    --retry-all-errors
     --silent
     --show-error
     --header 'Accept: application/vnd.github+json'
@@ -126,8 +163,9 @@ require_single_asset() {
 }
 
 checksums_asset="checksums.sha256"
-amd64_suffix="-linux64-gpl-8.1.tar.xz"
-arm64_suffix="-linuxarm64-gpl-8.1.tar.xz"
+asset_variant="gpl-8.1"
+amd64_suffix="-linux64-${asset_variant}.tar.xz"
+arm64_suffix="-linuxarm64-${asset_variant}.tar.xz"
 if [[ "$(exact_asset_count "${checksums_asset}")" != "1" ]]; then
   echo "Expected exactly one ${checksums_asset} release asset" >&2
   exit 1
@@ -192,19 +230,11 @@ printf '%s\n' \
   "release=${release}" \
   "version=${version}" \
   "source_revision=${source_revision}" \
+  "asset_variant=${asset_variant}" \
   "amd64_asset=${amd64_asset}" \
   "amd64_sha256=${amd64_sha256}" \
   "arm64_asset=${arm64_asset}" \
   "arm64_sha256=${arm64_sha256}" \
   >"${temporary_lock}"
-
-if [[ "${check_only}" == true ]]; then
-  if cmp -s "${temporary_lock}" "${lock_file}"; then
-    exit 0
-  fi
-  echo "FFmpeg lock is stale; run buildpacks/ffmpeg/bin/update-lock" >&2
-  diff -u "${lock_file}" "${temporary_lock}" || true
-  exit 1
-fi
 
 mv "${temporary_lock}" "${lock_file}"

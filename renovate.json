@@ -39,7 +39,7 @@
         "/^buildpacks/ffmpeg/release$/"
       ],
       "matchStrings": [
-        "^(?<currentValue>autobuild-\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2})$"
+        "(?<currentValue>autobuild-\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2})"
       ],
       "depNameTemplate": "BtbN/FFmpeg-Builds",
       "datasourceTemplate": "github-releases",

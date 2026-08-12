@@ -258,7 +258,10 @@ class PackagedConfigurationTest {
             .orElseThrow();
     var trackedReleases =
         StreamSupport.stream(manager.path("matchStrings").spliterator(), false)
-            .map(node -> Pattern.compile(node.asString()).matcher(releaseInput))
+            .map(
+                node ->
+                    Pattern.compile(node.asString())
+                        .matcher(releaseInput + "renovate-end-sentinel"))
             .filter(java.util.regex.Matcher::find)
             .map(matcher -> matcher.group("currentValue"))
             .toList();
@@ -272,10 +275,6 @@ class PackagedConfigurationTest {
   @DisplayName("Should isolate FFmpeg Renovate updates for lock synchronization")
   void shouldIsolateFfmpegRenovateUpdatesForLockSynchronization() throws IOException {
     var renovateConfig = new ObjectMapper().readTree(Files.readString(Path.of("renovate.json")));
-    var ignoredAuthors =
-        StreamSupport.stream(renovateConfig.path("gitIgnoredAuthors").spliterator(), false)
-            .map(node -> node.asString())
-            .toList();
     var ffmpegRule =
         StreamSupport.stream(renovateConfig.path("packageRules").spliterator(), false)
             .filter(
@@ -284,11 +283,11 @@ class PackagedConfigurationTest {
                         .anyMatch(node -> "BtbN/FFmpeg-Builds".equals(node.asString())))
             .findFirst()
             .orElseThrow();
+    var automerge = ffmpegRule.path("automerge");
 
-    assertThat(ignoredAuthors)
-        .containsExactly("streamarr-ffmpeg-lock[bot]@users.noreply.github.com");
     assertThat(ffmpegRule.path("groupName").asString()).isEqualTo("FFmpeg runtime");
-    assertThat(ffmpegRule.path("automerge").asBoolean()).isFalse();
+    assertThat(automerge.isBoolean()).isTrue();
+    assertThat(automerge.asBoolean()).isFalse();
   }
 
   @Test
@@ -297,6 +296,14 @@ class PackagedConfigurationTest {
     var workflowPath = ".github/workflows/sync-ffmpeg-lock.yml";
     var workflowSource = Files.readString(Path.of(workflowPath));
     var workflow = yaml(workflowPath);
+    var renovateConfig = new ObjectMapper().readTree(Files.readString(Path.of("renovate.json")));
+    var ignoredAuthors =
+        StreamSupport.stream(renovateConfig.path("gitIgnoredAuthors").spliterator(), false)
+            .map(node -> node.asString())
+            .toList();
+    var commitAuthor =
+        extractSingle(
+            Pattern.compile("git config user\\.email '(?<email>[^']+)'"), workflowSource, "email");
     var job = map(map(workflow.get("jobs")).get("sync_ffmpeg_lock"));
     var steps = listOfMaps(job.get("steps"));
     var stepNames = steps.stream().map(step -> step.get("name")).toList();
@@ -324,10 +331,13 @@ class PackagedConfigurationTest {
     assertThat((String) resolve.get("run"))
         .contains(
             "git -C proposed show \"HEAD:buildpacks/ffmpeg/release\"",
+            "release_lines=()",
+            "release_lines+=(\"${line}\")",
+            "${#release_lines[@]}",
             "trusted/buildpacks/ffmpeg/bin/update-lock",
             "--root \"${GITHUB_WORKSPACE}/trusted\"",
             "--release \"${release}\"")
-        .doesNotContain("--root \"${GITHUB_WORKSPACE}/proposed\"");
+        .doesNotContain("--root \"${GITHUB_WORKSPACE}/proposed\"", "wc -l");
     assertThat(stepNames)
         .containsSubsequence(
             "Resolve FFmpeg lock from trusted code",
@@ -339,10 +349,8 @@ class PackagedConfigurationTest {
         .isEqualTo("actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1");
     assertThat(map(token.get("with"))).containsEntry("permission-contents", "write");
     assertThat((String) push.get("run"))
-        .contains(
-            "git update-index --add --cacheinfo",
-            "streamarr-ffmpeg-lock[bot]@users.noreply.github.com",
-            "HEAD:refs/heads/${HEAD_REF}");
+        .contains("git update-index --add --cacheinfo", "HEAD:refs/heads/${HEAD_REF}");
+    assertThat(ignoredAuthors).containsExactly(commitAuthor);
   }
 
   @Test
@@ -356,8 +364,31 @@ class PackagedConfigurationTest {
 
     assertThat((String) checkStep.get("run"))
         .isEqualTo("buildpacks/ffmpeg/bin/update-lock --check");
-    assertThat(map(checkStep.get("env"))).containsEntry("GITHUB_TOKEN", "${{ github.token }}");
+    assertThat(checkStep).doesNotContainKey("env");
     assertThat(packageImage).containsEntry("needs", List.of("changes", "ffmpeg_lock"));
+  }
+
+  @Test
+  @DisplayName("Should aggregate every required CI outcome behind the build status")
+  void shouldAggregateEveryRequiredCiOutcomeBehindBuildStatus() throws IOException {
+    var workflow = yaml(".github/workflows/ci.yml");
+    var jobs = map(workflow.get("jobs"));
+    var application = map(jobs.get("application"));
+    var build = map(jobs.get("build"));
+    var gate = stepNamed(listOfMaps(build.get("steps")), "Verify required checks");
+
+    assertThat(stepNamed(listOfMaps(application.get("steps")), "Build and test")).isNotEmpty();
+    assertThat(build)
+        .containsEntry("needs", List.of("changes", "ffmpeg_lock", "application", "package_image"))
+        .containsEntry("if", "${{ !cancelled() }}");
+    assertThat((String) gate.get("run"))
+        .contains(
+            ".github/actions/verify-required-checks.sh",
+            "needs.changes.result",
+            "needs.changes.outputs.packaging",
+            "needs.ffmpeg_lock.result",
+            "needs.application.result",
+            "needs.package_image.result");
   }
 
   @Test
@@ -379,6 +410,20 @@ class PackagedConfigurationTest {
             Map.of("architecture", "amd64", "runner", "ubuntu-24.04"),
             Map.of("architecture", "arm64", "runner", "ubuntu-24.04-arm"));
     assertThat(map(buildStep.get("with"))).containsEntry("publish", "true");
+  }
+
+  @Test
+  @DisplayName("Should verify the FFmpeg lock before publishing release images")
+  void shouldVerifyFfmpegLockBeforePublishingReleaseImages() throws IOException {
+    var workflow = yaml(".github/workflows/publish-release.yml");
+    var buildReleaseImages = map(map(workflow.get("jobs")).get("build_release_images"));
+    var steps = listOfMaps(buildReleaseImages.get("steps"));
+    var stepNames = steps.stream().map(step -> step.get("name")).toList();
+    var lockCheck = stepNamed(steps, "Verify FFmpeg lock");
+
+    assertThat((String) lockCheck.get("run"))
+        .isEqualTo("buildpacks/ffmpeg/bin/update-lock --check");
+    assertThat(stepNames).containsSubsequence("Verify FFmpeg lock", "Build and publish");
   }
 
   @Test

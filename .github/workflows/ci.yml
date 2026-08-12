@@ -47,11 +47,10 @@ jobs:
           persist-credentials: false
 
       - name: Verify FFmpeg lock
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: buildpacks/ffmpeg/bin/update-lock --check
 
-  build:
+  application:
+    name: Build and test application
     runs-on: ubuntu-latest
 
     env:
@@ -143,3 +142,22 @@ jobs:
           tags: streamarr/streamarr-server:ci-${{ github.run_id }}-${{ matrix.architecture }}
           publish: "false"
           image-version: ${{ github.sha }}
+
+  build:
+    name: build
+    needs: [ changes, ffmpeg_lock, application, package_image ]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Verify required checks
+        run: >-
+          .github/actions/verify-required-checks.sh
+          '${{ needs.changes.result }}'
+          '${{ needs.changes.outputs.packaging }}'
+          '${{ needs.ffmpeg_lock.result }}'
+          '${{ needs.application.result }}'
+          '${{ needs.package_image.result }}'

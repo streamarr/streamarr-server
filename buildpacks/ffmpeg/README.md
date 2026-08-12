@@ -1,8 +1,8 @@
 # FFmpeg runtime lock
 
 `release` is the only Renovate-owned input. `ffmpeg.lock` is generated from that exact BtbN
-release and contains the version, source revision, asset names, and SHA-256 digests consumed by the
-buildpack.
+release and contains the version, source revision, selected GPL asset variant, asset names, and
+SHA-256 digests consumed by the buildpack.
 
 Regenerate or validate the lock with:
 
@@ -31,5 +31,5 @@ these Actions secrets:
 
 The workflow authors commits as
 `streamarr-ffmpeg-lock[bot]@users.noreply.github.com`; this must remain identical to Renovate's
-`gitIgnoredAuthors` entry. Branch protection should require `Verify FFmpeg lock` and both
-architecture image-build checks before merging FFmpeg updates.
+`gitIgnoredAuthors` entry. The required `build` status aggregates application tests, offline lock
+verification, and both architecture image builds whenever packaging inputs change.
