@@ -1,0 +1,215 @@
+/*
+ * Copyright 2018 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Modified by Streamarr contributors: the vibrant-target constants and swatch scoring are
+ * adapted from AndroidX Palette and Target (androidx commit
+ * 9748764301e5dce66cbf297f6778fa658768c213), reduced to a single-target search with a
+ * dominant-swatch fallback. The corner averaging, opaque-coverage gating, and pixel sampling
+ * are Streamarr additions. See THIRD_PARTY_NOTICES.md.
+ */
+package com.streamarr.server.services.metadata.color;
+
+import java.awt.image.BufferedImage;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Derives ambient UI colors from artwork: a linear-light average per image quadrant for corner
+ * gradient tinting, and a saturation-weighted dominant color for accents.
+ */
+public final class AmbientColorExtractor {
+
+  private static final int MIN_OPAQUE_ALPHA = 125;
+  private static final double MIN_OPAQUE_RATIO = 0.1;
+  private static final int MAX_SAMPLED_PIXELS = 112 * 112;
+  private static final int MAX_COLOR_COUNT = 16;
+
+  private static final float MIN_VIBRANT_SATURATION = 0.35f;
+  private static final float TARGET_SATURATION = 1f;
+  private static final float MIN_LIGHTNESS = 0.3f;
+  private static final float TARGET_LIGHTNESS = 0.5f;
+  private static final float MAX_LIGHTNESS = 0.7f;
+  private static final float WEIGHT_SATURATION = 0.24f;
+  private static final float WEIGHT_LIGHTNESS = 0.52f;
+  private static final float WEIGHT_POPULATION = 0.24f;
+
+  private static final int TOP_LEFT = 0;
+  private static final int TOP_RIGHT = 1;
+  private static final int BOTTOM_LEFT = 2;
+  private static final int BOTTOM_RIGHT = 3;
+
+  private AmbientColorExtractor() {}
+
+  public static Optional<AmbientColors> extract(BufferedImage image) {
+    var width = image.getWidth();
+    var height = image.getHeight();
+    var pixels = image.getRGB(0, 0, width, height, null, 0, width);
+
+    var opaquePixels = collectOpaquePixels(pixels);
+    if (opaquePixels.length < pixels.length * MIN_OPAQUE_RATIO) {
+      return Optional.empty();
+    }
+
+    var quadrants = accumulateQuadrants(pixels, width, height);
+    var wholeImage = new LinearAccumulator();
+    for (var quadrant : quadrants) {
+      wholeImage.addAll(quadrant);
+    }
+
+    return Optional.of(
+        AmbientColors.builder()
+            .topLeft(quadrantHex(quadrants[TOP_LEFT], wholeImage))
+            .topRight(quadrantHex(quadrants[TOP_RIGHT], wholeImage))
+            .bottomRight(quadrantHex(quadrants[BOTTOM_RIGHT], wholeImage))
+            .bottomLeft(quadrantHex(quadrants[BOTTOM_LEFT], wholeImage))
+            .primary(ColorConversions.toHex(selectPrimaryColor(opaquePixels)))
+            .build());
+  }
+
+  private static int[] collectOpaquePixels(int[] pixels) {
+    var opaque = new int[pixels.length];
+    var count = 0;
+    for (var pixel : pixels) {
+      if (ColorConversions.alpha(pixel) >= MIN_OPAQUE_ALPHA) {
+        opaque[count++] = pixel;
+      }
+    }
+    return Arrays.copyOf(opaque, count);
+  }
+
+  private static LinearAccumulator[] accumulateQuadrants(int[] pixels, int width, int height) {
+    var quadrants =
+        new LinearAccumulator[] {
+          new LinearAccumulator(),
+          new LinearAccumulator(),
+          new LinearAccumulator(),
+          new LinearAccumulator()
+        };
+
+    for (var y = 0; y < height; y++) {
+      var rowOffset = y * width;
+      var verticalOffset = y * 2 / height * 2;
+      for (var x = 0; x < width; x++) {
+        var pixel = pixels[rowOffset + x];
+        if (ColorConversions.alpha(pixel) >= MIN_OPAQUE_ALPHA) {
+          quadrants[verticalOffset + x * 2 / width].add(pixel);
+        }
+      }
+    }
+    return quadrants;
+  }
+
+  private static String quadrantHex(LinearAccumulator quadrant, LinearAccumulator wholeImage) {
+    if (quadrant.isEmpty()) {
+      return wholeImage.averageHex();
+    }
+    return quadrant.averageHex();
+  }
+
+  private static int selectPrimaryColor(int[] opaquePixels) {
+    var sample = samplePixels(opaquePixels);
+    var swatches =
+        new ColorCutQuantizer(sample, MAX_COLOR_COUNT, SwatchFilter.DEFAULT).getQuantizedColors();
+    if (swatches.isEmpty()) {
+      swatches =
+          new ColorCutQuantizer(sample, MAX_COLOR_COUNT, SwatchFilter.ALLOW_ALL)
+              .getQuantizedColors();
+    }
+
+    var dominant = findDominantSwatch(swatches);
+    return findBestVibrantSwatch(swatches, dominant.population()).orElse(dominant).rgb();
+  }
+
+  private static int[] samplePixels(int[] opaquePixels) {
+    if (opaquePixels.length <= MAX_SAMPLED_PIXELS) {
+      return opaquePixels;
+    }
+    var stride = Math.ceilDiv(opaquePixels.length, MAX_SAMPLED_PIXELS);
+    var sample = new int[Math.ceilDiv(opaquePixels.length, stride)];
+    for (var i = 0; i < sample.length; i++) {
+      sample[i] = opaquePixels[i * stride];
+    }
+    return sample;
+  }
+
+  private static Swatch findDominantSwatch(List<Swatch> swatches) {
+    return swatches.stream().max(Comparator.comparingInt(Swatch::population)).orElseThrow();
+  }
+
+  private static Optional<Swatch> findBestVibrantSwatch(List<Swatch> swatches, int maxPopulation) {
+    Swatch best = null;
+    var bestScore = 0f;
+    for (var swatch : swatches) {
+      if (!isVibrantCandidate(swatch)) {
+        continue;
+      }
+      var score = vibrantScore(swatch, maxPopulation);
+      if (best == null || score > bestScore) {
+        best = swatch;
+        bestScore = score;
+      }
+    }
+    return Optional.ofNullable(best);
+  }
+
+  private static boolean isVibrantCandidate(Swatch swatch) {
+    var hsl = swatch.hsl();
+    return hsl[1] >= MIN_VIBRANT_SATURATION && hsl[2] >= MIN_LIGHTNESS && hsl[2] <= MAX_LIGHTNESS;
+  }
+
+  private static float vibrantScore(Swatch swatch, int maxPopulation) {
+    var hsl = swatch.hsl();
+    var saturationScore = WEIGHT_SATURATION * (1f - Math.abs(hsl[1] - TARGET_SATURATION));
+    var lightnessScore = WEIGHT_LIGHTNESS * (1f - Math.abs(hsl[2] - TARGET_LIGHTNESS));
+    var populationScore = WEIGHT_POPULATION * (swatch.population() / (float) maxPopulation);
+    return saturationScore + lightnessScore + populationScore;
+  }
+
+  private static final class LinearAccumulator {
+
+    private double red;
+    private double green;
+    private double blue;
+    private int count;
+
+    void add(int rgb) {
+      red += ColorConversions.srgbToLinear(ColorConversions.red(rgb));
+      green += ColorConversions.srgbToLinear(ColorConversions.green(rgb));
+      blue += ColorConversions.srgbToLinear(ColorConversions.blue(rgb));
+      count++;
+    }
+
+    void addAll(LinearAccumulator other) {
+      red += other.red;
+      green += other.green;
+      blue += other.blue;
+      count += other.count;
+    }
+
+    boolean isEmpty() {
+      return count == 0;
+    }
+
+    String averageHex() {
+      return ColorConversions.toHex(
+          ColorConversions.rgb(
+              ColorConversions.linearToSrgb(red / count),
+              ColorConversions.linearToSrgb(green / count),
+              ColorConversions.linearToSrgb(blue / count)));
+    }
+  }
+}
