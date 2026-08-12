@@ -63,6 +63,9 @@ if [[ -n "${requested_release_file}" ]]; then
   release_file="${requested_release_file}"
 fi
 lock_file="${repository_root}/buildpacks/ffmpeg/ffmpeg.lock"
+if [[ "${verify_upstream}" == true ]]; then
+  ffmpeg_lock_validate "${lock_file}"
+fi
 release="${requested_release}"
 if [[ "${requested_release_set}" == false ]]; then
   release_lines=()

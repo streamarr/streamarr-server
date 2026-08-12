@@ -30,6 +30,11 @@ ffmpeg_lock_value() {
 
 ffmpeg_lock_validate() {
   local lock_file="$1"
+  if [[ ! -f "${lock_file}" || ! -r "${lock_file}" || -L "${lock_file}" ]]; then
+    echo "Expected a regular readable FFmpeg lock file: ${lock_file}" >&2
+    return 1
+  fi
+
   local key
   for key in "${ffmpeg_lock_keys[@]}"; do
     ffmpeg_lock_value "${lock_file}" "${key}" >/dev/null || return
@@ -79,6 +84,8 @@ ffmpeg_lock_validate() {
     echo "FFmpeg lock version is unsupported: ${version}" >&2
     return 1
   fi
+  # Bare release tags do not encode a revision. The trusted --verify-upstream CI gate resolves
+  # those tags and compares the complete lock against canonical upstream metadata.
   if [[ ! "${asset_variant}" =~ ^gpl-[0-9]+\.[0-9]+$ \
     || "${amd64_asset}" != "ffmpeg-${version}-linux64-${asset_variant}.tar.xz" \
     || "${arm64_asset}" != "ffmpeg-${version}-linuxarm64-${asset_variant}.tar.xz" ]]; then

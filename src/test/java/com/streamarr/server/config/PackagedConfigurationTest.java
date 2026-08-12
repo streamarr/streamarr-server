@@ -354,26 +354,47 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should gate package image builds on a fresh FFmpeg lock")
-  void shouldGatePackageImageBuildsOnAFreshFfmpegLock() throws IOException {
+  @DisplayName("Should verify proposed FFmpeg data with trusted resolver code")
+  void shouldVerifyProposedFfmpegDataWithTrustedResolverCode() throws IOException {
     var workflow = yaml(".github/workflows/ci.yml");
     var jobs = map(workflow.get("jobs"));
     var lockCheck = map(jobs.get("ffmpeg_lock"));
     var packageImage = map(jobs.get("package_image"));
-    var checkStep = stepNamed(listOfMaps(lockCheck.get("steps")), "Verify FFmpeg lock");
+    var lockSteps = listOfMaps(lockCheck.get("steps"));
+    var trustedCheckout = stepNamed(lockSteps, "Check out trusted resolver");
+    var proposedCheckout = stepNamed(lockSteps, "Check out proposed source");
+    var checkStep = stepNamed(lockSteps, "Verify FFmpeg lock with trusted resolver");
     var packageSteps = listOfMaps(packageImage.get("steps"));
-    var upstreamCheck = stepNamed(packageSteps, "Verify canonical upstream FFmpeg lock");
-    var packageStepNames = packageSteps.stream().map(step -> step.get("name")).toList();
 
+    assertThat(map(trustedCheckout.get("with")))
+        .containsEntry("ref", "${{ github.event.pull_request.base.sha || github.sha }}")
+        .containsEntry("path", "trusted")
+        .containsEntry("persist-credentials", false);
+    assertThat(map(proposedCheckout.get("with")))
+        .containsEntry("ref", "${{ github.event.pull_request.head.sha || github.sha }}")
+        .containsEntry("path", "proposed")
+        .containsEntry("persist-credentials", false);
     assertThat((String) checkStep.get("run"))
-        .isEqualTo("buildpacks/ffmpeg/bin/update-lock --check");
-    assertThat(checkStep).doesNotContainKey("env");
+        .contains(
+            "trusted/buildpacks/ffmpeg/bin/update-lock --root proposed --check",
+            "trusted/buildpacks/ffmpeg/bin/update-lock --root proposed --verify-upstream")
+        .doesNotContain("proposed/buildpacks/ffmpeg/bin/update-lock");
+    assertThat(map(checkStep.get("env"))).containsEntry("GITHUB_TOKEN", "${{ github.token }}");
+    assertThat(lockCheck).doesNotContainKeys("if", "needs");
     assertThat(packageImage).containsEntry("needs", List.of("changes", "ffmpeg_lock"));
-    assertThat((String) upstreamCheck.get("run"))
-        .isEqualTo("buildpacks/ffmpeg/bin/update-lock --verify-upstream");
-    assertThat(packageStepNames)
-        .containsSubsequence(
-            "Verify canonical upstream FFmpeg lock", "Build and verify package image");
+    assertThat(packageSteps.stream().map(step -> step.get("name")))
+        .doesNotContain("Verify canonical upstream FFmpeg lock");
+  }
+
+  @Test
+  @DisplayName("Should build package images for every FFmpeg buildpack change")
+  void shouldBuildPackageImagesForEveryFfmpegBuildpackChange() throws IOException {
+    var workflow = yaml(".github/workflows/ci.yml");
+    var changes = map(map(workflow.get("jobs")).get("changes"));
+    var filter = stepNamed(listOfMaps(changes.get("steps")), "Filter changed paths");
+    var filters = (String) map(filter.get("with")).get("filters");
+
+    assertThat(filters).contains("packaging:", "- 'buildpacks/**'");
   }
 
   @Test
@@ -435,19 +456,50 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should verify canonical FFmpeg lock before publishing preview image")
-  void shouldVerifyCanonicalFfmpegLockBeforePublishingPreviewImage() throws IOException {
+  @DisplayName("Should isolate untrusted preview builds from registry publishing credentials")
+  void shouldIsolateUntrustedPreviewBuildsFromRegistryPublishingCredentials() throws IOException {
     var workflow = yaml(".github/workflows/preview.yml");
-    var preview = map(map(workflow.get("jobs")).get("build_preview"));
-    var steps = listOfMaps(preview.get("steps"));
-    var stepNames = steps.stream().map(step -> step.get("name")).toList();
-    var lockCheck = stepNamed(steps, "Verify canonical upstream FFmpeg lock");
+    var jobs = map(workflow.get("jobs"));
+    var build = map(jobs.get("build_preview"));
+    var publish = map(jobs.get("publish_preview"));
+    var buildSteps = listOfMaps(build.get("steps"));
+    var publishSteps = listOfMaps(publish.get("steps"));
+    var buildImage = stepNamed(buildSteps, "Build and verify preview image");
+    var loadImage = stepNamed(publishSteps, "Load preview image");
+    var publishImage = stepNamed(publishSteps, "Publish preview image");
 
-    assertThat((String) lockCheck.get("run"))
-        .isEqualTo("buildpacks/ffmpeg/bin/update-lock --verify-upstream");
-    assertThat(stepNames)
+    assertThat(map(workflow.get("permissions"))).isEmpty();
+    assertThat(map(build.get("permissions")))
+        .containsOnlyKeys("contents")
+        .containsEntry("contents", "read");
+    assertThat(map(buildImage.get("with")))
+        .containsEntry("publish", "false")
+        .doesNotContainKeys("dockerhub-username", "dockerhub-token");
+    assertThat(build.toString()).doesNotContain("secrets.");
+    assertThat(buildSteps.stream().map(step -> step.get("name")))
         .containsSubsequence(
-            "Verify canonical upstream FFmpeg lock", "Build and publish preview image");
+            "Build and verify preview image", "Archive preview image", "Upload preview image");
+
+    assertThat(publish).containsEntry("needs", "build_preview");
+    assertThat(map(publish.get("permissions")))
+        .containsOnlyKeys("pull-requests")
+        .containsEntry("pull-requests", "write");
+    assertThat(publishSteps)
+        .noneMatch(
+            step -> {
+              var action = String.valueOf(step.get("uses"));
+              return action.startsWith("./") || action.startsWith("actions/checkout@");
+            });
+    assertThat(publishSteps.stream().map(step -> step.get("name")))
+        .containsSubsequence(
+            "Download preview image",
+            "Load preview image",
+            "Login to Docker Hub",
+            "Publish preview image");
+    assertThat((String) loadImage.get("run"))
+        .contains("docker image load", "docker image inspect")
+        .doesNotContain("docker run");
+    assertThat((String) publishImage.get("run")).contains("docker tag", "docker push");
   }
 
   @Test

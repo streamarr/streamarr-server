@@ -33,6 +33,8 @@ jobs:
         with:
           filters: |
             packaging:
+              # Keep this broad so every FFmpeg lock, resolver, and buildpack change exercises
+              # both supported package-image architectures.
               - 'buildpacks/**'
               - '.github/actions/pack-build/**'
               - '.github/workflows/ci.yml'
@@ -42,12 +44,26 @@ jobs:
     name: Verify FFmpeg lock
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Check out trusted resolver
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: trusted
           persist-credentials: false
 
-      - name: Verify FFmpeg lock
-        run: buildpacks/ffmpeg/bin/update-lock --check
+      - name: Check out proposed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: proposed
+          persist-credentials: false
+
+      - name: Verify FFmpeg lock with trusted resolver
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          trusted/buildpacks/ffmpeg/bin/update-lock --root proposed --check
+          trusted/buildpacks/ffmpeg/bin/update-lock --root proposed --verify-upstream
 
   application:
     name: Build and test application
@@ -135,11 +151,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-
-      - name: Verify canonical upstream FFmpeg lock
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: buildpacks/ffmpeg/bin/update-lock --verify-upstream
 
       - name: Build and verify package image
         uses: ./.github/actions/pack-build

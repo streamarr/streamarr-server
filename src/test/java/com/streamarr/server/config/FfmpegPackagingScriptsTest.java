@@ -271,6 +271,25 @@ class FfmpegPackagingScriptsTest {
   }
 
   @Test
+  @DisplayName("Should reject a missing FFmpeg lock before upstream access")
+  void shouldRejectMissingFfmpegLockBeforeUpstreamAccess() throws Exception {
+    var updater = lockUpdater();
+    Files.delete(updater.lock());
+    var attempts = temporaryDirectory.resolve("updater-curl-attempts");
+
+    var result =
+        updater
+            .command()
+            .argument("--verify-upstream")
+            .environment("FAKE_CURL_ATTEMPTS", attempts.toString())
+            .execute();
+
+    assertThat(result.exitCode()).isEqualTo(1);
+    assertThat(result.output()).contains("Expected a regular readable FFmpeg lock file");
+    assertThat(attempts).doesNotExist();
+  }
+
+  @Test
   @DisplayName("Should reject duplicate FFmpeg lock release when checking")
   void shouldRejectDuplicateFfmpegLockReleaseWhenChecking() throws Exception {
     var updater = lockUpdater();
