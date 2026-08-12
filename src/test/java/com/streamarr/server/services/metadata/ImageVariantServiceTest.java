@@ -179,6 +179,36 @@ class ImageVariantServiceTest {
   }
 
   @Test
+  @DisplayName("Should consider variant equal when compared to itself")
+  void shouldConsiderVariantEqualWhenComparedToItself() {
+    var variant =
+        new ImageVariantService.GeneratedVariant(
+            ImageSize.SMALL, new byte[] {1}, 100, 150, "hash", null);
+
+    assertThat(variant).isEqualTo(variant);
+  }
+
+  @Test
+  @DisplayName("Should not consider variant equal when compared to another type")
+  void shouldNotConsiderVariantEqualWhenComparedToAnotherType() {
+    var variant =
+        new ImageVariantService.GeneratedVariant(
+            ImageSize.SMALL, new byte[] {1}, 100, 150, "hash", null);
+
+    assertThat(variant).isNotEqualTo("not-a-variant");
+  }
+
+  @Test
+  @DisplayName("Should not consider variants equal when only height differs")
+  void shouldNotConsiderVariantsEqualWhenOnlyHeightDiffers() {
+    var data = new byte[] {1};
+    var a = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 150, "hash", null);
+    var b = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 300, "hash", null);
+
+    assertThat(a).isNotEqualTo(b);
+  }
+
+  @Test
   @DisplayName("Should not consider variants equal when data differs")
   void shouldNotConsiderVariantsEqualWhenDataDiffers() {
     var a =
@@ -252,6 +282,15 @@ class ImageVariantServiceTest {
             ImageSize.SMALL, new byte[] {1, 2, 3}, 100, 150, "hash", null);
 
     assertThat(variant.toString()).contains("dataLength=3");
+  }
+
+  @Test
+  @DisplayName("Should report zero data length when converted to string with null data")
+  void shouldReportZeroDataLengthWhenConvertedToStringWithNullData() {
+    var variant =
+        new ImageVariantService.GeneratedVariant(ImageSize.SMALL, null, 100, 150, "hash", null);
+
+    assertThat(variant.toString()).contains("dataLength=0");
   }
 
   @Test
