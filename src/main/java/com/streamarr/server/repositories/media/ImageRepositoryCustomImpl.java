@@ -7,6 +7,7 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.jooq.generated.enums.ImageEntityType;
 import com.streamarr.server.jooq.generated.enums.ImageSize;
 import com.streamarr.server.jooq.generated.enums.ImageType;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +17,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.jooq.Field;
+import org.jooq.impl.DSL;
 import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
@@ -47,6 +49,12 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
     var first = images.getFirst();
     var entityType = ImageEntityType.lookupLiteral(first.getEntityType().name());
     var imageType = ImageType.lookupLiteral(first.getImageType().name());
+    var artworkIdentity = first.getEntityId() + "|" + entityType + "|" + imageType;
+    var lockKey =
+        UUID.nameUUIDFromBytes(artworkIdentity.getBytes(StandardCharsets.UTF_8))
+            .getMostSignificantBits();
+    dsl.select(DSL.function(DSL.name("pg_advisory_xact_lock"), Object.class, DSL.val(lockKey)))
+        .execute();
     var condition =
         IMAGE
             .ENTITY_ID

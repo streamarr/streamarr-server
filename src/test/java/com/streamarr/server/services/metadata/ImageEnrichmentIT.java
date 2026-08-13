@@ -27,6 +27,9 @@ import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -271,6 +274,75 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
           .hasMessageContaining("image_content_sha256_format_check");
     } finally {
       imageService.deleteFiles(processed.writtenFiles());
+    }
+  }
+
+  @Test
+  @DisplayName("Should serialize concurrent artwork replacements without orphaning files")
+  void shouldSerializeConcurrentArtworkReplacementsWithoutOrphaningFiles() throws Exception {
+    var entityId = UUID.randomUUID();
+    var original =
+        imageService.processImage(
+            createSolidPngImage(600, 900, 0x0000FF),
+            ImageType.POSTER,
+            entityId,
+            ImageEntityType.MOVIE,
+            "/original.jpg");
+    var cyanReplacement =
+        imageService.processImage(
+            createSolidPngImage(600, 900, 0x00FFFF),
+            ImageType.POSTER,
+            entityId,
+            ImageEntityType.MOVIE,
+            "/cyan.jpg");
+    var magentaReplacement =
+        imageService.processImage(
+            createSolidPngImage(600, 900, 0xFF00FF),
+            ImageType.POSTER,
+            entityId,
+            ImageEntityType.MOVIE,
+            "/magenta.jpg");
+    imageService.saveImages(original.images());
+
+    try {
+      var start = new CyclicBarrier(2);
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var cyan =
+            executor.submit(
+                () -> {
+                  start.await();
+                  imageService.replaceImages(cyanReplacement);
+                  return null;
+                });
+        var magenta =
+            executor.submit(
+                () -> {
+                  start.await();
+                  imageService.replaceImages(magentaReplacement);
+                  return null;
+                });
+
+        cyan.get(5, TimeUnit.SECONDS);
+        magenta.get(5, TimeUnit.SECONDS);
+      }
+
+      var persisted = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+      assertThat(persisted).hasSize(ImageSize.values().length);
+      var persistedKey = persisted.getFirst().getKey();
+      assertThat(persistedKey).isIn("/cyan.jpg", "/magenta.jpg");
+      assertThat(persisted).extracting(Image::getKey).containsOnly(persistedKey);
+      var winner = persistedKey.equals("/cyan.jpg") ? cyanReplacement : magentaReplacement;
+      var loser = persistedKey.equals("/cyan.jpg") ? magentaReplacement : cyanReplacement;
+      assertThat(persisted)
+          .allSatisfy(image -> assertThat(imageService.readImageFile(image)).isNotEmpty());
+      assertThat(winner.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
+      assertThat(loser.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+      assertThat(original.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+    } finally {
+      imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+      imageService.deleteFiles(original.writtenFiles());
+      imageService.deleteFiles(cyanReplacement.writtenFiles());
+      imageService.deleteFiles(magentaReplacement.writtenFiles());
     }
   }
 
