@@ -157,11 +157,16 @@ public class SeriesService {
 
   @Transactional
   public Series refreshSeriesMetadata(Series existing, MetadataResult<Series> metadataResult) {
-    return refreshSeriesMetadata(existing, metadataResult, ImageRefreshMode.PRESERVE);
+    return refreshSeriesMetadataInternal(existing, metadataResult, ImageRefreshMode.PRESERVE);
   }
 
   @Transactional
   public Series refreshSeriesMetadata(
+      Series existing, MetadataResult<Series> metadataResult, ImageRefreshMode imageRefreshMode) {
+    return refreshSeriesMetadataInternal(existing, metadataResult, imageRefreshMode);
+  }
+
+  private Series refreshSeriesMetadataInternal(
       Series existing, MetadataResult<Series> metadataResult, ImageRefreshMode imageRefreshMode) {
     var fresh = metadataResult.entity();
 
@@ -193,11 +198,16 @@ public class SeriesService {
 
   @Transactional
   public Season refreshSeasonWithEpisodes(Series series, SeasonDetails details, Library library) {
-    return refreshSeasonWithEpisodes(series, details, library, ImageRefreshMode.PRESERVE);
+    return refreshSeasonWithEpisodesInternal(series, details, library, ImageRefreshMode.PRESERVE);
   }
 
   @Transactional
   public Season refreshSeasonWithEpisodes(
+      Series series, SeasonDetails details, Library library, ImageRefreshMode imageRefreshMode) {
+    return refreshSeasonWithEpisodesInternal(series, details, library, imageRefreshMode);
+  }
+
+  private Season refreshSeasonWithEpisodesInternal(
       Series series, SeasonDetails details, Library library, ImageRefreshMode imageRefreshMode) {
     var season =
         seasonRepository

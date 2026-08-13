@@ -122,11 +122,16 @@ public class MovieService {
 
   @Transactional
   public Movie refreshMovieMetadata(Movie existing, MetadataResult<Movie> metadataResult) {
-    return refreshMovieMetadata(existing, metadataResult, ImageRefreshMode.PRESERVE);
+    return refreshMovieMetadataInternal(existing, metadataResult, ImageRefreshMode.PRESERVE);
   }
 
   @Transactional
   public Movie refreshMovieMetadata(
+      Movie existing, MetadataResult<Movie> metadataResult, ImageRefreshMode imageRefreshMode) {
+    return refreshMovieMetadataInternal(existing, metadataResult, imageRefreshMode);
+  }
+
+  private Movie refreshMovieMetadataInternal(
       Movie existing, MetadataResult<Movie> metadataResult, ImageRefreshMode imageRefreshMode) {
     var fresh = metadataResult.entity();
 

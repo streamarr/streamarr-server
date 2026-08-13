@@ -287,8 +287,8 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
 
     var preserved = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     assertThat(preserved).extracting(Image::getId).containsExactlyInAnyOrderElementsOf(originalIds);
-    assertThat(preserved).allSatisfy(image -> assertThat(image.getKey()).isEqualTo(oldKey));
     assertThat(preserved)
+        .allSatisfy(image -> assertThat(image.getKey()).isEqualTo(oldKey))
         .allSatisfy(image -> assertThat(imageService.readImageFile(image)).isNotEmpty());
     assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
   }
