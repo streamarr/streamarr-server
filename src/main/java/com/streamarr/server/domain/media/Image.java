@@ -2,7 +2,6 @@ package com.streamarr.server.domain.media;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
 import jakarta.persistence.AttributeOverride;
-import jakarta.persistence.AttributeOverrides;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
@@ -45,12 +44,10 @@ public class Image extends BaseAuditableEntity<Image> {
   private String path;
 
   @Embedded
-  @AttributeOverrides({
-    @AttributeOverride(name = "topLeft", column = @Column(name = "ambient_top_left")),
-    @AttributeOverride(name = "topRight", column = @Column(name = "ambient_top_right")),
-    @AttributeOverride(name = "bottomRight", column = @Column(name = "ambient_bottom_right")),
-    @AttributeOverride(name = "bottomLeft", column = @Column(name = "ambient_bottom_left")),
-    @AttributeOverride(name = "primary", column = @Column(name = "ambient_primary"))
-  })
+  @AttributeOverride(name = "topLeft", column = @Column(name = "ambient_top_left"))
+  @AttributeOverride(name = "topRight", column = @Column(name = "ambient_top_right"))
+  @AttributeOverride(name = "bottomRight", column = @Column(name = "ambient_bottom_right"))
+  @AttributeOverride(name = "bottomLeft", column = @Column(name = "ambient_bottom_left"))
+  @AttributeOverride(name = "primary", column = @Column(name = "ambient_primary"))
   private AmbientColors ambientColors;
 }
