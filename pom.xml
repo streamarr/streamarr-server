@@ -72,10 +72,10 @@
         <surefire.excludedGroups>SmokeTest</surefire.excludedGroups>
         <failsafe.excludedGroups>SmokeTest</failsafe.excludedGroups>
         <spotless.version>3.9.0</spotless.version>
-        <checkstyle.version>13.9.0</checkstyle.version>
+        <checkstyle.version>13.10.0</checkstyle.version>
         <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
-        <archunit.version>1.4.2</archunit.version>
-        <grpc.version>1.82.2</grpc.version>
+        <archunit.version>1.5.0</archunit.version>
+        <grpc.version>1.83.1</grpc.version>
         <protobuf-maven-plugin.version>5.1.7</protobuf-maven-plugin.version>
     </properties>
 
