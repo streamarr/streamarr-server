@@ -5,6 +5,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.streamarr.server.fakes.TestImages.createDistinctColorPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -95,12 +96,40 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
                           assertThat(small.getAmbientColors())
                               .isEqualTo(
                                   AmbientColors.builder()
-                                      .topLeft("#00a0a0")
+                                      .topLeft("#202020")
                                       .topRight("#404040")
                                       .bottomRight("#c0c0c0")
                                       .bottomLeft("#808080")
                                       .primary("#00a0a0")
                                       .build()));
+            });
+  }
+
+  @Test
+  @DisplayName("Should persist null ambient colors when artwork has insufficient opaque coverage")
+  void shouldPersistNullAmbientColorsWhenArtworkHasInsufficientOpaqueCoverage() {
+    var entityId = UUID.randomUUID();
+    stubImageDownload("/transparent.png", createTransparentPngImage());
+
+    transactionTemplate.executeWithoutResult(
+        status ->
+            eventPublisher.publishEvent(
+                new MetadataEnrichedEvent(
+                    entityId,
+                    ImageEntityType.MOVIE,
+                    List.of(new TmdbImageSource(ImageType.POSTER, "/transparent.png")))));
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images)
+                  .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
+                  .singleElement()
+                  .extracting(Image::getAmbientColors)
+                  .isNull();
             });
   }
 
