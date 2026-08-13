@@ -29,6 +29,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Tag("UnitTest")
 @DisplayName("Image Service Tests")
@@ -313,6 +315,37 @@ class ImageServiceTest {
             });
     assertThat(existingArtwork.absolutePath()).exists();
     assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+  }
+
+  @Test
+  @DisplayName("Should defer staged file cleanup until rollback when replacement persistence fails")
+  void shouldDeferStagedFileCleanupUntilRollbackWhenReplacementPersistenceFails() {
+    var replacement =
+        imageService.processImage(
+            createSolidPngImage(600, 900, 0x00A0A0),
+            ImageType.POSTER,
+            UUID.randomUUID(),
+            ImageEntityType.MOVIE,
+            "/new-poster.jpg");
+    imageRepository.setFailOnReplaceLogicalArtwork(true);
+    TransactionSynchronizationManager.initSynchronization();
+
+    try {
+      assertThatThrownBy(() -> imageService.replaceImages(replacement))
+          .isInstanceOf(RuntimeException.class)
+          .hasMessageContaining("Simulated logical artwork replacement failure");
+      assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
+
+      TransactionSynchronizationManager.getSynchronizations()
+          .forEach(
+              synchronization ->
+                  synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
+
+      assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+    } finally {
+      TransactionSynchronizationManager.clearSynchronization();
+      imageService.deleteFiles(replacement.writtenFiles());
+    }
   }
 
   @Test

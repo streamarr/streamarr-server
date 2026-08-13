@@ -126,26 +126,21 @@ public class ImageService {
       return;
     }
 
+    var cleanupDeferred = deferReplacementFileCleanupUntilRollback(replacement.writtenFiles());
+
     try {
       validateContentSha256(replacement.images());
       validateArtworkIdentity(replacement.images());
       validateVariantSet(replacement.images());
-    } catch (IllegalArgumentException e) {
-      deleteFiles(replacement.writtenFiles());
-      throw e;
-    }
-
-    List<String> replacedPaths;
-
-    try {
-      replacedPaths = imageRepository.replaceLogicalArtwork(replacement.images());
+      var replacedPaths = imageRepository.replaceLogicalArtwork(replacement.images());
+      var existingFiles = replacedPaths.stream().map(this::resolveAbsolutePath).toList();
+      scheduleSupersededFileCleanup(existingFiles);
     } catch (RuntimeException e) {
-      deleteFiles(replacement.writtenFiles());
+      if (!cleanupDeferred) {
+        deleteFiles(replacement.writtenFiles());
+      }
       throw e;
     }
-
-    var existingFiles = replacedPaths.stream().map(this::resolveAbsolutePath).toList();
-    scheduleReplacementFileCleanup(existingFiles, replacement.writtenFiles());
   }
 
   private void validateContentSha256(List<Image> images) {
@@ -190,8 +185,24 @@ public class ImageService {
     }
   }
 
-  private void scheduleReplacementFileCleanup(
-      List<Path> existingFiles, List<Path> replacementFiles) {
+  private boolean deferReplacementFileCleanupUntilRollback(List<Path> replacementFiles) {
+    if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+      return false;
+    }
+
+    TransactionSynchronizationManager.registerSynchronization(
+        new TransactionSynchronization() {
+          @Override
+          public void afterCompletion(int status) {
+            if (status != TransactionSynchronization.STATUS_COMMITTED) {
+              deleteFiles(replacementFiles);
+            }
+          }
+        });
+    return true;
+  }
+
+  private void scheduleSupersededFileCleanup(List<Path> existingFiles) {
     if (!TransactionSynchronizationManager.isSynchronizationActive()) {
       deleteFiles(existingFiles);
       return;
@@ -202,13 +213,6 @@ public class ImageService {
           @Override
           public void afterCommit() {
             deleteFiles(existingFiles);
-          }
-
-          @Override
-          public void afterCompletion(int status) {
-            if (status != TransactionSynchronization.STATUS_COMMITTED) {
-              deleteFiles(replacementFiles);
-            }
           }
         });
   }
