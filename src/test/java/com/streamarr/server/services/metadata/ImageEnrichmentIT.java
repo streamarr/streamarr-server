@@ -7,6 +7,9 @@ import static com.streamarr.server.fakes.TestImages.createDistinctColorPngImage;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitBlockedBackendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockArtworkRows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
@@ -23,12 +26,9 @@ import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -362,58 +362,6 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
       imageService.deleteFiles(original.writtenFiles());
       imageService.deleteFiles(cyanReplacement.writtenFiles());
       imageService.deleteFiles(magentaReplacement.writtenFiles());
-    }
-  }
-
-  private void lockArtworkRows(Connection connection, UUID entityId) throws SQLException {
-    try (var statement =
-        connection.prepareStatement("SELECT id FROM image WHERE entity_id = ? FOR UPDATE")) {
-      statement.setObject(1, entityId);
-      try (var rows = statement.executeQuery()) {
-        var lockedRows = 0;
-        while (rows.next()) {
-          lockedRows++;
-        }
-        assertThat(lockedRows).isEqualTo(ImageSize.values().length);
-      }
-    }
-  }
-
-  private int backendPid(Connection connection) throws SQLException {
-    try (var statement = connection.createStatement();
-        var result = statement.executeQuery("SELECT pg_backend_pid()")) {
-      result.next();
-      return result.getInt(1);
-    }
-  }
-
-  private int awaitBlockedBackendPid(Connection observer, int blockerPid, String expectedWaitEvent)
-      throws SQLException {
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .until(() -> blockedBackendPid(observer, blockerPid, expectedWaitEvent).isPresent());
-    return blockedBackendPid(observer, blockerPid, expectedWaitEvent).orElseThrow();
-  }
-
-  private OptionalInt blockedBackendPid(
-      Connection observer, int blockerPid, String expectedWaitEvent) throws SQLException {
-    var sql =
-        """
-        SELECT pid
-        FROM pg_stat_activity
-        WHERE ? = ANY(pg_blocking_pids(pid))
-          AND wait_event_type = 'Lock'
-          AND (? IS NULL OR wait_event = ?)
-        ORDER BY pid
-        LIMIT 1
-        """;
-    try (var statement = observer.prepareStatement(sql)) {
-      statement.setInt(1, blockerPid);
-      statement.setString(2, expectedWaitEvent);
-      statement.setString(3, expectedWaitEvent);
-      try (var result = statement.executeQuery()) {
-        return result.next() ? OptionalInt.of(result.getInt(1)) : OptionalInt.empty();
-      }
     }
   }
 
