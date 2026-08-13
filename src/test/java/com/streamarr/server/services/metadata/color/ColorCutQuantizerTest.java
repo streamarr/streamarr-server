@@ -47,8 +47,8 @@ class ColorCutQuantizerTest {
 
     var swatches = new ColorCutQuantizer(pixels, 8, SwatchFilter.ALLOW_ALL).getQuantizedColors();
 
-    assertThat(swatches).hasSize(8);
     assertThat(swatches)
+        .hasSize(8)
         .allSatisfy(
             swatch -> {
               assertThat((swatch.rgb() >> 16) & 0xFF).isZero();
@@ -66,8 +66,8 @@ class ColorCutQuantizerTest {
 
     var swatches = new ColorCutQuantizer(pixels, 8, SwatchFilter.ALLOW_ALL).getQuantizedColors();
 
-    assertThat(swatches).hasSize(8);
     assertThat(swatches)
+        .hasSize(8)
         .allSatisfy(
             swatch -> {
               assertThat((swatch.rgb() >> 16) & 0xFF).isZero();
