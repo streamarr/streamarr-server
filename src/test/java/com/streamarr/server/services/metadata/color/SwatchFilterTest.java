@@ -50,6 +50,7 @@ class SwatchFilterTest {
   @DisplayName("Should allow skin tone when hue is outside inclusive range")
   void shouldAllowSkinToneWhenHueIsOutsideInclusiveRange() {
     assertThat(List.of(Math.nextDown(10f), Math.nextUp(37f)))
+        .hasSize(2)
         .allSatisfy(
             hue ->
                 assertThat(SwatchFilter.DEFAULT.isAllowed(0, new float[] {hue, 0.5f, 0.5f}))
