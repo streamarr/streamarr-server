@@ -34,8 +34,16 @@ class ImageDataLoaderTest {
   void shouldReturnImagesForEachKeyWhenBatchLoading() throws Exception {
     var movieId = UUID.randomUUID();
     var personId = UUID.randomUUID();
-    saveImage(movieId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278, null);
-    saveImage(personId, ImageEntityType.PERSON, ImageType.PROFILE, ImageSize.SMALL, 185, 278, null);
+    saveImage(
+        defaultImageBuilder(movieId, ImageEntityType.MOVIE, ImageType.POSTER)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278));
+    saveImage(
+        defaultImageBuilder(personId, ImageEntityType.PERSON, ImageType.PROFILE)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278));
 
     var keys =
         Set.of(
@@ -52,9 +60,21 @@ class ImageDataLoaderTest {
   @DisplayName("Should group image rows by image type when building DTOs")
   void shouldGroupImageRowsByImageTypeWhenBuildingDtos() throws Exception {
     var entityId = UUID.randomUUID();
-    saveImage(entityId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278, null);
-    saveImage(entityId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.LARGE, 500, 750, null);
-    saveImage(entityId, ImageEntityType.MOVIE, ImageType.BACKDROP, ImageSize.SMALL, 300, 169, null);
+    saveImage(
+        defaultImageBuilder(entityId, ImageEntityType.MOVIE, ImageType.POSTER)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278));
+    saveImage(
+        defaultImageBuilder(entityId, ImageEntityType.MOVIE, ImageType.POSTER)
+            .variant(ImageSize.LARGE)
+            .width(500)
+            .height(750));
+    saveImage(
+        defaultImageBuilder(entityId, ImageEntityType.MOVIE, ImageType.BACKDROP)
+            .variant(ImageSize.SMALL)
+            .width(300)
+            .height(169));
 
     var key = new ImageLoaderKey(entityId, ImageEntityType.MOVIE);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
@@ -74,14 +94,16 @@ class ImageDataLoaderTest {
   void shouldHoistBlurHashToImageLevelWhenSmallVariantPresent() throws Exception {
     var entityId = UUID.randomUUID();
     saveImage(
-        entityId,
-        ImageEntityType.MOVIE,
-        ImageType.POSTER,
-        ImageSize.SMALL,
-        185,
-        278,
-        "LEHV6nWB2yk8pyo0adR*.7kCMdnj");
-    saveImage(entityId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.LARGE, 500, 750, null);
+        defaultImageBuilder(entityId, ImageEntityType.MOVIE, ImageType.POSTER)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278)
+            .blurHash("LEHV6nWB2yk8pyo0adR*.7kCMdnj"));
+    saveImage(
+        defaultImageBuilder(entityId, ImageEntityType.MOVIE, ImageType.POSTER)
+            .variant(ImageSize.LARGE)
+            .width(500)
+            .height(750));
 
     var key = new ImageLoaderKey(entityId, ImageEntityType.MOVIE);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
@@ -103,18 +125,17 @@ class ImageDataLoaderTest {
             .bottomLeft("#404040")
             .primary("#00a0a0")
             .build();
-    imageRepository.save(
-        Image.builder()
-            .entityId(entityId)
-            .entityType(ImageEntityType.MOVIE)
-            .imageType(ImageType.POSTER)
+    saveImage(
+        defaultImageBuilder(entityId, ImageEntityType.MOVIE, ImageType.POSTER)
             .variant(ImageSize.SMALL)
             .width(185)
             .height(278)
-            .ambientColors(ambient)
-            .path("test/path.jpg")
-            .build());
-    saveImage(entityId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.LARGE, 500, 750, null);
+            .ambientColors(ambient));
+    saveImage(
+        defaultImageBuilder(entityId, ImageEntityType.MOVIE, ImageType.POSTER)
+            .variant(ImageSize.LARGE)
+            .width(500)
+            .height(750));
 
     var key = new ImageLoaderKey(entityId, ImageEntityType.MOVIE);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
@@ -128,7 +149,27 @@ class ImageDataLoaderTest {
   @DisplayName("Should return null ambient colors when small variant missing")
   void shouldReturnNullAmbientColorsWhenSmallVariantMissing() throws Exception {
     var entityId = UUID.randomUUID();
-    saveImage(entityId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.LARGE, 500, 750, null);
+    saveImage(
+        defaultImageBuilder(entityId, ImageEntityType.MOVIE, ImageType.POSTER)
+            .variant(ImageSize.LARGE)
+            .width(500)
+            .height(750));
+
+    var key = new ImageLoaderKey(entityId, ImageEntityType.MOVIE);
+    var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
+
+    assertThat(result.get(key).getFirst().ambientColors()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should return null ambient colors when small variant has none")
+  void shouldReturnNullAmbientColorsWhenSmallVariantHasNone() throws Exception {
+    var entityId = UUID.randomUUID();
+    saveImage(
+        defaultImageBuilder(entityId, ImageEntityType.MOVIE, ImageType.POSTER)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278));
 
     var key = new ImageLoaderKey(entityId, ImageEntityType.MOVIE);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
@@ -140,7 +181,11 @@ class ImageDataLoaderTest {
   @DisplayName("Should compute aspect ratio when small variant present")
   void shouldComputeAspectRatioWhenSmallVariantPresent() throws Exception {
     var entityId = UUID.randomUUID();
-    saveImage(entityId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278, null);
+    saveImage(
+        defaultImageBuilder(entityId, ImageEntityType.MOVIE, ImageType.POSTER)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278));
 
     var key = new ImageLoaderKey(entityId, ImageEntityType.MOVIE);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
@@ -152,7 +197,11 @@ class ImageDataLoaderTest {
   @DisplayName("Should return null blurHash when small variant missing")
   void shouldReturnNullBlurHashWhenSmallVariantMissing() throws Exception {
     var entityId = UUID.randomUUID();
-    saveImage(entityId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.LARGE, 500, 750, null);
+    saveImage(
+        defaultImageBuilder(entityId, ImageEntityType.MOVIE, ImageType.POSTER)
+            .variant(ImageSize.LARGE)
+            .width(500)
+            .height(750));
 
     var key = new ImageLoaderKey(entityId, ImageEntityType.MOVIE);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
@@ -170,24 +219,16 @@ class ImageDataLoaderTest {
     assertThat(result.get(key)).isEmpty();
   }
 
-  private Image saveImage(
-      UUID entityId,
-      ImageEntityType entityType,
-      ImageType imageType,
-      ImageSize variant,
-      int width,
-      int height,
-      String blurHash) {
-    return imageRepository.save(
-        Image.builder()
-            .entityId(entityId)
-            .entityType(entityType)
-            .imageType(imageType)
-            .variant(variant)
-            .width(width)
-            .height(height)
-            .blurHash(blurHash)
-            .path("test/path.jpg")
-            .build());
+  private static Image.ImageBuilder<?, ?> defaultImageBuilder(
+      UUID entityId, ImageEntityType entityType, ImageType imageType) {
+    return Image.builder()
+        .entityId(entityId)
+        .entityType(entityType)
+        .imageType(imageType)
+        .path("test/path.jpg");
+  }
+
+  private Image saveImage(Image.ImageBuilder<?, ?> imageBuilder) {
+    return imageRepository.save(imageBuilder.build());
   }
 }

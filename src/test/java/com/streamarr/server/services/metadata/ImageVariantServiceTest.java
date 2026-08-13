@@ -19,6 +19,7 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import javax.imageio.ImageIO;
+import lombok.Builder;
 import net.coobird.thumbnailator.Thumbnails;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -168,12 +169,23 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should consider variants equal when all fields match")
   void shouldConsiderVariantsEqualWhenAllFieldsMatch() {
+    var a = defaultVariantBuilder().data(new byte[] {1, 2, 3}).build();
+    var b = defaultVariantBuilder().data(new byte[] {1, 2, 3}).build();
+
+    assertThat(a).isEqualTo(b).hasSameHashCodeAs(b);
+  }
+
+  @Test
+  @DisplayName("Should consider variants equal when ambient color values match")
+  void shouldConsiderVariantsEqualWhenAmbientColorValuesMatch() {
     var a =
-        new ImageVariantService.GeneratedVariant(
-            ImageSize.SMALL, new byte[] {1, 2, 3}, 100, 150, "hash", null);
+        defaultVariantBuilder()
+            .ambientColors(AmbientColors.builder().primary("#00a0a0").build())
+            .build();
     var b =
-        new ImageVariantService.GeneratedVariant(
-            ImageSize.SMALL, new byte[] {1, 2, 3}, 100, 150, "hash", null);
+        defaultVariantBuilder()
+            .ambientColors(AmbientColors.builder().primary("#00a0a0").build())
+            .build();
 
     assertThat(a).isEqualTo(b).hasSameHashCodeAs(b);
   }
@@ -181,9 +193,7 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should consider variant equal when compared to itself")
   void shouldConsiderVariantEqualWhenComparedToItself() {
-    var variant =
-        new ImageVariantService.GeneratedVariant(
-            ImageSize.SMALL, new byte[] {1}, 100, 150, "hash", null);
+    var variant = defaultVariantBuilder().build();
 
     assertThat(variant).isEqualTo(variant);
   }
@@ -191,9 +201,7 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should not consider variant equal when compared to another type")
   void shouldNotConsiderVariantEqualWhenComparedToAnotherType() {
-    var variant =
-        new ImageVariantService.GeneratedVariant(
-            ImageSize.SMALL, new byte[] {1}, 100, 150, "hash", null);
+    var variant = defaultVariantBuilder().build();
 
     assertThat(variant).isNotEqualTo("not-a-variant");
   }
@@ -201,9 +209,8 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should not consider variants equal when only height differs")
   void shouldNotConsiderVariantsEqualWhenOnlyHeightDiffers() {
-    var data = new byte[] {1};
-    var a = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 150, "hash", null);
-    var b = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 300, "hash", null);
+    var a = defaultVariantBuilder().build();
+    var b = defaultVariantBuilder().height(300).build();
 
     assertThat(a).isNotEqualTo(b);
   }
@@ -211,12 +218,8 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should not consider variants equal when data differs")
   void shouldNotConsiderVariantsEqualWhenDataDiffers() {
-    var a =
-        new ImageVariantService.GeneratedVariant(
-            ImageSize.SMALL, new byte[] {1}, 100, 150, "hash", null);
-    var b =
-        new ImageVariantService.GeneratedVariant(
-            ImageSize.SMALL, new byte[] {2}, 100, 150, "hash", null);
+    var a = defaultVariantBuilder().data(new byte[] {1}).build();
+    var b = defaultVariantBuilder().data(new byte[] {2}).build();
 
     assertThat(a).isNotEqualTo(b);
   }
@@ -224,9 +227,8 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should not consider variants equal when variant size differs")
   void shouldNotConsiderVariantsEqualWhenVariantSizeDiffers() {
-    var data = new byte[] {1};
-    var a = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 150, "hash", null);
-    var b = new ImageVariantService.GeneratedVariant(ImageSize.LARGE, data, 100, 150, "hash", null);
+    var a = defaultVariantBuilder().build();
+    var b = defaultVariantBuilder().variant(ImageSize.LARGE).build();
 
     assertThat(a).isNotEqualTo(b);
   }
@@ -234,9 +236,8 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should not consider variants equal when dimensions differ")
   void shouldNotConsiderVariantsEqualWhenDimensionsDiffer() {
-    var data = new byte[] {1};
-    var a = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 150, "hash", null);
-    var b = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 200, 300, "hash", null);
+    var a = defaultVariantBuilder().build();
+    var b = defaultVariantBuilder().width(200).build();
 
     assertThat(a).isNotEqualTo(b);
   }
@@ -244,11 +245,8 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should not consider variants equal when blurHash differs")
   void shouldNotConsiderVariantsEqualWhenBlurHashDiffers() {
-    var data = new byte[] {1};
-    var a =
-        new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 150, "hash1", null);
-    var b =
-        new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 150, "hash2", null);
+    var a = defaultVariantBuilder().blurHash("hash1").build();
+    var b = defaultVariantBuilder().blurHash("hash2").build();
 
     assertThat(a).isNotEqualTo(b);
   }
@@ -256,10 +254,9 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should not consider variants equal when ambient colors differ")
   void shouldNotConsiderVariantsEqualWhenAmbientColorsDiffer() {
-    var data = new byte[] {1};
     var teal = AmbientColors.builder().primary("#00a0a0").build();
-    var a = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 150, "hash", teal);
-    var b = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 150, "hash", null);
+    var a = defaultVariantBuilder().ambientColors(teal).build();
+    var b = defaultVariantBuilder().build();
 
     assertThat(a).isNotEqualTo(b);
   }
@@ -267,9 +264,7 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should not consider variant equal when compared to null")
   void shouldNotConsiderVariantEqualWhenComparedToNull() {
-    var variant =
-        new ImageVariantService.GeneratedVariant(
-            ImageSize.SMALL, new byte[] {1}, 100, 150, "hash", null);
+    var variant = defaultVariantBuilder().build();
 
     assertThat(variant).isNotEqualTo(null);
   }
@@ -277,20 +272,49 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should include data length when converted to string")
   void shouldIncludeDataLengthWhenConvertedToString() {
-    var variant =
-        new ImageVariantService.GeneratedVariant(
-            ImageSize.SMALL, new byte[] {1, 2, 3}, 100, 150, "hash", null);
+    var variant = defaultVariantBuilder().data(new byte[] {1, 2, 3}).build();
 
     assertThat(variant.toString()).contains("dataLength=3");
   }
 
   @Test
+  @DisplayName("Should include ambient colors when converted to string")
+  void shouldIncludeAmbientColorsWhenConvertedToString() {
+    var variant =
+        defaultVariantBuilder()
+            .ambientColors(AmbientColors.builder().primary("#00a0a0").build())
+            .build();
+
+    assertThat(variant.toString()).contains("ambientColors=", "primary=#00a0a0");
+  }
+
+  @Test
   @DisplayName("Should report zero data length when converted to string with null data")
   void shouldReportZeroDataLengthWhenConvertedToStringWithNullData() {
-    var variant =
-        new ImageVariantService.GeneratedVariant(ImageSize.SMALL, null, 100, 150, "hash", null);
+    var variant = defaultVariantBuilder().data(null).build();
 
     assertThat(variant.toString()).contains("dataLength=0");
+  }
+
+  private static GeneratedVariantBuilder defaultVariantBuilder() {
+    return emptyVariantBuilder()
+        .variant(ImageSize.SMALL)
+        .data(new byte[] {1})
+        .width(100)
+        .height(150)
+        .blurHash("hash");
+  }
+
+  @Builder(builderClassName = "GeneratedVariantBuilder", builderMethodName = "emptyVariantBuilder")
+  private static ImageVariantService.GeneratedVariant buildVariant(
+      ImageSize variant,
+      byte[] data,
+      int width,
+      int height,
+      String blurHash,
+      AmbientColors ambientColors) {
+    return new ImageVariantService.GeneratedVariant(
+        variant, data, width, height, blurHash, ambientColors);
   }
 
   @Test

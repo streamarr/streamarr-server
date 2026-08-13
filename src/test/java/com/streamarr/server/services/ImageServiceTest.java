@@ -3,6 +3,7 @@ package com.streamarr.server.services;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fakes.TestImages.createTestImageWithMismatchedColorProfile;
+import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -56,6 +57,23 @@ class ImageServiceTest {
     var small =
         images.stream().filter(i -> i.getVariant() == ImageSize.SMALL).findFirst().orElseThrow();
     assertThat(small.getAmbientColors().primary()).isEqualTo("#00a0a0");
+  }
+
+  @Test
+  @DisplayName("Should omit ambient colors when small image has insufficient opaque coverage")
+  void shouldOmitAmbientColorsWhenSmallImageHasInsufficientOpaqueCoverage() {
+    var result =
+        imageService.processImage(
+            createTransparentPngImage(),
+            ImageType.POSTER,
+            UUID.randomUUID(),
+            ImageEntityType.MOVIE);
+
+    assertThat(result.images())
+        .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
+        .singleElement()
+        .extracting(Image::getAmbientColors)
+        .isNull();
   }
 
   @Test
