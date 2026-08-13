@@ -253,6 +253,19 @@ class AmbientColorExtractorTest {
     assertThat(colors.primary()).isEqualTo("#00a0a0");
   }
 
+  @Test
+  @DisplayName("Should select dominant color when large artwork has a repeating pixel pattern")
+  void shouldSelectDominantColorWhenLargeArtworkHasRepeatingPixelPattern() {
+    var image = ArtworkCanvas.size(1_000, 100).fill(TEAL).image();
+    for (var pixelIndex = 0; pixelIndex < 100_000; pixelIndex += 8) {
+      image.setRGB(pixelIndex % image.getWidth(), pixelIndex / image.getWidth(), GRAY);
+    }
+
+    var colors = AmbientColorExtractor.extract(image).orElseThrow();
+
+    assertThat(colors.primary()).isEqualTo("#00a0a0");
+  }
+
   private static final class ArtworkCanvas {
 
     private final BufferedImage image;

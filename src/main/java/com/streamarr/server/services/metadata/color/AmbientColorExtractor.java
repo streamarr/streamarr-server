@@ -26,6 +26,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.SplittableRandom;
 
 /**
  * Derives ambient UI colors from artwork: a linear-light average per image quadrant for corner
@@ -37,6 +38,7 @@ public final class AmbientColorExtractor {
   private static final double MIN_OPAQUE_RATIO = 0.1;
   private static final int MAX_SAMPLED_PIXELS = 112 * 112;
   private static final int MAX_COLOR_COUNT = 16;
+  private static final long DETERMINISTIC_SAMPLING_SEED = 0;
 
   private static final float MIN_VIBRANT_SATURATION = 0.35f;
   private static final float TARGET_SATURATION = 1f;
@@ -138,10 +140,13 @@ public final class AmbientColorExtractor {
     if (opaquePixels.length <= MAX_SAMPLED_PIXELS) {
       return opaquePixels;
     }
-    var stride = Math.ceilDiv(opaquePixels.length, MAX_SAMPLED_PIXELS);
-    var sample = new int[Math.ceilDiv(opaquePixels.length, stride)];
-    for (var i = 0; i < sample.length; i++) {
-      sample[i] = opaquePixels[i * stride];
+    var sample = Arrays.copyOf(opaquePixels, MAX_SAMPLED_PIXELS);
+    var random = new SplittableRandom(DETERMINISTIC_SAMPLING_SEED);
+    for (var i = MAX_SAMPLED_PIXELS; i < opaquePixels.length; i++) {
+      var replacementIndex = random.nextInt(i + 1);
+      if (replacementIndex < sample.length) {
+        sample[replacementIndex] = opaquePixels[i];
+      }
     }
     return sample;
   }
