@@ -6,6 +6,7 @@
     "schedule:earlyMondays"
   ],
   "labels": ["dependencies"],
+  "gitIgnoredAuthors": ["streamarr-ffmpeg-lock[bot]@users.noreply.github.com"],
   "vulnerabilityAlerts": {
     "labels": ["dependencies", "security"],
     "schedule": ["at any time"]
@@ -35,10 +36,10 @@
       "customType": "regex",
       "description": "Track pinned BtbN FFmpeg runtime releases",
       "managerFilePatterns": [
-        "/^buildpacks/ffmpeg/bin/build$/"
+        "/^buildpacks/ffmpeg/release$/"
       ],
       "matchStrings": [
-        "release=(?<currentValue>autobuild-\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2})"
+        "^(?<currentValue>autobuild-\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2})\\n?$"
       ],
       "depNameTemplate": "BtbN/FFmpeg-Builds",
       "datasourceTemplate": "github-releases",
@@ -56,6 +57,12 @@
       "description": "Group minor updates into a single PR",
       "matchUpdateTypes": ["minor"],
       "groupName": "minor dependencies"
+    },
+    {
+      "description": "Keep FFmpeg runtime updates isolated for lock synchronization",
+      "matchDepNames": ["BtbN/FFmpeg-Builds"],
+      "groupName": "FFmpeg runtime",
+      "automerge": false
     }
   ],
   "prConcurrentLimit": 10
