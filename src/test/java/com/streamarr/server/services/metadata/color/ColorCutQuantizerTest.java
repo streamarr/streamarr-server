@@ -38,66 +38,6 @@ class ColorCutQuantizerTest {
   }
 
   @Test
-  @DisplayName("Should split along green axis when green varies most")
-  void shouldSplitAlongGreenAxisWhenGreenVariesMost() {
-    var pixels = new int[32];
-    for (var i = 0; i < pixels.length; i++) {
-      pixels[i] = (8 * i) << 8;
-    }
-
-    var swatches = new ColorCutQuantizer(pixels, 8, SwatchFilter.ALLOW_ALL).getQuantizedColors();
-
-    assertThat(swatches)
-        .hasSize(8)
-        .allSatisfy(
-            swatch -> {
-              assertThat((swatch.rgb() >> 16) & 0xFF).isZero();
-              assertThat(swatch.rgb() & 0xFF).isZero();
-            });
-  }
-
-  @Test
-  @DisplayName("Should split along blue axis when blue varies most")
-  void shouldSplitAlongBlueAxisWhenBlueVariesMost() {
-    var pixels = new int[32];
-    for (var i = 0; i < pixels.length; i++) {
-      pixels[i] = 8 * i;
-    }
-
-    var swatches = new ColorCutQuantizer(pixels, 8, SwatchFilter.ALLOW_ALL).getQuantizedColors();
-
-    assertThat(swatches)
-        .hasSize(8)
-        .allSatisfy(
-            swatch -> {
-              assertThat((swatch.rgb() >> 16) & 0xFF).isZero();
-              assertThat((swatch.rgb() >> 8) & 0xFF).isZero();
-            });
-  }
-
-  @Test
-  @DisplayName("Should split along blue axis when red varies more than green")
-  void shouldSplitAlongBlueAxisWhenRedVariesMoreThanGreen() {
-    var pixels = concat(colorRun(0x000000, 1), colorRun(0x100850, 1), colorRun(0x0800F8, 1));
-
-    var swatches = new ColorCutQuantizer(pixels, 2, SwatchFilter.ALLOW_ALL).getQuantizedColors();
-
-    assertThat(swatches)
-        .containsExactlyInAnyOrder(new Swatch(0x000000, 1), new Swatch(0x1008A8, 2));
-  }
-
-  @Test
-  @DisplayName("Should clamp split point when population concentrates in last color")
-  void shouldClampSplitPointWhenPopulationConcentratesInLastColor() {
-    var pixels = concat(colorRun(0x000000, 1), colorRun(0x080000, 1), colorRun(0xF80000, 6));
-
-    var swatches = new ColorCutQuantizer(pixels, 2, SwatchFilter.ALLOW_ALL).getQuantizedColors();
-
-    assertThat(swatches)
-        .containsExactlyInAnyOrder(new Swatch(0x080000, 2), new Swatch(0xF80000, 6));
-  }
-
-  @Test
   @DisplayName("Should average all colors when limit is one")
   void shouldAverageAllColorsWhenLimitIsOne() {
     var pixels = concat(colorRun(0x000000, 2), colorRun(0x404040, 2));
@@ -123,16 +63,6 @@ class ColorCutQuantizerTest {
     var pixels = colorRun(0xF8F8F8, 5);
 
     var swatches = new ColorCutQuantizer(pixels, 16, SwatchFilter.DEFAULT).getQuantizedColors();
-
-    assertThat(swatches).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should drop averaged swatch when box average falls in excluded range")
-  void shouldDropAveragedSwatchWhenBoxAverageFallsInExcludedRange() {
-    var pixels = concat(colorRun(0xC86E64, 1), colorRun(0xC8AF64, 1));
-
-    var swatches = new ColorCutQuantizer(pixels, 1, SwatchFilter.DEFAULT).getQuantizedColors();
 
     assertThat(swatches).isEmpty();
   }

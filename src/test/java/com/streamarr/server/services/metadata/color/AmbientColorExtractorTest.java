@@ -28,8 +28,6 @@ class AmbientColorExtractorTest {
   private static final int SKIN_TONE = OPAQUE | 0xC88868;
   private static final int NEAR_WHITE = OPAQUE | 0xF8F8F8;
   private static final int NEAR_BLACK = OPAQUE | 0x080808;
-  private static final int PASTEL_LILAC = OPAQUE | 0xC0A0C0;
-  private static final int PASTEL_MINT = OPAQUE | 0xA0C0A0;
   private static final int DESATURATED_BLUE = OPAQUE | 0x4080C0;
 
   @Test
@@ -110,7 +108,7 @@ class AmbientColorExtractorTest {
   @Test
   @DisplayName("Should return empty when opaque coverage is below threshold")
   void shouldReturnEmptyWhenOpaqueCoverageIsBelowThreshold() {
-    var image = ArtworkCanvas.size(100, 100).paint(new Rectangle(0, 0, 5, 100), RED).image();
+    var image = ArtworkCanvas.size(100, 100).paint(new Rectangle(0, 0, 9, 100), RED).image();
 
     assertThat(AmbientColorExtractor.extract(image)).isEmpty();
   }
@@ -154,8 +152,8 @@ class AmbientColorExtractorTest {
   }
 
   @Test
-  @DisplayName("Should exclude near-white and near-black when selecting primary")
-  void shouldExcludeNearWhiteAndNearBlackWhenSelectingPrimary() {
+  @DisplayName("Should select vibrant color when near-neutral colors dominate")
+  void shouldSelectVibrantColorWhenNearNeutralColorsDominate() {
     var image =
         ArtworkCanvas.size(100, 100)
             .paint(new Rectangle(0, 0, 60, 100), NEAR_WHITE)
@@ -184,14 +182,30 @@ class AmbientColorExtractorTest {
   }
 
   @Test
-  @DisplayName("Should fall back to dominant when saturated colors are outside lightness range")
-  void shouldFallBackToDominantWhenSaturatedColorsAreOutsideLightnessRange() {
-    var darkTeal = OPAQUE | 0x002020;
+  @DisplayName("Should fall back to dominant when saturated color is below lightness range")
+  void shouldFallBackToDominantWhenSaturatedColorIsBelowLightnessRange() {
+    var tooDarkTeal = OPAQUE | 0x009898;
     var lightPink = OPAQUE | 0xF8A0A0;
     var image =
         ArtworkCanvas.size(100, 100)
-            .paint(new Rectangle(0, 0, 60, 100), darkTeal)
-            .paint(new Rectangle(60, 0, 40, 100), lightPink)
+            .paint(new Rectangle(0, 0, 49, 100), tooDarkTeal)
+            .paint(new Rectangle(49, 0, 51, 100), lightPink)
+            .image();
+
+    var colors = AmbientColorExtractor.extract(image).orElseThrow();
+
+    assertThat(colors.primary()).isEqualTo("#f8a0a0");
+  }
+
+  @Test
+  @DisplayName("Should fall back to dominant when saturated color is above lightness range")
+  void shouldFallBackToDominantWhenSaturatedColorIsAboveLightnessRange() {
+    var darkTeal = OPAQUE | 0x002020;
+    var tooLightCyan = OPAQUE | 0x70F8F8;
+    var image =
+        ArtworkCanvas.size(100, 100)
+            .paint(new Rectangle(0, 0, 51, 100), darkTeal)
+            .paint(new Rectangle(51, 0, 49, 100), tooLightCyan)
             .image();
 
     var colors = AmbientColorExtractor.extract(image).orElseThrow();
@@ -200,17 +214,49 @@ class AmbientColorExtractorTest {
   }
 
   @Test
-  @DisplayName("Should fall back to dominant swatch when no swatch is vibrant enough")
-  void shouldFallBackToDominantSwatchWhenNoSwatchIsVibrantEnough() {
+  @DisplayName("Should select vibrant color when lightness is within upper range")
+  void shouldSelectVibrantColorWhenLightnessIsWithinUpperRange() {
+    var lightCyan = OPAQUE | 0x68F8F8;
     var image =
         ArtworkCanvas.size(100, 100)
-            .paint(new Rectangle(0, 0, 70, 100), PASTEL_LILAC)
-            .paint(new Rectangle(70, 0, 30, 100), PASTEL_MINT)
+            .paint(new Rectangle(0, 0, 80, 100), GRAY)
+            .paint(new Rectangle(80, 0, 20, 100), lightCyan)
             .image();
 
     var colors = AmbientColorExtractor.extract(image).orElseThrow();
 
-    assertThat(colors.primary()).isEqualTo("#c0a0c0");
+    assertThat(colors.primary()).isEqualTo("#68f8f8");
+  }
+
+  @Test
+  @DisplayName("Should fall back to dominant swatch when no swatch is vibrant enough")
+  void shouldFallBackToDominantSwatchWhenNoSwatchIsVibrantEnough() {
+    var lightGray = OPAQUE | 0xB0B0B0;
+    var almostVibrantGreen = OPAQUE | 0x90C890;
+    var image =
+        ArtworkCanvas.size(100, 100)
+            .paint(new Rectangle(0, 0, 51, 100), lightGray)
+            .paint(new Rectangle(51, 0, 49, 100), almostVibrantGreen)
+            .image();
+
+    var colors = AmbientColorExtractor.extract(image).orElseThrow();
+
+    assertThat(colors.primary()).isEqualTo("#b0b0b0");
+  }
+
+  @Test
+  @DisplayName("Should select vibrant color when saturation is within lower range")
+  void shouldSelectVibrantColorWhenSaturationIsWithinLowerRange() {
+    var justVibrantGreen = OPAQUE | 0x50A850;
+    var image =
+        ArtworkCanvas.size(100, 100)
+            .paint(new Rectangle(0, 0, 80, 100), GRAY)
+            .paint(new Rectangle(80, 0, 20, 100), justVibrantGreen)
+            .image();
+
+    var colors = AmbientColorExtractor.extract(image).orElseThrow();
+
+    assertThat(colors.primary()).isEqualTo("#50a850");
   }
 
   @Test
@@ -229,28 +275,61 @@ class AmbientColorExtractorTest {
     var image =
         ArtworkCanvas.size(100, 100)
             .paint(new Rectangle(0, 0, 55, 100), GRAY)
-            .paint(new Rectangle(55, 0, 30, 100), TEAL)
-            .paint(new Rectangle(85, 0, 15, 100), MAGENTA)
+            .paint(new Rectangle(55, 0, 15, 100), TEAL)
+            .paint(new Rectangle(70, 0, 30, 100), MAGENTA)
             .image();
 
     var colors = AmbientColorExtractor.extract(image).orElseThrow();
 
-    assertThat(colors.primary()).isEqualTo("#00a0a0");
+    assertThat(colors.primary()).isEqualTo("#a000a0");
   }
 
   @Test
-  @DisplayName("Should prefer saturation and lightness near targets when populations are equal")
-  void shouldPreferSaturationAndLightnessNearTargetsWhenPopulationsAreEqual() {
+  @DisplayName("Should prefer higher saturation when lightness and population are equal")
+  void shouldPreferHigherSaturationWhenLightnessAndPopulationAreEqual() {
+    var vividRed = OPAQUE | 0xF80808;
     var image =
         ArtworkCanvas.size(100, 100)
-            .paint(new Rectangle(0, 0, 50, 100), GRAY)
-            .paint(new Rectangle(50, 0, 25, 100), DESATURATED_BLUE)
-            .paint(new Rectangle(75, 0, 25, 100), TEAL)
+            .paint(new Rectangle(0, 0, 50, 100), DESATURATED_BLUE)
+            .paint(new Rectangle(50, 0, 50, 100), vividRed)
             .image();
 
     var colors = AmbientColorExtractor.extract(image).orElseThrow();
 
-    assertThat(colors.primary()).isEqualTo("#00a0a0");
+    assertThat(colors.primary()).isEqualTo("#f80808");
+  }
+
+  @Test
+  @DisplayName("Should prefer target lightness when saturation and population are equal")
+  void shouldPreferTargetLightnessWhenSaturationAndPopulationAreEqual() {
+    var vividRed = OPAQUE | 0xF80000;
+    var image =
+        ArtworkCanvas.size(100, 100)
+            .paint(new Rectangle(0, 0, 50, 100), TEAL)
+            .paint(new Rectangle(50, 0, 50, 100), vividRed)
+            .image();
+
+    var colors = AmbientColorExtractor.extract(image).orElseThrow();
+
+    assertThat(colors.primary()).isEqualTo("#f80000");
+  }
+
+  @Test
+  @DisplayName("Should quantize to sixteen swatches when artwork has seventeen distinct colors")
+  void shouldQuantizeToSixteenSwatchesWhenArtworkHasSeventeenDistinctColors() {
+    var distinctColors =
+        new int[] {
+          0xF80000, 0xF80040, 0xF80080, 0xF800C0, 0xF800F8, 0xC000F8, 0x8000F8, 0x4000F8, 0x0000F8,
+          0x0040F8, 0x0080F8, 0x00C0F8, 0x00F8F8, 0x00F8C0, 0x00F880, 0x00F840, 0x00F800
+        };
+    var artwork = ArtworkCanvas.size(17, 100);
+    for (var index = 0; index < distinctColors.length; index++) {
+      artwork.paint(new Rectangle(index, 0, 1, 100), OPAQUE | distinctColors[index]);
+    }
+
+    var colors = AmbientColorExtractor.extract(artwork.image()).orElseThrow();
+
+    assertThat(colors.primary()).isEqualTo("#00f8e0");
   }
 
   @Test
