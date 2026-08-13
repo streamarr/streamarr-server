@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
+import java.util.Arrays;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -167,6 +169,18 @@ class AmbientColorExtractorTest {
   }
 
   @Test
+  @DisplayName("Should keep vibrant primary when near-neutral palette exceeds swatch limit")
+  void shouldKeepVibrantPrimaryWhenNearNeutralPaletteExceedsSwatchLimit() {
+    var image = nearNeutralPaletteBeyondSwatchLimit();
+
+    var colors = AmbientColorExtractor.extract(image).orElseThrow();
+
+    assertThat(colors.primary())
+        .as("near-neutral runs are excluded before sixteen-swatch quantization")
+        .isEqualTo("#00a0a0");
+  }
+
+  @Test
   @DisplayName("Should keep vivid orange when saturation exceeds skin-tone threshold")
   void shouldKeepVividOrangeWhenSaturationExceedsSkinToneThreshold() {
     var vividOrange = OPAQUE | 0xF88000;
@@ -270,6 +284,18 @@ class AmbientColorExtractorTest {
   }
 
   @Test
+  @DisplayName("Should discard swatch when median-cut average enters excluded skin-tone range")
+  void shouldDiscardSwatchWhenMedianCutAverageEntersExcludedSkinToneRange() {
+    var image = paletteWhoseMedianCutAverageEntersSkinToneRange();
+
+    var colors = AmbientColorExtractor.extract(image).orElseThrow();
+
+    assertThat(colors.primary())
+        .as("the #e88838 skin-tone swatch created by averaging is excluded after quantization")
+        .isEqualTo("#00a0a0");
+  }
+
+  @Test
   @DisplayName("Should prefer higher population when vibrant candidates tie")
   void shouldPreferHigherPopulationWhenVibrantCandidatesTie() {
     var image =
@@ -315,8 +341,8 @@ class AmbientColorExtractorTest {
   }
 
   @Test
-  @DisplayName("Should quantize to sixteen swatches when artwork has seventeen distinct colors")
-  void shouldQuantizeToSixteenSwatchesWhenArtworkHasSeventeenDistinctColors() {
+  @DisplayName("Should match sixteen-swatch golden result when artwork has seventeen colors")
+  void shouldMatchSixteenSwatchGoldenResultWhenArtworkHasSeventeenColors() {
     var distinctColors =
         new int[] {
           0xF80000, 0xF80040, 0xF80080, 0xF800C0, 0xF800F8, 0xC000F8, 0x8000F8, 0x4000F8, 0x0000F8,
@@ -329,7 +355,25 @@ class AmbientColorExtractorTest {
 
     var colors = AmbientColorExtractor.extract(artwork.image()).orElseThrow();
 
-    assertThat(colors.primary()).isEqualTo("#00f8e0");
+    assertThat(colors.primary())
+        .as(
+            "the sole two-color box averages #00f8c0 and #00f8f8 to #00f8e0, "
+                + "then wins on population")
+        .isEqualTo("#00f8e0");
+  }
+
+  @Test
+  @DisplayName("Should preserve dominant endpoint when seventeenth color holds most pixels")
+  void shouldPreserveDominantEndpointWhenSeventeenthColorHoldsMostPixels() {
+    var artwork = ArtworkCanvas.size(116, 1);
+    for (var index = 0; index < 16; index++) {
+      artwork.paint(new Rectangle(index, 0, 1, 1), OPAQUE | ((0x78 + index * 8) << 16));
+    }
+    artwork.paint(new Rectangle(16, 0, 100, 1), OPAQUE | 0xF80000);
+
+    var colors = AmbientColorExtractor.extract(artwork.image()).orElseThrow();
+
+    assertThat(colors.primary()).isEqualTo("#f80000");
   }
 
   @Test
@@ -345,6 +389,47 @@ class AmbientColorExtractorTest {
     assertThat(colors.primary()).isEqualTo("#00a0a0");
   }
 
+  private static BufferedImage nearNeutralPaletteBeyondSwatchLimit() {
+    var nearBlackColors =
+        new int[] {
+          0x000000, 0x080000, 0x100000, 0x180000, 0x000800, 0x001000,
+          0x001800, 0x000008, 0x000010, 0x000018, 0x080800, 0x100800,
+          0x180800, 0x080008, 0x100008, 0x180008, 0x001008
+        };
+    var canvas = ArtworkCanvas.size(197, 1);
+    var offset = 0;
+    for (var nearBlack : nearBlackColors) {
+      canvas.paint(new Rectangle(offset, 0, 10, 1), OPAQUE | nearBlack);
+      offset += 10;
+    }
+    canvas
+        .paint(new Rectangle(offset, 0, 17, 1), TEAL)
+        .paint(new Rectangle(offset + 17, 0, 10, 1), OPAQUE | 0xF80000);
+    return canvas.image();
+  }
+
+  private static BufferedImage paletteWhoseMedianCutAverageEntersSkinToneRange() {
+    return ArtworkCanvas.runs(
+            ColorRun.builder().rgb(0x409038).pixels(34).build(),
+            ColorRun.builder().rgb(0xF06840).pixels(31).build(),
+            ColorRun.builder().rgb(0x408058).pixels(30).build(),
+            ColorRun.builder().rgb(0xA02840).pixels(1).build(),
+            ColorRun.builder().rgb(0xE0A828).pixels(25).build(),
+            ColorRun.builder().rgb(0x50A028).pixels(1).build(),
+            ColorRun.builder().rgb(0xF85090).pixels(6).build(),
+            ColorRun.builder().rgb(0x504810).pixels(1).build(),
+            ColorRun.builder().rgb(0xA8E0B0).pixels(6).build(),
+            ColorRun.builder().rgb(0xB830A8).pixels(19).build(),
+            ColorRun.builder().rgb(0xD84078).pixels(29).build(),
+            ColorRun.builder().rgb(0xF0D048).pixels(29).build(),
+            ColorRun.builder().rgb(0x90C028).pixels(47).build(),
+            ColorRun.builder().rgb(0x885050).pixels(53).build(),
+            ColorRun.builder().rgb(0x88E048).pixels(46).build(),
+            ColorRun.builder().rgb(0x787080).pixels(1).build(),
+            ColorRun.builder().rgb(0x00A0A0).pixels(59).build())
+        .image();
+  }
+
   private static final class ArtworkCanvas {
 
     private final BufferedImage image;
@@ -355,6 +440,16 @@ class AmbientColorExtractorTest {
 
     static ArtworkCanvas size(int width, int height) {
       return new ArtworkCanvas(new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB));
+    }
+
+    static ArtworkCanvas runs(ColorRun... runs) {
+      var canvas = size(Arrays.stream(runs).mapToInt(ColorRun::pixels).sum(), 1);
+      var offset = 0;
+      for (var run : runs) {
+        canvas.paint(new Rectangle(offset, 0, run.pixels(), 1), OPAQUE | run.rgb());
+        offset += run.pixels();
+      }
+      return canvas;
     }
 
     ArtworkCanvas fill(int argb) {
@@ -383,4 +478,7 @@ class AmbientColorExtractorTest {
       return image;
     }
   }
+
+  @Builder
+  private record ColorRun(int rgb, int pixels) {}
 }
