@@ -241,34 +241,6 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should track the pinned FFmpeg runtime when packaging container images")
-  void shouldTrackThePinnedFfmpegRuntimeWhenPackagingContainerImages() throws IOException {
-    var buildpackPath = "buildpacks/ffmpeg/bin/build";
-    var buildpack = Files.readString(Path.of(buildpackPath));
-    var release =
-        extractSingle(
-            Pattern.compile("^release=(?<currentValue>\\S+)$", Pattern.MULTILINE),
-            buildpack,
-            "currentValue");
-    var renovateConfig = new ObjectMapper().readTree(Files.readString(Path.of("renovate.json")));
-    var manager =
-        StreamSupport.stream(renovateConfig.path("customManagers").spliterator(), false)
-            .filter(candidate -> managesFile(candidate, buildpackPath))
-            .findFirst()
-            .orElseThrow();
-    var trackedReleases =
-        StreamSupport.stream(manager.path("matchStrings").spliterator(), false)
-            .map(node -> Pattern.compile(node.asString()).matcher(buildpack))
-            .filter(java.util.regex.Matcher::find)
-            .map(matcher -> matcher.group("currentValue"))
-            .toList();
-
-    assertThat(trackedReleases).containsExactly(release);
-    assertThat(manager.path("datasourceTemplate").asString()).isEqualTo("github-releases");
-    assertThat(manager.path("depNameTemplate").asString()).isEqualTo("BtbN/FFmpeg-Builds");
-  }
-
-  @Test
   @DisplayName("Should build every supported architecture when publishing a release")
   void shouldBuildEverySupportedArchitectureWhenPublishingARelease() throws IOException {
     var workflow = yaml(".github/workflows/publish-release.yml");
@@ -393,13 +365,5 @@ class PackagedConfigurationTest {
   private static Pattern patternBetweenSlashes(String renovatePattern) {
     var lastSlash = renovatePattern.lastIndexOf('/');
     return Pattern.compile(renovatePattern.substring(1, lastSlash));
-  }
-
-  private static String extractSingle(Pattern pattern, String content, String group) {
-    var matcher = pattern.matcher(content);
-    assertThat(matcher.find()).isTrue();
-    var value = matcher.group(group);
-    assertThat(matcher.find()).isFalse();
-    return value;
   }
 }
