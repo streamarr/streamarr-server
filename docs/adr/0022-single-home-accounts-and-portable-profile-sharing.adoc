@@ -1,0 +1,325 @@
+= ADR 0022: Accounts Have One Home Household and Profiles Are Portable
+
+== Status
+
+Accepted
+
+== Context
+
+link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015] makes `Household` both the owner of a profile and a runtime context selected after login.
+It allows one account to join several households, requires each profile to belong to exactly one household, and forbids cross-household profile grants.
+link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] carries that model into account-, household-, and profile-scoped tokens and sessions with an active household.
+link:0021-device-pairing-over-streamarr-transport.adoc[ADR 0021] consequently leaves a paired TV to select a household before it selects a profile when the account has more than one membership.
+
+That model exposes a system administration boundary in the viewing experience and prevents a viewing identity from following the same person between homes.
+The motivating cases are a child who watches in two parents' homes, a visitor who wants their own watch history on another household's TV, and a server administrator who must recover a household whose owners have lost access.
+In each case the person needs one profile and one history, not a duplicate profile per household or a household picker on the television.
+
+A linked tvOS device already authenticates as an account.
+If an account has one home household, its household context is unambiguous and the television can continue directly to profile selection.
+Cross-household availability can then be expressed as sharing the profile rather than moving the account or switching the session.
+
+Profile sharing also expands the child-safety boundary.
+ADR 0015 requires less-restricted profiles to have a PIN when restricted profiles exist, but a portable profile means every share activation, classification change, content-ceiling change, and PIN change can affect that invariant in several households at once.
+Application validation alone cannot protect against concurrent writes or alternative writers, while an ordinary SQL `CHECK` constraint cannot inspect the other rows and tables required by this rule.
+
+This ADR replaces the affected identity model as one decision because account membership, profile portability, session scope, sharing authorization, and PIN safety must agree.
+It supersedes ADR 0015's multiple-household account membership, household-owned profiles, active-household selection, per-account profile-use grants, no-cross-household-grant decision, and rule that any restricted adult profile triggers PIN protection on less-restricted profiles; ADR 0016's selected-household session, three-scope access-token shape, and self-contained household-context claims; and ADR 0021's post-pairing household selection.
+The unaffected authentication, authorization, content-control, and pairing decisions in those ADRs remain in force.
+
+== Diagram
+
+image::diagrams/0022-portable-profile-sharing.png[Portable profile sharing across two account-derived households, with each household controlling its own share endpoint, an active profile able to leave its current household, guarded deletion, global policy, and child-safety enforcement]
+
+link:diagrams/0022-portable-profile-sharing.excalidraw[Editable Excalidraw source]
+
+== Decision
+
+=== An account has exactly one home household
+
+`Account` remains the authenticated login and security principal.
+Every non-deleted account belongs to exactly one `Household`, and one household may contain many accounts.
+The account's household role belongs to that relationship.
+An account never switches household context during a session.
+
+Every non-deleted household has exactly one account with the `OWNER` household role.
+The owner has final authority over that household boundary and may delegate local administration through the `PARENT` role without creating another owner.
+Ownership transfer is transactional, and the database rejects both an ownerless household and a second owner.
+
+The database represents this total relationship with a required household foreign key and household role on the account rather than a many-to-many membership table.
+Account creation and household transfer are transactional operations, so an account is never committed without a home household.
+A household transfer changes the account's administrative and profile-availability boundary; it does not move or duplicate any profiles.
+It clears the account's active profile from every session, and already-issued profile tokens lose profile access when live authorization no longer finds that profile shared into the new home household.
+
+Deleting a household never cascades into deleting accounts, portable profiles, or viewing history.
+A household can be deleted only after its accounts are transferred or explicitly deleted, its pending offers are canceled or rejected, and its active profiles are unshared; foreign keys reject deletion while any such reference remains.
+
+`Household` remains the home administration, privacy, and local-policy boundary.
+It is not a viewing identity and is never presented as a normal viewing choice.
+
+=== Server administration is authority, not membership
+
+The global `ADMIN` account role is `ServerAdmin` authority over every household.
+A server administrator can restore household ownership, transfer an account, repair profile-manager assignments after lost access, override a disputed manager relationship, force-unshare a profile, and force-delete a shared or co-managed profile.
+Those powers do not create household membership and do not make every household's profiles appear in the administrator's ordinary profile picker.
+
+Every global-administration mutation requires live ServerAdmin authority; destructive overrides additionally require fresh server-side password reauthentication and record the acting account, target household, target profile or account where applicable, operation, reason, and time in the security audit trail.
+Streamarr does not decide which person is right in a family dispute; the server administrator owns the decision to use an override.
+Server administration can repair the inputs to a safety invariant but cannot bypass the invariant itself.
+
+=== A profile is a portable viewing identity
+
+`Profile` remains the viewing identity and owns its watch progress, watch history, preferences, `KID` or `ADULT` classification, content ceiling, and PIN.
+A profile has no owning household foreign key.
+Its identity, history, classification, content ceiling, and PIN remain the same wherever it is available.
+
+Two independent relationships replace the overloaded `account_profile` link:
+
+* `ProfileManager` links a named account to a profile it may edit, offer to a household, invite other accounts to manage, and help delete.
+  Management is explicit, can be held by more than one equal account, and does not by itself make the profile selectable on that account's devices.
+* `ProfileHouseholdShare` links a profile to a household in which it is available for viewing.
+  Every account whose home is that household may select the shared profile; the share does not automatically make every household owner or parent a profile manager.
+
+The database enforces one manager row per `(account_id, profile_id)` and one active share per `(profile_id, household_id)`, with foreign keys to the referenced account, profile, and household tables.
+Every non-deleted profile has at least one manager.
+A newly created profile makes its creator a manager and creates an active share into the creator's home household in the same transaction.
+Relinquishing management or unsharing never cascades into deleting the profile or its viewing history; profile deletion is a separate explicit operation.
+
+Profile managers are peers, not an owner with delegates.
+While the profile exists, no manager can remove another manager's management; a manager may relinquish only their own management and only while every manager and kid-share invariant remains valid.
+Ordinary profile deletion is allowed only when the profile has no pending or active household shares, no pending manager invitations, and exactly one remaining manager.
+The sole manager must enter their account password again and the server must verify it before deleting, following ADR 0016's password-change precedent.
+This is password reauthentication, not a new authenticator-code, security-key, or other MFA requirement; an ordinary access token, profile PIN, typed confirmation, or client dialog is insufficient authority.
+Deletion then irreversibly erases the profile's progress, history, preferences, policy, PIN, and final manager relationship and records the acting manager and operation in the retained security audit trail.
+
+A co-manager therefore holds a veto over ordinary permanent deletion by retaining their management relationship.
+Co-managers may voluntarily relinquish until one remains, but a refusing or unreachable co-manager blocks ordinary deletion indefinitely.
+Relinquishment is unconditional: a manager who gives it up loses their deletion veto even if the final manager later chooses not to delete.
+Streamarr accepts that risk instead of adding a separate unanimous-deletion workflow; the adults involved or ServerAdmin resolve a dispute.
+ServerAdmin may explicitly override a disputed manager relationship or force-delete a still-shared or co-managed profile after fresh password reauthentication; force-delete atomically ends pending and active shares, clears affected profile selections, erases the profile, and records the override reason.
+These overrides are exceptional administration, not ordinary Profile Manager authority.
+
+Profile portability is server-local.
+Sharing one profile across independent Streamarr server installations would require a federated identity, trust, and history-replication design and is outside this decision.
+
+=== Household sharing grants use; named profile managers grant management
+
+An account may select exactly the active profiles shared into its home household.
+It does not need a separate per-profile use grant.
+This is the mechanism by which a profile becomes available across accounts: sharing the profile into a household makes it available to every account in that household.
+
+Management is intentionally narrower than use.
+Any named `ProfileManager` may rename, classify, PIN-protect, change the content ceiling, or offer the profile to a household.
+Those edits change the one portable profile and therefore apply in every household receiving it.
+Every profile-management mutation is audited with the acting account, profile, operation, and time.
+
+An owner or parent of a receiving household may accept, reject, or remove the profile from that household.
+That authority is local: Dad cannot remove a profile from Mom's household, and Mom cannot remove it from Dad's household.
+Unless separately named as a profile manager, household authority cannot edit the portable profile, offer it elsewhere, invite a manager, remove a manager, or delete the profile.
+
+An active cross-household share requires authority from both sides: a profile manager offers the profile, and an owner or parent of the target household accepts it.
+The exact invitation delivery and web interaction are deferred, but no one-sided operation may silently place a profile into another household.
+Only an accepted share is active, selectable, or considered by household safety rules.
+After activation, either endpoint may end the relationship: the receiving household may remove the profile through its owner or parent, or the active profile may leave its current household directly.
+The server authorizes the profile-side action only from a profile-scoped session whose active profile matches the share and whose authenticated account's home household is the household named by that share.
+The request cannot name another household, and Profile Manager status alone grants no authority to make the profile leave a remote household.
+Kid and adult profiles have the same ability to leave because ending one share only removes availability; it does not relax policy, erase profile data, or affect another household.
+Unsharing by either endpoint ends availability only in that household, clears affected sessions selecting the profile, and preserves the portable profile and all of its data.
+A profile manager may cancel a pending offer, and the target household may reject it, without consent from the other side.
+
+This preserves both motivating boundaries.
+In the divorced-parent case, each parent controls only their own household endpoint and neither can take the profile away from the other's household.
+In the visitor case, the visitor's active profile can leave the household in which it is currently being used without that household's cooperation or a Profile Manager vote.
+
+Every household receiving a kid profile has at least one named profile manager whose account belongs to that household with owner or parent authority.
+Management can be offered to a named account by an existing manager, but only that named account's personal acceptance creates the `ProfileManager` relationship.
+The kid-profile sharing flow therefore requires a named owner or parent in the receiving household to personally accept management before or together with accepting the share; when combined, both relationships are created atomically.
+This makes parents in different households equal managers of the same kid profile without granting global edit rights to every adult in either household.
+An adult-profile viewing share grants no management merely by being accepted.
+Reclassifying a widely shared adult profile as a kid remains blocked until every receiving household has a consenting local owner or parent as a manager or is unshared.
+
+Application services preflight profile-side leave, ordinary deletion, manager invitation or relinquishment, account deletion or transfer, household ownership and role changes, profile reclassification, and kid-share changes so callers receive corrective errors before writing.
+PostgreSQL rechecks the no-managerless-profile, ordinary-deletion, unique-household-owner, and local-kid-manager invariants at commit through deferred constraint triggers over the affected manager, invitation, account, profile, household, and share rows.
+Each profile carries a non-semantic `management_version` guard, and each household carries the `safety_version` guard described below.
+Every enforcement path follows one global guard order: increment all affected profile guards in profile-id order, then all affected household guards in household-id order, then run separate validation queries.
+This ordering prevents guard-family inversion; callers still retry the complete transaction after either PostgreSQL serialization failure `40001` or deadlock detection `40P01`.
+
+=== tvOS selects a profile, never a household
+
+Device pairing continues to link the tvOS session to the approving account.
+The account's required home household supplies the sole household context without another device-provisioning step.
+Pairing never binds the television to an independently selected household.
+
+The server returns the active profiles shared into the linked account's home household.
+tvOS renders only the profile picker and submits only the selected profile identifier.
+The server verifies that the profile has an active share into the account's home household before activating it.
+
+Sessions retain the account and optional active profile; they do not retain an independently mutable `active_household_id`.
+Access tokens have account scope before profile selection and profile scope afterward.
+There is no household-selection endpoint or household token scope.
+Playback tokens remain the separate, stream-session-bound carrier ADR 0016 defines.
+
+Account scope reaches login and session surfaces plus home-household administration when the account's current household role permits it.
+Profile scope nests account scope and additionally reaches content, activity, and playback surfaces under the selected profile's policy.
+Scope continues to express context rather than privilege; the current account role, household role, profile management, and household share still authorize each operation.
+
+Account and profile access tokens name the account subject, authorization session, scope, and optional active profile; they do not carry household id or household role claims.
+For every household- or profile-sensitive request, the authorization facade loads the account's current home household and role and verifies any active profile share from authoritative database state.
+That authoritative state is resolved once per incoming request and propagated through the authorization facade, not queried independently by every GraphQL field, controller, or repository call.
+Failure to load it fails the protected request closed.
+The server never accepts a client-selected household or trusts a mutable session or token household field.
+This deliberately replaces ADR 0016's self-contained household context so account transfer and unsharing cannot retain cross-household access for the remainder of an access-token lifetime.
+
+An account transfer clears the active profile from all of that account's sessions in the transfer transaction.
+An already-issued profile token may continue to reach nested account surfaces, but profile-sensitive requests fail until the account selects a profile actively shared into its new home household.
+Refresh always revalidates the stored active profile and emits account scope when no valid active share remains.
+
+The profile-selection response and `me` query expose selectable profiles as a flat account result rather than nesting the viewing flow under household memberships.
+Household identifiers and roles are absent from tvOS profile selection but remain available to authenticated administration surfaces that actually manage the household.
+
+=== The web application owns profile sharing
+
+The web application provides management surfaces to offer, review, accept, diagnose, and remove shares and to invite or relinquish profile management.
+Any client may expose a direct `Leave this home` action for the active profile; that action uses the account-derived current household and never presents a household picker or the `Household` domain term.
+Limited-input clients otherwise consume accepted shares and do not create or administer them.
+
+The web surface makes the named managers and global effect of a portable-profile edit explicit.
+It explains why a share, classification, ceiling, or PIN change is blocked and identifies every profile that needs a PIN without exposing PIN values or hashes.
+A requested share that would violate household safety remains pending or is rejected; it never becomes an active `ProfileHouseholdShare` until the invariant is satisfied.
+Both household removal and `Leave this home` say that only the current home loses access and that the portable profile and its data continue elsewhere.
+Delete remains unavailable until all shares and pending invitations end and all other managers voluntarily relinquish.
+The final delete confirmation makes clear that the unshared profile, history, progress, preferences, policy, and PIN will be permanently erased and requires fresh server-side password reauthentication rather than an ordinary destructive button tap.
+
+=== Portable identity combines with local household policy
+
+A profile's `KID` or `ADULT` classification and content ceiling travel with the profile and cannot vary by household.
+An edit by any profile manager changes that policy everywhere the profile is shared.
+The account's home household supplies local policy inputs such as its rating region, library availability, and household safety state.
+Content authorization evaluates both and fails closed when either denies access.
+
+Watch history and progress remain keyed only by profile id.
+They do not fork by household and are visible on every device where that profile is legitimately selected.
+Household-local audit and administrative views still apply their own authorization boundary.
+
+=== Child safety is an invariant of every active household share set
+
+For every household `H`, the following must always be true at transaction commit:
+
+....
+for every kid profile K actively shared into H,
+every profile P actively shared into H has an effective profile PIN
+when P is an adult or P's content ceiling is less restrictive than K's
+....
+
+`KID` and `ADULT` are explicit, mutually exclusive profile classifications; a kid is someone who is not an adult, and neither classification is an account role.
+Classification and content ceiling are separate: a profile with a thirteen-year ceiling remains a kid profile and may be less restricted than a kid profile with a seven-year ceiling.
+In v1, a higher `maximumAllowedRatingAge` is less restrictive than a lower one, and unrestricted is less restrictive than every restricted ceiling.
+Future policy dimensions must define an equally deterministic comparison before they participate in this invariant.
+Only the presence of a kid profile triggers mandatory PIN protection; an adult's self-restricted profile is a preference, not a child-safety boundary for other adult profiles.
+An effective PIN is a server-verified profile PIN that is active for profile entry.
+The PIN belongs to the portable profile, so it protects that profile consistently in every household where it is shared.
+
+The invariant applies in both directions and to every mutation that can change its truth:
+
+* Sharing a kid profile is rejected until every adult and every less-restricted kid profile already available in the target household has an effective PIN.
+* Sharing an adult or less-restricted kid profile without an effective PIN is rejected when a more-restricted kid profile is already available in the target household.
+* Removing a profile's PIN is rejected when that profile is an adult available with a kid or is less restricted than a kid in any household receiving it.
+* Reclassifying a profile between kid and adult or changing its content ceiling revalidates every household receiving it because the portable change applies everywhere.
+* Removing a profile from a household, a profile leaving a household, and profile deletion are monotonic removals: they can only weaken the kid antecedent or shrink the protected-profile set, so they cannot create a child-safety violation.
+  An implementation may still run the common validator defensively after an unshare; ordinary deletion has no active share set to validate.
+
+Application services validate the invariant before writing so callers receive a specific corrective error.
+This preflight is user experience, not the authority.
+
+PostgreSQL is the final authority through `DEFERRABLE INITIALLY DEFERRED` constraint triggers on the tables that can activate shares or change profile classification, content ceiling, or PIN state and on the manager, invitation, share, account, and household tables that participate in lifecycle invariants.
+At commit, the trigger function gathers every affected profile and household and follows the shared guard order: profile `management_version` rows first in id order, then household `safety_version` rows in id order.
+The complete active share set is re-evaluated in a separate SQL statement after the guard update, never in the pre-wait snapshot of the locking statement.
+At `READ COMMITTED`, a waiting writer's validation therefore sees the preceding commit; at `REPEATABLE READ` or `SERIALIZABLE`, the actual concurrent guard-row update forces a serialization failure rather than permitting validation against a stale snapshot.
+Callers retry both serialization failures and detected deadlocks by rerunning the complete transaction.
+If any affected household is invalid, the database aborts the whole transaction regardless of which application path or writer issued the change.
+
+Foreign keys, `NOT NULL`, uniqueness constraints, and closed database enums enforce the single-row structural invariants.
+Constraint triggers are reserved for the cross-row, cross-table child-safety and manager-lifecycle rules; an ordinary `CHECK` constraint is insufficient and an application-only check is racy.
+
+=== Explicitly deferred
+
+* The invitation transport, notification channel, expiry, and exact accept/decline web journey for a cross-household share.
+* Federation of profiles, credentials, history, or trust across independent Streamarr servers.
+* Household-local PIN overrides; this decision keeps one portable profile PIN.
+* Additional content-policy dimensions until they define a deterministic less-restrictive comparison for the household PIN invariant.
+
+== Consequences
+
+* tvOS never displays a household selector and needs no additional provisioning step beyond linking an account and selecting a profile.
+* A kid can retain one profile, watch history, preferences, classification, content ceiling, and PIN across two parents' households.
+* Parents in different households can be equal named managers of that kid profile; either parent's edit applies everywhere, neither can remove the other's management, neither can remove the profile from the other's household, and either can block permanent deletion by remaining a manager.
+* A visitor can use their own shared profile on another household's account-linked television without joining that household or linking their account to the television.
+  While active there, the visitor profile can leave that household without its cooperation or a Profile Manager vote.
+* Sharing a profile into a household intentionally makes it selectable by every account in that household; the web confirmation must communicate that privacy boundary clearly.
+* Starting a share requires consent from both endpoints.
+  The receiving household may later remove the profile through its local owner or parent; the active profile may leave its current household directly.
+* A Profile is a viewing identity, not a separate login, so any account in the current household that can enter the Profile can invoke `Leave this home`.
+  Streamarr accepts that simplicity because the action only removes that one household's availability, cannot affect another household or erase data, and can be reversed only through the normal two-sided sharing flow.
+* Accepting a viewing share does not grant every household owner or parent global edit rights; kid sharing names at least one local owner or parent as a manager explicitly.
+  That named account must personally consent to management.
+* A refusing or unreachable co-manager blocks ordinary deletion indefinitely, and completing ordinary deletion requires every household share and pending manager invitation to end first.
+* Global server administrators can recover all households and explicitly override a disputed manager or force-delete a profile without becoming members or polluting their own viewing profile list.
+  The server administrator owns that exceptional decision, which requires fresh password reauthentication, a reason, and retained audit evidence.
+* Household-local catalog and policy remain unambiguous because the authenticated account has exactly one home household.
+* PIN prompts may increase for older kid profiles as well as adult profiles when a household contains a more-restricted kid; that is an accepted safety cost.
+* Every safety-relevant application mutation must identify all affected households and produce the same answer as the database constraint function.
+  Service-level behavior tests prove useful errors, while PostgreSQL integration and concurrency tests at `READ COMMITTED`, `REPEATABLE READ`, and `SERIALIZABLE` prove rollback, trigger coverage, visibility after waiting, and required retries.
+* Manager-lifecycle tests apply the same application-and-database proof to manager invitations and relinquishment, account transfer or deletion, household ownership and role changes, profile deletion, and kid-share activation.
+  Authorization tests prove that profile-side leave affects only the active profile's share into the authenticated account's home household, including for kid and co-managed profiles.
+* Guard acquisition follows one profile-then-household order, and transaction retry handles both SQLSTATE `40001` and `40P01`.
+* The schema removes `profile.household_id`, replaces `account_profile` with manager and share relationships, and replaces many-to-many household membership with a required account home household and role.
+* `auth_session.active_household_id`, household scope, household selection, household-to-profile auto-selection, and APIs that nest selectable profiles under memberships are removed or migrated.
+* Household- and profile-sensitive API authorization now reads current account, household-role, manager, and share state; it no longer accepts ADR 0016's bounded access-token staleness for those boundaries.
+  This adds one authoritative authorization read to each affected request, makes database availability part of those request paths, and fails closed when current state cannot be loaded; request-scoped resolution prevents the cost from multiplying per field or repository call.
+* Account transfer clears active profile selections, and deleting a household requires its accounts and shares to be resolved first.
+* Streamarr has no production instances when this decision is made, so adoption does not preserve or transform legacy identity rows or sessions.
+  Development and test databases may be reset against the new schema instead of carrying a one-time family-relationship migration design.
+* The web administration product gains consent-based manager invitations, local household removal, ordinary-delete precondition guidance, fresh password reauthentication, explicit ServerAdmin override, safety remediation, and global recovery surfaces before portable sharing is considered user-complete.
+  Clients may add the direct active-profile `Leave this home` action without adding household selection.
+
+== Rejected Alternatives
+
+* Keep accounts in several households and hide the selector — the ambiguity remains in session state and reappears whenever two memberships offer the same profile or different local policy.
+* Bind each television directly to a household — it adds provisioning and reassignment state that can drift from the already-linked account while solving no ambiguity once an account has one home household.
+* Duplicate a profile into each household — identity, PIN, preferences, progress, and history fork, defeating the portability use case.
+* Give one parent permanent ownership over a portable kid profile — divorced or separated parents need equal management, and a first-created account is not a legitimate main parent.
+* Let any one manager delete a shared or co-managed profile — an equal manager could irreversibly erase a portable identity, history, and policy while another manager and household still depend on it.
+* Let the last household delete the profile — deletion authority would derive from availability and reconflate household use with profile management; it would also reward whichever actor unshared fastest.
+* Let any one manager unshare the profile from any household — managing the portable identity does not grant authority over another household's endpoint; Dad cannot take away Kai's access to Mom's house.
+* Require every Profile Manager to approve a profile leaving a household — managers edit the portable identity, but they are not the endpoints of an individual share; voting adds requests, approvals, expiry, cancellation, and race handling to an operation that only removes local availability.
+* Let only the receiving household end a share — a visitor profile could not leave while active in another household without that household's cooperation; the profile side must also be able to leave.
+* Retain deleted profiles in a recovery window — soft deletion adds restoration, retention, purge, and dispute semantics while contradicting the promise that confirmed deletion permanently erases private profile data.
+* Let profile management alone make a profile selectable — server administrators and remote managers would see profiles on their personal TVs merely because they can repair or manage them.
+* Keep per-account profile-use grants alongside household shares — two competing availability models make unsharing and safety evaluation ambiguous; an accepted household share is the single use boundary.
+* Make every owner or parent in a receiving household a profile manager automatically — a later role assignment would silently gain global edit rights over a portable identity; managers must be named explicitly.
+* Allow one-sided shares into another household — it bypasses the target household's privacy and child-safety consent.
+* Require both endpoints to approve ending a share — a visitor profile could not leave another household without that household's cooperation; either endpoint may end the relationship under its own governance.
+* Require every manager to approve deletion while retaining management — that creates a separate durable approval workflow.
+  Ordinary deletion instead requires other managers to relinquish voluntarily; relinquishment unconditionally gives up the veto, and Streamarr accepts the risk that the final manager may then choose not to delete.
+* Give each household a different classification or content ceiling for the same profile — the person would have one history but contradictory identity and age policy; portable profile policy changes everywhere.
+* Give a shared profile a different PIN per household — inconsistent entry behavior and multiple recoverable secrets undermine the meaning of one portable viewing identity.
+* Require PINs only on adult profiles — an older or less-restricted kid profile would let a younger kid escape their own content ceiling.
+* Let a restricted adult profile trigger PINs on less-restricted adult profiles — adult self-restriction is a personal preference, while this mandatory rule exists to protect kids.
+* Validate child safety only in application code — concurrent changes and alternate writers can commit an invalid household.
+* Validate child safety only in the database — the invariant is safe but callers receive late, opaque constraint failures instead of actionable remediation.
+* Use an ordinary SQL `CHECK` constraint — PostgreSQL checks one row and cannot express the required cross-table quantification over every active profile share.
+* Serialize safety writes with a row lock that is not updated — `REPEATABLE READ` can acquire that lock after a competing commit and still validate against its older transaction snapshot.
+* Order profile and household guard families independently — opposite acquisition order can deadlock; every enforcement path acquires profile guards before household guards and still retries detected deadlocks defensively.
+* Make every server administrator a member of every household — global recovery authority would leak household profiles into ordinary viewing and collapse the privacy boundary.
+
+== References
+
+* link:../../CONTEXT.md[Streamarr domain language]
+* link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015: Authorization, Profiles, and Content Controls]
+* link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016: Authentication Mechanisms and Session Security]
+* link:0021-device-pairing-over-streamarr-transport.adoc[ADR 0021: Device Pairing Follows RFC 8628 Semantics over Streamarr Transport]
+* https://www.postgresql.org/docs/current/transaction-iso.html[PostgreSQL: Transaction Isolation]
+* https://forums.plex.tv/t/request-allow-user-in-multiple-households/851354[Plex forum: Allow a user in multiple households]
+* https://forums.plex.tv/t/2-homes-divorce-split-family/908201/2[Plex forum: Two homes and split families]
+* https://forums.plex.tv/t/feature-request-allow-users-to-be-member-of-more-than-1-home/88831[Plex forum: Membership in more than one home]
+* https://forums.plex.tv/t/managed-users-and-plex-home-confusion/216788[Plex forum: Managed users and home confusion]

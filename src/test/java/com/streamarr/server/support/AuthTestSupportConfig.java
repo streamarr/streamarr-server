@@ -1,9 +1,10 @@
 package com.streamarr.server.support;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
-import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
+import com.streamarr.server.repositories.auth.ProfileDeletionAuthorizationRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
@@ -13,6 +14,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.transaction.PlatformTransactionManager;
 
 @TestConfiguration
 public class AuthTestSupportConfig {
@@ -21,27 +23,30 @@ public class AuthTestSupportConfig {
   public AuthTestSupport authTestSupport(
       UserAccountRepository userAccountRepository,
       HouseholdRepository householdRepository,
-      HouseholdMembershipRepository membershipRepository,
       ProfileRepository profileRepository,
-      AccountProfileRepository accountProfileRepository,
+      ProfileDeletionAuthorizationRepository deletionAuthorizationRepository,
+      ProfileManagerRepository profileManagerRepository,
+      ProfileHouseholdShareRepository profileShareRepository,
       RefreshTokenService refreshTokenService,
       AccessTokenIssuer accessTokenIssuer,
       JwtDecoder jwtDecoder,
       PlaybackTokenIssuer playbackTokenIssuer,
       AuthTokenProperties tokenProperties,
-      PasswordEncoder passwordEncoder) {
+      PasswordEncoder passwordEncoder,
+      PlatformTransactionManager transactionManager) {
     return new AuthTestSupport(
         userAccountRepository,
         householdRepository,
-        membershipRepository,
         profileRepository,
-        accountProfileRepository,
+        deletionAuthorizationRepository,
+        profileManagerRepository,
+        profileShareRepository,
         refreshTokenService,
         accessTokenIssuer,
-        AuthTestSupport.expiredIssuer(
-            tokenProperties, membershipRepository, accountProfileRepository),
+        AuthTestSupport.expiredIssuer(tokenProperties),
         jwtDecoder,
         playbackTokenIssuer,
-        passwordEncoder);
+        passwordEncoder,
+        transactionManager);
   }
 }

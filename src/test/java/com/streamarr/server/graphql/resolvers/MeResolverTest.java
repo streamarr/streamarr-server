@@ -8,15 +8,15 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
-import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.IdentityQueryService;
+import com.streamarr.server.services.auth.ProfileAvailabilityService;
 import com.streamarr.server.services.auth.TokenScope;
+import com.streamarr.server.services.authorization.RequestAuthorizationStateResolver;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import java.util.List;
 import java.util.UUID;
@@ -46,8 +46,8 @@ class MeResolverTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private IdentityQueryService identityQueryService;
-  @MockitoBean private ProfileRepository profileRepository;
-  @MockitoBean private AccountProfileRepository accountProfileRepository;
+  @MockitoBean private RequestAuthorizationStateResolver authorizationStateResolver;
+  @MockitoBean private ProfileHouseholdShareRepository profileShareRepository;
 
   private final UUID accountId = UUID.randomUUID();
 
@@ -57,8 +57,8 @@ class MeResolverTest {
   }
 
   @Test
-  @DisplayName("Should return memberships when account scoped")
-  void shouldReturnMembershipsWhenAccountScoped() {
+  @DisplayName("Should return flat profiles when account scoped")
+  void shouldReturnFlatProfilesWhenAccountScoped() {
     authenticateAtAccountScope();
     var account = AccountFixture.defaultAccountBuilder().id(accountId).build();
     var profileId = UUID.randomUUID();
@@ -68,30 +68,17 @@ class MeResolverTest {
                 account,
                 TokenScope.ACCOUNT,
                 List.of(
-                    new IdentityQueryService.MembershipView(
-                        UUID.randomUUID(),
-                        "Home",
-                        HouseholdRole.OWNER,
-                        List.of(
-                            new IdentityQueryService.SelectableProfileView(
-                                profileId, "Andrew", INACTIVE_PROFILE))))));
+                    new ProfileAvailabilityService.SelectableProfile(
+                        profileId, "Andrew", INACTIVE_PROFILE))));
 
-    var query =
-        "{ me { email role scope memberships { householdName householdRole profiles { name active } } } }";
+    var query = "{ me { email role scope profiles { name active } } }";
     String scope = dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.scope");
     String role = dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.role");
-    String householdName =
-        dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.memberships[0].householdName");
-    String householdRole =
-        dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.memberships[0].householdRole");
     Boolean profileActive =
-        dgsQueryExecutor.executeAndExtractJsonPath(
-            query, "data.me.memberships[0].profiles[0].active");
+        dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.profiles[0].active");
 
     assertThat(scope).isEqualTo("account");
     assertThat(role).isEqualTo("USER");
-    assertThat(householdName).isEqualTo("Home");
-    assertThat(householdRole).isEqualTo("OWNER");
     assertThat(profileActive).isFalse();
   }
 

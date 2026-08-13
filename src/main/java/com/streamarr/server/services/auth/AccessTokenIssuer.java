@@ -1,10 +1,6 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
-import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
-import com.streamarr.server.exceptions.ProfileAccessDeniedException;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
-import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -25,8 +21,6 @@ public class AccessTokenIssuer {
   private final JwtEncoder jwtEncoder;
   private final AuthTokenProperties properties;
   private final Clock clock;
-  private final HouseholdMembershipRepository membershipRepository;
-  private final AccountProfileRepository accountProfileRepository;
 
   public AccessToken issue(TokenContext context) {
     // JWT timestamps carry whole seconds; truncate so expiresAt matches the encoded exp claim.
@@ -62,11 +56,8 @@ public class AccessTokenIssuer {
             .claim(TokenClaims.SESSION_ID, context.session().getId().toString())
             .claim(TokenClaims.SCOPE, scope.claimValue());
 
-    if (scope != TokenScope.ACCOUNT) {
-      addHouseholdClaims(claims, context);
-    }
     if (scope == TokenScope.PROFILE) {
-      addProfileClaims(claims, context);
+      claims.claim(TokenClaims.PROFILE_ID, context.profileId().toString());
     }
 
     var jwt =
@@ -82,36 +73,10 @@ public class AccessTokenIssuer {
   }
 
   private TokenScope resolveScope(TokenContext context) {
-    // TokenContext's constructor guarantees a profile id always rides a household id.
     if (context.profileId() != null) {
       return TokenScope.PROFILE;
     }
 
-    if (context.householdId() != null) {
-      return TokenScope.HOUSEHOLD;
-    }
-
     return TokenScope.ACCOUNT;
-  }
-
-  private void addHouseholdClaims(JwtClaimsSet.Builder claims, TokenContext context) {
-    var membership =
-        membershipRepository
-            .findByAccountIdAndHouseholdId(context.account().getId(), context.householdId())
-            .orElseThrow(HouseholdAccessDeniedException::new);
-
-    claims
-        .claim(TokenClaims.HOUSEHOLD_ID, context.householdId().toString())
-        .claim(TokenClaims.HOUSEHOLD_ROLE, membership.getHouseholdRole().name());
-  }
-
-  private void addProfileClaims(JwtClaimsSet.Builder claims, TokenContext context) {
-    // A single account_profile row structurally implies membership AND profile-in-household.
-    accountProfileRepository
-        .findByAccountIdAndHouseholdIdAndProfileId(
-            context.account().getId(), context.householdId(), context.profileId())
-        .orElseThrow(ProfileAccessDeniedException::new);
-
-    claims.claim(TokenClaims.PROFILE_ID, context.profileId().toString());
   }
 }

@@ -119,6 +119,20 @@ public class HouseholdRecord extends UpdatableRecordImpl<HouseholdRecord> {
         return (String) get(6);
     }
 
+    /**
+     * Setter for <code>public.household.safety_version</code>.
+     */
+    public void setSafetyVersion(Long value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for <code>public.household.safety_version</code>.
+     */
+    public Long getSafetyVersion() {
+        return (Long) get(7);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -142,7 +156,7 @@ public class HouseholdRecord extends UpdatableRecordImpl<HouseholdRecord> {
     /**
      * Create a detached, initialised HouseholdRecord
      */
-    public HouseholdRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String name, String defaultRatingRegion) {
+    public HouseholdRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String name, String defaultRatingRegion, Long safetyVersion) {
         super(Household.HOUSEHOLD);
 
         setId(id);
@@ -152,6 +166,7 @@ public class HouseholdRecord extends UpdatableRecordImpl<HouseholdRecord> {
         setLastModifiedBy(lastModifiedBy);
         setName(name);
         setDefaultRatingRegion(defaultRatingRegion);
+        setSafetyVersion(safetyVersion);
         resetTouchedOnNotNull();
     }
 }

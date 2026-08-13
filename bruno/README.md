@@ -14,6 +14,11 @@ reserved for the development profile in server PR #266; production never emits t
 `Auth/Public/Refresh Tokens` replaces the access token and captures a rotated refresh token when
 the response includes one.
 
+An account always has one home household, so login and device pairing issue an account-scoped
+token without a household-selection step. Run `GraphQL/Get Me` to capture the first flat,
+selectable `PROFILE_ID`, then run `Auth/Session/Select Profile` when a profile-scoped token is
+required. The collection never stores or submits a household context for ordinary viewing.
+
 Requests under `GraphQL` inherit `Bearer {{ACCESS_TOKEN}}`. The `TMDB` folder has its own
 inherited bearer configuration backed by the separate `TMDB_TOKEN` secret.
 The token in a stream session's `streamUrl` is a short-lived playback token, not the API

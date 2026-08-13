@@ -10,7 +10,6 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.controllers.StreamController;
 import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -463,7 +462,6 @@ class RemotePlaybackIT {
         .authSessionId(UUID.randomUUID())
         .scope(TokenScope.PLAYBACK)
         .householdId(UUID.randomUUID())
-        .householdRole(HouseholdRole.MEMBER)
         .profileId(UUID.randomUUID())
         .streamSessionId(streamSessionId)
         .build();

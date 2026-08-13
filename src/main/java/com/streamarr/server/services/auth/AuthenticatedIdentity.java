@@ -1,7 +1,6 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
@@ -19,7 +18,6 @@ public record AuthenticatedIdentity(
     UUID authSessionId,
     TokenScope scope,
     UUID householdId,
-    HouseholdRole householdRole,
     UUID profileId,
     UUID streamSessionId) {
 
@@ -29,21 +27,17 @@ public record AuthenticatedIdentity(
     Objects.requireNonNull(authSessionId, "authSessionId is required");
     Objects.requireNonNull(scope, "scope is required");
 
-    if (scope == TokenScope.ACCOUNT
-        && (householdId != null || householdRole != null || profileId != null)) {
-      throw new IllegalArgumentException(
-          "Account scope cannot carry household or profile identity");
-    }
-    if (scope != TokenScope.ACCOUNT && (householdId == null || householdRole == null)) {
-      throw new IllegalArgumentException("Scoped identity requires household id and role");
-    }
-    if (scope == TokenScope.HOUSEHOLD && profileId != null) {
-      throw new IllegalArgumentException("Household scope cannot carry profile identity");
+    if (scope == TokenScope.ACCOUNT && profileId != null) {
+      throw new IllegalArgumentException("Account scope cannot carry profile identity");
     }
     if (scope == TokenScope.PROFILE && profileId == null) {
       throw new IllegalArgumentException("Profile scope requires profile identity");
     }
-    if (scope == TokenScope.PLAYBACK && (profileId == null || streamSessionId == null)) {
+    if (scope != TokenScope.PLAYBACK && householdId != null) {
+      throw new IllegalArgumentException("Only playback scope can carry household identity");
+    }
+    if (scope == TokenScope.PLAYBACK
+        && (householdId == null || profileId == null || streamSessionId == null)) {
       throw new IllegalArgumentException(
           "Playback scope requires profile identity and a stream session");
     }
@@ -59,7 +53,6 @@ public record AuthenticatedIdentity(
         .authSessionId(UUID.fromString(jwt.getClaimAsString(TokenClaims.SESSION_ID)))
         .scope(TokenScope.valueOf(jwt.getClaimAsString(TokenClaims.SCOPE).toUpperCase(Locale.ROOT)))
         .householdId(uuidClaim(jwt, TokenClaims.HOUSEHOLD_ID))
-        .householdRole(householdRoleClaim(jwt))
         .profileId(uuidClaim(jwt, TokenClaims.PROFILE_ID))
         .streamSessionId(uuidClaim(jwt, TokenClaims.STREAM_SESSION_ID))
         .build();
@@ -91,13 +84,5 @@ public record AuthenticatedIdentity(
       return null;
     }
     return UUID.fromString(value);
-  }
-
-  private static HouseholdRole householdRoleClaim(Jwt jwt) {
-    var value = jwt.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE);
-    if (value == null) {
-      return null;
-    }
-    return HouseholdRole.valueOf(value);
   }
 }

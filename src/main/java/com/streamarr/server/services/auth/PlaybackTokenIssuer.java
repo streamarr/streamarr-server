@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
@@ -36,14 +37,22 @@ public class PlaybackTokenIssuer {
 
   public AccessToken issue(
       AuthenticatedIdentity identity, StreamSession streamSession, Duration validity) {
-    if (!authorityGate.allows(identity.playbackAuthority())) {
+    return issue(identity, identity.playbackAuthority(), streamSession, validity);
+  }
+
+  public AccessToken issue(
+      AuthenticatedIdentity identity,
+      PlaybackAuthority authority,
+      StreamSession streamSession,
+      Duration validity) {
+    if (!authorityGate.allows(authority)) {
       throw new AuthenticationRequiredException();
     }
 
     // This is the only place playback capability is minted, so ownership is enforced here
     // rather than trusted to callers: an unowned session must never become a playable token,
     // and reads as missing (no existence oracle).
-    if (!streamSession.isOwnedBy(identity.profileId())) {
+    if (!streamSession.isOwnedBy(authority.profileId())) {
       throw new SessionNotFoundException(streamSession.getSessionId());
     }
 
@@ -55,15 +64,14 @@ public class PlaybackTokenIssuer {
             .issuer(properties.issuer())
             .audience(List.of(properties.audience()))
             .id(UUID.randomUUID().toString())
-            .subject(identity.accountId().toString())
+            .subject(authority.accountId().toString())
             .issuedAt(now)
             .expiresAt(expiresAt)
             .claim(TokenClaims.ROLES, List.of(identity.role().name()))
-            .claim(TokenClaims.SESSION_ID, identity.authSessionId().toString())
+            .claim(TokenClaims.SESSION_ID, authority.authSessionId().toString())
             .claim(TokenClaims.SCOPE, TokenScope.PLAYBACK.claimValue())
-            .claim(TokenClaims.HOUSEHOLD_ID, identity.householdId().toString())
-            .claim(TokenClaims.HOUSEHOLD_ROLE, identity.householdRole().name())
-            .claim(TokenClaims.PROFILE_ID, identity.profileId().toString())
+            .claim(TokenClaims.HOUSEHOLD_ID, authority.householdId().toString())
+            .claim(TokenClaims.PROFILE_ID, authority.profileId().toString())
             .claim(TokenClaims.STREAM_SESSION_ID, streamSession.getSessionId().toString())
             .build();
 

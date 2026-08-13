@@ -2,7 +2,6 @@ package com.streamarr.server.controllers.auth;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
-import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
@@ -45,11 +44,6 @@ public class AuthExceptionHandler {
   public ResponseEntity<AuthErrorResponse> handleAuthenticationRequired(
       AuthenticationRequiredException e) {
     return respond(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", e);
-  }
-
-  @ExceptionHandler(HouseholdRequiredException.class)
-  public ResponseEntity<AuthErrorResponse> handleHouseholdRequired(HouseholdRequiredException e) {
-    return respond(HttpStatus.BAD_REQUEST, "HOUSEHOLD_REQUIRED", e);
   }
 
   @ExceptionHandler(HouseholdAccessDeniedException.class)

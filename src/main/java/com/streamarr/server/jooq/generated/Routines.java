@@ -4,6 +4,11 @@
 package com.streamarr.server.jooq.generated;
 
 
+import com.streamarr.server.jooq.generated.routines.AssertHouseholdHasExactlyOneOwner;
+import com.streamarr.server.jooq.generated.routines.AssertHouseholdProfileSafety;
+import com.streamarr.server.jooq.generated.routines.AssertLocalKidManager;
+import com.streamarr.server.jooq.generated.routines.AssertProfileHasManager;
+import com.streamarr.server.jooq.generated.routines.GuardPortableIdentity;
 import com.streamarr.server.jooq.generated.routines.UuidGenerateV1;
 import com.streamarr.server.jooq.generated.routines.UuidGenerateV1mc;
 import com.streamarr.server.jooq.generated.routines.UuidGenerateV3;
@@ -26,6 +31,75 @@ import org.jooq.Field;
  */
 @SuppressWarnings({ "all", "unchecked", "rawtypes", "this-escape" })
 public class Routines {
+
+    /**
+     * Call <code>public.assert_household_has_exactly_one_owner</code>
+     */
+    public static void assertHouseholdHasExactlyOneOwner(
+          Configuration configuration
+        , UUID candidateHouseholdId
+    ) {
+        AssertHouseholdHasExactlyOneOwner p = new AssertHouseholdHasExactlyOneOwner();
+        p.setCandidateHouseholdId(candidateHouseholdId);
+
+        p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.assert_household_profile_safety</code>
+     */
+    public static void assertHouseholdProfileSafety(
+          Configuration configuration
+        , UUID candidateHouseholdId
+    ) {
+        AssertHouseholdProfileSafety p = new AssertHouseholdProfileSafety();
+        p.setCandidateHouseholdId(candidateHouseholdId);
+
+        p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.assert_local_kid_manager</code>
+     */
+    public static void assertLocalKidManager(
+          Configuration configuration
+        , UUID candidateProfileId
+        , UUID candidateHouseholdId
+    ) {
+        AssertLocalKidManager p = new AssertLocalKidManager();
+        p.setCandidateProfileId(candidateProfileId);
+        p.setCandidateHouseholdId(candidateHouseholdId);
+
+        p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.assert_profile_has_manager</code>
+     */
+    public static void assertProfileHasManager(
+          Configuration configuration
+        , UUID candidateProfileId
+    ) {
+        AssertProfileHasManager p = new AssertProfileHasManager();
+        p.setCandidateProfileId(candidateProfileId);
+
+        p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.guard_portable_identity</code>
+     */
+    public static void guardPortableIdentity(
+          Configuration configuration
+        , UUID[] candidateProfileIds
+        , UUID[] candidateHouseholdIds
+    ) {
+        GuardPortableIdentity p = new GuardPortableIdentity();
+        p.setCandidateProfileIds(candidateProfileIds);
+        p.setCandidateHouseholdIds(candidateHouseholdIds);
+
+        p.execute(configuration);
+    }
 
     /**
      * Call <code>public.uuid_generate_v1</code>

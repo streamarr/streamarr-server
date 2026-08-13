@@ -44,7 +44,6 @@ public class DeviceAuthorizationService {
   private final DeviceAuthorizationRepository authorizationRepository;
   private final UserAccountRepository userAccountRepository;
   private final RefreshTokenService refreshTokenService;
-  private final SessionScopeService sessionScopeService;
   private final AccessTokenIssuer accessTokenIssuer;
   private final UserCodeGenerator userCodeGenerator;
   private final DeviceCodeGenerator deviceCodeGenerator;
@@ -181,27 +180,18 @@ public class DeviceAuthorizationService {
     }
 
     // The session is born here, at the winning poll — never at approval, which would mean storing
-    // a raw refresh token to wait for pickup. It is born already scoped: the selection follows
-    // from the account alone, and updating a session this transaction only queued for insert would
-    // write through jOOQ before Hibernate ever flushed the row.
+    // a raw refresh token to wait for pickup. It starts at account scope; the television selects a
+    // portable profile in a separate request.
     var account = approver.get();
-    var selection = sessionScopeService.resolveAutoSelection(account);
     var issued =
         refreshTokenService.createSession(
             CreateAuthSessionCommand.builder()
                 .accountId(account.getId())
                 .deviceName(authorization.getDeviceName())
-                .activeHouseholdId(selection.householdId())
-                .activeProfileId(selection.profileId())
                 .build());
     var accessToken =
         accessTokenIssuer.issue(
-            TokenContext.builder()
-                .account(account)
-                .session(issued.session())
-                .householdId(selection.householdId())
-                .profileId(selection.profileId())
-                .build());
+            TokenContext.builder().account(account).session(issued.session()).build());
 
     authorizationRepository.markConsumed(authorization.getId(), now);
 

@@ -1,0 +1,18 @@
+package com.streamarr.server.exceptions;
+
+import java.util.List;
+import java.util.UUID;
+
+public class ProfileSafetyViolationException extends RuntimeException {
+
+  private final List<UUID> profilesRequiringPin;
+
+  public ProfileSafetyViolationException(List<UUID> profilesRequiringPin) {
+    super("Profiles require a PIN before this change can be applied: " + profilesRequiringPin);
+    this.profilesRequiringPin = List.copyOf(profilesRequiringPin);
+  }
+
+  public List<UUID> profilesRequiringPin() {
+    return profilesRequiringPin;
+  }
+}

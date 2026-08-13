@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import static com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION;
+import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 
 import com.streamarr.server.domain.auth.AuthSession;
@@ -32,12 +33,18 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .from(AUTH_SESSION)
             .join(USER_ACCOUNT)
             .on(USER_ACCOUNT.ID.eq(AUTH_SESSION.ACCOUNT_ID))
+            .join(PROFILE_HOUSEHOLD_SHARE)
+            .on(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(AUTH_SESSION.ACTIVE_PROFILE_ID))
+            .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(USER_ACCOUNT.HOME_HOUSEHOLD_ID))
             .where(AUTH_SESSION.ID.eq(authority.authSessionId()))
             .and(AUTH_SESSION.ACCOUNT_ID.eq(authority.accountId()))
-            .and(AUTH_SESSION.ACTIVE_HOUSEHOLD_ID.eq(authority.householdId()))
+            .and(USER_ACCOUNT.HOME_HOUSEHOLD_ID.eq(authority.householdId()))
             .and(AUTH_SESSION.ACTIVE_PROFILE_ID.eq(authority.profileId()))
             .and(AUTH_SESSION.REVOKED_AT.isNull())
-            .and(USER_ACCOUNT.ENABLED.isTrue()));
+            .and(USER_ACCOUNT.ENABLED.isTrue())
+            .and(
+                PROFILE_HOUSEHOLD_SHARE.STATUS.eq(
+                    com.streamarr.server.jooq.generated.enums.ProfileShareStatus.ACTIVE)));
   }
 
   @Override
@@ -64,7 +71,6 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
     var nowOffset = now.atOffset(ZoneOffset.UTC);
 
     return dsl.update(AUTH_SESSION)
-            .set(AUTH_SESSION.ACTIVE_HOUSEHOLD_ID, session.getActiveHouseholdId())
             .set(AUTH_SESSION.ACTIVE_PROFILE_ID, session.getActiveProfileId())
             .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
             .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
@@ -72,6 +78,36 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .and(AUTH_SESSION.REVOKED_AT.isNull())
             .execute()
         > 0;
+  }
+
+  @Override
+  public int clearProfileSelection(UUID profileId, UUID householdId, Instant now) {
+    var nowOffset = now.atOffset(ZoneOffset.UTC);
+
+    return dsl.update(AUTH_SESSION)
+        .setNull(AUTH_SESSION.ACTIVE_PROFILE_ID)
+        .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
+        .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+        .where(AUTH_SESSION.ACTIVE_PROFILE_ID.eq(profileId))
+        .and(
+            AUTH_SESSION.ACCOUNT_ID.in(
+                dsl.select(USER_ACCOUNT.ID)
+                    .from(USER_ACCOUNT)
+                    .where(USER_ACCOUNT.HOME_HOUSEHOLD_ID.eq(householdId))))
+        .execute();
+  }
+
+  @Override
+  public int clearAccountSelections(UUID accountId, Instant now) {
+    var nowOffset = now.atOffset(ZoneOffset.UTC);
+
+    return dsl.update(AUTH_SESSION)
+        .setNull(AUTH_SESSION.ACTIVE_PROFILE_ID)
+        .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
+        .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+        .where(AUTH_SESSION.ACCOUNT_ID.eq(accountId))
+        .and(AUTH_SESSION.ACTIVE_PROFILE_ID.isNotNull())
+        .execute();
   }
 
   @Override

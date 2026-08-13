@@ -11,4 +11,4 @@ public record Me(
     String displayName,
     String role,
     String scope,
-    List<Membership> memberships) {}
+    List<SelectableProfile> profiles) {}

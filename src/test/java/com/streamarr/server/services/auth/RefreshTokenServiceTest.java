@@ -358,7 +358,6 @@ class RefreshTokenServiceTest {
   @Test
   @DisplayName("Should persist active selection when creating a session from a command")
   void shouldPersistActiveSelectionWhenCreatingSessionFromCommand() {
-    var householdId = UUID.randomUUID();
     var profileId = UUID.randomUUID();
 
     var issued =
@@ -366,12 +365,10 @@ class RefreshTokenServiceTest {
             CreateAuthSessionCommand.builder()
                 .accountId(UUID.randomUUID())
                 .deviceName("replacement-device")
-                .activeHouseholdId(householdId)
                 .activeProfileId(profileId)
                 .build());
 
     var persisted = sessionRepository.findById(issued.session().getId()).orElseThrow();
-    assertThat(persisted.getActiveHouseholdId()).isEqualTo(householdId);
     assertThat(persisted.getActiveProfileId()).isEqualTo(profileId);
   }
 

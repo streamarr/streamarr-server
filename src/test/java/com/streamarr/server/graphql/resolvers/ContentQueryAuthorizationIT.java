@@ -23,8 +23,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 /**
- * Content is profile-scoped (ADR 0015: account- and household-scoped tokens cannot reach content) —
- * direct content queries demand a selected profile and answer PROFILE_REQUIRED otherwise.
+ * Content is profile-scoped: account-scoped tokens cannot reach content. Direct content queries
+ * demand a selected profile and answer PROFILE_REQUIRED otherwise.
  */
 @Tag("IntegrationTest")
 @DisplayName("Content Query Authorization Integration Tests")

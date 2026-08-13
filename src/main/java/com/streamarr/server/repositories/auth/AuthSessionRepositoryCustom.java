@@ -21,6 +21,12 @@ public interface AuthSessionRepositoryCustom {
    */
   boolean updateSelectionIfLive(AuthSession session, Instant now);
 
+  /** Clears remembered selections for a profile in one household after its active share ends. */
+  int clearProfileSelection(UUID profileId, UUID householdId, Instant now);
+
+  /** Clears every remembered profile selection owned by an account after a home transfer. */
+  int clearAccountSelections(UUID accountId, Instant now);
+
   /**
    * Asks the database whether the row exists, so a conditional update that matched nothing can say
    * which of its two causes applied. Deliberately not JpaRepository.existsById: a JPA query

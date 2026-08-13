@@ -9,12 +9,10 @@ import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
-import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.jooq.generated.enums.RefreshTokenStatus;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
-import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.support.AuthTestSupport;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -51,6 +49,8 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
 
   @Autowired private UserAccountRepository userAccountRepository;
 
+  @Autowired private AuthTestSupport authTestSupport;
+
   @Autowired private AuthSessionRepository authSessionRepository;
 
   @Autowired private GatedAccessTokenIssuer gatedIssuer;
@@ -64,7 +64,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     gatedIssuer.reset();
     if (account != null) {
       // FK cascades sweep auth_session and refresh_token rows.
-      userAccountRepository.deleteById(account.getId());
+      authTestSupport.deleteAccount(account);
     }
   }
 
@@ -78,13 +78,8 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     @Bean
     @Primary
     GatedAccessTokenIssuer gatedAccessTokenIssuer(
-        JwtEncoder jwtEncoder,
-        AuthTokenProperties properties,
-        Clock clock,
-        HouseholdMembershipRepository membershipRepository,
-        AccountProfileRepository accountProfileRepository) {
-      return new GatedAccessTokenIssuer(
-          jwtEncoder, properties, clock, membershipRepository, accountProfileRepository);
+        JwtEncoder jwtEncoder, AuthTokenProperties properties, Clock clock) {
+      return new GatedAccessTokenIssuer(jwtEncoder, properties, clock);
     }
   }
 
@@ -94,13 +89,8 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     private final AtomicBoolean failNextIssue = new AtomicBoolean();
     private final AtomicReference<CountDownLatch> reachedIssue = new AtomicReference<>();
 
-    GatedAccessTokenIssuer(
-        JwtEncoder jwtEncoder,
-        AuthTokenProperties properties,
-        Clock clock,
-        HouseholdMembershipRepository membershipRepository,
-        AccountProfileRepository accountProfileRepository) {
-      super(jwtEncoder, properties, clock, membershipRepository, accountProfileRepository);
+    GatedAccessTokenIssuer(JwtEncoder jwtEncoder, AuthTokenProperties properties, Clock clock) {
+      super(jwtEncoder, properties, clock);
     }
 
     @Override
@@ -149,7 +139,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should refuse refresh and keep rotation uncommitted when account disabled")
   void shouldRefuseRefreshAndKeepRotationUncommittedWhenAccountDisabled() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var issued = refreshTokenService.createSession(account, "tx-device");
     account.setEnabled(false);
     account = userAccountRepository.save(account);
@@ -166,7 +156,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should roll rotation back when issuance fails")
   void shouldRollRotationBackWhenIssuanceFails() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var issued = refreshTokenService.createSession(account, "tx-device");
     gatedIssuer.failNextIssuance();
     var rawToken = issued.rawToken();
@@ -182,7 +172,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should refuse issuance when logout committed first")
   void shouldRefuseIssuanceWhenLogoutCommittedFirst() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var issued = refreshTokenService.createSession(account, "tx-device");
 
     refreshTokenService.logout(issued.session().getId());
@@ -196,7 +186,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should leave no active successor when logout completes after refresh")
   void shouldLeaveNoActiveSuccessorWhenLogoutCompletesAfterRefresh() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var issued = refreshTokenService.createSession(account, "tx-device");
 
     var refreshed = tokenRefreshService.refresh(issued.rawToken());
@@ -210,7 +200,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return access token only when recovered successor was superseded")
   void shouldReturnAccessTokenOnlyWhenRecoveredSuccessorWasSuperseded() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var issued = refreshTokenService.createSession(account, "tx-device");
     var firstRotation = tokenRefreshService.refresh(issued.rawToken());
     tokenRefreshService.refresh(firstRotation.rawRefreshToken());
@@ -225,7 +215,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should hold session lock through issuance when logout races refresh")
   void shouldHoldSessionLockThroughIssuanceWhenLogoutRacesRefresh() throws Exception {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var issued = refreshTokenService.createSession(account, "tx-device");
 
     var gate = new CountDownLatch(1);
@@ -275,7 +265,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should persist reuse revocation when redemption joins outer transaction")
   void shouldPersistReuseRevocationWhenRedemptionJoinsOuterTransaction() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var issued = refreshTokenService.createSession(account, "tx-device");
 
     // Rotate once, then age the rotation past grace so replaying the original proves reuse.

@@ -5,6 +5,7 @@ package com.streamarr.server.jooq.generated.tables.records;
 
 
 import com.streamarr.server.jooq.generated.enums.AccountRole;
+import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 
 import java.time.OffsetDateTime;
@@ -162,6 +163,34 @@ public class UserAccountRecord extends UpdatableRecordImpl<UserAccountRecord> {
         return (Boolean) get(9);
     }
 
+    /**
+     * Setter for <code>public.user_account.home_household_id</code>.
+     */
+    public void setHomeHouseholdId(UUID value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>public.user_account.home_household_id</code>.
+     */
+    public UUID getHomeHouseholdId() {
+        return (UUID) get(10);
+    }
+
+    /**
+     * Setter for <code>public.user_account.household_role</code>.
+     */
+    public void setHouseholdRole(HouseholdRole value) {
+        set(11, value);
+    }
+
+    /**
+     * Getter for <code>public.user_account.household_role</code>.
+     */
+    public HouseholdRole getHouseholdRole() {
+        return (HouseholdRole) get(11);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -185,7 +214,7 @@ public class UserAccountRecord extends UpdatableRecordImpl<UserAccountRecord> {
     /**
      * Create a detached, initialised UserAccountRecord
      */
-    public UserAccountRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String email, String displayName, String passwordHash, AccountRole accountRole, Boolean enabled) {
+    public UserAccountRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String email, String displayName, String passwordHash, AccountRole accountRole, Boolean enabled, UUID homeHouseholdId, HouseholdRole householdRole) {
         super(UserAccount.USER_ACCOUNT);
 
         setId(id);
@@ -198,6 +227,8 @@ public class UserAccountRecord extends UpdatableRecordImpl<UserAccountRecord> {
         setPasswordHash(passwordHash);
         setAccountRole(accountRole);
         setEnabled(enabled);
+        setHomeHouseholdId(homeHouseholdId);
+        setHouseholdRole(householdRole);
         resetTouchedOnNotNull();
     }
 }

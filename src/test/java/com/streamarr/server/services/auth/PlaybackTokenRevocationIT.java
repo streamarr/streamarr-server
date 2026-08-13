@@ -3,6 +3,7 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.support.AuthTestSupport;
@@ -39,15 +40,23 @@ class PlaybackTokenRevocationIT extends AbstractIntegrationTest {
               .build());
 
       var staleIdentity = AuthenticatedIdentity.fromJwt(authenticatedSource);
+      var authority =
+          PlaybackAuthority.builder()
+              .authSessionId(identity.session().getId())
+              .accountId(identity.account().getId())
+              .householdId(identity.household().getId())
+              .profileId(identity.profile().getId())
+              .build();
       var streamSession =
           StreamSession.builder()
               .sessionId(UUID.randomUUID())
               .mediaFileId(UUID.randomUUID())
-              .authority(staleIdentity.playbackAuthority())
+              .authority(authority)
               .build();
       var playbackTtl = Duration.ofHours(1);
 
-      assertThatThrownBy(() -> playbackTokenIssuer.issue(staleIdentity, streamSession, playbackTtl))
+      assertThatThrownBy(
+              () -> playbackTokenIssuer.issue(staleIdentity, authority, streamSession, playbackTtl))
           .isInstanceOf(AuthenticationRequiredException.class);
     } finally {
       authTestSupport.deleteIdentity(identity);

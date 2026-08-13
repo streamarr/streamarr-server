@@ -5,10 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.RefreshTokenRepository;
-import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.support.AuthTestSupport;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -25,7 +24,7 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
 
   @Autowired private RefreshTokenService refreshTokenService;
 
-  @Autowired private UserAccountRepository userAccountRepository;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private AuthSessionRepository authSessionRepository;
 
@@ -37,14 +36,14 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
   void deleteAccountAndCascades() {
     if (account != null) {
       // FK cascades sweep auth_session and refresh_token rows.
-      userAccountRepository.deleteById(account.getId());
+      authTestSupport.deleteAccount(account);
     }
   }
 
   @Test
   @DisplayName("Should rotate exactly once when same token redeemed concurrently")
   void shouldRotateExactlyOnceWhenSameTokenRedeemedConcurrently() throws InterruptedException {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var issued = refreshTokenService.createSession(account, "race-device");
 
     var threadCount = 2;
@@ -112,7 +111,7 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should not recover consumed successor when earlier token replayed within grace")
   void shouldNotRecoverConsumedSuccessorWhenEarlierTokenReplayedWithinGrace() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var issued = refreshTokenService.createSession(account, "late-response-device");
     var firstRotation = (RefreshResult.Rotated) refreshTokenService.redeem(issued.rawToken());
     refreshTokenService.redeem(firstRotation.rawRefreshToken());

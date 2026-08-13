@@ -23,4 +23,6 @@ public class Household extends BaseAuditableEntity<Household> {
 
   // Mirrors the V044 column default.
   @Builder.Default private String defaultRatingRegion = "US";
+
+  @Builder.Default private long safetyVersion = 0;
 }

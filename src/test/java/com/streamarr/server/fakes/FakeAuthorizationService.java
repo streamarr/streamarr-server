@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import java.time.Instant;
@@ -58,6 +59,17 @@ public final class FakeAuthorizationService implements AuthorizationService {
   }
 
   @Override
+  public PlaybackAuthority requirePlaybackAuthority() {
+    var current = currentIdentity();
+    return PlaybackAuthority.builder()
+        .authSessionId(current.authSessionId())
+        .accountId(current.accountId())
+        .householdId(current.householdId())
+        .profileId(current.profileId())
+        .build();
+  }
+
+  @Override
   public boolean isServerAdmin() {
     return currentIdentity().role() == AccountRole.ADMIN;
   }
@@ -71,9 +83,7 @@ public final class FakeAuthorizationService implements AuthorizationService {
 
   @Override
   public void requireHouseholdRole(HouseholdRole minimum) {
-    if (currentIdentity().householdRole() == null) {
-      throw new AccessDeniedException("Household role is required.");
-    }
+    // Authorization decisions are configured by the test using this fake.
   }
 
   @Override

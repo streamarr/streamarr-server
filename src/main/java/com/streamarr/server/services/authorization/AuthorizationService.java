@@ -1,6 +1,7 @@
 package com.streamarr.server.services.authorization;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.time.Instant;
 import java.util.UUID;
@@ -35,6 +36,8 @@ public interface AuthorizationService {
   UUID requireHousehold();
 
   UUID requireProfile();
+
+  PlaybackAuthority requirePlaybackAuthority();
 
   boolean isServerAdmin();
 

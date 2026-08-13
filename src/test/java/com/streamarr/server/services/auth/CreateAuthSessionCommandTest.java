@@ -15,17 +15,16 @@ class CreateAuthSessionCommandTest {
   @Test
   @DisplayName("Should reject a null account id when constructed")
   void shouldRejectNullAccountIdWhenConstructed() {
-    assertThatThrownBy(() -> new CreateAuthSessionCommand(null, "device", null, null))
+    assertThatThrownBy(() -> new CreateAuthSessionCommand(null, "device", null))
         .isInstanceOf(NullPointerException.class)
         .hasMessageContaining("accountId");
   }
 
   @Test
-  @DisplayName("Should allow absent household and profile selection when constructed")
+  @DisplayName("Should allow absent profile selection when constructed")
   void shouldAllowAbsentSelectionWhenConstructed() {
-    var command = new CreateAuthSessionCommand(UUID.randomUUID(), "device", null, null);
+    var command = new CreateAuthSessionCommand(UUID.randomUUID(), "device", null);
 
-    assertThat(command.activeHouseholdId()).isNull();
     assertThat(command.activeProfileId()).isNull();
   }
 }

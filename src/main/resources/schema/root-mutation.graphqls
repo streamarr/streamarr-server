@@ -9,4 +9,24 @@ type Mutation {
     reportStreamSessionTimeline(sessionId: ID!, positionSeconds: Int!, state: PlaybackState!): Boolean!
     markWatched(id: ID!): Boolean!
     markUnwatched(id: ID!): Boolean!
+    createPortableProfile(input: PortableProfileCreationInput!): PortableProfileSummary!
+    renamePortableProfile(input: PortableProfileRenameInput!): Boolean!
+    offerProfileShare(input: ProfileShareOfferInput!): PortableProfileShare!
+    acceptProfileShare(input: ProfileShareAcceptanceInput!): PortableProfileShare!
+    rejectProfileShare(shareId: ID!): Boolean!
+    cancelProfileShare(shareId: ID!): Boolean!
+    removeProfileFromCurrentHousehold(shareId: ID!): Boolean!
+    leaveCurrentHome: Boolean!
+    inviteProfileManager(input: ProfileManagerInviteInput!): PortableProfileManagerInvitation!
+    acceptProfileManagerInvitation(input: ProfileManagerInvitationAcceptanceInput!): PortableProfileManager!
+    rejectProfileManagerInvitation(invitationId: ID!): Boolean!
+    cancelProfileManagerInvitation(invitationId: ID!): Boolean!
+    relinquishProfileManagement(input: ProfileReferenceInput!): Boolean!
+    changeProfilePolicy(input: ProfilePolicyChangeInput!): Boolean!
+    deleteProfile(input: ProfileDeletionInput!): Boolean!
+    forceDeleteProfile(input: ForceProfileDeletionInput!): Boolean!
+    forceUnshareProfile(input: ForceProfileUnshareInput!): Boolean!
+    overrideProfileManager(input: ProfileManagerOverrideInput!): Boolean!
+    transferAccountHousehold(input: AccountHouseholdTransferInput!): Boolean!
+    transferHouseholdOwnership(input: HouseholdOwnershipTransferInput!): Boolean!
 }

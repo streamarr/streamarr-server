@@ -7,7 +7,7 @@ import com.streamarr.server.config.security.Argon2Properties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
-import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.support.AuthTestSupport;
 import java.sql.Connection;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -33,7 +33,7 @@ class LoginServiceTransactionIT extends AbstractIntegrationTest {
 
   @Autowired private LoginService loginService;
 
-  @Autowired private UserAccountRepository userAccountRepository;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private TransactionProbePasswordEncoder passwordEncoder;
 
@@ -42,7 +42,7 @@ class LoginServiceTransactionIT extends AbstractIntegrationTest {
   @AfterEach
   void deleteAccountAndCascades() {
     if (account != null) {
-      userAccountRepository.deleteById(account.getId());
+      authTestSupport.deleteAccount(account);
     }
   }
 
@@ -50,10 +50,8 @@ class LoginServiceTransactionIT extends AbstractIntegrationTest {
   @DisplayName("Should release database connection before password verification")
   void shouldReleaseDatabaseConnectionBeforePasswordVerification() {
     account =
-        userAccountRepository.save(
-            AccountFixture.defaultAccountBuilder()
-                .passwordHash(passwordEncoder.encode(PASSWORD))
-                .build());
+        authTestSupport.createAccount(
+            AccountFixture.defaultAccountBuilder().passwordHash(passwordEncoder.encode(PASSWORD)));
     passwordEncoder.resetProbe();
 
     loginService.login(

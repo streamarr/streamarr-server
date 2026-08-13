@@ -28,8 +28,6 @@ public class AuthSession extends BaseAuditableEntity<AuthSession> {
 
   private String deviceName;
 
-  private UUID activeHouseholdId;
-
   private UUID activeProfileId;
 
   private Instant revokedAt;

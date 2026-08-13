@@ -10,10 +10,9 @@ import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
-import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.RefreshTokenRepository;
-import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.support.AuthTestSupport;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -36,7 +35,7 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
 
   @Autowired private RefreshTokenService refreshTokenService;
 
-  @Autowired private UserAccountRepository userAccountRepository;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private AuthSessionRepository authSessionRepository;
 
@@ -49,14 +48,14 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
   @AfterEach
   void deleteAccountAndCascades() {
     if (account != null) {
-      userAccountRepository.deleteById(account.getId());
+      authTestSupport.deleteAccount(account);
     }
   }
 
   @Test
   @DisplayName("Should leave no active token on session when refresh races revocation")
   void shouldLeaveNoActiveTokenOnSessionWhenRefreshRacesRevocation() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
 
     for (int round = 0; round < ROUNDS; round++) {
       var issued = refreshTokenService.createSession(account, "race-device");
@@ -75,7 +74,7 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject redeeming a successor when minted before revocation")
   void shouldRejectRedeemingSuccessorWhenMintedBeforeRevocation() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var issued = refreshTokenService.createSession(account, "sequential-device");
 
     var rotated = (RefreshResult.Rotated) refreshTokenService.redeem(issued.rawToken());

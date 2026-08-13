@@ -118,16 +118,26 @@ An optional worker opens an outbound, long-lived mTLS gRPC `WorkerSession`; the 
 Segment uploads use separate bounded HTTP/2 streams over the same channel, and media is addressed by opaque `MediaSourceRef(source_namespace_id, relative_key)` values rather than host paths.
 The initial topology is one Streamarr server and zero or more workers; workers have no database access or inbound listener, and multi-server coordination is deferred.
 
-== Authentication and Invalidation
+== Identity, Authentication, and Invalidation
 
 Identity, sessions, and token security follow
 link:adr/0015-authorization-profiles-and-content-controls.adoc[ADR 0015] and
-link:adr/0016-authentication-mechanisms-and-session-security.adoc[ADR 0016]: ES256-signed access
-tokens with nested scopes, mandatory strict expiry, and digest-only rotating refresh tokens.
-Ordinary API claims remain valid only until their short expiry; refresh revalidates live session,
-account, and context authority. Playback additionally checks live authority on stream creation and
-every playlist and segment request, as
+link:adr/0016-authentication-mechanisms-and-session-security.adoc[ADR 0016], as revised by
+link:adr/0022-single-home-accounts-and-portable-profile-sharing.adoc[ADR 0022].
+Every account has exactly one home household, while profiles are portable viewing identities made
+available through explicit household shares. The `me` query returns one flat list of selectable
+profiles; clients select a profile and never select a household.
+
+Sessions retain the account and an optional active profile. ES256-signed API access tokens have
+account or profile scope, mandatory strict expiry, and no household id or role claims. Refresh tokens
+rotate and are stored only as digests. Household- and profile-sensitive requests resolve the account's
+current home household, household role, and active profile share from authoritative database state.
+Ordinary API claims otherwise remain valid only until their short expiry. Playback additionally checks
+live authority on stream creation and every playlist and segment request, as
 link:adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] specifies.
+
+image::adr/diagrams/0022-portable-profile-sharing.png[Portable profile sharing across two account-derived households]
+
 The browser client is same-origin by construction -- development
 tooling proxies the API paths and production serves the client from the application origin --
 so no CORS configuration exists and none should be added (recorded as a rejected alternative in
@@ -186,6 +196,9 @@ See link:adr/[Architecture Decision Records] for detailed rationale. Summary:
 
 | Spring Application Events
 | Decouples side effects from core operations, eliminates circular dependencies (link:adr/0010-spring-application-events.adoc[ADR 0010])
+
+| Single-home accounts and portable profiles
+| Keeps household administration out of the viewing flow while one profile and its history can be shared across homes (link:adr/0022-single-home-accounts-and-portable-profile-sharing.adoc[ADR 0022])
 
 | Stream decision architecture
 | Per-stream decision records compose into TranscodeDecision; mode resolution considers all stream types (link:adr/0013-stream-decision-architecture.adoc[ADR 0013])

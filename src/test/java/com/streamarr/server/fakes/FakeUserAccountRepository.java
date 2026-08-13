@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.sql.SQLException;
@@ -44,6 +45,15 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   public Optional<UserAccount> findByEmailIgnoreCase(String email) {
     return database.values().stream()
         .filter(account -> account.getEmail().equalsIgnoreCase(email))
+        .findFirst();
+  }
+
+  @Override
+  public Optional<UserAccount> findByHomeHouseholdIdAndHouseholdRole(
+      java.util.UUID homeHouseholdId, HouseholdRole householdRole) {
+    return database.values().stream()
+        .filter(account -> homeHouseholdId.equals(account.getHomeHouseholdId()))
+        .filter(account -> householdRole == account.getHouseholdRole())
         .findFirst();
   }
 }

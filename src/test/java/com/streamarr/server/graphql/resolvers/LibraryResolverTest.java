@@ -25,7 +25,6 @@ import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -35,6 +34,7 @@ import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.support.security.ResolverAuthorizationTestConfig;
 import com.streamarr.server.support.security.WithAccountContext;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.time.Instant;
@@ -55,6 +55,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
@@ -70,6 +71,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       JacksonAutoConfiguration.class,
       SecurityContextAuthorizationService.class
     })
+@Import(ResolverAuthorizationTestConfig.class)
 @DisplayName("Library Resolver Tests")
 class LibraryResolverTest {
 
@@ -78,8 +80,6 @@ class LibraryResolverTest {
   @Autowired private LibraryResolver libraryResolver;
 
   @MockitoBean private ProfileRepository profileRepository;
-
-  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private LibraryRepository libraryRepository;
 

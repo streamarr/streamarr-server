@@ -7,10 +7,10 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Season;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.support.security.ResolverAuthorizationTestConfig;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
@@ -32,14 +33,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       SeriesResolver.class,
       SecurityContextAuthorizationService.class
     })
+@Import(ResolverAuthorizationTestConfig.class)
 @DisplayName("Episode Field Resolver Tests")
 class EpisodeFieldResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private ProfileRepository profileRepository;
-
-  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private SeriesService seriesService;
 

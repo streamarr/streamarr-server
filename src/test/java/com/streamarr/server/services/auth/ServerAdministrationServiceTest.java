@@ -1,0 +1,285 @@
+package com.streamarr.server.services.auth;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileClassification;
+import com.streamarr.server.domain.auth.ProfileDeletionMode;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileManager;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.SecurityAuditOperation;
+import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.exceptions.KidProfileManagerRequiredException;
+import com.streamarr.server.exceptions.ServerAdministrationDeniedException;
+import com.streamarr.server.fakes.FakeProfileDeletionAuthorizationRepository;
+import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
+import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
+import com.streamarr.server.fakes.FakeProfileManagerRepository;
+import com.streamarr.server.fakes.FakeProfileRepository;
+import com.streamarr.server.fakes.FakeProfileSelectionCleaner;
+import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
+import com.streamarr.server.fakes.FakeUserAccountRepository;
+import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+
+@Tag("UnitTest")
+@DisplayName("Server Administration Service Tests")
+class ServerAdministrationServiceTest {
+
+  private static final String PASSWORD = "correct horse battery staple";
+
+  private final FakeUserAccountRepository accountRepository = new FakeUserAccountRepository();
+  private final FakeProfileRepository profileRepository = new FakeProfileRepository();
+  private final FakeProfileManagerRepository managerRepository = new FakeProfileManagerRepository();
+  private final FakeProfileManagerInvitationRepository invitationRepository =
+      new FakeProfileManagerInvitationRepository();
+  private final FakeProfileHouseholdShareRepository shareRepository =
+      new FakeProfileHouseholdShareRepository();
+  private final FakeProfileDeletionAuthorizationRepository deletionAuthorizationRepository =
+      new FakeProfileDeletionAuthorizationRepository();
+  private final FakeProfileSelectionCleaner selectionCleaner = new FakeProfileSelectionCleaner();
+  private final FakeSecurityAuditEventRepository auditRepository =
+      new FakeSecurityAuditEventRepository();
+  private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder =
+      PasswordEncoderFactories.createDelegatingPasswordEncoder();
+  private final ServerAdministrationService service =
+      new ServerAdministrationService(
+          accountRepository,
+          profileRepository,
+          managerRepository,
+          invitationRepository,
+          shareRepository,
+          deletionAuthorizationRepository,
+          selectionCleaner,
+          new ServerAdminAuthorizer(accountRepository, passwordEncoder),
+          new KidProfileManagerPolicy(
+              profileRepository, managerRepository, shareRepository, accountRepository),
+          new SecurityAuditService(auditRepository));
+
+  @Test
+  @DisplayName("Should force delete a profile and every relationship after fresh reauthentication")
+  void shouldForceDeleteProfileAndEveryRelationshipAfterFreshReauthentication() {
+    var admin = saveAccount(AccountRole.ADMIN);
+    var otherManager = saveAccount(AccountRole.USER);
+    var profile = profileRepository.save(Profile.builder().name("Disputed Profile").build());
+    managerRepository.save(manager(admin.getId(), profile.getId()));
+    managerRepository.save(manager(otherManager.getId(), profile.getId()));
+    invitationRepository.save(
+        ProfileManagerInvitation.builder()
+            .profileId(profile.getId())
+            .invitingAccountId(admin.getId())
+            .invitedAccountId(UUID.randomUUID())
+            .status(ProfileManagerInvitationStatus.PENDING)
+            .build());
+    var activeShare = saveShare(profile.getId(), ProfileShareStatus.ACTIVE);
+    var pendingShare = saveShare(profile.getId(), ProfileShareStatus.PENDING);
+
+    service.forceDeleteProfile(
+        ForceProfileDeletionCommand.builder()
+            .actingAccountId(admin.getId())
+            .profileId(profile.getId())
+            .password(PASSWORD)
+            .reason("Lost access recovery")
+            .build());
+
+    assertThat(profileRepository.existsById(profile.getId())).isFalse();
+    assertThat(managerRepository.findByProfileId(profile.getId())).isEmpty();
+    assertThat(invitationRepository.findAll()).isEmpty();
+    assertThat(shareRepository.countByProfileId(profile.getId())).isZero();
+    assertThat(selectionCleaner.clearedSelections)
+        .extracting(FakeProfileSelectionCleaner.ClearedSelection::householdId)
+        .containsExactlyInAnyOrder(activeShare.getHouseholdId(), pendingShare.getHouseholdId());
+    assertThat(deletionAuthorizationRepository.findAll())
+        .singleElement()
+        .satisfies(
+            authorization -> {
+              assertThat(authorization.getActingAccountId()).isEqualTo(admin.getId());
+              assertThat(authorization.getMode()).isEqualTo(ProfileDeletionMode.FORCE);
+            });
+    assertThat(auditRepository.findAll())
+        .singleElement()
+        .satisfies(
+            event -> {
+              assertThat(event.getOperation())
+                  .isEqualTo(SecurityAuditOperation.PROFILE_FORCE_DELETED);
+              assertThat(event.getReason()).isEqualTo("Lost access recovery");
+            });
+  }
+
+  @Test
+  @DisplayName("Should force unshare only the targeted profile share")
+  void shouldForceUnshareOnlyTargetedProfileShare() {
+    var admin = saveAccount(AccountRole.ADMIN);
+    var profile = profileRepository.save(Profile.builder().name("Portable Profile").build());
+    var removedShare = saveShare(profile.getId(), ProfileShareStatus.ACTIVE);
+    var retainedShare = saveShare(profile.getId(), ProfileShareStatus.ACTIVE);
+
+    service.forceUnshareProfile(
+        ForceProfileUnshareCommand.builder()
+            .actingAccountId(admin.getId())
+            .shareId(removedShare.getId())
+            .password(PASSWORD)
+            .reason("Household recovery")
+            .build());
+
+    assertThat(shareRepository.existsById(removedShare.getId())).isFalse();
+    assertThat(shareRepository.existsById(retainedShare.getId())).isTrue();
+    assertThat(selectionCleaner.clearedSelections)
+        .containsExactly(
+            new FakeProfileSelectionCleaner.ClearedSelection(
+                profile.getId(), removedShare.getHouseholdId()));
+    assertThat(auditRepository.findAll())
+        .singleElement()
+        .extracting(event -> event.getOperation())
+        .isEqualTo(SecurityAuditOperation.PROFILE_FORCE_UNSHARED);
+  }
+
+  @Test
+  @DisplayName("Should override a disputed profile manager relationship")
+  void shouldOverrideDisputedProfileManagerRelationship() {
+    var admin = saveAccount(AccountRole.ADMIN);
+    var manager = saveAccount(AccountRole.USER);
+    var profile = profileRepository.save(Profile.builder().name("Managed Profile").build());
+
+    service.overrideProfileManager(
+        ProfileManagerOverrideCommand.builder()
+            .actingAccountId(admin.getId())
+            .targetAccountId(manager.getId())
+            .profileId(profile.getId())
+            .action(ProfileManagerOverrideAction.GRANT)
+            .password(PASSWORD)
+            .reason("Restore named manager")
+            .build());
+
+    assertThat(managerRepository.existsByAccountIdAndProfileId(manager.getId(), profile.getId()))
+        .isTrue();
+    assertThat(auditRepository.findAll())
+        .singleElement()
+        .satisfies(
+            event -> {
+              assertThat(event.getTargetAccountId()).isEqualTo(manager.getId());
+              assertThat(event.getOperation())
+                  .isEqualTo(SecurityAuditOperation.PROFILE_MANAGER_OVERRIDDEN);
+            });
+  }
+
+  @Test
+  @DisplayName("Should reject global administration from a non administrator")
+  void shouldRejectGlobalAdministrationFromNonAdministrator() {
+    var account = saveAccount(AccountRole.USER);
+    var profile = profileRepository.save(Profile.builder().name("Protected Profile").build());
+
+    assertThatThrownBy(
+            () ->
+                service.forceDeleteProfile(
+                    ForceProfileDeletionCommand.builder()
+                        .actingAccountId(account.getId())
+                        .profileId(profile.getId())
+                        .password(PASSWORD)
+                        .reason("Unauthorized")
+                        .build()))
+        .isInstanceOf(ServerAdministrationDeniedException.class);
+
+    assertThat(profileRepository.existsById(profile.getId())).isTrue();
+    assertThat(auditRepository.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject destructive override when password reauthentication fails")
+  void shouldRejectDestructiveOverrideWhenPasswordReauthenticationFails() {
+    var admin = saveAccount(AccountRole.ADMIN);
+    var profile = profileRepository.save(Profile.builder().name("Protected Profile").build());
+
+    assertThatThrownBy(
+            () ->
+                service.forceDeleteProfile(
+                    ForceProfileDeletionCommand.builder()
+                        .actingAccountId(admin.getId())
+                        .profileId(profile.getId())
+                        .password("wrong password")
+                        .reason("Recovery")
+                        .build()))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(profileRepository.existsById(profile.getId())).isTrue();
+    assertThat(auditRepository.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject manager override that removes the last local kid parent")
+  void shouldRejectManagerOverrideThatRemovesLastLocalKidParent() {
+    var localHouseholdId = UUID.randomUUID();
+    var admin = saveAccount(AccountRole.ADMIN);
+    var localParent = saveAccount(AccountRole.USER);
+    localParent.setHomeHouseholdId(localHouseholdId);
+    localParent.setHouseholdRole(HouseholdRole.PARENT);
+    accountRepository.save(localParent);
+    var remoteParent = saveAccount(AccountRole.USER);
+    var kid =
+        profileRepository.save(
+            Profile.builder()
+                .name("Portable Kid")
+                .classification(ProfileClassification.KID)
+                .maximumAllowedRatingAge(7)
+                .build());
+    managerRepository.save(manager(localParent.getId(), kid.getId()));
+    managerRepository.save(manager(remoteParent.getId(), kid.getId()));
+    shareRepository.save(
+        ProfileHouseholdShare.builder()
+            .profileId(kid.getId())
+            .householdId(localHouseholdId)
+            .status(ProfileShareStatus.ACTIVE)
+            .build());
+
+    assertThatThrownBy(
+            () ->
+                service.overrideProfileManager(
+                    ProfileManagerOverrideCommand.builder()
+                        .actingAccountId(admin.getId())
+                        .targetAccountId(localParent.getId())
+                        .profileId(kid.getId())
+                        .action(ProfileManagerOverrideAction.REMOVE)
+                        .password(PASSWORD)
+                        .reason("Unsafe override")
+                        .build()))
+        .isInstanceOf(KidProfileManagerRequiredException.class);
+
+    assertThat(managerRepository.existsByAccountIdAndProfileId(localParent.getId(), kid.getId()))
+        .isTrue();
+  }
+
+  private UserAccount saveAccount(AccountRole role) {
+    return accountRepository.save(
+        UserAccount.builder()
+            .email("account-" + UUID.randomUUID() + "@example.com")
+            .displayName("Account")
+            .passwordHash(passwordEncoder.encode(PASSWORD))
+            .accountRole(role)
+            .homeHouseholdId(UUID.randomUUID())
+            .householdRole(HouseholdRole.OWNER)
+            .build());
+  }
+
+  private ProfileManager manager(UUID accountId, UUID profileId) {
+    return ProfileManager.builder().accountId(accountId).profileId(profileId).build();
+  }
+
+  private ProfileHouseholdShare saveShare(UUID profileId, ProfileShareStatus status) {
+    return shareRepository.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profileId)
+            .householdId(UUID.randomUUID())
+            .status(status)
+            .build());
+  }
+}

@@ -4,6 +4,7 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -11,6 +12,7 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.dto.StreamSessionDto;
 import com.streamarr.server.graphql.dto.StreamingOptionsInput;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
@@ -37,18 +39,18 @@ public class StreamingResolver {
   public StreamSessionDto createStreamSession(
       @InputArgument String mediaFileId, @InputArgument StreamingOptionsInput options) {
     var opts = mapOptions(options);
-    authorizationService.requireProfile();
+    var authority = authorizationService.requirePlaybackAuthority();
     var identity = authorizationService.currentIdentity();
     var session =
         streamingService.createSession(
             CreateStreamSessionCommand.builder()
                 .mediaFileId(parseUuid(mediaFileId))
-                .authority(identity.playbackAuthority())
+                .authority(authority)
                 .options(opts)
                 .build());
 
     try {
-      return toDto(session);
+      return toDto(session, identity, authority);
     } catch (RuntimeException exception) {
       streamingService.destroySession(session.getSessionId());
       throw exception;
@@ -126,7 +128,8 @@ public class StreamingResolver {
         .build();
   }
 
-  private StreamSessionDto toDto(StreamSession session) {
+  private StreamSessionDto toDto(
+      StreamSession session, AuthenticatedIdentity identity, PlaybackAuthority authority) {
     // The issuer refuses to mint for sessions the caller does not own — every DTO carries a
     // playback token, so the ownership check rides along wherever this is called from.
     return StreamSessionDto.builder()
@@ -136,10 +139,7 @@ public class StreamingResolver {
                 + session.getSessionId()
                 + "/multivariant.m3u8?t="
                 + playbackTokenIssuer
-                    .issue(
-                        authorizationService.currentIdentity(),
-                        session,
-                        playbackTokenValidity(session))
+                    .issue(identity, authority, session, playbackTokenValidity(session))
                     .value())
         .transcodeMode(session.getTranscodeDecision().transcodeMode().name())
         .build();

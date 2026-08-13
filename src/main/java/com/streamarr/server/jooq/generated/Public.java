@@ -4,7 +4,6 @@
 package com.streamarr.server.jooq.generated;
 
 
-import com.streamarr.server.jooq.generated.tables.AccountProfile;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
@@ -14,7 +13,6 @@ import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
 import com.streamarr.server.jooq.generated.tables.Household;
-import com.streamarr.server.jooq.generated.tables.HouseholdMembership;
 import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
@@ -26,11 +24,16 @@ import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
 import com.streamarr.server.jooq.generated.tables.Person;
 import com.streamarr.server.jooq.generated.tables.Profile;
+import com.streamarr.server.jooq.generated.tables.ProfileDeletionAuthorization;
+import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare;
+import com.streamarr.server.jooq.generated.tables.ProfileManager;
+import com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation;
 import com.streamarr.server.jooq.generated.tables.Rating;
 import com.streamarr.server.jooq.generated.tables.RefreshToken;
 import com.streamarr.server.jooq.generated.tables.Review;
 import com.streamarr.server.jooq.generated.tables.SchemaHistory;
 import com.streamarr.server.jooq.generated.tables.Season;
+import com.streamarr.server.jooq.generated.tables.SecurityAuditEvent;
 import com.streamarr.server.jooq.generated.tables.Series;
 import com.streamarr.server.jooq.generated.tables.SeriesCompany;
 import com.streamarr.server.jooq.generated.tables.SeriesDirector;
@@ -62,11 +65,6 @@ public class Public extends SchemaImpl {
      * The reference instance of <code>public</code>
      */
     public static final Public PUBLIC = new Public();
-
-    /**
-     * The table <code>public.account_profile</code>.
-     */
-    public final AccountProfile ACCOUNT_PROFILE = AccountProfile.ACCOUNT_PROFILE;
 
     /**
      * The table <code>public.auth_session</code>.
@@ -112,11 +110,6 @@ public class Public extends SchemaImpl {
      * The table <code>public.household</code>.
      */
     public final Household HOUSEHOLD = Household.HOUSEHOLD;
-
-    /**
-     * The table <code>public.household_membership</code>.
-     */
-    public final HouseholdMembership HOUSEHOLD_MEMBERSHIP = HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
 
     /**
      * The table <code>public.image</code>.
@@ -174,6 +167,26 @@ public class Public extends SchemaImpl {
     public final Profile PROFILE = Profile.PROFILE;
 
     /**
+     * The table <code>public.profile_deletion_authorization</code>.
+     */
+    public final ProfileDeletionAuthorization PROFILE_DELETION_AUTHORIZATION = ProfileDeletionAuthorization.PROFILE_DELETION_AUTHORIZATION;
+
+    /**
+     * The table <code>public.profile_household_share</code>.
+     */
+    public final ProfileHouseholdShare PROFILE_HOUSEHOLD_SHARE = ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
+
+    /**
+     * The table <code>public.profile_manager</code>.
+     */
+    public final ProfileManager PROFILE_MANAGER = ProfileManager.PROFILE_MANAGER;
+
+    /**
+     * The table <code>public.profile_manager_invitation</code>.
+     */
+    public final ProfileManagerInvitation PROFILE_MANAGER_INVITATION = ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
+
+    /**
      * The table <code>public.rating</code>.
      */
     public final Rating RATING = Rating.RATING;
@@ -197,6 +210,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.season</code>.
      */
     public final Season SEASON = Season.SEASON;
+
+    /**
+     * The table <code>public.security_audit_event</code>.
+     */
+    public final SecurityAuditEvent SECURITY_AUDIT_EVENT = SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 
     /**
      * The table <code>public.series</code>.
@@ -259,7 +277,6 @@ public class Public extends SchemaImpl {
     @Override
     public final List<Table<?>> getTables() {
         return Arrays.asList(
-            AccountProfile.ACCOUNT_PROFILE,
             AuthSession.AUTH_SESSION,
             BaseCollectable.BASE_COLLECTABLE,
             Company.COMPANY,
@@ -269,7 +286,6 @@ public class Public extends SchemaImpl {
             FileProcessingTask.FILE_PROCESSING_TASK,
             Genre.GENRE,
             Household.HOUSEHOLD,
-            HouseholdMembership.HOUSEHOLD_MEMBERSHIP,
             Image.IMAGE,
             Library.LIBRARY,
             LibraryMetadata.LIBRARY_METADATA,
@@ -281,11 +297,16 @@ public class Public extends SchemaImpl {
             MoviePerson.MOVIE_PERSON,
             Person.PERSON,
             Profile.PROFILE,
+            ProfileDeletionAuthorization.PROFILE_DELETION_AUTHORIZATION,
+            ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE,
+            ProfileManager.PROFILE_MANAGER,
+            ProfileManagerInvitation.PROFILE_MANAGER_INVITATION,
             Rating.RATING,
             RefreshToken.REFRESH_TOKEN,
             Review.REVIEW,
             SchemaHistory.SCHEMA_HISTORY,
             Season.SEASON,
+            SecurityAuditEvent.SECURITY_AUDIT_EVENT,
             Series.SERIES,
             SeriesCompany.SERIES_COMPANY,
             SeriesDirector.SERIES_DIRECTOR,

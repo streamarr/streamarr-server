@@ -7,6 +7,9 @@ Accepted
 NOTE: link:0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] supersedes this ADR's playback-counter-retirement mechanism, persisted stream-session authority, and distributed-transcode direction.
 The remaining authentication, token, refresh, carrier, and key-rotation decisions stay accepted.
 
+NOTE: link:0022-single-home-accounts-and-portable-profile-sharing.adoc[ADR 0022] supersedes this ADR's selected-household session, household access-token scope, and self-contained household-context claims.
+Its unaffected authentication and session-security decisions remain accepted.
+
 === Implementation status
 
 * ADR 0018's live playback-authority gate is operative; V049 removes the version counters and their notification feed.

@@ -56,7 +56,6 @@ public class PasswordChangeCompletionService {
             CreateAuthSessionCommand.builder()
                 .accountId(account.getId())
                 .deviceName(callerSession.getDeviceName())
-                .activeHouseholdId(callerSession.getActiveHouseholdId())
                 .activeProfileId(callerSession.getActiveProfileId())
                 .build());
 

@@ -1,7 +1,6 @@
 package com.streamarr.server.graphql;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
-import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import graphql.GraphqlErrorBuilder;
@@ -56,7 +55,6 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
   private static String codeFor(Throwable exception) {
     return switch (exception) {
       case ProfileRequiredException _ -> "PROFILE_REQUIRED";
-      case HouseholdRequiredException _ -> "HOUSEHOLD_REQUIRED";
       case AuthenticationRequiredException _ -> "AUTHENTICATION_REQUIRED";
       case AccessDeniedException _ -> "FORBIDDEN";
       case SessionNotFoundException _ -> "SESSION_NOT_FOUND";

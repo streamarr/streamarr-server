@@ -3,11 +3,11 @@ package com.streamarr.server.services.authorization;
 import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
-import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
-import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.time.Instant;
 import java.util.UUID;
@@ -21,8 +21,8 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class SecurityContextAuthorizationService implements AuthorizationService {
 
-  private final ProfileRepository profileRepository;
-  private final AccountProfileRepository accountProfileRepository;
+  private final RequestAuthorizationStateResolver stateResolver;
+  private final ProfileHouseholdShareRepository shareRepository;
 
   @Override
   public AuthenticatedIdentity currentIdentity() {
@@ -35,51 +35,55 @@ public class SecurityContextAuthorizationService implements AuthorizationService
 
   @Override
   public String currentTokenValue() {
-    var authentication = SecurityContextHolder.getContext().getAuthentication();
-    if (authentication instanceof StreamarrAuthenticationToken token
-        && token.getCredentials() instanceof Jwt jwt) {
-      return jwt.getTokenValue();
-    }
-    throw new AuthenticationRequiredException();
+    return currentJwt().getTokenValue();
   }
 
   @Override
   public Instant currentTokenExpiry() {
-    var authentication = SecurityContextHolder.getContext().getAuthentication();
-    if (authentication instanceof StreamarrAuthenticationToken token
-        && token.getCredentials() instanceof Jwt jwt
-        && jwt.getExpiresAt() != null) {
-      return jwt.getExpiresAt();
+    var expiry = currentJwt().getExpiresAt();
+    if (expiry != null) {
+      return expiry;
     }
     throw new AuthenticationRequiredException();
   }
 
   @Override
   public UUID requireAccountId() {
-    return currentIdentity().accountId();
+    return state().account().getId();
   }
 
   @Override
   public UUID requireHousehold() {
-    var householdId = currentIdentity().householdId();
-    if (householdId == null) {
-      throw new HouseholdRequiredException();
-    }
-    return householdId;
+    return state().account().getHomeHouseholdId();
   }
 
   @Override
   public UUID requireProfile() {
-    var profileId = currentIdentity().profileId();
+    var profileId = state().activeProfileId();
+    if (profileId != null) {
+      return profileId;
+    }
+    throw new ProfileRequiredException();
+  }
+
+  @Override
+  public PlaybackAuthority requirePlaybackAuthority() {
+    var state = state();
+    var profileId = state.activeProfileId();
     if (profileId == null) {
       throw new ProfileRequiredException();
     }
-    return profileId;
+    return PlaybackAuthority.builder()
+        .authSessionId(currentIdentity().authSessionId())
+        .accountId(state.account().getId())
+        .householdId(state.account().getHomeHouseholdId())
+        .profileId(profileId)
+        .build();
   }
 
   @Override
   public boolean isServerAdmin() {
-    return currentIdentity().role() == AccountRole.ADMIN;
+    return state().account().getAccountRole() == AccountRole.ADMIN;
   }
 
   @Override
@@ -91,55 +95,45 @@ public class SecurityContextAuthorizationService implements AuthorizationService
 
   @Override
   public void requireHouseholdRole(HouseholdRole minimum) {
-    var identity = currentIdentity();
-    if (identity.householdRole() == null) {
-      throw new HouseholdRequiredException();
-    }
-    if (rank(identity.householdRole()) < rank(minimum)) {
+    var actual = state().account().getHouseholdRole();
+    if (rank(actual) < rank(minimum)) {
       throw new AccessDeniedException("Household role " + minimum + " or higher is required.");
     }
   }
 
-  /**
-   * ADR 0015 activity visibility: a server admin sees all activity, an owner or parent sees the
-   * profiles of their active household, and everyone else sees their own activity plus the profiles
-   * granted to them.
-   */
   @Override
   public boolean canViewActivityOf(UUID profileId) {
-    var identity = currentIdentity();
     if (profileId == null) {
       return false;
     }
-    if (identity.role() == AccountRole.ADMIN || profileId.equals(identity.profileId())) {
+
+    var state = state();
+    if (state.account().getAccountRole() == AccountRole.ADMIN
+        || profileId.equals(state.activeProfileId())) {
       return true;
     }
-    if (identity.householdId() == null) {
+    if (rank(state.account().getHouseholdRole()) < rank(HouseholdRole.PARENT)) {
       return false;
     }
-    if (managesHouseholdProfiles(identity)) {
-      return profileInHousehold(profileId, identity.householdId());
+    return shareRepository.existsByProfileIdAndHouseholdIdAndStatus(
+        profileId, state.account().getHomeHouseholdId(), ProfileShareStatus.ACTIVE);
+  }
+
+  private RequestAuthorizationStateResolver.AuthorizationState state() {
+    var authentication = SecurityContextHolder.getContext().getAuthentication();
+    if (authentication instanceof StreamarrAuthenticationToken token) {
+      return stateResolver.resolve(token);
     }
-    return profileGrantedTo(identity, profileId);
+    throw new AuthenticationRequiredException();
   }
 
-  private static boolean managesHouseholdProfiles(AuthenticatedIdentity identity) {
-    return identity.householdRole() != null
-        && rank(identity.householdRole()) >= rank(HouseholdRole.PARENT);
-  }
-
-  private boolean profileInHousehold(UUID profileId, UUID householdId) {
-    return profileRepository
-        .findById(profileId)
-        .map(profile -> householdId.equals(profile.getHouseholdId()))
-        .orElse(false);
-  }
-
-  private boolean profileGrantedTo(AuthenticatedIdentity identity, UUID profileId) {
-    return accountProfileRepository
-        .findByAccountIdAndHouseholdIdAndProfileId(
-            identity.accountId(), identity.householdId(), profileId)
-        .isPresent();
+  private Jwt currentJwt() {
+    var authentication = SecurityContextHolder.getContext().getAuthentication();
+    if (authentication instanceof StreamarrAuthenticationToken token
+        && token.getCredentials() instanceof Jwt jwt) {
+      return jwt;
+    }
+    throw new AuthenticationRequiredException();
   }
 
   private static int rank(HouseholdRole role) {

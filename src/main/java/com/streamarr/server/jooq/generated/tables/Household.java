@@ -6,9 +6,8 @@ package com.streamarr.server.jooq.generated.tables;
 
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
-import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
-import com.streamarr.server.jooq.generated.tables.HouseholdMembership.HouseholdMembershipPath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
+import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
 import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
 import com.streamarr.server.jooq.generated.tables.records.HouseholdRecord;
 
@@ -95,6 +94,11 @@ public class Household extends TableImpl<HouseholdRecord> {
      */
     public final TableField<HouseholdRecord, String> DEFAULT_RATING_REGION = createField(DSL.name("default_rating_region"), SQLDataType.CLOB.nullable(false).defaultValue(DSL.field(DSL.raw("'US'::text"), SQLDataType.CLOB)), this, "");
 
+    /**
+     * The column <code>public.household.safety_version</code>.
+     */
+    public final TableField<HouseholdRecord, Long> SAFETY_VERSION = createField(DSL.name("safety_version"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.BIGINT)), this, "");
+
     private Household(Name alias, Table<HouseholdRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -167,51 +171,38 @@ public class Household extends TableImpl<HouseholdRecord> {
         return Keys.HOUSEHOLD_PKEY;
     }
 
-    private transient AuthSessionPath _authSession;
+    private transient ProfileHouseholdSharePath _profileHouseholdShare;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.auth_session</code> table
+     * <code>public.profile_household_share</code> table
      */
-    public AuthSessionPath authSession() {
-        if (_authSession == null)
-            _authSession = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_HOUSEHOLD.getInverseKey());
+    public ProfileHouseholdSharePath profileHouseholdShare() {
+        if (_profileHouseholdShare == null)
+            _profileHouseholdShare = new ProfileHouseholdSharePath(this, null, Keys.PROFILE_HOUSEHOLD_SHARE__FK_PROFILE_HOUSEHOLD_SHARE_HOUSEHOLD.getInverseKey());
 
-        return _authSession;
+        return _profileHouseholdShare;
     }
 
-    private transient HouseholdMembershipPath _householdMembership;
+    private transient UserAccountPath _userAccount;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.household_membership</code> table
+     * <code>public.user_account</code> table
      */
-    public HouseholdMembershipPath householdMembership() {
-        if (_householdMembership == null)
-            _householdMembership = new HouseholdMembershipPath(this, null, Keys.HOUSEHOLD_MEMBERSHIP__FK_HOUSEHOLD_MEMBERSHIP_HOUSEHOLD.getInverseKey());
+    public UserAccountPath userAccount() {
+        if (_userAccount == null)
+            _userAccount = new UserAccountPath(this, null, Keys.USER_ACCOUNT__FK_USER_ACCOUNT_HOME_HOUSEHOLD.getInverseKey());
 
-        return _householdMembership;
-    }
-
-    private transient ProfilePath _profile;
-
-    /**
-     * Get the implicit to-many join path to the <code>public.profile</code>
-     * table
-     */
-    public ProfilePath profile() {
-        if (_profile == null)
-            _profile = new ProfilePath(this, null, Keys.PROFILE__FK_PROFILE_HOUSEHOLD.getInverseKey());
-
-        return _profile;
+        return _userAccount;
     }
 
     /**
      * Get the implicit many-to-many join path to the
-     * <code>public.user_account</code> table
+     * <code>public.profile</code> table
      */
-    public UserAccountPath userAccount() {
-        return householdMembership().userAccount();
+    public ProfilePath profile() {
+        return profileHouseholdShare().profile();
     }
 
     @Override

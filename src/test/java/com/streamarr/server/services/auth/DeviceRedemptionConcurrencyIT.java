@@ -8,18 +8,14 @@ import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
-import com.streamarr.server.fixtures.AccountFixture;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
-import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
-import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.support.AuthTestSupport;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
@@ -49,7 +45,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   @Autowired private DeviceAuthorizationRepository authorizationRepository;
 
-  @Autowired private UserAccountRepository userAccountRepository;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private AuthSessionRepository sessionRepository;
 
@@ -57,18 +53,15 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   @Autowired private GatedClock gatedClock;
 
-  private final List<UUID> accountIds = new ArrayList<>();
+  private final List<UserAccount> accounts = new ArrayList<>();
 
   @AfterEach
   void deleteSeededRows() {
     gatedIssuer.reset();
     gatedClock.reset();
     authorizationRepository.deleteAll();
-    for (var accountId : accountIds) {
-      // FK cascades sweep auth_session and refresh_token rows.
-      userAccountRepository.deleteById(accountId);
-    }
-    accountIds.clear();
+    accounts.forEach(authTestSupport::deleteAccount);
+    accounts.clear();
   }
 
   @TestConfiguration
@@ -83,13 +76,8 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     @Bean
     @Primary
     GatedAccessTokenIssuer gatedAccessTokenIssuer(
-        JwtEncoder jwtEncoder,
-        AuthTokenProperties properties,
-        Clock clock,
-        HouseholdMembershipRepository membershipRepository,
-        AccountProfileRepository accountProfileRepository) {
-      return new GatedAccessTokenIssuer(
-          jwtEncoder, properties, clock, membershipRepository, accountProfileRepository);
+        JwtEncoder jwtEncoder, AuthTokenProperties properties, Clock clock) {
+      return new GatedAccessTokenIssuer(jwtEncoder, properties, clock);
     }
   }
 
@@ -171,13 +159,8 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
     private final AtomicBoolean failNextIssue = new AtomicBoolean();
 
-    GatedAccessTokenIssuer(
-        JwtEncoder jwtEncoder,
-        AuthTokenProperties properties,
-        Clock clock,
-        HouseholdMembershipRepository membershipRepository,
-        AccountProfileRepository accountProfileRepository) {
-      super(jwtEncoder, properties, clock, membershipRepository, accountProfileRepository);
+    GatedAccessTokenIssuer(JwtEncoder jwtEncoder, AuthTokenProperties properties, Clock clock) {
+      super(jwtEncoder, properties, clock);
     }
 
     @Override
@@ -291,8 +274,8 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
     // A deleted approver no longer authorizes consumption. No write is attempted, so this is a
     // refusal path rather than transaction-rollback evidence.
-    userAccountRepository.deleteById(approver.getId());
-    accountIds.remove(approver.getId());
+    authTestSupport.deleteAccount(approver);
+    accounts.remove(approver);
 
     assertThat(deviceAuthorizationService.redeem(issued.deviceCode()))
         .isInstanceOf(DevicePollResult.Expired.class);
@@ -369,8 +352,8 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   }
 
   private UserAccount seedApprover() {
-    var approver = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
-    accountIds.add(approver.getId());
+    var approver = authTestSupport.createAccount();
+    accounts.add(approver);
     return approver;
   }
 

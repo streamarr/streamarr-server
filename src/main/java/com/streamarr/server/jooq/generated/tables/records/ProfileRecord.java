@@ -4,6 +4,7 @@
 package com.streamarr.server.jooq.generated.tables.records;
 
 
+import com.streamarr.server.jooq.generated.enums.ProfileClassification;
 import com.streamarr.server.jooq.generated.tables.Profile;
 
 import java.time.OffsetDateTime;
@@ -92,31 +93,73 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
     }
 
     /**
-     * Setter for <code>public.profile.household_id</code>.
-     */
-    public void setHouseholdId(UUID value) {
-        set(5, value);
-    }
-
-    /**
-     * Getter for <code>public.profile.household_id</code>.
-     */
-    public UUID getHouseholdId() {
-        return (UUID) get(5);
-    }
-
-    /**
      * Setter for <code>public.profile.name</code>.
      */
     public void setName(String value) {
-        set(6, value);
+        set(5, value);
     }
 
     /**
      * Getter for <code>public.profile.name</code>.
      */
     public String getName() {
-        return (String) get(6);
+        return (String) get(5);
+    }
+
+    /**
+     * Setter for <code>public.profile.classification</code>.
+     */
+    public void setClassification(ProfileClassification value) {
+        set(6, value);
+    }
+
+    /**
+     * Getter for <code>public.profile.classification</code>.
+     */
+    public ProfileClassification getClassification() {
+        return (ProfileClassification) get(6);
+    }
+
+    /**
+     * Setter for <code>public.profile.maximum_allowed_rating_age</code>.
+     */
+    public void setMaximumAllowedRatingAge(Integer value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for <code>public.profile.maximum_allowed_rating_age</code>.
+     */
+    public Integer getMaximumAllowedRatingAge() {
+        return (Integer) get(7);
+    }
+
+    /**
+     * Setter for <code>public.profile.pin_hash</code>.
+     */
+    public void setPinHash(String value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for <code>public.profile.pin_hash</code>.
+     */
+    public String getPinHash() {
+        return (String) get(8);
+    }
+
+    /**
+     * Setter for <code>public.profile.management_version</code>.
+     */
+    public void setManagementVersion(Long value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>public.profile.management_version</code>.
+     */
+    public Long getManagementVersion() {
+        return (Long) get(9);
     }
 
     // -------------------------------------------------------------------------
@@ -142,7 +185,7 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
     /**
      * Create a detached, initialised ProfileRecord
      */
-    public ProfileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID householdId, String name) {
+    public ProfileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String name, ProfileClassification classification, Integer maximumAllowedRatingAge, String pinHash, Long managementVersion) {
         super(Profile.PROFILE);
 
         setId(id);
@@ -150,8 +193,11 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
         setCreatedBy(createdBy);
         setLastModifiedOn(lastModifiedOn);
         setLastModifiedBy(lastModifiedBy);
-        setHouseholdId(householdId);
         setName(name);
+        setClassification(classification);
+        setMaximumAllowedRatingAge(maximumAllowedRatingAge);
+        setPinHash(pinHash);
+        setManagementVersion(managementVersion);
         resetTouchedOnNotNull();
     }
 }

@@ -7,8 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
-import com.streamarr.server.repositories.auth.HouseholdRepository;
-import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.support.AuthTestSupport;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -27,9 +26,7 @@ class SetupServiceErrorTranslationIT extends AbstractIntegrationTest {
 
   @Autowired private SetupService setupService;
 
-  @Autowired private UserAccountRepository userAccountRepository;
-
-  @Autowired private HouseholdRepository householdRepository;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private DSLContext dsl;
 
@@ -45,16 +42,18 @@ class SetupServiceErrorTranslationIT extends AbstractIntegrationTest {
     dsl.deleteFrom(SERVER_BOOTSTRAP).execute();
 
     for (var setup : completedSetups) {
-      // No profile FK exists yet, so remapped watch rows must be swept explicitly before they
-      // strand in the reused container.
       dsl.deleteFrom(SESSION_PROGRESS)
           .where(SESSION_PROGRESS.PROFILE_ID.eq(setup.profile().getId()))
           .execute();
       dsl.deleteFrom(WATCH_HISTORY)
           .where(WATCH_HISTORY.PROFILE_ID.eq(setup.profile().getId()))
           .execute();
-      householdRepository.deleteById(setup.household().getId());
-      userAccountRepository.deleteById(setup.admin().getId());
+      authTestSupport.deleteIdentity(
+          AuthTestSupport.TestIdentity.builder()
+              .account(setup.admin())
+              .household(setup.household())
+              .profile(setup.profile())
+              .build());
     }
   }
 

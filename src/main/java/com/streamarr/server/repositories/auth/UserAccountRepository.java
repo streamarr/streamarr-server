@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.auth;
 
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import java.util.Optional;
 import java.util.UUID;
@@ -11,4 +12,7 @@ public interface UserAccountRepository
     extends JpaRepository<UserAccount, UUID>, UserAccountRepositoryCustom {
 
   Optional<UserAccount> findByEmailIgnoreCase(String email);
+
+  Optional<UserAccount> findByHomeHouseholdIdAndHouseholdRole(
+      UUID homeHouseholdId, HouseholdRole householdRole);
 }

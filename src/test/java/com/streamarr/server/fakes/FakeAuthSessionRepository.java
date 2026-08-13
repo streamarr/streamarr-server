@@ -53,10 +53,30 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
         .filter(stored -> stored.getRevokedAt() == null)
         .map(
             stored -> {
-              stored.setActiveHouseholdId(session.getActiveHouseholdId());
               stored.setActiveProfileId(session.getActiveProfileId());
               return true;
             })
         .orElse(false);
+  }
+
+  @Override
+  public int clearProfileSelection(UUID profileId, UUID householdId, Instant now) {
+    var matches =
+        database.values().stream()
+            .filter(session -> profileId.equals(session.getActiveProfileId()))
+            .toList();
+    matches.forEach(session -> session.setActiveProfileId(null));
+    return matches.size();
+  }
+
+  @Override
+  public int clearAccountSelections(UUID accountId, Instant now) {
+    var matches =
+        database.values().stream()
+            .filter(session -> accountId.equals(session.getAccountId()))
+            .filter(session -> session.getActiveProfileId() != null)
+            .toList();
+    matches.forEach(session -> session.setActiveProfileId(null));
+    return matches.size();
   }
 }

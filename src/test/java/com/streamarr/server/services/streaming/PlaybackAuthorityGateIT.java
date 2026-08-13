@@ -3,14 +3,10 @@ package com.streamarr.server.services.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.auth.AccountProfile;
-import com.streamarr.server.domain.auth.HouseholdMembership;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
-import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
@@ -36,8 +32,7 @@ class PlaybackAuthorityGateIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private AuthSessionRepository authSessionRepository;
   @Autowired private UserAccountRepository userAccountRepository;
-  @Autowired private HouseholdMembershipRepository membershipRepository;
-  @Autowired private AccountProfileRepository accountProfileRepository;
+  @Autowired private ProfileHouseholdShareRepository profileShareRepository;
 
   private AuthTestSupport.TestIdentity identity;
   private PlaybackAuthority authority;
@@ -45,7 +40,6 @@ class PlaybackAuthorityGateIT extends AbstractIntegrationTest {
   @BeforeEach
   void setUp() {
     identity = authTestSupport.createIdentity();
-    identity.session().setActiveHouseholdId(identity.household().getId());
     identity.session().setActiveProfileId(identity.profile().getId());
     authSessionRepository.updateSelectionIfLive(identity.session(), Instant.now());
     authority = authorityFor(identity);
@@ -64,19 +58,6 @@ class PlaybackAuthorityGateIT extends AbstractIntegrationTest {
     try {
       assertThat(authorityGate.allows(authority)).isTrue();
 
-      membershipRepository.grantMembership(
-          HouseholdMembership.builder()
-              .accountId(identity.account().getId())
-              .householdId(alternate.household().getId())
-              .householdRole(HouseholdRole.MEMBER)
-              .build());
-      accountProfileRepository.linkProfile(
-          AccountProfile.builder()
-              .accountId(identity.account().getId())
-              .householdId(alternate.household().getId())
-              .profileId(alternate.profile().getId())
-              .build());
-      identity.session().setActiveHouseholdId(alternate.household().getId());
       identity.session().setActiveProfileId(alternate.profile().getId());
 
       assertThat(authSessionRepository.updateSelectionIfLive(identity.session(), Instant.now()))
@@ -109,22 +90,12 @@ class PlaybackAuthorityGateIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should deny playback authority when household membership is revoked")
-  void shouldDenyPlaybackAuthorityWhenHouseholdMembershipIsRevoked() {
-    membershipRepository.revokeMembership(identity.account().getId(), identity.household().getId());
-
-    assertThat(authorityGate.allows(authority)).isFalse();
-  }
-
-  @Test
-  @DisplayName("Should deny playback authority when profile grant is revoked")
-  void shouldDenyPlaybackAuthorityWhenProfileGrantIsRevoked() {
-    accountProfileRepository.revokeProfileLink(
-        AccountProfile.builder()
-            .accountId(identity.account().getId())
-            .householdId(identity.household().getId())
-            .profileId(identity.profile().getId())
-            .build());
+  @DisplayName("Should deny playback authority when active profile share is removed")
+  void shouldDenyPlaybackAuthorityWhenActiveProfileShareRemoved() {
+    profileShareRepository.delete(
+        profileShareRepository
+            .findByProfileIdAndHouseholdId(identity.profile().getId(), identity.household().getId())
+            .orElseThrow());
 
     assertThat(authorityGate.allows(authority)).isFalse();
   }
@@ -140,22 +111,26 @@ class PlaybackAuthorityGateIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should not deadlock with concurrent profile grant revocation on PostgreSQL 18 when authorizing playback")
-  void shouldNotDeadlockWithConcurrentProfileGrantRevocationOnPostgresql18WhenAuthorizingPlayback()
+      "Should not deadlock with concurrent profile share removal on PostgreSQL 18 when authorizing playback")
+  void shouldNotDeadlockWithConcurrentProfileShareRemovalOnPostgresql18WhenAuthorizingPlayback()
       throws Exception {
     var start = new CyclicBarrier(2);
-    var link =
-        AccountProfile.builder()
-            .accountId(identity.account().getId())
-            .householdId(identity.household().getId())
-            .profileId(identity.profile().getId())
-            .build();
+    var share =
+        profileShareRepository
+            .findByProfileIdAndHouseholdId(identity.profile().getId(), identity.household().getId())
+            .orElseThrow();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var access = executor.submit(() -> awaitThen(start, () -> authorityGate.allows(authority)));
       var revoke =
           executor.submit(
-              () -> awaitThen(start, () -> accountProfileRepository.revokeProfileLink(link)));
+              () ->
+                  awaitThen(
+                      start,
+                      () -> {
+                        profileShareRepository.delete(share);
+                        return true;
+                      }));
 
       assertThat(access.get(5, TimeUnit.SECONDS)).isIn(true, false);
       assertThat(revoke.get(5, TimeUnit.SECONDS)).isTrue();

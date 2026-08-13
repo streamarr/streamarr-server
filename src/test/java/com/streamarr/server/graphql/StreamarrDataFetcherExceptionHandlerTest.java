@@ -3,7 +3,6 @@ package com.streamarr.server.graphql;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
-import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import graphql.Scalars;
@@ -31,12 +30,6 @@ class StreamarrDataFetcherExceptionHandlerTest {
   @DisplayName("Should map profile required to code when profile missing")
   void shouldMapProfileRequiredToCodeWhenProfileMissing() {
     assertThat(codeFor(new ProfileRequiredException())).isEqualTo("PROFILE_REQUIRED");
-  }
-
-  @Test
-  @DisplayName("Should map household required to code when household missing")
-  void shouldMapHouseholdRequiredToCodeWhenHouseholdMissing() {
-    assertThat(codeFor(new HouseholdRequiredException())).isEqualTo("HOUSEHOLD_REQUIRED");
   }
 
   @Test

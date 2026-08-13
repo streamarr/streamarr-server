@@ -1,6 +1,7 @@
 package com.streamarr.server.config.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -9,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.services.auth.TokenScope;
+import com.streamarr.server.services.authorization.RequestAuthorizationStateResolver;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.Filter;
@@ -238,6 +240,16 @@ class SecurityConfigTest {
     @Bean
     AuthCookiePolicy authCookiePolicy() {
       return AuthCookiePolicy.SECURE;
+    }
+
+    @Bean
+    LiveIdentityAuthorizationFilter liveIdentityAuthorizationFilter(
+        RestAuthenticationEntryPoint authenticationEntryPoint,
+        RestAccessDeniedHandler accessDeniedHandler) {
+      return new LiveIdentityAuthorizationFilter(
+          mock(RequestAuthorizationStateResolver.class),
+          authenticationEntryPoint,
+          accessDeniedHandler);
     }
   }
 

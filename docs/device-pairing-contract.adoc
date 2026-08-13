@@ -173,8 +173,8 @@ No enumeration value leaks — both endpoints share one account-keyed guessing b
 
 == Domain states are not failures
 
-An account with zero household memberships, or a household with zero selectable profiles, is a *valid* result of pairing.
-Clients render guidance ("no households yet — finish setup on the web", "no profiles") and never an error screen or an infinite picker.
+Every account has one home household, and that household having zero selectable profiles is a *valid* result of pairing.
+Clients render "no profiles" guidance and never a household picker, an error screen, or an infinite profile picker.
 
 == Response headers
 

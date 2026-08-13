@@ -4,13 +4,6 @@ type Me {
     displayName: String!
     role: String!
     scope: String!
-    memberships: [Membership!]!
-}
-
-type Membership {
-    householdId: ID!
-    householdName: String!
-    householdRole: String!
     profiles: [SelectableProfile!]!
 }
 
@@ -18,4 +11,131 @@ type SelectableProfile {
     id: ID!
     name: String!
     active: Boolean!
+}
+
+type PortableProfileSummary {
+    id: ID!
+    name: String!
+    classification: String!
+    maximumAllowedRatingAge: Int
+    pinProtected: Boolean!
+}
+
+type PortableProfileShare {
+    id: ID!
+    profileId: ID!
+    householdId: ID!
+    status: String!
+}
+
+type PortableProfileManager {
+    id: ID!
+    accountId: ID!
+    profileId: ID!
+}
+
+type PortableProfileManagerInvitation {
+    id: ID!
+    profileId: ID!
+    invitingAccountId: ID!
+    invitedAccountId: ID!
+    status: String!
+}
+
+enum ProfileClassificationInput {
+    KID
+    ADULT
+}
+
+enum HouseholdRoleInput {
+    OWNER
+    PARENT
+    MEMBER
+}
+
+enum ProfileManagerOverrideActionInput {
+    GRANT
+    REMOVE
+}
+
+input PortableProfileCreationInput {
+    name: String!
+    classification: ProfileClassificationInput!
+    maximumAllowedRatingAge: Int
+    pin: String
+}
+
+input PortableProfileRenameInput {
+    profileId: ID!
+    name: String!
+}
+
+input ProfileShareOfferInput {
+    profileId: ID!
+    targetHouseholdId: ID!
+}
+
+input ProfileShareAcceptanceInput {
+    shareId: ID!
+    managementInvitationId: ID
+}
+
+input ProfileManagerInviteInput {
+    profileId: ID!
+    invitedAccountId: ID!
+}
+
+input ProfileManagerInvitationAcceptanceInput {
+    invitationId: ID!
+}
+
+input ProfileReferenceInput {
+    profileId: ID!
+}
+
+input ProfilePolicyChangeInput {
+    profileId: ID!
+    classification: ProfileClassificationInput!
+    maximumAllowedRatingAge: Int
+    pin: String
+}
+
+input ProfileDeletionInput {
+    profileId: ID!
+    password: String!
+}
+
+input ForceProfileDeletionInput {
+    profileId: ID!
+    password: String!
+    reason: String!
+}
+
+input ForceProfileUnshareInput {
+    shareId: ID!
+    password: String!
+    reason: String!
+}
+
+input ProfileManagerOverrideInput {
+    profileId: ID!
+    targetAccountId: ID!
+    action: ProfileManagerOverrideActionInput!
+    password: String!
+    reason: String!
+}
+
+input AccountHouseholdTransferInput {
+    targetAccountId: ID!
+    targetHouseholdId: ID!
+    targetRole: HouseholdRoleInput!
+    password: String!
+    reason: String!
+}
+
+input HouseholdOwnershipTransferInput {
+    householdId: ID!
+    targetAccountId: ID!
+    password: String!
+    reason: String!
 }

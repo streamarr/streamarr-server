@@ -9,17 +9,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
-import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.TokenContext;
+import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -44,7 +42,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
 
-  @Autowired private UserAccountRepository userAccountRepository;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private DeviceAuthorizationRepository authorizationRepository;
 
@@ -54,13 +52,13 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
 
   @Autowired private ObjectMapper objectMapper;
 
-  private final List<UUID> accountIds = new ArrayList<>();
+  private final List<UserAccount> accounts = new ArrayList<>();
 
   @AfterEach
   void deleteSeededRows() {
     authorizationRepository.deleteAll();
-    accountIds.forEach(userAccountRepository::deleteById);
-    accountIds.clear();
+    accounts.forEach(authTestSupport::deleteAccount);
+    accounts.clear();
   }
 
   @Test
@@ -538,8 +536,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   private UserAccount seedAccount() {
-    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
-    accountIds.add(account.getId());
+    var account = authTestSupport.createAccount();
+    accounts.add(account);
     return account;
   }
 

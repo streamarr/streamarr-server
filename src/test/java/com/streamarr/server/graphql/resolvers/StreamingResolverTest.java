@@ -19,9 +19,7 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
-import com.streamarr.server.fakes.FakeAccountProfileRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
@@ -30,6 +28,7 @@ import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
+import com.streamarr.server.support.security.ResolverAuthorizationTestConfig;
 import com.streamarr.server.support.security.TestIdentityConstants;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.nio.file.Path;
@@ -52,6 +51,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 
 @Tag("UnitTest")
 @EnableDgsTest
@@ -62,6 +62,7 @@ import org.springframework.context.annotation.Bean;
       StreamingResolverTest.TestConfig.class,
       SecurityContextAuthorizationService.class
     })
+@Import(ResolverAuthorizationTestConfig.class)
 @DisplayName("Streaming Resolver Tests")
 class StreamingResolverTest {
 
@@ -98,11 +99,6 @@ class StreamingResolverTest {
     @Bean
     ProfileRepository profileRepository() {
       return new FakeProfileRepository();
-    }
-
-    @Bean
-    AccountProfileRepository accountProfileRepository() {
-      return new FakeAccountProfileRepository();
     }
 
     @Bean

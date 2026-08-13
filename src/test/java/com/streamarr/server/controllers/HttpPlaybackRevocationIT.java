@@ -47,7 +47,6 @@ class HttpPlaybackRevocationIT extends AbstractIntegrationTest {
   @BeforeEach
   void setUp() {
     identity = authTestSupport.createIdentity();
-    identity.session().setActiveHouseholdId(identity.household().getId());
     identity.session().setActiveProfileId(identity.profile().getId());
     authSessionRepository.updateSelectionIfLive(identity.session(), Instant.now());
     streamSession = defaultSessionBuilder().authority(authority()).build();
@@ -85,7 +84,7 @@ class HttpPlaybackRevocationIT extends AbstractIntegrationTest {
     var authenticatedIdentity =
         AuthenticatedIdentity.fromJwt(jwtDecoder.decode(authTestSupport.profileBearer(identity)));
     return playbackTokenIssuer
-        .issue(authenticatedIdentity, streamSession, Duration.ofHours(1))
+        .issue(authenticatedIdentity, authority(), streamSession, Duration.ofHours(1))
         .value();
   }
 

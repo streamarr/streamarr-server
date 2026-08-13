@@ -17,12 +17,12 @@ import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.dataloaders.ImageDataLoader;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.support.security.ResolverAuthorizationTestConfig;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
 import java.util.Optional;
@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
@@ -48,14 +49,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       SeasonFieldResolver.class,
       SecurityContextAuthorizationService.class,
     })
+@Import(ResolverAuthorizationTestConfig.class)
 @DisplayName("Image Field Resolver Tests")
 class ImageFieldResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private ProfileRepository profileRepository;
-
-  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private ImageRepository imageRepository;
   @MockitoBean private MovieService movieService;

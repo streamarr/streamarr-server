@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -32,6 +33,12 @@ public class UserAccount extends BaseAuditableEntity<UserAccount> {
   @Enumerated(EnumType.STRING)
   @JdbcTypeCode(SqlTypes.NAMED_ENUM)
   private AccountRole accountRole;
+
+  private UUID homeHouseholdId;
+
+  @Enumerated(EnumType.STRING)
+  @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+  private HouseholdRole householdRole;
 
   // Mirrors the V044 column default; disabled-by-default flows (invites, verification)
   // must opt out explicitly.

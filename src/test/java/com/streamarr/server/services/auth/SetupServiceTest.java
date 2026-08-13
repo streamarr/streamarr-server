@@ -7,12 +7,13 @@ import com.streamarr.server.config.security.Argon2Properties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
-import com.streamarr.server.fakes.FakeAccountProfileRepository;
-import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
+import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
+import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeServerBootstrapRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
@@ -39,11 +40,11 @@ class SetupServiceTest {
 
   private final FakeUserAccountRepository userAccountRepository = new FakeUserAccountRepository();
   private final FakeHouseholdRepository householdRepository = new FakeHouseholdRepository();
-  private final FakeHouseholdMembershipRepository membershipRepository =
-      new FakeHouseholdMembershipRepository();
   private final FakeProfileRepository profileRepository = new FakeProfileRepository();
-  private final FakeAccountProfileRepository accountProfileRepository =
-      new FakeAccountProfileRepository();
+  private final FakeProfileManagerRepository profileManagerRepository =
+      new FakeProfileManagerRepository();
+  private final FakeProfileHouseholdShareRepository profileShareRepository =
+      new FakeProfileHouseholdShareRepository();
   private final FakeServerBootstrapRepository bootstrapRepository =
       new FakeServerBootstrapRepository();
   private final FakeSessionProgressRepository sessionProgressRepository =
@@ -60,17 +61,17 @@ class SetupServiceTest {
       new SetupService(
           userAccountRepository,
           householdRepository,
-          membershipRepository,
           profileRepository,
-          accountProfileRepository,
+          profileManagerRepository,
+          profileShareRepository,
           bootstrapRepository,
           sessionProgressRepository,
           watchHistoryRepository,
           passwordEncoder);
 
   @Test
-  @DisplayName("Should create admin household and profile when bootstrap unclaimed")
-  void shouldCreateAdminHouseholdAndProfileWhenBootstrapUnclaimed() {
+  @DisplayName("Should create owned home and portable profile when bootstrap unclaimed")
+  void shouldCreateOwnedHomeAndPortableProfileWhenBootstrapUnclaimed() {
     sessionProgressRepository.save(
         SessionProgressFixture.progressBuilder(PLACEHOLDER_PROFILE_ID, UUID.randomUUID())
             .durationSeconds(3600)
@@ -95,22 +96,27 @@ class SetupServiceTest {
     assertThat(household.getName()).isEqualTo("Home");
     assertThat(household.getDefaultRatingRegion()).isEqualTo("US");
 
-    var membership = membershipRepository.findAll().getFirst();
-    assertThat(membership.getAccountId()).isEqualTo(admin.getId());
-    assertThat(membership.getHouseholdId()).isEqualTo(household.getId());
-    assertThat(membership.getHouseholdRole()).isEqualTo(HouseholdRole.OWNER);
+    assertThat(admin.getHomeHouseholdId()).isEqualTo(household.getId());
+    assertThat(admin.getHouseholdRole()).isEqualTo(HouseholdRole.OWNER);
 
     var profile = profileRepository.findById(result.profile().getId()).orElseThrow();
-    assertThat(profile.getHouseholdId()).isEqualTo(household.getId());
     assertThat(profile.getName()).isEqualTo("Andrew");
 
-    assertThat(accountProfileRepository.findAll())
+    assertThat(profileManagerRepository.findAll())
         .singleElement()
         .satisfies(
-            link -> {
-              assertThat(link.getAccountId()).isEqualTo(admin.getId());
-              assertThat(link.getHouseholdId()).isEqualTo(household.getId());
-              assertThat(link.getProfileId()).isEqualTo(profile.getId());
+            manager -> {
+              assertThat(manager.getAccountId()).isEqualTo(admin.getId());
+              assertThat(manager.getProfileId()).isEqualTo(profile.getId());
+            });
+
+    assertThat(profileShareRepository.findAll())
+        .singleElement()
+        .satisfies(
+            share -> {
+              assertThat(share.getProfileId()).isEqualTo(profile.getId());
+              assertThat(share.getHouseholdId()).isEqualTo(household.getId());
+              assertThat(share.getStatus()).isEqualTo(ProfileShareStatus.ACTIVE);
             });
 
     assertThat(sessionProgressRepository.findAll())
@@ -191,9 +197,9 @@ class SetupServiceTest {
         new SetupService(
             throwingRepository,
             householdRepository,
-            membershipRepository,
             profileRepository,
-            accountProfileRepository,
+            profileManagerRepository,
+            profileShareRepository,
             bootstrapRepository,
             sessionProgressRepository,
             watchHistoryRepository,

@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
@@ -51,7 +51,7 @@ class PlaybackTokenIssuerTest {
     var streamSession = sessionOwnedBy(profileId);
     var streamSessionId = streamSession.getSessionId();
 
-    var token = issuer.issue(profileIdentity(), streamSession, Duration.ofHours(24));
+    var token = issuer.issue(profileIdentity(), authority(), streamSession, Duration.ofHours(24));
 
     assertThat(token.scope()).isEqualTo(TokenScope.PLAYBACK);
     var decoded = decode(token.value());
@@ -62,7 +62,6 @@ class PlaybackTokenIssuerTest {
     assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("playback");
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
         .isEqualTo(householdId.toString());
-    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("MEMBER");
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isEqualTo(profileId.toString());
     assertThat(decoded.getClaimAsString("stream_session_id")).isEqualTo(streamSessionId.toString());
     assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
@@ -95,7 +94,7 @@ class PlaybackTokenIssuerTest {
 
     // The issuer is the only authority that mints playback capability: whatever future caller
     // asks, an unowned session must never become a token, and reads as missing.
-    assertThatThrownBy(() -> issuer.issue(identity, foreignSession, ttl))
+    assertThatThrownBy(() -> issuer.issue(identity, authority(), foreignSession, ttl))
         .isInstanceOf(SessionNotFoundException.class);
   }
 
@@ -107,7 +106,7 @@ class PlaybackTokenIssuerTest {
     var ttl = Duration.ofHours(1);
     authorityGate.deny();
 
-    assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
+    assertThatThrownBy(() -> issuer.issue(identity, authority(), streamSession, ttl))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 
@@ -117,8 +116,15 @@ class PlaybackTokenIssuerTest {
         .role(AccountRole.USER)
         .authSessionId(sessionId)
         .scope(TokenScope.PROFILE)
+        .profileId(profileId)
+        .build();
+  }
+
+  private PlaybackAuthority authority() {
+    return PlaybackAuthority.builder()
+        .authSessionId(sessionId)
+        .accountId(accountId)
         .householdId(householdId)
-        .householdRole(HouseholdRole.MEMBER)
         .profileId(profileId)
         .build();
   }

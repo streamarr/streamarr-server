@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.support.security.ResolverAuthorizationTestConfig.authorizeProfileContext;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -20,16 +21,19 @@ import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.authorization.RequestAuthorizationStateResolver;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("IntegrationTest")
 @EnableDgsTest
@@ -45,6 +49,12 @@ class SeriesResolverIT extends AbstractIntegrationTest {
   @Autowired private PersonRepository personRepository;
   @Autowired private CompanyRepository companyRepository;
   @Autowired private GenreRepository genreRepository;
+  @MockitoBean private RequestAuthorizationStateResolver authorizationStateResolver;
+
+  @BeforeEach
+  void authorizeProfile() {
+    authorizeProfileContext(authorizationStateResolver);
+  }
 
   @Test
   @DisplayName("Should resolve series scalar fields when the season is queried")

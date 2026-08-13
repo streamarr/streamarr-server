@@ -1,16 +1,17 @@
 package com.streamarr.server.services.auth;
 
-import com.streamarr.server.domain.auth.AccountProfile;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.Household;
-import com.streamarr.server.domain.auth.HouseholdMembership;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileManager;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
-import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.ServerBootstrapRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -44,9 +45,9 @@ public class SetupService {
 
   private final UserAccountRepository userAccountRepository;
   private final HouseholdRepository householdRepository;
-  private final HouseholdMembershipRepository membershipRepository;
   private final ProfileRepository profileRepository;
-  private final AccountProfileRepository accountProfileRepository;
+  private final ProfileManagerRepository profileManagerRepository;
+  private final ProfileHouseholdShareRepository profileShareRepository;
   private final ServerBootstrapRepository serverBootstrapRepository;
   private final SessionProgressRepository sessionProgressRepository;
   private final WatchHistoryRepository watchHistoryRepository;
@@ -66,12 +67,6 @@ public class SetupService {
 
     // saveAndFlush before each jOOQ statement: Hibernate defers JPA inserts until flush, but
     // the claim and link run as direct SQL against those rows' foreign keys.
-    var admin = createAdminAccount(command);
-
-    if (!serverBootstrapRepository.claim(admin.getId())) {
-      throw new SetupAlreadyCompletedException();
-    }
-
     var household =
         householdRepository.save(
             Household.builder()
@@ -79,22 +74,22 @@ public class SetupService {
                 .defaultRatingRegion(DEFAULT_RATING_REGION)
                 .build());
 
-    membershipRepository.grantMembership(
-        HouseholdMembership.builder()
-            .accountId(admin.getId())
-            .householdId(household.getId())
-            .householdRole(HouseholdRole.OWNER)
-            .build());
+    var admin = createAdminAccount(command, household.getId());
+
+    if (!serverBootstrapRepository.claim(admin.getId())) {
+      throw new SetupAlreadyCompletedException();
+    }
 
     var profile =
-        profileRepository.saveAndFlush(
-            Profile.builder().householdId(household.getId()).name(command.profileName()).build());
+        profileRepository.saveAndFlush(Profile.builder().name(command.profileName()).build());
 
-    accountProfileRepository.linkProfile(
-        AccountProfile.builder()
-            .accountId(admin.getId())
-            .householdId(household.getId())
+    profileManagerRepository.save(
+        ProfileManager.builder().accountId(admin.getId()).profileId(profile.getId()).build());
+    profileShareRepository.save(
+        ProfileHouseholdShare.builder()
             .profileId(profile.getId())
+            .householdId(household.getId())
+            .status(ProfileShareStatus.ACTIVE)
             .build());
 
     sessionProgressRepository.reassignProfile(LEGACY_PLACEHOLDER_PROFILE_ID, profile.getId());
@@ -103,7 +98,7 @@ public class SetupService {
     return SetupResult.builder().admin(admin).household(household).profile(profile).build();
   }
 
-  private UserAccount createAdminAccount(SetupCommand command) {
+  private UserAccount createAdminAccount(SetupCommand command, UUID homeHouseholdId) {
     // Accounts only exist once setup has won, so a duplicate email before the claim can only
     // be a competing setup that already flushed — report the domain conflict, not the
     // constraint violation. Any other integrity failure is a real defect and must surface.
@@ -114,6 +109,8 @@ public class SetupService {
               .displayName(command.displayName())
               .passwordHash(passwordEncoder.encode(command.password()))
               .accountRole(AccountRole.ADMIN)
+              .homeHouseholdId(homeHouseholdId)
+              .householdRole(HouseholdRole.OWNER)
               .enabled(true)
               .build());
     } catch (DataIntegrityViolationException e) {

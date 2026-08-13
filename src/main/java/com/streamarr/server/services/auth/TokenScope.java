@@ -4,7 +4,6 @@ import java.util.Locale;
 
 public enum TokenScope {
   ACCOUNT,
-  HOUSEHOLD,
   PROFILE,
   /** Authorizes only stream paths; deliberately outside the scope hierarchy. */
   PLAYBACK;

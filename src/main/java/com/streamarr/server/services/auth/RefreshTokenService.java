@@ -63,7 +63,6 @@ public class RefreshTokenService {
             AuthSession.builder()
                 .accountId(command.accountId())
                 .deviceName(command.deviceName())
-                .activeHouseholdId(command.activeHouseholdId())
                 .activeProfileId(command.activeProfileId())
                 .build());
 

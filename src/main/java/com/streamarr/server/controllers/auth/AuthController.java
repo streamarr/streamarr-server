@@ -93,18 +93,6 @@ public class AuthController {
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
-  @PostMapping("/select-household")
-  public ResponseEntity<AuthTokensResponse> selectHousehold(
-      @Valid @RequestBody SelectHouseholdRequest request, HttpServletRequest httpRequest) {
-    var identity = authorizationService.currentIdentity();
-    var context =
-        sessionScopeService.selectHousehold(
-            identity.accountId(), identity.authSessionId(), request.householdId());
-    return respondAccessOnly(
-        accessTokenIssuer.issueDerived(context, authorizationService.currentTokenExpiry()),
-        StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
-  }
-
   @PostMapping("/select-profile")
   public ResponseEntity<AuthTokensResponse> selectProfile(
       @Valid @RequestBody SelectProfileRequest request, HttpServletRequest httpRequest) {
@@ -131,7 +119,11 @@ public class AuthController {
                 .build());
 
     var issued = refreshTokenService.createSession(result.admin(), deviceNameOf(httpRequest));
-    var context = sessionScopeService.autoSelectContext(result.admin(), issued.session());
+    var context =
+        com.streamarr.server.services.auth.TokenContext.builder()
+            .account(result.admin())
+            .session(issued.session())
+            .build();
     var accessToken = accessTokenIssuer.issue(context);
 
     return respond(HttpStatus.CREATED, accessToken, issued.rawToken(), request.cookieMode());
@@ -149,7 +141,11 @@ public class AuthController {
                 .source(httpRequest.getRemoteAddr())
                 .build());
 
-    var context = sessionScopeService.autoSelectContext(result.account(), result.session());
+    var context =
+        com.streamarr.server.services.auth.TokenContext.builder()
+            .account(result.account())
+            .session(result.session())
+            .build();
     var accessToken = accessTokenIssuer.issue(context);
 
     return respond(HttpStatus.OK, accessToken, result.rawRefreshToken(), request.cookieMode());

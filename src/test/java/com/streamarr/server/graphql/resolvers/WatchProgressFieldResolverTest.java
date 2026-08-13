@@ -25,12 +25,12 @@ import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.graphql.dataloaders.AggregateWatchProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.SessionProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
+import com.streamarr.server.support.security.ResolverAuthorizationTestConfig;
 import com.streamarr.server.support.security.TestIdentityConstants;
 import com.streamarr.server.support.security.WithAccountContext;
 import com.streamarr.server.support.security.WithProfileContext;
@@ -47,6 +47,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
@@ -66,6 +67,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       WatchProgressFieldResolverTest.TestConfig.class,
       SecurityContextAuthorizationService.class
     })
+@Import(ResolverAuthorizationTestConfig.class)
 @DisplayName("Watch Progress Field Resolver Tests")
 class WatchProgressFieldResolverTest {
 
@@ -78,8 +80,6 @@ class WatchProgressFieldResolverTest {
   @Autowired private FakeSeasonRepository seasonRepository;
 
   @MockitoBean private ProfileRepository profileRepository;
-
-  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private MovieService movieService;
   @MockitoBean private SeriesService seriesService;

@@ -10,6 +10,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.annotation.web.configurers.CsrfConfigurer;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.header.HeaderWriterFilter;
@@ -25,6 +26,7 @@ public class SecurityConfig {
   private final RestAccessDeniedHandler accessDeniedHandler;
   private final AuthTokenProperties tokenProperties;
   private final AuthCookiePolicy cookiePolicy;
+  private final LiveIdentityAuthorizationFilter liveIdentityAuthorizationFilter;
 
   /**
    * The permit matrix: pre-auth endpoints (shared with the bearer resolver, so the two lists cannot
@@ -43,6 +45,7 @@ public class SecurityConfig {
   SecurityFilterChain securityFilterChain(HttpSecurity http) {
     http.removeConfigurer(CsrfConfigurer.class);
     return http.addFilterAfter(cookieScopedCsrfFilter(), HeaderWriterFilter.class)
+        .addFilterAfter(liveIdentityAuthorizationFilter, BearerTokenAuthenticationFilter.class)
         .authorizeHttpRequests(
             authorize ->
                 authorize

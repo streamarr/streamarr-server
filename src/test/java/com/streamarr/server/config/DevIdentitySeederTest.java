@@ -7,9 +7,9 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.security.Argon2Properties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
-import com.streamarr.server.fakes.FakeAccountProfileRepository;
-import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
+import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
+import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeServerBootstrapRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
@@ -27,8 +27,6 @@ import org.slf4j.LoggerFactory;
 class DevIdentitySeederTest {
 
   private final FakeUserAccountRepository userAccountRepository = new FakeUserAccountRepository();
-  private final FakeHouseholdMembershipRepository membershipRepository =
-      new FakeHouseholdMembershipRepository();
   private final FakeServerBootstrapRepository bootstrapRepository =
       new FakeServerBootstrapRepository();
 
@@ -36,9 +34,9 @@ class DevIdentitySeederTest {
       new SetupService(
           userAccountRepository,
           new FakeHouseholdRepository(),
-          membershipRepository,
           new FakeProfileRepository(),
-          new FakeAccountProfileRepository(),
+          new FakeProfileManagerRepository(),
+          new FakeProfileHouseholdShareRepository(),
           bootstrapRepository,
           new FakeSessionProgressRepository(),
           new FakeWatchHistoryRepository(),

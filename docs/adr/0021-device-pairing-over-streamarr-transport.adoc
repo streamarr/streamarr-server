@@ -4,6 +4,9 @@
 
 Proposed
 
+NOTE: link:0022-single-home-accounts-and-portable-profile-sharing.adoc[ADR 0022] supersedes only this ADR's post-pairing household-selection step.
+The device-pairing transport, polling, approval, and session-creation decisions remain unchanged.
+
 == Context
 
 link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] rejects lowering the bar for limited-input devices: a TV should not ask a person to type an account password on a remote control, and a password typed on the least-trusted screen in the house is the credential most likely to be shoulder-surfed or captured.

@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
-import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
@@ -77,20 +76,8 @@ class AuthExceptionHandlerTest {
   }
 
   @Test
-  @DisplayName("Should respond 400 household required when no household selected")
-  void shouldRespond400HouseholdRequiredWhenNoHouseholdSelected() {
-    var response = handler.handleHouseholdRequired(new HouseholdRequiredException());
-
-    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-    assertThat(response.getBody())
-        .isEqualTo(
-            new AuthErrorResponse(
-                "HOUSEHOLD_REQUIRED", "A household must be selected for this operation."));
-  }
-
-  @Test
-  @DisplayName("Should respond 403 household access denied when membership missing")
-  void shouldRespond403HouseholdAccessDeniedWhenMembershipMissing() {
+  @DisplayName("Should respond 403 household access denied when household inaccessible")
+  void shouldRespond403HouseholdAccessDeniedWhenHouseholdInaccessible() {
     var response = handler.handleHouseholdDenied(new HouseholdAccessDeniedException());
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
