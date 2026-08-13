@@ -13,9 +13,14 @@ import java.util.UUID;
 public class FakeImageRepository extends FakeJpaRepository<Image> implements ImageRepository {
 
   private boolean failOnInsertAllIfAbsent;
+  private boolean failOnReplaceLogicalArtwork;
 
   public void setFailOnInsertAllIfAbsent(boolean failOnInsertAllIfAbsent) {
     this.failOnInsertAllIfAbsent = failOnInsertAllIfAbsent;
+  }
+
+  public void setFailOnReplaceLogicalArtwork(boolean failOnReplaceLogicalArtwork) {
+    this.failOnReplaceLogicalArtwork = failOnReplaceLogicalArtwork;
   }
 
   @Override
@@ -34,6 +39,25 @@ public class FakeImageRepository extends FakeJpaRepository<Image> implements Ima
     }
 
     return Set.copyOf(insertedImageIds);
+  }
+
+  @Override
+  public List<String> replaceLogicalArtwork(List<Image> images) {
+    if (failOnReplaceLogicalArtwork) {
+      throw new RuntimeException("Simulated logical artwork replacement failure");
+    }
+    if (images.isEmpty()) {
+      return List.of();
+    }
+
+    var first = images.getFirst();
+    var existing =
+        findByEntityIdAndEntityTypeAndImageType(
+            first.getEntityId(), first.getEntityType(), first.getImageType());
+    var replacedPaths = existing.stream().map(Image::getPath).toList();
+    existing.forEach(image -> database.remove(image.getId()));
+    saveAll(images);
+    return replacedPaths;
   }
 
   private boolean isDuplicate(Image image) {

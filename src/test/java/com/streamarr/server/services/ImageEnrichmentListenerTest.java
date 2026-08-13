@@ -15,6 +15,7 @@ import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
@@ -143,6 +144,167 @@ class ImageEnrichmentListenerTest {
                   imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
               assertThat(images).hasSize(1);
               assertThat(images.getFirst().getId()).isEqualTo(existingImage.getId());
+            });
+  }
+
+  @Test
+  @DisplayName("Should skip download when refreshing if changed and source key matches")
+  void shouldSkipDownloadWhenRefreshingIfChangedAndSourceKeyMatches() {
+    var entityId = UUID.randomUUID();
+    var sourceKey = "/poster.jpg";
+    tmdbHttpService.setImageData(createTestImage(600, 900));
+    imageRepository.save(
+        Image.builder()
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageType(ImageType.POSTER)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278)
+            .key(sourceKey)
+            .path("movie/" + entityId + "/poster/small.jpg")
+            .build());
+
+    listener.onMetadataEnriched(
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(new TmdbImageSource(ImageType.POSTER, sourceKey)),
+            ImageRefreshMode.REFRESH_IF_CHANGED));
+
+    await()
+        .during(Duration.ofMillis(250))
+        .atMost(Duration.ofSeconds(1))
+        .untilAsserted(() -> assertThat(tmdbHttpService.getDownloadCount()).isZero());
+  }
+
+  @Test
+  @DisplayName("Should replace artwork when refreshing if changed and source key differs")
+  void shouldReplaceArtworkWhenRefreshingIfChangedAndSourceKeyDiffers() {
+    var entityId = UUID.randomUUID();
+    var oldImageId = UUID.randomUUID();
+    tmdbHttpService.setImageData(createTestImage(600, 900));
+    imageRepository.save(
+        Image.builder()
+            .id(oldImageId)
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageType(ImageType.POSTER)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278)
+            .key("/old-poster.jpg")
+            .contentSha256("a".repeat(64))
+            .path("movie/" + entityId + "/poster/small-old.jpg")
+            .build());
+
+    listener.onMetadataEnriched(
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(new TmdbImageSource(ImageType.POSTER, "/new-poster.jpg")),
+            ImageRefreshMode.REFRESH_IF_CHANGED));
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              assertThat(tmdbHttpService.getDownloadCount()).isOne();
+              assertThat(
+                      imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+                  .hasSize(4)
+                  .allSatisfy(image -> assertThat(image.getKey()).isEqualTo("/new-poster.jpg"))
+                  .extracting(Image::getId)
+                  .doesNotContain(oldImageId);
+            });
+  }
+
+  @Test
+  @DisplayName("Should replace artwork when any stored variant has a different source key")
+  void shouldReplaceArtworkWhenAnyStoredVariantHasDifferentSourceKey() {
+    var entityId = UUID.randomUUID();
+    var sourceKey = "/poster.jpg";
+    tmdbHttpService.setImageData(createTestImage(600, 900));
+    imageRepository.saveAll(
+        List.of(
+            Image.builder()
+                .entityId(entityId)
+                .entityType(ImageEntityType.MOVIE)
+                .imageType(ImageType.POSTER)
+                .variant(ImageSize.SMALL)
+                .width(185)
+                .height(278)
+                .key(sourceKey)
+                .path("movie/" + entityId + "/poster/small.jpg")
+                .build(),
+            Image.builder()
+                .entityId(entityId)
+                .entityType(ImageEntityType.MOVIE)
+                .imageType(ImageType.POSTER)
+                .variant(ImageSize.MEDIUM)
+                .width(342)
+                .height(513)
+                .key("/stale-poster.jpg")
+                .path("movie/" + entityId + "/poster/medium.jpg")
+                .build()));
+
+    listener.onMetadataEnriched(
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(new TmdbImageSource(ImageType.POSTER, sourceKey)),
+            ImageRefreshMode.REFRESH_IF_CHANGED));
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              assertThat(tmdbHttpService.getDownloadCount()).isOne();
+              assertThat(
+                      imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+                  .hasSize(4)
+                  .allSatisfy(image -> assertThat(image.getKey()).isEqualTo(sourceKey));
+            });
+  }
+
+  @Test
+  @DisplayName("Should replace artwork when force refreshing and source key matches")
+  void shouldReplaceArtworkWhenForceRefreshingAndSourceKeyMatches() {
+    var entityId = UUID.randomUUID();
+    var oldImageId = UUID.randomUUID();
+    var sourceKey = "/poster.jpg";
+    tmdbHttpService.setImageData(createTestImage(600, 900));
+    imageRepository.save(
+        Image.builder()
+            .id(oldImageId)
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageType(ImageType.POSTER)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278)
+            .key(sourceKey)
+            .contentSha256("a".repeat(64))
+            .path("movie/" + entityId + "/poster/small-old.jpg")
+            .build());
+
+    listener.onMetadataEnriched(
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(new TmdbImageSource(ImageType.POSTER, sourceKey)),
+            ImageRefreshMode.FORCE_REFRESH));
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              assertThat(tmdbHttpService.getDownloadCount()).isOne();
+              assertThat(
+                      imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+                  .hasSize(4)
+                  .extracting(Image::getId)
+                  .doesNotContain(oldImageId);
             });
   }
 

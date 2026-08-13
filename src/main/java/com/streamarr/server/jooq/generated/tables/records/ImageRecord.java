@@ -276,6 +276,34 @@ public class ImageRecord extends UpdatableRecordImpl<ImageRecord> {
         return (String) get(17);
     }
 
+    /**
+     * Setter for <code>public.image.key</code>.
+     */
+    public void setKey(String value) {
+        set(18, value);
+    }
+
+    /**
+     * Getter for <code>public.image.key</code>.
+     */
+    public String getKey() {
+        return (String) get(18);
+    }
+
+    /**
+     * Setter for <code>public.image.content_sha256</code>.
+     */
+    public void setContentSha256(String value) {
+        set(19, value);
+    }
+
+    /**
+     * Getter for <code>public.image.content_sha256</code>.
+     */
+    public String getContentSha256() {
+        return (String) get(19);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -299,7 +327,7 @@ public class ImageRecord extends UpdatableRecordImpl<ImageRecord> {
     /**
      * Create a detached, initialised ImageRecord
      */
-    public ImageRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID entityId, ImageEntityType entityType, ImageType imageType, ImageSize variant, Integer width, Integer height, String blurHash, String path, String ambientTopLeft, String ambientTopRight, String ambientBottomRight, String ambientBottomLeft, String ambientPrimary) {
+    public ImageRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID entityId, ImageEntityType entityType, ImageType imageType, ImageSize variant, Integer width, Integer height, String blurHash, String path, String ambientTopLeft, String ambientTopRight, String ambientBottomRight, String ambientBottomLeft, String ambientPrimary, String key, String contentSha256) {
         super(Image.IMAGE);
 
         setId(id);
@@ -320,6 +348,8 @@ public class ImageRecord extends UpdatableRecordImpl<ImageRecord> {
         setAmbientBottomRight(ambientBottomRight);
         setAmbientBottomLeft(ambientBottomLeft);
         setAmbientPrimary(ambientPrimary);
+        setKey(key);
+        setContentSha256(contentSha256);
         resetTouchedOnNotNull();
     }
 }

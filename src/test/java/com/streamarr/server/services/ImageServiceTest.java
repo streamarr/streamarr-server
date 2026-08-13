@@ -21,6 +21,7 @@ import com.streamarr.server.services.metadata.ImageVariantService;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -227,6 +228,19 @@ class ImageServiceTest {
   }
 
   @Test
+  @DisplayName("Should delete staged files when replacement contains no images")
+  void shouldDeleteStagedFilesWhenReplacementContainsNoImages() throws IOException {
+    var stagedFile = fileSystem.getPath("/data/images/staged.jpg");
+    Files.createDirectories(stagedFile.getParent());
+    Files.write(stagedFile, new byte[] {1, 2, 3});
+    var emptyReplacement = new ImageService.ProcessedImage(List.of(), List.of(stagedFile));
+
+    imageService.replaceImages(emptyReplacement);
+
+    assertThat(stagedFile).doesNotExist();
+  }
+
+  @Test
   @DisplayName("Should delete files when concurrent image save loses conflict")
   void shouldDeleteFilesWhenConcurrentImageSaveLosesConflict() {
     var entityId = UUID.randomUUID();
@@ -242,6 +256,197 @@ class ImageServiceTest {
 
     assertThat(losingResult.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
     assertThat(firstResult.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
+  }
+
+  @Test
+  @DisplayName("Should atomically replace logical artwork and delete superseded files")
+  void shouldAtomicallyReplaceLogicalArtworkAndDeleteSupersededFiles() throws IOException {
+    var entityId = UUID.randomUUID();
+    var oldImageId = UUID.randomUUID();
+    var oldRelativePath = "movie/" + entityId + "/poster/small-" + oldImageId + ".jpg";
+    var oldAbsolutePath = fileSystem.getPath("/data/images").resolve(oldRelativePath);
+    Files.createDirectories(oldAbsolutePath.getParent());
+    Files.write(oldAbsolutePath, new byte[] {1, 2, 3});
+    imageRepository.save(
+        Image.builder()
+            .id(oldImageId)
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageType(ImageType.POSTER)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278)
+            .key("/old-poster.jpg")
+            .contentSha256("a".repeat(64))
+            .path(oldRelativePath)
+            .build());
+    var replacement =
+        imageService.processImage(
+            createSolidPngImage(600, 900, 0x00A0A0),
+            ImageType.POSTER,
+            entityId,
+            ImageEntityType.MOVIE,
+            "/new-poster.jpg");
+
+    imageService.replaceImages(replacement);
+
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .hasSize(4)
+        .allSatisfy(image -> assertThat(image.getKey()).isEqualTo("/new-poster.jpg"))
+        .extracting(Image::getId)
+        .doesNotContain(oldImageId);
+    assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
+    assertThat(oldAbsolutePath).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should preserve existing artwork when atomic replacement fails")
+  void shouldPreserveExistingArtworkWhenAtomicReplacementFails() throws IOException {
+    var entityId = UUID.randomUUID();
+    var oldImageId = UUID.randomUUID();
+    var oldRelativePath = "movie/" + entityId + "/poster/small-" + oldImageId + ".jpg";
+    var oldAbsolutePath = fileSystem.getPath("/data/images").resolve(oldRelativePath);
+    Files.createDirectories(oldAbsolutePath.getParent());
+    Files.write(oldAbsolutePath, new byte[] {1, 2, 3});
+    imageRepository.save(
+        Image.builder()
+            .id(oldImageId)
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageType(ImageType.POSTER)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278)
+            .key("/old-poster.jpg")
+            .contentSha256("a".repeat(64))
+            .path(oldRelativePath)
+            .build());
+    var replacement =
+        imageService.processImage(
+            createSolidPngImage(600, 900, 0x00A0A0),
+            ImageType.POSTER,
+            entityId,
+            ImageEntityType.MOVIE,
+            "/new-poster.jpg");
+    imageRepository.setFailOnReplaceLogicalArtwork(true);
+
+    assertThatThrownBy(() -> imageService.replaceImages(replacement))
+        .isInstanceOf(RuntimeException.class)
+        .hasMessageContaining("Simulated logical artwork replacement failure");
+
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .singleElement()
+        .satisfies(
+            image -> {
+              assertThat(image.getId()).isEqualTo(oldImageId);
+              assertThat(image.getKey()).isEqualTo("/old-poster.jpg");
+            });
+    assertThat(oldAbsolutePath).exists();
+    assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+  }
+
+  @Test
+  @DisplayName("Should reject invalid content SHA-256 before replacing logical artwork")
+  void shouldRejectInvalidContentSha256BeforeReplacingLogicalArtwork() throws IOException {
+    var entityId = UUID.randomUUID();
+    var oldImage =
+        imageRepository.save(
+            Image.builder()
+                .entityId(entityId)
+                .entityType(ImageEntityType.MOVIE)
+                .imageType(ImageType.POSTER)
+                .variant(ImageSize.SMALL)
+                .width(185)
+                .height(278)
+                .key("/old-poster.jpg")
+                .contentSha256("a".repeat(64))
+                .path("movie/" + entityId + "/poster/small-old.jpg")
+                .build());
+    var stagedFile = fileSystem.getPath("/data/images/staged.jpg");
+    Files.createDirectories(stagedFile.getParent());
+    Files.write(stagedFile, new byte[] {1, 2, 3});
+    var invalidReplacement =
+        new ImageService.ProcessedImage(
+            List.of(
+                Image.builder()
+                    .entityId(entityId)
+                    .entityType(ImageEntityType.MOVIE)
+                    .imageType(ImageType.POSTER)
+                    .variant(ImageSize.SMALL)
+                    .width(185)
+                    .height(278)
+                    .key("/new-poster.jpg")
+                    .contentSha256("not-a-sha256")
+                    .path("movie/" + entityId + "/poster/small-new.jpg")
+                    .build()),
+            List.of(stagedFile));
+
+    assertThatThrownBy(() -> imageService.replaceImages(invalidReplacement))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Replacement contentSha256 must be 64 lowercase hexadecimal characters");
+
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .containsExactly(oldImage);
+    assertThat(stagedFile).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should reject replacement when variant content hashes differ")
+  void shouldRejectReplacementWhenVariantContentHashesDiffer() {
+    var replacement =
+        imageService.processImage(
+            createTestImage(600, 900),
+            ImageType.POSTER,
+            UUID.randomUUID(),
+            ImageEntityType.MOVIE,
+            "/poster.jpg");
+    replacement.images().getLast().setContentSha256("b".repeat(64));
+
+    assertThatThrownBy(() -> imageService.replaceImages(replacement))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Replacement variants must have the same contentSha256");
+
+    assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+  }
+
+  @Test
+  @DisplayName("Should reject replacement that spans multiple logical artworks")
+  void shouldRejectReplacementThatSpansMultipleLogicalArtworks() {
+    var replacement =
+        imageService.processImage(
+            createTestImage(600, 900),
+            ImageType.POSTER,
+            UUID.randomUUID(),
+            ImageEntityType.MOVIE,
+            "/poster.jpg");
+    replacement.images().getLast().setEntityId(UUID.randomUUID());
+
+    assertThatThrownBy(() -> imageService.replaceImages(replacement))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Replacement variants must describe one logical artwork");
+
+    assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+  }
+
+  @Test
+  @DisplayName("Should reject replacement when generated variant set is incomplete")
+  void shouldRejectReplacementWhenGeneratedVariantSetIsIncomplete() {
+    var processed =
+        imageService.processImage(
+            createTestImage(600, 900),
+            ImageType.POSTER,
+            UUID.randomUUID(),
+            ImageEntityType.MOVIE,
+            "/poster.jpg");
+    var incompleteReplacement =
+        new ImageService.ProcessedImage(
+            processed.images().stream().limit(3).toList(), processed.writtenFiles());
+
+    assertThatThrownBy(() -> imageService.replaceImages(incompleteReplacement))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Replacement must contain exactly one of every image variant");
+
+    assertThat(processed.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
   }
 
   @Test

@@ -60,6 +60,7 @@ import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
@@ -97,6 +98,7 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -1427,6 +1429,25 @@ class LibraryManagementServiceTest {
     }
 
     @Test
+    @DisplayName("Should propagate image refresh mode when refreshing library")
+    void shouldPropagateImageRefreshModeWhenRefreshingLibrary() {
+      var capturedMode = new AtomicReference<ImageRefreshMode>();
+      doAnswer(
+              invocation -> {
+                capturedMode.set(invocation.getArgument(1));
+                return null;
+              })
+          .when(libraryRefreshService)
+          .refreshLibrary(any(Library.class), any(ImageRefreshMode.class));
+
+      libraryManagementService.refreshLibrary(savedLibraryId, ImageRefreshMode.FORCE_REFRESH);
+
+      assertThat(capturedMode).hasValue(ImageRefreshMode.FORCE_REFRESH);
+      assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
+          .isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    @Test
     @DisplayName("Should transition library to UNHEALTHY when refresh fails")
     void shouldTransitionToUnhealthyWhenRefreshFails() {
       doThrow(new RuntimeException("simulated refresh failure"))
@@ -1548,6 +1569,27 @@ class LibraryManagementServiceTest {
                 var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
                 assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
               });
+    }
+
+    @Test
+    @DisplayName("Should propagate image refresh mode during async refresh")
+    void shouldPropagateImageRefreshModeDuringAsyncRefresh() {
+      var capturedMode = new AtomicReference<ImageRefreshMode>();
+      doAnswer(
+              invocation -> {
+                capturedMode.set(invocation.getArgument(1));
+                return null;
+              })
+          .when(libraryRefreshService)
+          .refreshLibrary(any(Library.class), any(ImageRefreshMode.class));
+
+      libraryManagementService.triggerAsyncRefresh(
+          savedLibraryId, ImageRefreshMode.REFRESH_IF_CHANGED);
+
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> assertThat(capturedMode).hasValue(ImageRefreshMode.REFRESH_IF_CHANGED));
     }
   }
 

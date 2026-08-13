@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -31,6 +32,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.library.LibraryManagementService;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
@@ -181,12 +183,61 @@ class LibraryResolverTest {
     @Test
     @DisplayName("Should return true when refreshLibrary called with valid ID")
     void shouldReturnTrueWhenRefreshLibraryCalledWithValidId() {
+      var libraryId = UUID.randomUUID();
+      var refreshRequest = new AtomicReference<ImageRefreshMode>();
+      doAnswer(
+              invocation -> {
+                refreshRequest.set(invocation.getArgument(1));
+                return null;
+              })
+          .when(libraryManagementService)
+          .triggerAsyncRefresh(libraryId, ImageRefreshMode.PRESERVE);
+
       Boolean result =
           dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format("mutation { refreshLibrary(id: \"%s\") }", UUID.randomUUID()),
+              String.format("mutation { refreshLibrary(id: \"%s\") }", libraryId),
               "data.refreshLibrary");
 
       assertThat(result).isTrue();
+      assertThat(refreshRequest).hasValue(ImageRefreshMode.PRESERVE);
+    }
+
+    @Test
+    @DisplayName("Should pass explicit image refresh mode through refreshLibrary mutation")
+    void shouldPassExplicitImageRefreshModeThroughRefreshLibraryMutation() {
+      var libraryId = UUID.randomUUID();
+      var refreshRequest = new AtomicReference<ImageRefreshMode>();
+      doAnswer(
+              invocation -> {
+                refreshRequest.set(invocation.getArgument(1));
+                return null;
+              })
+          .when(libraryManagementService)
+          .triggerAsyncRefresh(libraryId, ImageRefreshMode.REFRESH_IF_CHANGED);
+
+      Boolean result =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              String.format(
+                  "mutation { refreshLibrary(id: \"%s\", imageRefreshMode: REFRESH_IF_CHANGED) }",
+                  libraryId),
+              "data.refreshLibrary");
+
+      assertThat(result).isTrue();
+      assertThat(refreshRequest).hasValue(ImageRefreshMode.REFRESH_IF_CHANGED);
+    }
+
+    @Test
+    @DisplayName("Should reject null image refresh mode")
+    void shouldRejectNullImageRefreshMode() {
+      var result =
+          dgsQueryExecutor.execute(
+              String.format(
+                  "mutation { refreshLibrary(id: \"%s\", imageRefreshMode: null) }",
+                  UUID.randomUUID()));
+
+      assertThat(result.getErrors())
+          .singleElement()
+          .satisfies(error -> assertThat(error.getMessage()).contains("imageRefreshMode"));
     }
 
     @Test

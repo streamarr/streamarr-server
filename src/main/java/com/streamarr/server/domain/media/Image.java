@@ -43,6 +43,8 @@ public class Image extends BaseAuditableEntity<Image> {
   private int width;
   private int height;
   private String blurHash;
+  private String key;
+  private String contentSha256;
   private String path;
 
   @Embedded

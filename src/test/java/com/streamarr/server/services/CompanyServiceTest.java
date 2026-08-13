@@ -11,6 +11,7 @@ import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeCompanyRepository;
 import com.streamarr.server.repositories.CompanyRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
@@ -141,7 +142,25 @@ class CompanyServiceTest {
               assertThat(event.entityId()).isEqualTo(existing.getId());
               assertThat(event.entityType()).isEqualTo(ImageEntityType.COMPANY);
               assertThat(event.imageSources()).containsExactly(expectedImageSource);
+              assertThat(event.imageRefreshMode()).isEqualTo(ImageRefreshMode.PRESERVE);
             });
+  }
+
+  @Test
+  @DisplayName("Should propagate image refresh mode when publishing company image event")
+  void shouldPropagateImageRefreshModeWhenPublishingCompanyImageEvent() {
+    var company = Company.builder().name("Warner Bros.").sourceId("wb-123").build();
+    var imageSources =
+        Map.<String, List<ImageSource>>of(
+            "wb-123", List.of(new TmdbImageSource(ImageType.LOGO, "/wb.png")));
+
+    companyService.getOrCreateCompanies(
+        Set.of(company), imageSources, ImageRefreshMode.FORCE_REFRESH);
+
+    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
+        .singleElement()
+        .extracting(MetadataEnrichedEvent::imageRefreshMode)
+        .isEqualTo(ImageRefreshMode.FORCE_REFRESH);
   }
 
   @Test

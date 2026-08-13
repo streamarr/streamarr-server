@@ -6,5 +6,13 @@ public sealed interface ImageSource {
 
   ImageType imageType();
 
-  record TmdbImageSource(ImageType imageType, String pathFragment) implements ImageSource {}
+  String key();
+
+  record TmdbImageSource(ImageType imageType, String pathFragment) implements ImageSource {
+
+    @Override
+    public String key() {
+      return pathFragment;
+    }
+  }
 }

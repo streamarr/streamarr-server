@@ -15,6 +15,7 @@ import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
@@ -121,6 +122,12 @@ public class MovieService {
 
   @Transactional
   public Movie refreshMovieMetadata(Movie existing, MetadataResult<Movie> metadataResult) {
+    return refreshMovieMetadata(existing, metadataResult, ImageRefreshMode.PRESERVE);
+  }
+
+  @Transactional
+  public Movie refreshMovieMetadata(
+      Movie existing, MetadataResult<Movie> metadataResult, ImageRefreshMode imageRefreshMode) {
     var fresh = metadataResult.entity();
 
     existing.setTitle(fresh.getTitle());
@@ -133,24 +140,35 @@ public class MovieService {
     existing.setReleaseDate(fresh.getReleaseDate());
 
     existing.setCast(
-        personService.getOrCreatePersons(fresh.getCast(), metadataResult.personImageSources()));
+        personService.getOrCreatePersons(
+            fresh.getCast(), metadataResult.personImageSources(), imageRefreshMode));
     existing.setDirectors(
         personService.getOrCreatePersons(
-            fresh.getDirectors(), metadataResult.personImageSources()));
+            fresh.getDirectors(), metadataResult.personImageSources(), imageRefreshMode));
     existing.setGenres(genreService.getOrCreateGenres(fresh.getGenres()));
     existing.setStudios(
         companyService.getOrCreateCompanies(
-            fresh.getStudios(), metadataResult.companyImageSources()));
+            fresh.getStudios(), metadataResult.companyImageSources(), imageRefreshMode));
 
     var saved = movieRepository.saveAndFlush(existing);
-    publishImageEvent(saved.getId(), ImageEntityType.MOVIE, metadataResult.imageSources());
+    publishImageEvent(
+        saved.getId(), ImageEntityType.MOVIE, metadataResult.imageSources(), imageRefreshMode);
     return saved;
   }
 
   private void publishImageEvent(
       UUID entityId, ImageEntityType entityType, List<ImageSource> sources) {
+    publishImageEvent(entityId, entityType, sources, ImageRefreshMode.PRESERVE);
+  }
+
+  private void publishImageEvent(
+      UUID entityId,
+      ImageEntityType entityType,
+      List<ImageSource> sources,
+      ImageRefreshMode imageRefreshMode) {
     if (!sources.isEmpty()) {
-      eventPublisher.publishEvent(new MetadataEnrichedEvent(entityId, entityType, sources));
+      eventPublisher.publishEvent(
+          new MetadataEnrichedEvent(entityId, entityType, sources, imageRefreshMode));
     }
   }
 

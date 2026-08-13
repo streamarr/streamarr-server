@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOption
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -28,6 +29,7 @@ import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -628,17 +630,20 @@ class SeriesServiceTest {
                   persons ->
                       persons != null
                           && persons.stream().anyMatch(p -> "Bryan Cranston".equals(p.getName()))),
-              any()))
+              any(),
+              eq(ImageRefreshMode.PRESERVE)))
           .thenReturn(castInput);
       when(personService.getOrCreatePersons(
               argThat(
                   persons ->
                       persons != null
                           && persons.stream().anyMatch(p -> "Vince Gilligan".equals(p.getName()))),
-              any()))
+              any(),
+              eq(ImageRefreshMode.PRESERVE)))
           .thenReturn(directorInput);
       when(genreService.getOrCreateGenres(any())).thenReturn(freshGenres);
-      when(companyService.getOrCreateCompanies(any(), any())).thenReturn(freshStudios);
+      when(companyService.getOrCreateCompanies(any(), any(), eq(ImageRefreshMode.PRESERVE)))
+          .thenReturn(freshStudios);
 
       var fresh =
           Series.builder().title("Breaking Bad").cast(castInput).directors(directorInput).build();
