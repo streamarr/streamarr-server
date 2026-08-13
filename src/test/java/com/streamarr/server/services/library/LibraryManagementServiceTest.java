@@ -1436,8 +1436,8 @@ class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should refresh metadata and propagate artwork mode from top-level refresh")
-    void shouldRefreshMetadataAndPropagateArtworkModeFromTopLevelRefresh() {
+    @DisplayName("Should refresh metadata and propagate artwork mode when top-level refresh runs")
+    void shouldRefreshMetadataAndPropagateArtworkModeWhenTopLevelRefreshRuns() {
       var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
       var movie =
           fakeMovieRepository.save(
@@ -1596,16 +1596,35 @@ class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should start async refresh on virtual thread when triggerAsyncRefresh called")
     void shouldStartAsyncRefreshOnVirtualThreadWhenTriggerAsyncRefreshCalled() throws Exception {
-      libraryManagementService.triggerAsyncRefresh(savedLibraryId);
+      var controlledRefreshService = new BlockingLibraryRefreshService();
+      var service = libraryManagementServiceWithRefreshService(controlledRefreshService);
+
+      service.triggerAsyncRefresh(savedLibraryId);
+
+      assertThat(controlledRefreshService.awaitStarted()).isTrue();
+      try {
+        var executingThread = controlledRefreshService.executingThread();
+        assertThat(executingThread).isNotNull();
+        assertThat(executingThread.isVirtual()).isTrue();
+        assertThat(controlledRefreshService.isReleased()).isFalse();
+        assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
+            .isEqualTo(LibraryStatus.REFRESHING);
+      } finally {
+        controlledRefreshService.release();
+      }
 
       assertThat(capturingEventPublisher.awaitRefreshEnded()).isTrue();
       assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
           .isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class))
+          .singleElement()
+          .extracting(RefreshEndedEvent::libraryId)
+          .isEqualTo(savedLibraryId);
     }
 
     @Test
-    @DisplayName("Should propagate image refresh mode during async refresh")
-    void shouldPropagateImageRefreshModeDuringAsyncRefresh() throws Exception {
+    @DisplayName("Should propagate image refresh mode when async refresh runs")
+    void shouldPropagateImageRefreshModeWhenAsyncRefreshRuns() throws Exception {
       var capturedMode = new AtomicReference<ImageRefreshMode>();
       doAnswer(
               invocation -> {
@@ -1643,6 +1662,47 @@ class LibraryManagementServiceTest {
 
     private boolean awaitRefreshEnded() throws InterruptedException {
       return refreshEnded.await(5, TimeUnit.SECONDS);
+    }
+  }
+
+  private static final class BlockingLibraryRefreshService extends LibraryRefreshService {
+
+    private final CountDownLatch started = new CountDownLatch(1);
+    private final CountDownLatch release = new CountDownLatch(1);
+    private final AtomicReference<Thread> executingThread = new AtomicReference<>();
+
+    private BlockingLibraryRefreshService() {
+      super(null, null, null, null, null, null);
+    }
+
+    @Override
+    public void refreshLibrary(Library library) {
+      executingThread.set(Thread.currentThread());
+      started.countDown();
+      try {
+        if (!release.await(5, TimeUnit.SECONDS)) {
+          throw new AssertionError("Controlled library refresh was not released");
+        }
+      } catch (InterruptedException exception) {
+        Thread.currentThread().interrupt();
+        throw new AssertionError("Controlled library refresh was interrupted", exception);
+      }
+    }
+
+    private boolean awaitStarted() throws InterruptedException {
+      return started.await(5, TimeUnit.SECONDS);
+    }
+
+    private Thread executingThread() {
+      return executingThread.get();
+    }
+
+    private boolean isReleased() {
+      return release.getCount() == 0;
+    }
+
+    private void release() {
+      release.countDown();
     }
   }
 

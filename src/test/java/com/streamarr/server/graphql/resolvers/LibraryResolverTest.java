@@ -203,8 +203,9 @@ class LibraryResolverTest {
     }
 
     @Test
-    @DisplayName("Should pass explicit image refresh mode through refreshLibrary mutation")
-    void shouldPassExplicitImageRefreshModeThroughRefreshLibraryMutation() {
+    @DisplayName(
+        "Should pass explicit image refresh mode when refreshLibrary mutation specifies it")
+    void shouldPassExplicitImageRefreshModeWhenRefreshLibraryMutationSpecifiesIt() {
       var libraryId = UUID.randomUUID();
       var refreshRequest = new AtomicReference<ImageRefreshMode>();
       doAnswer(
@@ -227,8 +228,8 @@ class LibraryResolverTest {
     }
 
     @Test
-    @DisplayName("Should reject null image refresh mode")
-    void shouldRejectNullImageRefreshMode() {
+    @DisplayName("Should reject image refresh mode when refreshLibrary mutation receives null")
+    void shouldRejectImageRefreshModeWhenRefreshLibraryMutationReceivesNull() {
       var result =
           dgsQueryExecutor.execute(
               String.format(

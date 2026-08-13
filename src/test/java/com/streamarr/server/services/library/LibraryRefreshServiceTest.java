@@ -272,8 +272,9 @@ class LibraryRefreshServiceTest {
   }
 
   @Test
-  @DisplayName("Should propagate image refresh mode through series season and episode refresh")
-  void shouldPropagateImageRefreshModeThroughSeriesSeasonAndEpisodeRefresh() {
+  @DisplayName(
+      "Should propagate image refresh mode when refreshing series season and episode artwork")
+  void shouldPropagateImageRefreshModeWhenRefreshingSeriesSeasonAndEpisodeArtwork() {
     var library = buildSeriesLibrary();
     saveSeriesWithTmdbId("Breaking Bad", "1396", library);
     var freshSeries = Series.builder().title("Breaking Bad").titleSort("breaking bad").build();
@@ -332,8 +333,9 @@ class LibraryRefreshServiceTest {
   }
 
   @Test
-  @DisplayName("Should propagate image refresh mode to movie person and company artwork")
-  void shouldPropagateImageRefreshModeToMoviePersonAndCompanyArtwork() {
+  @DisplayName(
+      "Should propagate image refresh mode when refreshing movie person and company artwork")
+  void shouldPropagateImageRefreshModeWhenRefreshingMoviePersonAndCompanyArtwork() {
     var library = buildMovieLibrary();
     saveMovieWithTmdbId("Inception", "27205", library);
     var person = Person.builder().name("Leonardo DiCaprio").sourceId("actor-1").build();

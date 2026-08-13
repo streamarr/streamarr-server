@@ -261,8 +261,10 @@ class ImageServiceTest {
   }
 
   @Test
-  @DisplayName("Should atomically replace logical artwork and delete superseded files")
-  void shouldAtomicallyReplaceLogicalArtworkAndDeleteSupersededFiles() throws IOException {
+  @DisplayName(
+      "Should atomically replace logical artwork and delete superseded files when artwork changes")
+  void shouldAtomicallyReplaceLogicalArtworkAndDeleteSupersededFilesWhenArtworkChanges()
+      throws IOException {
     var entityId = UUID.randomUUID();
     var existingArtwork = persistExistingArtwork(entityId);
     var replacement =
@@ -314,8 +316,8 @@ class ImageServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject invalid content SHA-256 before replacing logical artwork")
-  void shouldRejectInvalidContentSha256BeforeReplacingLogicalArtwork() throws IOException {
+  @DisplayName("Should reject logical artwork replacement when content SHA-256 is invalid")
+  void shouldRejectLogicalArtworkReplacementWhenContentSha256IsInvalid() throws IOException {
     var entityId = UUID.randomUUID();
     var oldImage =
         imageRepository.save(
@@ -346,8 +348,8 @@ class ImageServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject null content SHA-256 before replacing logical artwork")
-  void shouldRejectNullContentSha256BeforeReplacingLogicalArtwork() {
+  @DisplayName("Should reject logical artwork replacement when content SHA-256 is null")
+  void shouldRejectLogicalArtworkReplacementWhenContentSha256IsNull() {
     var replacement =
         imageService.processImage(
             createTestImage(600, 900),
@@ -384,8 +386,8 @@ class ImageServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject replacement that spans multiple logical artworks")
-  void shouldRejectReplacementThatSpansMultipleLogicalArtworks() {
+  @DisplayName("Should reject replacement when variants span multiple logical artworks")
+  void shouldRejectReplacementWhenVariantsSpanMultipleLogicalArtworks() {
     var replacement =
         imageService.processImage(
             createTestImage(600, 900),

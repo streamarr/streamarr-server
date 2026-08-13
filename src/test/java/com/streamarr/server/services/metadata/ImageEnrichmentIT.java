@@ -23,13 +23,16 @@ import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.UUID;
-import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -49,6 +52,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private ImageRepository imageRepository;
   @Autowired private ImageService imageService;
+  @Autowired private DataSource dataSource;
 
   @BeforeEach
   void resetStubs() {
@@ -168,8 +172,9 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should replace changed artwork and recompute derived metadata atomically")
-  void shouldReplaceChangedArtworkAndRecomputeDerivedMetadataAtomically()
+  @DisplayName(
+      "Should replace changed artwork and recompute derived metadata when replacement commits atomically")
+  void shouldReplaceChangedArtworkAndRecomputeDerivedMetadataWhenReplacementCommitsAtomically()
       throws NoSuchAlgorithmException {
     var entityId = UUID.randomUUID();
     var oldKey = "/old-poster.jpg";
@@ -256,8 +261,8 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject malformed content SHA-256 at database boundary")
-  void shouldRejectMalformedContentSha256AtDatabaseBoundary() {
+  @DisplayName("Should reject malformed content SHA-256 when persisted at database boundary")
+  void shouldRejectMalformedContentSha256WhenPersistedAtDatabaseBoundary() {
     var processed =
         imageService.processImage(
             createTestImage(600, 900),
@@ -278,8 +283,8 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should serialize concurrent artwork replacements without orphaning files")
-  void shouldSerializeConcurrentArtworkReplacementsWithoutOrphaningFiles() throws Exception {
+  @DisplayName("Should preserve coherent artwork files when replacements run concurrently")
+  void shouldPreserveCoherentArtworkFilesWhenReplacementsRunConcurrently() throws Exception {
     var entityId = UUID.randomUUID();
     var original =
         imageService.processImage(
@@ -305,44 +310,109 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
     imageService.saveImages(original.images());
 
     try {
-      var start = new CyclicBarrier(2);
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        var cyan =
-            executor.submit(
-                () -> {
-                  start.await();
-                  imageService.replaceImages(cyanReplacement);
-                  return null;
-                });
-        var magenta =
-            executor.submit(
-                () -> {
-                  start.await();
-                  imageService.replaceImages(magentaReplacement);
-                  return null;
-                });
+      try (var rowLockConnection = dataSource.getConnection()) {
+        rowLockConnection.setAutoCommit(false);
+        lockArtworkRows(rowLockConnection, entityId);
+        var rowLockerPid = backendPid(rowLockConnection);
 
-        cyan.get(5, TimeUnit.SECONDS);
-        magenta.get(5, TimeUnit.SECONDS);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          try {
+            var cyan =
+                executor.submit(
+                    () -> {
+                      imageService.replaceImages(cyanReplacement);
+                      return null;
+                    });
+            var cyanPid = awaitBlockedBackendPid(rowLockConnection, rowLockerPid, null);
+            assertThat(cyan.isDone()).isFalse();
+
+            var magenta =
+                executor.submit(
+                    () -> {
+                      imageService.replaceImages(magentaReplacement);
+                      return null;
+                    });
+            var magentaPid = awaitBlockedBackendPid(rowLockConnection, cyanPid, "advisory");
+            assertThat(magentaPid).isNotEqualTo(cyanPid);
+            assertThat(magenta.isDone()).isFalse();
+
+            rowLockConnection.commit();
+            cyan.get(5, TimeUnit.SECONDS);
+            magenta.get(5, TimeUnit.SECONDS);
+          } finally {
+            rowLockConnection.rollback();
+          }
+        }
       }
 
       var persisted = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-      assertThat(persisted).hasSize(ImageSize.values().length);
-      var persistedKey = persisted.getFirst().getKey();
-      assertThat(persistedKey).isIn("/cyan.jpg", "/magenta.jpg");
-      assertThat(persisted).extracting(Image::getKey).containsOnly(persistedKey);
-      var winner = persistedKey.equals("/cyan.jpg") ? cyanReplacement : magentaReplacement;
-      var loser = persistedKey.equals("/cyan.jpg") ? magentaReplacement : cyanReplacement;
+      assertThat(persisted)
+          .hasSize(ImageSize.values().length)
+          .extracting(Image::getKey)
+          .containsOnly("/magenta.jpg");
       assertThat(persisted)
           .allSatisfy(image -> assertThat(imageService.readImageFile(image)).isNotEmpty());
-      assertThat(winner.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
-      assertThat(loser.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+      assertThat(magentaReplacement.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
+      assertThat(cyanReplacement.writtenFiles())
+          .allSatisfy(path -> assertThat(path).doesNotExist());
       assertThat(original.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
     } finally {
       imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
       imageService.deleteFiles(original.writtenFiles());
       imageService.deleteFiles(cyanReplacement.writtenFiles());
       imageService.deleteFiles(magentaReplacement.writtenFiles());
+    }
+  }
+
+  private void lockArtworkRows(Connection connection, UUID entityId) throws SQLException {
+    try (var statement =
+        connection.prepareStatement("SELECT id FROM image WHERE entity_id = ? FOR UPDATE")) {
+      statement.setObject(1, entityId);
+      try (var rows = statement.executeQuery()) {
+        var lockedRows = 0;
+        while (rows.next()) {
+          lockedRows++;
+        }
+        assertThat(lockedRows).isEqualTo(ImageSize.values().length);
+      }
+    }
+  }
+
+  private int backendPid(Connection connection) throws SQLException {
+    try (var statement = connection.createStatement();
+        var result = statement.executeQuery("SELECT pg_backend_pid()")) {
+      result.next();
+      return result.getInt(1);
+    }
+  }
+
+  private int awaitBlockedBackendPid(Connection observer, int blockerPid, String expectedWaitEvent)
+      throws SQLException {
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> blockedBackendPid(observer, blockerPid, expectedWaitEvent).isPresent());
+    return blockedBackendPid(observer, blockerPid, expectedWaitEvent).orElseThrow();
+  }
+
+  private OptionalInt blockedBackendPid(
+      Connection observer, int blockerPid, String expectedWaitEvent) throws SQLException {
+    var sql =
+        """
+        SELECT pid
+        FROM pg_stat_activity
+        WHERE ? = ANY(pg_blocking_pids(pid))
+          AND wait_event_type = 'Lock'
+          AND (? IS NULL OR wait_event = ?)
+        ORDER BY pid
+        LIMIT 1
+        """;
+    try (var statement = observer.prepareStatement(sql)) {
+      statement.setInt(1, blockerPid);
+      statement.setString(2, expectedWaitEvent);
+      statement.setString(3, expectedWaitEvent);
+      try (var result = statement.executeQuery()) {
+        return result.next() ? OptionalInt.of(result.getInt(1)) : OptionalInt.empty();
+      }
     }
   }
 
