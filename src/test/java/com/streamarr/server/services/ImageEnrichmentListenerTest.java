@@ -1,6 +1,8 @@
 package com.streamarr.server.services;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
+import static com.streamarr.server.fixtures.MetadataFixture.metadataEnrichedEventBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -23,6 +25,7 @@ import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -149,98 +152,70 @@ class ImageEnrichmentListenerTest {
 
   @Test
   @DisplayName("Should skip download when refreshing if changed and source key matches")
-  void shouldSkipDownloadWhenRefreshingIfChangedAndSourceKeyMatches() {
+  void shouldSkipDownloadWhenRefreshingIfChangedAndSourceKeyMatches() throws InterruptedException {
     var entityId = UUID.randomUUID();
     var sourceKey = "/poster.jpg";
     tmdbHttpService.setImageData(createTestImage(600, 900));
     imageRepository.save(
-        Image.builder()
-            .entityId(entityId)
-            .entityType(ImageEntityType.MOVIE)
-            .imageType(ImageType.POSTER)
-            .variant(ImageSize.SMALL)
-            .width(185)
-            .height(278)
+        imageBuilder(entityId)
             .key(sourceKey)
             .path("movie/" + entityId + "/poster/small.jpg")
             .build());
 
-    listener.onMetadataEnriched(
-        new MetadataEnrichedEvent(
-            entityId,
-            ImageEntityType.MOVIE,
-            List.of(new TmdbImageSource(ImageType.POSTER, sourceKey)),
-            ImageRefreshMode.REFRESH_IF_CHANGED));
+    enrichAndAwait(
+        metadataEnrichedEventBuilder()
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, sourceKey)))
+            .imageRefreshMode(ImageRefreshMode.REFRESH_IF_CHANGED)
+            .build());
 
-    await()
-        .during(Duration.ofMillis(250))
-        .atMost(Duration.ofSeconds(1))
-        .untilAsserted(() -> assertThat(tmdbHttpService.getDownloadCount()).isZero());
+    assertThat(tmdbHttpService.getDownloadCount()).isZero();
   }
 
   @Test
   @DisplayName("Should replace artwork when refreshing if changed and source key differs")
-  void shouldReplaceArtworkWhenRefreshingIfChangedAndSourceKeyDiffers() {
+  void shouldReplaceArtworkWhenRefreshingIfChangedAndSourceKeyDiffers()
+      throws InterruptedException {
     var entityId = UUID.randomUUID();
     var oldImageId = UUID.randomUUID();
     tmdbHttpService.setImageData(createTestImage(600, 900));
     imageRepository.save(
-        Image.builder()
+        imageBuilder(entityId)
             .id(oldImageId)
-            .entityId(entityId)
-            .entityType(ImageEntityType.MOVIE)
-            .imageType(ImageType.POSTER)
-            .variant(ImageSize.SMALL)
-            .width(185)
-            .height(278)
             .key("/old-poster.jpg")
-            .contentSha256("a".repeat(64))
             .path("movie/" + entityId + "/poster/small-old.jpg")
             .build());
 
-    listener.onMetadataEnriched(
-        new MetadataEnrichedEvent(
-            entityId,
-            ImageEntityType.MOVIE,
-            List.of(new TmdbImageSource(ImageType.POSTER, "/new-poster.jpg")),
-            ImageRefreshMode.REFRESH_IF_CHANGED));
+    enrichAndAwait(
+        metadataEnrichedEventBuilder()
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/new-poster.jpg")))
+            .imageRefreshMode(ImageRefreshMode.REFRESH_IF_CHANGED)
+            .build());
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              assertThat(tmdbHttpService.getDownloadCount()).isOne();
-              assertThat(
-                      imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
-                  .hasSize(4)
-                  .allSatisfy(image -> assertThat(image.getKey()).isEqualTo("/new-poster.jpg"))
-                  .extracting(Image::getId)
-                  .doesNotContain(oldImageId);
-            });
+    assertThat(tmdbHttpService.getDownloadCount()).isOne();
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .hasSize(4)
+        .allSatisfy(image -> assertThat(image.getKey()).isEqualTo("/new-poster.jpg"))
+        .extracting(Image::getId)
+        .doesNotContain(oldImageId);
   }
 
   @Test
   @DisplayName("Should replace artwork when any stored variant has a different source key")
-  void shouldReplaceArtworkWhenAnyStoredVariantHasDifferentSourceKey() {
+  void shouldReplaceArtworkWhenAnyStoredVariantHasDifferentSourceKey() throws InterruptedException {
     var entityId = UUID.randomUUID();
     var sourceKey = "/poster.jpg";
     tmdbHttpService.setImageData(createTestImage(600, 900));
     imageRepository.saveAll(
         List.of(
-            Image.builder()
-                .entityId(entityId)
-                .entityType(ImageEntityType.MOVIE)
-                .imageType(ImageType.POSTER)
-                .variant(ImageSize.SMALL)
-                .width(185)
-                .height(278)
+            imageBuilder(entityId)
                 .key(sourceKey)
                 .path("movie/" + entityId + "/poster/small.jpg")
                 .build(),
-            Image.builder()
-                .entityId(entityId)
-                .entityType(ImageEntityType.MOVIE)
-                .imageType(ImageType.POSTER)
+            imageBuilder(entityId)
                 .variant(ImageSize.MEDIUM)
                 .width(342)
                 .height(513)
@@ -248,64 +223,128 @@ class ImageEnrichmentListenerTest {
                 .path("movie/" + entityId + "/poster/medium.jpg")
                 .build()));
 
-    listener.onMetadataEnriched(
-        new MetadataEnrichedEvent(
-            entityId,
-            ImageEntityType.MOVIE,
-            List.of(new TmdbImageSource(ImageType.POSTER, sourceKey)),
-            ImageRefreshMode.REFRESH_IF_CHANGED));
+    enrichAndAwait(
+        metadataEnrichedEventBuilder()
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, sourceKey)))
+            .imageRefreshMode(ImageRefreshMode.REFRESH_IF_CHANGED)
+            .build());
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              assertThat(tmdbHttpService.getDownloadCount()).isOne();
-              assertThat(
-                      imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
-                  .hasSize(4)
-                  .allSatisfy(image -> assertThat(image.getKey()).isEqualTo(sourceKey));
-            });
+    assertThat(tmdbHttpService.getDownloadCount()).isOne();
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .hasSize(4)
+        .allSatisfy(image -> assertThat(image.getKey()).isEqualTo(sourceKey));
   }
 
   @Test
   @DisplayName("Should replace artwork when force refreshing and source key matches")
-  void shouldReplaceArtworkWhenForceRefreshingAndSourceKeyMatches() {
+  void shouldReplaceArtworkWhenForceRefreshingAndSourceKeyMatches() throws InterruptedException {
     var entityId = UUID.randomUUID();
     var oldImageId = UUID.randomUUID();
     var sourceKey = "/poster.jpg";
     tmdbHttpService.setImageData(createTestImage(600, 900));
     imageRepository.save(
-        Image.builder()
+        imageBuilder(entityId)
             .id(oldImageId)
-            .entityId(entityId)
-            .entityType(ImageEntityType.MOVIE)
-            .imageType(ImageType.POSTER)
-            .variant(ImageSize.SMALL)
-            .width(185)
-            .height(278)
             .key(sourceKey)
-            .contentSha256("a".repeat(64))
             .path("movie/" + entityId + "/poster/small-old.jpg")
             .build());
 
-    listener.onMetadataEnriched(
-        new MetadataEnrichedEvent(
-            entityId,
-            ImageEntityType.MOVIE,
-            List.of(new TmdbImageSource(ImageType.POSTER, sourceKey)),
-            ImageRefreshMode.FORCE_REFRESH));
+    enrichAndAwait(
+        metadataEnrichedEventBuilder()
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, sourceKey)))
+            .imageRefreshMode(ImageRefreshMode.FORCE_REFRESH)
+            .build());
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              assertThat(tmdbHttpService.getDownloadCount()).isOne();
-              assertThat(
-                      imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
-                  .hasSize(4)
-                  .extracting(Image::getId)
-                  .doesNotContain(oldImageId);
+    assertThat(tmdbHttpService.getDownloadCount()).isOne();
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .hasSize(4)
+        .extracting(Image::getId)
+        .doesNotContain(oldImageId);
+  }
+
+  @Test
+  @DisplayName("Should preserve existing artwork when changed image processing fails")
+  void shouldPreserveExistingArtworkWhenChangedImageProcessingFails()
+      throws IOException, InterruptedException {
+    var entityId = UUID.randomUUID();
+    var existingArtwork = persistExistingArtwork(entityId);
+    tmdbHttpService.setImageData(new byte[] {0, 1, 2});
+
+    enrichAndAwait(
+        metadataEnrichedEventBuilder()
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/invalid-poster.jpg")))
+            .imageRefreshMode(ImageRefreshMode.REFRESH_IF_CHANGED)
+            .build());
+
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .singleElement()
+        .satisfies(
+            image -> {
+              assertThat(image.getId()).isEqualTo(existingArtwork.imageId());
+              assertThat(image.getKey()).isEqualTo("/old-poster.jpg");
             });
+    assertThat(existingArtwork.absolutePath()).exists();
+  }
+
+  @Test
+  @DisplayName("Should preserve existing artwork when changed image download fails")
+  void shouldPreserveExistingArtworkWhenChangedImageDownloadFails()
+      throws IOException, InterruptedException {
+    var entityId = UUID.randomUUID();
+    var existingArtwork = persistExistingArtwork(entityId);
+    tmdbHttpService.setFailOnPath("/unavailable-poster.jpg");
+
+    enrichAndAwait(
+        metadataEnrichedEventBuilder()
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/unavailable-poster.jpg")))
+            .imageRefreshMode(ImageRefreshMode.REFRESH_IF_CHANGED)
+            .build());
+
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .singleElement()
+        .satisfies(
+            image -> {
+              assertThat(image.getId()).isEqualTo(existingArtwork.imageId());
+              assertThat(image.getKey()).isEqualTo("/old-poster.jpg");
+            });
+    assertThat(existingArtwork.absolutePath()).exists();
+  }
+
+  @Test
+  @DisplayName("Should replace legacy artwork without source key when refreshing if changed")
+  void shouldReplaceLegacyArtworkWithoutSourceKeyWhenRefreshingIfChanged()
+      throws InterruptedException {
+    var entityId = UUID.randomUUID();
+    var oldImageId = UUID.randomUUID();
+    var sourceKey = "/poster.jpg";
+    imageRepository.save(
+        imageBuilder(entityId)
+            .id(oldImageId)
+            .path("movie/" + entityId + "/poster/small-old.jpg")
+            .build());
+    tmdbHttpService.setImageData(createTestImage(600, 900));
+
+    enrichAndAwait(
+        metadataEnrichedEventBuilder()
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, sourceKey)))
+            .imageRefreshMode(ImageRefreshMode.REFRESH_IF_CHANGED)
+            .build());
+
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .hasSize(ImageSize.values().length)
+        .allSatisfy(image -> assertThat(image.getKey()).isEqualTo(sourceKey))
+        .extracting(Image::getId)
+        .doesNotContain(oldImageId);
   }
 
   @Test
@@ -620,6 +659,26 @@ class ImageEnrichmentListenerTest {
     return new ImageEnrichmentListener(imageDownloader, imageService, mutexFactoryProvider);
   }
 
+  private ExistingArtwork persistExistingArtwork(UUID entityId) throws IOException {
+    var imageId = UUID.randomUUID();
+    var relativePath = "movie/" + entityId + "/poster/small-" + imageId + ".jpg";
+    var absolutePath = fileSystem.getPath("/data/images").resolve(relativePath);
+    Files.createDirectories(absolutePath.getParent());
+    Files.write(absolutePath, new byte[] {1, 2, 3});
+    imageRepository.save(
+        imageBuilder(entityId).id(imageId).key("/old-poster.jpg").path(relativePath).build());
+    return new ExistingArtwork(imageId, absolutePath);
+  }
+
+  private void enrichAndAwait(MetadataEnrichedEvent event) throws InterruptedException {
+    var mutex = SignalingMutex.builder().expectedUnlocks(1).build();
+    var testListener = createListener(tmdbHttpService, new FixedMutexFactory(mutex));
+
+    testListener.onMetadataEnriched(event);
+
+    assertThat(mutex.awaitUnlocks()).isTrue();
+  }
+
   private static final class CompletionTrackingImageRepository extends FakeImageRepository {
 
     private final ConcurrentHashMap<UUID, CountDownLatch> expectedImages =
@@ -645,6 +704,8 @@ class ImageEnrichmentListenerTest {
       return insertedImageIds;
     }
   }
+
+  private record ExistingArtwork(UUID imageId, Path absolutePath) {}
 
   private static final class BlockingImageDownloader implements TmdbImageDownloader {
 

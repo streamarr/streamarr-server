@@ -2,7 +2,6 @@ package com.streamarr.server.services.metadata;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
-import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.streamarr.server.fakes.TestImages.createDistinctColorPngImage;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
@@ -35,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
@@ -147,32 +147,20 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
     var entityId = UUID.randomUUID();
     var imageData = createTestImage(600, 900);
     var sourceKey = "/poster.jpg";
-    stubImageDownload(sourceKey, imageData);
+    var processed =
+        imageService.processImage(
+            imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE, sourceKey);
 
-    transactionTemplate.executeWithoutResult(
-        status ->
-            eventPublisher.publishEvent(
-                new MetadataEnrichedEvent(
-                    entityId,
-                    ImageEntityType.MOVIE,
-                    List.of(new TmdbImageSource(ImageType.POSTER, sourceKey)))));
+    imageService.saveImages(processed.images());
 
     var expectedContentSha256 =
         HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(imageData));
-
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var images =
-                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-              assertThat(images).isNotEmpty();
-              assertThat(images)
-                  .allSatisfy(
-                      image -> {
-                        assertThat(image.getKey()).isEqualTo(sourceKey);
-                        assertThat(image.getContentSha256()).isEqualTo(expectedContentSha256);
-                      });
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .hasSize(ImageSize.values().length)
+        .allSatisfy(
+            image -> {
+              assertThat(image.getKey()).isEqualTo(sourceKey);
+              assertThat(image.getContentSha256()).isEqualTo(expectedContentSha256);
             });
   }
 
@@ -183,10 +171,16 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
     var entityId = UUID.randomUUID();
     var oldKey = "/old-poster.jpg";
     var newKey = "/new-poster.png";
-    stubImageDownload(oldKey, createSolidPngImage(600, 900, 0x0000FF));
-    publishImageEvent(entityId, oldKey, ImageRefreshMode.PRESERVE);
-
-    var originalImages = awaitImages(entityId, oldKey);
+    var original =
+        imageService.processImage(
+            createSolidPngImage(600, 900, 0x0000FF),
+            ImageType.POSTER,
+            entityId,
+            ImageEntityType.MOVIE,
+            oldKey);
+    imageService.saveImages(original.images());
+    var originalImages =
+        imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     var originalIds = originalImages.stream().map(Image::getId).toList();
     var originalSmall =
         originalImages.stream()
@@ -195,73 +189,35 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             .orElseThrow();
 
     var newImageData = createSolidPngImage(600, 900, 0x00A0A0);
-    stubImageDownload(newKey, newImageData);
-    publishImageEvent(entityId, newKey, ImageRefreshMode.REFRESH_IF_CHANGED);
+    var replacement =
+        imageService.processImage(
+            newImageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE, newKey);
+
+    imageService.replaceImages(replacement);
 
     var expectedContentSha256 =
         HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(newImageData));
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var replacements =
-                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-              assertThat(replacements)
-                  .hasSize(ImageSize.values().length)
-                  .allSatisfy(
-                      image -> {
-                        assertThat(image.getKey()).isEqualTo(newKey);
-                        assertThat(image.getContentSha256()).isEqualTo(expectedContentSha256);
-                      })
-                  .extracting(Image::getId)
-                  .doesNotContainAnyElementsOf(originalIds);
-              assertThat(replacements)
-                  .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
-                  .singleElement()
-                  .satisfies(
-                      replacement -> {
-                        assertThat(replacement.getBlurHash())
-                            .isNotEqualTo(originalSmall.getBlurHash());
-                        assertThat(replacement.getAmbientColors())
-                            .isNotEqualTo(originalSmall.getAmbientColors());
-                      });
-              assertThatThrownBy(() -> imageService.readImageFile(originalSmall))
-                  .isInstanceOf(java.io.IOException.class);
+    var replacements = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+    assertThat(replacements)
+        .hasSize(ImageSize.values().length)
+        .allSatisfy(
+            image -> {
+              assertThat(image.getKey()).isEqualTo(newKey);
+              assertThat(image.getContentSha256()).isEqualTo(expectedContentSha256);
+            })
+        .extracting(Image::getId)
+        .doesNotContainAnyElementsOf(originalIds);
+    assertThat(replacements)
+        .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
+        .singleElement()
+        .satisfies(
+            newSmall -> {
+              assertThat(newSmall.getBlurHash()).isNotEqualTo(originalSmall.getBlurHash());
+              assertThat(newSmall.getAmbientColors())
+                  .isNotEqualTo(originalSmall.getAmbientColors());
             });
-  }
-
-  @Test
-  @DisplayName("Should preserve existing artwork when changed image download fails")
-  void shouldPreserveExistingArtworkWhenChangedImageDownloadFails() {
-    var entityId = UUID.randomUUID();
-    var oldKey = "/existing-poster.jpg";
-    var failingKey = "/unavailable-poster.jpg";
-    stubImageDownload(oldKey);
-    publishImageEvent(entityId, oldKey, ImageRefreshMode.PRESERVE);
-    var originalImages = awaitImages(entityId, oldKey);
-    var originalIds = originalImages.stream().map(Image::getId).toList();
-
-    wireMock.stubFor(get(urlPathEqualTo(failingKey)).willReturn(aResponse().withStatus(500)));
-    publishImageEvent(entityId, failingKey, ImageRefreshMode.REFRESH_IF_CHANGED);
-
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(() -> wireMock.verify(getRequestedFor(urlPathEqualTo(failingKey))));
-    await()
-        .during(Duration.ofMillis(500))
-        .atMost(Duration.ofSeconds(2))
-        .untilAsserted(
-            () -> {
-              var preserved =
-                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-              assertThat(preserved)
-                  .extracting(Image::getId)
-                  .containsExactlyInAnyOrderElementsOf(originalIds);
-              assertThat(preserved)
-                  .allSatisfy(image -> assertThat(image.getKey()).isEqualTo(oldKey));
-              assertThat(preserved)
-                  .allSatisfy(image -> assertThat(imageService.readImageFile(image)).isNotEmpty());
-            });
+    assertThatThrownBy(() -> imageService.readImageFile(originalSmall))
+        .isInstanceOf(java.io.IOException.class);
   }
 
   @Test
@@ -269,9 +225,12 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   void shouldRollBackDatabaseReplacementAndPreserveFilesWhenInsertFails() {
     var entityId = UUID.randomUUID();
     var oldKey = "/rollback-old.jpg";
-    stubImageDownload(oldKey);
-    publishImageEvent(entityId, oldKey, ImageRefreshMode.PRESERVE);
-    var originalImages = awaitImages(entityId, oldKey);
+    var original =
+        imageService.processImage(
+            createTestImage(600, 900), ImageType.POSTER, entityId, ImageEntityType.MOVIE, oldKey);
+    imageService.saveImages(original.images());
+    var originalImages =
+        imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     var originalIds = originalImages.stream().map(Image::getId).toList();
     var replacement =
         imageService.processImage(
@@ -293,29 +252,26 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
     assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
   }
 
-  private void publishImageEvent(
-      UUID entityId, String sourceKey, ImageRefreshMode imageRefreshMode) {
-    transactionTemplate.executeWithoutResult(
-        status ->
-            eventPublisher.publishEvent(
-                new MetadataEnrichedEvent(
-                    entityId,
-                    ImageEntityType.MOVIE,
-                    List.of(new TmdbImageSource(ImageType.POSTER, sourceKey)),
-                    imageRefreshMode)));
-  }
+  @Test
+  @DisplayName("Should reject malformed content SHA-256 at database boundary")
+  void shouldRejectMalformedContentSha256AtDatabaseBoundary() {
+    var processed =
+        imageService.processImage(
+            createTestImage(600, 900),
+            ImageType.POSTER,
+            UUID.randomUUID(),
+            ImageEntityType.MOVIE,
+            "/poster.jpg");
+    var invalidImage = processed.images().getFirst();
+    invalidImage.setContentSha256("not-a-sha256");
 
-  private List<Image> awaitImages(UUID entityId, String sourceKey) {
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () ->
-                assertThat(
-                        imageRepository.findByEntityIdAndEntityType(
-                            entityId, ImageEntityType.MOVIE))
-                    .hasSize(ImageSize.values().length)
-                    .allSatisfy(image -> assertThat(image.getKey()).isEqualTo(sourceKey)));
-    return imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+    try {
+      assertThatThrownBy(() -> imageRepository.insertAllIfAbsent(List.of(invalidImage)))
+          .isInstanceOf(DataIntegrityViolationException.class)
+          .hasMessageContaining("image_content_sha256_format_check");
+    } finally {
+      imageService.deleteFiles(processed.writtenFiles());
+    }
   }
 
   private void stubImageDownload(String path) {

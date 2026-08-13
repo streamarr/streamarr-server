@@ -29,6 +29,7 @@ import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.MetadataResult;
@@ -993,7 +994,7 @@ class MovieServiceTest {
 
       var fresh =
           Movie.builder().title("Inception").cast(castInput).directors(directorInput).build();
-      var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+      var metadataResult = MetadataFixture.<Movie>metadataResultBuilder().entity(fresh).build();
 
       var result = movieService.refreshMovieMetadata(existing, metadataResult);
 

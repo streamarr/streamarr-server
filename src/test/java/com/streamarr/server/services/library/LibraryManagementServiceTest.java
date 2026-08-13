@@ -18,10 +18,13 @@ import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
+import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
@@ -39,11 +42,13 @@ import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
+import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.RecordingMetadataProvider;
 import com.streamarr.server.fakes.RecordingSeriesMetadataProvider;
 import com.streamarr.server.fakes.SecurityExceptionFileSystem;
 import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -67,6 +72,8 @@ import com.streamarr.server.services.metadata.MetadataSearchOutcome.Found;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.NotFound;
 import com.streamarr.server.services.metadata.MetadataSearchOutcome.TemporarilyUnavailable;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
+import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProvider;
@@ -125,7 +132,7 @@ class LibraryManagementServiceTest {
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
   private final MediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final MovieRepository fakeMovieRepository = new FakeMovieRepository();
-  private final CapturingEventPublisher capturingEventPublisher = new CapturingEventPublisher();
+  private final SignalingEventPublisher capturingEventPublisher = new SignalingEventPublisher();
   private final MovieService movieService =
       new MovieService(
           fakeMovieRepository,
@@ -1429,22 +1436,51 @@ class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should propagate image refresh mode when refreshing library")
-    void shouldPropagateImageRefreshModeWhenRefreshingLibrary() {
-      var capturedMode = new AtomicReference<ImageRefreshMode>();
-      doAnswer(
-              invocation -> {
-                capturedMode.set(invocation.getArgument(1));
-                return null;
-              })
-          .when(libraryRefreshService)
-          .refreshLibrary(any(Library.class), any(ImageRefreshMode.class));
+    @DisplayName("Should refresh metadata and propagate artwork mode from top-level refresh")
+    void shouldRefreshMetadataAndPropagateArtworkModeFromTopLevelRefresh() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      var movie =
+          fakeMovieRepository.save(
+              Movie.builder().title("Original").titleSort("original").library(library).build());
+      movie
+          .getExternalIds()
+          .add(
+              ExternalIdentifier.builder()
+                  .externalSourceType(ExternalSourceType.TMDB)
+                  .externalId("27205")
+                  .build());
+      when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+      when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+          .thenReturn(
+              Optional.of(
+                  MetadataFixture.<Movie>metadataResultBuilder()
+                      .entity(Movie.builder().title("Refreshed").titleSort("refreshed").build())
+                      .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
+                      .build()));
+      var refreshService =
+          new LibraryRefreshService(
+              new FakeSeriesRepository(),
+              fakeMovieRepository,
+              seriesService,
+              movieService,
+              mock(SeriesMetadataProviderResolver.class),
+              fakeMovieMetadataProviderResolver);
+      var service = libraryManagementServiceWithRefreshService(refreshService);
 
-      libraryManagementService.refreshLibrary(savedLibraryId, ImageRefreshMode.FORCE_REFRESH);
+      service.refreshLibrary(savedLibraryId, ImageRefreshMode.FORCE_REFRESH);
 
-      assertThat(capturedMode).hasValue(ImageRefreshMode.FORCE_REFRESH);
+      assertThat(fakeMovieRepository.findById(movie.getId()).orElseThrow().getTitle())
+          .isEqualTo("Refreshed");
       assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
           .isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(capturingEventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
+          .singleElement()
+          .satisfies(
+              event -> {
+                assertThat(event.entityId()).isEqualTo(movie.getId());
+                assertThat(event.entityType()).isEqualTo(ImageEntityType.MOVIE);
+                assertThat(event.imageRefreshMode()).isEqualTo(ImageRefreshMode.FORCE_REFRESH);
+              });
     }
 
     @Test
@@ -1559,21 +1595,17 @@ class LibraryManagementServiceTest {
 
     @Test
     @DisplayName("Should start async refresh on virtual thread when triggerAsyncRefresh called")
-    void shouldStartAsyncRefreshOnVirtualThreadWhenTriggerAsyncRefreshCalled() {
+    void shouldStartAsyncRefreshOnVirtualThreadWhenTriggerAsyncRefreshCalled() throws Exception {
       libraryManagementService.triggerAsyncRefresh(savedLibraryId);
 
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () -> {
-                var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-                assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
-              });
+      assertThat(capturingEventPublisher.awaitRefreshEnded()).isTrue();
+      assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
+          .isEqualTo(LibraryStatus.HEALTHY);
     }
 
     @Test
     @DisplayName("Should propagate image refresh mode during async refresh")
-    void shouldPropagateImageRefreshModeDuringAsyncRefresh() {
+    void shouldPropagateImageRefreshModeDuringAsyncRefresh() throws Exception {
       var capturedMode = new AtomicReference<ImageRefreshMode>();
       doAnswer(
               invocation -> {
@@ -1586,10 +1618,31 @@ class LibraryManagementServiceTest {
       libraryManagementService.triggerAsyncRefresh(
           savedLibraryId, ImageRefreshMode.REFRESH_IF_CHANGED);
 
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () -> assertThat(capturedMode).hasValue(ImageRefreshMode.REFRESH_IF_CHANGED));
+      assertThat(capturingEventPublisher.awaitRefreshEnded()).isTrue();
+      assertThat(capturedMode).hasValue(ImageRefreshMode.REFRESH_IF_CHANGED);
+      assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
+          .isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class))
+          .singleElement()
+          .extracting(RefreshEndedEvent::libraryId)
+          .isEqualTo(savedLibraryId);
+    }
+  }
+
+  private static final class SignalingEventPublisher extends CapturingEventPublisher {
+
+    private final CountDownLatch refreshEnded = new CountDownLatch(1);
+
+    @Override
+    public void publishEvent(Object event) {
+      super.publishEvent(event);
+      if (event instanceof RefreshEndedEvent) {
+        refreshEnded.countDown();
+      }
+    }
+
+    private boolean awaitRefreshEnded() throws InterruptedException {
+      return refreshEnded.await(5, TimeUnit.SECONDS);
     }
   }
 
@@ -1642,6 +1695,24 @@ class LibraryManagementServiceTest {
         capturingEventPublisher,
         new MutexFactoryProvider(),
         libraryRefreshService,
+        fileSystem);
+  }
+
+  private LibraryManagementService libraryManagementServiceWithRefreshService(
+      LibraryRefreshService refreshService) {
+    return new LibraryManagementService(
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        new VideoExtensionValidator(),
+        movieFileProcessor,
+        seriesFileProcessor,
+        fakeLibraryRepository,
+        new FakeLibraryMetadataRepository(),
+        fakeMediaFileRepository,
+        movieService,
+        seriesService,
+        capturingEventPublisher,
+        new MutexFactoryProvider(),
+        refreshService,
         fileSystem);
   }
 
