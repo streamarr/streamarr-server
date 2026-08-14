@@ -1054,33 +1054,128 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should revoke session and clear cookies when logging out")
-  void shouldRevokeSessionAndClearCookiesWhenLoggingOut() throws Exception {
+  @DisplayName("Should revoke only presented refresh family and clear cookies when logging out")
+  void shouldRevokeOnlyPresentedRefreshFamilyAndClearCookiesWhenLoggingOut() throws Exception {
     seedSingleProfileIdentity();
-    var login = objectMapper.readTree(loginResponseBody());
-    var accessToken = login.get("accessToken").asString();
+    var loggedOutDevice = objectMapper.readTree(loginResponseBody());
+    var otherDevice = objectMapper.readTree(loginResponseBody());
 
     var logoutResponse =
         mockMvc
-            .perform(post("/api/auth/logout").header("Authorization", "Bearer " + accessToken))
+            .perform(
+                post("/api/auth/refresh/revoke")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(refreshBody(loggedOutDevice.get("refreshToken").asString())))
             .andExpect(status().isNoContent())
             .andReturn()
             .getResponse();
     assertThat(logoutResponse.getCookie("streamarr_access").getMaxAge()).isZero();
     assertThat(logoutResponse.getCookie("streamarr_refresh").getMaxAge()).isZero();
 
-    // Logout revokes refresh and playback authority immediately. The short-lived API token keeps
-    // its bounded TTL.
+    // Logout revokes refresh and playback authority for only the presented device. The short-lived
+    // API token keeps its bounded TTL.
     mockMvc
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
-                .header("Authorization", "Bearer " + accessToken))
+                .header("Authorization", "Bearer " + loggedOutDevice.get("accessToken").asString()))
         .andExpect(status().isNotFound());
     mockMvc
         .perform(
             post("/api/auth/refresh")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(refreshBody(login.get("refreshToken").asString())))
+                .content(refreshBody(loggedOutDevice.get("refreshToken").asString())))
+        .andExpect(status().isUnauthorized());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(otherDevice.get("refreshToken").asString())))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("Should revoke refresh family from browser cookie when csrf token present")
+  void shouldRevokeRefreshFamilyFromBrowserCookieWhenCsrfTokenPresent() throws Exception {
+    seedSingleProfileIdentity();
+    var loginResponse = cookieModeLogin();
+    var refreshCookie = loginResponse.getCookie(AuthCookies.REFRESH_COOKIE);
+    var csrfCookie = loginResponse.getCookie(AuthCookies.CSRF_COOKIE);
+
+    var logoutResponse =
+        mockMvc
+            .perform(
+                post("/api/auth/refresh/revoke")
+                    .cookie(refreshCookie, csrfCookie)
+                    .header(AuthCookies.CSRF_HEADER, csrfCookie.getValue()))
+            .andExpect(status().isNoContent())
+            .andReturn()
+            .getResponse();
+
+    assertThat(logoutResponse.getCookie(AuthCookies.ACCESS_COOKIE).getMaxAge()).isZero();
+    assertThat(logoutResponse.getCookie(AuthCookies.REFRESH_COOKIE).getMaxAge()).isZero();
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(refreshCookie.getValue())))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  @DisplayName("Should require csrf token when browser refresh cookie logs out")
+  void shouldRequireCsrfTokenWhenBrowserRefreshCookieLogsOut() throws Exception {
+    seedSingleProfileIdentity();
+    var refreshCookie = cookieModeLogin().getCookie(AuthCookies.REFRESH_COOKIE);
+
+    mockMvc
+        .perform(post("/api/auth/refresh/revoke").cookie(refreshCookie))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("Should succeed when refresh family already revoked or token unknown")
+  void shouldSucceedWhenRefreshFamilyAlreadyRevokedOrTokenUnknown() throws Exception {
+    seedSingleProfileIdentity();
+    var refreshToken = loginAndReturnRefreshToken();
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(refreshToken)))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(refreshToken)))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody("never-issued-token")))
+        .andExpect(status().isNoContent());
+  }
+
+  @Test
+  @DisplayName("Should revoke family when rotated predecessor presented")
+  void shouldRevokeFamilyWhenRotatedPredecessorPresented() throws Exception {
+    seedSingleProfileIdentity();
+    var predecessor = loginAndReturnRefreshToken();
+    var successor = redeemAndReturnRefreshToken(predecessor);
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(predecessor)))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(successor)))
         .andExpect(status().isUnauthorized());
   }
 

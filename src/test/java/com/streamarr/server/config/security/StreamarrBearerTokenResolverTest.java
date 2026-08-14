@@ -68,7 +68,13 @@ class StreamarrBearerTokenResolverTest {
 
   @ParameterizedTest(name = "Should suppress bearer resolution on {0}")
   @ValueSource(
-      strings = {"/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/refresh"})
+      strings = {
+        "/api/auth/status",
+        "/api/auth/setup",
+        "/api/auth/login",
+        "/api/auth/refresh",
+        "/api/auth/refresh/revoke"
+      })
   void shouldSuppressBearerResolutionOnUnauthenticatedAuthPath(String uri) {
     var request = requestFor(uri);
     request.addHeader("Authorization", "Bearer header-token");

@@ -30,6 +30,7 @@ public final class StreamarrBearerTokenResolver implements BearerTokenResolver {
           "/api/auth/setup",
           "/api/auth/login",
           "/api/auth/refresh",
+          "/api/auth/refresh/revoke",
           "/api/auth/device/code",
           "/api/auth/device/token",
           "/.well-known/jwks.json");
