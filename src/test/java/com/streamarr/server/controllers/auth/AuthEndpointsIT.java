@@ -1122,14 +1122,45 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should require csrf token when browser refresh cookie logs out")
-  void shouldRequireCsrfTokenWhenBrowserRefreshCookieLogsOut() throws Exception {
+  @DisplayName("Should reject browser logout and keep refresh family live when csrf token missing")
+  void shouldRejectBrowserLogoutAndKeepRefreshFamilyLiveWhenCsrfTokenMissing() throws Exception {
     seedSingleProfileIdentity();
     var refreshCookie = cookieModeLogin().getCookie(AuthCookies.REFRESH_COOKIE);
 
     mockMvc
         .perform(post("/api/auth/refresh/revoke").cookie(refreshCookie))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("CSRF_TOKEN_REQUIRED"));
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(refreshCookie.getValue())))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject browser logout and keep refresh family live when csrf token mismatched")
+  void shouldRejectBrowserLogoutAndKeepRefreshFamilyLiveWhenCsrfTokenMismatched() throws Exception {
+    seedSingleProfileIdentity();
+    var loginResponse = cookieModeLogin();
+    var refreshCookie = loginResponse.getCookie(AuthCookies.REFRESH_COOKIE);
+    var csrfCookie = loginResponse.getCookie(AuthCookies.CSRF_COOKIE);
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .cookie(refreshCookie, csrfCookie)
+                .header(AuthCookies.CSRF_HEADER, "mismatched-token"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("CSRF_TOKEN_REQUIRED"));
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(refreshCookie.getValue())))
+        .andExpect(status().isOk());
   }
 
   @Test
