@@ -1187,10 +1187,11 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should succeed when refresh family already revoked or token unknown")
-  void shouldSucceedWhenRefreshFamilyAlreadyRevokedOrTokenUnknown() throws Exception {
+  @DisplayName("Should keep other refresh family live when logout repeated")
+  void shouldKeepOtherRefreshFamilyLiveWhenLogoutRepeated() throws Exception {
     seedSingleProfileIdentity();
     var refreshToken = loginAndReturnRefreshToken();
+    var otherRefreshToken = loginAndReturnRefreshToken();
 
     mockMvc
         .perform(
@@ -1206,10 +1207,51 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isNoContent());
     mockMvc
         .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(otherRefreshToken)))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("Should keep existing refresh family live when logout token unknown")
+  void shouldKeepExistingRefreshFamilyLiveWhenLogoutTokenUnknown() throws Exception {
+    seedSingleProfileIdentity();
+    var existingRefreshToken = loginAndReturnRefreshToken();
+
+    mockMvc
+        .perform(
             post("/api/auth/refresh/revoke")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(refreshBody("never-issued-token")))
         .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(existingRefreshToken)))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("Should reject logout when refresh credential missing")
+  void shouldRejectLogoutWhenRefreshCredentialMissing() throws Exception {
+    mockMvc
+        .perform(post("/api/auth/refresh/revoke"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
+  }
+
+  @Test
+  @DisplayName("Should reject logout when refresh credential blank")
+  void shouldRejectLogoutWhenRefreshCredentialBlank() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody("")))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
   }
 
   @Test

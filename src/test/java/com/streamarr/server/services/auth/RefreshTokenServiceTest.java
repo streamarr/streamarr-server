@@ -229,12 +229,18 @@ class RefreshTokenServiceTest {
   }
 
   @Test
-  @DisplayName("Should succeed when logout refresh token unknown")
-  void shouldSucceedWhenLogoutRefreshTokenUnknown() {
+  @DisplayName("Should keep existing refresh family live when logout refresh token unknown")
+  void shouldKeepExistingRefreshFamilyLiveWhenLogoutRefreshTokenUnknown() {
+    var existing = issueSession();
+
     service.logout("never-issued-token");
 
-    assertThat(sessionRepository.findAll()).isEmpty();
-    assertThat(tokenRepository.findAll()).isEmpty();
+    assertThat(sessionRepository.findById(existing.session().getId()).orElseThrow().getRevokedAt())
+        .isNull();
+    assertThat(tokenRepository.findAll())
+        .filteredOn(token -> token.getSessionId().equals(existing.session().getId()))
+        .singleElement()
+        .satisfies(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.ACTIVE));
   }
 
   @Test

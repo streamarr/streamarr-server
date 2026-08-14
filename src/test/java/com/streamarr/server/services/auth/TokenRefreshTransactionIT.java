@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.awaitility.Awaitility;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -273,6 +274,62 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should hold session lock through issuance when raw token logout races refresh")
+  void shouldHoldSessionLockThroughIssuanceWhenRawTokenLogoutRacesRefresh() throws Exception {
+    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var issued = refreshTokenService.createSession(account, "tx-device");
+
+    var gate = new CountDownLatch(1);
+    var arrival = new CountDownLatch(1);
+    gatedIssuer.holdIssuanceAt(gate, arrival);
+
+    try (var executor = Executors.newFixedThreadPool(2)) {
+      var refreshDone = new CountDownLatch(1);
+      var logoutStarted = new CountDownLatch(1);
+      var logoutDone = new CountDownLatch(1);
+      var refreshResult = new AtomicReference<TokenRefreshService.RefreshedTokens>();
+
+      executor.submit(
+          () -> {
+            try {
+              refreshResult.set(tokenRefreshService.refresh(issued.rawToken()));
+            } finally {
+              refreshDone.countDown();
+            }
+          });
+
+      assertThat(arrival.await(10, TimeUnit.SECONDS)).isTrue();
+
+      executor.submit(
+          () -> {
+            logoutStarted.countDown();
+            try {
+              refreshTokenService.logout(issued.rawToken());
+            } finally {
+              logoutDone.countDown();
+            }
+          });
+
+      assertThat(logoutStarted.await(10, TimeUnit.SECONDS)).isTrue();
+      Awaitility.await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> {
+                assertThat(blockedAuthSessionUpdateCount()).isOne();
+                assertThat(logoutDone.getCount()).isOne();
+              });
+
+      gate.countDown();
+
+      assertThat(refreshDone.await(10, TimeUnit.SECONDS)).isTrue();
+      assertThat(logoutDone.await(10, TimeUnit.SECONDS)).isTrue();
+      assertThat(refreshResult.get()).isNotNull();
+      assertThat(refreshResult.get().accessToken()).isNotNull();
+      assertThat(activeTokenCount(issued.session().getId())).isZero();
+    }
+  }
+
+  @Test
   @DisplayName("Should persist reuse revocation when redemption joins outer transaction")
   void shouldPersistReuseRevocationWhenRedemptionJoinsOuterTransaction() {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
@@ -309,5 +366,14 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
             .SESSION_ID
             .eq(sessionId)
             .and(REFRESH_TOKEN.STATUS.eq(RefreshTokenStatus.ACTIVE)));
+  }
+
+  private int blockedAuthSessionUpdateCount() {
+    return dsl.fetchCount(
+        dsl.selectOne()
+            .from("pg_stat_activity")
+            .where(DSL.field("wait_event_type", String.class).eq("Lock"))
+            .and(DSL.field("query", String.class).containsIgnoreCase("auth_session"))
+            .and(DSL.field("query", String.class).startsWithIgnoreCase("update")));
   }
 }
