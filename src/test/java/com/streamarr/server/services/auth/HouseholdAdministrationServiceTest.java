@@ -14,7 +14,9 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditOperation;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdOwnershipTransferRequiredException;
+import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.KidProfileManagerRequiredException;
 import com.streamarr.server.exceptions.ServerAdministrationDeniedException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
@@ -152,6 +154,27 @@ class HouseholdAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject assigning owner role through account transfer")
+  void shouldRejectAssigningOwnerRoleThroughAccountTransfer() {
+    var source = householdRepository.save(Household.builder().name("Source").build());
+    var target = householdRepository.save(Household.builder().name("Target").build());
+    var admin = saveAccount(AccountRole.ADMIN, source.getId(), HouseholdRole.OWNER);
+    var member = saveAccount(AccountRole.USER, source.getId(), HouseholdRole.MEMBER);
+    var command =
+        AccountHouseholdTransferCommand.builder()
+            .actingAccountId(admin.getId())
+            .targetAccountId(member.getId())
+            .targetHouseholdId(target.getId())
+            .targetRole(HouseholdRole.OWNER)
+            .password(PASSWORD)
+            .reason("Invalid ownership shortcut")
+            .build();
+
+    assertThatThrownBy(() -> service.transferAccount(command))
+        .isInstanceOf(HouseholdOwnershipTransferRequiredException.class);
+  }
+
+  @Test
   @DisplayName("Should reject account transfer without live ServerAdmin authority")
   void shouldRejectAccountTransferWithoutLiveServerAdminAuthority() {
     var source = householdRepository.save(Household.builder().name("Source").build());
@@ -215,6 +238,120 @@ class HouseholdAdministrationServiceTest {
         .isInstanceOf(KidProfileManagerRequiredException.class);
 
     assertThat(localParent.getHomeHouseholdId()).isEqualTo(source.getId());
+  }
+
+  @Test
+  @DisplayName("Should let server administrator transfer household ownership")
+  void shouldLetServerAdministratorTransferHouseholdOwnership() {
+    var household = householdRepository.save(Household.builder().name("Family").build());
+    var outsideHousehold = UUID.randomUUID();
+    var admin = saveAccount(AccountRole.ADMIN, outsideHousehold, HouseholdRole.MEMBER);
+    var currentOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.OWNER);
+    var nextOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.PARENT);
+
+    service.transferOwnership(
+        HouseholdOwnershipTransferCommand.builder()
+            .actingAccountId(admin.getId())
+            .householdId(household.getId())
+            .targetAccountId(nextOwner.getId())
+            .password(PASSWORD)
+            .reason("Administrator recovery")
+            .build());
+
+    assertThat(currentOwner.getHouseholdRole()).isEqualTo(HouseholdRole.PARENT);
+    assertThat(nextOwner.getHouseholdRole()).isEqualTo(HouseholdRole.OWNER);
+  }
+
+  @Test
+  @DisplayName("Should reject ownership transfer without owner or administrator authority")
+  void shouldRejectOwnershipTransferWithoutOwnerOrAdministratorAuthority() {
+    var household = householdRepository.save(Household.builder().name("Family").build());
+    saveAccount(AccountRole.USER, household.getId(), HouseholdRole.OWNER);
+    var parent = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.PARENT);
+    var nextOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.MEMBER);
+    var command =
+        HouseholdOwnershipTransferCommand.builder()
+            .actingAccountId(parent.getId())
+            .householdId(household.getId())
+            .targetAccountId(nextOwner.getId())
+            .password(PASSWORD)
+            .reason("Unauthorized handoff")
+            .build();
+
+    assertThatThrownBy(() -> service.transferOwnership(command))
+        .isInstanceOf(HouseholdAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject ownership transfer by disabled administrator")
+  void shouldRejectOwnershipTransferByDisabledAdministrator() {
+    var household = householdRepository.save(Household.builder().name("Family").build());
+    saveAccount(AccountRole.USER, household.getId(), HouseholdRole.OWNER);
+    var disabledAdmin = saveAccount(AccountRole.ADMIN, UUID.randomUUID(), HouseholdRole.MEMBER);
+    disabledAdmin.setEnabled(false);
+    accountRepository.save(disabledAdmin);
+    var nextOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.PARENT);
+    var command =
+        HouseholdOwnershipTransferCommand.builder()
+            .actingAccountId(disabledAdmin.getId())
+            .householdId(household.getId())
+            .targetAccountId(nextOwner.getId())
+            .password(PASSWORD)
+            .reason("Disabled administrator")
+            .build();
+
+    assertThatThrownBy(() -> service.transferOwnership(command))
+        .isInstanceOf(HouseholdAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject ownership transfer with invalid credentials")
+  void shouldRejectOwnershipTransferWithInvalidCredentials() {
+    var household = householdRepository.save(Household.builder().name("Family").build());
+    var owner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.OWNER);
+    var nextOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.PARENT);
+    var command =
+        HouseholdOwnershipTransferCommand.builder()
+            .actingAccountId(owner.getId())
+            .householdId(household.getId())
+            .targetAccountId(nextOwner.getId())
+            .password("wrong password")
+            .reason("Invalid credentials")
+            .build();
+
+    assertThatThrownBy(() -> service.transferOwnership(command))
+        .isInstanceOf(InvalidCredentialsException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject transferring household ownership to current owner")
+  void shouldRejectTransferringHouseholdOwnershipToCurrentOwner() {
+    var household = householdRepository.save(Household.builder().name("Family").build());
+    var owner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.OWNER);
+    var command =
+        HouseholdOwnershipTransferCommand.builder()
+            .actingAccountId(owner.getId())
+            .householdId(household.getId())
+            .targetAccountId(owner.getId())
+            .password(PASSWORD)
+            .reason("No-op handoff")
+            .build();
+
+    assertThatThrownBy(() -> service.transferOwnership(command))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("already owns");
+  }
+
+  @Test
+  @DisplayName("Should require nonblank reason for household administration")
+  void shouldRequireNonblankReasonForHouseholdAdministration() {
+    var missingReason = AccountHouseholdTransferCommand.builder().reason(null).build();
+    var blankReason = HouseholdOwnershipTransferCommand.builder().reason("  ").build();
+
+    assertThatThrownBy(() -> service.transferAccount(missingReason))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> service.transferOwnership(blankReason))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   private UserAccount saveAccount(

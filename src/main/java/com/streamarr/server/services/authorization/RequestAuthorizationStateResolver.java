@@ -8,27 +8,43 @@ import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class RequestAuthorizationStateResolver {
 
   private final UserAccountRepository accountRepository;
   private final AuthSessionRepository sessionRepository;
   private final ProfileHouseholdShareRepository shareRepository;
+  private final MutexFactory<StreamarrAuthenticationToken> authenticationMutex;
+
+  public RequestAuthorizationStateResolver(
+      UserAccountRepository accountRepository,
+      AuthSessionRepository sessionRepository,
+      ProfileHouseholdShareRepository shareRepository,
+      MutexFactoryProvider mutexFactoryProvider) {
+    this.accountRepository = accountRepository;
+    this.sessionRepository = sessionRepository;
+    this.shareRepository = shareRepository;
+    this.authenticationMutex = mutexFactoryProvider.getMutexFactory();
+  }
 
   public AuthorizationState resolve(StreamarrAuthenticationToken authentication) {
-    synchronized (authentication) {
-      if (authentication.getDetails() instanceof CachedAuthorizationState cached) {
-        return cached.state();
+    var mutex = authenticationMutex.getMutex(authentication);
+    mutex.lock();
+    try {
+      if (authentication.getDetails() instanceof CachedAuthorizationState(var cachedState)) {
+        return cachedState;
       }
 
       var state = load(authentication.getPrincipal());
       authentication.setDetails(new CachedAuthorizationState(state));
       return state;
+    } finally {
+      mutex.unlock();
     }
   }
 

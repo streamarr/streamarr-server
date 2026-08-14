@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.AuthSession;
@@ -9,11 +10,15 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.UnwrittenAuthSessionException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -53,6 +58,126 @@ class SessionScopeServiceTest {
     assertThat(context.profileId()).isEqualTo(profile.getId());
     assertThat(sessionRepository.findById(session.getId()).orElseThrow().getActiveProfileId())
         .isEqualTo(profile.getId());
+  }
+
+  @Test
+  @DisplayName("Should keep account scope when stored session has no profile selection")
+  void shouldKeepAccountScopeWhenStoredSessionHasNoProfileSelection() {
+    var account = saveAccount(UUID.randomUUID());
+    var session = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
+
+    var context = service.revalidateStoredContext(account, session);
+
+    assertThat(context.account()).isEqualTo(account);
+    assertThat(context.session()).isEqualTo(session);
+    assertThat(context.profileId()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should keep selectable stored profile in session context")
+  void shouldKeepSelectableStoredProfileInSessionContext() {
+    var householdId = UUID.randomUUID();
+    var account = saveAccount(householdId);
+    var profile = profileRepository.save(Profile.builder().name("Portable Profile").build());
+    shareRepository.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(householdId)
+            .status(ProfileShareStatus.ACTIVE)
+            .build());
+    var session =
+        sessionRepository.save(
+            AuthSession.builder()
+                .accountId(account.getId())
+                .activeProfileId(profile.getId())
+                .build());
+
+    var context = service.revalidateStoredContext(account, session);
+
+    assertThat(context.profileId()).isEqualTo(profile.getId());
+    assertThat(session.getActiveProfileId()).isEqualTo(profile.getId());
+  }
+
+  @Test
+  @DisplayName("Should clear stored profile when share is no longer selectable")
+  void shouldClearStoredProfileWhenShareIsNoLongerSelectable() {
+    var account = saveAccount(UUID.randomUUID());
+    var session =
+        sessionRepository.save(
+            AuthSession.builder()
+                .accountId(account.getId())
+                .activeProfileId(UUID.randomUUID())
+                .build());
+
+    var context = service.revalidateStoredContext(account, session);
+
+    assertThat(context.profileId()).isNull();
+    assertThat(sessionRepository.findById(session.getId()).orElseThrow().getActiveProfileId())
+        .isNull();
+  }
+
+  @Test
+  @DisplayName("Should fail closed when invalid selection belongs to revoked stored session")
+  void shouldFailClosedWhenInvalidSelectionBelongsToRevokedStoredSession() {
+    var account = saveAccount(UUID.randomUUID());
+    var session =
+        sessionRepository.save(
+            AuthSession.builder()
+                .accountId(account.getId())
+                .activeProfileId(UUID.randomUUID())
+                .revokedAt(Instant.EPOCH)
+                .build());
+
+    assertThatThrownBy(() -> service.revalidateStoredContext(account, session))
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should distinguish unwritten session when invalid selection cannot be persisted")
+  void shouldDistinguishUnwrittenSessionWhenInvalidSelectionCannotBePersisted() {
+    var account = saveAccount(UUID.randomUUID());
+    var session =
+        sessionRepository.save(
+            AuthSession.builder()
+                .accountId(account.getId())
+                .activeProfileId(UUID.randomUUID())
+                .build());
+    sessionRepository.delete(session);
+
+    assertThatThrownBy(() -> service.revalidateStoredContext(account, session))
+        .isInstanceOf(UnwrittenAuthSessionException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject selection when account session or profile is unavailable")
+  void shouldRejectSelectionWhenAccountSessionOrProfileIsUnavailable() {
+    var missingAccountId = UUID.randomUUID();
+    assertThatThrownBy(
+            () -> service.selectProfile(missingAccountId, UUID.randomUUID(), UUID.randomUUID()))
+        .isInstanceOf(AuthenticationRequiredException.class);
+
+    var account = saveAccount(UUID.randomUUID());
+    var otherAccountSession =
+        sessionRepository.save(AuthSession.builder().accountId(UUID.randomUUID()).build());
+    assertThatThrownBy(
+            () ->
+                service.selectProfile(
+                    account.getId(), otherAccountSession.getId(), UUID.randomUUID()))
+        .isInstanceOf(AuthenticationRequiredException.class);
+
+    var revokedSession =
+        sessionRepository.save(
+            AuthSession.builder().accountId(account.getId()).revokedAt(Instant.EPOCH).build());
+    assertThatThrownBy(
+            () -> service.selectProfile(account.getId(), revokedSession.getId(), UUID.randomUUID()))
+        .isInstanceOf(AuthenticationRequiredException.class);
+
+    var liveSession =
+        sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
+    assertThatThrownBy(
+            () -> service.selectProfile(account.getId(), liveSession.getId(), UUID.randomUUID()))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+    assertThat(liveSession.getActiveProfileId()).isNull();
   }
 
   private UserAccount saveAccount(UUID homeHouseholdId) {

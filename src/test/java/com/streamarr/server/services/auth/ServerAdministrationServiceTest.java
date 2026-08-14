@@ -17,6 +17,8 @@ import com.streamarr.server.domain.auth.SecurityAuditOperation;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.KidProfileManagerRequiredException;
+import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.ProfileManagerInvariantException;
 import com.streamarr.server.exceptions.ServerAdministrationDeniedException;
 import com.streamarr.server.fakes.FakeProfileDeletionAuthorizationRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
@@ -171,6 +173,108 @@ class ServerAdministrationServiceTest {
               assertThat(event.getOperation())
                   .isEqualTo(SecurityAuditOperation.PROFILE_MANAGER_OVERRIDDEN);
             });
+  }
+
+  @Test
+  @DisplayName("Should leave existing manager relationship unchanged when grant repeated")
+  void shouldLeaveExistingManagerRelationshipUnchangedWhenGrantRepeated() {
+    var admin = saveAccount(AccountRole.ADMIN);
+    var existingManager = saveAccount(AccountRole.USER);
+    var profile = profileRepository.save(Profile.builder().name("Managed Profile").build());
+    managerRepository.save(manager(existingManager.getId(), profile.getId()));
+
+    service.overrideProfileManager(
+        ProfileManagerOverrideCommand.builder()
+            .actingAccountId(admin.getId())
+            .targetAccountId(existingManager.getId())
+            .profileId(profile.getId())
+            .action(ProfileManagerOverrideAction.GRANT)
+            .password(PASSWORD)
+            .reason("Confirm named manager")
+            .build());
+
+    assertThat(managerRepository.findByProfileId(profile.getId())).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should remove one of multiple adult profile managers")
+  void shouldRemoveOneOfMultipleAdultProfileManagers() {
+    var admin = saveAccount(AccountRole.ADMIN);
+    var removedManager = saveAccount(AccountRole.USER);
+    var retainedManager = saveAccount(AccountRole.USER);
+    var profile =
+        profileRepository.save(
+            Profile.builder()
+                .name("Managed Adult")
+                .classification(ProfileClassification.ADULT)
+                .build());
+    managerRepository.save(manager(removedManager.getId(), profile.getId()));
+    managerRepository.save(manager(retainedManager.getId(), profile.getId()));
+
+    service.overrideProfileManager(
+        ProfileManagerOverrideCommand.builder()
+            .actingAccountId(admin.getId())
+            .targetAccountId(removedManager.getId())
+            .profileId(profile.getId())
+            .action(ProfileManagerOverrideAction.REMOVE)
+            .password(PASSWORD)
+            .reason("Remove disputed manager")
+            .build());
+
+    assertThat(
+            managerRepository.existsByAccountIdAndProfileId(
+                removedManager.getId(), profile.getId()))
+        .isFalse();
+    assertThat(
+            managerRepository.existsByAccountIdAndProfileId(
+                retainedManager.getId(), profile.getId()))
+        .isTrue();
+  }
+
+  @Test
+  @DisplayName("Should reject removing absent or sole profile manager")
+  void shouldRejectRemovingAbsentOrSoleProfileManager() {
+    var admin = saveAccount(AccountRole.ADMIN);
+    var target = saveAccount(AccountRole.USER);
+    var profile = profileRepository.save(Profile.builder().name("Managed Profile").build());
+    var absentRemoval =
+        ProfileManagerOverrideCommand.builder()
+            .actingAccountId(admin.getId())
+            .targetAccountId(target.getId())
+            .profileId(profile.getId())
+            .action(ProfileManagerOverrideAction.REMOVE)
+            .password(PASSWORD)
+            .reason("Remove absent manager")
+            .build();
+
+    assertThatThrownBy(() -> service.overrideProfileManager(absentRemoval))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+
+    managerRepository.save(manager(target.getId(), profile.getId()));
+    var soleRemoval =
+        ProfileManagerOverrideCommand.builder()
+            .actingAccountId(admin.getId())
+            .targetAccountId(target.getId())
+            .profileId(profile.getId())
+            .action(ProfileManagerOverrideAction.REMOVE)
+            .password(PASSWORD)
+            .reason("Remove sole manager")
+            .build();
+
+    assertThatThrownBy(() -> service.overrideProfileManager(soleRemoval))
+        .isInstanceOf(ProfileManagerInvariantException.class);
+  }
+
+  @Test
+  @DisplayName("Should require nonblank reason for destructive administration")
+  void shouldRequireNonblankReasonForDestructiveAdministration() {
+    var missingReason = ForceProfileDeletionCommand.builder().reason(null).build();
+    var blankReason = ForceProfileUnshareCommand.builder().reason("  ").build();
+
+    assertThatThrownBy(() -> service.forceDeleteProfile(missingReason))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> service.forceUnshareProfile(blankReason))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test

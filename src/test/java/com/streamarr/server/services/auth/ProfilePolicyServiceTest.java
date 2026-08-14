@@ -164,6 +164,127 @@ class ProfilePolicyServiceTest {
         .isEqualTo(SecurityAuditOperation.PROFILE_POLICY_CHANGED);
   }
 
+  @Test
+  @DisplayName("Should treat blank adult PIN as absent beside kid profile")
+  void shouldTreatBlankAdultPinAsAbsentBesideKidProfile() {
+    var householdId = UUID.randomUUID();
+    var adult =
+        profileRepository.save(
+            Profile.builder()
+                .name("Adult")
+                .classification(ProfileClassification.ADULT)
+                .pinHash(" ")
+                .build());
+    var kid =
+        profileRepository.save(
+            Profile.builder()
+                .name("Kid")
+                .classification(ProfileClassification.KID)
+                .maximumAllowedRatingAge(7)
+                .build());
+    share(adult, householdId);
+    share(kid, householdId);
+
+    assertThatThrownBy(() -> safetyService.validateActivation(adult, householdId))
+        .isInstanceOf(ProfileSafetyViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should require PIN for unrestricted kid beside more restricted kid")
+  void shouldRequirePinForUnrestrictedKidBesideMoreRestrictedKid() {
+    var householdId = UUID.randomUUID();
+    var unrestrictedKid =
+        profileRepository.save(
+            Profile.builder()
+                .name("Unrestricted Kid")
+                .classification(ProfileClassification.KID)
+                .build());
+    var restrictedKid =
+        profileRepository.save(
+            Profile.builder()
+                .name("Restricted Kid")
+                .classification(ProfileClassification.KID)
+                .maximumAllowedRatingAge(7)
+                .build());
+    share(unrestrictedKid, householdId);
+    share(restrictedKid, householdId);
+
+    assertThatThrownBy(() -> safetyService.validateActivation(unrestrictedKid, householdId))
+        .isInstanceOfSatisfying(
+            ProfileSafetyViolationException.class,
+            exception ->
+                assertThat(exception.profilesRequiringPin())
+                    .containsExactly(unrestrictedKid.getId()));
+  }
+
+  @Test
+  @DisplayName("Should require PIN for less restricted kid beside more restricted kid")
+  void shouldRequirePinForLessRestrictedKidBesideMoreRestrictedKid() {
+    var householdId = UUID.randomUUID();
+    var olderKid =
+        profileRepository.save(
+            Profile.builder()
+                .name("Older Kid")
+                .classification(ProfileClassification.KID)
+                .maximumAllowedRatingAge(13)
+                .build());
+    var youngerKid =
+        profileRepository.save(
+            Profile.builder()
+                .name("Younger Kid")
+                .classification(ProfileClassification.KID)
+                .maximumAllowedRatingAge(7)
+                .build());
+    share(olderKid, householdId);
+    share(youngerKid, householdId);
+
+    assertThatThrownBy(() -> safetyService.validateActivation(olderKid, householdId))
+        .isInstanceOfSatisfying(
+            ProfileSafetyViolationException.class,
+            exception ->
+                assertThat(exception.profilesRequiringPin()).containsExactly(olderKid.getId()));
+  }
+
+  @Test
+  @DisplayName("Should allow equally unrestricted kid profiles without PIN")
+  void shouldAllowEquallyUnrestrictedKidProfilesWithoutPin() {
+    var householdId = UUID.randomUUID();
+    var firstKid =
+        profileRepository.save(
+            Profile.builder().name("First Kid").classification(ProfileClassification.KID).build());
+    var secondKid =
+        profileRepository.save(
+            Profile.builder().name("Second Kid").classification(ProfileClassification.KID).build());
+    share(firstKid, householdId);
+    share(secondKid, householdId);
+
+    safetyService.validateActivation(firstKid, householdId);
+  }
+
+  @Test
+  @DisplayName("Should allow restricted kid beside PIN-protected unrestricted kid")
+  void shouldAllowRestrictedKidBesidePinProtectedUnrestrictedKid() {
+    var householdId = UUID.randomUUID();
+    var unrestrictedKid =
+        profileRepository.save(
+            Profile.builder()
+                .name("Unrestricted Kid")
+                .classification(ProfileClassification.KID)
+                .pinHash("encoded-pin")
+                .build());
+    var restrictedKid =
+        profileRepository.save(
+            Profile.builder()
+                .name("Restricted Kid")
+                .classification(ProfileClassification.KID)
+                .maximumAllowedRatingAge(13)
+                .build());
+    share(unrestrictedKid, householdId);
+    share(restrictedKid, householdId);
+
+    safetyService.validateActivation(restrictedKid, householdId);
+  }
+
   private void share(Profile profile, UUID householdId) {
     shareRepository.save(
         ProfileHouseholdShare.builder()

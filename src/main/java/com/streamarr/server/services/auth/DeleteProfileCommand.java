@@ -6,6 +6,13 @@ import lombok.Builder;
 @Builder
 public record DeleteProfileCommand(UUID actingAccountId, UUID profileId, String password) {
 
+  public static class DeleteProfileCommandBuilder {
+    @Override
+    public String toString() {
+      return "DeleteProfileCommandBuilder[REDACTED]";
+    }
+  }
+
   @Override
   public String toString() {
     return "DeleteProfileCommand[actingAccountId="

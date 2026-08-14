@@ -12,6 +12,13 @@ public record CreatePortableProfileCommand(
     Integer maximumAllowedRatingAge,
     String pinHash) {
 
+  public static class CreatePortableProfileCommandBuilder {
+    @Override
+    public String toString() {
+      return "CreatePortableProfileCommandBuilder[REDACTED]";
+    }
+  }
+
   @Override
   public String toString() {
     return "CreatePortableProfileCommand[actingAccountId=%s, name=%s, classification=%s, maximumAllowedRatingAge=%s, pinHash=<redacted>]"

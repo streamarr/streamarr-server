@@ -9,11 +9,13 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileClassification;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditOperation;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.KidProfileManagerRequiredException;
+import com.streamarr.server.exceptions.ProfileManagementDeniedException;
 import com.streamarr.server.exceptions.ProfileManagerInvariantException;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
@@ -102,6 +104,32 @@ class ProfileManagementServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject missing or blank portable profile name")
+  void shouldRejectMissingOrBlankPortableProfileName() {
+    var missingName = CreatePortableProfileCommand.builder().name(null).build();
+    var blankName = RenamePortableProfileCommand.builder().name("  ").build();
+
+    assertThatThrownBy(() -> service.create(missingName))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> service.rename(blankName))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject portable profile rename by non-manager")
+  void shouldRejectPortableProfileRenameByNonManager() {
+    var command =
+        RenamePortableProfileCommand.builder()
+            .actingAccountId(UUID.randomUUID())
+            .profileId(UUID.randomUUID())
+            .name("Denied")
+            .build();
+
+    assertThatThrownBy(() -> service.rename(command))
+        .isInstanceOf(ProfileManagementDeniedException.class);
+  }
+
+  @Test
   @DisplayName("Should create manager only when named invitee personally accepts")
   void shouldCreateManagerOnlyWhenNamedInviteePersonallyAccepts() {
     var currentManagerId = UUID.randomUUID();
@@ -168,6 +196,41 @@ class ProfileManagementServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject stale or mismatched manager invitation rejection")
+  void shouldRejectStaleOrMismatchedManagerInvitationRejection() {
+    var invitedAccountId = UUID.randomUUID();
+    var stale =
+        invitationRepository.save(
+            ProfileManagerInvitation.builder()
+                .profileId(UUID.randomUUID())
+                .invitedAccountId(invitedAccountId)
+                .status(ProfileManagerInvitationStatus.ACCEPTED)
+                .build());
+    var pending =
+        invitationRepository.save(
+            ProfileManagerInvitation.builder()
+                .profileId(UUID.randomUUID())
+                .invitedAccountId(invitedAccountId)
+                .status(ProfileManagerInvitationStatus.PENDING)
+                .build());
+    var staleRejection =
+        ProfileManagerInvitationRejection.builder()
+            .actingAccountId(invitedAccountId)
+            .invitationId(stale.getId())
+            .build();
+    var mismatchedRejection =
+        ProfileManagerInvitationRejection.builder()
+            .actingAccountId(UUID.randomUUID())
+            .invitationId(pending.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.reject(staleRejection))
+        .isInstanceOf(ProfileManagementDeniedException.class);
+    assertThatThrownBy(() -> service.reject(mismatchedRejection))
+        .isInstanceOf(ProfileManagementDeniedException.class);
+  }
+
+  @Test
   @DisplayName("Should let profile manager cancel pending manager invitation")
   void shouldLetProfileManagerCancelPendingManagerInvitation() {
     var currentManagerId = UUID.randomUUID();
@@ -195,6 +258,61 @@ class ProfileManagementServiceTest {
         .containsExactlyInAnyOrder(
             SecurityAuditOperation.PROFILE_MANAGER_INVITED,
             SecurityAuditOperation.PROFILE_MANAGER_INVITATION_CANCELED);
+  }
+
+  @Test
+  @DisplayName("Should reject canceling completed manager invitation")
+  void shouldRejectCancelingCompletedManagerInvitation() {
+    var invitation =
+        invitationRepository.save(
+            ProfileManagerInvitation.builder()
+                .profileId(UUID.randomUUID())
+                .invitedAccountId(UUID.randomUUID())
+                .status(ProfileManagerInvitationStatus.ACCEPTED)
+                .build());
+    var cancellation =
+        ProfileManagerInvitationCancellation.builder()
+            .actingAccountId(UUID.randomUUID())
+            .invitationId(invitation.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.cancel(cancellation))
+        .isInstanceOf(ProfileManagementDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject accepting completed or mismatched manager invitation")
+  void shouldRejectAcceptingCompletedOrMismatchedManagerInvitation() {
+    var invitedAccountId = UUID.randomUUID();
+    var completed =
+        invitationRepository.save(
+            ProfileManagerInvitation.builder()
+                .profileId(UUID.randomUUID())
+                .invitedAccountId(invitedAccountId)
+                .status(ProfileManagerInvitationStatus.ACCEPTED)
+                .build());
+    var pending =
+        invitationRepository.save(
+            ProfileManagerInvitation.builder()
+                .profileId(UUID.randomUUID())
+                .invitedAccountId(invitedAccountId)
+                .status(ProfileManagerInvitationStatus.PENDING)
+                .build());
+    var completedAcceptance =
+        ProfileManagerInvitationAcceptance.builder()
+            .actingAccountId(invitedAccountId)
+            .invitationId(completed.getId())
+            .build();
+    var mismatchedAcceptance =
+        ProfileManagerInvitationAcceptance.builder()
+            .actingAccountId(UUID.randomUUID())
+            .invitationId(pending.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.accept(completedAcceptance))
+        .isInstanceOf(ProfileManagementDeniedException.class);
+    assertThatThrownBy(() -> service.accept(mismatchedAcceptance))
+        .isInstanceOf(ProfileManagementDeniedException.class);
   }
 
   @Test
@@ -253,6 +371,31 @@ class ProfileManagementServiceTest {
 
     assertThat(managerRepository.existsByAccountIdAndProfileId(local.getId(), kid.getId()))
         .isTrue();
+  }
+
+  @Test
+  @DisplayName("Should let one of multiple adult profile managers relinquish management")
+  void shouldLetOneOfMultipleAdultProfileManagersRelinquishManagement() {
+    var profile =
+        profileRepository.save(
+            Profile.builder().name("Adult").classification(ProfileClassification.ADULT).build());
+    var departingManagerId = UUID.randomUUID();
+    managerRepository.save(
+        ProfileManager.builder().accountId(departingManagerId).profileId(profile.getId()).build());
+    managerRepository.save(
+        ProfileManager.builder().accountId(UUID.randomUUID()).profileId(profile.getId()).build());
+
+    service.relinquish(
+        ProfileManagementRelinquishment.builder()
+            .actingAccountId(departingManagerId)
+            .profileId(profile.getId())
+            .build());
+
+    assertThat(managerRepository.existsByAccountIdAndProfileId(departingManagerId, profile.getId()))
+        .isFalse();
+    assertThat(auditRepository.findAll())
+        .extracting(event -> event.getOperation())
+        .containsExactly(SecurityAuditOperation.PROFILE_MANAGER_RELINQUISHED);
   }
 
   private UserAccount saveAccount(UUID householdId, HouseholdRole role) {

@@ -12,6 +12,13 @@ public record ProfilePolicyChange(
     Integer maximumAllowedRatingAge,
     String pinHash) {
 
+  public static class ProfilePolicyChangeBuilder {
+    @Override
+    public String toString() {
+      return "ProfilePolicyChangeBuilder[REDACTED]";
+    }
+  }
+
   @Override
   public String toString() {
     return "ProfilePolicyChange[actingAccountId=%s, profileId=%s, classification=%s, maximumAllowedRatingAge=%s, pinHash=<redacted>]"

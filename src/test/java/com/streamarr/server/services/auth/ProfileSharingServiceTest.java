@@ -15,6 +15,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.KidProfileManagerRequiredException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.ProfileManagementDeniedException;
 import com.streamarr.server.exceptions.ProfileSafetyViolationException;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
@@ -99,6 +100,21 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject share offer from account that does not manage profile")
+  void shouldRejectShareOfferFromAccountThatDoesNotManageProfile() {
+    var offer =
+        ProfileShareOffer.builder()
+            .actingAccountId(UUID.randomUUID())
+            .profileId(UUID.randomUUID())
+            .targetHouseholdId(UUID.randomUUID())
+            .build();
+
+    assertThatThrownBy(() -> service.offer(offer))
+        .isInstanceOf(ProfileManagementDeniedException.class);
+    assertThat(shareRepository.findAll()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should activate adult share when target parent accepts")
   void shouldActivateAdultShareWhenTargetParentAccepts() {
     var householdId = UUID.randomUUID();
@@ -127,6 +143,53 @@ class ProfileSharingServiceTest {
     assertThat(acceptedShare.getStatus()).isEqualTo(ProfileShareStatus.ACTIVE);
     assertThat(managerRepository.existsByAccountIdAndProfileId(parent.getId(), profile.getId()))
         .isFalse();
+  }
+
+  @Test
+  @DisplayName("Should reject share acceptance from another household")
+  void shouldRejectShareAcceptanceFromAnotherHousehold() {
+    var parent = saveAccount(UUID.randomUUID(), HouseholdRole.PARENT);
+    var pending = saveShare(UUID.randomUUID(), UUID.randomUUID(), ProfileShareStatus.PENDING);
+    var acceptance =
+        ProfileShareAcceptance.builder()
+            .actingAccountId(parent.getId())
+            .shareId(pending.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.accept(acceptance))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject share acceptance by household member")
+  void shouldRejectShareAcceptanceByHouseholdMember() {
+    var householdId = UUID.randomUUID();
+    var member = saveAccount(householdId, HouseholdRole.MEMBER);
+    var pending = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.PENDING);
+    var acceptance =
+        ProfileShareAcceptance.builder()
+            .actingAccountId(member.getId())
+            .shareId(pending.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.accept(acceptance))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject acceptance when share is already active")
+  void shouldRejectAcceptanceWhenShareIsAlreadyActive() {
+    var householdId = UUID.randomUUID();
+    var parent = saveAccount(householdId, HouseholdRole.PARENT);
+    var active = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.ACTIVE);
+    var acceptance =
+        ProfileShareAcceptance.builder()
+            .actingAccountId(parent.getId())
+            .shareId(active.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.accept(acceptance))
+        .isInstanceOf(ProfileAccessDeniedException.class);
   }
 
   @Test
@@ -205,6 +268,41 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject kid share when management invitation names another profile")
+  void shouldRejectKidShareWhenManagementInvitationNamesAnotherProfile() {
+    var householdId = UUID.randomUUID();
+    var parent = saveAccount(householdId, HouseholdRole.PARENT);
+    var kid =
+        profileRepository.save(
+            Profile.builder()
+                .name("Portable Kid")
+                .classification(ProfileClassification.KID)
+                .maximumAllowedRatingAge(7)
+                .build());
+    var pendingShare = saveShare(kid.getId(), householdId, ProfileShareStatus.PENDING);
+    var otherProfileInvitation =
+        invitationRepository.save(
+            ProfileManagerInvitation.builder()
+                .profileId(UUID.randomUUID())
+                .invitingAccountId(UUID.randomUUID())
+                .invitedAccountId(parent.getId())
+                .status(ProfileManagerInvitationStatus.PENDING)
+                .build());
+    var acceptance =
+        ProfileShareAcceptance.builder()
+            .actingAccountId(parent.getId())
+            .shareId(pendingShare.getId())
+            .managementInvitationId(otherProfileInvitation.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.accept(acceptance))
+        .isInstanceOf(ProfileManagementDeniedException.class);
+    assertThat(otherProfileInvitation.getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.PENDING);
+    assertThat(pendingShare.getStatus()).isEqualTo(ProfileShareStatus.PENDING);
+  }
+
+  @Test
   @DisplayName("Should reject kid share when target adult profile has no PIN")
   void shouldRejectKidShareWhenTargetAdultProfileHasNoPin() {
     var householdId = UUID.randomUUID();
@@ -280,6 +378,62 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName("Should let household owner remove active shared profile")
+  void shouldLetHouseholdOwnerRemoveActiveSharedProfile() {
+    var householdId = UUID.randomUUID();
+    var owner = saveAccount(householdId, HouseholdRole.OWNER);
+    var active = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.ACTIVE);
+
+    service.removeFromHousehold(
+        HouseholdProfileRemoval.builder()
+            .actingAccountId(owner.getId())
+            .shareId(active.getId())
+            .build());
+
+    assertThat(shareRepository.existsById(active.getId())).isFalse();
+    assertThat(selectionCleaner.clearedSelections)
+        .containsExactly(
+            new FakeProfileSelectionCleaner.ClearedSelection(active.getProfileId(), householdId));
+    assertThat(auditRepository.findAll())
+        .singleElement()
+        .extracting(event -> event.getOperation())
+        .isEqualTo(
+            com.streamarr.server.domain.auth.SecurityAuditOperation.PROFILE_UNSHARED_BY_HOUSEHOLD);
+  }
+
+  @Test
+  @DisplayName("Should reject household member removing active shared profile")
+  void shouldRejectHouseholdMemberRemovingActiveSharedProfile() {
+    var householdId = UUID.randomUUID();
+    var member = saveAccount(householdId, HouseholdRole.MEMBER);
+    var active = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.ACTIVE);
+    var removal =
+        HouseholdProfileRemoval.builder()
+            .actingAccountId(member.getId())
+            .shareId(active.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.removeFromHousehold(removal))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject household parent removing pending shared profile")
+  void shouldRejectHouseholdParentRemovingPendingSharedProfile() {
+    var householdId = UUID.randomUUID();
+    var parent = saveAccount(householdId, HouseholdRole.PARENT);
+    var pending = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.PENDING);
+    var removal =
+        HouseholdProfileRemoval.builder()
+            .actingAccountId(parent.getId())
+            .shareId(pending.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.removeFromHousehold(removal))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
+  @Test
   @DisplayName("Should let target household parent reject a pending share")
   void shouldLetTargetHouseholdParentRejectPendingShare() {
     var householdId = UUID.randomUUID();
@@ -303,6 +457,53 @@ class ProfileSharingServiceTest {
         .singleElement()
         .extracting(event -> event.getOperation())
         .isEqualTo(com.streamarr.server.domain.auth.SecurityAuditOperation.PROFILE_SHARE_REJECTED);
+  }
+
+  @Test
+  @DisplayName("Should reject an already active share rejection")
+  void shouldRejectAlreadyActiveShareRejection() {
+    var householdId = UUID.randomUUID();
+    var parent = saveAccount(householdId, HouseholdRole.PARENT);
+    var active = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.ACTIVE);
+    var rejection =
+        ProfileShareRejection.builder()
+            .actingAccountId(parent.getId())
+            .shareId(active.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.reject(rejection))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject pending share rejection from another household")
+  void shouldRejectPendingShareRejectionFromAnotherHousehold() {
+    var parent = saveAccount(UUID.randomUUID(), HouseholdRole.PARENT);
+    var pending = saveShare(UUID.randomUUID(), UUID.randomUUID(), ProfileShareStatus.PENDING);
+    var rejection =
+        ProfileShareRejection.builder()
+            .actingAccountId(parent.getId())
+            .shareId(pending.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.reject(rejection))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject pending share rejection by household member")
+  void shouldRejectPendingShareRejectionByHouseholdMember() {
+    var householdId = UUID.randomUUID();
+    var member = saveAccount(householdId, HouseholdRole.MEMBER);
+    var pending = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.PENDING);
+    var rejection =
+        ProfileShareRejection.builder()
+            .actingAccountId(member.getId())
+            .shareId(pending.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.reject(rejection))
+        .isInstanceOf(ProfileAccessDeniedException.class);
   }
 
   @Test
@@ -331,6 +532,38 @@ class ProfileSharingServiceTest {
         .singleElement()
         .extracting(event -> event.getOperation())
         .isEqualTo(com.streamarr.server.domain.auth.SecurityAuditOperation.PROFILE_SHARE_CANCELED);
+  }
+
+  @Test
+  @DisplayName("Should reject canceling active share")
+  void shouldRejectCancelingActiveShare() {
+    var profileId = UUID.randomUUID();
+    var managerId = UUID.randomUUID();
+    managerRepository.save(
+        ProfileManager.builder().accountId(managerId).profileId(profileId).build());
+    var active = saveShare(profileId, UUID.randomUUID(), ProfileShareStatus.ACTIVE);
+    var cancellation =
+        ProfileShareCancellation.builder()
+            .actingAccountId(managerId)
+            .shareId(active.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.cancel(cancellation))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject canceling pending share by non-manager")
+  void shouldRejectCancelingPendingShareByNonManager() {
+    var pending = saveShare(UUID.randomUUID(), UUID.randomUUID(), ProfileShareStatus.PENDING);
+    var cancellation =
+        ProfileShareCancellation.builder()
+            .actingAccountId(UUID.randomUUID())
+            .shareId(pending.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.cancel(cancellation))
+        .isInstanceOf(ProfileManagementDeniedException.class);
   }
 
   @Test
@@ -367,6 +600,32 @@ class ProfileSharingServiceTest {
     assertThat(selectionCleaner.clearedSelections)
         .containsExactly(
             new FakeProfileSelectionCleaner.ClearedSelection(kid.getId(), householdId));
+  }
+
+  @Test
+  @DisplayName("Should reject leaving home when profile share is pending")
+  void shouldRejectLeavingHomeWhenProfileShareIsPending() {
+    var householdId = UUID.randomUUID();
+    var account = saveAccount(householdId, HouseholdRole.MEMBER);
+    var pending = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.PENDING);
+    var departure =
+        ProfileHomeDeparture.builder()
+            .actingAccountId(account.getId())
+            .activeProfileId(pending.getProfileId())
+            .build();
+
+    assertThatThrownBy(() -> service.leaveCurrentHome(departure))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
+  private ProfileHouseholdShare saveShare(
+      UUID profileId, UUID householdId, ProfileShareStatus status) {
+    return shareRepository.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profileId)
+            .householdId(householdId)
+            .status(status)
+            .build());
   }
 
   private UserAccount saveAccount(UUID homeHouseholdId, HouseholdRole householdRole) {

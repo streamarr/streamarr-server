@@ -2,6 +2,8 @@ package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.ProfileClassification;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -24,10 +26,18 @@ class SecretRecordToStringTest {
             LoginCompletionCommand.builder().expectedPasswordHash(secret).toString(),
             SetupCommand.builder().password(secret).toString(),
             LoginResult.builder().rawRefreshToken(secret).toString(),
-            AccessToken.builder().value(secret).toString());
+            AccessToken.builder().value(secret).toString(),
+            AccountHouseholdTransferCommand.builder().password(secret).toString(),
+            CreatePortableProfileCommand.builder().pinHash(secret).toString(),
+            DeleteProfileCommand.builder().password(secret).toString(),
+            ForceProfileDeletionCommand.builder().password(secret).toString(),
+            ForceProfileUnshareCommand.builder().password(secret).toString(),
+            HouseholdOwnershipTransferCommand.builder().password(secret).toString(),
+            ProfileManagerOverrideCommand.builder().password(secret).toString(),
+            ProfilePolicyChange.builder().pinHash(secret).toString());
 
     assertThat(renderedValues)
-        .hasSize(5)
+        .hasSize(13)
         .allSatisfy(rendered -> assertThat(rendered).doesNotContain(secret));
   }
 
@@ -53,10 +63,34 @@ class SecretRecordToStringTest {
                 .expiresAt(Instant.EPOCH)
                 .scope(TokenScope.ACCOUNT)
                 .build()
+                .toString(),
+            AccountHouseholdTransferCommand.builder()
+                .targetRole(HouseholdRole.MEMBER)
+                .password(secret)
+                .build()
+                .toString(),
+            CreatePortableProfileCommand.builder()
+                .classification(ProfileClassification.ADULT)
+                .pinHash(secret)
+                .build()
+                .toString(),
+            DeleteProfileCommand.builder().password(secret).build().toString(),
+            ForceProfileDeletionCommand.builder().password(secret).build().toString(),
+            ForceProfileUnshareCommand.builder().password(secret).build().toString(),
+            HouseholdOwnershipTransferCommand.builder().password(secret).build().toString(),
+            ProfileManagerOverrideCommand.builder()
+                .action(ProfileManagerOverrideAction.GRANT)
+                .password(secret)
+                .build()
+                .toString(),
+            ProfilePolicyChange.builder()
+                .classification(ProfileClassification.KID)
+                .pinHash(secret)
+                .build()
                 .toString());
 
     assertThat(renderedValues)
-        .hasSize(8)
+        .hasSize(16)
         .allSatisfy(rendered -> assertThat(rendered).doesNotContain(secret));
   }
 }

@@ -64,6 +64,17 @@ class KidProfileManagerPolicyTest {
   }
 
   @Test
+  @DisplayName("Should ignore manager removal policy for adult profile")
+  void shouldIgnoreManagerRemovalPolicyForAdultProfile() {
+    var adult =
+        profileRepository.save(
+            Profile.builder().name("Adult").classification(ProfileClassification.ADULT).build());
+
+    assertThatCode(() -> policy.validateManagerRemoval(adult.getId(), UUID.randomUUID()))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
   @DisplayName(
       "Should reject account departure when it removes the active kid local parent manager")
   void shouldRejectAccountDepartureWhenItRemovesActiveKidLocalParentManager() {
@@ -74,6 +85,42 @@ class KidProfileManagerPolicyTest {
 
     assertThatThrownBy(() -> policy.validateAccountDeparture(localParent.getId(), householdId))
         .isInstanceOf(KidProfileManagerRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should allow account departure when another local parent manager remains")
+  void shouldAllowAccountDepartureWhenAnotherLocalParentManagerRemains() {
+    var householdId = UUID.randomUUID();
+    var departingParent = saveAccount(householdId, HouseholdRole.PARENT);
+    var remainingParent = saveAccount(householdId, HouseholdRole.PARENT);
+    var kid = saveActiveKid(householdId);
+    manage(departingParent, kid);
+    manage(remainingParent, kid);
+
+    assertThatCode(() -> policy.validateAccountDeparture(departingParent.getId(), householdId))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("Should ignore account departure for adult and inactive kid management")
+  void shouldIgnoreAccountDepartureForAdultAndInactiveKidManagement() {
+    var householdId = UUID.randomUUID();
+    var account = saveAccount(householdId, HouseholdRole.PARENT);
+    var adult =
+        profileRepository.save(
+            Profile.builder().name("Adult").classification(ProfileClassification.ADULT).build());
+    var inactiveKid =
+        profileRepository.save(
+            Profile.builder()
+                .name("Inactive Kid")
+                .classification(ProfileClassification.KID)
+                .maximumAllowedRatingAge(7)
+                .build());
+    manage(account, adult);
+    manage(account, inactiveKid);
+
+    assertThatCode(() -> policy.validateAccountDeparture(account.getId(), householdId))
+        .doesNotThrowAnyException();
   }
 
   @Test
@@ -97,6 +144,58 @@ class KidProfileManagerPolicyTest {
             .build());
 
     assertThatThrownBy(() -> policy.validateKidClassification(profile.getId()))
+        .isInstanceOf(KidProfileManagerRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should allow kid classification when every active home has local parent manager")
+  void shouldAllowKidClassificationWhenEveryActiveHomeHasLocalParentManager() {
+    var householdId = UUID.randomUUID();
+    var parent = saveAccount(householdId, HouseholdRole.PARENT);
+    var profile =
+        profileRepository.save(
+            Profile.builder()
+                .name("Becoming Kid")
+                .classification(ProfileClassification.ADULT)
+                .build());
+    manage(parent, profile);
+    shareRepository.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(householdId)
+            .status(ProfileShareStatus.ACTIVE)
+            .build());
+
+    assertThatCode(() -> policy.validateKidClassification(profile.getId()))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("Should not require local manager when activating adult share")
+  void shouldNotRequireLocalManagerWhenActivatingAdultShare() {
+    var adult =
+        profileRepository.save(
+            Profile.builder().name("Adult").classification(ProfileClassification.ADULT).build());
+
+    assertThatCode(() -> policy.validateShareActivation(adult.getId(), UUID.randomUUID()))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("Should reject kid share activation when local manager is household member")
+  void shouldRejectKidShareActivationWhenLocalManagerIsHouseholdMember() {
+    var householdId = UUID.randomUUID();
+    var member = saveAccount(householdId, HouseholdRole.MEMBER);
+    var kid =
+        profileRepository.save(
+            Profile.builder()
+                .name("Kid")
+                .classification(ProfileClassification.KID)
+                .maximumAllowedRatingAge(7)
+                .build());
+    manage(member, kid);
+
+    assertThatThrownBy(() -> policy.validateShareActivation(kid.getId(), householdId))
         .isInstanceOf(KidProfileManagerRequiredException.class);
   }
 
