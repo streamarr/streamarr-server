@@ -17,6 +17,7 @@ import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,6 +31,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.ResultMatcher;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import tools.jackson.databind.JsonNode;
@@ -246,8 +248,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   void shouldAcceptTypedCodeWhenDisplaySeparatorOmitted() throws Exception {
     var issued = issueCode("Apple TV");
     var approver = seedAccount();
-    var typed =
-        issued.get("userCode").asString().replace("-", "").toLowerCase(java.util.Locale.ROOT);
+    var typed = issued.get("userCode").asString().replace("-", "").toLowerCase(Locale.ROOT);
 
     mockMvc
         .perform(
@@ -562,8 +563,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     return "{\"userCode\": \"%s\", \"decision\": \"%s\"}".formatted(userCode, decision);
   }
 
-  private JsonNode readJson(org.springframework.test.web.servlet.ResultActions actions)
-      throws Exception {
+  private JsonNode readJson(ResultActions actions) throws Exception {
     return objectMapper.readTree(actions.andReturn().getResponse().getContentAsString());
   }
 

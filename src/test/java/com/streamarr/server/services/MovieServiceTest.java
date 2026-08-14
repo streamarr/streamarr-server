@@ -11,6 +11,9 @@ import static org.mockito.Mockito.when;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.ImageProperties;
+import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.domain.ExternalIdentifier;
+import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.Image;
@@ -419,7 +422,7 @@ class MovieServiceTest {
               .sortBy(OrderMediaBy.RELEASE_DATE)
               .sortDirection(SortOrder.ASC)
               .libraryId(libraryId)
-              .startLetter(com.streamarr.server.domain.AlphabetLetter.HASH)
+              .startLetter(AlphabetLetter.HASH)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -443,7 +446,7 @@ class MovieServiceTest {
               .sortBy(OrderMediaBy.ADDED)
               .sortDirection(SortOrder.ASC)
               .libraryId(libraryId)
-              .startLetter(com.streamarr.server.domain.AlphabetLetter.A)
+              .startLetter(AlphabetLetter.A)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -467,7 +470,7 @@ class MovieServiceTest {
               .sortBy(OrderMediaBy.TITLE)
               .sortDirection(SortOrder.ASC)
               .libraryId(libraryId)
-              .startLetter(com.streamarr.server.domain.AlphabetLetter.A)
+              .startLetter(AlphabetLetter.A)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -493,7 +496,7 @@ class MovieServiceTest {
               .sortBy(OrderMediaBy.TITLE)
               .sortDirection(SortOrder.ASC)
               .libraryId(libraryId)
-              .startLetter(com.streamarr.server.domain.AlphabetLetter.B)
+              .startLetter(AlphabetLetter.B)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -792,8 +795,8 @@ class MovieServiceTest {
               .title("Matched Movie")
               .externalIds(
                   Set.of(
-                      com.streamarr.server.domain.ExternalIdentifier.builder()
-                          .externalSourceType(com.streamarr.server.domain.ExternalSourceType.TMDB)
+                      ExternalIdentifier.builder()
+                          .externalSourceType(ExternalSourceType.TMDB)
                           .externalId("12345")
                           .build()))
               .build());

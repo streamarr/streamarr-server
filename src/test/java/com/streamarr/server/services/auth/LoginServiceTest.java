@@ -7,6 +7,7 @@ import com.streamarr.server.config.security.Argon2Properties;
 import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
@@ -261,7 +262,7 @@ class LoginServiceTest {
         .isInstanceOf(InvalidCredentialsException.class);
   }
 
-  private com.streamarr.server.domain.auth.UserAccount seedAccount(String passwordHash) {
+  private UserAccount seedAccount(String passwordHash) {
     return userAccountRepository.save(
         AccountFixture.defaultAccountBuilder().passwordHash(passwordHash).build());
   }

@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -165,11 +166,11 @@ class FfmpegAutomationWorkflowTest {
     assertThat(steps.toString()).doesNotContain("proposed/buildpacks/ffmpeg/bin/update-lock");
   }
 
-  private static java.util.stream.Stream<JsonNode> nodes(JsonNode values) {
+  private static Stream<JsonNode> nodes(JsonNode values) {
     return StreamSupport.stream(values.spliterator(), false);
   }
 
-  private static java.util.stream.Stream<String> strings(JsonNode values) {
+  private static Stream<String> strings(JsonNode values) {
     return nodes(values).map(JsonNode::asText);
   }
 

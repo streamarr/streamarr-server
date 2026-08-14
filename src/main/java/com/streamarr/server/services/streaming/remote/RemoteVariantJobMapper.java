@@ -19,6 +19,8 @@ import java.io.File;
 import java.nio.file.Path;
 import java.util.UUID;
 
+// Domain and protobuf contracts intentionally share simple names.
+@SuppressWarnings("checkstyle:fullyQualifiedName")
 final class RemoteVariantJobMapper {
 
   private final UUID sourceNamespaceId;

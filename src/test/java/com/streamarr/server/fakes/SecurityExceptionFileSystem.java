@@ -3,17 +3,26 @@ package com.streamarr.server.fakes;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.channels.SeekableByteChannel;
+import java.nio.file.AccessMode;
+import java.nio.file.CopyOption;
+import java.nio.file.DirectoryStream;
 import java.nio.file.FileStore;
 import java.nio.file.FileSystem;
 import java.nio.file.LinkOption;
+import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.FileAttributeView;
 import java.nio.file.attribute.UserPrincipalLookupService;
 import java.nio.file.spi.FileSystemProvider;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -247,7 +256,7 @@ public class SecurityExceptionFileSystem extends FileSystem {
     }
 
     @Override
-    public void checkAccess(Path path, java.nio.file.AccessMode... modes) {
+    public void checkAccess(Path path, AccessMode... modes) {
       throw new SecurityException("Simulated security manager denial for path: " + path);
     }
 
@@ -257,39 +266,35 @@ public class SecurityExceptionFileSystem extends FileSystem {
     }
 
     @Override
-    public FileSystem newFileSystem(java.net.URI uri, java.util.Map<String, ?> env)
-        throws IOException {
+    public FileSystem newFileSystem(URI uri, Map<String, ?> env) throws IOException {
       return delegate.newFileSystem(uri, env);
     }
 
     @Override
-    public FileSystem getFileSystem(java.net.URI uri) {
+    public FileSystem getFileSystem(URI uri) {
       return fileSystem;
     }
 
     @Override
-    public Path getPath(java.net.URI uri) {
+    public Path getPath(URI uri) {
       return new WrappedPath(delegate.getPath(uri), fileSystem);
     }
 
     @Override
-    public java.nio.channels.SeekableByteChannel newByteChannel(
-        Path path,
-        Set<? extends java.nio.file.OpenOption> options,
-        java.nio.file.attribute.FileAttribute<?>... attrs)
+    public SeekableByteChannel newByteChannel(
+        Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs)
         throws IOException {
       return delegate.newByteChannel(unwrap(path), options, attrs);
     }
 
     @Override
-    public java.nio.file.DirectoryStream<Path> newDirectoryStream(
-        Path dir, java.nio.file.DirectoryStream.Filter<? super Path> filter) throws IOException {
+    public DirectoryStream<Path> newDirectoryStream(
+        Path dir, DirectoryStream.Filter<? super Path> filter) throws IOException {
       return delegate.newDirectoryStream(unwrap(dir), filter);
     }
 
     @Override
-    public void createDirectory(Path dir, java.nio.file.attribute.FileAttribute<?>... attrs)
-        throws IOException {
+    public void createDirectory(Path dir, FileAttribute<?>... attrs) throws IOException {
       delegate.createDirectory(unwrap(dir), attrs);
     }
 
@@ -299,14 +304,12 @@ public class SecurityExceptionFileSystem extends FileSystem {
     }
 
     @Override
-    public void copy(Path source, Path target, java.nio.file.CopyOption... options)
-        throws IOException {
+    public void copy(Path source, Path target, CopyOption... options) throws IOException {
       delegate.copy(unwrap(source), unwrap(target), options);
     }
 
     @Override
-    public void move(Path source, Path target, java.nio.file.CopyOption... options)
-        throws IOException {
+    public void move(Path source, Path target, CopyOption... options) throws IOException {
       delegate.move(unwrap(source), unwrap(target), options);
     }
 
@@ -326,26 +329,25 @@ public class SecurityExceptionFileSystem extends FileSystem {
     }
 
     @Override
-    public <V extends java.nio.file.attribute.FileAttributeView> V getFileAttributeView(
-        Path path, Class<V> type, java.nio.file.LinkOption... options) {
+    public <V extends FileAttributeView> V getFileAttributeView(
+        Path path, Class<V> type, LinkOption... options) {
       return delegate.getFileAttributeView(unwrap(path), type, options);
     }
 
     @Override
-    public <A extends java.nio.file.attribute.BasicFileAttributes> A readAttributes(
-        Path path, Class<A> type, java.nio.file.LinkOption... options) throws IOException {
+    public <A extends BasicFileAttributes> A readAttributes(
+        Path path, Class<A> type, LinkOption... options) throws IOException {
       return delegate.readAttributes(unwrap(path), type, options);
     }
 
     @Override
-    public java.util.Map<String, Object> readAttributes(
-        Path path, String attributes, java.nio.file.LinkOption... options) throws IOException {
+    public Map<String, Object> readAttributes(Path path, String attributes, LinkOption... options)
+        throws IOException {
       return delegate.readAttributes(unwrap(path), attributes, options);
     }
 
     @Override
-    public void setAttribute(
-        Path path, String attribute, Object value, java.nio.file.LinkOption... options)
+    public void setAttribute(Path path, String attribute, Object value, LinkOption... options)
         throws IOException {
       delegate.setAttribute(unwrap(path), attribute, value, options);
     }

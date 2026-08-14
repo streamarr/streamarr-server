@@ -7,10 +7,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -74,6 +76,7 @@ class PackagedConfigurationTest {
 
   @Test
   @DisplayName("Should ship separate server and transcode worker process types when packaged")
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   void shouldShipSeparateServerAndTranscodeWorkerProcessTypesWhenPackaged() throws IOException {
     var processes = Set.copyOf(Files.readAllLines(Path.of("Procfile")));
     var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
@@ -232,7 +235,7 @@ class PackagedConfigurationTest {
         StreamSupport.stream(renovateConfig.path("customManagers").spliterator(), false)
             .filter(manager -> managesFile(manager, ".github/actions/pack-build/action.yml"))
             .flatMap(manager -> dependencyPins(manager, buildAction).stream())
-            .collect(java.util.stream.Collectors.toSet());
+            .collect(Collectors.toSet());
 
     assertThat(pinnedDependencies)
         .as("every independently pinned Pack input must be extractable by Renovate")
@@ -341,7 +344,7 @@ class PackagedConfigurationTest {
   }
 
   private static Set<String> dependencyPins(Pattern pattern, String content) {
-    var pins = new java.util.HashSet<String>();
+    var pins = new HashSet<String>();
     var matcher = pattern.matcher(content);
     while (matcher.find()) {
       pins.add(matcher.group("depName") + "@" + matcher.group("currentValue"));
@@ -352,7 +355,7 @@ class PackagedConfigurationTest {
   private static Set<String> dependencyPins(JsonNode manager, String content) {
     return StreamSupport.stream(manager.path("matchStrings").spliterator(), false)
         .flatMap(node -> dependencyPins(Pattern.compile(node.asString()), content).stream())
-        .collect(java.util.stream.Collectors.toSet());
+        .collect(Collectors.toSet());
   }
 
   private static boolean managesFile(JsonNode manager, String file) {

@@ -161,6 +161,7 @@ public class LibraryMetadataListener {
         });
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.server.jooq.generated.enums.AlphabetLetter toJooqLetter(
       AlphabetLetter letter) {
     return com.streamarr.server.jooq.generated.enums.AlphabetLetter.valueOf(letter.name());

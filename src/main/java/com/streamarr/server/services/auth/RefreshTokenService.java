@@ -73,7 +73,7 @@ public class RefreshTokenService {
   }
 
   @Transactional
-  public void logout(java.util.UUID sessionId) {
+  public void logout(UUID sessionId) {
     var now = clock.instant();
     sessionRepository.revoke(sessionId, SessionRevocationReason.LOGOUT, now);
     tokenRepository.revokeAllForSession(sessionId, now);

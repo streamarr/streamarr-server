@@ -32,6 +32,7 @@ import com.streamarr.server.support.security.ResolverAuthorizationTestConfig;
 import com.streamarr.server.support.security.TestIdentityConstants;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
@@ -52,6 +53,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 @Tag("UnitTest")
 @EnableDgsTest
@@ -92,7 +94,7 @@ class StreamingResolverTest {
       return new PlaybackTokenIssuer(
           crypto.jwtEncoder(crypto.tokenSigningKeys(tokenProperties())),
           tokenProperties(),
-          java.time.Clock.systemUTC(),
+          Clock.systemUTC(),
           authority -> true);
     }
 
@@ -237,7 +239,7 @@ class StreamingResolverTest {
         .isEqualTo(session.getMediaProbe().duration().plus(streamingProperties.sessionRetention()));
   }
 
-  private static org.springframework.security.oauth2.jwt.Jwt decodeToken(String token) {
+  private static Jwt decodeToken(String token) {
     return decode(token, tokenProperties());
   }
 

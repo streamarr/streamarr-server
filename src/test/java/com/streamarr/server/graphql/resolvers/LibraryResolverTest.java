@@ -32,6 +32,7 @@ import com.streamarr.server.services.authorization.SecurityContextAuthorizationS
 import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.support.security.ResolverAuthorizationTestConfig;
@@ -236,6 +237,7 @@ class LibraryResolverTest {
     @ParameterizedTest(name = "Should return error when {0} called with invalid ID")
     @MethodSource("com.streamarr.server.graphql.resolvers.LibraryResolverTest#invalidIdOperations")
     @DisplayName("Should return error when operation called with invalid ID")
+    @SuppressWarnings("checkstyle:fullyQualifiedName")
     void shouldReturnErrorWhenCalledWithInvalidId(String operationName, String query) {
       var result = dgsQueryExecutor.execute(query);
 
@@ -491,8 +493,7 @@ class LibraryResolverTest {
               argThat(
                   (MediaPaginationOptions opts) -> {
                     var f = opts.getMediaFilter();
-                    return f.getSortBy()
-                            == com.streamarr.server.services.pagination.OrderMediaBy.ADDED
+                    return f.getSortBy() == OrderMediaBy.ADDED
                         && f.getSortDirection() == SortOrder.DESC;
                   })))
           .thenReturn(page);

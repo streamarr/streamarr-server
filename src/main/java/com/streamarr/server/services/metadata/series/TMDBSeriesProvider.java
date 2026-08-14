@@ -21,6 +21,7 @@ import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource
 import com.streamarr.server.services.metadata.tmdb.TmdbContentRatings;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
 import com.streamarr.server.services.metadata.tmdb.TmdbFindResults;
+import com.streamarr.server.services.metadata.tmdb.TmdbTvEpisode;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeasonSummary;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
@@ -322,8 +323,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
     }
   }
 
-  private SeasonDetails.EpisodeDetails mapEpisodeDetails(
-      com.streamarr.server.services.metadata.tmdb.TmdbTvEpisode ep) {
+  private SeasonDetails.EpisodeDetails mapEpisodeDetails(TmdbTvEpisode ep) {
     var builder =
         SeasonDetails.EpisodeDetails.builder()
             .episodeNumber(ep.getEpisodeNumber())

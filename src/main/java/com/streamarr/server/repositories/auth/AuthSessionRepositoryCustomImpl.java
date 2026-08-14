@@ -48,6 +48,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
 
   @Override
   @Transactional
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   public boolean revoke(UUID sessionId, SessionRevocationReason reason, Instant now) {
     var nowOffset = now.atOffset(ZoneOffset.UTC);
 

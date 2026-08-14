@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -170,7 +171,7 @@ class SessionReaperTest {
     session.setVariantHandle("720p", StreamSessionFixture.mintHandle(101L, TranscodeStatus.FAILED));
 
     executor.start(
-        com.streamarr.server.domain.streaming.TranscodeRequest.builder()
+        TranscodeRequest.builder()
             .sessionId(session.getSessionId())
             .sourcePath(Path.of("/media/movie.mkv"))
             .seekPosition(0)
@@ -222,7 +223,7 @@ class SessionReaperTest {
     session.setVariantHandle("720p", StreamSessionFixture.mintHandle(101L, TranscodeStatus.ACTIVE));
 
     executor.start(
-        com.streamarr.server.domain.streaming.TranscodeRequest.builder()
+        TranscodeRequest.builder()
             .sessionId(session.getSessionId())
             .sourcePath(Path.of("/media/movie.mkv"))
             .seekPosition(0)
@@ -235,7 +236,7 @@ class SessionReaperTest {
             .variantLabel("1080p")
             .build());
     executor.start(
-        com.streamarr.server.domain.streaming.TranscodeRequest.builder()
+        TranscodeRequest.builder()
             .sessionId(session.getSessionId())
             .sourcePath(Path.of("/media/movie.mkv"))
             .seekPosition(0)
