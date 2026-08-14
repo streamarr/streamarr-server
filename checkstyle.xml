@@ -3,7 +3,17 @@
     "https://checkstyle.org/dtds/configuration_1_3.dtd">
 
 <module name="Checker">
+  <module name="SuppressWarningsFilter"/>
   <module name="TreeWalker">
+    <module name="SuppressWarningsHolder"/>
     <module name="AvoidStarImport"/>
+    <module name="RegexpSinglelineJava">
+      <property name="id" value="fullyQualifiedName"/>
+      <property name="format"
+                value="^(?!\s*(?:import|package)\s).*\b(?:[a-z_][A-Za-z0-9_$]*\.){2,}[A-Z_$][A-Za-z0-9_$]*"/>
+      <property name="ignoreComments" value="true"/>
+      <property name="message"
+                value="Use an import instead of a fully qualified name; suppress only unavoidable name collisions or literal external contracts."/>
+    </module>
   </module>
 </module>

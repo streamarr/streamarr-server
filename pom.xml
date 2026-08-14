@@ -292,6 +292,19 @@
         </dependency>
 
         <dependency>
+            <groupId>com.puppycrawl.tools</groupId>
+            <artifactId>checkstyle</artifactId>
+            <version>${checkstyle.version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-simple</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
             <groupId>com.netflix.graphql.dgs</groupId>
             <artifactId>dgs-starter-test</artifactId>
             <scope>test</scope>
@@ -519,6 +532,7 @@
                     <configLocation>checkstyle.xml</configLocation>
                     <consoleOutput>true</consoleOutput>
                     <failsOnError>true</failsOnError>
+                    <includeTestSourceDirectory>true</includeTestSourceDirectory>
                     <sourceDirectories>
                         <sourceDirectory>${project.build.sourceDirectory}</sourceDirectory>
                     </sourceDirectories>
