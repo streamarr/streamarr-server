@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.jooq.generated.enums.ProfileShareStatus.PENDING;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -20,7 +21,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   public ProfileHouseholdShare insertPendingIfAbsent(UUID profileId, UUID householdId) {
     var id = UUID.randomUUID();
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
-    var pending = com.streamarr.server.jooq.generated.enums.ProfileShareStatus.PENDING;
+    var pending = PENDING;
     var insertedId =
         dsl.insertInto(PROFILE_HOUSEHOLD_SHARE)
             .set(PROFILE_HOUSEHOLD_SHARE.ID, id)

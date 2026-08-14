@@ -14,6 +14,7 @@ import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -161,7 +162,7 @@ public class ProfileManagementService {
   }
 
   ProfileManager acceptForProfile(
-      ProfileManagerInvitationAcceptance acceptance, java.util.UUID expectedProfileId) {
+      ProfileManagerInvitationAcceptance acceptance, UUID expectedProfileId) {
     var invitation =
         invitationRepository
             .findById(acceptance.invitationId())
@@ -212,7 +213,7 @@ public class ProfileManagementService {
             .build());
   }
 
-  private void requireManager(java.util.UUID accountId, java.util.UUID profileId) {
+  private void requireManager(UUID accountId, UUID profileId) {
     if (!managerRepository.existsByAccountIdAndProfileId(accountId, profileId)) {
       throw new ProfileManagementDeniedException();
     }

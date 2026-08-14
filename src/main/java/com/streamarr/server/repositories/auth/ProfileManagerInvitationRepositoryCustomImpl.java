@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.PENDING;
 import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
@@ -21,7 +22,7 @@ public class ProfileManagerInvitationRepositoryCustomImpl
       UUID profileId, UUID invitingAccountId, UUID invitedAccountId) {
     var id = UUID.randomUUID();
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
-    var pending = com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.PENDING;
+    var pending = PENDING;
     var insertedId =
         dsl.insertInto(PROFILE_MANAGER_INVITATION)
             .set(PROFILE_MANAGER_INVITATION.ID, id)

@@ -9,6 +9,7 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -77,7 +78,7 @@ public class KidProfileManagerPolicy {
         managers.stream()
             .filter(manager -> !manager.getAccountId().equals(excludedAccountId))
             .map(manager -> accountsById.get(manager.getAccountId()))
-            .filter(java.util.Objects::nonNull)
+            .filter(Objects::nonNull)
             .filter(account -> account.isEnabled())
             .anyMatch(
                 account ->

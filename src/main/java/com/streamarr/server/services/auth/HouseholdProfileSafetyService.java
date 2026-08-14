@@ -9,6 +9,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -36,7 +37,7 @@ public class HouseholdProfileSafetyService {
     var profileIds =
         shareRepository.findByHouseholdIdAndStatus(householdId, ProfileShareStatus.ACTIVE).stream()
             .map(share -> share.getProfileId())
-            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     profileIds.add(candidate.getId());
 
     var profiles =

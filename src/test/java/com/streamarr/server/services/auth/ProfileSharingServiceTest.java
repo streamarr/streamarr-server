@@ -12,6 +12,7 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.SecurityAuditOperation;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.KidProfileManagerRequiredException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
@@ -96,7 +97,7 @@ class ProfileSharingServiceTest {
     assertThat(auditRepository.findAll())
         .singleElement()
         .extracting(event -> event.getOperation())
-        .isEqualTo(com.streamarr.server.domain.auth.SecurityAuditOperation.PROFILE_SHARE_OFFERED);
+        .isEqualTo(SecurityAuditOperation.PROFILE_SHARE_OFFERED);
   }
 
   @Test
@@ -428,8 +429,7 @@ class ProfileSharingServiceTest {
     assertThat(auditRepository.findAll())
         .singleElement()
         .extracting(event -> event.getOperation())
-        .isEqualTo(
-            com.streamarr.server.domain.auth.SecurityAuditOperation.PROFILE_UNSHARED_BY_HOUSEHOLD);
+        .isEqualTo(SecurityAuditOperation.PROFILE_UNSHARED_BY_HOUSEHOLD);
   }
 
   @Test
@@ -487,7 +487,7 @@ class ProfileSharingServiceTest {
     assertThat(auditRepository.findAll())
         .singleElement()
         .extracting(event -> event.getOperation())
-        .isEqualTo(com.streamarr.server.domain.auth.SecurityAuditOperation.PROFILE_SHARE_REJECTED);
+        .isEqualTo(SecurityAuditOperation.PROFILE_SHARE_REJECTED);
   }
 
   @Test
@@ -562,7 +562,7 @@ class ProfileSharingServiceTest {
     assertThat(auditRepository.findAll())
         .singleElement()
         .extracting(event -> event.getOperation())
-        .isEqualTo(com.streamarr.server.domain.auth.SecurityAuditOperation.PROFILE_SHARE_CANCELED);
+        .isEqualTo(SecurityAuditOperation.PROFILE_SHARE_CANCELED);
   }
 
   @Test

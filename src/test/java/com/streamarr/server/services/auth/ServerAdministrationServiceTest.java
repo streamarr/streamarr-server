@@ -37,6 +37,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Tag("UnitTest")
 @DisplayName("Server Administration Service Tests")
@@ -56,7 +57,7 @@ class ServerAdministrationServiceTest {
   private final FakeProfileSelectionCleaner selectionCleaner = new FakeProfileSelectionCleaner();
   private final FakeSecurityAuditEventRepository auditRepository =
       new FakeSecurityAuditEventRepository();
-  private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder =
+  private final PasswordEncoder passwordEncoder =
       PasswordEncoderFactories.createDelegatingPasswordEncoder();
   private final ServerAdministrationService service =
       new ServerAdministrationService(

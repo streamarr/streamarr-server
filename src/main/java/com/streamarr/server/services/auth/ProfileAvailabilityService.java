@@ -9,6 +9,7 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -37,7 +38,7 @@ public class ProfileAvailabilityService {
 
     return shares.stream()
         .map(share -> profilesById.get(share.getProfileId()))
-        .filter(java.util.Objects::nonNull)
+        .filter(Objects::nonNull)
         .map(
             profile ->
                 new SelectableProfile(

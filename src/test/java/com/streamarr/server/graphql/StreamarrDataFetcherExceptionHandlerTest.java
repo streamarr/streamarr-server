@@ -23,6 +23,7 @@ import graphql.execution.MergedField;
 import graphql.execution.ResultPath;
 import graphql.language.Field;
 import graphql.schema.DataFetchingEnvironmentImpl;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletionException;
 import java.util.stream.Stream;
@@ -102,7 +103,7 @@ class StreamarrDataFetcherExceptionHandlerTest {
         Arguments.of(new ProfileManagementDeniedException(), "PROFILE_MANAGEMENT_DENIED"),
         Arguments.of(new ProfileManagerInvariantException("invalid"), "PROFILE_MANAGER_INVARIANT"),
         Arguments.of(
-            new ProfileSafetyViolationException(java.util.List.of(UUID.randomUUID())),
+            new ProfileSafetyViolationException(List.of(UUID.randomUUID())),
             "PROFILE_SAFETY_VIOLATION"),
         Arguments.of(new KidProfileManagerRequiredException(), "KID_PROFILE_MANAGER_REQUIRED"),
         Arguments.of(new ServerAdministrationDeniedException(), "SERVER_ADMINISTRATION_DENIED"));

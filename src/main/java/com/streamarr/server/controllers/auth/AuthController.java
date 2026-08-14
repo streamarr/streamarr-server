@@ -15,6 +15,7 @@ import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.SessionScopeService;
 import com.streamarr.server.services.auth.SetupCommand;
 import com.streamarr.server.services.auth.SetupService;
+import com.streamarr.server.services.auth.TokenContext;
 import com.streamarr.server.services.auth.TokenRefreshService;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import jakarta.servlet.http.Cookie;
@@ -119,11 +120,7 @@ public class AuthController {
                 .build());
 
     var issued = refreshTokenService.createSession(result.admin(), deviceNameOf(httpRequest));
-    var context =
-        com.streamarr.server.services.auth.TokenContext.builder()
-            .account(result.admin())
-            .session(issued.session())
-            .build();
+    var context = TokenContext.builder().account(result.admin()).session(issued.session()).build();
     var accessToken = accessTokenIssuer.issue(context);
 
     return respond(HttpStatus.CREATED, accessToken, issued.rawToken(), request.cookieMode());
@@ -142,10 +139,7 @@ public class AuthController {
                 .build());
 
     var context =
-        com.streamarr.server.services.auth.TokenContext.builder()
-            .account(result.account())
-            .session(result.session())
-            .build();
+        TokenContext.builder().account(result.account()).session(result.session()).build();
     var accessToken = accessTokenIssuer.issue(context);
 
     return respond(HttpStatus.OK, accessToken, result.rawRefreshToken(), request.cookieMode());

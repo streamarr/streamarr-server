@@ -7,6 +7,7 @@ import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUN
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
+import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
@@ -42,9 +43,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .and(AUTH_SESSION.ACTIVE_PROFILE_ID.eq(authority.profileId()))
             .and(AUTH_SESSION.REVOKED_AT.isNull())
             .and(USER_ACCOUNT.ENABLED.isTrue())
-            .and(
-                PROFILE_HOUSEHOLD_SHARE.STATUS.eq(
-                    com.streamarr.server.jooq.generated.enums.ProfileShareStatus.ACTIVE)));
+            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE)));
   }
 
   @Override

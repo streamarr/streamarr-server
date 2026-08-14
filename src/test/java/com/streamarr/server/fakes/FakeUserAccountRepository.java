@@ -5,6 +5,7 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.sql.SQLException;
 import java.util.Optional;
+import java.util.UUID;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -12,7 +13,7 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     implements UserAccountRepository {
 
   @Override
-  public boolean lockIfCredentialsUnchanged(java.util.UUID accountId, String expectedPasswordHash) {
+  public boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash) {
     return findById(accountId)
         .filter(UserAccount::isEnabled)
         .filter(account -> account.getPasswordHash().equals(expectedPasswordHash))
@@ -50,7 +51,7 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
 
   @Override
   public Optional<UserAccount> findByHomeHouseholdIdAndHouseholdRole(
-      java.util.UUID homeHouseholdId, HouseholdRole householdRole) {
+      UUID homeHouseholdId, HouseholdRole householdRole) {
     return database.values().stream()
         .filter(account -> homeHouseholdId.equals(account.getHomeHouseholdId()))
         .filter(account -> householdRole == account.getHouseholdRole())

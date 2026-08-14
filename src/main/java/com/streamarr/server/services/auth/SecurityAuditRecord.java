@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.SecurityAuditOperation;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
 
@@ -14,7 +15,7 @@ public record SecurityAuditRecord(
     String reason) {
 
   public SecurityAuditRecord {
-    java.util.Objects.requireNonNull(actingAccountId, "actingAccountId");
-    java.util.Objects.requireNonNull(operation, "operation");
+    Objects.requireNonNull(actingAccountId, "actingAccountId");
+    Objects.requireNonNull(operation, "operation");
   }
 }

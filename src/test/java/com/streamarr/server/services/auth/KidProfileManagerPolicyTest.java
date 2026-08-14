@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -226,8 +227,8 @@ class KidProfileManagerPolicyTest {
     assertThatThrownBy(() -> policy.validateKidClassification(kidId))
         .isInstanceOf(KidProfileManagerRequiredException.class);
 
-    org.assertj.core.api.Assertions.assertThat(accountRepository.individualLookups).isZero();
-    org.assertj.core.api.Assertions.assertThat(accountRepository.bulkLookups).isOne();
+    assertThat(accountRepository.individualLookups).isZero();
+    assertThat(accountRepository.bulkLookups).isOne();
   }
 
   @Test

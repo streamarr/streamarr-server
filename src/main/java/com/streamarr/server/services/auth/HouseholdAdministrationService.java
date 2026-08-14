@@ -3,6 +3,7 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.SecurityAuditOperation;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdOwnershipTransferRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
@@ -102,8 +103,7 @@ public class HouseholdAdministrationService {
   }
 
   private void requireOwnershipAuthority(
-      com.streamarr.server.domain.auth.UserAccount actor,
-      HouseholdOwnershipTransferCommand command) {
+      UserAccount actor, HouseholdOwnershipTransferCommand command) {
     var isCurrentOwner =
         actor.isEnabled()
             && command.householdId().equals(actor.getHomeHouseholdId())

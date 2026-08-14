@@ -34,6 +34,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Tag("UnitTest")
 @DisplayName("Household Administration Service Tests")
@@ -50,7 +51,7 @@ class HouseholdAdministrationServiceTest {
       new FakeProfileHouseholdShareRepository();
   private final FakeSecurityAuditEventRepository auditRepository =
       new FakeSecurityAuditEventRepository();
-  private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder =
+  private final PasswordEncoder passwordEncoder =
       PasswordEncoderFactories.createDelegatingPasswordEncoder();
   private final Clock clock = Clock.fixed(Instant.parse("2026-08-13T17:00:00Z"), ZoneOffset.UTC);
   private final HouseholdAdministrationService service =

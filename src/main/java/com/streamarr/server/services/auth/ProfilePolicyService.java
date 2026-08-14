@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileClassification;
 import com.streamarr.server.domain.auth.SecurityAuditOperation;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
@@ -58,8 +59,7 @@ public class ProfilePolicyService {
             .build());
   }
 
-  private Integer resolveMaximumAllowedRatingAge(
-      ProfilePolicyChange change, com.streamarr.server.domain.auth.Profile profile) {
+  private Integer resolveMaximumAllowedRatingAge(ProfilePolicyChange change, Profile profile) {
     if (change.clearMaximumAllowedRatingAge()) {
       return null;
     }
@@ -68,8 +68,7 @@ public class ProfilePolicyService {
         : change.maximumAllowedRatingAge();
   }
 
-  private String resolvePinHash(
-      ProfilePolicyChange change, com.streamarr.server.domain.auth.Profile profile) {
+  private String resolvePinHash(ProfilePolicyChange change, Profile profile) {
     if (change.clearPin()) {
       return null;
     }
