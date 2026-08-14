@@ -20,13 +20,13 @@ class PortableIdentityCommandValidationTest {
   @Test
   @DisplayName("Should reject null security audit operation at construction")
   void shouldRejectNullSecurityAuditOperationAtConstruction() {
-    var record =
+    var auditRecordBuilder =
         SecurityAuditRecord.builder()
             .actingAccountId(UUID.randomUUID())
             .operation(null)
             .reason("administrative action");
 
-    assertThatThrownBy(record::build).isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(auditRecordBuilder::build).isInstanceOf(NullPointerException.class);
   }
 
   @Test
