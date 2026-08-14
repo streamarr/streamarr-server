@@ -29,6 +29,7 @@ public class HouseholdMembershipRepositoryCustomImpl
 
   @Override
   @Transactional
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   public boolean changeRole(HouseholdMembership membership) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
 

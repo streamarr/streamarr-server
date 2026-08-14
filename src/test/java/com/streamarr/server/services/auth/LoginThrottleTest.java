@@ -14,6 +14,7 @@ import com.streamarr.server.fakes.MutableClock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -288,7 +289,7 @@ class LoginThrottleTest {
   @DisplayName("Should treat email case-insensitively when throttling")
   void shouldTreatEmailCaseInsensitivelyWhenThrottling() {
     for (int i = 0; i < MAX_ATTEMPTS; i++) {
-      throttle.registerAttempt(EMAIL.toUpperCase(java.util.Locale.ROOT), "src-" + i);
+      throttle.registerAttempt(EMAIL.toUpperCase(Locale.ROOT), "src-" + i);
     }
 
     assertThatThrownBy(() -> throttle.registerAttempt(EMAIL, "src-fresh"))

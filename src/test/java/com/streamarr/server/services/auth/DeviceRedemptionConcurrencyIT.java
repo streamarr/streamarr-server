@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
@@ -20,10 +22,12 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -343,7 +347,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
         IntStream.range(0, pollers)
             .mapToObj(
                 _ ->
-                    (java.util.concurrent.Callable<DevicePollResult>)
+                    (Callable<DevicePollResult>)
                         () -> {
                           start.await(20, TimeUnit.SECONDS);
                           return deviceAuthorizationService.redeem(deviceCode);
@@ -354,7 +358,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var futures = executor.invokeAll(attempts, 20, TimeUnit.SECONDS);
-      assertThat(futures).noneMatch(java.util.concurrent.Future::isCancelled);
+      assertThat(futures).noneMatch(Future::isCancelled);
       for (var future : futures) {
         try {
           results.add(future.get());
@@ -388,8 +392,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
             .build());
   }
 
-  private com.streamarr.server.domain.auth.DeviceAuthorization authorizationOf(
-      String displayUserCode) {
+  private DeviceAuthorization authorizationOf(String displayUserCode) {
     return authorizationRepository
         .findByUserCode(UserCode.normalize(displayUserCode))
         .orElseThrow();
@@ -406,7 +409,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
         .getPollIntervalSeconds();
   }
 
-  private List<com.streamarr.server.domain.auth.AuthSession> sessionsOf(UserAccount approver) {
+  private List<AuthSession> sessionsOf(UserAccount approver) {
     return sessionRepository.findAll().stream()
         .filter(session -> approver.getId().equals(session.getAccountId()))
         .toList();

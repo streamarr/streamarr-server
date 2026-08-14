@@ -10,6 +10,7 @@ import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -53,7 +54,7 @@ public class IdentityQueryService {
             .findByAccountIdAndHouseholdId(identity.accountId(), membership.getHouseholdId())
             .stream()
             .map(link -> profileRepository.findById(link.getProfileId()))
-            .flatMap(java.util.Optional::stream)
+            .flatMap(Optional::stream)
             .map(
                 profile ->
                     new SelectableProfileView(

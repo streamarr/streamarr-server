@@ -163,6 +163,7 @@ public class DeviceAuthorizationRepositoryCustomImpl
   }
 
   @Override
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   public Optional<com.streamarr.server.domain.auth.DeviceAuthorizationStatus> findStatusByUserCode(
       String userCode) {
     return dsl.select(DEVICE_AUTHORIZATION.STATUS)
@@ -193,11 +194,13 @@ public class DeviceAuthorizationRepositoryCustomImpl
     return serverError != null && constraintName.equals(serverError.getConstraint());
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static DeviceAuthorizationStatus generatedStatusOf(
       com.streamarr.server.domain.auth.DeviceAuthorizationStatus status) {
     return DeviceAuthorizationStatus.valueOf(status.name());
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.server.domain.auth.DeviceAuthorizationStatus domainStatusOf(
       DeviceAuthorizationStatus status) {
     return com.streamarr.server.domain.auth.DeviceAuthorizationStatus.valueOf(status.name());

@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 /** Prevents the name-based jOOQ ↔ Java enum bridge from drifting. */
 @Tag("UnitTest")
 @DisplayName("Auth Enum Parity Tests")
+@SuppressWarnings("checkstyle:fullyQualifiedName")
 class AuthEnumParityTest {
 
   @Test

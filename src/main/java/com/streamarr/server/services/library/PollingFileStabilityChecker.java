@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -15,7 +16,7 @@ public class PollingFileStabilityChecker implements FileStabilityChecker {
 
   private sealed interface PollResult
       permits PollResult.Continue, PollResult.Stabilized, PollResult.Failed {
-    record Continue(long lastSize, java.time.Instant lastChangeTime) implements PollResult {}
+    record Continue(long lastSize, Instant lastChangeTime) implements PollResult {}
 
     record Stabilized() implements PollResult {}
 
@@ -74,8 +75,8 @@ public class PollingFileStabilityChecker implements FileStabilityChecker {
   private PollResult pollOnce(
       Path path,
       long lastSize,
-      java.time.Instant lastChangeTime,
-      java.time.Instant startTime,
+      Instant lastChangeTime,
+      Instant startTime,
       Duration stabilizationPeriod,
       Duration maxWait,
       Duration pollInterval) {

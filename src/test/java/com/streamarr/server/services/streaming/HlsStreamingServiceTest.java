@@ -396,7 +396,7 @@ class HlsStreamingServiceTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var sessions = new java.util.ArrayList<StreamSession>();
+    var sessions = new ArrayList<StreamSession>();
     for (int i = 0; i < 3; i++) {
       var file = seedMediaFile();
       sessions.add(createSession(file.getId(), UUID.randomUUID(), options));

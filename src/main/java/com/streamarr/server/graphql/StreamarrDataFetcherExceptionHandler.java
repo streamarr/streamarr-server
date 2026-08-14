@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql;
 
+import com.netflix.graphql.dgs.exceptions.DefaultDataFetcherExceptionHandler;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
@@ -23,8 +24,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptionHandler {
 
-  private final DataFetcherExceptionHandler delegate =
-      new com.netflix.graphql.dgs.exceptions.DefaultDataFetcherExceptionHandler();
+  private final DataFetcherExceptionHandler delegate = new DefaultDataFetcherExceptionHandler();
 
   @Override
   public CompletableFuture<DataFetcherExceptionHandlerResult> handleException(

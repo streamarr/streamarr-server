@@ -8,9 +8,13 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
+import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryBackend;
+import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
@@ -628,11 +632,11 @@ class SeriesScanningIT extends AbstractWireMockIntegrationTest {
     return libraryRepository.saveAndFlush(
         Library.builder()
             .name("TV Shows")
-            .backend(com.streamarr.server.domain.LibraryBackend.LOCAL)
-            .status(com.streamarr.server.domain.LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .status(LibraryStatus.HEALTHY)
             .filepathUri(FilepathCodec.encode(tempDir))
-            .externalAgentStrategy(com.streamarr.server.domain.ExternalAgentStrategy.TMDB)
-            .type(com.streamarr.server.domain.media.MediaType.SERIES)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.SERIES)
             .build());
   }
 

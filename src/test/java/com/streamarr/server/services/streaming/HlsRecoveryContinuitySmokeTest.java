@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.remuxMpegtsDecision;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.data.Offset.offset;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -168,9 +169,7 @@ class HlsRecoveryContinuitySmokeTest {
     var lastPtsBeforeDeath = probePtsTimes(outputDir.resolve("segment1.ts")).getLast();
     var replacementPts = probePtsTimes(outputDir.resolve("segment2.ts"));
     assertThat(replacementPts.getFirst())
-        .isCloseTo(
-            timelineOffset + 2.0 * SEGMENT_DURATION_SECONDS,
-            org.assertj.core.data.Offset.offset(0.5));
+        .isCloseTo(timelineOffset + 2.0 * SEGMENT_DURATION_SECONDS, offset(0.5));
     assertThat(replacementPts.getFirst()).isGreaterThanOrEqualTo(lastPtsBeforeDeath - 0.1);
 
     // The replacement emits a contiguous run from the requested index, never a lone segment.

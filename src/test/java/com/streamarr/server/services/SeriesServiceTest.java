@@ -421,7 +421,7 @@ class SeriesServiceTest {
               .name("Season 1")
               .seasonNumber(1)
               .overview("The first season of Breaking Bad.")
-              .airDate(java.time.LocalDate.of(2008, 1, 20))
+              .airDate(LocalDate.of(2008, 1, 20))
               .imageSources(List.of())
               .episodes(
                   List.of(
@@ -429,7 +429,7 @@ class SeriesServiceTest {
                           .episodeNumber(1)
                           .name("Pilot")
                           .overview("A chemistry teacher turns to crime.")
-                          .airDate(java.time.LocalDate.of(2008, 1, 20))
+                          .airDate(LocalDate.of(2008, 1, 20))
                           .runtime(58)
                           .imageSources(List.of())
                           .build(),
@@ -437,7 +437,7 @@ class SeriesServiceTest {
                           .episodeNumber(2)
                           .name("Cat's in the Bag...")
                           .overview("Walt and Jesse deal with the aftermath.")
-                          .airDate(java.time.LocalDate.of(2008, 1, 27))
+                          .airDate(LocalDate.of(2008, 1, 27))
                           .runtime(48)
                           .imageSources(List.of())
                           .build()))
@@ -449,7 +449,7 @@ class SeriesServiceTest {
       assertThat(season.getTitle()).isEqualTo("Season 1");
       assertThat(season.getSeasonNumber()).isEqualTo(1);
       assertThat(season.getOverview()).isEqualTo("The first season of Breaking Bad.");
-      assertThat(season.getAirDate()).isEqualTo(java.time.LocalDate.of(2008, 1, 20));
+      assertThat(season.getAirDate()).isEqualTo(LocalDate.of(2008, 1, 20));
       assertThat(season.getSeries().getId()).isEqualTo(series.getId());
 
       var episodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());

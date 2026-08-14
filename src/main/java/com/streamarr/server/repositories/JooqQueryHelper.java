@@ -26,6 +26,8 @@ import java.util.UUID;
 import lombok.experimental.UtilityClass;
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.Query;
+import org.jooq.Record;
 import org.jooq.SortField;
 import org.jooq.SortOrder;
 import org.jooq.Table;
@@ -35,7 +37,7 @@ import org.jooq.TableField;
 public class JooqQueryHelper {
 
   @SuppressWarnings("unchecked")
-  public <E> List<E> nativeQuery(EntityManager em, org.jooq.Query query, Class<E> type) {
+  public <E> List<E> nativeQuery(EntityManager em, Query query, Class<E> type) {
     var result = em.createNativeQuery(query.getSQL(), type);
 
     List<Object> values = query.getBindValues();
@@ -177,7 +179,7 @@ public class JooqQueryHelper {
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
-  public <R extends org.jooq.Record> Condition semiJoinCondition(
+  public <R extends Record> Condition semiJoinCondition(
       Field<UUID> entityIdField,
       Table<R> joinTable,
       TableField<R, UUID> joinEntityIdField,

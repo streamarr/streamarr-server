@@ -27,6 +27,7 @@ import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -329,7 +330,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
         seasonRepository.saveAndFlush(
             Season.builder().seasonNumber(1).series(series).library(lib).build());
 
-    var episodeIds = new java.util.ArrayList<UUID>();
+    var episodeIds = new ArrayList<UUID>();
     UUID firstFileId = null;
 
     for (int i = 1; i <= episodeCount; i++) {

@@ -7,6 +7,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.tls.PemTlsIdentity;
 import java.nio.file.Path;
 import java.util.UUID;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -52,7 +53,7 @@ class WorkerSessionServerTest {
         .hasMessageContaining("not started");
   }
 
-  private static void assertNotStarted(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
+  private static void assertNotStarted(ThrowingCallable call) {
     assertThatThrownBy(call)
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not started");

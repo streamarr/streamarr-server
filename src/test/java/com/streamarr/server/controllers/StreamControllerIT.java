@@ -18,6 +18,8 @@ import com.streamarr.server.support.AuthTestSupport;
 import jakarta.servlet.http.Cookie;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -40,17 +42,17 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
   private AuthTestSupport.TestIdentity identity;
 
-  @org.junit.jupiter.api.BeforeEach
+  @BeforeEach
   void seedIdentity() {
     identity = authTestSupport.createIdentity();
   }
 
-  @org.junit.jupiter.api.AfterEach
+  @AfterEach
   void deleteIdentity() {
     authTestSupport.deleteIdentity(identity);
   }
 
-  private String playbackToken(java.util.UUID streamSessionId) {
+  private String playbackToken(UUID streamSessionId) {
     return authTestSupport.playbackBearer(identity, streamSessionId);
   }
 

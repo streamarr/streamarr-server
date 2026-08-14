@@ -8,9 +8,11 @@ import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
@@ -54,7 +56,7 @@ class DeviceIssuanceCapConcurrencyIT extends AbstractIntegrationTest {
         IntStream.range(0, racers)
             .mapToObj(
                 _ ->
-                    (java.util.concurrent.Callable<IssuedDeviceCode>)
+                    (Callable<IssuedDeviceCode>)
                         () -> {
                           start.await(20, TimeUnit.SECONDS);
                           return deviceAuthorizationService.issue("Racer");
@@ -65,7 +67,7 @@ class DeviceIssuanceCapConcurrencyIT extends AbstractIntegrationTest {
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var futures = executor.invokeAll(attempts, 20, TimeUnit.SECONDS);
-      assertThat(futures).noneMatch(java.util.concurrent.Future::isCancelled);
+      assertThat(futures).noneMatch(Future::isCancelled);
       for (var future : futures) {
         try {
           accepted.add(future.get());
