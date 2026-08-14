@@ -1,0 +1,73 @@
+= ADR 0022: Artwork Replacement Uses a Bounded Transaction-Scoped Advisory Lock
+
+== Status
+
+Accepted
+
+== Context
+
+Replacing artwork is a multi-row operation: every generated size for one entity and image type must change as one logical set.
+The operation reads the paths being replaced, deletes the old rows, and inserts the new rows.
+There is no stable database row that survives that sequence and can carry an ordinary row lock.
+
+`SELECT FOR UPDATE` alone did not serialize concurrent replacements.
+After the first transaction deleted the locked rows, a waiting transaction could continue without observing the first replacement paths, delete the first replacement rows, and leave their files orphaned.
+The in-memory `MutexFactory` in `ImageEnrichmentListener` prevents duplicate work inside one application instance but cannot coordinate multiple instances or direct service callers.
+
+Image download, processing, and file writes can involve slow external systems or network storage.
+They must not extend a database critical section or consume a connection while retrying.
+
+== Decision
+
+`ImageEnrichmentListener` keeps its per-entity in-memory mutex around source comparison, download, processing, and saving to avoid redundant work within one application instance.
+The cross-instance correctness boundary is `ImageService.replaceImages`, whose `REQUIRES_NEW` transaction validates the already-written replacement files before calling `ImageRepositoryCustomImpl.replaceLogicalArtwork`.
+
+The repository acquires a PostgreSQL transaction-scoped advisory lock before selecting or locking artwork rows.
+The logical lock identity is the complete `entityId|entityType|imageType` tuple, encoded as UTF-8 and mapped to a stable 64-bit key from a name-based UUID.
+Every writer that replaces a logical artwork set must use the same identity algorithm and acquire locks in this order: advisory lock, then artwork row locks.
+Advisory locks are cooperative; SQL that bypasses this protocol is not protected.
+
+Both the timeout and lock acquisition use jOOQ in the repository layer.
+The repository applies `SET LOCAL lock_timeout` immediately before `pg_advisory_xact_lock`, so the timeout applies only to the current transaction and also bounds any later row-lock wait in that replacement.
+`image.replacement-lock-timeout`, exposed as `IMAGE_REPLACEMENT_LOCK_TIMEOUT`, defaults to five seconds and must be at least one millisecond.
+A timeout aborts the transaction; there is no retry, backoff, or work queue in this path.
+
+Download, image processing, and replacement-file writes finish before the transaction begins.
+On rollback, staged replacement files are deleted after PostgreSQL has released the transaction-scoped advisory lock.
+Spring may still hold the local pooled connection while its `afterCompletion` callback performs that cleanup; this is accepted on the rare failure path rather than adding a transactional collaborator solely to release it earlier.
+Superseded files are deleted only after commit.
+File deletion is idempotent and logs failures without changing the database outcome.
+
+The lock guarantees atomic replacement, not provider freshness ordering.
+Concurrent replacements use last-committer-wins semantics because providers expose no revision token that orders source keys.
+If a later non-preserving refresh reports a different provider key, `REFRESH_IF_CHANGED` can repair a stale winner.
+Bytes changing behind the same provider key remain undetectable regardless of concurrency.
+
+=== Explicitly deferred
+
+* A try-lock outcome or retry loop — the asynchronous enrichment caller has no useful consumer for a dropped or retryable result.
+* A durable coalescing work table with `SKIP LOCKED` — revisit if production evidence shows sustained contention rather than rare collisions.
+* A provider revision column — no provider revision token currently exists to populate it.
+* A separate transactional collaborator solely to return the local pool connection before rollback file cleanup — the residual exposure is bounded to failures and does not hold the cross-instance advisory lock.
+
+== Consequences
+
+* Concurrent replacements across application instances persist one coherent variant set and clean original and losing replacement files.
+* Waiters consume a database connection, but the configured timeout bounds that exposure and the critical section contains only database work.
+* Transaction-scoped locks release automatically on commit, rollback, or connection loss and cannot leak into a pooled connection's next transaction.
+* The current listener mutex ordinarily limits an instance to one contender per entity, while the repository lock remains the correctness backstop for every service caller.
+* The 64-bit key has a theoretical collision risk; an unrelated artwork replacement could briefly serialize but cannot corrupt either identity.
+* PostgreSQL is an intentional backing-service dependency for this repository contract.
+
+== Rejected Alternatives
+
+* Row locks alone — the rows being locked are deleted, so the waiter can miss the winning transaction's replacement paths.
+* The JVM mutex alone — it does not coordinate multiple application instances.
+* A non-blocking advisory try-lock — dropping a forced refresh is surprising and the fire-and-forget caller cannot surface or schedule the outcome.
+* Serializable transactions with retries — heavier and still require retry policy while the logical lock directly expresses the resource being serialized.
+* A durable work queue — adds leasing, recovery, and coalescing machinery without evidence of sustained contention.
+
+== References
+
+* https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS[PostgreSQL advisory lock functions]
+* https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-LOCK-TIMEOUT[PostgreSQL `lock_timeout`]
