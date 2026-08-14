@@ -88,15 +88,11 @@ public class ProfileManagementService {
   @Transactional
   public ProfileManagerInvitation invite(ProfileManagerInvite invite) {
     requireManager(invite.actingAccountId(), invite.profileId());
+    requireEligibleInvitee(invite);
 
     var invitation =
-        invitationRepository.save(
-            ProfileManagerInvitation.builder()
-                .profileId(invite.profileId())
-                .invitingAccountId(invite.actingAccountId())
-                .invitedAccountId(invite.invitedAccountId())
-                .status(ProfileManagerInvitationStatus.PENDING)
-                .build());
+        invitationRepository.insertPendingIfAbsent(
+            invite.profileId(), invite.actingAccountId(), invite.invitedAccountId());
     auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(invite.actingAccountId())
@@ -105,6 +101,20 @@ public class ProfileManagementService {
             .operation(SecurityAuditOperation.PROFILE_MANAGER_INVITED)
             .build());
     return invitation;
+  }
+
+  private void requireEligibleInvitee(ProfileManagerInvite invite) {
+    if (invite.actingAccountId().equals(invite.invitedAccountId())) {
+      throw new ProfileManagementDeniedException();
+    }
+    if (managerRepository.existsByAccountIdAndProfileId(
+        invite.invitedAccountId(), invite.profileId())) {
+      throw new ProfileManagementDeniedException();
+    }
+    accountRepository
+        .findById(invite.invitedAccountId())
+        .filter(candidate -> candidate.isEnabled())
+        .orElseThrow(ProfileManagementDeniedException::new);
   }
 
   @Transactional

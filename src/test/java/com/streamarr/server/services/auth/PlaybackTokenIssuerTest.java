@@ -18,6 +18,7 @@ import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.support.TokenTestSupport;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -81,7 +82,9 @@ class PlaybackTokenIssuerTest {
     var streamSession = defaultSessionBuilder().build();
     var ttl = Duration.ofHours(1);
 
-    assertThatThrownBy(() -> issuer.issue(accountScoped, streamSession, ttl))
+    assertThatThrownBy(
+            () ->
+                issuer.issue(accountScoped, accountScoped.playbackAuthority(), streamSession, ttl))
         .isInstanceOf(ProfileRequiredException.class);
   }
 
@@ -110,6 +113,14 @@ class PlaybackTokenIssuerTest {
 
     assertThatThrownBy(() -> issuer.issue(identity, playbackAuthority, streamSession, ttl))
         .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should expose only the authority explicit playback issuance API")
+  void shouldExposeOnlyAuthorityExplicitPlaybackIssuanceApi() {
+    assertThat(Arrays.stream(PlaybackTokenIssuer.class.getDeclaredMethods()))
+        .filteredOn(method -> method.getName().equals("issue"))
+        .allMatch(method -> method.getParameterCount() == 4);
   }
 
   private AuthenticatedIdentity profileIdentity() {

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
 
@@ -11,6 +12,15 @@ public record ProfileManagerOverrideCommand(
     ProfileManagerOverrideAction action,
     String password,
     String reason) {
+
+  public ProfileManagerOverrideCommand {
+    Objects.requireNonNull(actingAccountId, "actingAccountId");
+    Objects.requireNonNull(targetAccountId, "targetAccountId");
+    Objects.requireNonNull(profileId, "profileId");
+    Objects.requireNonNull(action, "action");
+    Objects.requireNonNull(password, "password");
+    Objects.requireNonNull(reason, "reason");
+  }
 
   public static class ProfileManagerOverrideCommandBuilder {
     @Override

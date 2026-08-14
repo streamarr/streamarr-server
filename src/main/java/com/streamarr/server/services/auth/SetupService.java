@@ -65,8 +65,7 @@ public class SetupService {
       throw new SetupAlreadyCompletedException();
     }
 
-    // saveAndFlush before each jOOQ statement: Hibernate defers JPA inserts until flush, but
-    // the claim and link run as direct SQL against those rows' foreign keys.
+    // The household and account must exist before the atomic database claim references them.
     var household =
         householdRepository.save(
             Household.builder()

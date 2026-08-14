@@ -6,6 +6,7 @@ package com.streamarr.server.jooq.generated;
 
 import com.streamarr.server.jooq.generated.routines.AssertHouseholdHasExactlyOneOwner;
 import com.streamarr.server.jooq.generated.routines.AssertHouseholdProfileSafety;
+import com.streamarr.server.jooq.generated.routines.AssertHouseholdUniqueProfileNames;
 import com.streamarr.server.jooq.generated.routines.AssertLocalKidManager;
 import com.streamarr.server.jooq.generated.routines.AssertProfileHasManager;
 import com.streamarr.server.jooq.generated.routines.GuardPortableIdentity;
@@ -53,6 +54,19 @@ public class Routines {
         , UUID candidateHouseholdId
     ) {
         AssertHouseholdProfileSafety p = new AssertHouseholdProfileSafety();
+        p.setCandidateHouseholdId(candidateHouseholdId);
+
+        p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.assert_household_unique_profile_names</code>
+     */
+    public static void assertHouseholdUniqueProfileNames(
+          Configuration configuration
+        , UUID candidateHouseholdId
+    ) {
+        AssertHouseholdUniqueProfileNames p = new AssertHouseholdUniqueProfileNames();
         p.setCandidateHouseholdId(candidateHouseholdId);
 
         p.execute(configuration);

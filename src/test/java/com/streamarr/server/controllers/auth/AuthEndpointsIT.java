@@ -368,6 +368,29 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should retain account surfaces for issued profile token after share removal")
+  void shouldRetainAccountSurfacesForIssuedProfileTokenAfterShareRemoval() throws Exception {
+    seedSingleProfileIdentity();
+    var accessToken = selectProfileToken(loginAndReadField("accessToken"));
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            _ ->
+                profileShareRepository
+                    .findByProfileIdAndHouseholdId(profile.getId(), household.getId())
+                    .ifPresent(profileShareRepository::delete));
+
+    mockMvc
+        .perform(
+            post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + accessToken)
+                .content("{\"query\": \"{ me { accountId scope } }\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.me.accountId").value(account.getId().toString()));
+  }
+
+  @Test
   @DisplayName("Should reject issued profile token immediately when account home changes")
   void shouldRejectIssuedProfileTokenImmediatelyWhenAccountHomeChanges() throws Exception {
     seedSingleProfileIdentity();
@@ -584,6 +607,56 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var claims = decodeToken(objectMapper.readTree(response).get("accessToken").asString());
     assertThat(claims.getClaimAsString("pf")).isEqualTo(profile.getId().toString());
     assertThat(claims.hasClaim("hh")).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should require profile PIN when selecting PIN protected profile")
+  void shouldRequireProfilePinWhenSelectingPinProtectedProfile() throws Exception {
+    var accountToken = accountScopedTokenWithTwoProfiles();
+    profile.setPinHash(passwordEncoder.encode("2468"));
+    profileRepository.saveAndFlush(profile);
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + accountToken)
+                .content(
+                    "{\"profileId\": \"%s\", \"cookieMode\": false}".formatted(profile.getId())))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("Should reject wrong PIN when selecting PIN protected profile")
+  void shouldRejectWrongPinWhenSelectingPinProtectedProfile() throws Exception {
+    var accountToken = accountScopedTokenWithTwoProfiles();
+    profile.setPinHash(passwordEncoder.encode("2468"));
+    profileRepository.saveAndFlush(profile);
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + accountToken)
+                .content("{\"profileId\": \"%s\", \"pin\": \"1357\"}".formatted(profile.getId())))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("Should select PIN protected profile when PIN is correct")
+  void shouldSelectPinProtectedProfileWhenPinIsCorrect() throws Exception {
+    var accountToken = accountScopedTokenWithTwoProfiles();
+    profile.setPinHash(passwordEncoder.encode("2468"));
+    profileRepository.saveAndFlush(profile);
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + accountToken)
+                .content("{\"profileId\": \"%s\", \"pin\": \"2468\"}".formatted(profile.getId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.scope").value("profile"));
   }
 
   @Test

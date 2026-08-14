@@ -89,7 +89,7 @@ class ProfilePolicyServiceTest {
             .actingAccountId(managerId)
             .profileId(adult.getId())
             .classification(ProfileClassification.ADULT)
-            .pinHash(null)
+            .clearPin(true)
             .build();
 
     assertThatThrownBy(() -> service.changePolicy(change))
@@ -160,6 +160,58 @@ class ProfilePolicyServiceTest {
         .singleElement()
         .extracting(event -> event.getOperation())
         .isEqualTo(SecurityAuditOperation.PROFILE_POLICY_CHANGED);
+  }
+
+  @Test
+  @DisplayName("Should preserve profile PIN when changing only content ceiling")
+  void shouldPreserveProfilePinWhenChangingOnlyContentCeiling() {
+    var managerId = UUID.randomUUID();
+    var profile =
+        profileRepository.save(
+            Profile.builder()
+                .name("Protected Adult")
+                .classification(ProfileClassification.ADULT)
+                .maximumAllowedRatingAge(13)
+                .pinHash("encoded-pin")
+                .build());
+    managerRepository.save(
+        ProfileManager.builder().accountId(managerId).profileId(profile.getId()).build());
+
+    service.changePolicy(
+        ProfilePolicyChange.builder()
+            .actingAccountId(managerId)
+            .profileId(profile.getId())
+            .classification(ProfileClassification.ADULT)
+            .maximumAllowedRatingAge(16)
+            .build());
+
+    assertThat(profile.getPinHash()).isEqualTo("encoded-pin");
+  }
+
+  @Test
+  @DisplayName("Should preserve content ceiling when changing only profile PIN")
+  void shouldPreserveContentCeilingWhenChangingOnlyProfilePin() {
+    var managerId = UUID.randomUUID();
+    var profile =
+        profileRepository.save(
+            Profile.builder()
+                .name("Restricted Adult")
+                .classification(ProfileClassification.ADULT)
+                .maximumAllowedRatingAge(13)
+                .pinHash("old-pin")
+                .build());
+    managerRepository.save(
+        ProfileManager.builder().accountId(managerId).profileId(profile.getId()).build());
+
+    service.changePolicy(
+        ProfilePolicyChange.builder()
+            .actingAccountId(managerId)
+            .profileId(profile.getId())
+            .classification(ProfileClassification.ADULT)
+            .pinHash("new-pin")
+            .build());
+
+    assertThat(profile.getMaximumAllowedRatingAge()).isEqualTo(13);
   }
 
   @Test

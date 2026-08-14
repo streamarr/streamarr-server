@@ -3,11 +3,15 @@ package com.streamarr.server;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.netflix.graphql.dgs.DgsMutation;
+import com.streamarr.server.graphql.resolvers.PortableProfileResolver;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.services.RootServiceCycleFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
+import com.streamarr.server.services.auth.PortableIdentityTransactionExecutor;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -20,10 +24,12 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.library.dependencies.SliceAssignment;
 import com.tngtech.archunit.library.dependencies.SliceIdentifier;
 import java.nio.file.Path;
+import java.util.Arrays;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
 @Tag("UnitTest")
@@ -122,6 +128,26 @@ class ArchitectureTest {
           .beAnnotatedWith(Transactional.class)
           .as(TRANSACTION_BOUNDARY_REASON);
 
+  @ArchTest
+  static final ArchRule controllersAndResolversMustNotOwnTransactionExecutors =
+      noClasses()
+          .that()
+          .resideInAnyPackage("..controllers..", "..graphql..")
+          .should()
+          .dependOnClassesThat()
+          .areAssignableTo(PortableIdentityTransactionExecutor.class)
+          .as(TRANSACTION_BOUNDARY_REASON);
+
+  @ArchTest
+  static final ArchRule graphqlMustNotOwnPasswordPolicy =
+      noClasses()
+          .that()
+          .resideInAPackage("..graphql..")
+          .should()
+          .dependOnClassesThat()
+          .areAssignableTo(PasswordEncoder.class)
+          .as("GraphQL adapts input; services own password and PIN policy");
+
   // The library services call the filepath, parsers, streaming, and task services; a dependency
   // back the other way puts them in a cycle. FilepathCodec did exactly that from the library
   // package until it moved to services.filepath.
@@ -201,6 +227,24 @@ class ArchitectureTest {
     assertThatThrownBy(() -> repositoryRule.check(repositoryWithQueryAnnotation))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("Query");
+  }
+
+  @Test
+  @DisplayName("Should keep portable profile domain entities behind GraphQL adapters")
+  void shouldKeepPortableProfileDomainEntitiesBehindGraphqlAdapters() {
+    var domainReturningMutations =
+        Arrays.stream(PortableProfileResolver.class.getDeclaredMethods())
+            .filter(method -> method.isAnnotationPresent(DgsMutation.class))
+            .filter(
+                method ->
+                    method
+                        .getReturnType()
+                        .getPackageName()
+                        .startsWith("com.streamarr.server.domain"))
+            .map(method -> method.getName())
+            .toList();
+
+    assertThat(domainReturningMutations).isEmpty();
   }
 
   private static ArchRule repositoryMethodsMustNotUseQueryAnnotations() {

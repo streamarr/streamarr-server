@@ -146,6 +146,39 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName("Should accept attached management invitation with adult profile share")
+  void shouldAcceptAttachedManagementInvitationWithAdultProfileShare() {
+    var householdId = UUID.randomUUID();
+    var parent = saveAccount(householdId, HouseholdRole.PARENT);
+    var profile =
+        profileRepository.save(
+            Profile.builder()
+                .name("Co-managed Adult")
+                .classification(ProfileClassification.ADULT)
+                .build());
+    var pendingShare = saveShare(profile.getId(), householdId, ProfileShareStatus.PENDING);
+    var invitation =
+        invitationRepository.save(
+            ProfileManagerInvitation.builder()
+                .profileId(profile.getId())
+                .invitingAccountId(UUID.randomUUID())
+                .invitedAccountId(parent.getId())
+                .status(ProfileManagerInvitationStatus.PENDING)
+                .build());
+
+    service.accept(
+        ProfileShareAcceptance.builder()
+            .actingAccountId(parent.getId())
+            .shareId(pendingShare.getId())
+            .managementInvitationId(invitation.getId())
+            .build());
+
+    assertThat(managerRepository.existsByAccountIdAndProfileId(parent.getId(), profile.getId()))
+        .isTrue();
+    assertThat(invitation.getStatus()).isEqualTo(ProfileManagerInvitationStatus.ACCEPTED);
+  }
+
+  @Test
   @DisplayName("Should reject share acceptance from another household")
   void shouldRejectShareAcceptanceFromAnotherHousehold() {
     var parent = saveAccount(UUID.randomUUID(), HouseholdRole.PARENT);

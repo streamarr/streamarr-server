@@ -11,6 +11,7 @@ type SelectableProfile {
     id: ID!
     name: String!
     active: Boolean!
+    pinProtected: Boolean!
 }
 
 type PortableProfileSummary {
@@ -63,6 +64,8 @@ input PortableProfileCreationInput {
     classification: ProfileClassificationInput!
     maximumAllowedRatingAge: Int
     pin: String
+    clearMaximumAllowedRatingAge: Boolean! = false
+    clearPin: Boolean! = false
 }
 
 input PortableProfileRenameInput {

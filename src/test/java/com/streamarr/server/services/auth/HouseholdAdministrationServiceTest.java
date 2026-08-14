@@ -342,8 +342,26 @@ class HouseholdAdministrationServiceTest {
   @Test
   @DisplayName("Should require nonblank reason for household administration")
   void shouldRequireNonblankReasonForHouseholdAdministration() {
-    var missingReason = AccountHouseholdTransferCommand.builder().reason(null).build();
-    var blankReason = HouseholdOwnershipTransferCommand.builder().reason("  ").build();
+    var actorId = UUID.randomUUID();
+    var targetId = UUID.randomUUID();
+    var householdId = UUID.randomUUID();
+    var missingReason =
+        AccountHouseholdTransferCommand.builder()
+            .actingAccountId(actorId)
+            .targetAccountId(targetId)
+            .targetHouseholdId(householdId)
+            .targetRole(HouseholdRole.MEMBER)
+            .password(PASSWORD)
+            .reason("")
+            .build();
+    var blankReason =
+        HouseholdOwnershipTransferCommand.builder()
+            .actingAccountId(actorId)
+            .householdId(householdId)
+            .targetAccountId(targetId)
+            .password(PASSWORD)
+            .reason("  ")
+            .build();
 
     assertThatThrownBy(() -> service.transferAccount(missingReason))
         .isInstanceOf(IllegalArgumentException.class);

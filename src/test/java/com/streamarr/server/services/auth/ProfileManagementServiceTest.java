@@ -106,11 +106,23 @@ class ProfileManagementServiceTest {
   @Test
   @DisplayName("Should reject missing or blank portable profile name")
   void shouldRejectMissingOrBlankPortableProfileName() {
-    var missingName = CreatePortableProfileCommand.builder().name(null).build();
-    var blankName = RenamePortableProfileCommand.builder().name("  ").build();
+    var accountId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
+    var blankName =
+        RenamePortableProfileCommand.builder()
+            .actingAccountId(accountId)
+            .profileId(profileId)
+            .name("  ")
+            .build();
 
-    assertThatThrownBy(() -> service.create(missingName))
-        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                CreatePortableProfileCommand.builder()
+                    .actingAccountId(accountId)
+                    .name(null)
+                    .classification(ProfileClassification.ADULT)
+                    .build())
+        .isInstanceOf(NullPointerException.class);
     assertThatThrownBy(() -> service.rename(blankName))
         .isInstanceOf(IllegalArgumentException.class);
   }
@@ -135,6 +147,7 @@ class ProfileManagementServiceTest {
     var currentManagerId = UUID.randomUUID();
     var inviteeId = UUID.randomUUID();
     var profileId = UUID.randomUUID();
+    saveAccount(inviteeId);
     managerRepository.save(
         ProfileManager.builder().accountId(currentManagerId).profileId(profileId).build());
 
@@ -165,11 +178,72 @@ class ProfileManagementServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject profile manager self invitation")
+  void shouldRejectProfileManagerSelfInvitation() {
+    var managerId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
+    managerRepository.save(
+        ProfileManager.builder().accountId(managerId).profileId(profileId).build());
+
+    assertThatThrownBy(
+            () ->
+                service.invite(
+                    ProfileManagerInvite.builder()
+                        .actingAccountId(managerId)
+                        .invitedAccountId(managerId)
+                        .profileId(profileId)
+                        .build()))
+        .isInstanceOf(ProfileManagementDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject invitation for existing profile manager")
+  void shouldRejectInvitationForExistingProfileManager() {
+    var invitingManagerId = UUID.randomUUID();
+    var existingManagerId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
+    managerRepository.save(
+        ProfileManager.builder().accountId(invitingManagerId).profileId(profileId).build());
+    managerRepository.save(
+        ProfileManager.builder().accountId(existingManagerId).profileId(profileId).build());
+
+    assertThatThrownBy(
+            () ->
+                service.invite(
+                    ProfileManagerInvite.builder()
+                        .actingAccountId(invitingManagerId)
+                        .invitedAccountId(existingManagerId)
+                        .profileId(profileId)
+                        .build()))
+        .isInstanceOf(ProfileManagementDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject invitation for nonexistent account")
+  void shouldRejectInvitationForNonexistentAccount() {
+    var invitingManagerId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
+    managerRepository.save(
+        ProfileManager.builder().accountId(invitingManagerId).profileId(profileId).build());
+
+    assertThatThrownBy(
+            () ->
+                service.invite(
+                    ProfileManagerInvite.builder()
+                        .actingAccountId(invitingManagerId)
+                        .invitedAccountId(UUID.randomUUID())
+                        .profileId(profileId)
+                        .build()))
+        .isInstanceOf(ProfileManagementDeniedException.class);
+  }
+
+  @Test
   @DisplayName("Should let named invitee reject pending manager invitation")
   void shouldLetNamedInviteeRejectPendingManagerInvitation() {
     var currentManagerId = UUID.randomUUID();
     var inviteeId = UUID.randomUUID();
     var profileId = UUID.randomUUID();
+    saveAccount(inviteeId);
     managerRepository.save(
         ProfileManager.builder().accountId(currentManagerId).profileId(profileId).build());
     var invitation =
@@ -236,6 +310,7 @@ class ProfileManagementServiceTest {
     var currentManagerId = UUID.randomUUID();
     var inviteeId = UUID.randomUUID();
     var profileId = UUID.randomUUID();
+    saveAccount(inviteeId);
     managerRepository.save(
         ProfileManager.builder().accountId(currentManagerId).profileId(profileId).build());
     var invitation =
@@ -405,6 +480,20 @@ class ProfileManagementServiceTest {
             .accountRole(AccountRole.USER)
             .homeHouseholdId(householdId)
             .householdRole(role)
+            .build());
+  }
+
+  private void saveAccount(UUID accountId) {
+    accountRepository.save(
+        UserAccount.builder()
+            .id(accountId)
+            .email("invitee-" + accountId + "@example.com")
+            .displayName("Invitee")
+            .passwordHash("encoded")
+            .accountRole(AccountRole.USER)
+            .homeHouseholdId(UUID.randomUUID())
+            .householdRole(HouseholdRole.MEMBER)
+            .enabled(true)
             .build());
   }
 }

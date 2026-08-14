@@ -99,7 +99,7 @@ public class AuthController {
     var identity = authorizationService.currentIdentity();
     var context =
         sessionScopeService.selectProfile(
-            identity.accountId(), identity.authSessionId(), request.profileId());
+            identity.accountId(), identity.authSessionId(), request.profileId(), request.pin());
     return respondAccessOnly(
         accessTokenIssuer.issueDerived(context, authorizationService.currentTokenExpiry()),
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));

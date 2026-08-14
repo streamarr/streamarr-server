@@ -1,7 +1,6 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
-import com.streamarr.server.domain.auth.ProfileClassification;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditOperation;
@@ -36,13 +35,7 @@ public class ProfileSharingService {
       throw new ProfileManagementDeniedException();
     }
 
-    var share =
-        shareRepository.save(
-            ProfileHouseholdShare.builder()
-                .profileId(offer.profileId())
-                .householdId(offer.targetHouseholdId())
-                .status(ProfileShareStatus.PENDING)
-                .build());
+    var share = shareRepository.insertPendingIfAbsent(offer.profileId(), offer.targetHouseholdId());
     auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(offer.actingAccountId())
@@ -74,8 +67,7 @@ public class ProfileSharingService {
         profileRepository
             .findById(share.getProfileId())
             .orElseThrow(ProfileAccessDeniedException::new);
-    if (profile.getClassification() == ProfileClassification.KID
-        && acceptance.managementInvitationId() != null) {
+    if (acceptance.managementInvitationId() != null) {
       managementService.acceptForProfile(
           ProfileManagerInvitationAcceptance.builder()
               .actingAccountId(acceptance.actingAccountId())

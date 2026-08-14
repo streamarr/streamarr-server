@@ -36,11 +36,6 @@ public class PlaybackTokenIssuer {
   private final PlaybackAuthorityGate authorityGate;
 
   public AccessToken issue(
-      AuthenticatedIdentity identity, StreamSession streamSession, Duration validity) {
-    return issue(identity, identity.playbackAuthority(), streamSession, validity);
-  }
-
-  public AccessToken issue(
       AuthenticatedIdentity identity,
       PlaybackAuthority authority,
       StreamSession streamSession,

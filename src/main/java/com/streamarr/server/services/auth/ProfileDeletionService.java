@@ -34,6 +34,7 @@ public class ProfileDeletionService {
 
   @Transactional
   public void delete(DeleteProfileCommand command) {
+    requireValidPassword(command);
     if (!managerRepository.existsByAccountIdAndProfileId(
         command.actingAccountId(), command.profileId())) {
       throw new ProfileManagementDeniedException();
@@ -50,14 +51,6 @@ public class ProfileDeletionService {
     if (managerRepository.countByProfileId(command.profileId()) != 1) {
       throw new ProfileDeletionBlockedException(
           "Exactly one profile manager must remain before deletion.");
-    }
-
-    var account =
-        accountRepository
-            .findById(command.actingAccountId())
-            .orElseThrow(ProfileAccessDeniedException::new);
-    if (!passwordEncoder.matches(command.password(), account.getPasswordHash())) {
-      throw new InvalidCredentialsException();
     }
 
     var profile =
@@ -77,5 +70,15 @@ public class ProfileDeletionService {
             .mode(ProfileDeletionMode.ORDINARY)
             .build());
     profileRepository.delete(profile);
+  }
+
+  private void requireValidPassword(DeleteProfileCommand command) {
+    var account =
+        accountRepository
+            .findById(command.actingAccountId())
+            .orElseThrow(ProfileAccessDeniedException::new);
+    if (!passwordEncoder.matches(command.password(), account.getPasswordHash())) {
+      throw new InvalidCredentialsException();
+    }
   }
 }

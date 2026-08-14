@@ -13,6 +13,7 @@ public class StreamarrAuthenticationToken extends AbstractAuthenticationToken {
 
   private final transient AuthenticatedIdentity identity;
   private final transient Jwt token;
+  private transient Object requestAuthorizationState;
 
   public StreamarrAuthenticationToken(
       AuthenticatedIdentity identity,
@@ -32,5 +33,13 @@ public class StreamarrAuthenticationToken extends AbstractAuthenticationToken {
   @Override
   public Object getCredentials() {
     return token;
+  }
+
+  public Object getRequestAuthorizationState() {
+    return requestAuthorizationState;
+  }
+
+  public void setRequestAuthorizationState(Object requestAuthorizationState) {
+    this.requestAuthorizationState = requestAuthorizationState;
   }
 }

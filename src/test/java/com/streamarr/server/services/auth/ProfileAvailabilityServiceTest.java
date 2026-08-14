@@ -13,6 +13,9 @@ import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -25,7 +28,7 @@ class ProfileAvailabilityServiceTest {
   private final FakeUserAccountRepository accountRepository = new FakeUserAccountRepository();
   private final FakeProfileHouseholdShareRepository shareRepository =
       new FakeProfileHouseholdShareRepository();
-  private final FakeProfileRepository profileRepository = new FakeProfileRepository();
+  private final TrackingProfileRepository profileRepository = new TrackingProfileRepository();
 
   private final ProfileAvailabilityService service =
       new ProfileAvailabilityService(accountRepository, shareRepository, profileRepository);
@@ -36,6 +39,7 @@ class ProfileAvailabilityServiceTest {
     var homeHouseholdId = UUID.randomUUID();
     var account = saveAccount(homeHouseholdId);
     var active = saveProfile("Active Profile");
+    active.setPinHash("encoded-pin");
     var pending = saveProfile("Pending Profile");
     var remote = saveProfile("Remote Profile");
     share(active, homeHouseholdId, ProfileShareStatus.ACTIVE);
@@ -51,6 +55,7 @@ class ProfileAvailabilityServiceTest {
               assertThat(profile.id()).isEqualTo(active.getId());
               assertThat(profile.name()).isEqualTo("Active Profile");
               assertThat(profile.active()).isTrue();
+              assertThat(profile.pinProtected()).isTrue();
             });
   }
 
@@ -66,6 +71,21 @@ class ProfileAvailabilityServiceTest {
 
     assertThatThrownBy(() -> service.requireSelectableProfile(accountId, pendingProfileId))
         .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should load selectable profiles in one bulk repository query")
+  void shouldLoadSelectableProfilesInOneBulkRepositoryQuery() {
+    var homeHouseholdId = UUID.randomUUID();
+    var account = saveAccount(homeHouseholdId);
+    for (var index = 0; index < 3; index++) {
+      share(saveProfile("Profile " + index), homeHouseholdId, ProfileShareStatus.ACTIVE);
+    }
+
+    service.selectableProfiles(account.getId(), null);
+
+    assertThat(profileRepository.individualLookups).isZero();
+    assertThat(profileRepository.bulkLookups).isOne();
   }
 
   private UserAccount saveAccount(UUID homeHouseholdId) {
@@ -91,5 +111,25 @@ class ProfileAvailabilityServiceTest {
             .householdId(householdId)
             .status(status)
             .build());
+  }
+
+  private static final class TrackingProfileRepository extends FakeProfileRepository {
+
+    private int individualLookups;
+    private int bulkLookups;
+
+    @Override
+    public Optional<Profile> findById(UUID id) {
+      individualLookups++;
+      return super.findById(id);
+    }
+
+    @Override
+    public List<Profile> findAllById(Iterable<UUID> ids) {
+      bulkLookups++;
+      var profiles = new ArrayList<Profile>();
+      ids.forEach(id -> Optional.ofNullable(database.get(id)).ifPresent(profiles::add));
+      return profiles;
+    }
   }
 }

@@ -1,7 +1,14 @@
 package com.streamarr.server.services.auth;
 
+import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
 
 @Builder
-public record ProfileManagerInvitationCancellation(UUID actingAccountId, UUID invitationId) {}
+public record ProfileManagerInvitationCancellation(UUID actingAccountId, UUID invitationId) {
+
+  public ProfileManagerInvitationCancellation {
+    Objects.requireNonNull(actingAccountId, "actingAccountId");
+    Objects.requireNonNull(invitationId, "invitationId");
+  }
+}

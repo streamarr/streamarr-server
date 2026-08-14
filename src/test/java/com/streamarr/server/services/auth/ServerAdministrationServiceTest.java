@@ -28,7 +28,11 @@ import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeProfileSelectionCleaner;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -119,6 +123,40 @@ class ServerAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should remove profile shares in global household guard order")
+  void shouldRemoveProfileSharesInGlobalHouseholdGuardOrder() {
+    var admin = saveAccount(AccountRole.ADMIN);
+    var profile = profileRepository.save(Profile.builder().name("Ordered Deletion").build());
+    managerRepository.save(manager(admin.getId(), profile.getId()));
+    var firstHouseholdId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    var secondHouseholdId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    shareRepository.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(secondHouseholdId)
+            .status(ProfileShareStatus.ACTIVE)
+            .build());
+    shareRepository.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(firstHouseholdId)
+            .status(ProfileShareStatus.ACTIVE)
+            .build());
+
+    service.forceDeleteProfile(
+        ForceProfileDeletionCommand.builder()
+            .actingAccountId(admin.getId())
+            .profileId(profile.getId())
+            .password(PASSWORD)
+            .reason("Lost access recovery")
+            .build());
+
+    assertThat(selectionCleaner.clearedSelections)
+        .extracting(FakeProfileSelectionCleaner.ClearedSelection::householdId)
+        .containsExactly(firstHouseholdId, secondHouseholdId);
+  }
+
+  @Test
   @DisplayName("Should force unshare only the targeted profile share")
   void shouldForceUnshareOnlyTargetedProfileShare() {
     var admin = saveAccount(AccountRole.ADMIN);
@@ -197,6 +235,50 @@ class ServerAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should make concurrent manager grants idempotent")
+  void shouldMakeConcurrentManagerGrantsIdempotent() throws Exception {
+    var admin = saveAccount(AccountRole.ADMIN);
+    var target = saveAccount(AccountRole.USER);
+    var profile = profileRepository.save(Profile.builder().name("Concurrent Grant").build());
+    var racingManagerRepository =
+        new RacingProfileManagerRepository(target.getId(), profile.getId());
+    var racingService =
+        new ServerAdministrationService(
+            accountRepository,
+            profileRepository,
+            racingManagerRepository,
+            invitationRepository,
+            shareRepository,
+            deletionAuthorizationRepository,
+            selectionCleaner,
+            new ServerAdminAuthorizer(accountRepository, passwordEncoder),
+            new KidProfileManagerPolicy(
+                profileRepository, racingManagerRepository, shareRepository, accountRepository),
+            new SecurityAuditService(auditRepository));
+    var command =
+        ProfileManagerOverrideCommand.builder()
+            .actingAccountId(admin.getId())
+            .targetAccountId(target.getId())
+            .profileId(profile.getId())
+            .action(ProfileManagerOverrideAction.GRANT)
+            .password(PASSWORD)
+            .reason("Concurrent recovery")
+            .build();
+
+    List<Throwable> failures;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var first =
+          executor.submit(() -> catchFailure(() -> racingService.overrideProfileManager(command)));
+      var second =
+          executor.submit(() -> catchFailure(() -> racingService.overrideProfileManager(command)));
+      failures = Arrays.asList(first.get(), second.get());
+    }
+
+    assertThat(failures).containsOnlyNulls();
+    assertThat(racingManagerRepository.findByProfileId(profile.getId())).hasSize(1);
+  }
+
+  @Test
   @DisplayName("Should remove one of multiple adult profile managers")
   void shouldRemoveOneOfMultipleAdultProfileManagers() {
     var admin = saveAccount(AccountRole.ADMIN);
@@ -268,8 +350,21 @@ class ServerAdministrationServiceTest {
   @Test
   @DisplayName("Should require nonblank reason for destructive administration")
   void shouldRequireNonblankReasonForDestructiveAdministration() {
-    var missingReason = ForceProfileDeletionCommand.builder().reason(null).build();
-    var blankReason = ForceProfileUnshareCommand.builder().reason("  ").build();
+    var actorId = UUID.randomUUID();
+    var missingReason =
+        ForceProfileDeletionCommand.builder()
+            .actingAccountId(actorId)
+            .profileId(UUID.randomUUID())
+            .password(PASSWORD)
+            .reason("")
+            .build();
+    var blankReason =
+        ForceProfileUnshareCommand.builder()
+            .actingAccountId(actorId)
+            .shareId(UUID.randomUUID())
+            .password(PASSWORD)
+            .reason("  ")
+            .build();
 
     assertThatThrownBy(() -> service.forceDeleteProfile(missingReason))
         .isInstanceOf(IllegalArgumentException.class);
@@ -382,5 +477,44 @@ class ServerAdministrationServiceTest {
             .householdId(UUID.randomUUID())
             .status(status)
             .build());
+  }
+
+  private Throwable catchFailure(Runnable operation) {
+    try {
+      operation.run();
+      return null;
+    } catch (RuntimeException exception) {
+      return exception;
+    }
+  }
+
+  private static final class RacingProfileManagerRepository extends FakeProfileManagerRepository {
+
+    private final UUID targetAccountId;
+    private final UUID targetProfileId;
+    private final CyclicBarrier barrier = new CyclicBarrier(2);
+
+    private RacingProfileManagerRepository(UUID targetAccountId, UUID targetProfileId) {
+      this.targetAccountId = targetAccountId;
+      this.targetProfileId = targetProfileId;
+    }
+
+    @Override
+    public boolean insertIfAbsent(UUID accountId, UUID profileId) {
+      var exists = existsByAccountIdAndProfileId(accountId, profileId);
+      if (!targetAccountId.equals(accountId) || !targetProfileId.equals(profileId)) {
+        return super.insertIfAbsent(accountId, profileId);
+      }
+
+      try {
+        barrier.await();
+      } catch (Exception exception) {
+        throw new IllegalStateException("Manager grant race barrier failed", exception);
+      }
+      if (exists) {
+        return false;
+      }
+      return super.insertIfAbsent(accountId, profileId);
+    }
   }
 }

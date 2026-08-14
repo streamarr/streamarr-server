@@ -12,10 +12,14 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.KidProfileManagerRequiredException;
+import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -29,7 +33,8 @@ class KidProfileManagerPolicyTest {
   private final FakeProfileManagerRepository managerRepository = new FakeProfileManagerRepository();
   private final FakeProfileHouseholdShareRepository shareRepository =
       new FakeProfileHouseholdShareRepository();
-  private final FakeUserAccountRepository accountRepository = new FakeUserAccountRepository();
+  private final TrackingUserAccountRepository accountRepository =
+      new TrackingUserAccountRepository();
   private final KidProfileManagerPolicy policy =
       new KidProfileManagerPolicy(
           profileRepository, managerRepository, shareRepository, accountRepository);
@@ -208,6 +213,36 @@ class KidProfileManagerPolicyTest {
         .isInstanceOf(KidProfileManagerRequiredException.class);
   }
 
+  @Test
+  @DisplayName("Should load profile managers in one bulk account query")
+  void shouldLoadProfileManagersInOneBulkAccountQuery() {
+    var householdId = UUID.randomUUID();
+    var kid = saveActiveKid(householdId);
+    for (var index = 0; index < 3; index++) {
+      manage(saveAccount(UUID.randomUUID(), HouseholdRole.PARENT), kid);
+    }
+
+    assertThatThrownBy(() -> policy.validateKidClassification(kid.getId()))
+        .isInstanceOf(KidProfileManagerRequiredException.class);
+
+    org.assertj.core.api.Assertions.assertThat(accountRepository.individualLookups).isZero();
+    org.assertj.core.api.Assertions.assertThat(accountRepository.bulkLookups).isOne();
+  }
+
+  @Test
+  @DisplayName("Should return domain denial when manager removal profile is missing")
+  void shouldReturnDomainDenialWhenManagerRemovalProfileIsMissing() {
+    assertThatThrownBy(() -> policy.validateManagerRemoval(UUID.randomUUID(), UUID.randomUUID()))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should return domain denial when share activation profile is missing")
+  void shouldReturnDomainDenialWhenShareActivationProfileIsMissing() {
+    assertThatThrownBy(() -> policy.validateShareActivation(UUID.randomUUID(), UUID.randomUUID()))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
   private Profile saveActiveKid(UUID householdId) {
     var kid =
         profileRepository.save(
@@ -240,5 +275,25 @@ class KidProfileManagerPolicyTest {
   private void manage(UserAccount account, Profile profile) {
     managerRepository.save(
         ProfileManager.builder().accountId(account.getId()).profileId(profile.getId()).build());
+  }
+
+  private static final class TrackingUserAccountRepository extends FakeUserAccountRepository {
+
+    private int individualLookups;
+    private int bulkLookups;
+
+    @Override
+    public Optional<UserAccount> findById(UUID id) {
+      individualLookups++;
+      return super.findById(id);
+    }
+
+    @Override
+    public List<UserAccount> findAllById(Iterable<UUID> ids) {
+      bulkLookups++;
+      var accounts = new ArrayList<UserAccount>();
+      ids.forEach(id -> Optional.ofNullable(database.get(id)).ifPresent(accounts::add));
+      return accounts;
+    }
   }
 }

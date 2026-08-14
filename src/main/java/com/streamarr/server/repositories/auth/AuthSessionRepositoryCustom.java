@@ -15,9 +15,9 @@ public interface AuthSessionRepositoryCustom {
   boolean revoke(UUID sessionId, SessionRevocationReason reason, Instant now);
 
   /**
-   * Persists only the remembered household/profile selection when the session is still live.
-   * Returns false when the session is missing or revoked; revocation fields are never written from
-   * the supplied entity.
+   * Persists only the remembered profile selection when the session is still live. Returns false
+   * when the session is missing or revoked; revocation fields are never written from the supplied
+   * entity.
    */
   boolean updateSelectionIfLive(AuthSession session, Instant now);
 

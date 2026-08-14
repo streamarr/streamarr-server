@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.ProfileClassification;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
 
@@ -11,6 +12,12 @@ public record CreatePortableProfileCommand(
     ProfileClassification classification,
     Integer maximumAllowedRatingAge,
     String pinHash) {
+
+  public CreatePortableProfileCommand {
+    Objects.requireNonNull(actingAccountId, "actingAccountId");
+    Objects.requireNonNull(name, "name");
+    Objects.requireNonNull(classification, "classification");
+  }
 
   public static class CreatePortableProfileCommandBuilder {
     @Override

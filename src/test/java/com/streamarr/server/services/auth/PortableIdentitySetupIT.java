@@ -189,25 +189,33 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should guard profile before ordinary deletion is authorized")
-  void shouldGuardProfileBeforeOrdinaryDeletionIsAuthorized() {
+  @DisplayName("Should guard profile when ordinary deletion is authorized")
+  void shouldGuardProfileWhenOrdinaryDeletionIsAuthorized() {
     var identity = createPortableIdentity("Guarded Deletion");
     var versionBeforeAuthorization =
         profileRepository.findById(identity.profileId()).orElseThrow().getManagementVersion();
 
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
-            _ ->
-                deletionAuthorizationRepository.saveAndFlush(
-                    ProfileDeletionAuthorization.builder()
-                        .profileId(identity.profileId())
-                        .actingAccountId(identity.accountId())
-                        .mode(ProfileDeletionMode.ORDINARY)
-                        .build()));
+            status -> {
+              profileShareRepository.deleteAll(
+                  profileShareRepository.findByProfileId(identity.profileId()));
+              profileShareRepository.flush();
+              deletionAuthorizationRepository.saveAndFlush(
+                  ProfileDeletionAuthorization.builder()
+                      .profileId(identity.profileId())
+                      .actingAccountId(identity.accountId())
+                      .mode(ProfileDeletionMode.ORDINARY)
+                      .build());
 
-    assertThat(
-            profileRepository.findById(identity.profileId()).orElseThrow().getManagementVersion())
-        .isGreaterThan(versionBeforeAuthorization);
+              assertThat(
+                      profileRepository
+                          .findById(identity.profileId())
+                          .orElseThrow()
+                          .getManagementVersion())
+                  .isGreaterThan(versionBeforeAuthorization);
+              status.setRollbackOnly();
+            });
   }
 
   @Test
@@ -614,7 +622,7 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
                           .householdRole(HouseholdRole.OWNER)
                           .build());
               var profile =
-                  profileRepository.save(Profile.builder().name("Unprotected Adult").build());
+                  profileRepository.save(Profile.builder().name(displayName + " Profile").build());
               profileManagerRepository.save(
                   ProfileManager.builder()
                       .accountId(account.getId())

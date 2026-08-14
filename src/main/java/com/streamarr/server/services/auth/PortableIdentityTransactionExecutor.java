@@ -1,12 +1,18 @@
 package com.streamarr.server.services.auth;
 
 import java.sql.SQLException;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Supplier;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+@Slf4j
 @Component
 public class PortableIdentityTransactionExecutor {
 
@@ -24,9 +30,19 @@ public class PortableIdentityTransactionExecutor {
       try {
         return transactionTemplate.execute(_ -> operation.get());
       } catch (RuntimeException exception) {
-        if (attempt == MAX_ATTEMPTS || !isRetryable(exception)) {
+        var retryableSqlState = retryableSqlState(exception);
+        if (attempt == MAX_ATTEMPTS || retryableSqlState.isEmpty()) {
           throw exception;
         }
+        var backoffMillis = ThreadLocalRandom.current().nextLong(5, 21) * attempt;
+        log.warn(
+            "Retrying portable identity transaction after SQLSTATE {} with {} ms backoff (attempt"
+                + " {}/{}).",
+            retryableSqlState.orElseThrow(),
+            backoffMillis,
+            attempt,
+            MAX_ATTEMPTS);
+        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(backoffMillis));
       }
     }
   }
@@ -39,13 +55,21 @@ public class PortableIdentityTransactionExecutor {
         });
   }
 
-  private boolean isRetryable(Throwable failure) {
+  private Optional<String> retryableSqlState(Throwable failure) {
     for (var cause = failure; cause != null; cause = cause.getCause()) {
-      if (cause instanceof SQLException sqlException
-          && RETRYABLE_SQL_STATES.contains(sqlException.getSQLState())) {
-        return true;
+      if (!(cause instanceof SQLException sqlException)) {
+        continue;
+      }
+
+      for (var candidate = sqlException;
+          candidate != null;
+          candidate = candidate.getNextException()) {
+        var sqlState = candidate.getSQLState();
+        if (sqlState != null && RETRYABLE_SQL_STATES.contains(sqlState)) {
+          return Optional.of(sqlState);
+        }
       }
     }
-    return false;
+    return Optional.empty();
   }
 }

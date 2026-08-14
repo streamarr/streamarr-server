@@ -3,10 +3,10 @@ package com.streamarr.server.graphql.resolvers;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
-import com.streamarr.server.domain.auth.ProfileHouseholdShare;
-import com.streamarr.server.domain.auth.ProfileManager;
-import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.exceptions.InvalidIdException;
+import com.streamarr.server.graphql.dto.PortableProfileManagerInvitationSummary;
+import com.streamarr.server.graphql.dto.PortableProfileManagerSummary;
+import com.streamarr.server.graphql.dto.PortableProfileShareSummary;
 import com.streamarr.server.graphql.dto.PortableProfileSummary;
 import com.streamarr.server.graphql.inputs.PortableProfileInputs;
 import com.streamarr.server.services.auth.AccountHouseholdTransferCommand;
@@ -17,7 +17,7 @@ import com.streamarr.server.services.auth.ForceProfileUnshareCommand;
 import com.streamarr.server.services.auth.HouseholdAdministrationService;
 import com.streamarr.server.services.auth.HouseholdOwnershipTransferCommand;
 import com.streamarr.server.services.auth.HouseholdProfileRemoval;
-import com.streamarr.server.services.auth.PortableIdentityTransactionExecutor;
+import com.streamarr.server.services.auth.PortableIdentityMutationService;
 import com.streamarr.server.services.auth.ProfileDeletionService;
 import com.streamarr.server.services.auth.ProfileHomeDeparture;
 import com.streamarr.server.services.auth.ProfileManagementRelinquishment;
@@ -27,6 +27,7 @@ import com.streamarr.server.services.auth.ProfileManagerInvitationCancellation;
 import com.streamarr.server.services.auth.ProfileManagerInvitationRejection;
 import com.streamarr.server.services.auth.ProfileManagerInvite;
 import com.streamarr.server.services.auth.ProfileManagerOverrideCommand;
+import com.streamarr.server.services.auth.ProfilePinService;
 import com.streamarr.server.services.auth.ProfilePolicyChange;
 import com.streamarr.server.services.auth.ProfilePolicyService;
 import com.streamarr.server.services.auth.ProfileShareAcceptance;
@@ -39,27 +40,26 @@ import com.streamarr.server.services.auth.ServerAdministrationService;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.crypto.password.PasswordEncoder;
 
 @DgsComponent
 @RequiredArgsConstructor
 public class PortableProfileResolver {
 
   private final AuthorizationService authorizationService;
-  private final PortableIdentityTransactionExecutor transactionExecutor;
+  private final PortableIdentityMutationService mutationService;
   private final ProfileSharingService sharingService;
   private final ProfileManagementService managementService;
   private final ProfilePolicyService policyService;
   private final ProfileDeletionService deletionService;
   private final ServerAdministrationService serverAdministrationService;
   private final HouseholdAdministrationService householdAdministrationService;
-  private final PasswordEncoder passwordEncoder;
+  private final ProfilePinService profilePinService;
 
   @DgsMutation
   public PortableProfileSummary createPortableProfile(
       @InputArgument("input") PortableProfileInputs.ProfileCreation input) {
     var accountId = authorizationService.requireAccountId();
-    return transactionExecutor.execute(
+    return mutationService.execute(
         () -> {
           var profile =
               managementService.create(
@@ -68,7 +68,7 @@ public class PortableProfileResolver {
                       .name(input.name())
                       .classification(input.classification())
                       .maximumAllowedRatingAge(input.maximumAllowedRatingAge())
-                      .pinHash(input.pin() == null ? null : passwordEncoder.encode(input.pin()))
+                      .pinHash(input.pin() == null ? null : profilePinService.encode(input.pin()))
                       .build());
           return new PortableProfileSummary(
               profile.getId(),
@@ -83,7 +83,7 @@ public class PortableProfileResolver {
   public boolean renamePortableProfile(
       @InputArgument("input") PortableProfileInputs.ProfileRename input) {
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             managementService.rename(
                 RenamePortableProfileCommand.builder()
@@ -95,37 +95,39 @@ public class PortableProfileResolver {
   }
 
   @DgsMutation
-  public ProfileHouseholdShare offerProfileShare(
+  public PortableProfileShareSummary offerProfileShare(
       @InputArgument("input") PortableProfileInputs.ShareOffer input) {
     var accountId = authorizationService.requireAccountId();
-    return transactionExecutor.execute(
-        () ->
-            sharingService.offer(
-                ProfileShareOffer.builder()
-                    .actingAccountId(accountId)
-                    .profileId(parseUuid(input.profileId()))
-                    .targetHouseholdId(parseUuid(input.targetHouseholdId()))
-                    .build()));
+    return PortableProfileShareSummary.from(
+        mutationService.execute(
+            () ->
+                sharingService.offer(
+                    ProfileShareOffer.builder()
+                        .actingAccountId(accountId)
+                        .profileId(parseUuid(input.profileId()))
+                        .targetHouseholdId(parseUuid(input.targetHouseholdId()))
+                        .build())));
   }
 
   @DgsMutation
-  public ProfileHouseholdShare acceptProfileShare(
+  public PortableProfileShareSummary acceptProfileShare(
       @InputArgument("input") PortableProfileInputs.ShareAcceptance input) {
     var accountId = authorizationService.requireAccountId();
-    return transactionExecutor.execute(
-        () ->
-            sharingService.accept(
-                ProfileShareAcceptance.builder()
-                    .actingAccountId(accountId)
-                    .shareId(parseUuid(input.shareId()))
-                    .managementInvitationId(parseOptionalUuid(input.managementInvitationId()))
-                    .build()));
+    return PortableProfileShareSummary.from(
+        mutationService.execute(
+            () ->
+                sharingService.accept(
+                    ProfileShareAcceptance.builder()
+                        .actingAccountId(accountId)
+                        .shareId(parseUuid(input.shareId()))
+                        .managementInvitationId(parseOptionalUuid(input.managementInvitationId()))
+                        .build())));
   }
 
   @DgsMutation
   public boolean rejectProfileShare(@InputArgument String shareId) {
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             sharingService.reject(
                 ProfileShareRejection.builder()
@@ -138,7 +140,7 @@ public class PortableProfileResolver {
   @DgsMutation
   public boolean cancelProfileShare(@InputArgument String shareId) {
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             sharingService.cancel(
                 ProfileShareCancellation.builder()
@@ -151,7 +153,7 @@ public class PortableProfileResolver {
   @DgsMutation
   public boolean removeProfileFromCurrentHousehold(@InputArgument String shareId) {
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             sharingService.removeFromHousehold(
                 HouseholdProfileRemoval.builder()
@@ -165,7 +167,7 @@ public class PortableProfileResolver {
   public boolean leaveCurrentHome() {
     var accountId = authorizationService.requireAccountId();
     var profileId = authorizationService.requireProfile();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             sharingService.leaveCurrentHome(
                 ProfileHomeDeparture.builder()
@@ -176,36 +178,38 @@ public class PortableProfileResolver {
   }
 
   @DgsMutation
-  public ProfileManagerInvitation inviteProfileManager(
+  public PortableProfileManagerInvitationSummary inviteProfileManager(
       @InputArgument("input") PortableProfileInputs.ManagerInvite input) {
     var accountId = authorizationService.requireAccountId();
-    return transactionExecutor.execute(
-        () ->
-            managementService.invite(
-                ProfileManagerInvite.builder()
-                    .actingAccountId(accountId)
-                    .profileId(parseUuid(input.profileId()))
-                    .invitedAccountId(parseUuid(input.invitedAccountId()))
-                    .build()));
+    return PortableProfileManagerInvitationSummary.from(
+        mutationService.execute(
+            () ->
+                managementService.invite(
+                    ProfileManagerInvite.builder()
+                        .actingAccountId(accountId)
+                        .profileId(parseUuid(input.profileId()))
+                        .invitedAccountId(parseUuid(input.invitedAccountId()))
+                        .build())));
   }
 
   @DgsMutation
-  public ProfileManager acceptProfileManagerInvitation(
+  public PortableProfileManagerSummary acceptProfileManagerInvitation(
       @InputArgument("input") PortableProfileInputs.InvitationAcceptance input) {
     var accountId = authorizationService.requireAccountId();
-    return transactionExecutor.execute(
-        () ->
-            managementService.accept(
-                ProfileManagerInvitationAcceptance.builder()
-                    .actingAccountId(accountId)
-                    .invitationId(parseUuid(input.invitationId()))
-                    .build()));
+    return PortableProfileManagerSummary.from(
+        mutationService.execute(
+            () ->
+                managementService.accept(
+                    ProfileManagerInvitationAcceptance.builder()
+                        .actingAccountId(accountId)
+                        .invitationId(parseUuid(input.invitationId()))
+                        .build())));
   }
 
   @DgsMutation
   public boolean rejectProfileManagerInvitation(@InputArgument String invitationId) {
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             managementService.reject(
                 ProfileManagerInvitationRejection.builder()
@@ -218,7 +222,7 @@ public class PortableProfileResolver {
   @DgsMutation
   public boolean cancelProfileManagerInvitation(@InputArgument String invitationId) {
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             managementService.cancel(
                 ProfileManagerInvitationCancellation.builder()
@@ -232,7 +236,7 @@ public class PortableProfileResolver {
   public boolean relinquishProfileManagement(
       @InputArgument("input") PortableProfileInputs.ProfileReference input) {
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             managementService.relinquish(
                 ProfileManagementRelinquishment.builder()
@@ -246,7 +250,7 @@ public class PortableProfileResolver {
   public boolean changeProfilePolicy(
       @InputArgument("input") PortableProfileInputs.PolicyChange input) {
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             policyService.changePolicy(
                 ProfilePolicyChange.builder()
@@ -254,7 +258,9 @@ public class PortableProfileResolver {
                     .profileId(parseUuid(input.profileId()))
                     .classification(input.classification())
                     .maximumAllowedRatingAge(input.maximumAllowedRatingAge())
-                    .pinHash(input.pin() == null ? null : passwordEncoder.encode(input.pin()))
+                    .pinHash(input.pin() == null ? null : profilePinService.encode(input.pin()))
+                    .clearMaximumAllowedRatingAge(input.clearMaximumAllowedRatingAge())
+                    .clearPin(input.clearPin())
                     .build()));
     return true;
   }
@@ -263,7 +269,7 @@ public class PortableProfileResolver {
   public boolean deleteProfile(
       @InputArgument("input") PortableProfileInputs.ProfileDeletion input) {
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             deletionService.delete(
                 DeleteProfileCommand.builder()
@@ -279,7 +285,7 @@ public class PortableProfileResolver {
       @InputArgument("input") PortableProfileInputs.ForceProfileDeletion input) {
     authorizationService.requireServerAdmin();
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             serverAdministrationService.forceDeleteProfile(
                 ForceProfileDeletionCommand.builder()
@@ -296,7 +302,7 @@ public class PortableProfileResolver {
       @InputArgument("input") PortableProfileInputs.ForceProfileUnshare input) {
     authorizationService.requireServerAdmin();
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             serverAdministrationService.forceUnshareProfile(
                 ForceProfileUnshareCommand.builder()
@@ -313,7 +319,7 @@ public class PortableProfileResolver {
       @InputArgument("input") PortableProfileInputs.ManagerOverride input) {
     authorizationService.requireServerAdmin();
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             serverAdministrationService.overrideProfileManager(
                 ProfileManagerOverrideCommand.builder()
@@ -332,7 +338,7 @@ public class PortableProfileResolver {
       @InputArgument("input") PortableProfileInputs.AccountTransfer input) {
     authorizationService.requireServerAdmin();
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             householdAdministrationService.transferAccount(
                 AccountHouseholdTransferCommand.builder()
@@ -350,7 +356,7 @@ public class PortableProfileResolver {
   public boolean transferHouseholdOwnership(
       @InputArgument("input") PortableProfileInputs.OwnershipTransfer input) {
     var accountId = authorizationService.requireAccountId();
-    transactionExecutor.execute(
+    mutationService.execute(
         () ->
             householdAdministrationService.transferOwnership(
                 HouseholdOwnershipTransferCommand.builder()

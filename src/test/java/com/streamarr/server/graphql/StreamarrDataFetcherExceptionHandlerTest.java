@@ -3,7 +3,18 @@ package com.streamarr.server.graphql;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
+import com.streamarr.server.exceptions.HouseholdOwnershipTransferRequiredException;
+import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.exceptions.InvalidProfilePinException;
+import com.streamarr.server.exceptions.KidProfileManagerRequiredException;
+import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.ProfileDeletionBlockedException;
+import com.streamarr.server.exceptions.ProfileManagementDeniedException;
+import com.streamarr.server.exceptions.ProfileManagerInvariantException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import com.streamarr.server.exceptions.ProfileSafetyViolationException;
+import com.streamarr.server.exceptions.ServerAdministrationDeniedException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import graphql.Scalars;
 import graphql.execution.DataFetcherExceptionHandlerParameters;
@@ -14,9 +25,13 @@ import graphql.language.Field;
 import graphql.schema.DataFetchingEnvironmentImpl;
 import java.util.UUID;
 import java.util.concurrent.CompletionException;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.security.access.AccessDeniedException;
 
 @Tag("UnitTest")
@@ -64,6 +79,33 @@ class StreamarrDataFetcherExceptionHandlerTest {
   @DisplayName("Should delegate to default handler when exception unrelated to identity")
   void shouldDelegateToDefaultHandlerWhenExceptionUnrelatedToIdentity() {
     assertThat(codeFor(new IllegalStateException("boom"))).isNull();
+  }
+
+  @ParameterizedTest(name = "{1}")
+  @MethodSource("portableIdentityErrors")
+  @DisplayName("Should map portable identity domain failures to stable codes")
+  void shouldMapPortableIdentityDomainFailuresToStableCodes(
+      RuntimeException exception, String expectedCode) {
+    assertThat(codeFor(exception)).isEqualTo(expectedCode);
+  }
+
+  private static Stream<Arguments> portableIdentityErrors() {
+    return Stream.of(
+        Arguments.of(new InvalidCredentialsException(), "INVALID_CREDENTIALS"),
+        Arguments.of(new InvalidProfilePinException(), "INVALID_PROFILE_PIN"),
+        Arguments.of(new HouseholdAccessDeniedException(), "HOUSEHOLD_ACCESS_DENIED"),
+        Arguments.of(
+            new HouseholdOwnershipTransferRequiredException(),
+            "HOUSEHOLD_OWNERSHIP_TRANSFER_REQUIRED"),
+        Arguments.of(new ProfileAccessDeniedException(), "PROFILE_ACCESS_DENIED"),
+        Arguments.of(new ProfileDeletionBlockedException("blocked"), "PROFILE_DELETION_BLOCKED"),
+        Arguments.of(new ProfileManagementDeniedException(), "PROFILE_MANAGEMENT_DENIED"),
+        Arguments.of(new ProfileManagerInvariantException("invalid"), "PROFILE_MANAGER_INVARIANT"),
+        Arguments.of(
+            new ProfileSafetyViolationException(java.util.List.of(UUID.randomUUID())),
+            "PROFILE_SAFETY_VIOLATION"),
+        Arguments.of(new KidProfileManagerRequiredException(), "KID_PROFILE_MANAGER_REQUIRED"),
+        Arguments.of(new ServerAdministrationDeniedException(), "SERVER_ADMINISTRATION_DENIED"));
   }
 
   // The cause-null arm of unwrap stays untested on purpose: a cause-less CompletionException is

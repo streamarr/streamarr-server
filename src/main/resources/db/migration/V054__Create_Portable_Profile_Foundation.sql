@@ -1,5 +1,7 @@
 -- ADR 0022 intentionally resets the pre-production identity model. Streamarr has no production
 -- instances, so preserving the V044/V045 family rows would add an unused migration workflow.
+-- CASCADE erases dependent identity state including auth_session, refresh_token,
+-- session_progress, and watch_history before rebuilding the portable-profile model.
 TRUNCATE TABLE user_account, household, profile CASCADE;
 
 ALTER TABLE user_account
@@ -160,7 +162,8 @@ CREATE TYPE security_audit_operation AS ENUM
      'PROFILE_SHARE_REJECTED', 'PROFILE_SHARE_CANCELED',
      'PROFILE_UNSHARED_BY_HOUSEHOLD', 'PROFILE_LEFT_HOME', 'PROFILE_DELETED',
      'PROFILE_FORCE_DELETED', 'PROFILE_MANAGER_OVERRIDDEN', 'PROFILE_FORCE_UNSHARED',
-     'ACCOUNT_TRANSFERRED', 'HOUSEHOLD_OWNERSHIP_TRANSFERRED');
+     'PROFILE_SELECTION_CLEARED', 'ACCOUNT_TRANSFERRED',
+     'HOUSEHOLD_OWNERSHIP_TRANSFERRED');
 
 CREATE TABLE security_audit_event
 (
@@ -254,30 +257,6 @@ BEGIN
 
         RAISE EXCEPTION 'Force deletion requires a live ServerAdmin account'
             USING ERRCODE = '23514', CONSTRAINT = 'chk_profile_force_deletion_admin';
-    END IF;
-
-    IF EXISTS (SELECT 1 FROM profile_household_share WHERE profile_id = OLD.id) THEN
-        RAISE EXCEPTION 'Ordinary profile deletion requires no household shares'
-            USING ERRCODE = '23514', CONSTRAINT = 'chk_profile_ordinary_deletion_shares';
-    END IF;
-
-    IF EXISTS (
-        SELECT 1
-        FROM profile_manager_invitation
-        WHERE profile_id = OLD.id
-          AND status = 'PENDING') THEN
-        RAISE EXCEPTION 'Ordinary profile deletion requires no pending manager invitations'
-            USING ERRCODE = '23514', CONSTRAINT = 'chk_profile_ordinary_deletion_invitations';
-    END IF;
-
-    IF (SELECT COUNT(*) FROM profile_manager WHERE profile_id = OLD.id) <> 1
-        OR NOT EXISTS (
-            SELECT 1
-            FROM profile_manager
-            WHERE profile_id = OLD.id
-              AND account_id = deletion_grant.acting_account_id) THEN
-        RAISE EXCEPTION 'Ordinary profile deletion requires its sole manager'
-            USING ERRCODE = '23514', CONSTRAINT = 'chk_profile_ordinary_deletion_manager';
     END IF;
 
     RETURN OLD;
@@ -385,6 +364,7 @@ CREATE CONSTRAINT TRIGGER chk_profile_has_manager
     FOR EACH ROW
 EXECUTE FUNCTION enforce_profile_manager_presence();
 
+-- Every caller acquires profile guards before household guards, with UUIDs sorted in each group.
 CREATE FUNCTION guard_portable_identity(
     candidate_profile_ids UUID[], candidate_household_ids UUID[])
     RETURNS VOID
@@ -424,6 +404,34 @@ CREATE FUNCTION guard_profile_deletion_authorization()
 AS
 $$
 BEGIN
+    IF NEW.mode = 'ORDINARY'
+        AND EXISTS (
+            SELECT 1 FROM profile_household_share WHERE profile_id = NEW.profile_id) THEN
+        RAISE EXCEPTION 'Ordinary profile deletion requires no household shares'
+            USING ERRCODE = '23514', CONSTRAINT = 'chk_profile_ordinary_deletion_shares';
+    END IF;
+
+    IF NEW.mode = 'ORDINARY'
+        AND EXISTS (
+            SELECT 1
+            FROM profile_manager_invitation
+            WHERE profile_id = NEW.profile_id
+              AND status = 'PENDING') THEN
+        RAISE EXCEPTION 'Ordinary profile deletion requires no pending manager invitations'
+            USING ERRCODE = '23514', CONSTRAINT = 'chk_profile_ordinary_deletion_invitations';
+    END IF;
+
+    IF NEW.mode = 'ORDINARY'
+        AND ((SELECT COUNT(*) FROM profile_manager WHERE profile_id = NEW.profile_id) <> 1
+            OR NOT EXISTS (
+                SELECT 1
+                FROM profile_manager
+                WHERE profile_id = NEW.profile_id
+                  AND account_id = NEW.acting_account_id)) THEN
+        RAISE EXCEPTION 'Ordinary profile deletion requires its sole manager'
+            USING ERRCODE = '23514', CONSTRAINT = 'chk_profile_ordinary_deletion_manager';
+    END IF;
+
     PERFORM guard_portable_identity(ARRAY[NEW.profile_id], ARRAY[]::UUID[]);
     RETURN NULL;
 END;
@@ -541,6 +549,35 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION assert_household_unique_profile_names(candidate_household_id UUID)
+    RETURNS VOID
+    LANGUAGE plpgsql
+AS
+$$
+DECLARE
+    duplicate_name TEXT;
+BEGIN
+    SELECT LOWER(BTRIM(profile.name))
+    INTO duplicate_name
+    FROM profile_household_share share
+    JOIN profile ON profile.id = share.profile_id
+    WHERE share.household_id = candidate_household_id
+      AND share.status = 'ACTIVE'
+    GROUP BY LOWER(BTRIM(profile.name))
+    HAVING COUNT(*) > 1
+    ORDER BY LOWER(BTRIM(profile.name))
+    LIMIT 1;
+
+    IF duplicate_name IS NULL THEN
+        RETURN;
+    END IF;
+
+    RAISE EXCEPTION 'Active profile name must be unique within household %',
+        candidate_household_id
+        USING ERRCODE = '23514', CONSTRAINT = 'chk_household_unique_profile_name';
+END;
+$$;
+
 CREATE FUNCTION enforce_profile_share_invariants()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -582,6 +619,7 @@ BEGIN
         ORDER BY id
     LOOP
         PERFORM assert_household_profile_safety(candidate_household_id);
+        PERFORM assert_household_unique_profile_names(candidate_household_id);
     END LOOP;
 
     RETURN NULL;
@@ -631,6 +669,42 @@ CREATE CONSTRAINT TRIGGER chk_profile_policy_invariants
     DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW
 EXECUTE FUNCTION enforce_profile_policy_invariants();
+
+CREATE FUNCTION enforce_profile_name_uniqueness()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+AS
+$$
+DECLARE
+    household_ids UUID[];
+    candidate_household_id UUID;
+BEGIN
+    SELECT COALESCE(array_agg(share.household_id ORDER BY share.household_id), ARRAY[]::UUID[])
+    INTO household_ids
+    FROM profile_household_share share
+    WHERE share.profile_id = NEW.id
+      AND share.status = 'ACTIVE';
+
+    PERFORM guard_portable_identity(ARRAY[]::UUID[], household_ids);
+
+    FOR candidate_household_id IN
+        SELECT DISTINCT id
+        FROM unnest(household_ids) AS ids(id)
+        ORDER BY id
+    LOOP
+        PERFORM assert_household_unique_profile_names(candidate_household_id);
+    END LOOP;
+
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER chk_profile_name_uniqueness
+    AFTER UPDATE OF name
+    ON profile
+    DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW
+EXECUTE FUNCTION enforce_profile_name_uniqueness();
 
 CREATE FUNCTION enforce_account_profile_manager_invariants()
     RETURNS TRIGGER

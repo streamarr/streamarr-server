@@ -30,7 +30,8 @@ public class MeResolver {
             view.profiles().stream()
                 .map(
                     profile ->
-                        new SelectableProfile(profile.id(), profile.name(), profile.active()))
+                        new SelectableProfile(
+                            profile.id(), profile.name(), profile.active(), profile.pinProtected()))
                 .toList())
         .build();
   }

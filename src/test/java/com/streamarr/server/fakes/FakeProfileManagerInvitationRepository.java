@@ -19,6 +19,26 @@ public class FakeProfileManagerInvitationRepository
   }
 
   @Override
+  public synchronized ProfileManagerInvitation insertPendingIfAbsent(
+      UUID profileId, UUID invitingAccountId, UUID invitedAccountId) {
+    var existing =
+        database.values().stream()
+            .filter(invitation -> profileId.equals(invitation.getProfileId()))
+            .filter(invitation -> invitedAccountId.equals(invitation.getInvitedAccountId()))
+            .filter(invitation -> invitation.getStatus() == ProfileManagerInvitationStatus.PENDING)
+            .findFirst();
+    return existing.orElseGet(
+        () ->
+            save(
+                ProfileManagerInvitation.builder()
+                    .profileId(profileId)
+                    .invitingAccountId(invitingAccountId)
+                    .invitedAccountId(invitedAccountId)
+                    .status(ProfileManagerInvitationStatus.PENDING)
+                    .build()));
+  }
+
+  @Override
   public List<ProfileManagerInvitation> findByProfileId(UUID profileId) {
     return database.values().stream()
         .filter(invitation -> profileId.equals(invitation.getProfileId()))

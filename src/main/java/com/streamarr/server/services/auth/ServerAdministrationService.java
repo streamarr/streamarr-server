@@ -2,7 +2,7 @@ package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.ProfileDeletionAuthorization;
 import com.streamarr.server.domain.auth.ProfileDeletionMode;
-import com.streamarr.server.domain.auth.ProfileManager;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.SecurityAuditOperation;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.ProfileManagerInvariantException;
@@ -12,6 +12,7 @@ import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.util.Comparator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,7 +41,10 @@ public class ServerAdministrationService {
             .findById(command.profileId())
             .orElseThrow(ProfileAccessDeniedException::new);
 
-    var shares = shareRepository.findByProfileId(command.profileId());
+    var shares =
+        shareRepository.findByProfileId(command.profileId()).stream()
+            .sorted(Comparator.comparing(ProfileHouseholdShare::getHouseholdId))
+            .toList();
     shareRepository.deleteAll(shares);
     shares.forEach(share -> selectionCleaner.clear(share.getProfileId(), share.getHouseholdId()));
     invitationRepository.deleteAll(invitationRepository.findByProfileId(command.profileId()));
@@ -106,16 +110,7 @@ public class ServerAdministrationService {
   }
 
   private void grantManagement(ProfileManagerOverrideCommand command) {
-    if (managerRepository.existsByAccountIdAndProfileId(
-        command.targetAccountId(), command.profileId())) {
-      return;
-    }
-
-    managerRepository.save(
-        ProfileManager.builder()
-            .accountId(command.targetAccountId())
-            .profileId(command.profileId())
-            .build());
+    managerRepository.insertIfAbsent(command.targetAccountId(), command.profileId());
   }
 
   private void removeManagement(ProfileManagerOverrideCommand command) {

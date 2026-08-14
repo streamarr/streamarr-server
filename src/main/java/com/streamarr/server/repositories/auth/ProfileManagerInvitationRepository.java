@@ -9,7 +9,8 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ProfileManagerInvitationRepository
-    extends JpaRepository<ProfileManagerInvitation, UUID> {
+    extends JpaRepository<ProfileManagerInvitation, UUID>,
+        ProfileManagerInvitationRepositoryCustom {
 
   long countByProfileIdAndStatus(UUID profileId, ProfileManagerInvitationStatus status);
 

@@ -45,6 +45,7 @@ class SecretRecordToStringTest {
   @DisplayName("Should not expose plaintext secrets in string representations when rendered")
   void shouldNotExposePlaintextSecretsInStringRepresentationsWhenRendered() {
     var secret = "review-secret-value";
+    var id = UUID.randomUUID();
     var renderedValues =
         List.of(
             LoginCommand.builder().password(secret).build().toString(),
@@ -65,25 +66,61 @@ class SecretRecordToStringTest {
                 .build()
                 .toString(),
             AccountHouseholdTransferCommand.builder()
+                .actingAccountId(id)
+                .targetAccountId(id)
+                .targetHouseholdId(id)
                 .targetRole(HouseholdRole.MEMBER)
                 .password(secret)
+                .reason("review")
                 .build()
                 .toString(),
             CreatePortableProfileCommand.builder()
+                .actingAccountId(id)
+                .name("Profile")
                 .classification(ProfileClassification.ADULT)
                 .pinHash(secret)
                 .build()
                 .toString(),
-            DeleteProfileCommand.builder().password(secret).build().toString(),
-            ForceProfileDeletionCommand.builder().password(secret).build().toString(),
-            ForceProfileUnshareCommand.builder().password(secret).build().toString(),
-            HouseholdOwnershipTransferCommand.builder().password(secret).build().toString(),
-            ProfileManagerOverrideCommand.builder()
-                .action(ProfileManagerOverrideAction.GRANT)
+            DeleteProfileCommand.builder()
+                .actingAccountId(id)
+                .profileId(id)
                 .password(secret)
                 .build()
                 .toString(),
+            ForceProfileDeletionCommand.builder()
+                .actingAccountId(id)
+                .profileId(id)
+                .password(secret)
+                .reason("review")
+                .build()
+                .toString(),
+            ForceProfileUnshareCommand.builder()
+                .actingAccountId(id)
+                .shareId(id)
+                .password(secret)
+                .reason("review")
+                .build()
+                .toString(),
+            HouseholdOwnershipTransferCommand.builder()
+                .actingAccountId(id)
+                .householdId(id)
+                .targetAccountId(id)
+                .password(secret)
+                .reason("review")
+                .build()
+                .toString(),
+            ProfileManagerOverrideCommand.builder()
+                .actingAccountId(id)
+                .targetAccountId(id)
+                .profileId(id)
+                .action(ProfileManagerOverrideAction.GRANT)
+                .password(secret)
+                .reason("review")
+                .build()
+                .toString(),
             ProfilePolicyChange.builder()
+                .actingAccountId(id)
+                .profileId(id)
                 .classification(ProfileClassification.KID)
                 .pinHash(secret)
                 .build()

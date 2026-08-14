@@ -195,6 +195,7 @@ public class AuthTestSupport {
                   .findByProfileIdAndHouseholdId(
                       identity.profile().getId(), identity.household().getId())
                   .ifPresent(profileShareRepository::delete);
+              profileShareRepository.flush();
               deletionAuthorizationRepository.saveAndFlush(
                   ProfileDeletionAuthorization.builder()
                       .profileId(identity.profile().getId())

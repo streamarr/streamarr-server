@@ -26,6 +26,7 @@ import java.util.concurrent.Executors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -135,6 +136,26 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     assertThat(!localManagerRemains && kidIsActive).isFalse();
   }
 
+  @Test
+  @DisplayName("Should retain a manager when two co managers concurrently relinquish")
+  void shouldRetainManagerWhenTwoCoManagersConcurrentlyRelinquish() throws Exception {
+    var fixture = createRelinquishmentFixture();
+    var barrier = new CyclicBarrier(2);
+
+    assertOneCommit(
+        race(
+            mutation(
+                TransactionDefinition.ISOLATION_READ_COMMITTED,
+                () -> preflightRelinquish(fixture.profileId(), fixture.firstManagerId(), barrier)),
+            mutation(
+                TransactionDefinition.ISOLATION_READ_COMMITTED,
+                () ->
+                    preflightRelinquish(fixture.profileId(), fixture.secondManagerId(), barrier))),
+        "23514");
+
+    assertThat(managerRepository.countByProfileId(fixture.profileId())).isEqualTo(1);
+  }
+
   private List<MutationResult> race(Callable<MutationResult> first, Callable<MutationResult> second)
       throws Exception {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -208,6 +229,16 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     managerRepository.delete(manager);
     managerRepository.flush();
     await(barrier);
+  }
+
+  private void preflightRelinquish(UUID profileId, UUID accountId, CyclicBarrier barrier) {
+    var manager = managerRepository.findByAccountIdAndProfileId(accountId, profileId).orElseThrow();
+    if (managerRepository.countByProfileId(profileId) <= 1) {
+      throw new IllegalStateException("Preflight did not observe another manager");
+    }
+    await(barrier);
+    managerRepository.delete(manager);
+    managerRepository.flush();
   }
 
   private ConcurrencyFixture createFixture() {
@@ -320,6 +351,54 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
             });
   }
 
+  private RelinquishmentFixture createRelinquishmentFixture() {
+    return new TransactionTemplate(transactionManager)
+        .execute(
+            _ -> {
+              var firstHousehold =
+                  householdRepository.save(
+                      Household.builder().name("First Manager Home " + UUID.randomUUID()).build());
+              var firstManager =
+                  accountRepository.save(
+                      UserAccount.builder()
+                          .email("first-manager-" + UUID.randomUUID() + "@example.com")
+                          .displayName("First Manager")
+                          .passwordHash("encoded")
+                          .accountRole(AccountRole.USER)
+                          .homeHouseholdId(firstHousehold.getId())
+                          .householdRole(HouseholdRole.OWNER)
+                          .build());
+              var secondHousehold =
+                  householdRepository.save(
+                      Household.builder().name("Second Manager Home " + UUID.randomUUID()).build());
+              var secondManager =
+                  accountRepository.save(
+                      UserAccount.builder()
+                          .email("second-manager-" + UUID.randomUUID() + "@example.com")
+                          .displayName("Second Manager")
+                          .passwordHash("encoded")
+                          .accountRole(AccountRole.USER)
+                          .homeHouseholdId(secondHousehold.getId())
+                          .householdRole(HouseholdRole.OWNER)
+                          .build());
+              var profile =
+                  profileRepository.save(
+                      Profile.builder().name("Relinquishment Race " + UUID.randomUUID()).build());
+              managerRepository.save(
+                  ProfileManager.builder()
+                      .accountId(firstManager.getId())
+                      .profileId(profile.getId())
+                      .build());
+              managerRepository.save(
+                  ProfileManager.builder()
+                      .accountId(secondManager.getId())
+                      .profileId(profile.getId())
+                      .build());
+              return new RelinquishmentFixture(
+                  profile.getId(), firstManager.getId(), secondManager.getId());
+            });
+  }
+
   private void await(CyclicBarrier barrier) {
     try {
       barrier.await();
@@ -353,4 +432,6 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
       UUID householdId, UUID adultProfileId, UUID kidProfileId, UUID localManagerAccountId) {}
 
   private record MutationResult(boolean committed, String sqlState) {}
+
+  private record RelinquishmentFixture(UUID profileId, UUID firstManagerId, UUID secondManagerId) {}
 }

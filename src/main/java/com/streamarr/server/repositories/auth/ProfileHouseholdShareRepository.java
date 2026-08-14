@@ -10,7 +10,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ProfileHouseholdShareRepository
-    extends JpaRepository<ProfileHouseholdShare, UUID> {
+    extends JpaRepository<ProfileHouseholdShare, UUID>, ProfileHouseholdShareRepositoryCustom {
 
   List<ProfileHouseholdShare> findByHouseholdIdAndStatus(
       UUID householdId, ProfileShareStatus status);

@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.ProfileClassification;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
 
@@ -10,7 +11,14 @@ public record ProfilePolicyChange(
     UUID profileId,
     ProfileClassification classification,
     Integer maximumAllowedRatingAge,
-    String pinHash) {
+    String pinHash,
+    boolean clearMaximumAllowedRatingAge,
+    boolean clearPin) {
+
+  public ProfilePolicyChange {
+    Objects.requireNonNull(actingAccountId, "actingAccountId");
+    Objects.requireNonNull(profileId, "profileId");
+  }
 
   public static class ProfilePolicyChangeBuilder {
     @Override
@@ -21,7 +29,13 @@ public record ProfilePolicyChange(
 
   @Override
   public String toString() {
-    return "ProfilePolicyChange[actingAccountId=%s, profileId=%s, classification=%s, maximumAllowedRatingAge=%s, pinHash=<redacted>]"
-        .formatted(actingAccountId, profileId, classification, maximumAllowedRatingAge);
+    return "ProfilePolicyChange[actingAccountId=%s, profileId=%s, classification=%s, maximumAllowedRatingAge=%s, pinHash=<redacted>, clearMaximumAllowedRatingAge=%s, clearPin=%s]"
+        .formatted(
+            actingAccountId,
+            profileId,
+            classification,
+            maximumAllowedRatingAge,
+            clearMaximumAllowedRatingAge,
+            clearPin);
   }
 }

@@ -11,6 +11,20 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
     implements ProfileHouseholdShareRepository {
 
   @Override
+  public synchronized ProfileHouseholdShare insertPendingIfAbsent(
+      UUID profileId, UUID householdId) {
+    return findByProfileIdAndHouseholdId(profileId, householdId)
+        .orElseGet(
+            () ->
+                save(
+                    ProfileHouseholdShare.builder()
+                        .profileId(profileId)
+                        .householdId(householdId)
+                        .status(ProfileShareStatus.PENDING)
+                        .build()));
+  }
+
+  @Override
   public List<ProfileHouseholdShare> findByHouseholdIdAndStatus(
       UUID householdId, ProfileShareStatus status) {
     return database.values().stream()

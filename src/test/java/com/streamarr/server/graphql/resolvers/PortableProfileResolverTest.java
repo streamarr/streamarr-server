@@ -24,6 +24,7 @@ import com.streamarr.server.services.auth.ForceProfileUnshareCommand;
 import com.streamarr.server.services.auth.HouseholdAdministrationService;
 import com.streamarr.server.services.auth.HouseholdOwnershipTransferCommand;
 import com.streamarr.server.services.auth.HouseholdProfileRemoval;
+import com.streamarr.server.services.auth.PortableIdentityMutationService;
 import com.streamarr.server.services.auth.PortableIdentityTransactionExecutor;
 import com.streamarr.server.services.auth.ProfileDeletionService;
 import com.streamarr.server.services.auth.ProfileHomeDeparture;
@@ -35,6 +36,7 @@ import com.streamarr.server.services.auth.ProfileManagerInvitationRejection;
 import com.streamarr.server.services.auth.ProfileManagerInvite;
 import com.streamarr.server.services.auth.ProfileManagerOverrideAction;
 import com.streamarr.server.services.auth.ProfileManagerOverrideCommand;
+import com.streamarr.server.services.auth.ProfilePinService;
 import com.streamarr.server.services.auth.ProfilePolicyChange;
 import com.streamarr.server.services.auth.ProfilePolicyService;
 import com.streamarr.server.services.auth.ProfileShareAcceptance;
@@ -98,17 +100,16 @@ class PortableProfileResolverTest {
   }
 
   @Test
-  @DisplayName("Should report blank PIN as unprotected")
-  void shouldReportBlankPinAsUnprotected() {
+  @DisplayName("Should reject blank PIN when creating portable profile")
+  void shouldRejectBlankPinWhenCreatingPortableProfile() {
     var fixture = new ResolverFixture();
 
-    var result =
-        fixture.resolver.createPortableProfile(
-            new PortableProfileInputs.ProfileCreation(
-                "Guest", ProfileClassification.ADULT, null, ""));
-
-    assertThat(result.pinProtected()).isFalse();
-    assertThat(fixture.managementService.creation.pinHash()).isEmpty();
+    assertThatThrownBy(
+            () ->
+                fixture.resolver.createPortableProfile(
+                    new PortableProfileInputs.ProfileCreation(
+                        "Guest", ProfileClassification.ADULT, null, "")))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
@@ -151,7 +152,9 @@ class PortableProfileResolverTest {
         fixture.resolver.offerProfileShare(
             new PortableProfileInputs.ShareOffer(profileId.toString(), householdId.toString()));
 
-    assertThat(result).isSameAs(fixture.sharingService.shareResult);
+    assertThat(result.profileId()).isEqualTo(fixture.sharingService.shareResult.getProfileId());
+    assertThat(result.householdId()).isEqualTo(fixture.sharingService.shareResult.getHouseholdId());
+    assertThat(result.status()).isEqualTo(fixture.sharingService.shareResult.getStatus());
     assertThat(fixture.sharingService.offer)
         .isEqualTo(
             ProfileShareOffer.builder()
@@ -172,7 +175,9 @@ class PortableProfileResolverTest {
         fixture.resolver.acceptProfileShare(
             new PortableProfileInputs.ShareAcceptance(shareId.toString(), invitationId.toString()));
 
-    assertThat(result).isSameAs(fixture.sharingService.shareResult);
+    assertThat(result.profileId()).isEqualTo(fixture.sharingService.shareResult.getProfileId());
+    assertThat(result.householdId()).isEqualTo(fixture.sharingService.shareResult.getHouseholdId());
+    assertThat(result.status()).isEqualTo(fixture.sharingService.shareResult.getStatus());
     assertThat(fixture.sharingService.acceptance)
         .isEqualTo(
             ProfileShareAcceptance.builder()
@@ -265,7 +270,11 @@ class PortableProfileResolverTest {
             new PortableProfileInputs.ManagerInvite(
                 profileId.toString(), invitedAccountId.toString()));
 
-    assertThat(result).isSameAs(fixture.managementService.invitationResult);
+    assertThat(result.profileId())
+        .isEqualTo(fixture.managementService.invitationResult.getProfileId());
+    assertThat(result.invitedAccountId())
+        .isEqualTo(fixture.managementService.invitationResult.getInvitedAccountId());
+    assertThat(result.status()).isEqualTo(fixture.managementService.invitationResult.getStatus());
     assertThat(fixture.managementService.invite)
         .isEqualTo(
             ProfileManagerInvite.builder()
@@ -285,7 +294,10 @@ class PortableProfileResolverTest {
         fixture.resolver.acceptProfileManagerInvitation(
             new PortableProfileInputs.InvitationAcceptance(invitationId.toString()));
 
-    assertThat(result).isSameAs(fixture.managementService.managerResult);
+    assertThat(result.profileId())
+        .isEqualTo(fixture.managementService.managerResult.getProfileId());
+    assertThat(result.accountId())
+        .isEqualTo(fixture.managementService.managerResult.getAccountId());
     assertThat(fixture.managementService.acceptance)
         .isEqualTo(
             ProfileManagerInvitationAcceptance.builder()
@@ -365,8 +377,21 @@ class PortableProfileResolverTest {
   }
 
   @Test
-  @DisplayName("Should remove portable profile PIN when PIN omitted from policy change")
-  void shouldRemovePortableProfilePinWhenPinOmittedFromPolicyChange() {
+  @DisplayName("Should reject blank PIN when changing portable profile policy")
+  void shouldRejectBlankPinWhenChangingPortableProfilePolicy() {
+    var fixture = new ResolverFixture();
+
+    assertThatThrownBy(
+            () ->
+                fixture.resolver.changeProfilePolicy(
+                    new PortableProfileInputs.PolicyChange(
+                        UUID.randomUUID().toString(), ProfileClassification.KID, 7, "")))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  @DisplayName("Should preserve portable profile PIN when PIN omitted from policy change")
+  void shouldPreservePortableProfilePinWhenPinOmittedFromPolicyChange() {
     var fixture = new ResolverFixture();
 
     fixture.resolver.changeProfilePolicy(
@@ -374,6 +399,19 @@ class PortableProfileResolverTest {
             UUID.randomUUID().toString(), ProfileClassification.ADULT, null, null));
 
     assertThat(fixture.policyService.change.pinHash()).isNull();
+    assertThat(fixture.policyService.change.clearPin()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should explicitly clear portable profile PIN when requested")
+  void shouldExplicitlyClearPortableProfilePinWhenRequested() {
+    var fixture = new ResolverFixture();
+
+    fixture.resolver.changeProfilePolicy(
+        new PortableProfileInputs.PolicyChange(
+            UUID.randomUUID().toString(), ProfileClassification.ADULT, null, null, false, true));
+
+    assertThat(fixture.policyService.change.clearPin()).isTrue();
   }
 
   @Test
@@ -541,14 +579,15 @@ class PortableProfileResolverTest {
                     .authSessionId(UUID.randomUUID())
                     .scope(TokenScope.PROFILE)
                     .build()),
-            new PortableIdentityTransactionExecutor(new NoOpTransactionManager()),
+            new PortableIdentityMutationService(
+                new PortableIdentityTransactionExecutor(new NoOpTransactionManager())),
             sharingService,
             managementService,
             policyService,
             deletionService,
             serverAdministrationService,
             householdAdministrationService,
-            NoOpPasswordEncoder.getInstance());
+            new ProfilePinService(NoOpPasswordEncoder.getInstance()));
   }
 
   private static final class CapturingProfileSharingService extends ProfileSharingService {

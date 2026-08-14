@@ -141,6 +141,31 @@ class ProfileDeletionServiceTest {
   }
 
   @Test
+  @DisplayName("Should verify deletion password before disclosing blocking profile state")
+  void shouldVerifyDeletionPasswordBeforeDisclosingBlockingProfileState() {
+    var account = saveAccount("correct horse battery staple");
+    var profile =
+        profileRepository.save(Profile.builder().name("Protected Shared Profile").build());
+    managerRepository.save(
+        ProfileManager.builder().accountId(account.getId()).profileId(profile.getId()).build());
+    shareRepository.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(account.getHomeHouseholdId())
+            .status(ProfileShareStatus.ACTIVE)
+            .build());
+    var command =
+        DeleteProfileCommand.builder()
+            .actingAccountId(account.getId())
+            .profileId(profile.getId())
+            .password("wrong password")
+            .build();
+
+    assertThatThrownBy(() -> service.delete(command))
+        .isInstanceOf(InvalidCredentialsException.class);
+  }
+
+  @Test
   @DisplayName("Should block ordinary deletion while manager invitation is pending")
   void shouldBlockOrdinaryDeletionWhileManagerInvitationIsPending() {
     var account = saveAccount("correct horse battery staple");

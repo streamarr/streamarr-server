@@ -33,11 +33,13 @@ public class ProfilePolicyService {
         profileRepository
             .findById(change.profileId())
             .orElseThrow(ProfileAccessDeniedException::new);
+    var maximumAllowedRatingAge = resolveMaximumAllowedRatingAge(change, profile);
+    var pinHash = resolvePinHash(change, profile);
     var proposed =
         profile.toBuilder()
             .classification(change.classification())
-            .maximumAllowedRatingAge(change.maximumAllowedRatingAge())
-            .pinHash(change.pinHash())
+            .maximumAllowedRatingAge(maximumAllowedRatingAge)
+            .pinHash(pinHash)
             .build();
     safetyService.validatePolicyChange(proposed);
     if (change.classification() == ProfileClassification.KID) {
@@ -45,8 +47,8 @@ public class ProfilePolicyService {
     }
 
     profile.setClassification(change.classification());
-    profile.setMaximumAllowedRatingAge(change.maximumAllowedRatingAge());
-    profile.setPinHash(change.pinHash());
+    profile.setMaximumAllowedRatingAge(maximumAllowedRatingAge);
+    profile.setPinHash(pinHash);
     profileRepository.save(profile);
     auditService.recordEvent(
         SecurityAuditRecord.builder()
@@ -54,5 +56,23 @@ public class ProfilePolicyService {
             .targetProfileId(change.profileId())
             .operation(SecurityAuditOperation.PROFILE_POLICY_CHANGED)
             .build());
+  }
+
+  private Integer resolveMaximumAllowedRatingAge(
+      ProfilePolicyChange change, com.streamarr.server.domain.auth.Profile profile) {
+    if (change.clearMaximumAllowedRatingAge()) {
+      return null;
+    }
+    return change.maximumAllowedRatingAge() == null
+        ? profile.getMaximumAllowedRatingAge()
+        : change.maximumAllowedRatingAge();
+  }
+
+  private String resolvePinHash(
+      ProfilePolicyChange change, com.streamarr.server.domain.auth.Profile profile) {
+    if (change.clearPin()) {
+      return null;
+    }
+    return change.pinHash() == null ? profile.getPinHash() : change.pinHash();
   }
 }

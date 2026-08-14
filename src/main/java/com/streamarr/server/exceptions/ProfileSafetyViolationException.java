@@ -8,7 +8,7 @@ public class ProfileSafetyViolationException extends RuntimeException {
   private final List<UUID> profilesRequiringPin;
 
   public ProfileSafetyViolationException(List<UUID> profilesRequiringPin) {
-    super("Profiles require a PIN before this change can be applied: " + profilesRequiringPin);
+    super("One or more profiles require a PIN before this change can be applied.");
     this.profilesRequiringPin = List.copyOf(profilesRequiringPin);
   }
 

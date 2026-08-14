@@ -244,12 +244,9 @@ class SecurityConfigTest {
 
     @Bean
     LiveIdentityAuthorizationFilter liveIdentityAuthorizationFilter(
-        RestAuthenticationEntryPoint authenticationEntryPoint,
-        RestAccessDeniedHandler accessDeniedHandler) {
+        RestAuthenticationEntryPoint authenticationEntryPoint) {
       return new LiveIdentityAuthorizationFilter(
-          mock(RequestAuthorizationStateResolver.class),
-          authenticationEntryPoint,
-          accessDeniedHandler);
+          mock(RequestAuthorizationStateResolver.class), authenticationEntryPoint);
     }
   }
 

@@ -89,6 +89,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
         .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
         .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(AUTH_SESSION.ACTIVE_PROFILE_ID.eq(profileId))
+        .and(AUTH_SESSION.REVOKED_AT.isNull())
         .and(
             AUTH_SESSION.ACCOUNT_ID.in(
                 dsl.select(USER_ACCOUNT.ID)

@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class HouseholdProfileSafetyService {
 
+  // Preflight feedback mirrors the deferred assert_household_profile_safety database invariant.
+
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileRepository profileRepository;
 

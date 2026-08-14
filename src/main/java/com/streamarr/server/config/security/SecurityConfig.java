@@ -2,6 +2,7 @@ package com.streamarr.server.config.security;
 
 import com.streamarr.server.services.auth.TokenScope;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
@@ -33,7 +34,7 @@ public class SecurityConfig {
    * drift) and health stay open; non-health actuator endpoints are refused for everyone; streams
    * demand SCOPE_PLAYBACK carried in the playback-URL token (outside the hierarchy); images demand
    * SCOPE_PROFILE; everything else — GraphQL including introspection and future surfaces — demands
-   * SCOPE_ACCOUNT, which household and profile tokens satisfy through the scope hierarchy.
+   * SCOPE_ACCOUNT, which profile tokens satisfy through the scope hierarchy.
    *
    * <p>CSRF (SPA shape: readable host-bound cookie, Xor rendering, header-only submission) protects
    * unsafe requests from the Streamarr cookie-carrying browser population. Explicitly insecure
@@ -84,6 +85,14 @@ public class SecurityConfig {
   @Bean
   static RoleHierarchy roleHierarchy() {
     return ScopeHierarchy.roleHierarchy();
+  }
+
+  @Bean
+  static FilterRegistrationBean<LiveIdentityAuthorizationFilter>
+      liveIdentityAuthorizationFilterRegistration(LiveIdentityAuthorizationFilter filter) {
+    var registration = new FilterRegistrationBean<>(filter);
+    registration.setEnabled(false);
+    return registration;
   }
 
   private CsrfFilter cookieScopedCsrfFilter() {

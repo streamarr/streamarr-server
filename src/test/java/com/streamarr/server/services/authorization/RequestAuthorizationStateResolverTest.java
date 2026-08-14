@@ -88,6 +88,26 @@ class RequestAuthorizationStateResolverTest {
   }
 
   @Test
+  @DisplayName("Should not mutate authentication mutex key while resolving authorization state")
+  void shouldNotMutateAuthenticationMutexKeyWhileResolvingAuthorizationState() {
+    var account = saveAccount(UUID.randomUUID());
+    var session = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
+    var signed =
+        AuthenticatedIdentity.builder()
+            .accountId(account.getId())
+            .role(AccountRole.USER)
+            .authSessionId(session.getId())
+            .scope(TokenScope.ACCOUNT)
+            .build();
+    var authentication = authentication(signed);
+    var mutexKeyHash = authentication.hashCode();
+
+    resolver.resolve(authentication);
+
+    assertThat(authentication.hashCode()).isEqualTo(mutexKeyHash);
+  }
+
+  @Test
   @DisplayName("Should reject authorization state for revoked session")
   void shouldRejectAuthorizationStateForRevokedSession() {
     var account = saveAccount(UUID.randomUUID());

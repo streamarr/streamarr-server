@@ -8,10 +8,12 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -21,7 +23,6 @@ public class LiveIdentityAuthorizationFilter extends OncePerRequestFilter {
 
   private final RequestAuthorizationStateResolver stateResolver;
   private final RestAuthenticationEntryPoint authenticationEntryPoint;
-  private final RestAccessDeniedHandler accessDeniedHandler;
 
   @Override
   protected void doFilterInternal(
@@ -42,11 +43,7 @@ public class LiveIdentityAuthorizationFilter extends OncePerRequestFilter {
     try {
       var state = stateResolver.resolve(token);
       if (identity.scope() == TokenScope.PROFILE && state.activeProfileId() == null) {
-        accessDeniedHandler.handle(
-            request,
-            response,
-            new AccessDeniedException("Active profile access is no longer live."));
-        return;
+        downgradeToAccountScope(token);
       }
     } catch (AuthenticationRequiredException exception) {
       authenticationEntryPoint.commence(
@@ -57,5 +54,16 @@ public class LiveIdentityAuthorizationFilter extends OncePerRequestFilter {
     }
 
     filterChain.doFilter(request, response);
+  }
+
+  private void downgradeToAccountScope(StreamarrAuthenticationToken token) {
+    var accountToken =
+        new StreamarrAuthenticationToken(
+            token.getPrincipal(),
+            (Jwt) token.getCredentials(),
+            List.of(new SimpleGrantedAuthority(TokenScope.ACCOUNT.authority())));
+    accountToken.setDetails(token.getDetails());
+    accountToken.setRequestAuthorizationState(token.getRequestAuthorizationState());
+    SecurityContextHolder.getContext().setAuthentication(accountToken);
   }
 }

@@ -19,6 +19,15 @@ public class FakeProfileManagerRepository extends FakeJpaRepository<ProfileManag
   }
 
   @Override
+  public synchronized boolean insertIfAbsent(UUID accountId, UUID profileId) {
+    if (existsByAccountIdAndProfileId(accountId, profileId)) {
+      return false;
+    }
+    save(ProfileManager.builder().accountId(accountId).profileId(profileId).build());
+    return true;
+  }
+
+  @Override
   public List<ProfileManager> findByProfileId(UUID profileId) {
     return database.values().stream()
         .filter(manager -> profileId.equals(manager.getProfileId()))

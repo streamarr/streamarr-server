@@ -14,6 +14,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import jakarta.servlet.http.Cookie;
+import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
@@ -24,6 +25,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -45,6 +47,10 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   @Autowired private DeviceAuthorizationRepository deviceAuthorizationRepository;
 
   @Autowired private ApplicationContext applicationContext;
+
+  @Autowired private LiveIdentityAuthorizationFilter liveIdentityAuthorizationFilter;
+
+  @Autowired private List<FilterRegistrationBean<?>> filterRegistrationBeans;
 
   private AuthTestSupport.TestIdentity identity;
 
@@ -303,6 +309,15 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   @DisplayName("Should publish scope hierarchy for security auto detection")
   void shouldPublishScopeHierarchyForSecurityAutoDetection() {
     assertThat(applicationContext.getBeanProvider(RoleHierarchy.class).getIfUnique()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("Should disable servlet auto registration for live identity filter")
+  void shouldDisableServletAutoRegistrationForLiveIdentityFilter() {
+    assertThat(filterRegistrationBeans)
+        .filteredOn(registration -> registration.getFilter() == liveIdentityAuthorizationFilter)
+        .singleElement()
+        .satisfies(registration -> assertThat(registration.isEnabled()).isFalse());
   }
 
   @Test

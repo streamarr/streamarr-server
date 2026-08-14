@@ -16,6 +16,7 @@ import com.streamarr.server.exceptions.UnwrittenAuthSessionException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
+import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import java.time.Clock;
 import java.time.Instant;
@@ -23,6 +24,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.password.NoOpPasswordEncoder;
 
 @Tag("UnitTest")
 @DisplayName("Session Scope Service Tests")
@@ -33,14 +35,21 @@ class SessionScopeServiceTest {
       new FakeProfileHouseholdShareRepository();
   private final FakeProfileRepository profileRepository = new FakeProfileRepository();
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
+  private final FakeSecurityAuditEventRepository auditRepository =
+      new FakeSecurityAuditEventRepository();
   private final ProfileAvailabilityService availabilityService =
       new ProfileAvailabilityService(accountRepository, shareRepository, profileRepository);
   private final SessionScopeService service =
       new SessionScopeService(
-          availabilityService, sessionRepository, accountRepository, Clock.systemUTC());
+          availabilityService,
+          sessionRepository,
+          accountRepository,
+          new SecurityAuditService(auditRepository),
+          new ProfilePinService(NoOpPasswordEncoder.getInstance()),
+          Clock.systemUTC());
 
   @Test
-  @DisplayName("Should select profile shared into account home without household selection")
+  @DisplayName("Should select profile shared into account home")
   void shouldSelectProfileSharedIntoAccountHomeWithoutHouseholdSelection() {
     var homeHouseholdId = UUID.randomUUID();
     var account = saveAccount(homeHouseholdId);

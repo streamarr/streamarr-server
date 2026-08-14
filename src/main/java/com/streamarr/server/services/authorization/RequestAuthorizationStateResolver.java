@@ -19,7 +19,7 @@ public class RequestAuthorizationStateResolver {
   private final UserAccountRepository accountRepository;
   private final AuthSessionRepository sessionRepository;
   private final ProfileHouseholdShareRepository shareRepository;
-  private final MutexFactory<StreamarrAuthenticationToken> authenticationMutex;
+  private final MutexFactory<UUID> authenticationMutex;
 
   public RequestAuthorizationStateResolver(
       UserAccountRepository accountRepository,
@@ -33,15 +33,16 @@ public class RequestAuthorizationStateResolver {
   }
 
   public AuthorizationState resolve(StreamarrAuthenticationToken authentication) {
-    var mutex = authenticationMutex.getMutex(authentication);
+    var mutex = authenticationMutex.getMutex(authentication.getPrincipal().authSessionId());
     mutex.lock();
     try {
-      if (authentication.getDetails() instanceof CachedAuthorizationState(var cachedState)) {
+      if (authentication.getRequestAuthorizationState()
+          instanceof CachedAuthorizationState(var cachedState)) {
         return cachedState;
       }
 
       var state = load(authentication.getPrincipal());
-      authentication.setDetails(new CachedAuthorizationState(state));
+      authentication.setRequestAuthorizationState(new CachedAuthorizationState(state));
       return state;
     } finally {
       mutex.unlock();

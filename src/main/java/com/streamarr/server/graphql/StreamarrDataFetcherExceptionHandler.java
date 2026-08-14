@@ -1,15 +1,30 @@
 package com.streamarr.server.graphql;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
+import com.streamarr.server.exceptions.HouseholdOwnershipTransferRequiredException;
+import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.exceptions.InvalidProfilePinException;
+import com.streamarr.server.exceptions.KidProfileManagerRequiredException;
+import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.ProfileDeletionBlockedException;
+import com.streamarr.server.exceptions.ProfileManagementDeniedException;
+import com.streamarr.server.exceptions.ProfileManagerInvariantException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import com.streamarr.server.exceptions.ProfileSafetyViolationException;
+import com.streamarr.server.exceptions.ServerAdministrationDeniedException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import graphql.GraphqlErrorBuilder;
 import graphql.execution.DataFetcherExceptionHandler;
 import graphql.execution.DataFetcherExceptionHandlerParameters;
 import graphql.execution.DataFetcherExceptionHandlerResult;
+import java.sql.SQLException;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
@@ -29,16 +44,16 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
   public CompletableFuture<DataFetcherExceptionHandlerResult> handleException(
       DataFetcherExceptionHandlerParameters handlerParameters) {
     var exception = unwrap(handlerParameters.getException());
-    var code = codeFor(exception);
+    var extensions = extensionsFor(exception);
 
-    if (code == null) {
+    if (extensions == null) {
       return delegate.handleException(handlerParameters);
     }
 
     var error =
         GraphqlErrorBuilder.newError(handlerParameters.getDataFetchingEnvironment())
-            .message(exception.getMessage())
-            .extensions(Map.of("code", code))
+            .message(messageFor(exception))
+            .extensions(extensions)
             .build();
 
     return CompletableFuture.completedFuture(
@@ -52,13 +67,67 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     return exception;
   }
 
+  private static Map<String, Object> extensionsFor(Throwable exception) {
+    if (exception instanceof ProfileSafetyViolationException safetyViolation) {
+      return Map.of(
+          "code",
+          "PROFILE_SAFETY_VIOLATION",
+          "profilesRequiringPin",
+          safetyViolation.profilesRequiringPin().stream().map(Object::toString).toList());
+    }
+    var code = codeFor(exception);
+    return code == null ? null : Map.of("code", code);
+  }
+
   private static String codeFor(Throwable exception) {
     return switch (exception) {
       case ProfileRequiredException _ -> "PROFILE_REQUIRED";
       case AuthenticationRequiredException _ -> "AUTHENTICATION_REQUIRED";
       case AccessDeniedException _ -> "FORBIDDEN";
       case SessionNotFoundException _ -> "SESSION_NOT_FOUND";
+      case InvalidCredentialsException _ -> "INVALID_CREDENTIALS";
+      case InvalidProfilePinException _ -> "INVALID_PROFILE_PIN";
+      case HouseholdAccessDeniedException _ -> "HOUSEHOLD_ACCESS_DENIED";
+      case HouseholdOwnershipTransferRequiredException _ -> "HOUSEHOLD_OWNERSHIP_TRANSFER_REQUIRED";
+      case ProfileAccessDeniedException _ -> "PROFILE_ACCESS_DENIED";
+      case ProfileDeletionBlockedException _ -> "PROFILE_DELETION_BLOCKED";
+      case ProfileManagementDeniedException _ -> "PROFILE_MANAGEMENT_DENIED";
+      case ProfileManagerInvariantException _ -> "PROFILE_MANAGER_INVARIANT";
+      case ProfileSafetyViolationException _ -> "PROFILE_SAFETY_VIOLATION";
+      case KidProfileManagerRequiredException _ -> "KID_PROFILE_MANAGER_REQUIRED";
+      case ServerAdministrationDeniedException _ -> "SERVER_ADMINISTRATION_DENIED";
+      case DataIntegrityViolationException violation when hasSqlState(violation, "23514") ->
+          "PORTABLE_IDENTITY_INVARIANT_VIOLATION";
       default -> null;
     };
+  }
+
+  private static String messageFor(Throwable exception) {
+    if (exception instanceof DataIntegrityViolationException) {
+      return "The requested change violates a profile or household safety invariant.";
+    }
+    return exception.getMessage();
+  }
+
+  private static boolean hasSqlState(Throwable exception, String expectedState) {
+    var visited = Collections.newSetFromMap(new IdentityHashMap<Throwable, Boolean>());
+    for (var current = exception;
+        current != null && visited.add(current);
+        current = current.getCause()) {
+      if (current instanceof SQLException sqlException
+          && sqlExceptionChainContains(sqlException, expectedState)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean sqlExceptionChainContains(SQLException exception, String expectedState) {
+    for (var current = exception; current != null; current = current.getNextException()) {
+      if (expectedState.equals(current.getSQLState())) {
+        return true;
+      }
+    }
+    return false;
   }
 }

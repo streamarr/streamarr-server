@@ -11,4 +11,10 @@ public record SecurityAuditRecord(
     UUID targetHouseholdId,
     UUID targetProfileId,
     SecurityAuditOperation operation,
-    String reason) {}
+    String reason) {
+
+  public SecurityAuditRecord {
+    java.util.Objects.requireNonNull(actingAccountId, "actingAccountId");
+    java.util.Objects.requireNonNull(operation, "operation");
+  }
+}

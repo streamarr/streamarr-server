@@ -24,6 +24,9 @@ import org.hibernate.type.SqlTypes;
 public class ProfileDeletionAuthorization
     extends BaseAuditableEntity<ProfileDeletionAuthorization> {
 
+  // Same transaction only: created after ordinary-deletion preconditions hold and cascaded by
+  // deletion; the profile trigger refuses deletion without it.
+
   private UUID profileId;
 
   private UUID actingAccountId;

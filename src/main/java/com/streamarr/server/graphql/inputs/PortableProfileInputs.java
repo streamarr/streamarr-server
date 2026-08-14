@@ -36,11 +36,26 @@ public final class PortableProfileInputs {
       String profileId,
       ProfileClassification classification,
       Integer maximumAllowedRatingAge,
-      String pin) {
+      String pin,
+      boolean clearMaximumAllowedRatingAge,
+      boolean clearPin) {
+    public PolicyChange(
+        String profileId,
+        ProfileClassification classification,
+        Integer maximumAllowedRatingAge,
+        String pin) {
+      this(profileId, classification, maximumAllowedRatingAge, pin, false, false);
+    }
+
     @Override
     public String toString() {
-      return "PolicyChange[profileId=%s, classification=%s, maximumAllowedRatingAge=%s, pin=<redacted>]"
-          .formatted(profileId, classification, maximumAllowedRatingAge);
+      return "PolicyChange[profileId=%s, classification=%s, maximumAllowedRatingAge=%s, pin=<redacted>, clearMaximumAllowedRatingAge=%s, clearPin=%s]"
+          .formatted(
+              profileId,
+              classification,
+              maximumAllowedRatingAge,
+              clearMaximumAllowedRatingAge,
+              clearPin);
     }
   }
 

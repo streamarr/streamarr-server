@@ -69,17 +69,20 @@ class MeResolverTest {
                 TokenScope.ACCOUNT,
                 List.of(
                     new ProfileAvailabilityService.SelectableProfile(
-                        profileId, "Andrew", INACTIVE_PROFILE))));
+                        profileId, "Andrew", INACTIVE_PROFILE, true))));
 
-    var query = "{ me { email role scope profiles { name active } } }";
+    var query = "{ me { email role scope profiles { name active pinProtected } } }";
     String scope = dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.scope");
     String role = dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.role");
     Boolean profileActive =
         dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.profiles[0].active");
+    Boolean pinProtected =
+        dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.profiles[0].pinProtected");
 
     assertThat(scope).isEqualTo("account");
     assertThat(role).isEqualTo("USER");
     assertThat(profileActive).isFalse();
+    assertThat(pinProtected).isTrue();
   }
 
   @Test
