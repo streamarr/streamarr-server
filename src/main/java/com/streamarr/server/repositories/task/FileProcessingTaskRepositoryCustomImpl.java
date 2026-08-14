@@ -7,7 +7,6 @@ import com.streamarr.server.domain.task.FileProcessingTask;
 import com.streamarr.server.jooq.generated.enums.FileProcessingTaskStatus;
 import com.streamarr.server.jooq.generated.tables.records.FileProcessingTaskRecord;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.Query;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -16,6 +15,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
+import org.jooq.Query;
 import org.springframework.transaction.annotation.Transactional;
 
 @RequiredArgsConstructor
@@ -145,6 +145,7 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
         .map(FileProcessingTaskRepositoryCustomImpl::toEntity);
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static FileProcessingTask toEntity(FileProcessingTaskRecord taskRecord) {
     return FileProcessingTask.builder()
         .id(taskRecord.getId())
@@ -166,9 +167,8 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
   }
 
   @SuppressWarnings("unchecked")
-  private static <E> List<E> executeJooqQuery(
-      EntityManager em, org.jooq.Query query, Class<E> type) {
-    Query result = em.createNativeQuery(query.getSQL(), type);
+  private static <E> List<E> executeJooqQuery(EntityManager em, Query query, Class<E> type) {
+    var result = em.createNativeQuery(query.getSQL(), type);
     List<Object> values = query.getBindValues();
     for (int i = 0; i < values.size(); i++) {
       result.setParameter(i + 1, values.get(i));

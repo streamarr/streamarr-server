@@ -123,6 +123,7 @@ class TranscodeWorkerApplicationIT {
     return process;
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private List<String> workerCommand() {
     var command = new ArrayList<String>();
     command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());

@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -287,7 +288,7 @@ class OrphanedMediaFileCleanupServiceTest {
     var throwingMediaFileRepository =
         new FakeMediaFileRepository() {
           @Override
-          public java.util.List<MediaFile> findByLibraryId(UUID libraryId) {
+          public List<MediaFile> findByLibraryId(UUID libraryId) {
             throw new RuntimeException("Simulated unexpected failure");
           }
         };

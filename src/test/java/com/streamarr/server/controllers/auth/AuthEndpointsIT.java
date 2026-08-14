@@ -28,6 +28,7 @@ import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.auth.ServerBootstrapRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
@@ -55,11 +56,13 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 @Tag("IntegrationTest")
@@ -93,9 +96,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   @Autowired private JwtEncoder jwtEncoder;
   @Autowired private JwtDecoder jwtDecoder;
 
-  @Autowired
-  private com.streamarr.server.repositories.auth.ServerBootstrapRepository
-      serverBootstrapRepository;
+  @Autowired private ServerBootstrapRepository serverBootstrapRepository;
 
   private UserAccount account;
   private Household household;
@@ -699,8 +700,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", "Bearer " + householdToken)
                 .content(
-                    "{\"profileId\": \"%s\", \"cookieMode\": false}"
-                        .formatted(java.util.UUID.randomUUID())))
+                    "{\"profileId\": \"%s\", \"cookieMode\": false}".formatted(UUID.randomUUID())))
         .andExpect(status().isForbidden());
   }
 
@@ -1212,7 +1212,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertUncacheable(response);
   }
 
-  private org.springframework.test.web.servlet.ResultActions changePassword(
+  private ResultActions changePassword(
       String bearerToken, String currentPassword, String newPassword) throws Exception {
     return mockMvc.perform(
         post("/api/auth/change-password")
@@ -1237,7 +1237,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .getContentAsString();
   }
 
-  private org.springframework.mock.web.MockHttpServletResponse cookieModeLogin() throws Exception {
+  private MockHttpServletResponse cookieModeLogin() throws Exception {
     return mockMvc
         .perform(
             post("/api/auth/login")
@@ -1267,7 +1267,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     return objectMapper.readTree(response).get(field).asString();
   }
 
-  private org.springframework.security.oauth2.jwt.Jwt decodeToken(String token) {
+  private Jwt decodeToken(String token) {
     return jwtDecoder.decode(token);
   }
 

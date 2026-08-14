@@ -24,6 +24,7 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -477,7 +478,7 @@ class ImageEnrichmentListenerTest {
           .map(Image::getEntityId)
           .distinct()
           .map(expectedImages::get)
-          .filter(java.util.Objects::nonNull)
+          .filter(Objects::nonNull)
           .forEach(CountDownLatch::countDown);
       return insertedImageIds;
     }

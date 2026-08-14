@@ -7,12 +7,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.AppenderBase;
 import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -225,7 +227,7 @@ class LocalFfmpegProcessManagerTest {
     Process replacement = null;
     try {
       cleanup.start();
-      assertThat(gate.reached.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+      assertThat(gate.reached.await(5, TimeUnit.SECONDS)).isTrue();
 
       replacement =
           manager.startProcess(
@@ -253,13 +255,10 @@ class LocalFfmpegProcessManagerTest {
   }
 
   /** Blocks the named thread inside an observed-exit warn, exactly once. */
-  private static final class LatchingWarnAppender
-      extends ch.qos.logback.core.AppenderBase<ILoggingEvent> {
+  private static final class LatchingWarnAppender extends AppenderBase<ILoggingEvent> {
 
-    private final java.util.concurrent.CountDownLatch reached =
-        new java.util.concurrent.CountDownLatch(1);
-    private final java.util.concurrent.CountDownLatch release =
-        new java.util.concurrent.CountDownLatch(1);
+    private final CountDownLatch reached = new CountDownLatch(1);
+    private final CountDownLatch release = new CountDownLatch(1);
     private final String threadName;
 
     private LatchingWarnAppender(String threadName) {
@@ -274,7 +273,7 @@ class LocalFfmpegProcessManagerTest {
       }
       reached.countDown();
       try {
-        release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+        release.await(10, TimeUnit.SECONDS);
       } catch (InterruptedException _) {
         Thread.currentThread().interrupt();
       }

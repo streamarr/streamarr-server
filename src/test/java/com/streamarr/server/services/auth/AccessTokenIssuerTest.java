@@ -28,6 +28,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 @Tag("UnitTest")
 @DisplayName("Access Token Issuer Tests")
@@ -305,7 +306,7 @@ class AccessTokenIssuerTest {
         .hasMessage("session");
   }
 
-  private org.springframework.security.oauth2.jwt.NimbusJwtDecoder buildDecoder() {
+  private NimbusJwtDecoder buildDecoder() {
     return decoder(properties);
   }
 }

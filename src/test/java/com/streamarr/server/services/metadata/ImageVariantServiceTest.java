@@ -3,6 +3,7 @@ package com.streamarr.server.services.metadata;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.data.Offset.offset;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
@@ -74,8 +75,7 @@ class ImageVariantServiceTest {
 
     for (var variant : variants) {
       var variantAspectRatio = (double) variant.width() / variant.height();
-      assertThat(variantAspectRatio)
-          .isCloseTo(sourceAspectRatio, org.assertj.core.data.Offset.offset(0.005));
+      assertThat(variantAspectRatio).isCloseTo(sourceAspectRatio, offset(0.005));
     }
   }
 

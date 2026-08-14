@@ -12,6 +12,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeFileProcessingTaskRepository;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryRepository;
@@ -36,6 +37,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
@@ -111,8 +113,7 @@ class FileEventProcessorTest {
 
     var movieService = mock(MovieService.class);
     @SuppressWarnings("unchecked")
-    MetadataProvider<com.streamarr.server.domain.media.Movie> tmdbProvider =
-        mock(TMDBMovieProvider.class);
+    MetadataProvider<Movie> tmdbProvider = mock(TMDBMovieProvider.class);
 
     var movieFileProcessor =
         new MovieFileProcessor(
@@ -143,7 +144,7 @@ class FileEventProcessorTest {
             fileSystem);
 
     var taskRepository = new FakeFileProcessingTaskRepository();
-    var clock = Clock.fixed(java.time.Instant.now(), ZoneId.of("UTC"));
+    var clock = Clock.fixed(Instant.now(), ZoneId.of("UTC"));
     var taskCoordinator =
         new FileProcessingTaskCoordinator(taskRepository, clock, Duration.ofSeconds(60));
 

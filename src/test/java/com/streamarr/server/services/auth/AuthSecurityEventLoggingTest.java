@@ -17,6 +17,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
@@ -118,7 +119,7 @@ class AuthSecurityEventLoggingTest {
       return new LogCapture(logger, appender);
     }
 
-    private java.util.List<ILoggingEvent> events() {
+    private List<ILoggingEvent> events() {
       return appender.list;
     }
 

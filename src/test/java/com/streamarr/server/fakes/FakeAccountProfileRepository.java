@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.AccountProfile;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,8 +22,7 @@ public class FakeAccountProfileRepository extends FakeJpaRepository<AccountProfi
   }
 
   @Override
-  public java.util.List<AccountProfile> findByAccountIdAndHouseholdId(
-      UUID accountId, UUID householdId) {
+  public List<AccountProfile> findByAccountIdAndHouseholdId(UUID accountId, UUID householdId) {
     return database.values().stream()
         .filter(
             link ->

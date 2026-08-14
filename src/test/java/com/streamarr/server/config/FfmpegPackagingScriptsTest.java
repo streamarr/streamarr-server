@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import tools.jackson.databind.ObjectMapper;
 
 @Tag("UnitTest")
 @DisplayName("FFmpeg Packaging Script Tests")
@@ -308,7 +310,7 @@ class FfmpegPackagingScriptsTest {
   void shouldRejectDuplicateFfmpegLockReleaseWhenChecking() throws Exception {
     var updater = lockUpdater();
     assertThat(updater.command().execute().exitCode()).isZero();
-    Files.writeString(updater.lock(), "release=\n", java.nio.file.StandardOpenOption.APPEND);
+    Files.writeString(updater.lock(), "release=\n", StandardOpenOption.APPEND);
 
     var result = updater.command().argument("--check").execute();
 
@@ -567,7 +569,7 @@ class FfmpegPackagingScriptsTest {
         .contains("launch = true", "cache = true");
 
     var sbom =
-        new tools.jackson.databind.ObjectMapper()
+        new ObjectMapper()
             .readTree(Files.readString(buildpack.layers().resolve("ffmpeg.sbom.cdx.json")));
     assertThat(sbom.path("components").get(0).path("name").asString()).isEqualTo("FFmpeg");
     assertThat(sbom.path("components").get(0).path("version").asString())
@@ -588,7 +590,7 @@ class FfmpegPackagingScriptsTest {
 
     assertThat(result.exitCode()).isZero();
     var sbom =
-        new tools.jackson.databind.ObjectMapper()
+        new ObjectMapper()
             .readTree(Files.readString(buildpack.layers().resolve("ffmpeg.sbom.cdx.json")));
     assertThat(sbom.path("components").get(0).path("version").asString()).isEqualTo(futureVersion);
   }

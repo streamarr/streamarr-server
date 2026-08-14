@@ -5,6 +5,7 @@ import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,7 +18,7 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
   }
 
   @Override
-  public java.util.List<AuthSession> findByAccountId(UUID accountId) {
+  public List<AuthSession> findByAccountId(UUID accountId) {
     return database.values().stream()
         .filter(session -> accountId.equals(session.getAccountId()))
         .toList();

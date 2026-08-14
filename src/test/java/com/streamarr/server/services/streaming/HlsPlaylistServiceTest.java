@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
@@ -400,7 +401,7 @@ class HlsPlaylistServiceTest {
 
     var lastExtinf = extinfLines.getLast();
     var duration = Double.parseDouble(lastExtinf.replace("#EXTINF:", "").replace(",", ""));
-    assertThat(duration).isCloseTo(0.5, org.assertj.core.api.Assertions.within(0.01));
+    assertThat(duration).isCloseTo(0.5, within(0.01));
   }
 
   @Test

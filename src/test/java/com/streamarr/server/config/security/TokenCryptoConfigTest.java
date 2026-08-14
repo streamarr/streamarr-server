@@ -16,6 +16,8 @@ import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.services.auth.TokenClaims;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
 import com.streamarr.server.services.auth.TokenScope;
+import java.security.KeyPairGenerator;
+import java.security.spec.ECGenParameterSpec;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -345,8 +347,8 @@ class TokenCryptoConfigTest {
   @Test
   @DisplayName("Should fail fast when retired key curve not P-256")
   void shouldFailFastWhenRetiredKeyCurveNotP256() throws Exception {
-    var generator = java.security.KeyPairGenerator.getInstance("EC");
-    generator.initialize(new java.security.spec.ECGenParameterSpec("secp384r1"));
+    var generator = KeyPairGenerator.getInstance("EC");
+    generator.initialize(new ECGenParameterSpec("secp384r1"));
     var p384Public =
         Base64.getEncoder().encodeToString(generator.generateKeyPair().getPublic().getEncoded());
     var properties = properties(KEY_A, List.of(p384Public));

@@ -14,6 +14,8 @@ import com.streamarr.transcode.v1.VariantJob;
 import java.util.Optional;
 import java.util.OptionalInt;
 
+// Domain and protobuf contracts intentionally share simple names.
+@SuppressWarnings("checkstyle:fullyQualifiedName")
 final class WorkerVariantJobMapper {
 
   private final WorkerMediaSourceResolver sourceResolver;

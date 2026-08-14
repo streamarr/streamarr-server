@@ -22,6 +22,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
 
 @Tag("UnitTest")
@@ -127,7 +128,7 @@ class PlaybackTokenIssuerTest {
     return defaultSessionBuilder().authority(playbackAuthorityFor(ownerProfileId)).build();
   }
 
-  private org.springframework.security.oauth2.jwt.Jwt decode(String token) {
+  private Jwt decode(String token) {
     return TokenTestSupport.decode(token, properties);
   }
 }

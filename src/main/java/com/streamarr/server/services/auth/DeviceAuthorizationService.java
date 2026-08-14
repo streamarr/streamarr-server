@@ -23,6 +23,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -208,9 +209,9 @@ public class DeviceAuthorizationService {
     return new DevicePollResult.Success(accessToken, issued.rawToken());
   }
 
-  private java.util.Optional<UserAccount> findEnabledApprover(DeviceAuthorization authorization) {
+  private Optional<UserAccount> findEnabledApprover(DeviceAuthorization authorization) {
     if (authorization.getDecidedByAccountId() == null) {
-      return java.util.Optional.empty();
+      return Optional.empty();
     }
     return userAccountRepository
         .findById(authorization.getDecidedByAccountId())
