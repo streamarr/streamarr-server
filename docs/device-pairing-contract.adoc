@@ -1,7 +1,7 @@
 = Device Pairing Contract v1
 
 Normative wire contract for `/api/auth/device/**` and the `devicePairingEnabled` status field.
-Rationale lives in link:adr/0021-device-pairing-over-streamarr-transport.adoc[ADR 0021]; this document defines what clients encode.
+Rationale lives in https://github.com/streamarr/streamarr-adr/blob/main/adr/0021-device-pairing-over-streamarr-transport.adoc[ADR 0021]; this document defines what clients encode.
 RFC 8628 is authoritative for the adopted code, cadence, terminal-state, and security semantics. This document is authoritative for the deliberate Streamarr JSON transport and extensions; it is not an RFC 8628 wire-compatible OAuth grant.
 
 Server protocol tests enforce this contract with explicit response-field, status, and header assertions.

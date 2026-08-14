@@ -29,7 +29,7 @@ Protocol Adapters (GraphQL Resolvers, REST Controllers)
 * *Repositories* use JPA for CRUD and jOOQ for complex queries
 * *Domain* depends on nothing -- pure data model
 
-These rules are enforced by ArchUnit tests (see link:adr/0014-protocol-agnostic-pagination.adoc[ADR 0014] for pagination-specific architecture).
+These rules are enforced by ArchUnit tests (see https://github.com/streamarr/streamarr-adr/blob/main/adr/0014-protocol-agnostic-pagination.adoc[ADR 0014] for pagination-specific architecture).
 
 == Database
 
@@ -85,7 +85,7 @@ removeLibrary()
 
 Side effects triggered by transactional operations use `@TransactionalEventListener(AFTER_COMMIT)` to ensure they only execute after a successful commit. Non-transactional publishers use `@EventListener` for synchronous, same-thread delivery.
 
-See link:adr/0010-spring-application-events.adoc[ADR 0010] for full rationale.
+See https://github.com/streamarr/streamarr-adr/blob/main/adr/0010-spring-application-events.adoc[ADR 0010] for full rationale.
 
 == Streaming Pipeline
 
@@ -107,13 +107,13 @@ StreamingOptions (client)  +  MediaProbe (ffprobe)
             HlsPlaylistService → master + media playlists
 ----
 
-See link:adr/0007-transcode-first-with-smart-remux.adoc[ADR 0007],
-link:adr/0009-h264-plus-av1-codec-strategy.adoc[ADR 0009],
-link:adr/0013-stream-decision-architecture.adoc[ADR 0013].
+See https://github.com/streamarr/streamarr-adr/blob/main/adr/0007-transcode-first-with-smart-remux.adoc[ADR 0007],
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0009-h264-plus-av1-codec-strategy.adoc[ADR 0009],
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0013-stream-decision-architecture.adoc[ADR 0013].
 
 === Distributed Transcoding Direction
 
-link:adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] keeps local playback as the default and preserves independent variant failure through one shared FFmpeg engine.
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] keeps local playback as the default and preserves independent variant failure through one shared FFmpeg engine.
 An optional worker opens an outbound, long-lived mTLS gRPC `WorkerSession`; the live connection owns registration, capacity accounting, commands, and job-attempt fencing.
 Segment uploads use separate bounded HTTP/2 streams over the same channel, and media is addressed by opaque `MediaSourceRef(source_namespace_id, relative_key)` values rather than host paths.
 The initial topology is one Streamarr server and zero or more workers; workers have no database access or inbound listener, and multi-server coordination is deferred.
@@ -121,9 +121,9 @@ The initial topology is one Streamarr server and zero or more workers; workers h
 == Identity, Authentication, and Invalidation
 
 Identity, sessions, and token security follow
-link:adr/0015-authorization-profiles-and-content-controls.adoc[ADR 0015] and
-link:adr/0016-authentication-mechanisms-and-session-security.adoc[ADR 0016], as revised by
-link:adr/0022-single-home-accounts-and-portable-profile-sharing.adoc[ADR 0022].
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0015-authorization-profiles-and-content-controls.adoc[ADR 0015] and
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0016-authentication-mechanisms-and-session-security.adoc[ADR 0016], as revised by
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0022-single-home-accounts-and-portable-profile-sharing.adoc[ADR 0022].
 Every account has exactly one home household, while profiles are portable viewing identities made
 available through explicit household shares. The `me` query returns one flat list of selectable
 profiles; clients select a profile and never select a household.
@@ -139,9 +139,9 @@ rotate and are stored only as digests. Every authenticated API request resolves 
 account authority; household- and profile-sensitive requests also resolve the current home household,
 household role, and active profile share from authoritative database state. Playback additionally checks
 live authority on stream creation and every playlist and segment request, as
-link:adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] specifies.
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] specifies.
 
-image::adr/diagrams/0022-portable-profile-sharing.png[Portable profile sharing across two account-derived households]
+image::https://raw.githubusercontent.com/streamarr/streamarr-adr/main/adr/diagrams/0022-portable-profile-sharing.png[Portable profile sharing across two account-derived households]
 
 The browser client is same-origin by construction -- development
 tooling proxies the API paths and production serves the client from the application origin --
@@ -176,7 +176,7 @@ refresh, and playback all fail closed against live authorization state.
 
 == Key Design Decisions
 
-See link:adr/[Architecture Decision Records] for detailed rationale. Summary:
+See https://github.com/streamarr/streamarr-adr/tree/main/adr[Architecture Decision Records] for detailed rationale. Summary:
 
 |===
 | Decision | Rationale
@@ -200,11 +200,11 @@ See link:adr/[Architecture Decision Records] for detailed rationale. Summary:
 | Provider interface allows future sources without changing the pipeline
 
 | Spring Application Events
-| Decouples side effects from core operations, eliminates circular dependencies (link:adr/0010-spring-application-events.adoc[ADR 0010])
+| Decouples side effects from core operations, eliminates circular dependencies (https://github.com/streamarr/streamarr-adr/blob/main/adr/0010-spring-application-events.adoc[ADR 0010])
 
 | Single-home accounts and portable profiles
-| Keeps household administration out of the viewing flow while one profile and its history can be shared across homes (link:adr/0022-single-home-accounts-and-portable-profile-sharing.adoc[ADR 0022])
+| Keeps household administration out of the viewing flow while one profile and its history can be shared across homes (https://github.com/streamarr/streamarr-adr/blob/main/adr/0022-single-home-accounts-and-portable-profile-sharing.adoc[ADR 0022])
 
 | Stream decision architecture
-| Per-stream decision records compose into TranscodeDecision; mode resolution considers all stream types (link:adr/0013-stream-decision-architecture.adoc[ADR 0013])
+| Per-stream decision records compose into TranscodeDecision; mode resolution considers all stream types (https://github.com/streamarr/streamarr-adr/blob/main/adr/0013-stream-decision-architecture.adoc[ADR 0013])
 |===

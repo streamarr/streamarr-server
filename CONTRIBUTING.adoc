@@ -10,7 +10,7 @@ See link:docs/dev-setup.adoc[Developer Setup] for prerequisites, build instructi
 
 See link:docs/architecture.adoc[Architecture Overview] for how the system is structured and key design decisions.
 
-Architecture Decision Records live in link:docs/adr/[docs/adr/].
+Architecture Decision Records live in https://github.com/streamarr/streamarr-adr/tree/main/adr[streamarr-adr].
 
 == Development Process
 

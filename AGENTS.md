@@ -86,7 +86,7 @@ check-then-act race unless the read-check-write is inside a mutex or expressed a
 atomic SQL statement. Prefer pushing the condition into a `WHERE` clause on the upsert/delete.
 
 ### Spring Application Events
-Use Spring's `ApplicationEventPublisher` to decouple side effects from core operations. See [ADR 0010](docs/adr/0010-spring-application-events.adoc) for full rationale.
+Use Spring's `ApplicationEventPublisher` to decouple side effects from core operations. See [ADR 0010](https://github.com/streamarr/streamarr-adr/blob/main/adr/0010-spring-application-events.adoc) for full rationale.
 
 **When to use events:**
 - Breaking circular dependencies between services
@@ -124,7 +124,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
   `toString()` methods as a separate leakage surface; never log builders carrying secrets.
 - Mutable password buffers are justified only as an end-to-end design in which the boundary,
   validation, and hashing APIs avoid immutable copies and every owned buffer is cleared. Revisit
-  [ADR 0016](docs/adr/0016-authentication-mechanisms-and-session-security.adoc) before introducing
+  [ADR 0016](https://github.com/streamarr/streamarr-adr/blob/main/adr/0016-authentication-mechanisms-and-session-security.adoc) before introducing
   that pipeline.
 
 ### Code Style
@@ -157,7 +157,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - These rules are enforced by ArchUnit tests (`ArchitectureTest`)
 
 ## Settled Decisions (do not revisit without an ADR)
-- Architectural decisions are recorded in `docs/adr/` — read the relevant ADR before revisiting a decision, and record newly settled ones as ADRs starting from `docs/adr/template.adoc`
+- Architectural decisions are recorded in [streamarr-adr](https://github.com/streamarr/streamarr-adr) — read the relevant ADR before revisiting a decision, and record newly settled ones from its [`adr/template.adoc`](https://github.com/streamarr/streamarr-adr/blob/main/adr/template.adoc)
 - **Concurrency runtime**: virtual threads (Loom). Akka and Vert.x were each adopted and removed in 2022 — don't reintroduce reactive/actor frameworks.
 - **Outbound HTTP**: Methanol over JDK `HttpClient` with interceptors (retry, rate limit, cache). Don't introduce `RestTemplate`/`RestClient`/`WebClient`.
 - **Delivery protocol**: GraphQL only. A complete REST/JSON:API layer was built and deleted within 24 hours — keep transport experiments on spike branches; extract protocol-agnostic services (`MediaPage`/`PageItem` pattern) but don't merge speculative protocol surfaces.

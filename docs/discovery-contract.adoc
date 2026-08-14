@@ -2,7 +2,7 @@
 
 Normative Bonjour/mDNS profile for Streamarr servers.
 The record shape is defined here; whether a packaged deployment can advertise at all is a separate, spike-gated question.
-link:adr/0021-device-pairing-over-streamarr-transport.adoc[ADR 0021] defers authenticated server identity and a discovery TXT `id`, not implementation of the responder.
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0021-device-pairing-over-streamarr-transport.adoc[ADR 0021] defers authenticated server identity and a discovery TXT `id`, not implementation of the responder.
 
 Manual endpoint entry is always supported. Discovery is a convenience, never a requirement.
 

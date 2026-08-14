@@ -36,8 +36,8 @@ See [Developer Setup](docs/dev-setup.adoc) for prerequisites, build instructions
 
 ## Architecture
 
-See [Architecture Overview](docs/architecture.adoc) for how the system is structured, and [Architecture Decision Records](docs/adr/) for key design rationale.
-See [ADR 0022](docs/adr/0022-single-home-accounts-and-portable-profile-sharing.adoc) for the single-home account and portable profile model.
+See [Architecture Overview](docs/architecture.adoc) for how the system is structured, and the [Streamarr Architecture Decision Records](https://github.com/streamarr/streamarr-adr/tree/main/adr) for key design rationale.
+See [ADR 0022](https://github.com/streamarr/streamarr-adr/blob/main/adr/0022-single-home-accounts-and-portable-profile-sharing.adoc) for the single-home account and portable profile model.
 See [Distributed Transcoding](docs/distributed-transcoding.adoc) for the opt-in Docker Compose and Kubernetes worker paths.
 
 ## Contributing
