@@ -139,7 +139,9 @@ An adult-profile viewing share grants no management merely by being accepted.
 Reclassifying a widely shared adult profile as a kid remains blocked until every receiving household has a consenting local owner or parent as a manager or is unshared.
 
 Application services preflight profile-side leave, ordinary deletion, manager invitation or relinquishment, account deletion or transfer, household ownership and role changes, profile reclassification, and kid-share changes so callers receive corrective errors before writing.
-PostgreSQL rechecks the no-managerless-profile, ordinary-deletion, unique-household-owner, and local-kid-manager invariants at commit through deferred constraint triggers over the affected manager, invitation, account, profile, household, and share rows.
+PostgreSQL rechecks the no-managerless-profile, unique-household-owner, and local-kid-manager invariants at commit through deferred constraint triggers over the affected manager, invitation, account, profile, household, and share rows.
+Ordinary-deletion eligibility is captured earlier in the same transaction: after shares and pending invitations are visibly gone, an authorization-row trigger locks the profile and verifies that the acting account is its sole manager; the profile deletion trigger then requires that authorization.
+This ordering lets the final manager row be removed before the profile row without creating a committed managerless profile, while preventing a shared or co-managed profile from being deleted through an ordinary authorization.
 Each profile carries a non-semantic `management_version` guard, and each household carries the `safety_version` guard described below.
 Every enforcement path follows one global guard order: increment all affected profile guards in profile-id order, then all affected household guards in household-id order, then run separate validation queries.
 This ordering prevents guard-family inversion; callers still retry the complete transaction after either PostgreSQL serialization failure `40001` or deadlock detection `40P01`.
@@ -151,8 +153,9 @@ The account's required home household supplies the sole household context withou
 Pairing never binds the television to an independently selected household.
 
 The server returns the active profiles shared into the linked account's home household.
-tvOS renders only the profile picker and submits only the selected profile identifier.
-The server verifies that the profile has an active share into the account's home household before activating it.
+Each picker entry reports whether the profile is PIN-protected.
+tvOS submits the selected profile identifier and, only for a protected profile, its PIN.
+The server verifies both the active share into the account's home household and the PIN before activating the profile.
 
 Sessions retain the account and optional active profile; they do not retain an independently mutable `active_household_id`.
 Access tokens have account scope before profile selection and profile scope afterward.
@@ -185,6 +188,7 @@ Limited-input clients otherwise consume accepted shares and do not create or adm
 
 The web surface makes the named managers and global effect of a portable-profile edit explicit.
 It explains why a share, classification, ceiling, or PIN change is blocked and identifies every profile that needs a PIN without exposing PIN values or hashes.
+A partial policy edit preserves every omitted value; clearing a PIN or content ceiling is an explicit operation.
 A requested share that would violate household safety remains pending or is rejected; it never becomes an active `ProfileHouseholdShare` until the invariant is satisfied.
 Both household removal and `Leave this home` say that only the current home loses access and that the portable profile and its data continue elsewhere.
 Delete remains unavailable until all shares and pending invitations end and all other managers voluntarily relinquish.
@@ -231,15 +235,16 @@ The invariant applies in both directions and to every mutation that can change i
 Application services validate the invariant before writing so callers receive a specific corrective error.
 This preflight is user experience, not the authority.
 
-PostgreSQL is the final authority through `DEFERRABLE INITIALLY DEFERRED` constraint triggers on the tables that can activate shares or change profile classification, content ceiling, or PIN state and on the manager, invitation, share, account, and household tables that participate in lifecycle invariants.
-At commit, the trigger function gathers every affected profile and household and follows the shared guard order: profile `management_version` rows first in id order, then household `safety_version` rows in id order.
+PostgreSQL is the final authority through `DEFERRABLE INITIALLY DEFERRED` constraint triggers on the tables that can activate shares, rename active profiles, or change profile classification, content ceiling, or PIN state and on the manager, invitation, share, account, and household tables that participate in lifecycle invariants.
+At commit, each deferred row trigger gathers the profiles and households affected by that row and follows the shared guard order: profile `management_version` rows first in id order, then household `safety_version` rows in id order.
 The complete active share set is re-evaluated in a separate SQL statement after the guard update, never in the pre-wait snapshot of the locking statement.
 At `READ COMMITTED`, a waiting writer's validation therefore sees the preceding commit; at `REPEATABLE READ` or `SERIALIZABLE`, the actual concurrent guard-row update forces a serialization failure rather than permitting validation against a stale snapshot.
-Callers retry both serialization failures and detected deadlocks by rerunning the complete transaction.
+Deferred row triggers from multi-row statements can interleave between transactions even though every individual check uses the same profile-then-household order.
+Application services therefore sort multi-row mutations by guard id, and callers retry both serialization failures and detected deadlocks with jittered backoff by rerunning the complete transaction.
 If any affected household is invalid, the database aborts the whole transaction regardless of which application path or writer issued the change.
 
 Foreign keys, `NOT NULL`, uniqueness constraints, and closed database enums enforce the single-row structural invariants.
-Constraint triggers are reserved for the cross-row, cross-table child-safety and manager-lifecycle rules; an ordinary `CHECK` constraint is insufficient and an application-only check is racy.
+Constraint triggers enforce the cross-row, cross-table child-safety and manager-lifecycle rules plus case-insensitive uniqueness of active profile names within a household; an ordinary `CHECK` constraint is insufficient and an application-only check is racy.
 
 === Explicitly deferred
 
@@ -271,7 +276,7 @@ Constraint triggers are reserved for the cross-row, cross-table child-safety and
   Service-level behavior tests prove useful errors, while PostgreSQL integration and concurrency tests at `READ COMMITTED`, `REPEATABLE READ`, and `SERIALIZABLE` prove rollback, trigger coverage, visibility after waiting, and required retries.
 * Manager-lifecycle tests apply the same application-and-database proof to manager invitations and relinquishment, account transfer or deletion, household ownership and role changes, profile deletion, and kid-share activation.
   Authorization tests prove that profile-side leave affects only the active profile's share into the authenticated account's home household, including for kid and co-managed profiles.
-* Guard acquisition follows one profile-then-household order, and transaction retry handles both SQLSTATE `40001` and `40P01`.
+* Each invariant check acquires sorted profile guards before sorted household guards, multi-row application mutations use guard-id order, and transaction retry handles both SQLSTATE `40001` and `40P01` with jittered backoff.
 * The schema removes `profile.household_id`, replaces `account_profile` with manager and share relationships, and replaces many-to-many household membership with a required account home household and role.
 * `auth_session.active_household_id`, household scope, household selection, household-to-profile auto-selection, and APIs that nest selectable profiles under memberships are removed or migrated.
 * Household- and profile-sensitive API authorization now reads current account, household-role, manager, and share state; it no longer accepts ADR 0016's bounded access-token staleness for those boundaries.

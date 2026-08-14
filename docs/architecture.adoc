@@ -127,12 +127,14 @@ link:adr/0022-single-home-accounts-and-portable-profile-sharing.adoc[ADR 0022].
 Every account has exactly one home household, while profiles are portable viewing identities made
 available through explicit household shares. The `me` query returns one flat list of selectable
 profiles; clients select a profile and never select a household.
+Picker entries expose only whether a PIN is required; profile selection verifies the supplied PIN
+server-side before issuing profile scope, and raw PINs never enter tokens, logs, or persisted state.
 
 Sessions retain the account and an optional active profile. ES256-signed API access tokens have
 account or profile scope, mandatory strict expiry, and no household id or role claims. Refresh tokens
-rotate and are stored only as digests. Household- and profile-sensitive requests resolve the account's
-current home household, household role, and active profile share from authoritative database state.
-Ordinary API claims otherwise remain valid only until their short expiry. Playback additionally checks
+rotate and are stored only as digests. Every authenticated API request resolves the live session and
+account authority; household- and profile-sensitive requests also resolve the current home household,
+household role, and active profile share from authoritative database state. Playback additionally checks
 live authority on stream creation and every playlist and segment request, as
 link:adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] specifies.
 
@@ -166,8 +168,8 @@ playback tokens; the server remains the playback request gate and segment proxy.
 The public verification keys are served at `/.well-known/jwks.json` (ADR 0016).
 
 V049 removed the version claims, cache, PostgreSQL notification feed, counter columns, and
-pooler-mode exception. Ordinary API tokens retain issued authority until strict expiry; refresh
-checks the live authorization session and context, and every playback request checks live authority.
+pooler-mode exception. Strict expiry bounds credential lifetime, while protected API requests,
+refresh, and playback all fail closed against live authorization state.
 
 == Key Design Decisions
 

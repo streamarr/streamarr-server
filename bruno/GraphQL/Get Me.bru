@@ -22,6 +22,7 @@ body:graphql {
         id
         name
         active
+        pinProtected
       }
     }
   }
@@ -30,6 +31,7 @@ body:graphql {
 script:post-response {
   if (res.status === 200 && res.body.data?.me?.profiles?.length) {
     bru.setVar("PROFILE_ID", res.body.data.me.profiles[0].id);
+    bru.setVar("PROFILE_PIN_REQUIRED", res.body.data.me.profiles[0].pinProtected);
   }
 }
 
@@ -39,5 +41,6 @@ tests {
     expect(res.body).to.not.have.property("errors");
     expect(res.body.data.me.accountId).to.be.a("string");
     expect(res.body.data.me.profiles).to.be.an("array");
+    expect(res.body.data.me.profiles[0].pinProtected).to.be.a("boolean");
   });
 }

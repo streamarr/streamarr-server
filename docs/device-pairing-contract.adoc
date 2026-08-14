@@ -105,7 +105,7 @@ Success `200` is the standard tokens response — for a newly paired session alw
 {
   "accessToken": "<signed ES256 JWT>",
   "accessTokenExpiresAt": "<ISO-8601 instant>",
-  "scope": "<account | household | profile>",
+  "scope": "<account | profile>",
   "refreshToken": "<opaque refresh token>"
 }
 ----

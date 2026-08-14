@@ -26,7 +26,7 @@
 
 Streamarr is an open-source media server that organizes your personal video library and streams it to your devices. It scans your filesystem, matches files against metadata providers (TMDB), and serves content via a GraphQL API designed for rich client experiences.
 
-**Status: Active development.** File scanning, metadata enrichment (for both Movies and Series), the GraphQL API, authentication, and portable profile sharing are functional. HLS transcoding works for h.264 and I am actively adding support for other codecs.
+**Status: Active development.** File scanning, metadata enrichment (for both Movies and Series), the GraphQL API, authentication, and PIN-protected portable profile sharing are functional. HLS transcoding works for h.264 and I am actively adding support for other codecs.
 
 ## Getting Started
 
