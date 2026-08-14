@@ -34,6 +34,7 @@ class PortableProfileInputsTest {
             new PortableProfileInputs.OwnershipTransfer(id, id, secret, "Family change"));
 
     assertThat(inputs)
+        .isNotEmpty()
         .allSatisfy(
             input ->
                 assertThat(input.toString())
