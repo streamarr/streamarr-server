@@ -28,6 +28,8 @@ Streamarr is an open-source media server that organizes your personal video libr
 
 **Status: Active development.** File scanning, metadata enrichment (for both Movies and Series), the GraphQL API, authentication, and PIN-protected portable profile sharing are functional. HLS transcoding works for h.264 and I am actively adding support for other codecs.
 
+Portable profile policy uses explicit Profile Kind, Content Ceiling, and PIN-reset operations. A Content Ceiling is optional for both Kid and Adult Profiles and is not calculated from a birthdate.
+
 ## Getting Started
 
 See [Developer Setup](docs/dev-setup.adoc) for prerequisites, build instructions, and local development workflow.

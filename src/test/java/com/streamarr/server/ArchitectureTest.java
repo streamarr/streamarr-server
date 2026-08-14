@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.netflix.graphql.dgs.DgsMutation;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.graphql.resolvers.PortableProfileResolver;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.services.RootServiceCycleFixture;
@@ -23,9 +24,16 @@ import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.library.dependencies.SliceAssignment;
 import com.tngtech.archunit.library.dependencies.SliceIdentifier;
+import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
+import java.lang.reflect.WildcardType;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -236,16 +244,40 @@ class ArchitectureTest {
     var domainReturningMutations =
         Arrays.stream(PortableProfileResolver.class.getDeclaredMethods())
             .filter(method -> method.isAnnotationPresent(DgsMutation.class))
-            .filter(
-                method ->
-                    method
-                        .getReturnType()
-                        .getPackageName()
-                        .startsWith("com.streamarr.server.domain"))
+            .filter(method -> returnsDomainType(method.getGenericReturnType()))
             .map(Method::getName)
             .toList();
 
     assertThat(domainReturningMutations).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should detect domain entities nested in generic mutation return types")
+  void shouldDetectDomainEntitiesNestedInGenericMutationReturnTypes() throws NoSuchMethodException {
+    var method = GenericDomainReturnFixture.class.getDeclaredMethod("profiles");
+
+    assertThat(returnsDomainType(method.getGenericReturnType())).isTrue();
+  }
+
+  private static boolean returnsDomainType(Type type) {
+    return switch (type) {
+      case Class<?> returnClass ->
+          returnClass.getPackageName().startsWith("com.streamarr.server.domain")
+              || (returnClass.isArray() && returnsDomainType(returnClass.getComponentType()));
+      case ParameterizedType parameterizedType ->
+          returnsDomainType(parameterizedType.getRawType())
+              || Arrays.stream(parameterizedType.getActualTypeArguments())
+                  .anyMatch(ArchitectureTest::returnsDomainType);
+      case GenericArrayType arrayType -> returnsDomainType(arrayType.getGenericComponentType());
+      case WildcardType wildcardType ->
+          Stream.concat(
+                  Arrays.stream(wildcardType.getUpperBounds()),
+                  Arrays.stream(wildcardType.getLowerBounds()))
+              .anyMatch(ArchitectureTest::returnsDomainType);
+      case TypeVariable<?> typeVariable ->
+          Arrays.stream(typeVariable.getBounds()).anyMatch(ArchitectureTest::returnsDomainType);
+      default -> false;
+    };
   }
 
   private static ArchRule repositoryMethodsMustNotUseQueryAnnotations() {
@@ -287,6 +319,13 @@ class ArchitectureTest {
     @Override
     public String getDescription() {
       return "service domains including root services";
+    }
+  }
+
+  private static final class GenericDomainReturnFixture {
+
+    private List<Profile> profiles() {
+      return List.of();
     }
   }
 }

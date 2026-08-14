@@ -1,7 +1,7 @@
 package com.streamarr.server.graphql.inputs;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
-import com.streamarr.server.domain.auth.ProfileClassification;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.services.auth.ProfileManagerOverrideAction;
 
 public final class PortableProfileInputs {
@@ -9,14 +9,11 @@ public final class PortableProfileInputs {
   private PortableProfileInputs() {}
 
   public record ProfileCreation(
-      String name,
-      ProfileClassification classification,
-      Integer maximumAllowedRatingAge,
-      String pin) {
+      String name, ProfileKind kind, Integer maximumAllowedRatingAge, String pin) {
     @Override
     public String toString() {
-      return "ProfileCreation[name=%s, classification=%s, maximumAllowedRatingAge=%s, pin=<redacted>]"
-          .formatted(name, classification, maximumAllowedRatingAge);
+      return "ProfileCreation[name=%s, kind=%s, maximumAllowedRatingAge=%s, pin=<redacted>]"
+          .formatted(name, kind, maximumAllowedRatingAge);
     }
   }
 
@@ -32,30 +29,14 @@ public final class PortableProfileInputs {
 
   public record ProfileReference(String profileId) {}
 
-  public record PolicyChange(
-      String profileId,
-      ProfileClassification classification,
-      Integer maximumAllowedRatingAge,
-      String pin,
-      boolean clearMaximumAllowedRatingAge,
-      boolean clearPin) {
-    public PolicyChange(
-        String profileId,
-        ProfileClassification classification,
-        Integer maximumAllowedRatingAge,
-        String pin) {
-      this(profileId, classification, maximumAllowedRatingAge, pin, false, false);
-    }
+  public record ProfileKindChange(String profileId, ProfileKind kind) {}
 
+  public record ProfileContentCeilingChange(String profileId, int maximumAllowedRatingAge) {}
+
+  public record ProfilePinReset(String profileId, String newPin) {
     @Override
     public String toString() {
-      return "PolicyChange[profileId=%s, classification=%s, maximumAllowedRatingAge=%s, pin=<redacted>, clearMaximumAllowedRatingAge=%s, clearPin=%s]"
-          .formatted(
-              profileId,
-              classification,
-              maximumAllowedRatingAge,
-              clearMaximumAllowedRatingAge,
-              clearPin);
+      return "ProfilePinReset[profileId=%s, newPin=<redacted>]".formatted(profileId);
     }
   }
 

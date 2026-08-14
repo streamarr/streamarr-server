@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql;
 
+import com.netflix.graphql.dgs.exceptions.DefaultDataFetcherExceptionHandler;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdOwnershipTransferRequiredException;
@@ -14,6 +15,7 @@ import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.ProfileSafetyViolationException;
 import com.streamarr.server.exceptions.ServerAdministrationDeniedException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import graphql.GraphqlErrorBuilder;
 import graphql.execution.DataFetcherExceptionHandler;
 import graphql.execution.DataFetcherExceptionHandlerParameters;
@@ -24,6 +26,7 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
@@ -37,8 +40,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptionHandler {
 
-  private final DataFetcherExceptionHandler delegate =
-      new com.netflix.graphql.dgs.exceptions.DefaultDataFetcherExceptionHandler();
+  private final DataFetcherExceptionHandler delegate = new DefaultDataFetcherExceptionHandler();
 
   @Override
   public CompletableFuture<DataFetcherExceptionHandlerResult> handleException(
@@ -68,13 +70,6 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
   }
 
   private static Map<String, Object> extensionsFor(Throwable exception) {
-    if (exception instanceof ProfileSafetyViolationException safetyViolation) {
-      return Map.of(
-          "code",
-          "PROFILE_SAFETY_VIOLATION",
-          "profilesRequiringPin",
-          safetyViolation.profilesRequiringPin().stream().map(Object::toString).toList());
-    }
     var code = codeFor(exception);
     return code == null ? null : Map.of("code", code);
   }
@@ -86,6 +81,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
       case AccessDeniedException _ -> "FORBIDDEN";
       case SessionNotFoundException _ -> "SESSION_NOT_FOUND";
       case InvalidCredentialsException _ -> "INVALID_CREDENTIALS";
+      case TooManyCredentialAttemptsException _ -> "TOO_MANY_CREDENTIAL_ATTEMPTS";
       case InvalidProfilePinException _ -> "INVALID_PROFILE_PIN";
       case HouseholdAccessDeniedException _ -> "HOUSEHOLD_ACCESS_DENIED";
       case HouseholdOwnershipTransferRequiredException _ -> "HOUSEHOLD_OWNERSHIP_TRANSFER_REQUIRED";
@@ -98,13 +94,22 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
       case ServerAdministrationDeniedException _ -> "SERVER_ADMINISTRATION_DENIED";
       case DataIntegrityViolationException violation when hasSqlState(violation, "23514") ->
           "PORTABLE_IDENTITY_INVARIANT_VIOLATION";
+      case DataAccessException _ -> "DATABASE_OPERATION_FAILED";
+      case IllegalArgumentException _ -> "INVALID_INPUT";
       default -> null;
     };
   }
 
   private static String messageFor(Throwable exception) {
-    if (exception instanceof DataIntegrityViolationException) {
+    if (exception instanceof DataIntegrityViolationException violation
+        && hasSqlState(violation, "23514")) {
       return "The requested change violates a profile or household safety invariant.";
+    }
+    if (exception instanceof DataAccessException) {
+      return "The requested change could not be persisted.";
+    }
+    if (exception instanceof IllegalArgumentException) {
+      return "The request contains an invalid value.";
     }
     return exception.getMessage();
   }

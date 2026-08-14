@@ -50,11 +50,10 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
-  public Optional<UserAccount> findByHomeHouseholdIdAndHouseholdRole(
-      UUID homeHouseholdId, HouseholdRole householdRole) {
+  public Optional<UserAccount> findOwnerByHomeHouseholdId(UUID homeHouseholdId) {
     return database.values().stream()
         .filter(account -> homeHouseholdId.equals(account.getHomeHouseholdId()))
-        .filter(account -> householdRole == account.getHouseholdRole())
+        .filter(account -> account.getHouseholdRole() == HouseholdRole.OWNER)
         .findFirst();
   }
 }

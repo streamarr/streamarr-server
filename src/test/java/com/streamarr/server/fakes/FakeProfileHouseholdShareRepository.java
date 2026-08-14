@@ -2,7 +2,9 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareInsertResult;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -11,17 +13,20 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
     implements ProfileHouseholdShareRepository {
 
   @Override
-  public synchronized ProfileHouseholdShare insertPendingIfAbsent(
+  public synchronized ProfileHouseholdShareInsertResult insertPendingIfAbsent(
       UUID profileId, UUID householdId) {
-    return findByProfileIdAndHouseholdId(profileId, householdId)
-        .orElseGet(
-            () ->
-                save(
-                    ProfileHouseholdShare.builder()
-                        .profileId(profileId)
-                        .householdId(householdId)
-                        .status(ProfileShareStatus.PENDING)
-                        .build()));
+    var existing = findByProfileIdAndHouseholdId(profileId, householdId);
+    if (existing.isPresent()) {
+      return new ProfileHouseholdShareInsertResult(existing.orElseThrow(), false);
+    }
+    var share =
+        save(
+            ProfileHouseholdShare.builder()
+                .profileId(profileId)
+                .householdId(householdId)
+                .status(ProfileShareStatus.PENDING)
+                .build());
+    return new ProfileHouseholdShareInsertResult(share, true);
   }
 
   @Override
@@ -29,6 +34,15 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
       UUID householdId, ProfileShareStatus status) {
     return database.values().stream()
         .filter(share -> householdId.equals(share.getHouseholdId()))
+        .filter(share -> status == share.getStatus())
+        .toList();
+  }
+
+  @Override
+  public List<ProfileHouseholdShare> findByHouseholdIdInAndStatus(
+      Collection<UUID> householdIds, ProfileShareStatus status) {
+    return database.values().stream()
+        .filter(share -> householdIds.contains(share.getHouseholdId()))
         .filter(share -> status == share.getStatus())
         .toList();
   }

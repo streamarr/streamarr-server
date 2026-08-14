@@ -27,6 +27,7 @@ import com.streamarr.server.domain.auth.ProfileDeletionMode;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.SecurityAuditOperation;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
@@ -36,6 +37,8 @@ import com.streamarr.server.repositories.auth.ProfileDeletionAuthorizationReposi
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
+import com.streamarr.server.repositories.auth.ServerBootstrapRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
@@ -64,11 +67,13 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
@@ -93,6 +98,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
 
   @Autowired private ProfileDeletionAuthorizationRepository deletionAuthorizationRepository;
 
+  @Autowired private SecurityAuditEventRepository securityAuditEventRepository;
+
   @Autowired private PasswordEncoder passwordEncoder;
 
   @Autowired private DSLContext dsl;
@@ -107,9 +114,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   @Autowired private JwtDecoder jwtDecoder;
   @Autowired private PlatformTransactionManager transactionManager;
 
-  @Autowired
-  private com.streamarr.server.repositories.auth.ServerBootstrapRepository
-      serverBootstrapRepository;
+  @Autowired private ServerBootstrapRepository serverBootstrapRepository;
 
   private UserAccount account;
   private Household household;
@@ -387,7 +392,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .content("{\"query\": \"{ me { accountId scope } }\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.me.accountId").value(account.getId().toString()));
+        .andExpect(jsonPath("$.data.me.accountId").value(account.getId().toString()))
+        .andExpect(jsonPath("$.data.me.scope").value("account"));
   }
 
   @Test
@@ -640,6 +646,12 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .header("Authorization", "Bearer " + accountToken)
                 .content("{\"profileId\": \"%s\", \"pin\": \"1357\"}".formatted(profile.getId())))
         .andExpect(status().isForbidden());
+
+    assertThat(
+            securityAuditEventRepository.findByActingAccountIdAndOperation(
+                account.getId(), SecurityAuditOperation.PROFILE_PIN_ENTRY_DENIED))
+        .singleElement()
+        .satisfies(event -> assertThat(event.getTargetProfileId()).isEqualTo(profile.getId()));
   }
 
   @Test
@@ -733,8 +745,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", "Bearer " + accountToken)
                 .content(
-                    "{\"profileId\": \"%s\", \"cookieMode\": false}"
-                        .formatted(java.util.UUID.randomUUID())))
+                    "{\"profileId\": \"%s\", \"cookieMode\": false}".formatted(UUID.randomUUID())))
         .andExpect(status().isForbidden());
   }
 
@@ -1209,7 +1220,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertUncacheable(response);
   }
 
-  private org.springframework.test.web.servlet.ResultActions changePassword(
+  private ResultActions changePassword(
       String bearerToken, String currentPassword, String newPassword) throws Exception {
     return mockMvc.perform(
         post("/api/auth/change-password")
@@ -1234,7 +1245,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .getContentAsString();
   }
 
-  private org.springframework.mock.web.MockHttpServletResponse cookieModeLogin() throws Exception {
+  private MockHttpServletResponse cookieModeLogin() throws Exception {
     return mockMvc
         .perform(
             post("/api/auth/login")
@@ -1264,7 +1275,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     return objectMapper.readTree(response).get(field).asString();
   }
 
-  private org.springframework.security.oauth2.jwt.Jwt decodeToken(String token) {
+  private Jwt decodeToken(String token) {
     return jwtDecoder.decode(token);
   }
 
@@ -1378,7 +1389,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                           .homeHouseholdId(household.getId())
                           .householdRole(HouseholdRole.OWNER)
                           .build());
-              profile = createPortableProfile();
+              profile = persistPortableProfile();
             });
   }
 

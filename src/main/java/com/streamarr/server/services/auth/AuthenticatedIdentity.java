@@ -39,7 +39,7 @@ public record AuthenticatedIdentity(
     if (scope == TokenScope.PLAYBACK
         && (householdId == null || profileId == null || streamSessionId == null)) {
       throw new IllegalArgumentException(
-          "Playback scope requires profile identity and a stream session");
+          "Playback scope requires household and profile identity plus a stream session");
     }
     if (scope != TokenScope.PLAYBACK && streamSessionId != null) {
       throw new IllegalArgumentException("Only playback scope can carry a stream session");

@@ -3,15 +3,18 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.SecurityAuditOperation;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.exceptions.UnwrittenAuthSessionException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
@@ -19,7 +22,9 @@ import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -37,6 +42,11 @@ class SessionScopeServiceTest {
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
   private final FakeSecurityAuditEventRepository auditRepository =
       new FakeSecurityAuditEventRepository();
+  private final SecurityAuditService auditService = new SecurityAuditService(auditRepository);
+  private final CredentialGuessThrottle credentialThrottle =
+      new CredentialGuessThrottle(
+          AuthThrottleProperties.builder().maxAttempts(2).window(Duration.ofMinutes(15)).build(),
+          Clock.systemUTC());
   private final ProfileAvailabilityService availabilityService =
       new ProfileAvailabilityService(accountRepository, shareRepository, profileRepository);
   private final SessionScopeService service =
@@ -44,8 +54,12 @@ class SessionScopeServiceTest {
           availabilityService,
           sessionRepository,
           accountRepository,
-          new SecurityAuditService(auditRepository),
-          new ProfilePinService(NoOpPasswordEncoder.getInstance()),
+          auditService,
+          new ProfileEntryAuthorizer(
+              new ProfilePinService(NoOpPasswordEncoder.getInstance()),
+              credentialThrottle,
+              auditService),
+          new ProfileSelectionPersistenceService(sessionRepository),
           Clock.systemUTC());
 
   @Test
@@ -67,6 +81,76 @@ class SessionScopeServiceTest {
     assertThat(context.profileId()).isEqualTo(profile.getId());
     assertThat(sessionRepository.findById(session.getId()).orElseThrow().getActiveProfileId())
         .isEqualTo(profile.getId());
+  }
+
+  @Test
+  @DisplayName("Should audit and throttle failed profile PIN entries")
+  void shouldAuditAndThrottleFailedProfilePinEntries() {
+    var homeHouseholdId = UUID.randomUUID();
+    var account = saveAccount(homeHouseholdId);
+    var profile =
+        profileRepository.save(Profile.builder().name("Protected Profile").pinHash("2468").build());
+    shareRepository.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(homeHouseholdId)
+            .status(ProfileShareStatus.ACTIVE)
+            .build());
+    var session = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
+
+    for (var attempt = 0; attempt < 2; attempt++) {
+      assertThatThrownBy(
+              () ->
+                  service.selectProfile(account.getId(), session.getId(), profile.getId(), "1357"))
+          .isInstanceOf(ProfileAccessDeniedException.class);
+    }
+
+    assertThatThrownBy(
+            () -> service.selectProfile(account.getId(), session.getId(), profile.getId(), "2468"))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(auditRepository.findAll())
+        .extracting(event -> event.getOperation())
+        .containsExactly(
+            SecurityAuditOperation.PROFILE_PIN_ENTRY_DENIED,
+            SecurityAuditOperation.PROFILE_PIN_ENTRY_DENIED);
+  }
+
+  @Test
+  @DisplayName("Should reject wrong profile PIN before locking session")
+  void shouldRejectWrongProfilePinBeforeLockingSession() {
+    var trackingSessionRepository = new TrackingFakeAuthSessionRepository();
+    var trackingService =
+        new SessionScopeService(
+            availabilityService,
+            trackingSessionRepository,
+            accountRepository,
+            auditService,
+            new ProfileEntryAuthorizer(
+                new ProfilePinService(NoOpPasswordEncoder.getInstance()),
+                credentialThrottle,
+                auditService),
+            new ProfileSelectionPersistenceService(trackingSessionRepository),
+            Clock.systemUTC());
+    var homeHouseholdId = UUID.randomUUID();
+    var account = saveAccount(homeHouseholdId);
+    var profile =
+        profileRepository.save(Profile.builder().name("Protected Profile").pinHash("2468").build());
+    shareRepository.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(homeHouseholdId)
+            .status(ProfileShareStatus.ACTIVE)
+            .build());
+    var session =
+        trackingSessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
+
+    assertThatThrownBy(
+            () ->
+                trackingService.selectProfile(
+                    account.getId(), session.getId(), profile.getId(), "1357"))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+
+    assertThat(trackingSessionRepository.lockCount()).isZero();
   }
 
   @Test
@@ -210,5 +294,20 @@ class SessionScopeServiceTest {
             .homeHouseholdId(homeHouseholdId)
             .householdRole(HouseholdRole.MEMBER)
             .build());
+  }
+
+  private static final class TrackingFakeAuthSessionRepository extends FakeAuthSessionRepository {
+
+    private int lockCount;
+
+    @Override
+    public Optional<AuthSession> lockById(UUID sessionId) {
+      lockCount++;
+      return super.lockById(sessionId);
+    }
+
+    private int lockCount() {
+      return lockCount;
+    }
   }
 }

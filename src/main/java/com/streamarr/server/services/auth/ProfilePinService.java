@@ -26,7 +26,7 @@ public class ProfilePinService {
   }
 
   public void requireEntry(Profile profile, String pin) {
-    if (!hasEffectivePin(profile)) {
+    if (!requiresEntry(profile)) {
       return;
     }
     if (pin != null && matches(pin, profile)) {
@@ -35,7 +35,7 @@ public class ProfilePinService {
     throw new ProfileAccessDeniedException();
   }
 
-  private boolean hasEffectivePin(Profile profile) {
+  public boolean requiresEntry(Profile profile) {
     return profile.getPinHash() != null && !profile.getPinHash().isBlank();
   }
 

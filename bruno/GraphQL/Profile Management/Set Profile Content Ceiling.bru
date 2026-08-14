@@ -1,0 +1,37 @@
+meta {
+  name: Set Profile Content Ceiling
+  type: graphql
+  seq: 2
+  tags: [
+    manual
+  ]
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: inherit
+}
+
+body:graphql {
+  mutation SetProfileContentCeiling($input: ProfileContentCeilingChangeInput!) {
+    setProfileContentCeiling(input: $input)
+  }
+}
+
+body:graphql:vars {
+  {
+    "input": {
+      "profileId": "{{PROFILE_ID}}",
+      "maximumAllowedRatingAge": 13
+    }
+  }
+}
+
+tests {
+  test("Should set the portable profile content ceiling", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.not.have.property("errors");
+    expect(res.body.data.setProfileContentCeiling).to.equal(true);
+  });
+}

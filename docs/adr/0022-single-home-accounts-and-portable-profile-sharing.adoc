@@ -20,7 +20,7 @@ If an account has one home household, its household context is unambiguous and t
 Cross-household availability can then be expressed as sharing the profile rather than moving the account or switching the session.
 
 Profile sharing also expands the child-safety boundary.
-ADR 0015 requires less-restricted profiles to have a PIN when restricted profiles exist, but a portable profile means every share activation, classification change, content-ceiling change, and PIN change can affect that invariant in several households at once.
+ADR 0015 requires less-restricted profiles to have a PIN when restricted profiles exist, but a portable profile means every share activation, Profile Kind change, content-ceiling change, and PIN change can affect that invariant in several households at once.
 Application validation alone cannot protect against concurrent writes or alternative writers, while an ordinary SQL `CHECK` constraint cannot inspect the other rows and tables required by this rule.
 
 This ADR replaces the affected identity model as one decision because account membership, profile portability, session scope, sharing authorization, and PIN safety must agree.
@@ -69,9 +69,9 @@ Server administration can repair the inputs to a safety invariant but cannot byp
 
 === A profile is a portable viewing identity
 
-`Profile` remains the viewing identity and owns its watch progress, watch history, preferences, `KID` or `ADULT` classification, content ceiling, and PIN.
+`Profile` remains the viewing identity and owns its watch progress, watch history, preferences, `KID` or `ADULT` Profile Kind, content ceiling, and PIN.
 A profile has no owning household foreign key.
-Its identity, history, classification, content ceiling, and PIN remain the same wherever it is available.
+Its identity, history, Profile Kind, content ceiling, and PIN remain the same wherever it is available.
 
 Two independent relationships replace the overloaded `account_profile` link:
 
@@ -109,7 +109,7 @@ It does not need a separate per-profile use grant.
 This is the mechanism by which a profile becomes available across accounts: sharing the profile into a household makes it available to every account in that household.
 
 Management is intentionally narrower than use.
-Any named `ProfileManager` may rename, classify, PIN-protect, change the content ceiling, or offer the profile to a household.
+Any named `ProfileManager` may rename the profile, set its Profile Kind, set or remove its content ceiling, reset its PIN, or offer it to a household.
 Those edits change the one portable profile and therefore apply in every household receiving it.
 Every profile-management mutation is audited with the acting account, profile, operation, and time.
 
@@ -138,7 +138,7 @@ This makes parents in different households equal managers of the same kid profil
 An adult-profile viewing share grants no management merely by being accepted.
 Reclassifying a widely shared adult profile as a kid remains blocked until every receiving household has a consenting local owner or parent as a manager or is unshared.
 
-Application services preflight profile-side leave, ordinary deletion, manager invitation or relinquishment, account deletion or transfer, household ownership and role changes, profile reclassification, and kid-share changes so callers receive corrective errors before writing.
+Application services preflight profile-side leave, ordinary deletion, manager invitation or relinquishment, account deletion or transfer, household ownership and role changes, Profile Kind changes, and kid-share changes so callers receive corrective errors before writing.
 PostgreSQL rechecks the no-managerless-profile, unique-household-owner, and local-kid-manager invariants at commit through deferred constraint triggers over the affected manager, invitation, account, profile, household, and share rows.
 Ordinary-deletion eligibility is captured earlier in the same transaction: after shares and pending invitations are visibly gone, an authorization-row trigger locks the profile and verifies that the acting account is its sole manager; the profile deletion trigger then requires that authorization.
 This ordering lets the final manager row be removed before the profile row without creating a committed managerless profile, while preventing a shared or co-managed profile from being deleted through an ordinary authorization.
@@ -187,8 +187,10 @@ Any client may expose a direct `Leave this home` action for the active profile; 
 Limited-input clients otherwise consume accepted shares and do not create or administer them.
 
 The web surface makes the named managers and global effect of a portable-profile edit explicit.
-It explains why a share, classification, ceiling, or PIN change is blocked and identifies every profile that needs a PIN without exposing PIN values or hashes.
-A partial policy edit preserves every omitted value; clearing a PIN or content ceiling is an explicit operation.
+It explains why a share, Profile Kind, ceiling, or PIN change is blocked and identifies every profile that needs a PIN without exposing PIN values or hashes.
+Each policy concept has an explicit operation: managers set Profile Kind, set or remove the optional content ceiling, and reset the PIN to a non-empty replacement.
+There is no PIN-clear operation.
+PIN reset does not require the manager's account password in this version; password reauthentication may be added later as a separate security decision.
 A requested share that would violate household safety remains pending or is rejected; it never becomes an active `ProfileHouseholdShare` until the invariant is satisfied.
 Both household removal and `Leave this home` say that only the current home loses access and that the portable profile and its data continue elsewhere.
 Delete remains unavailable until all shares and pending invitations end and all other managers voluntarily relinquish.
@@ -196,7 +198,7 @@ The final delete confirmation makes clear that the unshared profile, history, pr
 
 === Portable identity combines with local household policy
 
-A profile's `KID` or `ADULT` classification and content ceiling travel with the profile and cannot vary by household.
+A profile's `KID` or `ADULT` Profile Kind and content ceiling travel with the profile and cannot vary by household.
 An edit by any profile manager changes that policy everywhere the profile is shared.
 The account's home household supplies local policy inputs such as its rating region, library availability, and household safety state.
 Content authorization evaluates both and fails closed when either denies access.
@@ -215,8 +217,8 @@ every profile P actively shared into H has an effective profile PIN
 when P is an adult or P's content ceiling is less restrictive than K's
 ....
 
-`KID` and `ADULT` are explicit, mutually exclusive profile classifications; a kid is someone who is not an adult, and neither classification is an account role.
-Classification and content ceiling are separate: a profile with a thirteen-year ceiling remains a kid profile and may be less restricted than a kid profile with a seven-year ceiling.
+`KID` and `ADULT` are explicit, mutually exclusive Profile Kinds; a kid is someone who is not an adult, and neither kind is an account role.
+Profile Kind and content ceiling are separate: a profile with a thirteen-year ceiling remains a kid profile and may be less restricted than a kid profile with a seven-year ceiling.
 In v1, a higher `maximumAllowedRatingAge` is less restrictive than a lower one, and unrestricted is less restrictive than every restricted ceiling.
 Future policy dimensions must define an equally deterministic comparison before they participate in this invariant.
 Only the presence of a kid profile triggers mandatory PIN protection; an adult's self-restricted profile is a preference, not a child-safety boundary for other adult profiles.
@@ -227,7 +229,7 @@ The invariant applies in both directions and to every mutation that can change i
 
 * Sharing a kid profile is rejected until every adult and every less-restricted kid profile already available in the target household has an effective PIN.
 * Sharing an adult or less-restricted kid profile without an effective PIN is rejected when a more-restricted kid profile is already available in the target household.
-* Removing a profile's PIN is rejected when that profile is an adult available with a kid or is less restricted than a kid in any household receiving it.
+* The public API never removes a profile's PIN; any lower-level writer that removes one is rejected when that profile is an adult available with a kid or is less restricted than a kid in any household receiving it.
 * Reclassifying a profile between kid and adult or changing its content ceiling revalidates every household receiving it because the portable change applies everywhere.
 * Removing a profile from a household, a profile leaving a household, and profile deletion are monotonic removals: they can only weaken the kid antecedent or shrink the protected-profile set, so they cannot create a child-safety violation.
   An implementation may still run the common validator defensively after an unshare; ordinary deletion has no active share set to validate.
@@ -235,7 +237,7 @@ The invariant applies in both directions and to every mutation that can change i
 Application services validate the invariant before writing so callers receive a specific corrective error.
 This preflight is user experience, not the authority.
 
-PostgreSQL is the final authority through `DEFERRABLE INITIALLY DEFERRED` constraint triggers on the tables that can activate shares, rename active profiles, or change profile classification, content ceiling, or PIN state and on the manager, invitation, share, account, and household tables that participate in lifecycle invariants.
+PostgreSQL is the final authority through `DEFERRABLE INITIALLY DEFERRED` constraint triggers on the tables that can activate shares, rename active profiles, or change Profile Kind, content ceiling, or PIN state and on the manager, invitation, share, account, and household tables that participate in lifecycle invariants.
 At commit, each deferred row trigger gathers the profiles and households affected by that row and follows the shared guard order: profile `management_version` rows first in id order, then household `safety_version` rows in id order.
 The complete active share set is re-evaluated in a separate SQL statement after the guard update, never in the pre-wait snapshot of the locking statement.
 At `READ COMMITTED`, a waiting writer's validation therefore sees the preceding commit; at `REPEATABLE READ` or `SERIALIZABLE`, the actual concurrent guard-row update forces a serialization failure rather than permitting validation against a stale snapshot.
@@ -256,7 +258,7 @@ Constraint triggers enforce the cross-row, cross-table child-safety and manager-
 == Consequences
 
 * tvOS never displays a household selector and needs no additional provisioning step beyond linking an account and selecting a profile.
-* A kid can retain one profile, watch history, preferences, classification, content ceiling, and PIN across two parents' households.
+* A kid can retain one profile, watch history, preferences, Profile Kind, content ceiling, and PIN across two parents' households.
 * Parents in different households can be equal named managers of that kid profile; either parent's edit applies everywhere, neither can remove the other's management, neither can remove the profile from the other's household, and either can block permanent deletion by remaining a manager.
 * A visitor can use their own shared profile on another household's account-linked television without joining that household or linking their account to the television.
   While active there, the visitor profile can leave that household without its cooperation or a Profile Manager vote.
@@ -306,7 +308,7 @@ Constraint triggers enforce the cross-row, cross-table child-safety and manager-
 * Require both endpoints to approve ending a share — a visitor profile could not leave another household without that household's cooperation; either endpoint may end the relationship under its own governance.
 * Require every manager to approve deletion while retaining management — that creates a separate durable approval workflow.
   Ordinary deletion instead requires other managers to relinquish voluntarily; relinquishment unconditionally gives up the veto, and Streamarr accepts the risk that the final manager may then choose not to delete.
-* Give each household a different classification or content ceiling for the same profile — the person would have one history but contradictory identity and age policy; portable profile policy changes everywhere.
+* Give each household a different Profile Kind or content ceiling for the same profile — the person would have one history but contradictory identity and age policy; portable profile policy changes everywhere.
 * Give a shared profile a different PIN per household — inconsistent entry behavior and multiple recoverable secrets undermine the meaning of one portable viewing identity.
 * Require PINs only on adult profiles — an older or less-restricted kid profile would let a younger kid escape their own content ceiling.
 * Let a restricted adult profile trigger PINs on less-restricted adult profiles — adult self-restriction is a personal preference, while this mandatory rule exists to protect kids.

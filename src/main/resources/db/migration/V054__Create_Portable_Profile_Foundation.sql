@@ -80,7 +80,7 @@ CREATE CONSTRAINT TRIGGER chk_household_exactly_one_owner
 FOR EACH ROW
 EXECUTE FUNCTION enforce_new_household_owner();
 
-CREATE TYPE profile_classification AS ENUM ('KID', 'ADULT');
+CREATE TYPE profile_kind AS ENUM ('KID', 'ADULT');
 
 DROP INDEX idx_auth_session_active_household_id;
 
@@ -98,7 +98,7 @@ ALTER TABLE profile
     DROP CONSTRAINT uq_profile_household_name,
     DROP CONSTRAINT uq_profile_id_household,
     DROP COLUMN household_id,
-    ADD COLUMN classification profile_classification NOT NULL DEFAULT 'ADULT',
+    ADD COLUMN kind profile_kind NOT NULL DEFAULT 'ADULT',
     ADD COLUMN maximum_allowed_rating_age INTEGER,
     ADD COLUMN pin_hash TEXT,
     ADD COLUMN management_version BIGINT NOT NULL DEFAULT 0,
@@ -155,14 +155,17 @@ CREATE UNIQUE INDEX uq_profile_manager_invitation_pending
     WHERE status = 'PENDING';
 
 CREATE TYPE security_audit_operation AS ENUM
-    ('PROFILE_CREATED', 'PROFILE_RENAMED', 'PROFILE_POLICY_CHANGED',
+    ('PROFILE_CREATED', 'PROFILE_RENAMED', 'PROFILE_KIND_CHANGED',
+     'PROFILE_CONTENT_CEILING_SET', 'PROFILE_CONTENT_CEILING_REMOVED', 'PROFILE_PIN_RESET',
+     'PROFILE_PIN_ENTRY_DENIED',
      'PROFILE_MANAGER_INVITED', 'PROFILE_MANAGER_ACCEPTED',
      'PROFILE_MANAGER_INVITATION_REJECTED', 'PROFILE_MANAGER_INVITATION_CANCELED',
      'PROFILE_MANAGER_RELINQUISHED', 'PROFILE_SHARE_OFFERED', 'PROFILE_SHARE_ACCEPTED',
      'PROFILE_SHARE_REJECTED', 'PROFILE_SHARE_CANCELED',
      'PROFILE_UNSHARED_BY_HOUSEHOLD', 'PROFILE_LEFT_HOME', 'PROFILE_DELETED',
      'PROFILE_FORCE_DELETED', 'PROFILE_MANAGER_OVERRIDDEN', 'PROFILE_FORCE_UNSHARED',
-     'PROFILE_SELECTION_CLEARED', 'ACCOUNT_TRANSFERRED',
+     'PROFILE_SELECTION_CLEARED', 'SERVER_ADMIN_REAUTHENTICATION_DENIED',
+     'ACCOUNT_TRANSFERRED',
      'HOUSEHOLD_OWNERSHIP_TRANSFERRED');
 
 CREATE TABLE security_audit_event
@@ -404,6 +407,8 @@ CREATE FUNCTION guard_profile_deletion_authorization()
 AS
 $$
 BEGIN
+    PERFORM guard_portable_identity(ARRAY[NEW.profile_id], ARRAY[]::UUID[]);
+
     IF NEW.mode = 'ORDINARY'
         AND EXISTS (
             SELECT 1 FROM profile_household_share WHERE profile_id = NEW.profile_id) THEN
@@ -432,7 +437,6 @@ BEGIN
             USING ERRCODE = '23514', CONSTRAINT = 'chk_profile_ordinary_deletion_manager';
     END IF;
 
-    PERFORM guard_portable_identity(ARRAY[NEW.profile_id], ARRAY[]::UUID[]);
     RETURN NULL;
 END;
 $$;
@@ -484,7 +488,7 @@ BEGIN
         WHERE share.profile_id = candidate_profile_id
           AND share.household_id = candidate_household_id
           AND share.status = 'ACTIVE'
-          AND profile.classification = 'KID') THEN
+          AND profile.kind = 'KID') THEN
         RETURN;
     END IF;
 
@@ -526,11 +530,11 @@ BEGIN
           JOIN profile kid_profile ON kid_profile.id = kid_share.profile_id
           WHERE kid_share.household_id = candidate_household_id
             AND kid_share.status = 'ACTIVE'
-            AND kid_profile.classification = 'KID'
+            AND kid_profile.kind = 'KID'
             AND (
-                protected_profile.classification = 'ADULT'
+                protected_profile.kind = 'ADULT'
                 OR (
-                    protected_profile.classification = 'KID'
+                    protected_profile.kind = 'KID'
                     AND (
                         (protected_profile.maximum_allowed_rating_age IS NULL
                             AND kid_profile.maximum_allowed_rating_age IS NOT NULL)
@@ -664,7 +668,7 @@ END;
 $$;
 
 CREATE CONSTRAINT TRIGGER chk_profile_policy_invariants
-    AFTER UPDATE OF classification, maximum_allowed_rating_age, pin_hash
+    AFTER UPDATE OF kind, maximum_allowed_rating_age, pin_hash
     ON profile
     DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW

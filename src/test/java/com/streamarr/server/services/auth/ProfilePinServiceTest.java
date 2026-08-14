@@ -30,6 +30,17 @@ class ProfilePinServiceTest {
     assertThatCode(() -> service.requireEntry(profile, "2468")).doesNotThrowAnyException();
   }
 
+  @Test
+  @DisplayName("Should accept a twelve digit profile PIN")
+  void shouldAcceptTwelveDigitProfilePin() {
+    var pin = "123456789012";
+
+    var pinHash = service.encode(pin);
+
+    assertThatCode(() -> service.requireEntry(Profile.builder().pinHash(pinHash).build(), pin))
+        .doesNotThrowAnyException();
+  }
+
   @ParameterizedTest
   @NullAndEmptySource
   @ValueSource(strings = {"123", "1234567890123", "12a4", "    "})

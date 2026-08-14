@@ -18,37 +18,45 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   private final AuditorAware<UUID> auditorAware;
 
   @Override
-  public ProfileHouseholdShare insertPendingIfAbsent(UUID profileId, UUID householdId) {
-    var id = UUID.randomUUID();
+  public ProfileHouseholdShareInsertResult insertPendingIfAbsent(UUID profileId, UUID householdId) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
     var pending = PENDING;
-    var insertedId =
-        dsl.insertInto(PROFILE_HOUSEHOLD_SHARE)
-            .set(PROFILE_HOUSEHOLD_SHARE.ID, id)
-            .set(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, profileId)
-            .set(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID, householdId)
-            .set(PROFILE_HOUSEHOLD_SHARE.STATUS, pending)
-            .set(PROFILE_HOUSEHOLD_SHARE.CREATED_BY, auditUser)
-            .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditUser)
-            .onConflict(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
-            .doNothing()
-            .returning(PROFILE_HOUSEHOLD_SHARE.ID)
-            .fetchOne(PROFILE_HOUSEHOLD_SHARE.ID);
-    if (insertedId != null) {
-      return share(insertedId, profileId, householdId, ProfileShareStatus.PENDING);
-    }
+    while (true) {
+      var insertedId =
+          dsl.insertInto(PROFILE_HOUSEHOLD_SHARE)
+              .set(PROFILE_HOUSEHOLD_SHARE.ID, UUID.randomUUID())
+              .set(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, profileId)
+              .set(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID, householdId)
+              .set(PROFILE_HOUSEHOLD_SHARE.STATUS, pending)
+              .set(PROFILE_HOUSEHOLD_SHARE.CREATED_BY, auditUser)
+              .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditUser)
+              .onConflict(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
+              .doNothing()
+              .returning(PROFILE_HOUSEHOLD_SHARE.ID)
+              .fetchOne(PROFILE_HOUSEHOLD_SHARE.ID);
+      if (insertedId != null) {
+        return new ProfileHouseholdShareInsertResult(
+            share(insertedId, profileId, householdId, ProfileShareStatus.PENDING), true);
+      }
 
-    var existing =
-        dsl.select(PROFILE_HOUSEHOLD_SHARE.ID, PROFILE_HOUSEHOLD_SHARE.STATUS)
-            .from(PROFILE_HOUSEHOLD_SHARE)
-            .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
-            .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
-            .fetchSingle();
-    return share(
-        existing.value1(),
-        profileId,
-        householdId,
-        ProfileShareStatus.valueOf(existing.value2().getLiteral()));
+      var existing =
+          dsl.select(PROFILE_HOUSEHOLD_SHARE.ID, PROFILE_HOUSEHOLD_SHARE.STATUS)
+              .from(PROFILE_HOUSEHOLD_SHARE)
+              .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
+              .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
+              .forUpdate()
+              .fetchOptional();
+      if (existing.isPresent()) {
+        var record = existing.orElseThrow();
+        return new ProfileHouseholdShareInsertResult(
+            share(
+                record.value1(),
+                profileId,
+                householdId,
+                ProfileShareStatus.valueOf(record.value2().getLiteral())),
+            false);
+      }
+    }
   }
 
   private ProfileHouseholdShare share(

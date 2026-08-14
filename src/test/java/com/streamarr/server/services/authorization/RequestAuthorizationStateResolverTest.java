@@ -17,6 +17,7 @@ import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -39,8 +40,9 @@ class RequestAuthorizationStateResolverTest {
           accountRepository, sessionRepository, shareRepository, new MutexFactoryProvider());
 
   @Test
-  @DisplayName("Should clear profile authority when signed profile is not shared into current home")
-  void shouldClearProfileAuthorityWhenSignedProfileIsNotSharedIntoCurrentHome() {
+  @DisplayName(
+      "Should downgrade profile authority when signed profile is not shared into current home")
+  void shouldDowngradeProfileAuthorityWhenSignedProfileIsNotSharedIntoCurrentHome() {
     var homeHouseholdId = UUID.randomUUID();
     var account = saveAccount(homeHouseholdId);
     var session = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
@@ -159,6 +161,47 @@ class RequestAuthorizationStateResolverTest {
     }
   }
 
+  @Test
+  @DisplayName("Should resolve separate requests for one session concurrently")
+  void shouldResolveSeparateRequestsForOneSessionConcurrently() throws Exception {
+    var blockingAccountRepository = new BlockingUserAccountRepository();
+    var concurrentResolver =
+        new RequestAuthorizationStateResolver(
+            blockingAccountRepository,
+            sessionRepository,
+            shareRepository,
+            new MutexFactoryProvider());
+    var account =
+        blockingAccountRepository.save(
+            UserAccount.builder()
+                .email("concurrent-" + UUID.randomUUID() + "@example.com")
+                .displayName("Concurrent Parent")
+                .passwordHash("{noop}not-a-real-hash")
+                .accountRole(AccountRole.USER)
+                .homeHouseholdId(UUID.randomUUID())
+                .householdRole(HouseholdRole.PARENT)
+                .build());
+    var session = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
+    var signed =
+        AuthenticatedIdentity.builder()
+            .accountId(account.getId())
+            .role(AccountRole.USER)
+            .authSessionId(session.getId())
+            .scope(TokenScope.ACCOUNT)
+            .build();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var first = executor.submit(() -> concurrentResolver.resolve(authentication(signed)));
+      var second = executor.submit(() -> concurrentResolver.resolve(authentication(signed)));
+      var bothReadsStarted = blockingAccountRepository.awaitBothReads();
+      blockingAccountRepository.releaseReads();
+      first.get(1, TimeUnit.SECONDS);
+      second.get(1, TimeUnit.SECONDS);
+
+      assertThat(bothReadsStarted).isTrue();
+    }
+  }
+
   private StreamarrAuthenticationToken authentication(AuthenticatedIdentity identity) {
     var jwt =
         Jwt.withTokenValue("test-token-" + UUID.randomUUID())
@@ -178,5 +221,33 @@ class RequestAuthorizationStateResolverTest {
             .homeHouseholdId(homeHouseholdId)
             .householdRole(HouseholdRole.PARENT)
             .build());
+  }
+
+  private static final class BlockingUserAccountRepository extends FakeUserAccountRepository {
+
+    private final CountDownLatch readsStarted = new CountDownLatch(2);
+    private final CountDownLatch readsReleased = new CountDownLatch(1);
+
+    @Override
+    public Optional<UserAccount> findById(UUID accountId) {
+      readsStarted.countDown();
+      try {
+        if (!readsReleased.await(2, TimeUnit.SECONDS)) {
+          throw new IllegalStateException("Concurrent account reads did not arrive");
+        }
+      } catch (InterruptedException exception) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException("Concurrent account read was interrupted", exception);
+      }
+      return super.findById(accountId);
+    }
+
+    boolean awaitBothReads() throws InterruptedException {
+      return readsStarted.await(1, TimeUnit.SECONDS);
+    }
+
+    void releaseReads() {
+      readsReleased.countDown();
+    }
   }
 }

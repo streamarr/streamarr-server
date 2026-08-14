@@ -49,13 +49,12 @@ public class ProfileAvailabilityService {
         .toList();
   }
 
+  @Transactional(readOnly = true, noRollbackFor = ProfileAccessDeniedException.class)
   public Profile requireSelectableProfile(UUID accountId, UUID profileId) {
     var account = loadAccount(accountId);
     var shared =
-        shareRepository
-            .findByHouseholdIdAndStatus(account.getHomeHouseholdId(), ProfileShareStatus.ACTIVE)
-            .stream()
-            .anyMatch(share -> share.getProfileId().equals(profileId));
+        shareRepository.existsByProfileIdAndHouseholdIdAndStatus(
+            profileId, account.getHomeHouseholdId(), ProfileShareStatus.ACTIVE);
     if (!shared) {
       throw new ProfileAccessDeniedException();
     }

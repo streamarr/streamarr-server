@@ -129,6 +129,9 @@ available through explicit household shares. The `me` query returns one flat lis
 profiles; clients select a profile and never select a household.
 Picker entries expose only whether a PIN is required; profile selection verifies the supplied PIN
 server-side before issuing profile scope, and raw PINs never enter tokens, logs, or persisted state.
+Profile management exposes separate mutations to set Profile Kind, set or remove the optional
+Content Ceiling, and reset the Profile PIN. Reset replaces the PIN and cannot clear it; Content
+Ceiling is independent of Profile Kind and may be set for either a Kid or Adult Profile.
 
 Sessions retain the account and an optional active profile. ES256-signed API access tokens have
 account or profile scope, mandatory strict expiry, and no household id or role claims. Refresh tokens

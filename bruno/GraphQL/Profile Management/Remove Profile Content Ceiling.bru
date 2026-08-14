@@ -1,0 +1,36 @@
+meta {
+  name: Remove Profile Content Ceiling
+  type: graphql
+  seq: 3
+  tags: [
+    manual
+  ]
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: inherit
+}
+
+body:graphql {
+  mutation RemoveProfileContentCeiling($input: ProfileReferenceInput!) {
+    removeProfileContentCeiling(input: $input)
+  }
+}
+
+body:graphql:vars {
+  {
+    "input": {
+      "profileId": "{{PROFILE_ID}}"
+    }
+  }
+}
+
+tests {
+  test("Should remove the portable profile content ceiling", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.not.have.property("errors");
+    expect(res.body.data.removeProfileContentCeiling).to.equal(true);
+  });
+}

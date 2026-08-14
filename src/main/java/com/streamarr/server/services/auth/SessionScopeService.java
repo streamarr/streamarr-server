@@ -23,7 +23,8 @@ public class SessionScopeService {
   private final AuthSessionRepository sessionRepository;
   private final UserAccountRepository userAccountRepository;
   private final SecurityAuditService auditService;
-  private final ProfilePinService profilePinService;
+  private final ProfileEntryAuthorizer profileEntryAuthorizer;
+  private final ProfileSelectionPersistenceService profileSelectionPersistenceService;
   private final Clock clock;
 
   @Transactional
@@ -44,16 +45,14 @@ public class SessionScopeService {
     }
   }
 
-  @Transactional
   public TokenContext selectProfile(
       UUID accountId, UUID sessionId, UUID profileId, String profilePin) {
     var account = loadAccount(accountId);
-    var session = loadLiveSession(accountId, sessionId);
-
+    requireLiveSession(accountId, sessionId);
     var profile = profileAvailabilityService.requireSelectableProfile(accountId, profileId);
-    profilePinService.requireEntry(profile, profilePin);
-    session.setActiveProfileId(profileId);
-    sessionRepository.save(session);
+    profileEntryAuthorizer.requireEntry(accountId, profile, profilePin);
+
+    var session = profileSelectionPersistenceService.select(accountId, sessionId, profileId);
 
     return TokenContext.builder().account(account).session(session).profileId(profileId).build();
   }
@@ -64,9 +63,9 @@ public class SessionScopeService {
         .orElseThrow(AuthenticationRequiredException::new);
   }
 
-  private AuthSession loadLiveSession(UUID accountId, UUID sessionId) {
-    return sessionRepository
-        .lockById(sessionId)
+  private void requireLiveSession(UUID accountId, UUID sessionId) {
+    sessionRepository
+        .findById(sessionId)
         .filter(session -> session.getAccountId().equals(accountId))
         .filter(session -> session.getRevokedAt() == null)
         .orElseThrow(AuthenticationRequiredException::new);

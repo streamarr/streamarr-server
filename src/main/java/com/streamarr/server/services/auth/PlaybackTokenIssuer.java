@@ -43,6 +43,9 @@ public class PlaybackTokenIssuer {
     if (!authorityGate.allows(authority)) {
       throw new AuthenticationRequiredException();
     }
+    if (!isBoundTo(identity, authority)) {
+      throw new AuthenticationRequiredException();
+    }
 
     // This is the only place playback capability is minted, so ownership is enforced here
     // rather than trusted to callers: an unowned session must never become a playable token,
@@ -79,5 +82,11 @@ public class PlaybackTokenIssuer {
         .expiresAt(expiresAt)
         .scope(TokenScope.PLAYBACK)
         .build();
+  }
+
+  private boolean isBoundTo(AuthenticatedIdentity identity, PlaybackAuthority authority) {
+    return authority.accountId().equals(identity.accountId())
+        && authority.authSessionId().equals(identity.authSessionId())
+        && authority.profileId().equals(identity.profileId());
   }
 }

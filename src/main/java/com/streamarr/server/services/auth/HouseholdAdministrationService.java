@@ -76,7 +76,7 @@ public class HouseholdAdministrationService {
 
     var currentOwner =
         accountRepository
-            .findByHomeHouseholdIdAndHouseholdRole(command.householdId(), HouseholdRole.OWNER)
+            .findOwnerByHomeHouseholdId(command.householdId())
             .orElseThrow(HouseholdAccessDeniedException::new);
     var nextOwner =
         accountRepository

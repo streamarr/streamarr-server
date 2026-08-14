@@ -7,8 +7,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.domain.auth.ProfileClassification;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
@@ -31,7 +31,8 @@ import org.junit.jupiter.api.Test;
 class KidProfileManagerPolicyTest {
 
   private final FakeProfileRepository profileRepository = new FakeProfileRepository();
-  private final FakeProfileManagerRepository managerRepository = new FakeProfileManagerRepository();
+  private final TrackingProfileManagerRepository managerRepository =
+      new TrackingProfileManagerRepository();
   private final FakeProfileHouseholdShareRepository shareRepository =
       new FakeProfileHouseholdShareRepository();
   private final TrackingUserAccountRepository accountRepository =
@@ -76,8 +77,7 @@ class KidProfileManagerPolicyTest {
   @DisplayName("Should ignore manager removal policy for adult profile")
   void shouldIgnoreManagerRemovalPolicyForAdultProfile() {
     var adult =
-        profileRepository.save(
-            Profile.builder().name("Adult").classification(ProfileClassification.ADULT).build());
+        profileRepository.save(Profile.builder().name("Adult").kind(ProfileKind.ADULT).build());
 
     assertThatCode(() -> policy.validateManagerRemoval(adult.getId(), UUID.randomUUID()))
         .doesNotThrowAnyException();
@@ -118,13 +118,12 @@ class KidProfileManagerPolicyTest {
     var householdId = UUID.randomUUID();
     var account = saveAccount(householdId, HouseholdRole.PARENT);
     var adult =
-        profileRepository.save(
-            Profile.builder().name("Adult").classification(ProfileClassification.ADULT).build());
+        profileRepository.save(Profile.builder().name("Adult").kind(ProfileKind.ADULT).build());
     var inactiveKid =
         profileRepository.save(
             Profile.builder()
                 .name("Inactive Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(7)
                 .build());
     manage(account, adult);
@@ -136,16 +135,13 @@ class KidProfileManagerPolicyTest {
 
   @Test
   @DisplayName(
-      "Should reject kid classification when a household receiving the profile has no local parent manager")
-  void shouldRejectKidClassificationWhenReceivingHouseholdHasNoLocalParentManager() {
+      "Should reject kid kind when a household receiving the profile has no local parent manager")
+  void shouldRejectKidKindWhenReceivingHouseholdHasNoLocalParentManager() {
     var householdId = UUID.randomUUID();
     var remoteParent = saveAccount(UUID.randomUUID(), HouseholdRole.PARENT);
     var profile =
         profileRepository.save(
-            Profile.builder()
-                .name("Becoming Kid")
-                .classification(ProfileClassification.ADULT)
-                .build());
+            Profile.builder().name("Becoming Kid").kind(ProfileKind.ADULT).build());
     manage(remoteParent, profile);
     shareRepository.save(
         ProfileHouseholdShare.builder()
@@ -156,21 +152,18 @@ class KidProfileManagerPolicyTest {
 
     var profileId = profile.getId();
 
-    assertThatThrownBy(() -> policy.validateKidClassification(profileId))
+    assertThatThrownBy(() -> policy.validateKidKind(profileId))
         .isInstanceOf(KidProfileManagerRequiredException.class);
   }
 
   @Test
-  @DisplayName("Should allow kid classification when every active home has local parent manager")
-  void shouldAllowKidClassificationWhenEveryActiveHomeHasLocalParentManager() {
+  @DisplayName("Should allow kid kind when every active home has local parent manager")
+  void shouldAllowKidKindWhenEveryActiveHomeHasLocalParentManager() {
     var householdId = UUID.randomUUID();
     var parent = saveAccount(householdId, HouseholdRole.PARENT);
     var profile =
         profileRepository.save(
-            Profile.builder()
-                .name("Becoming Kid")
-                .classification(ProfileClassification.ADULT)
-                .build());
+            Profile.builder().name("Becoming Kid").kind(ProfileKind.ADULT).build());
     manage(parent, profile);
     shareRepository.save(
         ProfileHouseholdShare.builder()
@@ -179,16 +172,14 @@ class KidProfileManagerPolicyTest {
             .status(ProfileShareStatus.ACTIVE)
             .build());
 
-    assertThatCode(() -> policy.validateKidClassification(profile.getId()))
-        .doesNotThrowAnyException();
+    assertThatCode(() -> policy.validateKidKind(profile.getId())).doesNotThrowAnyException();
   }
 
   @Test
   @DisplayName("Should not require local manager when activating adult share")
   void shouldNotRequireLocalManagerWhenActivatingAdultShare() {
     var adult =
-        profileRepository.save(
-            Profile.builder().name("Adult").classification(ProfileClassification.ADULT).build());
+        profileRepository.save(Profile.builder().name("Adult").kind(ProfileKind.ADULT).build());
 
     assertThatCode(() -> policy.validateShareActivation(adult.getId(), UUID.randomUUID()))
         .doesNotThrowAnyException();
@@ -201,11 +192,7 @@ class KidProfileManagerPolicyTest {
     var member = saveAccount(householdId, HouseholdRole.MEMBER);
     var kid =
         profileRepository.save(
-            Profile.builder()
-                .name("Kid")
-                .classification(ProfileClassification.KID)
-                .maximumAllowedRatingAge(7)
-                .build());
+            Profile.builder().name("Kid").kind(ProfileKind.KID).maximumAllowedRatingAge(7).build());
     manage(member, kid);
 
     var kidId = kid.getId();
@@ -224,10 +211,31 @@ class KidProfileManagerPolicyTest {
     }
     var kidId = kid.getId();
 
-    assertThatThrownBy(() -> policy.validateKidClassification(kidId))
+    assertThatThrownBy(() -> policy.validateKidKind(kidId))
         .isInstanceOf(KidProfileManagerRequiredException.class);
 
     assertThat(accountRepository.individualLookups).isZero();
+    assertThat(accountRepository.bulkLookups).isOne();
+  }
+
+  @Test
+  @DisplayName("Should reuse profile managers when kid profile is active in several homes")
+  void shouldReuseProfileManagersWhenKidProfileIsActiveInSeveralHomes() {
+    var firstHouseholdId = UUID.randomUUID();
+    var secondHouseholdId = UUID.randomUUID();
+    var kid = saveActiveKid(firstHouseholdId);
+    shareRepository.save(
+        ProfileHouseholdShare.builder()
+            .profileId(kid.getId())
+            .householdId(secondHouseholdId)
+            .status(ProfileShareStatus.ACTIVE)
+            .build());
+    manage(saveAccount(firstHouseholdId, HouseholdRole.PARENT), kid);
+    manage(saveAccount(secondHouseholdId, HouseholdRole.OWNER), kid);
+
+    assertThatCode(() -> policy.validateKidKind(kid.getId())).doesNotThrowAnyException();
+
+    assertThat(managerRepository.profileLookups).isOne();
     assertThat(accountRepository.bulkLookups).isOne();
   }
 
@@ -254,11 +262,7 @@ class KidProfileManagerPolicyTest {
   private Profile saveActiveKid(UUID householdId) {
     var kid =
         profileRepository.save(
-            Profile.builder()
-                .name("Kid")
-                .classification(ProfileClassification.KID)
-                .maximumAllowedRatingAge(7)
-                .build());
+            Profile.builder().name("Kid").kind(ProfileKind.KID).maximumAllowedRatingAge(7).build());
     shareRepository.save(
         ProfileHouseholdShare.builder()
             .profileId(kid.getId())
@@ -302,6 +306,17 @@ class KidProfileManagerPolicyTest {
       var accounts = new ArrayList<UserAccount>();
       ids.forEach(id -> Optional.ofNullable(database.get(id)).ifPresent(accounts::add));
       return accounts;
+    }
+  }
+
+  private static final class TrackingProfileManagerRepository extends FakeProfileManagerRepository {
+
+    private int profileLookups;
+
+    @Override
+    public List<ProfileManager> findByProfileId(UUID profileId) {
+      profileLookups++;
+      return super.findByProfileId(profileId);
     }
   }
 }

@@ -1,11 +1,11 @@
 package com.streamarr.server.graphql.dto;
 
-import com.streamarr.server.domain.auth.ProfileClassification;
+import com.streamarr.server.domain.auth.ProfileKind;
 import java.util.UUID;
 
 public record PortableProfileSummary(
     UUID id,
     String name,
-    ProfileClassification classification,
+    ProfileKind kind,
     Integer maximumAllowedRatingAge,
     boolean pinProtected) {}

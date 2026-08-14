@@ -21,6 +21,7 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -242,7 +243,7 @@ class PortableIdentityGuardVersionIT extends AbstractIntegrationTest {
                 transaction.executeWithoutResult(
                     _ -> {
                       var profile = profileRepository.findById(secondProfileId).orElseThrow();
-                      profile.setName(existingName.toUpperCase());
+                      profile.setName(existingName.toUpperCase(Locale.ROOT));
                     }))
         .isInstanceOf(DataIntegrityViolationException.class);
   }

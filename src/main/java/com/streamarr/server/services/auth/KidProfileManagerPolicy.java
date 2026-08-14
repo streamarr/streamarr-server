@@ -1,14 +1,18 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
-import com.streamarr.server.domain.auth.ProfileClassification;
+import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.KidProfileManagerRequiredException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
@@ -30,13 +34,17 @@ public class KidProfileManagerPolicy {
   public void validateManagerRemoval(UUID profileId, UUID removedAccountId) {
     var profile =
         profileRepository.findById(profileId).orElseThrow(ProfileAccessDeniedException::new);
-    if (profile.getClassification() != ProfileClassification.KID) {
+    if (profile.getKind() != ProfileKind.KID) {
       return;
     }
 
-    shareRepository.findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE).stream()
-        .map(share -> share.getHouseholdId())
-        .forEach(householdId -> requireLocalManager(profileId, householdId, removedAccountId));
+    var householdIds =
+        shareRepository.findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE).stream()
+            .map(share -> share.getHouseholdId())
+            .toList();
+    var managers = loadManagers(profileId);
+    householdIds.forEach(
+        householdId -> requireLocalManager(managers, householdId, removedAccountId));
   }
 
   public void validateAccountDeparture(UUID accountId, UUID householdId) {
@@ -45,39 +53,53 @@ public class KidProfileManagerPolicy {
             .map(manager -> manager.getProfileId())
             .toList();
 
+    var activeProfileIds =
+        shareRepository.findByHouseholdIdAndStatus(householdId, ProfileShareStatus.ACTIVE).stream()
+            .map(share -> share.getProfileId())
+            .collect(Collectors.toSet());
+
     profileRepository.findAllById(managedProfileIds).stream()
-        .filter(profile -> profile.getClassification() == ProfileClassification.KID)
-        .filter(
-            profile ->
-                shareRepository.existsByProfileIdAndHouseholdIdAndStatus(
-                    profile.getId(), householdId, ProfileShareStatus.ACTIVE))
-        .forEach(profile -> requireLocalManager(profile.getId(), householdId, accountId));
+        .filter(profile -> profile.getKind() == ProfileKind.KID)
+        .filter(profile -> activeProfileIds.contains(profile.getId()))
+        .forEach(
+            profile -> requireLocalManager(loadManagers(profile.getId()), householdId, accountId));
   }
 
-  public void validateKidClassification(UUID profileId) {
-    shareRepository.findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE).stream()
-        .map(share -> share.getHouseholdId())
-        .forEach(householdId -> requireLocalManager(profileId, householdId, null));
+  public void validateKidKind(UUID profileId) {
+    var householdIds =
+        shareRepository.findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE).stream()
+            .map(share -> share.getHouseholdId())
+            .toList();
+    if (householdIds.isEmpty()) {
+      return;
+    }
+    var managers = loadManagers(profileId);
+    householdIds.forEach(householdId -> requireLocalManager(managers, householdId, null));
   }
 
   public void validateShareActivation(UUID profileId, UUID householdId) {
     var profile =
         profileRepository.findById(profileId).orElseThrow(ProfileAccessDeniedException::new);
-    if (profile.getClassification() == ProfileClassification.KID) {
-      requireLocalManager(profileId, householdId, null);
+    if (profile.getKind() == ProfileKind.KID) {
+      requireLocalManager(loadManagers(profileId), householdId, null);
     }
   }
 
-  private void requireLocalManager(UUID profileId, UUID householdId, UUID excludedAccountId) {
+  private ProfileManagers loadManagers(UUID profileId) {
     var managers = managerRepository.findByProfileId(profileId);
     var accountIds = managers.stream().map(manager -> manager.getAccountId()).toList();
     var accountsById =
         accountRepository.findAllById(accountIds).stream()
             .collect(Collectors.toMap(account -> account.getId(), Function.identity()));
+    return new ProfileManagers(managers, accountsById);
+  }
+
+  private void requireLocalManager(
+      ProfileManagers profileManagers, UUID householdId, UUID excludedAccountId) {
     var hasLocalManager =
-        managers.stream()
+        profileManagers.managers().stream()
             .filter(manager -> !manager.getAccountId().equals(excludedAccountId))
-            .map(manager -> accountsById.get(manager.getAccountId()))
+            .map(manager -> profileManagers.accountsById().get(manager.getAccountId()))
             .filter(Objects::nonNull)
             .filter(account -> account.isEnabled())
             .anyMatch(
@@ -92,4 +114,7 @@ public class KidProfileManagerPolicy {
   private boolean canManageKid(HouseholdRole role) {
     return role == HouseholdRole.OWNER || role == HouseholdRole.PARENT;
   }
+
+  private record ProfileManagers(
+      List<ProfileManager> managers, Map<UUID, UserAccount> accountsById) {}
 }

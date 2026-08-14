@@ -5,7 +5,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.LockSupport;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -42,7 +41,12 @@ public class PortableIdentityTransactionExecutor {
             backoffMillis,
             attempt,
             MAX_ATTEMPTS);
-        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(backoffMillis));
+        try {
+          TimeUnit.MILLISECONDS.sleep(backoffMillis);
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          throw exception;
+        }
       }
     }
   }

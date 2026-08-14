@@ -35,15 +35,18 @@ public class ProfileSharingService {
       throw new ProfileManagementDeniedException();
     }
 
-    var share = shareRepository.insertPendingIfAbsent(offer.profileId(), offer.targetHouseholdId());
-    auditService.recordEvent(
-        SecurityAuditRecord.builder()
-            .actingAccountId(offer.actingAccountId())
-            .targetHouseholdId(offer.targetHouseholdId())
-            .targetProfileId(offer.profileId())
-            .operation(SecurityAuditOperation.PROFILE_SHARE_OFFERED)
-            .build());
-    return share;
+    var result =
+        shareRepository.insertPendingIfAbsent(offer.profileId(), offer.targetHouseholdId());
+    if (result.inserted()) {
+      auditService.recordEvent(
+          SecurityAuditRecord.builder()
+              .actingAccountId(offer.actingAccountId())
+              .targetHouseholdId(offer.targetHouseholdId())
+              .targetProfileId(offer.profileId())
+              .operation(SecurityAuditOperation.PROFILE_SHARE_OFFERED)
+              .build());
+    }
+    return result.share();
   }
 
   @Transactional

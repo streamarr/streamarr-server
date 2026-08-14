@@ -32,7 +32,7 @@ public class Profile extends BaseAuditableEntity<Profile> {
   @Builder.Default
   @Enumerated(EnumType.STRING)
   @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-  private ProfileClassification classification = ProfileClassification.ADULT;
+  private ProfileKind kind = ProfileKind.ADULT;
 
   private Integer maximumAllowedRatingAge;
 

@@ -273,8 +273,6 @@ class AuthorizationServiceTest {
     SecurityContextHolder.getContext()
         .setAuthentication(
             new StreamarrAuthenticationToken(
-                identity,
-                jwt,
-                List.of(new SimpleGrantedAuthority(TokenScope.PROFILE.authority()))));
+                identity, jwt, List.of(new SimpleGrantedAuthority(identity.scope().authority()))));
   }
 }

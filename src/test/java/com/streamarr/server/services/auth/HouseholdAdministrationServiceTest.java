@@ -3,13 +3,14 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.domain.auth.ProfileClassification;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditOperation;
@@ -27,6 +28,7 @@ import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -54,12 +56,16 @@ class HouseholdAdministrationServiceTest {
   private final PasswordEncoder passwordEncoder =
       PasswordEncoderFactories.createDelegatingPasswordEncoder();
   private final Clock clock = Clock.fixed(Instant.parse("2026-08-13T17:00:00Z"), ZoneOffset.UTC);
+  private final CredentialGuessThrottle credentialThrottle =
+      new CredentialGuessThrottle(
+          AuthThrottleProperties.builder().maxAttempts(5).window(Duration.ofMinutes(15)).build(),
+          clock);
   private final HouseholdAdministrationService service =
       new HouseholdAdministrationService(
           accountRepository,
           householdRepository,
           sessionRepository,
-          new ServerAdminAuthorizer(accountRepository, passwordEncoder),
+          new ServerAdminAuthorizer(accountRepository, passwordEncoder, credentialThrottle),
           new KidProfileManagerPolicy(
               profileRepository, managerRepository, shareRepository, accountRepository),
           passwordEncoder,
@@ -209,7 +215,7 @@ class HouseholdAdministrationServiceTest {
         profileRepository.save(
             Profile.builder()
                 .name("Portable Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(7)
                 .build());
     managerRepository.save(

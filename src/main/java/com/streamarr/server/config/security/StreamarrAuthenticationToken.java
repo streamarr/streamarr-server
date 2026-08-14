@@ -1,6 +1,7 @@
 package com.streamarr.server.config.security;
 
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.authorization.RequestAuthorizationStateResolver.AuthorizationState;
 import java.util.Collection;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
@@ -13,7 +14,8 @@ public class StreamarrAuthenticationToken extends AbstractAuthenticationToken {
 
   private final transient AuthenticatedIdentity identity;
   private final transient Jwt token;
-  private transient Object requestAuthorizationState;
+  private final transient Object requestAuthorizationMutexKey = new Object();
+  private transient AuthorizationState requestAuthorizationState;
 
   public StreamarrAuthenticationToken(
       AuthenticatedIdentity identity,
@@ -35,11 +37,15 @@ public class StreamarrAuthenticationToken extends AbstractAuthenticationToken {
     return token;
   }
 
-  public Object getRequestAuthorizationState() {
+  public AuthorizationState getRequestAuthorizationState() {
     return requestAuthorizationState;
   }
 
-  public void setRequestAuthorizationState(Object requestAuthorizationState) {
+  public Object getRequestAuthorizationMutexKey() {
+    return requestAuthorizationMutexKey;
+  }
+
+  public void setRequestAuthorizationState(AuthorizationState requestAuthorizationState) {
     this.requestAuthorizationState = requestAuthorizationState;
   }
 }

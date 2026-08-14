@@ -44,7 +44,7 @@ public class ProfileManagementService {
         profileRepository.save(
             Profile.builder()
                 .name(command.name())
-                .classification(command.classification())
+                .kind(command.kind())
                 .maximumAllowedRatingAge(command.maximumAllowedRatingAge())
                 .pinHash(command.pinHash())
                 .build());
@@ -91,17 +91,19 @@ public class ProfileManagementService {
     requireManager(invite.actingAccountId(), invite.profileId());
     requireEligibleInvitee(invite);
 
-    var invitation =
+    var result =
         invitationRepository.insertPendingIfAbsent(
             invite.profileId(), invite.actingAccountId(), invite.invitedAccountId());
-    auditService.recordEvent(
-        SecurityAuditRecord.builder()
-            .actingAccountId(invite.actingAccountId())
-            .targetAccountId(invite.invitedAccountId())
-            .targetProfileId(invite.profileId())
-            .operation(SecurityAuditOperation.PROFILE_MANAGER_INVITED)
-            .build());
-    return invitation;
+    if (result.inserted()) {
+      auditService.recordEvent(
+          SecurityAuditRecord.builder()
+              .actingAccountId(invite.actingAccountId())
+              .targetAccountId(invite.invitedAccountId())
+              .targetProfileId(invite.profileId())
+              .operation(SecurityAuditOperation.PROFILE_MANAGER_INVITED)
+              .build());
+    }
+    return result.invitation();
   }
 
   private void requireEligibleInvitee(ProfileManagerInvite invite) {

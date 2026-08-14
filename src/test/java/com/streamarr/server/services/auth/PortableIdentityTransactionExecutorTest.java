@@ -125,6 +125,29 @@ class PortableIdentityTransactionExecutorTest {
     assertThat(attempts).hasValue(1);
   }
 
+  @Test
+  @DisplayName("Should stop retrying when caller is interrupted during backoff")
+  void shouldStopRetryingWhenCallerIsInterruptedDuringBackoff() {
+    var attempts = new AtomicInteger();
+    Thread.currentThread().interrupt();
+
+    try {
+      assertThatThrownBy(
+              () ->
+                  executor.execute(
+                      () -> {
+                        attempts.incrementAndGet();
+                        throw failure("40001");
+                      }))
+          .isInstanceOf(DataAccessResourceFailureException.class);
+
+      assertThat(attempts).hasValue(1);
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted();
+    }
+  }
+
   private DataAccessResourceFailureException failure(String sqlState) {
     return new DataAccessResourceFailureException(
         "Injected database failure", new SQLException("Injected database failure", sqlState));

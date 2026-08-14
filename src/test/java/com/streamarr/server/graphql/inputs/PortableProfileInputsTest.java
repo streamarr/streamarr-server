@@ -2,11 +2,9 @@ package com.streamarr.server.graphql.inputs;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.auth.HouseholdRole;
-import com.streamarr.server.domain.auth.ProfileClassification;
-import com.streamarr.server.services.auth.ProfileManagerOverrideAction;
-import java.util.List;
-import java.util.UUID;
+import java.lang.reflect.RecordComponent;
+import java.util.Arrays;
+import java.util.Locale;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -19,19 +17,12 @@ class PortableProfileInputsTest {
   @DisplayName("Should redact every plaintext secret from GraphQL input descriptions")
   void shouldRedactEveryPlaintextSecretFromGraphQlInputDescriptions() {
     var secret = "plaintext-secret";
-    var id = UUID.randomUUID().toString();
     var inputs =
-        List.of(
-            new PortableProfileInputs.ProfileCreation("Kai", ProfileClassification.KID, 7, secret),
-            new PortableProfileInputs.PolicyChange(id, ProfileClassification.ADULT, null, secret),
-            new PortableProfileInputs.ProfileDeletion(id, secret),
-            new PortableProfileInputs.ForceProfileDeletion(id, secret, "Recovery"),
-            new PortableProfileInputs.ForceProfileUnshare(id, secret, "Recovery"),
-            new PortableProfileInputs.ManagerOverride(
-                id, id, ProfileManagerOverrideAction.GRANT, secret, "Recovery"),
-            new PortableProfileInputs.AccountTransfer(
-                id, id, HouseholdRole.PARENT, secret, "Recovery"),
-            new PortableProfileInputs.OwnershipTransfer(id, id, secret, "Family change"));
+        Arrays.stream(PortableProfileInputs.class.getDeclaredClasses())
+            .filter(Class::isRecord)
+            .filter(PortableProfileInputsTest::carriesPlaintextSecret)
+            .map(type -> instantiate(type, secret))
+            .toList();
 
     assertThat(inputs)
         .isNotEmpty()
@@ -40,5 +31,43 @@ class PortableProfileInputsTest {
                 assertThat(input.toString())
                     .doesNotContain(secret)
                     .containsIgnoringCase("redacted"));
+  }
+
+  private static boolean carriesPlaintextSecret(Class<?> type) {
+    return Arrays.stream(type.getRecordComponents())
+        .map(RecordComponent::getName)
+        .map(name -> name.toLowerCase(Locale.ROOT))
+        .anyMatch(name -> name.contains("password") || name.contains("pin"));
+  }
+
+  private static Object instantiate(Class<?> type, String secret) {
+    try {
+      var components = type.getRecordComponents();
+      var parameterTypes =
+          Arrays.stream(components).map(RecordComponent::getType).toArray(Class[]::new);
+      var arguments =
+          Arrays.stream(components).map(component -> value(component, secret)).toArray();
+      return type.getDeclaredConstructor(parameterTypes).newInstance(arguments);
+    } catch (ReflectiveOperationException exception) {
+      throw new IllegalStateException(
+          "Could not construct secret-bearing GraphQL input", exception);
+    }
+  }
+
+  private static Object value(RecordComponent component, String secret) {
+    var name = component.getName().toLowerCase(Locale.ROOT);
+    if (name.contains("password") || name.contains("pin")) {
+      return secret;
+    }
+    if (component.getType() == String.class) {
+      return "value";
+    }
+    if (component.getType() == int.class || component.getType() == Integer.class) {
+      return 7;
+    }
+    if (component.getType().isEnum()) {
+      return component.getType().getEnumConstants()[0];
+    }
+    throw new IllegalStateException("Unsupported GraphQL input component " + component.getName());
   }
 }

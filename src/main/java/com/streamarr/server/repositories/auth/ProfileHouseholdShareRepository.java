@@ -2,6 +2,7 @@ package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,6 +15,9 @@ public interface ProfileHouseholdShareRepository
 
   List<ProfileHouseholdShare> findByHouseholdIdAndStatus(
       UUID householdId, ProfileShareStatus status);
+
+  List<ProfileHouseholdShare> findByHouseholdIdInAndStatus(
+      Collection<UUID> householdIds, ProfileShareStatus status);
 
   List<ProfileHouseholdShare> findByProfileIdAndStatus(UUID profileId, ProfileShareStatus status);
 

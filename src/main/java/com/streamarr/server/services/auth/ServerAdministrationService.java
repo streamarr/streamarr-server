@@ -4,6 +4,7 @@ import com.streamarr.server.domain.auth.ProfileDeletionAuthorization;
 import com.streamarr.server.domain.auth.ProfileDeletionMode;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.SecurityAuditOperation;
+import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.ProfileManagerInvariantException;
 import com.streamarr.server.repositories.auth.ProfileDeletionAuthorizationRepository;
@@ -13,6 +14,7 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.util.Comparator;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,7 +37,7 @@ public class ServerAdministrationService {
   @Transactional
   public void forceDeleteProfile(ForceProfileDeletionCommand command) {
     requireReason(command.reason());
-    serverAdminAuthorizer.requireFreshAuthority(command.actingAccountId(), command.password());
+    requireFreshAuthority(command.actingAccountId(), command.password(), command.profileId());
     var profile =
         profileRepository
             .findById(command.profileId())
@@ -68,7 +70,7 @@ public class ServerAdministrationService {
   @Transactional
   public void forceUnshareProfile(ForceProfileUnshareCommand command) {
     requireReason(command.reason());
-    serverAdminAuthorizer.requireFreshAuthority(command.actingAccountId(), command.password());
+    requireFreshAuthority(command.actingAccountId(), command.password(), null);
     var share =
         shareRepository.findById(command.shareId()).orElseThrow(ProfileAccessDeniedException::new);
 
@@ -87,7 +89,7 @@ public class ServerAdministrationService {
   @Transactional
   public void overrideProfileManager(ProfileManagerOverrideCommand command) {
     requireReason(command.reason());
-    serverAdminAuthorizer.requireFreshAuthority(command.actingAccountId(), command.password());
+    requireFreshAuthority(command.actingAccountId(), command.password(), command.profileId());
     profileRepository.findById(command.profileId()).orElseThrow(ProfileAccessDeniedException::new);
     accountRepository
         .findById(command.targetAccountId())
@@ -111,6 +113,21 @@ public class ServerAdministrationService {
 
   private void grantManagement(ProfileManagerOverrideCommand command) {
     managerRepository.insertIfAbsent(command.targetAccountId(), command.profileId());
+  }
+
+  private void requireFreshAuthority(UUID accountId, String password, UUID targetProfileId) {
+    try {
+      serverAdminAuthorizer.requireFreshAuthority(accountId, password);
+    } catch (InvalidCredentialsException exception) {
+      auditService.recordFailure(
+          SecurityAuditRecord.builder()
+              .actingAccountId(accountId)
+              .targetProfileId(targetProfileId)
+              .operation(SecurityAuditOperation.SERVER_ADMIN_REAUTHENTICATION_DENIED)
+              .reason("Server administrator password verification failed")
+              .build());
+      throw exception;
+    }
   }
 
   private void removeManagement(ProfileManagerOverrideCommand command) {

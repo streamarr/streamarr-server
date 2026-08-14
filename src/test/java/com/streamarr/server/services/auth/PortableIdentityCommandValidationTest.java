@@ -3,7 +3,7 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
-import com.streamarr.server.domain.auth.ProfileClassification;
+import com.streamarr.server.domain.auth.ProfileKind;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -59,9 +59,7 @@ class PortableIdentityCommandValidationTest {
                     null, id, id, HouseholdRole.MEMBER, "password", "reason")),
         command(
             "portable profile creation",
-            () ->
-                new CreatePortableProfileCommand(
-                    null, "Profile", ProfileClassification.ADULT, null, null)),
+            () -> new CreatePortableProfileCommand(null, "Profile", ProfileKind.ADULT, null, null)),
         command("profile deletion", () -> new DeleteProfileCommand(null, id, "password")),
         command(
             "forced profile deletion",
@@ -92,10 +90,10 @@ class PortableIdentityCommandValidationTest {
                 new ProfileManagerOverrideCommand(
                     null, id, id, ProfileManagerOverrideAction.GRANT, "password", "reason")),
         command(
-            "profile policy change",
-            () ->
-                new ProfilePolicyChange(
-                    null, id, ProfileClassification.ADULT, null, null, false, false)),
+            "profile kind change", () -> new SetProfileKindCommand(null, id, ProfileKind.ADULT)),
+        command("content ceiling set", () -> new SetProfileContentCeilingCommand(null, id, 13)),
+        command("content ceiling removal", () -> new RemoveProfileContentCeilingCommand(null, id)),
+        command("profile PIN reset", () -> new ResetProfilePinCommand(null, id, "encoded-pin")),
         command("profile share acceptance", () -> new ProfileShareAcceptance(null, id, null)),
         command("profile share cancellation", () -> new ProfileShareCancellation(null, id)),
         command("profile share rejection", () -> new ProfileShareRejection(null, id)),

@@ -21,6 +21,10 @@ selectable `PROFILE_ID`, then run `Auth/Session/Select Profile` when a profile-s
 required. Profile selection submits `PROFILE_PIN` for server-side verification when needed. The
 collection never stores or submits a household context for ordinary viewing.
 
+The manual requests under `GraphQL/Profile Management` mirror the explicit policy API: set Profile
+Kind, set or remove Content Ceiling, and reset Profile PIN. Set `PROFILE_PIN` to the replacement PIN
+before running the reset request; no account password is submitted by that operation.
+
 Requests under `GraphQL` inherit `Bearer {{ACCESS_TOKEN}}`. The `TMDB` folder has its own
 inherited bearer configuration backed by the separate `TMDB_TOKEN` secret.
 The token in a stream session's `streamUrl` is a short-lived playback token, not the API

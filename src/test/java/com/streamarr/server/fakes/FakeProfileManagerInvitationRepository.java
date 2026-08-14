@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationInsertResult;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import java.util.List;
 import java.util.UUID;
@@ -19,7 +20,7 @@ public class FakeProfileManagerInvitationRepository
   }
 
   @Override
-  public synchronized ProfileManagerInvitation insertPendingIfAbsent(
+  public synchronized ProfileManagerInvitationInsertResult insertPendingIfAbsent(
       UUID profileId, UUID invitingAccountId, UUID invitedAccountId) {
     var existing =
         database.values().stream()
@@ -27,15 +28,18 @@ public class FakeProfileManagerInvitationRepository
             .filter(invitation -> invitedAccountId.equals(invitation.getInvitedAccountId()))
             .filter(invitation -> invitation.getStatus() == ProfileManagerInvitationStatus.PENDING)
             .findFirst();
-    return existing.orElseGet(
-        () ->
-            save(
-                ProfileManagerInvitation.builder()
-                    .profileId(profileId)
-                    .invitingAccountId(invitingAccountId)
-                    .invitedAccountId(invitedAccountId)
-                    .status(ProfileManagerInvitationStatus.PENDING)
-                    .build()));
+    if (existing.isPresent()) {
+      return new ProfileManagerInvitationInsertResult(existing.orElseThrow(), false);
+    }
+    var invitation =
+        save(
+            ProfileManagerInvitation.builder()
+                .profileId(profileId)
+                .invitingAccountId(invitingAccountId)
+                .invitedAccountId(invitedAccountId)
+                .status(ProfileManagerInvitationStatus.PENDING)
+                .build());
+    return new ProfileManagerInvitationInsertResult(invitation, true);
   }
 
   @Override

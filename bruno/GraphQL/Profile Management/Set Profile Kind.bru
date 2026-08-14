@@ -1,0 +1,37 @@
+meta {
+  name: Set Profile Kind
+  type: graphql
+  seq: 1
+  tags: [
+    manual
+  ]
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: inherit
+}
+
+body:graphql {
+  mutation SetProfileKind($input: ProfileKindChangeInput!) {
+    setProfileKind(input: $input)
+  }
+}
+
+body:graphql:vars {
+  {
+    "input": {
+      "profileId": "{{PROFILE_ID}}",
+      "kind": "KID"
+    }
+  }
+}
+
+tests {
+  test("Should set the portable profile kind", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.not.have.property("errors");
+    expect(res.body.data.setProfileKind).to.equal(true);
+  });
+}

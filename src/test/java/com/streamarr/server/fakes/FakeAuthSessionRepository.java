@@ -5,11 +5,20 @@ import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
     implements AuthSessionRepository {
+
+  private final Map<UUID, UUID> accountHomes = new HashMap<>();
+
+  public void registerAccountHome(UUID accountId, UUID householdId) {
+    accountHomes.put(accountId, householdId);
+  }
 
   @Override
   public boolean hasLivePlaybackAuthority(PlaybackAuthority authority) {
@@ -17,7 +26,7 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
   }
 
   @Override
-  public java.util.List<AuthSession> findByAccountId(UUID accountId) {
+  public List<AuthSession> findByAccountId(UUID accountId) {
     return database.values().stream()
         .filter(session -> accountId.equals(session.getAccountId()))
         .toList();
@@ -64,6 +73,8 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
     var matches =
         database.values().stream()
             .filter(session -> profileId.equals(session.getActiveProfileId()))
+            .filter(session -> session.getRevokedAt() == null)
+            .filter(session -> householdId.equals(accountHomes.get(session.getAccountId())))
             .toList();
     matches.forEach(session -> session.setActiveProfileId(null));
     return matches.size();

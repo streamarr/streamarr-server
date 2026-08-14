@@ -1,6 +1,6 @@
 package com.streamarr.server.domain.auth;
 
-public enum ProfileClassification {
+public enum ProfileKind {
   KID,
   ADULT
 }

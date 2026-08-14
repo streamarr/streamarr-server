@@ -9,10 +9,10 @@ import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.domain.auth.ProfileClassification;
 import com.streamarr.server.domain.auth.ProfileDeletionAuthorization;
 import com.streamarr.server.domain.auth.ProfileDeletionMode;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
@@ -103,7 +103,7 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
               assertThat(share.getHouseholdId()).isEqualTo(result.household().getId());
               assertThat(share.getStatus()).isEqualTo(ProfileShareStatus.ACTIVE);
             });
-    assertThat(result.profile().getClassification()).isEqualTo(ProfileClassification.ADULT);
+    assertThat(result.profile().getKind()).isEqualTo(ProfileKind.ADULT);
     assertThat(result.profile().getMaximumAllowedRatingAge()).isNull();
     assertThat(result.profile().getPinHash()).isNull();
     assertThat(result.profile().getManagementVersion()).isZero();
@@ -246,7 +246,7 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
                       profileRepository.save(
                           Profile.builder()
                               .name("Shared Kid")
-                              .classification(ProfileClassification.KID)
+                              .kind(ProfileKind.KID)
                               .maximumAllowedRatingAge(7)
                               .build());
                   profileManagerRepository.save(
@@ -300,7 +300,7 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
                       profileRepository.save(
                           Profile.builder()
                               .name("Account Move Kid")
-                              .classification(ProfileClassification.KID)
+                              .kind(ProfileKind.KID)
                               .maximumAllowedRatingAge(7)
                               .build());
                   profileManagerRepository.save(
@@ -549,7 +549,7 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
                   profileRepository.save(
                       Profile.builder()
                           .name("Restricted Kid")
-                          .classification(ProfileClassification.KID)
+                          .kind(ProfileKind.KID)
                           .maximumAllowedRatingAge(7)
                           .build());
               profileManagerRepository.save(

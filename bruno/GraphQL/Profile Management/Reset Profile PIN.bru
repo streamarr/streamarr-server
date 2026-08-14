@@ -1,0 +1,37 @@
+meta {
+  name: Reset Profile PIN
+  type: graphql
+  seq: 4
+  tags: [
+    manual
+  ]
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: inherit
+}
+
+body:graphql {
+  mutation ResetProfilePin($input: ProfilePinResetInput!) {
+    resetProfilePin(input: $input)
+  }
+}
+
+body:graphql:vars {
+  {
+    "input": {
+      "profileId": "{{PROFILE_ID}}",
+      "newPin": "{{PROFILE_PIN}}"
+    }
+  }
+}
+
+tests {
+  test("Should replace the portable profile PIN", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.not.have.property("errors");
+    expect(res.body.data.resetProfilePin).to.equal(true);
+  });
+}

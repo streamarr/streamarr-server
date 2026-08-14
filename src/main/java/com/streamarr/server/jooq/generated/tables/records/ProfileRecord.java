@@ -4,7 +4,7 @@
 package com.streamarr.server.jooq.generated.tables.records;
 
 
-import com.streamarr.server.jooq.generated.enums.ProfileClassification;
+import com.streamarr.server.jooq.generated.enums.ProfileKind;
 import com.streamarr.server.jooq.generated.tables.Profile;
 
 import java.time.OffsetDateTime;
@@ -107,17 +107,17 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
     }
 
     /**
-     * Setter for <code>public.profile.classification</code>.
+     * Setter for <code>public.profile.kind</code>.
      */
-    public void setClassification(ProfileClassification value) {
+    public void setKind(ProfileKind value) {
         set(6, value);
     }
 
     /**
-     * Getter for <code>public.profile.classification</code>.
+     * Getter for <code>public.profile.kind</code>.
      */
-    public ProfileClassification getClassification() {
-        return (ProfileClassification) get(6);
+    public ProfileKind getKind() {
+        return (ProfileKind) get(6);
     }
 
     /**
@@ -185,7 +185,7 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
     /**
      * Create a detached, initialised ProfileRecord
      */
-    public ProfileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String name, ProfileClassification classification, Integer maximumAllowedRatingAge, String pinHash, Long managementVersion) {
+    public ProfileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String name, ProfileKind kind, Integer maximumAllowedRatingAge, String pinHash, Long managementVersion) {
         super(Profile.PROFILE);
 
         setId(id);
@@ -194,7 +194,7 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
         setLastModifiedOn(lastModifiedOn);
         setLastModifiedBy(lastModifiedBy);
         setName(name);
-        setClassification(classification);
+        setKind(kind);
         setMaximumAllowedRatingAge(maximumAllowedRatingAge);
         setPinHash(pinHash);
         setManagementVersion(managementVersion);

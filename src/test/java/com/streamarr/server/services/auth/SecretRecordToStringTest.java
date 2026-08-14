@@ -3,7 +3,7 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
-import com.streamarr.server.domain.auth.ProfileClassification;
+import com.streamarr.server.domain.auth.ProfileKind;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -34,7 +34,7 @@ class SecretRecordToStringTest {
             ForceProfileUnshareCommand.builder().password(secret).toString(),
             HouseholdOwnershipTransferCommand.builder().password(secret).toString(),
             ProfileManagerOverrideCommand.builder().password(secret).toString(),
-            ProfilePolicyChange.builder().pinHash(secret).toString());
+            ResetProfilePinCommand.builder().pinHash(secret).toString());
 
     assertThat(renderedValues)
         .hasSize(13)
@@ -77,7 +77,7 @@ class SecretRecordToStringTest {
             CreatePortableProfileCommand.builder()
                 .actingAccountId(id)
                 .name("Profile")
-                .classification(ProfileClassification.ADULT)
+                .kind(ProfileKind.ADULT)
                 .pinHash(secret)
                 .build()
                 .toString(),
@@ -118,10 +118,9 @@ class SecretRecordToStringTest {
                 .reason("review")
                 .build()
                 .toString(),
-            ProfilePolicyChange.builder()
+            ResetProfilePinCommand.builder()
                 .actingAccountId(id)
                 .profileId(id)
-                .classification(ProfileClassification.KID)
                 .pinHash(secret)
                 .build()
                 .toString());

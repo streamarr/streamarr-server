@@ -6,8 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.domain.auth.ProfileClassification;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
@@ -101,6 +101,53 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName("Should not audit a repeated pending share offer")
+  void shouldNotAuditRepeatedPendingShareOffer() {
+    var managerId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
+    var householdId = UUID.randomUUID();
+    managerRepository.save(
+        ProfileManager.builder().accountId(managerId).profileId(profileId).build());
+    var offer =
+        ProfileShareOffer.builder()
+            .actingAccountId(managerId)
+            .profileId(profileId)
+            .targetHouseholdId(householdId)
+            .build();
+
+    var first = service.offer(offer);
+    var second = service.offer(offer);
+
+    assertThat(second.getId()).isEqualTo(first.getId());
+    assertThat(auditRepository.findAll())
+        .extracting(event -> event.getOperation())
+        .containsExactly(SecurityAuditOperation.PROFILE_SHARE_OFFERED);
+  }
+
+  @Test
+  @DisplayName("Should not audit a share offer when the share is already active")
+  void shouldNotAuditShareOfferWhenShareAlreadyActive() {
+    var managerId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
+    var householdId = UUID.randomUUID();
+    managerRepository.save(
+        ProfileManager.builder().accountId(managerId).profileId(profileId).build());
+    var activeShare = saveShare(profileId, householdId, ProfileShareStatus.ACTIVE);
+
+    var returnedShare =
+        service.offer(
+            ProfileShareOffer.builder()
+                .actingAccountId(managerId)
+                .profileId(profileId)
+                .targetHouseholdId(householdId)
+                .build());
+
+    assertThat(returnedShare.getId()).isEqualTo(activeShare.getId());
+    assertThat(returnedShare.getStatus()).isEqualTo(ProfileShareStatus.ACTIVE);
+    assertThat(auditRepository.findAll()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should reject share offer from account that does not manage profile")
   void shouldRejectShareOfferFromAccountThatDoesNotManageProfile() {
     var offer =
@@ -122,10 +169,7 @@ class ProfileSharingServiceTest {
     var parent = saveAccount(householdId, HouseholdRole.PARENT);
     var profile =
         profileRepository.save(
-            Profile.builder()
-                .name("Visiting Adult")
-                .classification(ProfileClassification.ADULT)
-                .build());
+            Profile.builder().name("Visiting Adult").kind(ProfileKind.ADULT).build());
     var pendingShare =
         shareRepository.save(
             ProfileHouseholdShare.builder()
@@ -144,6 +188,10 @@ class ProfileSharingServiceTest {
     assertThat(acceptedShare.getStatus()).isEqualTo(ProfileShareStatus.ACTIVE);
     assertThat(managerRepository.existsByAccountIdAndProfileId(parent.getId(), profile.getId()))
         .isFalse();
+    assertThat(auditRepository.findAll())
+        .singleElement()
+        .extracting(event -> event.getOperation())
+        .isEqualTo(SecurityAuditOperation.PROFILE_SHARE_ACCEPTED);
   }
 
   @Test
@@ -153,10 +201,7 @@ class ProfileSharingServiceTest {
     var parent = saveAccount(householdId, HouseholdRole.PARENT);
     var profile =
         profileRepository.save(
-            Profile.builder()
-                .name("Co-managed Adult")
-                .classification(ProfileClassification.ADULT)
-                .build());
+            Profile.builder().name("Co-managed Adult").kind(ProfileKind.ADULT).build());
     var pendingShare = saveShare(profile.getId(), householdId, ProfileShareStatus.PENDING);
     var invitation =
         invitationRepository.save(
@@ -236,7 +281,7 @@ class ProfileSharingServiceTest {
         profileRepository.save(
             Profile.builder()
                 .name("Portable Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(7)
                 .build());
     var pendingShare =
@@ -267,7 +312,7 @@ class ProfileSharingServiceTest {
         profileRepository.save(
             Profile.builder()
                 .name("Portable Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(7)
                 .build());
     var pendingShare =
@@ -309,7 +354,7 @@ class ProfileSharingServiceTest {
         profileRepository.save(
             Profile.builder()
                 .name("Portable Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(7)
                 .build());
     var pendingShare = saveShare(kid.getId(), householdId, ProfileShareStatus.PENDING);
@@ -344,15 +389,12 @@ class ProfileSharingServiceTest {
         profileRepository.save(
             Profile.builder()
                 .name("Portable Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(7)
                 .build());
     var adult =
         profileRepository.save(
-            Profile.builder()
-                .name("Unprotected Adult")
-                .classification(ProfileClassification.ADULT)
-                .build());
+            Profile.builder().name("Unprotected Adult").kind(ProfileKind.ADULT).build());
     managerRepository.save(
         ProfileManager.builder().accountId(parent.getId()).profileId(kid.getId()).build());
     shareRepository.save(
@@ -430,6 +472,26 @@ class ProfileSharingServiceTest {
         .singleElement()
         .extracting(event -> event.getOperation())
         .isEqualTo(SecurityAuditOperation.PROFILE_UNSHARED_BY_HOUSEHOLD);
+  }
+
+  @Test
+  @DisplayName("Should remove profile only from the acting household when shared into two homes")
+  void shouldRemoveProfileOnlyFromActingHouseholdWhenSharedIntoTwoHomes() {
+    var dadHouseholdId = UUID.randomUUID();
+    var momHouseholdId = UUID.randomUUID();
+    var dad = saveAccount(dadHouseholdId, HouseholdRole.OWNER);
+    var profileId = UUID.randomUUID();
+    var dadShare = saveShare(profileId, dadHouseholdId, ProfileShareStatus.ACTIVE);
+    var momShare = saveShare(profileId, momHouseholdId, ProfileShareStatus.ACTIVE);
+
+    service.removeFromHousehold(
+        HouseholdProfileRemoval.builder()
+            .actingAccountId(dad.getId())
+            .shareId(dadShare.getId())
+            .build());
+
+    assertThat(shareRepository.existsById(dadShare.getId())).isFalse();
+    assertThat(shareRepository.existsById(momShare.getId())).isTrue();
   }
 
   @Test
@@ -606,7 +668,7 @@ class ProfileSharingServiceTest {
         profileRepository.save(
             Profile.builder()
                 .name("Co-managed Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(7)
                 .build());
     managerRepository.save(
@@ -620,6 +682,13 @@ class ProfileSharingServiceTest {
                 .householdId(householdId)
                 .status(ProfileShareStatus.ACTIVE)
                 .build());
+    var otherShare =
+        shareRepository.save(
+            ProfileHouseholdShare.builder()
+                .profileId(kid.getId())
+                .householdId(UUID.randomUUID())
+                .status(ProfileShareStatus.ACTIVE)
+                .build());
 
     service.leaveCurrentHome(
         ProfileHomeDeparture.builder()
@@ -628,9 +697,14 @@ class ProfileSharingServiceTest {
             .build());
 
     assertThat(shareRepository.existsById(currentShare.getId())).isFalse();
+    assertThat(shareRepository.existsById(otherShare.getId())).isTrue();
     assertThat(selectionCleaner.clearedSelections)
         .containsExactly(
             new FakeProfileSelectionCleaner.ClearedSelection(kid.getId(), householdId));
+    assertThat(auditRepository.findAll())
+        .singleElement()
+        .extracting(event -> event.getOperation())
+        .isEqualTo(SecurityAuditOperation.PROFILE_LEFT_HOME);
   }
 
   @Test

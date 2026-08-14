@@ -3,12 +3,13 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.domain.auth.ProfileClassification;
 import com.streamarr.server.domain.auth.ProfileDeletionMode;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
@@ -20,6 +21,7 @@ import com.streamarr.server.exceptions.KidProfileManagerRequiredException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.ProfileManagerInvariantException;
 import com.streamarr.server.exceptions.ServerAdministrationDeniedException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeProfileDeletionAuthorizationRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
@@ -28,6 +30,8 @@ import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeProfileSelectionCleaner;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -59,6 +63,11 @@ class ServerAdministrationServiceTest {
       new FakeSecurityAuditEventRepository();
   private final PasswordEncoder passwordEncoder =
       PasswordEncoderFactories.createDelegatingPasswordEncoder();
+  private final CredentialGuessThrottle credentialThrottle =
+      new CredentialGuessThrottle(
+          AuthThrottleProperties.builder().maxAttempts(2).window(Duration.ofMinutes(15)).build(),
+          Clock.systemUTC());
+  private final SecurityAuditService auditService = new SecurityAuditService(auditRepository);
   private final ServerAdministrationService service =
       new ServerAdministrationService(
           accountRepository,
@@ -68,10 +77,10 @@ class ServerAdministrationServiceTest {
           shareRepository,
           deletionAuthorizationRepository,
           selectionCleaner,
-          new ServerAdminAuthorizer(accountRepository, passwordEncoder),
+          new ServerAdminAuthorizer(accountRepository, passwordEncoder, credentialThrottle),
           new KidProfileManagerPolicy(
               profileRepository, managerRepository, shareRepository, accountRepository),
-          new SecurityAuditService(auditRepository));
+          auditService);
 
   @Test
   @DisplayName("Should force delete a profile and every relationship after fresh reauthentication")
@@ -252,7 +261,7 @@ class ServerAdministrationServiceTest {
             shareRepository,
             deletionAuthorizationRepository,
             selectionCleaner,
-            new ServerAdminAuthorizer(accountRepository, passwordEncoder),
+            new ServerAdminAuthorizer(accountRepository, passwordEncoder, credentialThrottle),
             new KidProfileManagerPolicy(
                 profileRepository, racingManagerRepository, shareRepository, accountRepository),
             new SecurityAuditService(auditRepository));
@@ -287,10 +296,7 @@ class ServerAdministrationServiceTest {
     var retainedManager = saveAccount(AccountRole.USER);
     var profile =
         profileRepository.save(
-            Profile.builder()
-                .name("Managed Adult")
-                .classification(ProfileClassification.ADULT)
-                .build());
+            Profile.builder().name("Managed Adult").kind(ProfileKind.ADULT).build());
     managerRepository.save(manager(removedManager.getId(), profile.getId()));
     managerRepository.save(manager(retainedManager.getId(), profile.getId()));
 
@@ -394,6 +400,57 @@ class ServerAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should audit rejected password reauthentication for manager override")
+  void shouldAuditRejectedPasswordReauthenticationForManagerOverride() {
+    var admin = saveAccount(AccountRole.ADMIN);
+    var target = saveAccount(AccountRole.USER);
+    var profile = profileRepository.save(Profile.builder().name("Protected Profile").build());
+    var command =
+        ProfileManagerOverrideCommand.builder()
+            .actingAccountId(admin.getId())
+            .targetAccountId(target.getId())
+            .profileId(profile.getId())
+            .action(ProfileManagerOverrideAction.GRANT)
+            .password("wrong password")
+            .reason("Recovery")
+            .build();
+
+    assertThatThrownBy(() -> service.overrideProfileManager(command))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(auditRepository.findAll())
+        .singleElement()
+        .satisfies(
+            event -> {
+              assertThat(event.getOperation())
+                  .isEqualTo(SecurityAuditOperation.SERVER_ADMIN_REAUTHENTICATION_DENIED);
+              assertThat(event.getTargetProfileId()).isEqualTo(profile.getId());
+            });
+  }
+
+  @Test
+  @DisplayName("Should throttle administrator password reauthentication")
+  void shouldThrottleAdministratorPasswordReauthentication() {
+    var admin = saveAccount(AccountRole.ADMIN);
+    var profile = profileRepository.save(Profile.builder().name("Protected Profile").build());
+    var command =
+        ForceProfileDeletionCommand.builder()
+            .actingAccountId(admin.getId())
+            .profileId(profile.getId())
+            .password("wrong password")
+            .reason("Recovery")
+            .build();
+
+    for (var attempt = 0; attempt < 2; attempt++) {
+      assertThatThrownBy(() -> service.forceDeleteProfile(command))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    assertThatThrownBy(() -> service.forceDeleteProfile(command))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
   @DisplayName("Should reject destructive override when password reauthentication fails")
   void shouldRejectDestructiveOverrideWhenPasswordReauthenticationFails() {
     var admin = saveAccount(AccountRole.ADMIN);
@@ -410,7 +467,14 @@ class ServerAdministrationServiceTest {
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(profileRepository.existsById(profile.getId())).isTrue();
-    assertThat(auditRepository.findAll()).isEmpty();
+    assertThat(auditRepository.findAll())
+        .singleElement()
+        .satisfies(
+            event -> {
+              assertThat(event.getOperation())
+                  .isEqualTo(SecurityAuditOperation.SERVER_ADMIN_REAUTHENTICATION_DENIED);
+              assertThat(event.getTargetProfileId()).isEqualTo(profile.getId());
+            });
   }
 
   @Test
@@ -427,7 +491,7 @@ class ServerAdministrationServiceTest {
         profileRepository.save(
             Profile.builder()
                 .name("Portable Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(7)
                 .build());
     managerRepository.save(manager(localParent.getId(), kid.getId()));

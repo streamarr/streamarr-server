@@ -191,10 +191,8 @@ public class AuthTestSupport {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
             _ -> {
-              profileShareRepository
-                  .findByProfileIdAndHouseholdId(
-                      identity.profile().getId(), identity.household().getId())
-                  .ifPresent(profileShareRepository::delete);
+              profileShareRepository.deleteAll(
+                  profileShareRepository.findByProfileId(identity.profile().getId()));
               profileShareRepository.flush();
               deletionAuthorizationRepository.saveAndFlush(
                   ProfileDeletionAuthorization.builder()

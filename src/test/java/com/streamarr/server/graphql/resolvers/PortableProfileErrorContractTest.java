@@ -91,9 +91,8 @@ class PortableProfileErrorContractTest {
     assertThat(result.getErrors()).hasSize(1);
     var error = result.getErrors().getFirst();
     assertThat(error.getMessage()).doesNotContain(inaccessibleProfileId.toString());
-    assertThat(error.getExtensions())
-        .containsEntry("code", "PROFILE_SAFETY_VIOLATION")
-        .containsEntry("profilesRequiringPin", List.of(inaccessibleProfileId.toString()));
+    assertThat(error.getExtensions()).containsEntry("code", "PROFILE_SAFETY_VIOLATION");
+    assertThat(error.getExtensions().toString()).doesNotContain(inaccessibleProfileId.toString());
   }
 
   @Test
@@ -112,7 +111,50 @@ class PortableProfileErrorContractTest {
 
     assertThat(result.getErrors()).hasSize(1);
     var error = result.getErrors().getFirst();
-    assertThat(error.getMessage()).doesNotContain("DataIntegrityViolationException");
+    assertThat(error.getMessage())
+        .doesNotContain("DataIntegrityViolationException")
+        .doesNotContain("Profiles require a PIN before sharing");
+    assertThat(error.getExtensions())
+        .containsEntry("code", "PORTABLE_IDENTITY_INVARIANT_VIOLATION");
+  }
+
+  @Test
+  @DisplayName("Should sanitize non-check-constraint database failures")
+  void shouldSanitizeNonCheckConstraintDatabaseFailures() {
+    var inaccessibleHouseholdId = UUID.randomUUID();
+    var databaseMessage =
+        "insert into profile_household_share violates foreign key constraint for household "
+            + inaccessibleHouseholdId;
+    doAnswer(
+            _ -> {
+              throw new DataIntegrityViolationException(
+                  databaseMessage, new SQLException(databaseMessage, "23503"));
+            })
+        .when(mutationService)
+        .execute(any(Runnable.class));
+
+    var result = dgsQueryExecutor.execute(deleteProfileMutation());
+
+    assertThat(result.getErrors()).hasSize(1);
+    var error = result.getErrors().getFirst();
+    assertThat(error.getMessage())
+        .doesNotContain(databaseMessage)
+        .doesNotContain(inaccessibleHouseholdId.toString());
+    assertThat(error.getExtensions()).containsKey("code");
+  }
+
+  @Test
+  @DisplayName("Should return a client safe validation error when an override reason is blank")
+  void shouldReturnClientSafeValidationErrorWhenOverrideReasonIsBlank() {
+    doAnswer(_ -> throwException(new IllegalArgumentException("An override reason is required.")))
+        .when(serverAdministrationService)
+        .forceDeleteProfile(any());
+
+    var result = dgsQueryExecutor.execute(forceDeleteProfileMutation());
+
+    assertThat(result.getErrors()).hasSize(1);
+    var error = result.getErrors().getFirst();
+    assertThat(error.getMessage()).doesNotContain("IllegalArgumentException");
     assertThat(error.getExtensions()).containsKey("code");
   }
 
@@ -122,6 +164,19 @@ class PortableProfileErrorContractTest {
           deleteProfile(input: {
             profileId: "%s"
             password: "wrong-password"
+          })
+        }
+        """
+        .formatted(UUID.randomUUID());
+  }
+
+  private String forceDeleteProfileMutation() {
+    return """
+        mutation {
+          forceDeleteProfile(input: {
+            profileId: "%s"
+            password: "correct-password"
+            reason: " "
           })
         }
         """

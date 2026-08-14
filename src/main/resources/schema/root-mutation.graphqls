@@ -22,7 +22,10 @@ type Mutation {
     rejectProfileManagerInvitation(invitationId: ID!): Boolean!
     cancelProfileManagerInvitation(invitationId: ID!): Boolean!
     relinquishProfileManagement(input: ProfileReferenceInput!): Boolean!
-    changeProfilePolicy(input: ProfilePolicyChangeInput!): Boolean!
+    setProfileKind(input: ProfileKindChangeInput!): Boolean!
+    setProfileContentCeiling(input: ProfileContentCeilingChangeInput!): Boolean!
+    removeProfileContentCeiling(input: ProfileReferenceInput!): Boolean!
+    resetProfilePin(input: ProfilePinResetInput!): Boolean!
     deleteProfile(input: ProfileDeletionInput!): Boolean!
     forceDeleteProfile(input: ForceProfileDeletionInput!): Boolean!
     forceUnshareProfile(input: ForceProfileUnshareInput!): Boolean!

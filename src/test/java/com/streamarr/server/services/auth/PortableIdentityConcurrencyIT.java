@@ -7,8 +7,8 @@ import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.domain.auth.ProfileClassification;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
@@ -23,6 +23,7 @@ import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -71,17 +72,17 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     assertThat(adult.getPinHash() == null && kidIsActive).isFalse();
   }
 
-  @ParameterizedTest(name = "Should serialize classification change and kid activation at {0}")
+  @ParameterizedTest(name = "Should serialize profile kind change and kid activation at {0}")
   @MethodSource("isolationLevels")
   @DisplayName(
-      "Should serialize classification change and kid activation at every supported isolation")
-  void shouldSerializeClassificationChangeAndKidActivationAtEverySupportedIsolation(
+      "Should serialize profile kind change and kid activation at every supported isolation")
+  void shouldSerializeKindChangeAndKidActivationAtEverySupportedIsolation(
       String isolationName, int isolationLevel, String expectedFailureState) throws Exception {
-    var fixture = createFixture(ProfileClassification.KID, 7, null, "Classification Candidate");
+    var fixture = createFixture(ProfileKind.KID, 7, null, "Kind Candidate");
     var barrier = new CyclicBarrier(2);
     assertOneCommit(
         race(
-            mutation(isolationLevel, () -> changeClassification(fixture.adultProfileId(), barrier)),
+            mutation(isolationLevel, () -> changeKind(fixture.adultProfileId(), barrier)),
             mutation(isolationLevel, () -> activateKidShare(fixture, barrier))),
         expectedFailureState);
 
@@ -89,8 +90,7 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     var kidIsActive =
         shareRepository.existsByProfileIdAndHouseholdIdAndStatus(
             fixture.kidProfileId(), fixture.householdId(), ProfileShareStatus.ACTIVE);
-    assertThat(candidate.getClassification() == ProfileClassification.ADULT && kidIsActive)
-        .isFalse();
+    assertThat(candidate.getKind() == ProfileKind.ADULT && kidIsActive).isFalse();
   }
 
   @ParameterizedTest(name = "Should serialize ceiling change and kid activation at {0}")
@@ -98,7 +98,7 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
   @DisplayName("Should serialize ceiling change and kid activation at every supported isolation")
   void shouldSerializeCeilingChangeAndKidActivationAtEverySupportedIsolation(
       String isolationName, int isolationLevel, String expectedFailureState) throws Exception {
-    var fixture = createFixture(ProfileClassification.KID, 7, null, "Ceiling Candidate");
+    var fixture = createFixture(ProfileKind.KID, 7, null, "Ceiling Candidate");
     var barrier = new CyclicBarrier(2);
     assertOneCommit(
         race(
@@ -161,7 +161,7 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var firstFuture = executor.submit(first);
       var secondFuture = executor.submit(second);
-      return List.of(firstFuture.get(), secondFuture.get());
+      return List.of(firstFuture.get(30, TimeUnit.SECONDS), secondFuture.get(30, TimeUnit.SECONDS));
     }
   }
 
@@ -207,9 +207,9 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     await(barrier);
   }
 
-  private void changeClassification(UUID profileId, CyclicBarrier barrier) {
+  private void changeKind(UUID profileId, CyclicBarrier barrier) {
     var profile = profileRepository.findById(profileId).orElseThrow();
-    profile.setClassification(ProfileClassification.ADULT);
+    profile.setKind(ProfileKind.ADULT);
     profileRepository.saveAndFlush(profile);
     await(barrier);
   }
@@ -242,11 +242,11 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
   }
 
   private ConcurrencyFixture createFixture() {
-    return createFixture(ProfileClassification.ADULT, null, "encoded-pin", "Protected Adult");
+    return createFixture(ProfileKind.ADULT, null, "encoded-pin", "Protected Adult");
   }
 
   private ConcurrencyFixture createFixture(
-      ProfileClassification classification, Integer ceiling, String pinHash, String name) {
+      ProfileKind kind, Integer ceiling, String pinHash, String name) {
     return new TransactionTemplate(transactionManager)
         .execute(
             _ -> {
@@ -267,7 +267,7 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
                   profileRepository.save(
                       Profile.builder()
                           .name(name)
-                          .classification(classification)
+                          .kind(kind)
                           .maximumAllowedRatingAge(ceiling)
                           .pinHash(pinHash)
                           .build());
@@ -275,7 +275,7 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
                   profileRepository.save(
                       Profile.builder()
                           .name("Concurrent Kid")
-                          .classification(ProfileClassification.KID)
+                          .kind(ProfileKind.KID)
                           .maximumAllowedRatingAge(7)
                           .build());
               managerRepository.save(
@@ -333,7 +333,7 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
                   profileRepository.save(
                       Profile.builder()
                           .name("Manager Race Kid")
-                          .classification(ProfileClassification.KID)
+                          .kind(ProfileKind.KID)
                           .maximumAllowedRatingAge(7)
                           .build());
               managerRepository.save(
@@ -401,7 +401,7 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
 
   private void await(CyclicBarrier barrier) {
     try {
-      barrier.await();
+      barrier.await(10, TimeUnit.SECONDS);
     } catch (Exception exception) {
       throw new IllegalStateException("Concurrent mutation barrier failed", exception);
     }

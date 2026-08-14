@@ -15,12 +15,17 @@ import org.springframework.stereotype.Component;
 public class LoginThrottleSweeper {
 
   private final LoginThrottle throttle;
+  private final CredentialGuessThrottle credentialThrottle;
 
   @Scheduled(fixedDelayString = "${auth.throttle.sweep-interval-ms:900000}")
   public void sweep() {
-    var evicted = throttle.sweepExpired();
-    if (evicted > 0) {
-      log.debug("Evicted {} stale login-throttle entries.", evicted);
+    var loginEntries = throttle.sweepExpired();
+    var credentialEntries = credentialThrottle.sweepExpired();
+    if (loginEntries + credentialEntries > 0) {
+      log.debug(
+          "Evicted {} stale login-throttle entries and {} stale credential-throttle entries.",
+          loginEntries,
+          credentialEntries);
     }
   }
 }

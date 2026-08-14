@@ -6,8 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.domain.auth.ProfileClassification;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
@@ -37,15 +37,18 @@ import com.streamarr.server.services.auth.ProfileManagerInvite;
 import com.streamarr.server.services.auth.ProfileManagerOverrideAction;
 import com.streamarr.server.services.auth.ProfileManagerOverrideCommand;
 import com.streamarr.server.services.auth.ProfilePinService;
-import com.streamarr.server.services.auth.ProfilePolicyChange;
 import com.streamarr.server.services.auth.ProfilePolicyService;
 import com.streamarr.server.services.auth.ProfileShareAcceptance;
 import com.streamarr.server.services.auth.ProfileShareCancellation;
 import com.streamarr.server.services.auth.ProfileShareOffer;
 import com.streamarr.server.services.auth.ProfileShareRejection;
 import com.streamarr.server.services.auth.ProfileSharingService;
+import com.streamarr.server.services.auth.RemoveProfileContentCeilingCommand;
 import com.streamarr.server.services.auth.RenamePortableProfileCommand;
+import com.streamarr.server.services.auth.ResetProfilePinCommand;
 import com.streamarr.server.services.auth.ServerAdministrationService;
+import com.streamarr.server.services.auth.SetProfileContentCeilingCommand;
+import com.streamarr.server.services.auth.SetProfileKindCommand;
 import com.streamarr.server.services.auth.TokenScope;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -67,11 +70,10 @@ class PortableProfileResolverTest {
 
     var result =
         fixture.resolver.createPortableProfile(
-            new PortableProfileInputs.ProfileCreation(
-                "Global Kai", ProfileClassification.KID, 7, "1234"));
+            new PortableProfileInputs.ProfileCreation("Global Kai", ProfileKind.KID, 7, "1234"));
 
     assertThat(result.name()).isEqualTo("Global Kai");
-    assertThat(result.classification()).isEqualTo(ProfileClassification.KID);
+    assertThat(result.kind()).isEqualTo(ProfileKind.KID);
     assertThat(result.maximumAllowedRatingAge()).isEqualTo(7);
     assertThat(result.pinProtected()).isTrue();
     assertThat(fixture.managementService.creation)
@@ -79,7 +81,7 @@ class PortableProfileResolverTest {
             CreatePortableProfileCommand.builder()
                 .actingAccountId(fixture.accountId)
                 .name("Global Kai")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(7)
                 .pinHash("1234")
                 .build());
@@ -92,8 +94,7 @@ class PortableProfileResolverTest {
 
     var result =
         fixture.resolver.createPortableProfile(
-            new PortableProfileInputs.ProfileCreation(
-                "Guest", ProfileClassification.ADULT, null, null));
+            new PortableProfileInputs.ProfileCreation("Guest", ProfileKind.ADULT, null, null));
 
     assertThat(result.pinProtected()).isFalse();
     assertThat(fixture.managementService.creation.pinHash()).isNull();
@@ -103,8 +104,7 @@ class PortableProfileResolverTest {
   @DisplayName("Should reject blank PIN when creating portable profile")
   void shouldRejectBlankPinWhenCreatingPortableProfile() {
     var fixture = new ResolverFixture();
-    var input =
-        new PortableProfileInputs.ProfileCreation("Guest", ProfileClassification.ADULT, null, "");
+    var input = new PortableProfileInputs.ProfileCreation("Guest", ProfileKind.ADULT, null, "");
 
     assertThatThrownBy(() -> fixture.resolver.createPortableProfile(input))
         .isInstanceOf(IllegalArgumentException.class);
@@ -353,62 +353,88 @@ class PortableProfileResolverTest {
   }
 
   @Test
-  @DisplayName("Should change portable profile policy and hash PIN at GraphQL boundary")
-  void shouldChangePortableProfilePolicyAndHashPinAtGraphQlBoundary() {
+  @DisplayName("Should set portable profile kind as authenticated account")
+  void shouldSetPortableProfileKindAsAuthenticatedAccount() {
     var fixture = new ResolverFixture();
     var profileId = UUID.randomUUID();
 
     assertThat(
-            fixture.resolver.changeProfilePolicy(
-                new PortableProfileInputs.PolicyChange(
-                    profileId.toString(), ProfileClassification.KID, 13, "2468")))
+            fixture.resolver.setProfileKind(
+                new PortableProfileInputs.ProfileKindChange(profileId.toString(), ProfileKind.KID)))
         .isTrue();
-    assertThat(fixture.policyService.change)
+    assertThat(fixture.policyService.kindChange)
         .isEqualTo(
-            ProfilePolicyChange.builder()
+            SetProfileKindCommand.builder()
                 .actingAccountId(fixture.accountId)
                 .profileId(profileId)
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
+                .build());
+  }
+
+  @Test
+  @DisplayName("Should set portable profile content ceiling as authenticated account")
+  void shouldSetPortableProfileContentCeilingAsAuthenticatedAccount() {
+    var fixture = new ResolverFixture();
+    var profileId = UUID.randomUUID();
+
+    assertThat(
+            fixture.resolver.setProfileContentCeiling(
+                new PortableProfileInputs.ProfileContentCeilingChange(profileId.toString(), 13)))
+        .isTrue();
+    assertThat(fixture.policyService.ceilingChange)
+        .isEqualTo(
+            SetProfileContentCeilingCommand.builder()
+                .actingAccountId(fixture.accountId)
+                .profileId(profileId)
                 .maximumAllowedRatingAge(13)
+                .build());
+  }
+
+  @Test
+  @DisplayName("Should remove portable profile content ceiling as authenticated account")
+  void shouldRemovePortableProfileContentCeilingAsAuthenticatedAccount() {
+    var fixture = new ResolverFixture();
+    var profileId = UUID.randomUUID();
+
+    assertThat(
+            fixture.resolver.removeProfileContentCeiling(
+                new PortableProfileInputs.ProfileReference(profileId.toString())))
+        .isTrue();
+    assertThat(fixture.policyService.ceilingRemoval)
+        .isEqualTo(
+            RemoveProfileContentCeilingCommand.builder()
+                .actingAccountId(fixture.accountId)
+                .profileId(profileId)
+                .build());
+  }
+
+  @Test
+  @DisplayName("Should reset portable profile PIN and hash it at GraphQL boundary")
+  void shouldResetPortableProfilePinAndHashItAtGraphQlBoundary() {
+    var fixture = new ResolverFixture();
+    var profileId = UUID.randomUUID();
+
+    assertThat(
+            fixture.resolver.resetProfilePin(
+                new PortableProfileInputs.ProfilePinReset(profileId.toString(), "2468")))
+        .isTrue();
+    assertThat(fixture.policyService.pinReset)
+        .isEqualTo(
+            ResetProfilePinCommand.builder()
+                .actingAccountId(fixture.accountId)
+                .profileId(profileId)
                 .pinHash("2468")
                 .build());
   }
 
   @Test
-  @DisplayName("Should reject blank PIN when changing portable profile policy")
-  void shouldRejectBlankPinWhenChangingPortableProfilePolicy() {
+  @DisplayName("Should reject blank PIN when resetting portable profile PIN")
+  void shouldRejectBlankPinWhenResettingPortableProfilePin() {
     var fixture = new ResolverFixture();
-    var input =
-        new PortableProfileInputs.PolicyChange(
-            UUID.randomUUID().toString(), ProfileClassification.KID, 7, "");
+    var input = new PortableProfileInputs.ProfilePinReset(UUID.randomUUID().toString(), "");
 
-    assertThatThrownBy(() -> fixture.resolver.changeProfilePolicy(input))
+    assertThatThrownBy(() -> fixture.resolver.resetProfilePin(input))
         .isInstanceOf(IllegalArgumentException.class);
-  }
-
-  @Test
-  @DisplayName("Should preserve portable profile PIN when PIN omitted from policy change")
-  void shouldPreservePortableProfilePinWhenPinOmittedFromPolicyChange() {
-    var fixture = new ResolverFixture();
-
-    fixture.resolver.changeProfilePolicy(
-        new PortableProfileInputs.PolicyChange(
-            UUID.randomUUID().toString(), ProfileClassification.ADULT, null, null));
-
-    assertThat(fixture.policyService.change.pinHash()).isNull();
-    assertThat(fixture.policyService.change.clearPin()).isFalse();
-  }
-
-  @Test
-  @DisplayName("Should explicitly clear portable profile PIN when requested")
-  void shouldExplicitlyClearPortableProfilePinWhenRequested() {
-    var fixture = new ResolverFixture();
-
-    fixture.resolver.changeProfilePolicy(
-        new PortableProfileInputs.PolicyChange(
-            UUID.randomUUID().toString(), ProfileClassification.ADULT, null, null, false, true));
-
-    assertThat(fixture.policyService.change.clearPin()).isTrue();
   }
 
   @Test
@@ -666,7 +692,7 @@ class PortableProfileResolverTest {
       creation = command;
       return Profile.builder()
           .name(command.name())
-          .classification(command.classification())
+          .kind(command.kind())
           .maximumAllowedRatingAge(command.maximumAllowedRatingAge())
           .pinHash(command.pinHash())
           .build();
@@ -707,15 +733,33 @@ class PortableProfileResolverTest {
 
   private static final class CapturingProfilePolicyService extends ProfilePolicyService {
 
-    private ProfilePolicyChange change;
+    private SetProfileKindCommand kindChange;
+    private SetProfileContentCeilingCommand ceilingChange;
+    private RemoveProfileContentCeilingCommand ceilingRemoval;
+    private ResetProfilePinCommand pinReset;
 
     private CapturingProfilePolicyService() {
-      super(null, null, null, null, null, null);
+      super(null, null, null, null, null);
     }
 
     @Override
-    public void changePolicy(ProfilePolicyChange command) {
-      change = command;
+    public void setKind(SetProfileKindCommand command) {
+      kindChange = command;
+    }
+
+    @Override
+    public void setContentCeiling(SetProfileContentCeilingCommand command) {
+      ceilingChange = command;
+    }
+
+    @Override
+    public void removeContentCeiling(RemoveProfileContentCeilingCommand command) {
+      ceilingRemoval = command;
+    }
+
+    @Override
+    public void resetPin(ResetProfilePinCommand command) {
+      pinReset = command;
     }
   }
 

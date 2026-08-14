@@ -1,13 +1,14 @@
 package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.domain.auth.ProfileClassification;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditOperation;
@@ -41,70 +42,136 @@ class ProfilePolicyServiceTest {
       new ProfilePolicyService(
           profileRepository,
           managerRepository,
-          shareRepository,
           safetyService,
           new KidProfileManagerPolicy(
               profileRepository, managerRepository, shareRepository, accountRepository),
           new SecurityAuditService(auditRepository));
 
   @Test
-  @DisplayName("Should redact profile PIN hash from policy command diagnostics")
-  void shouldRedactProfilePinHashFromPolicyCommandDiagnostics() {
-    var command =
-        ProfilePolicyChange.builder()
-            .actingAccountId(UUID.randomUUID())
-            .profileId(UUID.randomUUID())
-            .classification(ProfileClassification.ADULT)
-            .pinHash("sensitive-pin-hash")
-            .build();
-
-    assertThat(command.toString()).doesNotContain("sensitive-pin-hash").contains("<redacted>");
-  }
-
-  @Test
-  @DisplayName("Should reject removing adult PIN while kid is active in a shared household")
-  void shouldRejectRemovingAdultPinWhileKidIsActiveInSharedHousehold() {
-    var householdId = UUID.randomUUID();
+  @DisplayName("Should set profile kind without changing content ceiling or PIN")
+  void shouldSetProfileKindWithoutChangingContentCeilingOrPin() {
     var managerId = UUID.randomUUID();
-    var adult =
+    var profile =
         profileRepository.save(
             Profile.builder()
-                .name("Protected Adult")
-                .classification(ProfileClassification.ADULT)
+                .name("Managed Profile")
+                .kind(ProfileKind.ADULT)
+                .maximumAllowedRatingAge(13)
                 .pinHash("encoded-pin")
                 .build());
-    var kid =
-        profileRepository.save(
-            Profile.builder()
-                .name("Restricted Kid")
-                .classification(ProfileClassification.KID)
-                .maximumAllowedRatingAge(7)
-                .build());
     managerRepository.save(
-        ProfileManager.builder().accountId(managerId).profileId(adult.getId()).build());
-    share(adult, householdId);
-    share(kid, householdId);
-    var change =
-        ProfilePolicyChange.builder()
+        ProfileManager.builder().accountId(managerId).profileId(profile.getId()).build());
+
+    service.setKind(
+        SetProfileKindCommand.builder()
             .actingAccountId(managerId)
-            .profileId(adult.getId())
-            .classification(ProfileClassification.ADULT)
-            .clearPin(true)
-            .build();
+            .profileId(profile.getId())
+            .kind(ProfileKind.KID)
+            .build());
 
-    assertThatThrownBy(() -> service.changePolicy(change))
-        .isInstanceOf(ProfileSafetyViolationException.class)
-        .satisfies(
-            exception ->
-                assertThat(((ProfileSafetyViolationException) exception).profilesRequiringPin())
-                    .containsExactly(adult.getId()));
-
-    assertThat(adult.getPinHash()).isEqualTo("encoded-pin");
+    assertThat(profile.getKind()).isEqualTo(ProfileKind.KID);
+    assertThat(profile.getMaximumAllowedRatingAge()).isEqualTo(13);
+    assertThat(profile.getPinHash()).isEqualTo("encoded-pin");
+    assertThat(auditRepository.findAll())
+        .singleElement()
+        .extracting(event -> event.getOperation())
+        .isEqualTo(SecurityAuditOperation.PROFILE_KIND_CHANGED);
   }
 
   @Test
-  @DisplayName("Should reject kid classification without a local parent manager in every household")
-  void shouldRejectKidClassificationWithoutLocalParentManagerInEveryHousehold() {
+  @DisplayName("Should set content ceiling on adult profile without changing kind or PIN")
+  void shouldSetContentCeilingOnAdultProfileWithoutChangingKindOrPin() {
+    var managerId = UUID.randomUUID();
+    var profile =
+        profileRepository.save(
+            Profile.builder()
+                .name("Restricted Adult")
+                .kind(ProfileKind.ADULT)
+                .pinHash("encoded-pin")
+                .build());
+    managerRepository.save(
+        ProfileManager.builder().accountId(managerId).profileId(profile.getId()).build());
+
+    service.setContentCeiling(
+        SetProfileContentCeilingCommand.builder()
+            .actingAccountId(managerId)
+            .profileId(profile.getId())
+            .maximumAllowedRatingAge(13)
+            .build());
+
+    assertThat(profile.getKind()).isEqualTo(ProfileKind.ADULT);
+    assertThat(profile.getMaximumAllowedRatingAge()).isEqualTo(13);
+    assertThat(profile.getPinHash()).isEqualTo("encoded-pin");
+    assertThat(auditRepository.findAll())
+        .singleElement()
+        .extracting(event -> event.getOperation())
+        .isEqualTo(SecurityAuditOperation.PROFILE_CONTENT_CEILING_SET);
+  }
+
+  @Test
+  @DisplayName("Should remove content ceiling without changing profile kind or PIN")
+  void shouldRemoveContentCeilingWithoutChangingProfileKindOrPin() {
+    var managerId = UUID.randomUUID();
+    var profile =
+        profileRepository.save(
+            Profile.builder()
+                .name("Restricted Adult")
+                .kind(ProfileKind.ADULT)
+                .maximumAllowedRatingAge(13)
+                .pinHash("encoded-pin")
+                .build());
+    managerRepository.save(
+        ProfileManager.builder().accountId(managerId).profileId(profile.getId()).build());
+
+    service.removeContentCeiling(
+        RemoveProfileContentCeilingCommand.builder()
+            .actingAccountId(managerId)
+            .profileId(profile.getId())
+            .build());
+
+    assertThat(profile.getKind()).isEqualTo(ProfileKind.ADULT);
+    assertThat(profile.getMaximumAllowedRatingAge()).isNull();
+    assertThat(profile.getPinHash()).isEqualTo("encoded-pin");
+    assertThat(auditRepository.findAll())
+        .singleElement()
+        .extracting(event -> event.getOperation())
+        .isEqualTo(SecurityAuditOperation.PROFILE_CONTENT_CEILING_REMOVED);
+  }
+
+  @Test
+  @DisplayName("Should reset profile PIN without changing kind or content ceiling")
+  void shouldResetProfilePinWithoutChangingKindOrContentCeiling() {
+    var managerId = UUID.randomUUID();
+    var profile =
+        profileRepository.save(
+            Profile.builder()
+                .name("Managed Profile")
+                .kind(ProfileKind.ADULT)
+                .maximumAllowedRatingAge(13)
+                .pinHash("old-pin-hash")
+                .build());
+    managerRepository.save(
+        ProfileManager.builder().accountId(managerId).profileId(profile.getId()).build());
+
+    service.resetPin(
+        ResetProfilePinCommand.builder()
+            .actingAccountId(managerId)
+            .profileId(profile.getId())
+            .pinHash("new-pin-hash")
+            .build());
+
+    assertThat(profile.getKind()).isEqualTo(ProfileKind.ADULT);
+    assertThat(profile.getMaximumAllowedRatingAge()).isEqualTo(13);
+    assertThat(profile.getPinHash()).isEqualTo("new-pin-hash");
+    assertThat(auditRepository.findAll())
+        .singleElement()
+        .extracting(event -> event.getOperation())
+        .isEqualTo(SecurityAuditOperation.PROFILE_PIN_RESET);
+  }
+
+  @Test
+  @DisplayName("Should reject kid kind without a local parent manager in every household")
+  void shouldRejectKidKindWithoutLocalParentManagerInEveryHousehold() {
     var householdId = UUID.randomUUID();
     var manager =
         accountRepository.save(
@@ -120,98 +187,24 @@ class ProfilePolicyServiceTest {
         profileRepository.save(
             Profile.builder()
                 .name("Changing Profile")
-                .classification(ProfileClassification.ADULT)
+                .kind(ProfileKind.ADULT)
+                .maximumAllowedRatingAge(7)
                 .build());
     managerRepository.save(
         ProfileManager.builder().accountId(manager.getId()).profileId(profile.getId()).build());
     share(profile, householdId);
-    var change =
-        ProfilePolicyChange.builder()
+    var command =
+        SetProfileKindCommand.builder()
             .actingAccountId(manager.getId())
             .profileId(profile.getId())
-            .classification(ProfileClassification.KID)
-            .maximumAllowedRatingAge(7)
+            .kind(ProfileKind.KID)
             .build();
 
-    assertThatThrownBy(() -> service.changePolicy(change))
+    assertThatThrownBy(() -> service.setKind(command))
         .isInstanceOf(KidProfileManagerRequiredException.class);
 
-    assertThat(profile.getClassification()).isEqualTo(ProfileClassification.ADULT);
+    assertThat(profile.getKind()).isEqualTo(ProfileKind.ADULT);
     assertThat(auditRepository.findAll()).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should audit a successful profile policy change")
-  void shouldAuditSuccessfulProfilePolicyChange() {
-    var managerId = UUID.randomUUID();
-    var profile = profileRepository.save(Profile.builder().name("Adult").build());
-    managerRepository.save(
-        ProfileManager.builder().accountId(managerId).profileId(profile.getId()).build());
-
-    service.changePolicy(
-        ProfilePolicyChange.builder()
-            .actingAccountId(managerId)
-            .profileId(profile.getId())
-            .classification(ProfileClassification.ADULT)
-            .pinHash("new-pin")
-            .build());
-
-    assertThat(auditRepository.findAll())
-        .singleElement()
-        .extracting(event -> event.getOperation())
-        .isEqualTo(SecurityAuditOperation.PROFILE_POLICY_CHANGED);
-  }
-
-  @Test
-  @DisplayName("Should preserve profile PIN when changing only content ceiling")
-  void shouldPreserveProfilePinWhenChangingOnlyContentCeiling() {
-    var managerId = UUID.randomUUID();
-    var profile =
-        profileRepository.save(
-            Profile.builder()
-                .name("Protected Adult")
-                .classification(ProfileClassification.ADULT)
-                .maximumAllowedRatingAge(13)
-                .pinHash("encoded-pin")
-                .build());
-    managerRepository.save(
-        ProfileManager.builder().accountId(managerId).profileId(profile.getId()).build());
-
-    service.changePolicy(
-        ProfilePolicyChange.builder()
-            .actingAccountId(managerId)
-            .profileId(profile.getId())
-            .classification(ProfileClassification.ADULT)
-            .maximumAllowedRatingAge(16)
-            .build());
-
-    assertThat(profile.getPinHash()).isEqualTo("encoded-pin");
-  }
-
-  @Test
-  @DisplayName("Should preserve content ceiling when changing only profile PIN")
-  void shouldPreserveContentCeilingWhenChangingOnlyProfilePin() {
-    var managerId = UUID.randomUUID();
-    var profile =
-        profileRepository.save(
-            Profile.builder()
-                .name("Restricted Adult")
-                .classification(ProfileClassification.ADULT)
-                .maximumAllowedRatingAge(13)
-                .pinHash("old-pin")
-                .build());
-    managerRepository.save(
-        ProfileManager.builder().accountId(managerId).profileId(profile.getId()).build());
-
-    service.changePolicy(
-        ProfilePolicyChange.builder()
-            .actingAccountId(managerId)
-            .profileId(profile.getId())
-            .classification(ProfileClassification.ADULT)
-            .pinHash("new-pin")
-            .build());
-
-    assertThat(profile.getMaximumAllowedRatingAge()).isEqualTo(13);
   }
 
   @Test
@@ -220,18 +213,10 @@ class ProfilePolicyServiceTest {
     var householdId = UUID.randomUUID();
     var adult =
         profileRepository.save(
-            Profile.builder()
-                .name("Adult")
-                .classification(ProfileClassification.ADULT)
-                .pinHash(" ")
-                .build());
+            Profile.builder().name("Adult").kind(ProfileKind.ADULT).pinHash(" ").build());
     var kid =
         profileRepository.save(
-            Profile.builder()
-                .name("Kid")
-                .classification(ProfileClassification.KID)
-                .maximumAllowedRatingAge(7)
-                .build());
+            Profile.builder().name("Kid").kind(ProfileKind.KID).maximumAllowedRatingAge(7).build());
     share(adult, householdId);
     share(kid, householdId);
 
@@ -245,15 +230,12 @@ class ProfilePolicyServiceTest {
     var householdId = UUID.randomUUID();
     var unrestrictedKid =
         profileRepository.save(
-            Profile.builder()
-                .name("Unrestricted Kid")
-                .classification(ProfileClassification.KID)
-                .build());
+            Profile.builder().name("Unrestricted Kid").kind(ProfileKind.KID).build());
     var restrictedKid =
         profileRepository.save(
             Profile.builder()
                 .name("Restricted Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(7)
                 .build());
     share(unrestrictedKid, householdId);
@@ -275,14 +257,14 @@ class ProfilePolicyServiceTest {
         profileRepository.save(
             Profile.builder()
                 .name("Older Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(13)
                 .build());
     var youngerKid =
         profileRepository.save(
             Profile.builder()
                 .name("Younger Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(7)
                 .build());
     share(olderKid, householdId);
@@ -300,15 +282,14 @@ class ProfilePolicyServiceTest {
   void shouldAllowEquallyUnrestrictedKidProfilesWithoutPin() {
     var householdId = UUID.randomUUID();
     var firstKid =
-        profileRepository.save(
-            Profile.builder().name("First Kid").classification(ProfileClassification.KID).build());
+        profileRepository.save(Profile.builder().name("First Kid").kind(ProfileKind.KID).build());
     var secondKid =
-        profileRepository.save(
-            Profile.builder().name("Second Kid").classification(ProfileClassification.KID).build());
+        profileRepository.save(Profile.builder().name("Second Kid").kind(ProfileKind.KID).build());
     share(firstKid, householdId);
     share(secondKid, householdId);
 
-    safetyService.validateActivation(firstKid, householdId);
+    assertThatCode(() -> safetyService.validateActivation(firstKid, householdId))
+        .doesNotThrowAnyException();
   }
 
   @Test
@@ -319,20 +300,21 @@ class ProfilePolicyServiceTest {
         profileRepository.save(
             Profile.builder()
                 .name("Unrestricted Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .pinHash("encoded-pin")
                 .build());
     var restrictedKid =
         profileRepository.save(
             Profile.builder()
                 .name("Restricted Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(13)
                 .build());
     share(unrestrictedKid, householdId);
     share(restrictedKid, householdId);
 
-    safetyService.validateActivation(restrictedKid, householdId);
+    assertThatCode(() -> safetyService.validateActivation(restrictedKid, householdId))
+        .doesNotThrowAnyException();
   }
 
   private void share(Profile profile, UUID householdId) {

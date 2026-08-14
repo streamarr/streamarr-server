@@ -6,8 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.domain.auth.ProfileClassification;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
@@ -64,7 +64,7 @@ class ProfileManagementServiceTest {
             CreatePortableProfileCommand.builder()
                 .actingAccountId(creator.getId())
                 .name("Portable Profile")
-                .classification(ProfileClassification.ADULT)
+                .kind(ProfileKind.ADULT)
                 .maximumAllowedRatingAge(16)
                 .pinHash("encoded-pin")
                 .build());
@@ -118,7 +118,7 @@ class ProfileManagementServiceTest {
         CreatePortableProfileCommand.builder()
             .actingAccountId(accountId)
             .name(null)
-            .classification(ProfileClassification.ADULT);
+            .kind(ProfileKind.ADULT);
 
     assertThatThrownBy(missingName::build).isInstanceOf(NullPointerException.class);
     assertThatThrownBy(() -> service.rename(blankName))
@@ -173,6 +173,31 @@ class ProfileManagementServiceTest {
         .containsExactlyInAnyOrder(
             SecurityAuditOperation.PROFILE_MANAGER_INVITED,
             SecurityAuditOperation.PROFILE_MANAGER_ACCEPTED);
+  }
+
+  @Test
+  @DisplayName("Should not audit a repeated pending profile manager invitation")
+  void shouldNotAuditRepeatedPendingProfileManagerInvitation() {
+    var currentManagerId = UUID.randomUUID();
+    var inviteeId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
+    saveAccount(inviteeId);
+    managerRepository.save(
+        ProfileManager.builder().accountId(currentManagerId).profileId(profileId).build());
+    var invite =
+        ProfileManagerInvite.builder()
+            .actingAccountId(currentManagerId)
+            .invitedAccountId(inviteeId)
+            .profileId(profileId)
+            .build();
+
+    var first = service.invite(invite);
+    var second = service.invite(invite);
+
+    assertThat(second.getId()).isEqualTo(first.getId());
+    assertThat(auditRepository.findAll())
+        .extracting(event -> event.getOperation())
+        .containsExactly(SecurityAuditOperation.PROFILE_MANAGER_INVITED);
   }
 
   @Test
@@ -415,7 +440,7 @@ class ProfileManagementServiceTest {
         profileRepository.save(
             Profile.builder()
                 .name("Portable Kid")
-                .classification(ProfileClassification.KID)
+                .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(7)
                 .build());
     managerRepository.save(
@@ -445,8 +470,7 @@ class ProfileManagementServiceTest {
   @DisplayName("Should let one of multiple adult profile managers relinquish management")
   void shouldLetOneOfMultipleAdultProfileManagersRelinquishManagement() {
     var profile =
-        profileRepository.save(
-            Profile.builder().name("Adult").classification(ProfileClassification.ADULT).build());
+        profileRepository.save(Profile.builder().name("Adult").kind(ProfileKind.ADULT).build());
     var departingManagerId = UUID.randomUUID();
     managerRepository.save(
         ProfileManager.builder().accountId(departingManagerId).profileId(profile.getId()).build());

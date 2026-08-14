@@ -18,11 +18,11 @@ import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.support.TokenTestSupport;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
 
 @Tag("UnitTest")
@@ -112,12 +112,60 @@ class PlaybackTokenIssuerTest {
   }
 
   @Test
-  @DisplayName("Should expose only the authority explicit playback issuance API")
-  void shouldExposeOnlyAuthorityExplicitPlaybackIssuanceApi() {
-    assertThat(Arrays.stream(PlaybackTokenIssuer.class.getDeclaredMethods()))
-        .filteredOn(method -> method.getName().equals("issue"))
-        .isNotEmpty()
-        .allMatch(method -> method.getParameterCount() == 4);
+  @DisplayName("Should refuse issuance when authority belongs to another account")
+  void shouldRefuseIssuanceWhenAuthorityBelongsToAnotherAccount() {
+    var foreignIdentity =
+        AuthenticatedIdentity.builder()
+            .accountId(UUID.randomUUID())
+            .role(AccountRole.ADMIN)
+            .authSessionId(sessionId)
+            .scope(TokenScope.PROFILE)
+            .profileId(profileId)
+            .build();
+    var streamSession = sessionOwnedBy(profileId);
+
+    assertThatThrownBy(
+            () -> issuer.issue(foreignIdentity, authority(), streamSession, Duration.ofHours(1)))
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should refuse issuance when authority belongs to another authentication session")
+  void shouldRefuseIssuanceWhenAuthorityBelongsToAnotherAuthenticationSession() {
+    var foreignSessionAuthority =
+        PlaybackAuthority.builder()
+            .authSessionId(UUID.randomUUID())
+            .accountId(accountId)
+            .householdId(householdId)
+            .profileId(profileId)
+            .build();
+    var streamSession = sessionOwnedBy(profileId);
+
+    assertThatThrownBy(
+            () ->
+                issuer.issue(
+                    profileIdentity(), foreignSessionAuthority, streamSession, Duration.ofHours(1)))
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should refuse issuance when authority belongs to another profile")
+  void shouldRefuseIssuanceWhenAuthorityBelongsToAnotherProfile() {
+    var foreignProfileIdentity =
+        AuthenticatedIdentity.builder()
+            .accountId(accountId)
+            .role(AccountRole.USER)
+            .authSessionId(sessionId)
+            .scope(TokenScope.PROFILE)
+            .profileId(UUID.randomUUID())
+            .build();
+    var streamSession = sessionOwnedBy(profileId);
+
+    assertThatThrownBy(
+            () ->
+                issuer.issue(
+                    foreignProfileIdentity, authority(), streamSession, Duration.ofHours(1)))
+        .isInstanceOf(AuthenticationRequiredException.class);
   }
 
   private AuthenticatedIdentity profileIdentity() {
@@ -143,7 +191,7 @@ class PlaybackTokenIssuerTest {
     return defaultSessionBuilder().authority(playbackAuthorityFor(ownerProfileId)).build();
   }
 
-  private org.springframework.security.oauth2.jwt.Jwt decode(String token) {
+  private Jwt decode(String token) {
     return TokenTestSupport.decode(token, properties);
   }
 }

@@ -16,6 +16,7 @@ import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.ProfileSafetyViolationException;
 import com.streamarr.server.exceptions.ServerAdministrationDeniedException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import graphql.Scalars;
 import graphql.execution.DataFetcherExceptionHandlerParameters;
 import graphql.execution.ExecutionStepInfo;
@@ -23,6 +24,7 @@ import graphql.execution.MergedField;
 import graphql.execution.ResultPath;
 import graphql.language.Field;
 import graphql.schema.DataFetchingEnvironmentImpl;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletionException;
@@ -33,6 +35,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 
 @Tag("UnitTest")
@@ -82,6 +85,16 @@ class StreamarrDataFetcherExceptionHandlerTest {
     assertThat(codeFor(new IllegalStateException("boom"))).isNull();
   }
 
+  @Test
+  @DisplayName("Should inspect chained SQL exceptions when deferred constraint fails")
+  void shouldInspectChainedSqlExceptionsWhenDeferredConstraintFails() {
+    var root = new SQLException("batch failed", "HY000");
+    root.setNextException(new SQLException("deferred check failed", "23514"));
+
+    assertThat(codeFor(new DataIntegrityViolationException("commit failed", root)))
+        .isEqualTo("PORTABLE_IDENTITY_INVARIANT_VIOLATION");
+  }
+
   @ParameterizedTest(name = "{1}")
   @MethodSource("portableIdentityErrors")
   @DisplayName("Should map portable identity domain failures to stable codes")
@@ -93,6 +106,7 @@ class StreamarrDataFetcherExceptionHandlerTest {
   private static Stream<Arguments> portableIdentityErrors() {
     return Stream.of(
         Arguments.of(new InvalidCredentialsException(), "INVALID_CREDENTIALS"),
+        Arguments.of(new TooManyCredentialAttemptsException(), "TOO_MANY_CREDENTIAL_ATTEMPTS"),
         Arguments.of(new InvalidProfilePinException(), "INVALID_PROFILE_PIN"),
         Arguments.of(new HouseholdAccessDeniedException(), "HOUSEHOLD_ACCESS_DENIED"),
         Arguments.of(

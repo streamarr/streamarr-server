@@ -6,7 +6,7 @@ package com.streamarr.server.jooq.generated.tables;
 
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
-import com.streamarr.server.jooq.generated.enums.ProfileClassification;
+import com.streamarr.server.jooq.generated.enums.ProfileKind;
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
 import com.streamarr.server.jooq.generated.tables.ProfileDeletionAuthorization.ProfileDeletionAuthorizationPath;
@@ -100,9 +100,9 @@ public class Profile extends TableImpl<ProfileRecord> {
     public final TableField<ProfileRecord, String> NAME = createField(DSL.name("name"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
-     * The column <code>public.profile.classification</code>.
+     * The column <code>public.profile.kind</code>.
      */
-    public final TableField<ProfileRecord, ProfileClassification> CLASSIFICATION = createField(DSL.name("classification"), SQLDataType.VARCHAR.nullable(false).defaultValue(DSL.field(DSL.raw("'ADULT'::profile_classification"), SQLDataType.VARCHAR)).asEnumDataType(ProfileClassification.class), this, "");
+    public final TableField<ProfileRecord, ProfileKind> KIND = createField(DSL.name("kind"), SQLDataType.VARCHAR.nullable(false).defaultValue(DSL.field(DSL.raw("'ADULT'::profile_kind"), SQLDataType.VARCHAR)).asEnumDataType(ProfileKind.class), this, "");
 
     /**
      * The column <code>public.profile.maximum_allowed_rating_age</code>.

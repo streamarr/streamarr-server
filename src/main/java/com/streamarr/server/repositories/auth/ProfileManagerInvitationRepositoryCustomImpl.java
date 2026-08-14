@@ -18,39 +18,46 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   private final AuditorAware<UUID> auditorAware;
 
   @Override
-  public ProfileManagerInvitation insertPendingIfAbsent(
+  public ProfileManagerInvitationInsertResult insertPendingIfAbsent(
       UUID profileId, UUID invitingAccountId, UUID invitedAccountId) {
-    var id = UUID.randomUUID();
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
     var pending = PENDING;
-    var insertedId =
-        dsl.insertInto(PROFILE_MANAGER_INVITATION)
-            .set(PROFILE_MANAGER_INVITATION.ID, id)
-            .set(PROFILE_MANAGER_INVITATION.PROFILE_ID, profileId)
-            .set(PROFILE_MANAGER_INVITATION.INVITING_ACCOUNT_ID, invitingAccountId)
-            .set(PROFILE_MANAGER_INVITATION.INVITED_ACCOUNT_ID, invitedAccountId)
-            .set(PROFILE_MANAGER_INVITATION.STATUS, pending)
-            .set(PROFILE_MANAGER_INVITATION.CREATED_BY, auditUser)
-            .set(PROFILE_MANAGER_INVITATION.LAST_MODIFIED_BY, auditUser)
-            .onConflict(
-                PROFILE_MANAGER_INVITATION.PROFILE_ID,
-                PROFILE_MANAGER_INVITATION.INVITED_ACCOUNT_ID)
-            .where(PROFILE_MANAGER_INVITATION.STATUS.eq(pending))
-            .doNothing()
-            .returning(PROFILE_MANAGER_INVITATION.ID)
-            .fetchOne(PROFILE_MANAGER_INVITATION.ID);
-    if (insertedId != null) {
-      return invitation(insertedId, profileId, invitingAccountId, invitedAccountId);
-    }
+    while (true) {
+      var insertedId =
+          dsl.insertInto(PROFILE_MANAGER_INVITATION)
+              .set(PROFILE_MANAGER_INVITATION.ID, UUID.randomUUID())
+              .set(PROFILE_MANAGER_INVITATION.PROFILE_ID, profileId)
+              .set(PROFILE_MANAGER_INVITATION.INVITING_ACCOUNT_ID, invitingAccountId)
+              .set(PROFILE_MANAGER_INVITATION.INVITED_ACCOUNT_ID, invitedAccountId)
+              .set(PROFILE_MANAGER_INVITATION.STATUS, pending)
+              .set(PROFILE_MANAGER_INVITATION.CREATED_BY, auditUser)
+              .set(PROFILE_MANAGER_INVITATION.LAST_MODIFIED_BY, auditUser)
+              .onConflict(
+                  PROFILE_MANAGER_INVITATION.PROFILE_ID,
+                  PROFILE_MANAGER_INVITATION.INVITED_ACCOUNT_ID)
+              .where(PROFILE_MANAGER_INVITATION.STATUS.eq(pending))
+              .doNothing()
+              .returning(PROFILE_MANAGER_INVITATION.ID)
+              .fetchOne(PROFILE_MANAGER_INVITATION.ID);
+      if (insertedId != null) {
+        return new ProfileManagerInvitationInsertResult(
+            invitation(insertedId, profileId, invitingAccountId, invitedAccountId), true);
+      }
 
-    var existing =
-        dsl.select(PROFILE_MANAGER_INVITATION.ID, PROFILE_MANAGER_INVITATION.INVITING_ACCOUNT_ID)
-            .from(PROFILE_MANAGER_INVITATION)
-            .where(PROFILE_MANAGER_INVITATION.PROFILE_ID.eq(profileId))
-            .and(PROFILE_MANAGER_INVITATION.INVITED_ACCOUNT_ID.eq(invitedAccountId))
-            .and(PROFILE_MANAGER_INVITATION.STATUS.eq(pending))
-            .fetchSingle();
-    return invitation(existing.value1(), profileId, existing.value2(), invitedAccountId);
+      var existing =
+          dsl.select(PROFILE_MANAGER_INVITATION.ID, PROFILE_MANAGER_INVITATION.INVITING_ACCOUNT_ID)
+              .from(PROFILE_MANAGER_INVITATION)
+              .where(PROFILE_MANAGER_INVITATION.PROFILE_ID.eq(profileId))
+              .and(PROFILE_MANAGER_INVITATION.INVITED_ACCOUNT_ID.eq(invitedAccountId))
+              .and(PROFILE_MANAGER_INVITATION.STATUS.eq(pending))
+              .forUpdate()
+              .fetchOptional();
+      if (existing.isPresent()) {
+        var record = existing.orElseThrow();
+        return new ProfileManagerInvitationInsertResult(
+            invitation(record.value1(), profileId, record.value2(), invitedAccountId), false);
+      }
+    }
   }
 
   private ProfileManagerInvitation invitation(

@@ -26,8 +26,7 @@ import org.junit.jupiter.api.Test;
 class ProfileAvailabilityServiceTest {
 
   private final FakeUserAccountRepository accountRepository = new FakeUserAccountRepository();
-  private final FakeProfileHouseholdShareRepository shareRepository =
-      new FakeProfileHouseholdShareRepository();
+  private final TrackingShareRepository shareRepository = new TrackingShareRepository();
   private final TrackingProfileRepository profileRepository = new TrackingProfileRepository();
 
   private final ProfileAvailabilityService service =
@@ -88,6 +87,21 @@ class ProfileAvailabilityServiceTest {
     assertThat(profileRepository.bulkLookups).isOne();
   }
 
+  @Test
+  @DisplayName("Should check one active share when profile is selected")
+  void shouldCheckOneActiveShareWhenProfileIsSelected() {
+    var homeHouseholdId = UUID.randomUUID();
+    var account = saveAccount(homeHouseholdId);
+    var profile = saveProfile("Selected Profile");
+    share(profile, homeHouseholdId, ProfileShareStatus.ACTIVE);
+
+    assertThat(service.requireSelectableProfile(account.getId(), profile.getId()))
+        .isEqualTo(profile);
+
+    assertThat(shareRepository.householdListLookups).isZero();
+    assertThat(shareRepository.existenceLookups).isOne();
+  }
+
   private UserAccount saveAccount(UUID homeHouseholdId) {
     return accountRepository.save(
         UserAccount.builder()
@@ -130,6 +144,26 @@ class ProfileAvailabilityServiceTest {
       var profiles = new ArrayList<Profile>();
       ids.forEach(id -> Optional.ofNullable(database.get(id)).ifPresent(profiles::add));
       return profiles;
+    }
+  }
+
+  private static final class TrackingShareRepository extends FakeProfileHouseholdShareRepository {
+
+    private int householdListLookups;
+    private int existenceLookups;
+
+    @Override
+    public List<ProfileHouseholdShare> findByHouseholdIdAndStatus(
+        UUID householdId, ProfileShareStatus status) {
+      householdListLookups++;
+      return super.findByHouseholdIdAndStatus(householdId, status);
+    }
+
+    @Override
+    public boolean existsByProfileIdAndHouseholdIdAndStatus(
+        UUID profileId, UUID householdId, ProfileShareStatus status) {
+      existenceLookups++;
+      return super.existsByProfileIdAndHouseholdIdAndStatus(profileId, householdId, status);
     }
   }
 }

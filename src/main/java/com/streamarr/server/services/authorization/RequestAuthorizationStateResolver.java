@@ -11,15 +11,17 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 @Component
+@Slf4j
 public class RequestAuthorizationStateResolver {
 
   private final UserAccountRepository accountRepository;
   private final AuthSessionRepository sessionRepository;
   private final ProfileHouseholdShareRepository shareRepository;
-  private final MutexFactory<UUID> authenticationMutex;
+  private final MutexFactory<Object> authenticationMutex;
 
   public RequestAuthorizationStateResolver(
       UserAccountRepository accountRepository,
@@ -33,16 +35,16 @@ public class RequestAuthorizationStateResolver {
   }
 
   public AuthorizationState resolve(StreamarrAuthenticationToken authentication) {
-    var mutex = authenticationMutex.getMutex(authentication.getPrincipal().authSessionId());
+    var mutex = authenticationMutex.getMutex(authentication.getRequestAuthorizationMutexKey());
     mutex.lock();
     try {
-      if (authentication.getRequestAuthorizationState()
-          instanceof CachedAuthorizationState(var cachedState)) {
+      var cachedState = authentication.getRequestAuthorizationState();
+      if (cachedState != null) {
         return cachedState;
       }
 
       var state = load(authentication.getPrincipal());
-      authentication.setRequestAuthorizationState(new CachedAuthorizationState(state));
+      authentication.setRequestAuthorizationState(state);
       return state;
     } finally {
       mutex.unlock();
@@ -80,10 +82,12 @@ public class RequestAuthorizationStateResolver {
         profileId, account.getHomeHouseholdId(), ProfileShareStatus.ACTIVE)) {
       return profileId;
     }
+    log.debug(
+        "Profile {} is no longer active in account home {}; resolving request at account scope.",
+        profileId,
+        account.getHomeHouseholdId());
     return null;
   }
-
-  private record CachedAuthorizationState(AuthorizationState state) {}
 
   public record AuthorizationState(UserAccount account, UUID activeProfileId) {}
 }

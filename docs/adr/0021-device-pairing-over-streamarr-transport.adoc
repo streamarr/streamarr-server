@@ -4,7 +4,7 @@
 
 Proposed
 
-NOTE: link:0022-single-home-accounts-and-portable-profile-sharing.adoc[ADR 0022] supersedes only this ADR's post-pairing household-selection step.
+NOTE: link:0022-single-home-accounts-and-portable-profile-sharing.adoc[ADR 0022] supersedes this ADR's post-pairing selection model: every Account has one home Household, pairing issues Account scope, and the client may then select a portable Profile.
 The device-pairing transport, polling, approval, and session-creation decisions remain unchanged.
 
 == Context
@@ -53,9 +53,9 @@ Expiry is a predicate over `expires_at`, never a stored status — an expired ro
 
 === Approval authenticates a device, it does not choose a profile
 
-Approval applies the existing auto-selection rules, so the TV receives whatever scope the account's shape implies and picks household and profile afterward through the existing selection endpoints (link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015]).
-The scope is resolved before the session is created and carried into its insert: it follows from the account alone, and updating a session the same transaction has only queued for insert would write through jOOQ before Hibernate ever flushed the row.
-An account with no memberships, or a household with no selectable profiles, is a *valid domain state* the client renders as guidance — not an authentication failure.
+Every Account has exactly one home Household, so the winning poll creates an Account-scoped session without a Household-selection step (link:0022-single-home-accounts-and-portable-profile-sharing.adoc[ADR 0022]).
+The TV may select one portable Profile afterward through the profile-selection endpoint.
+A Household with no selectable Profiles is a *valid domain state* the client renders as guidance — not an authentication failure.
 
 === Issuance requires a canonical base URL
 

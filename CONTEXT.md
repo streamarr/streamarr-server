@@ -20,16 +20,30 @@ A Household has exactly one Household Owner; a Parent may hold delegated local a
 _Avoid_: Profile owner, ServerAdmin
 
 **Profile**:
-A portable viewing identity that carries its history, preferences, Kid or Adult classification, content ceiling, and PIN wherever it is shared.
+A portable viewing identity that carries its history, preferences, Kid or Adult Profile Kind, content ceiling, and PIN wherever it is shared.
 _Avoid_: Account, household profile
+
+**Profile Kind**:
+An explicit statement that a Profile is for a Kid or an Adult, independent of its content ceiling.
+_Avoid_: Classification, birthdate, profile age
+
+**Content Ceiling**:
+An optional maximum rating age that travels with a Profile; no ceiling means the Profile is unrestricted by this dimension.
+It may be set for either a Kid Profile or an Adult Profile and is never derived from a birthdate.
+_Avoid_: Profile age, age calculation
+
+**Profile PIN**:
+A portable Profile-entry secret that protects the same Profile everywhere it is shared.
+A Profile Manager may reset it to a replacement PIN, but the current model never clears an existing PIN.
+_Avoid_: Account password, household PIN, clear PIN
 
 **Kid Profile**:
 A Profile for someone who is not an adult.
-Its content ceiling is separate from its Kid classification, so one Kid Profile may be less restrictive than another.
+Its content ceiling is separate from its Kid Profile Kind, so one Kid Profile may be less restrictive than another.
 _Avoid_: Child account, restricted account
 
 **Adult Profile**:
-A Profile for an adult.
+A Profile whose Profile Kind is Adult; it may still have a Content Ceiling.
 _Avoid_: Admin profile, unrestricted profile
 
 **Profile Manager**:

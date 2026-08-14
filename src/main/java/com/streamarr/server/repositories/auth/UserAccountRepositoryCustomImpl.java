@@ -1,7 +1,13 @@
 package com.streamarr.server.repositories.auth;
 
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
+import static org.jooq.impl.DSL.inline;
 
+import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.jooq.generated.enums.HouseholdRole;
+import com.streamarr.server.repositories.JooqQueryHelper;
+import jakarta.persistence.EntityManager;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
@@ -10,6 +16,17 @@ import org.jooq.DSLContext;
 public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCustom {
 
   private final DSLContext dsl;
+  private final EntityManager entityManager;
+
+  @Override
+  public Optional<UserAccount> findOwnerByHomeHouseholdId(UUID homeHouseholdId) {
+    var query =
+        dsl.selectFrom(USER_ACCOUNT)
+            .where(USER_ACCOUNT.HOME_HOUSEHOLD_ID.eq(homeHouseholdId))
+            .and(USER_ACCOUNT.HOUSEHOLD_ROLE.eq(inline(HouseholdRole.OWNER)));
+    return JooqQueryHelper.nativeQuery(entityManager, query, UserAccount.class).stream()
+        .findFirst();
+  }
 
   @Override
   public boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash) {

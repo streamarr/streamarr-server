@@ -17,7 +17,7 @@ type SelectableProfile {
 type PortableProfileSummary {
     id: ID!
     name: String!
-    classification: String!
+    kind: ProfileKind!
     maximumAllowedRatingAge: Int
     pinProtected: Boolean!
 }
@@ -26,7 +26,7 @@ type PortableProfileShare {
     id: ID!
     profileId: ID!
     householdId: ID!
-    status: String!
+    status: ProfileShareStatus!
 }
 
 type PortableProfileManager {
@@ -40,12 +40,24 @@ type PortableProfileManagerInvitation {
     profileId: ID!
     invitingAccountId: ID!
     invitedAccountId: ID!
-    status: String!
+    status: ProfileManagerInvitationStatus!
 }
 
-enum ProfileClassificationInput {
+enum ProfileKind {
     KID
     ADULT
+}
+
+enum ProfileShareStatus {
+    PENDING
+    ACTIVE
+}
+
+enum ProfileManagerInvitationStatus {
+    PENDING
+    ACCEPTED
+    REJECTED
+    CANCELED
 }
 
 enum HouseholdRoleInput {
@@ -61,11 +73,9 @@ enum ProfileManagerOverrideActionInput {
 
 input PortableProfileCreationInput {
     name: String!
-    classification: ProfileClassificationInput!
+    kind: ProfileKind!
     maximumAllowedRatingAge: Int
     pin: String
-    clearMaximumAllowedRatingAge: Boolean! = false
-    clearPin: Boolean! = false
 }
 
 input PortableProfileRenameInput {
@@ -96,11 +106,19 @@ input ProfileReferenceInput {
     profileId: ID!
 }
 
-input ProfilePolicyChangeInput {
+input ProfileKindChangeInput {
     profileId: ID!
-    classification: ProfileClassificationInput!
-    maximumAllowedRatingAge: Int
-    pin: String
+    kind: ProfileKind!
+}
+
+input ProfileContentCeilingChangeInput {
+    profileId: ID!
+    maximumAllowedRatingAge: Int!
+}
+
+input ProfilePinResetInput {
+    profileId: ID!
+    newPin: String!
 }
 
 input ProfileDeletionInput {

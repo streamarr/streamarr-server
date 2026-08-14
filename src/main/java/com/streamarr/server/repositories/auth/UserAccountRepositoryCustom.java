@@ -1,8 +1,12 @@
 package com.streamarr.server.repositories.auth;
 
+import com.streamarr.server.domain.auth.UserAccount;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface UserAccountRepositoryCustom {
+
+  Optional<UserAccount> findOwnerByHomeHouseholdId(UUID homeHouseholdId);
 
   /**
    * Locks an enabled account only while its password hash still matches the caller's snapshot. This

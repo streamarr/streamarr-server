@@ -6,6 +6,7 @@ import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.fakes.MutableClock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -22,17 +23,24 @@ class LoginThrottleSweeperTest {
       new LoginThrottle(
           AuthThrottleProperties.builder().maxAttempts(5).window(Duration.ofMinutes(15)).build(),
           new MutableClock(currentTime));
+  private final CredentialGuessThrottle credentialThrottle =
+      new CredentialGuessThrottle(
+          AuthThrottleProperties.builder().maxAttempts(5).window(Duration.ofMinutes(15)).build(),
+          new MutableClock(currentTime));
 
-  private final LoginThrottleSweeper sweeper = new LoginThrottleSweeper(throttle);
+  private final LoginThrottleSweeper sweeper =
+      new LoginThrottleSweeper(throttle, credentialThrottle);
 
   @Test
   @DisplayName("Should leave nothing to evict when sweep already ran")
   void shouldLeaveNothingToEvictWhenSweepAlreadyRan() {
     throttle.registerAttempt("sprayed@example.com", "198.51.100.9");
+    credentialThrottle.registerServerAdminPasswordAttempt(UUID.randomUUID());
     currentTime.updateAndGet(instant -> instant.plus(Duration.ofMinutes(16)));
 
     sweeper.sweep();
 
     assertThat(throttle.sweepExpired()).isZero();
+    assertThat(credentialThrottle.sweepExpired()).isZero();
   }
 }

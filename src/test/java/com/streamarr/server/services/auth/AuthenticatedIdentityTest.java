@@ -71,7 +71,11 @@ class AuthenticatedIdentityTest {
             .householdId(UUID.randomUUID())
             .profileId(UUID.randomUUID());
 
-    assertThatThrownBy(missingHousehold::build).isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(missingHousehold::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("household")
+        .hasMessageContaining("profile")
+        .hasMessageContaining("stream session");
     assertThatThrownBy(missingProfile::build).isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(missingStream::build).isInstanceOf(IllegalArgumentException.class);
   }
