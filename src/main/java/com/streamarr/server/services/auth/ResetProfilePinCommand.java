@@ -1,17 +1,12 @@
 package com.streamarr.server.services.auth;
 
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
-public record ResetProfilePinCommand(UUID actingAccountId, UUID profileId, String pinHash) {
-
-  public ResetProfilePinCommand {
-    Objects.requireNonNull(actingAccountId, "actingAccountId");
-    Objects.requireNonNull(profileId, "profileId");
-    Objects.requireNonNull(pinHash, "pinHash");
-  }
+public record ResetProfilePinCommand(
+    @NonNull UUID actingAccountId, @NonNull UUID profileId, @NonNull String pinHash) {
 
   public static class ResetProfilePinCommandBuilder {
     @Override

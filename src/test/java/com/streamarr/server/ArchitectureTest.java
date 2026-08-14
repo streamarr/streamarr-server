@@ -12,7 +12,6 @@ import com.streamarr.server.graphql.resolvers.PortableProfileResolver;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.services.RootServiceCycleFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
-import com.streamarr.server.services.auth.PortableIdentityTransactionExecutor;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -138,13 +137,13 @@ class ArchitectureTest {
           .as(TRANSACTION_BOUNDARY_REASON);
 
   @ArchTest
-  static final ArchRule controllersAndResolversMustNotOwnTransactionExecutors =
+  static final ArchRule controllersAndResolversMustNotOwnTransactionInfrastructure =
       noClasses()
           .that()
           .resideInAnyPackage("..controllers..", "..graphql..")
           .should()
           .dependOnClassesThat()
-          .areAssignableTo(PortableIdentityTransactionExecutor.class)
+          .resideInAPackage("org.springframework.transaction..")
           .as(TRANSACTION_BOUNDARY_REASON);
 
   @ArchTest

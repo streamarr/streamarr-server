@@ -1,15 +1,9 @@
 package com.streamarr.server.services.auth;
 
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
-public record ProfileShareOffer(UUID actingAccountId, UUID profileId, UUID targetHouseholdId) {
-
-  public ProfileShareOffer {
-    Objects.requireNonNull(actingAccountId, "actingAccountId");
-    Objects.requireNonNull(profileId, "profileId");
-    Objects.requireNonNull(targetHouseholdId, "targetHouseholdId");
-  }
-}
+public record ProfileShareOffer(
+    @NonNull UUID actingAccountId, @NonNull UUID profileId, @NonNull UUID targetHouseholdId) {}

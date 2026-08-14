@@ -27,8 +27,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
-@DisplayName("Portable Identity Transaction Executor Integration Tests")
-class PortableIdentityTransactionExecutorIT extends AbstractIntegrationTest {
+@DisplayName("Portable Identity Service Integration Tests")
+class PortableIdentityServiceIT extends AbstractIntegrationTest {
 
   @Autowired private PlatformTransactionManager transactionManager;
   @Autowired private HouseholdRepository householdRepository;
@@ -45,8 +45,26 @@ class PortableIdentityTransactionExecutorIT extends AbstractIntegrationTest {
     var concurrentCommitCompleted = new CountDownLatch(1);
     var signals = new RaceSignals(firstReadCompleted, concurrentCommitCompleted);
     var attempts = new AtomicInteger();
-    var executor =
-        new PortableIdentityTransactionExecutor(new DataSourceTransactionManager(dataSource));
+    var managementService =
+        new SerializationProfileManagementService(
+            () -> {
+              jdbcTemplate.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE");
+              var observedVersion = safetyVersion(householdId);
+              if (attempts.incrementAndGet() == 1) {
+                firstReadCompleted.countDown();
+                awaitLatch(concurrentCommitCompleted);
+              }
+              jdbcTemplate.update(
+                  "UPDATE household SET safety_version = ? WHERE id = ?",
+                  observedVersion + 1,
+                  householdId);
+            });
+    var portableIdentityService =
+        PortableIdentityService.builder()
+            .transactionTemplate(
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource)))
+            .managementService(managementService)
+            .build();
 
     try (var concurrentConnection = dataSource.getConnection();
         var threadExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -55,19 +73,12 @@ class PortableIdentityTransactionExecutorIT extends AbstractIntegrationTest {
           threadExecutor.submit(
               () -> updateConcurrently(concurrentConnection, householdId, signals));
 
-      executor.execute(
-          () -> {
-            jdbcTemplate.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE");
-            var observedVersion = safetyVersion(householdId);
-            if (attempts.incrementAndGet() == 1) {
-              firstReadCompleted.countDown();
-              awaitLatch(concurrentCommitCompleted);
-            }
-            jdbcTemplate.update(
-                "UPDATE household SET safety_version = ? WHERE id = ?",
-                observedVersion + 1,
-                householdId);
-          });
+      portableIdentityService.renamePortableProfile(
+          RenamePortableProfileCommand.builder()
+              .actingAccountId(UUID.randomUUID())
+              .profileId(UUID.randomUUID())
+              .name("Retry Profile")
+              .build());
 
       assertThat(concurrentUpdate.get(30, TimeUnit.SECONDS)).isNull();
     }
@@ -138,4 +149,20 @@ class PortableIdentityTransactionExecutorIT extends AbstractIntegrationTest {
 
   private record RaceSignals(
       CountDownLatch firstReadCompleted, CountDownLatch concurrentCommitCompleted) {}
+
+  private static final class SerializationProfileManagementService
+      extends ProfileManagementService {
+
+    private final Runnable operation;
+
+    private SerializationProfileManagementService(Runnable operation) {
+      super(null, null, null, null, null, null, null, null);
+      this.operation = operation;
+    }
+
+    @Override
+    public void rename(RenamePortableProfileCommand command) {
+      operation.run();
+    }
+  }
 }

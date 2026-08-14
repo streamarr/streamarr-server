@@ -1,23 +1,17 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.ProfileKind;
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
 public record CreatePortableProfileCommand(
-    UUID actingAccountId,
-    String name,
-    ProfileKind kind,
+    @NonNull UUID actingAccountId,
+    @NonNull String name,
+    @NonNull ProfileKind kind,
     Integer maximumAllowedRatingAge,
     String pinHash) {
-
-  public CreatePortableProfileCommand {
-    Objects.requireNonNull(actingAccountId, "actingAccountId");
-    Objects.requireNonNull(name, "name");
-    Objects.requireNonNull(kind, "kind");
-  }
 
   public static class CreatePortableProfileCommandBuilder {
     @Override

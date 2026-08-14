@@ -1,14 +1,8 @@
 package com.streamarr.server.services.auth;
 
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
-public record HouseholdProfileRemoval(UUID actingAccountId, UUID shareId) {
-
-  public HouseholdProfileRemoval {
-    Objects.requireNonNull(actingAccountId, "actingAccountId");
-    Objects.requireNonNull(shareId, "shareId");
-  }
-}
+public record HouseholdProfileRemoval(@NonNull UUID actingAccountId, @NonNull UUID shareId) {}

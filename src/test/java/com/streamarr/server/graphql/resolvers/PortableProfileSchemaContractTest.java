@@ -2,19 +2,12 @@ package com.streamarr.server.graphql.resolvers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
-import com.streamarr.server.services.auth.HouseholdAdministrationService;
-import com.streamarr.server.services.auth.PortableIdentityMutationService;
-import com.streamarr.server.services.auth.ProfileDeletionService;
-import com.streamarr.server.services.auth.ProfileManagementService;
+import com.streamarr.server.services.auth.PortableIdentityService;
 import com.streamarr.server.services.auth.ProfilePinService;
-import com.streamarr.server.services.auth.ProfilePolicyService;
-import com.streamarr.server.services.auth.ProfileSharingService;
-import com.streamarr.server.services.auth.ServerAdministrationService;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLTypeUtil;
@@ -38,26 +31,13 @@ class PortableProfileSchemaContractTest {
   @Autowired private GraphQlSource graphQlSource;
 
   @MockitoBean private AuthorizationService authorizationService;
-  @MockitoBean private PortableIdentityMutationService mutationService;
-  @MockitoBean private ProfileSharingService sharingService;
-  @MockitoBean private ProfileManagementService managementService;
-  @MockitoBean private ProfilePolicyService policyService;
-  @MockitoBean private ProfileDeletionService deletionService;
-  @MockitoBean private ServerAdministrationService serverAdministrationService;
-  @MockitoBean private HouseholdAdministrationService householdAdministrationService;
+  @MockitoBean private PortableIdentityService portableIdentityService;
   @MockitoBean private ProfilePinService profilePinService;
 
   @BeforeEach
-  void executeTransactionsSynchronously() {
+  void configureGraphQlBoundaryServices() {
     when(authorizationService.requireAccountId()).thenReturn(UUID.randomUUID());
     when(profilePinService.encode(any())).thenReturn("encoded-pin");
-    doAnswer(
-            invocation -> {
-              invocation.<Runnable>getArgument(0).run();
-              return null;
-            })
-        .when(mutationService)
-        .execute(any(Runnable.class));
   }
 
   @Test

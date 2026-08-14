@@ -1,14 +1,9 @@
 package com.streamarr.server.services.auth;
 
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
-public record ProfileManagerInvitationRejection(UUID actingAccountId, UUID invitationId) {
-
-  public ProfileManagerInvitationRejection {
-    Objects.requireNonNull(actingAccountId, "actingAccountId");
-    Objects.requireNonNull(invitationId, "invitationId");
-  }
-}
+public record ProfileManagerInvitationRejection(
+    @NonNull UUID actingAccountId, @NonNull UUID invitationId) {}

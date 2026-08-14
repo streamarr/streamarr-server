@@ -1,11 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
-import java.util.Objects;
+import lombok.NonNull;
 
-public record ProfileHouseholdShareInsertResult(ProfileHouseholdShare share, boolean inserted) {
-
-  public ProfileHouseholdShareInsertResult {
-    Objects.requireNonNull(share);
-  }
-}
+public record ProfileHouseholdShareInsertResult(
+    @NonNull ProfileHouseholdShare share, boolean inserted) {}

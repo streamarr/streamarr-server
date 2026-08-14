@@ -1,16 +1,14 @@
 package com.streamarr.server.services.auth;
 
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
 public record SetProfileContentCeilingCommand(
-    UUID actingAccountId, UUID profileId, int maximumAllowedRatingAge) {
+    @NonNull UUID actingAccountId, @NonNull UUID profileId, int maximumAllowedRatingAge) {
 
   public SetProfileContentCeilingCommand {
-    Objects.requireNonNull(actingAccountId, "actingAccountId");
-    Objects.requireNonNull(profileId, "profileId");
     if (maximumAllowedRatingAge < 0) {
       throw new IllegalArgumentException("maximumAllowedRatingAge must not be negative");
     }

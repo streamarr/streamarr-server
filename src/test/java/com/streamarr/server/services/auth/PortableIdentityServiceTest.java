@@ -6,8 +6,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileKind;
 import java.sql.SQLException;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -16,29 +20,36 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
-@DisplayName("Portable Identity Transaction Executor Tests")
-class PortableIdentityTransactionExecutorTest {
+@DisplayName("Portable Identity Service Tests")
+class PortableIdentityServiceTest {
 
-  private final PortableIdentityTransactionExecutor executor =
-      new PortableIdentityTransactionExecutor(new NoOpTransactionManager());
+  private final RetryingProfileManagementService managementService =
+      new RetryingProfileManagementService();
+  private final PortableIdentityService portableIdentityService =
+      PortableIdentityService.builder()
+          .transactionTemplate(new TransactionTemplate(new NoOpTransactionManager()))
+          .managementService(managementService)
+          .build();
 
   @Test
   @DisplayName("Should retry the complete transaction after serialization failure")
   void shouldRetryCompleteTransactionAfterSerializationFailure() {
     var attempts = new AtomicInteger();
+    var committed = Profile.builder().name("Committed").build();
+    managementService.operation =
+        () -> {
+          if (attempts.incrementAndGet() < 3) {
+            throw failure("40001");
+          }
+          return committed;
+        };
 
-    var result =
-        executor.execute(
-            () -> {
-              if (attempts.incrementAndGet() < 3) {
-                throw failure("40001");
-              }
-              return "committed";
-            });
+    var result = portableIdentityService.createPortableProfile(command());
 
-    assertThat(result).isEqualTo("committed");
+    assertThat(result).isSameAs(committed);
     assertThat(attempts).hasValue(3);
   }
 
@@ -46,17 +57,18 @@ class PortableIdentityTransactionExecutorTest {
   @DisplayName("Should retry the complete transaction after deadlock detection")
   void shouldRetryCompleteTransactionAfterDeadlockDetection() {
     var attempts = new AtomicInteger();
+    var committed = Profile.builder().name("Committed").build();
+    managementService.operation =
+        () -> {
+          if (attempts.incrementAndGet() == 1) {
+            throw failure("40P01");
+          }
+          return committed;
+        };
 
-    var result =
-        executor.execute(
-            () -> {
-              if (attempts.incrementAndGet() == 1) {
-                throw failure("40P01");
-              }
-              return "committed";
-            });
+    var result = portableIdentityService.createPortableProfile(command());
 
-    assertThat(result).isEqualTo("committed");
+    assertThat(result).isSameAs(committed);
     assertThat(attempts).hasValue(2);
   }
 
@@ -64,17 +76,18 @@ class PortableIdentityTransactionExecutorTest {
   @DisplayName("Should retry when database reports deadlock through chained exception")
   void shouldRetryWhenDatabaseReportsDeadlockThroughChainedException() {
     var attempts = new AtomicInteger();
+    var committed = Profile.builder().name("Committed").build();
+    managementService.operation =
+        () -> {
+          if (attempts.incrementAndGet() == 1) {
+            throw chainedFailure("40P01");
+          }
+          return committed;
+        };
 
-    var result =
-        executor.execute(
-            () -> {
-              if (attempts.incrementAndGet() == 1) {
-                throw chainedFailure("40P01");
-              }
-              return "committed";
-            });
+    var result = portableIdentityService.createPortableProfile(command());
 
-    assertThat(result).isEqualTo("committed");
+    assertThat(result).isSameAs(committed);
     assertThat(attempts).hasValue(2);
   }
 
@@ -82,19 +95,20 @@ class PortableIdentityTransactionExecutorTest {
   @DisplayName("Should log retryable database contention before retrying")
   void shouldLogRetryableDatabaseContentionBeforeRetrying() {
     var attempts = new AtomicInteger();
-    var logger = (Logger) LoggerFactory.getLogger(PortableIdentityTransactionExecutor.class);
+    var logger = (Logger) LoggerFactory.getLogger(PortableIdentityService.class);
     var events = new ListAppender<ILoggingEvent>();
     events.start();
     logger.addAppender(events);
+    managementService.operation =
+        () -> {
+          if (attempts.incrementAndGet() == 1) {
+            throw failure("40P01");
+          }
+          return Profile.builder().name("Committed").build();
+        };
 
     try {
-      executor.execute(
-          () -> {
-            if (attempts.incrementAndGet() == 1) {
-              throw failure("40P01");
-            }
-            return "committed";
-          });
+      portableIdentityService.createPortableProfile(command());
     } finally {
       logger.detachAppender(events);
     }
@@ -112,14 +126,13 @@ class PortableIdentityTransactionExecutorTest {
   @DisplayName("Should not retry a portable identity constraint violation")
   void shouldNotRetryPortableIdentityConstraintViolation() {
     var attempts = new AtomicInteger();
+    managementService.operation =
+        () -> {
+          attempts.incrementAndGet();
+          throw failure("23514");
+        };
 
-    assertThatThrownBy(
-            () ->
-                executor.execute(
-                    () -> {
-                      attempts.incrementAndGet();
-                      throw failure("23514");
-                    }))
+    assertThatThrownBy(() -> portableIdentityService.createPortableProfile(command()))
         .isInstanceOf(DataAccessResourceFailureException.class);
 
     assertThat(attempts).hasValue(1);
@@ -129,16 +142,15 @@ class PortableIdentityTransactionExecutorTest {
   @DisplayName("Should stop retrying when caller is interrupted during backoff")
   void shouldStopRetryingWhenCallerIsInterruptedDuringBackoff() {
     var attempts = new AtomicInteger();
+    managementService.operation =
+        () -> {
+          attempts.incrementAndGet();
+          throw failure("40001");
+        };
     Thread.currentThread().interrupt();
 
     try {
-      assertThatThrownBy(
-              () ->
-                  executor.execute(
-                      () -> {
-                        attempts.incrementAndGet();
-                        throw failure("40001");
-                      }))
+      assertThatThrownBy(() -> portableIdentityService.createPortableProfile(command()))
           .isInstanceOf(DataAccessResourceFailureException.class);
 
       assertThat(attempts).hasValue(1);
@@ -146,6 +158,14 @@ class PortableIdentityTransactionExecutorTest {
     } finally {
       Thread.interrupted();
     }
+  }
+
+  private CreatePortableProfileCommand command() {
+    return CreatePortableProfileCommand.builder()
+        .actingAccountId(UUID.randomUUID())
+        .name("Profile")
+        .kind(ProfileKind.ADULT)
+        .build();
   }
 
   private DataAccessResourceFailureException failure(String sqlState) {
@@ -157,6 +177,20 @@ class PortableIdentityTransactionExecutorTest {
     var root = new SQLException("Batch failed");
     root.setNextException(new SQLException("Deadlock detected", sqlState));
     return new DataAccessResourceFailureException("Injected database failure", root);
+  }
+
+  private static final class RetryingProfileManagementService extends ProfileManagementService {
+
+    private Supplier<Profile> operation;
+
+    private RetryingProfileManagementService() {
+      super(null, null, null, null, null, null, null, null);
+    }
+
+    @Override
+    public Profile create(CreatePortableProfileCommand command) {
+      return operation.get();
+    }
   }
 
   private static final class NoOpTransactionManager extends AbstractPlatformTransactionManager {

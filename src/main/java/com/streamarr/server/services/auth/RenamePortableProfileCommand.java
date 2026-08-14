@@ -1,15 +1,9 @@
 package com.streamarr.server.services.auth;
 
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
-public record RenamePortableProfileCommand(UUID actingAccountId, UUID profileId, String name) {
-
-  public RenamePortableProfileCommand {
-    Objects.requireNonNull(actingAccountId, "actingAccountId");
-    Objects.requireNonNull(profileId, "profileId");
-    Objects.requireNonNull(name, "name");
-  }
-}
+public record RenamePortableProfileCommand(
+    @NonNull UUID actingAccountId, @NonNull UUID profileId, @NonNull String name) {}

@@ -1,19 +1,15 @@
 package com.streamarr.server.services.auth;
 
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
 public record ForceProfileUnshareCommand(
-    UUID actingAccountId, UUID shareId, String password, String reason) {
-
-  public ForceProfileUnshareCommand {
-    Objects.requireNonNull(actingAccountId, "actingAccountId");
-    Objects.requireNonNull(shareId, "shareId");
-    Objects.requireNonNull(password, "password");
-    Objects.requireNonNull(reason, "reason");
-  }
+    @NonNull UUID actingAccountId,
+    @NonNull UUID shareId,
+    @NonNull String password,
+    @NonNull String reason) {
 
   public static class ForceProfileUnshareCommandBuilder {
     @Override

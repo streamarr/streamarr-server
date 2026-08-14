@@ -10,14 +10,8 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.ProfileSafetyViolationException;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
-import com.streamarr.server.services.auth.HouseholdAdministrationService;
-import com.streamarr.server.services.auth.PortableIdentityMutationService;
-import com.streamarr.server.services.auth.ProfileDeletionService;
-import com.streamarr.server.services.auth.ProfileManagementService;
+import com.streamarr.server.services.auth.PortableIdentityService;
 import com.streamarr.server.services.auth.ProfilePinService;
-import com.streamarr.server.services.auth.ProfilePolicyService;
-import com.streamarr.server.services.auth.ProfileSharingService;
-import com.streamarr.server.services.auth.ServerAdministrationService;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import java.sql.SQLException;
 import java.util.List;
@@ -41,33 +35,20 @@ class PortableProfileErrorContractTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private AuthorizationService authorizationService;
-  @MockitoBean private PortableIdentityMutationService mutationService;
-  @MockitoBean private ProfileSharingService sharingService;
-  @MockitoBean private ProfileManagementService managementService;
-  @MockitoBean private ProfilePolicyService policyService;
-  @MockitoBean private ProfileDeletionService deletionService;
-  @MockitoBean private ServerAdministrationService serverAdministrationService;
-  @MockitoBean private HouseholdAdministrationService householdAdministrationService;
+  @MockitoBean private PortableIdentityService portableIdentityService;
   @MockitoBean private ProfilePinService profilePinService;
 
   @BeforeEach
-  void executeTransactionsSynchronously() {
+  void authenticateAccount() {
     when(authorizationService.requireAccountId()).thenReturn(UUID.randomUUID());
-    doAnswer(
-            invocation -> {
-              invocation.<Runnable>getArgument(0).run();
-              return null;
-            })
-        .when(mutationService)
-        .execute(any(Runnable.class));
   }
 
   @Test
   @DisplayName("Should return invalid credentials code when profile deletion password is wrong")
   void shouldReturnInvalidCredentialsCodeWhenProfileDeletionPasswordIsWrong() {
     doAnswer(_ -> throwException(new InvalidCredentialsException()))
-        .when(deletionService)
-        .delete(any());
+        .when(portableIdentityService)
+        .deleteProfile(any());
 
     var result = dgsQueryExecutor.execute(deleteProfileMutation());
 
@@ -83,8 +64,8 @@ class PortableProfileErrorContractTest {
     doAnswer(
             _ ->
                 throwException(new ProfileSafetyViolationException(List.of(inaccessibleProfileId))))
-        .when(deletionService)
-        .delete(any());
+        .when(portableIdentityService)
+        .deleteProfile(any());
 
     var result = dgsQueryExecutor.execute(deleteProfileMutation());
 
@@ -104,8 +85,8 @@ class PortableProfileErrorContractTest {
                   "Commit failed",
                   new SQLException("Profiles require a PIN before sharing", "23514"));
             })
-        .when(mutationService)
-        .execute(any(Runnable.class));
+        .when(portableIdentityService)
+        .deleteProfile(any());
 
     var result = dgsQueryExecutor.execute(deleteProfileMutation());
 
@@ -130,8 +111,8 @@ class PortableProfileErrorContractTest {
               throw new DataIntegrityViolationException(
                   databaseMessage, new SQLException(databaseMessage, "23503"));
             })
-        .when(mutationService)
-        .execute(any(Runnable.class));
+        .when(portableIdentityService)
+        .deleteProfile(any());
 
     var result = dgsQueryExecutor.execute(deleteProfileMutation());
 
@@ -147,7 +128,7 @@ class PortableProfileErrorContractTest {
   @DisplayName("Should return a client safe validation error when an override reason is blank")
   void shouldReturnClientSafeValidationErrorWhenOverrideReasonIsBlank() {
     doAnswer(_ -> throwException(new IllegalArgumentException("An override reason is required.")))
-        .when(serverAdministrationService)
+        .when(portableIdentityService)
         .forceDeleteProfile(any());
 
     var result = dgsQueryExecutor.execute(forceDeleteProfileMutation());

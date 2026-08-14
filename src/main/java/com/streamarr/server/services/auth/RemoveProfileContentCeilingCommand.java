@@ -1,14 +1,9 @@
 package com.streamarr.server.services.auth;
 
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
-public record RemoveProfileContentCeilingCommand(UUID actingAccountId, UUID profileId) {
-
-  public RemoveProfileContentCeilingCommand {
-    Objects.requireNonNull(actingAccountId, "actingAccountId");
-    Objects.requireNonNull(profileId, "profileId");
-  }
-}
+public record RemoveProfileContentCeilingCommand(
+    @NonNull UUID actingAccountId, @NonNull UUID profileId) {}

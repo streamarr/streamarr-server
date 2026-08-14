@@ -24,8 +24,7 @@ import com.streamarr.server.services.auth.ForceProfileUnshareCommand;
 import com.streamarr.server.services.auth.HouseholdAdministrationService;
 import com.streamarr.server.services.auth.HouseholdOwnershipTransferCommand;
 import com.streamarr.server.services.auth.HouseholdProfileRemoval;
-import com.streamarr.server.services.auth.PortableIdentityMutationService;
-import com.streamarr.server.services.auth.PortableIdentityTransactionExecutor;
+import com.streamarr.server.services.auth.PortableIdentityService;
 import com.streamarr.server.services.auth.ProfileDeletionService;
 import com.streamarr.server.services.auth.ProfileHomeDeparture;
 import com.streamarr.server.services.auth.ProfileManagementRelinquishment;
@@ -58,6 +57,7 @@ import org.springframework.security.crypto.password.NoOpPasswordEncoder;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("Portable Profile Resolver Tests")
@@ -592,6 +592,16 @@ class PortableProfileResolverTest {
         new CapturingServerAdministrationService();
     private final CapturingHouseholdAdministrationService householdAdministrationService =
         new CapturingHouseholdAdministrationService();
+    private final PortableIdentityService portableIdentityService =
+        PortableIdentityService.builder()
+            .transactionTemplate(new TransactionTemplate(new NoOpTransactionManager()))
+            .sharingService(sharingService)
+            .managementService(managementService)
+            .policyService(policyService)
+            .deletionService(deletionService)
+            .serverAdministrationService(serverAdministrationService)
+            .householdAdministrationService(householdAdministrationService)
+            .build();
     private final PortableProfileResolver resolver =
         new PortableProfileResolver(
             new FakeAuthorizationService(
@@ -602,14 +612,7 @@ class PortableProfileResolverTest {
                     .authSessionId(UUID.randomUUID())
                     .scope(TokenScope.PROFILE)
                     .build()),
-            new PortableIdentityMutationService(
-                new PortableIdentityTransactionExecutor(new NoOpTransactionManager())),
-            sharingService,
-            managementService,
-            policyService,
-            deletionService,
-            serverAdministrationService,
-            householdAdministrationService,
+            portableIdentityService,
             new ProfilePinService(NoOpPasswordEncoder.getInstance()));
   }
 

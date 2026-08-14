@@ -11,8 +11,7 @@ import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.graphql.inputs.PortableProfileInputs;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.CreatePortableProfileCommand;
-import com.streamarr.server.services.auth.PortableIdentityMutationService;
-import com.streamarr.server.services.auth.PortableIdentityTransactionExecutor;
+import com.streamarr.server.services.auth.PortableIdentityService;
 import com.streamarr.server.services.auth.ProfileManagementService;
 import com.streamarr.server.services.auth.ProfilePinService;
 import com.streamarr.server.services.auth.ProfilePolicyService;
@@ -27,6 +26,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 import org.springframework.transaction.support.DefaultTransactionStatus;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("Portable Profile Resolver Transaction Boundary Tests")
@@ -41,13 +41,7 @@ class PortableProfileResolverTransactionBoundaryTest {
     var resolver =
         new PortableProfileResolver(
             authorizationService(accountId),
-            mutationService(),
-            null,
-            managementService,
-            null,
-            null,
-            null,
-            null,
+            portableIdentityService(new RecordingTransactionManager(), managementService, null),
             new ProfilePinService(passwordEncoder));
 
     resolver.createPortableProfile(
@@ -66,13 +60,7 @@ class PortableProfileResolverTransactionBoundaryTest {
     var resolver =
         new PortableProfileResolver(
             authorizationService(accountId),
-            mutationService(),
-            null,
-            null,
-            policyService,
-            null,
-            null,
-            null,
+            portableIdentityService(new RecordingTransactionManager(), null, policyService),
             new ProfilePinService(passwordEncoder));
 
     resolver.resetProfilePin(
@@ -89,13 +77,7 @@ class PortableProfileResolverTransactionBoundaryTest {
     var resolver =
         new PortableProfileResolver(
             authorizationService(UUID.randomUUID()),
-            mutationService(transactionManager),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
+            portableIdentityService(transactionManager, null, null),
             null);
 
     assertThatThrownBy(
@@ -116,14 +98,15 @@ class PortableProfileResolverTransactionBoundaryTest {
             .build());
   }
 
-  private static PortableIdentityMutationService mutationService() {
-    return mutationService(new RecordingTransactionManager());
-  }
-
-  private static PortableIdentityMutationService mutationService(
-      RecordingTransactionManager transactionManager) {
-    return new PortableIdentityMutationService(
-        new PortableIdentityTransactionExecutor(transactionManager));
+  private static PortableIdentityService portableIdentityService(
+      RecordingTransactionManager transactionManager,
+      ProfileManagementService managementService,
+      ProfilePolicyService policyService) {
+    return PortableIdentityService.builder()
+        .transactionTemplate(new TransactionTemplate(transactionManager))
+        .managementService(managementService)
+        .policyService(policyService)
+        .build();
   }
 
   private static final class TransactionObservingPasswordEncoder implements PasswordEncoder {
