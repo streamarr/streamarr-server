@@ -1,9 +1,9 @@
 # Streamarr Bruno collection
 
-Use the `local` environment, then set `AUTH_EMAIL`, `AUTH_PASSWORD`, and `TMDB_TOKEN`
-as secrets in Bruno. Set `PROFILE_PIN` when the profile selected by `GraphQL/Get Me` reports
-`pinProtected`; `AUTH_NEW_PASSWORD` is only needed for the manual password-change request.
-Replace the non-secret resource IDs and local library path as needed.
+Copy `environments/example.bru` to `environments/local.bru`, select the `local` environment,
+and customize its non-secret values. Set `AUTH_EMAIL`, `AUTH_PASSWORD`, and `TMDB_TOKEN` as secrets
+in Bruno. Set `PROFILE_PIN` when the profile selected by `GraphQL/Get Me` reports `pinProtected`;
+`AUTH_NEW_PASSWORD` is only needed for the manual password-change request.
 
 For a configured server, run `Auth/Public/Login` before protected requests. On a fresh
 server, run `Auth/Public/Setup (one time)` instead. Both requests keep the returned access and refresh

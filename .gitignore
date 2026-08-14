@@ -52,6 +52,7 @@ buildNumber.properties
 
 ### Environment ###
 .env
+/bruno/environments/local.bru
 
 ### Test fixtures ###
 src/test/resources/BigBuckBunny_320x180.mp4
