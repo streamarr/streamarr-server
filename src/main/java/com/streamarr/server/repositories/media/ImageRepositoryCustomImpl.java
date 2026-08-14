@@ -2,6 +2,7 @@ package com.streamarr.server.repositories.media;
 
 import static com.streamarr.server.jooq.generated.tables.Image.IMAGE;
 
+import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.jooq.generated.enums.ImageEntityType;
@@ -25,6 +26,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
+  private final ImageProperties imageProperties;
 
   @Override
   public Set<UUID> insertAllIfAbsent(List<Image> images) {
@@ -49,6 +51,8 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
     var lockKey =
         UUID.nameUUIDFromBytes(artworkIdentity.getBytes(StandardCharsets.UTF_8))
             .getMostSignificantBits();
+    var lockTimeout = imageProperties.replacementLockTimeout().toMillis() + "ms";
+    dsl.setLocal(DSL.name("lock_timeout"), DSL.inline(lockTimeout)).execute();
     dsl.select(DSL.function(DSL.name("pg_advisory_xact_lock"), Object.class, DSL.val(lockKey)))
         .execute();
     var condition =

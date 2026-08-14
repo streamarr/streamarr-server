@@ -58,6 +58,7 @@ tmdb:
 
 image:
   storage-path: ${IMAGE_STORAGE_PATH:}
+  replacement-lock-timeout: ${IMAGE_REPLACEMENT_LOCK_TIMEOUT:5s}
 
 streaming:
   max-concurrent-transcodes: ${STREAMING_MAX_CONCURRENT_TRANSCODES:8}
