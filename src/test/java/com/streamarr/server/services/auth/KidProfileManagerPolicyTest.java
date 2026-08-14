@@ -45,7 +45,10 @@ class KidProfileManagerPolicyTest {
     manage(localParent, kid);
     manage(remoteParent, kid);
 
-    assertThatThrownBy(() -> policy.validateManagerRemoval(kid.getId(), localParent.getId()))
+    var kidId = kid.getId();
+    var localParentId = localParent.getId();
+
+    assertThatThrownBy(() -> policy.validateManagerRemoval(kidId, localParentId))
         .isInstanceOf(KidProfileManagerRequiredException.class);
   }
 
@@ -83,7 +86,9 @@ class KidProfileManagerPolicyTest {
     var kid = saveActiveKid(householdId);
     manage(localParent, kid);
 
-    assertThatThrownBy(() -> policy.validateAccountDeparture(localParent.getId(), householdId))
+    var localParentId = localParent.getId();
+
+    assertThatThrownBy(() -> policy.validateAccountDeparture(localParentId, householdId))
         .isInstanceOf(KidProfileManagerRequiredException.class);
   }
 
@@ -143,7 +148,9 @@ class KidProfileManagerPolicyTest {
             .status(ProfileShareStatus.ACTIVE)
             .build());
 
-    assertThatThrownBy(() -> policy.validateKidClassification(profile.getId()))
+    var profileId = profile.getId();
+
+    assertThatThrownBy(() -> policy.validateKidClassification(profileId))
         .isInstanceOf(KidProfileManagerRequiredException.class);
   }
 
@@ -195,7 +202,9 @@ class KidProfileManagerPolicyTest {
                 .build());
     manage(member, kid);
 
-    assertThatThrownBy(() -> policy.validateShareActivation(kid.getId(), householdId))
+    var kidId = kid.getId();
+
+    assertThatThrownBy(() -> policy.validateShareActivation(kidId, householdId))
         .isInstanceOf(KidProfileManagerRequiredException.class);
   }
 

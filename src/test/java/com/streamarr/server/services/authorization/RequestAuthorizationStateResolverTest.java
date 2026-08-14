@@ -101,8 +101,9 @@ class RequestAuthorizationStateResolverTest {
             .authSessionId(session.getId())
             .scope(TokenScope.ACCOUNT)
             .build();
+    var requestAuthentication = authentication(signed);
 
-    assertThatThrownBy(() -> resolver.resolve(authentication(signed)))
+    assertThatThrownBy(() -> resolver.resolve(requestAuthentication))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 

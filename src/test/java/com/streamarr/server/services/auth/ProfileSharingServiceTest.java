@@ -212,14 +212,13 @@ class ProfileSharingServiceTest {
                 .householdId(householdId)
                 .status(ProfileShareStatus.PENDING)
                 .build());
+    var acceptance =
+        ProfileShareAcceptance.builder()
+            .actingAccountId(parent.getId())
+            .shareId(pendingShare.getId())
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.accept(
-                    ProfileShareAcceptance.builder()
-                        .actingAccountId(parent.getId())
-                        .shareId(pendingShare.getId())
-                        .build()))
+    assertThatThrownBy(() -> service.accept(acceptance))
         .isInstanceOf(KidProfileManagerRequiredException.class);
 
     assertThat(pendingShare.getStatus()).isEqualTo(ProfileShareStatus.PENDING);
@@ -363,14 +362,13 @@ class ProfileSharingServiceTest {
                 .householdId(momHouseholdId)
                 .status(ProfileShareStatus.ACTIVE)
                 .build());
+    var removal =
+        HouseholdProfileRemoval.builder()
+            .actingAccountId(dad.getId())
+            .shareId(remoteShare.getId())
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.removeFromHousehold(
-                    HouseholdProfileRemoval.builder()
-                        .actingAccountId(dad.getId())
-                        .shareId(remoteShare.getId())
-                        .build()))
+    assertThatThrownBy(() -> service.removeFromHousehold(removal))
         .isInstanceOf(ProfileAccessDeniedException.class);
 
     assertThat(shareRepository.existsById(remoteShare.getId())).isTrue();

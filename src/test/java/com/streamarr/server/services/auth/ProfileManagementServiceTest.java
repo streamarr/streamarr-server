@@ -322,14 +322,13 @@ class ProfileManagementServiceTest {
     var profileId = UUID.randomUUID();
     managerRepository.save(
         ProfileManager.builder().accountId(managerId).profileId(profileId).build());
+    var relinquishment =
+        ProfileManagementRelinquishment.builder()
+            .actingAccountId(managerId)
+            .profileId(profileId)
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.relinquish(
-                    ProfileManagementRelinquishment.builder()
-                        .actingAccountId(managerId)
-                        .profileId(profileId)
-                        .build()))
+    assertThatThrownBy(() -> service.relinquish(relinquishment))
         .isInstanceOf(ProfileManagerInvariantException.class)
         .hasMessageContaining("at least one manager");
 
@@ -359,14 +358,13 @@ class ProfileManagementServiceTest {
             .householdId(householdId)
             .status(ProfileShareStatus.ACTIVE)
             .build());
+    var relinquishment =
+        ProfileManagementRelinquishment.builder()
+            .actingAccountId(local.getId())
+            .profileId(kid.getId())
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.relinquish(
-                    ProfileManagementRelinquishment.builder()
-                        .actingAccountId(local.getId())
-                        .profileId(kid.getId())
-                        .build()))
+    assertThatThrownBy(() -> service.relinquish(relinquishment))
         .isInstanceOf(KidProfileManagerRequiredException.class);
 
     assertThat(managerRepository.existsByAccountIdAndProfileId(local.getId(), kid.getId()))

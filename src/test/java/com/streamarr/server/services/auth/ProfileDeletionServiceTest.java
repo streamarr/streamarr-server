@@ -71,15 +71,14 @@ class ProfileDeletionServiceTest {
             .householdId(account.getHomeHouseholdId())
             .status(ProfileShareStatus.ACTIVE)
             .build());
+    var command =
+        DeleteProfileCommand.builder()
+            .actingAccountId(account.getId())
+            .profileId(profile.getId())
+            .password("correct horse battery staple")
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.delete(
-                    DeleteProfileCommand.builder()
-                        .actingAccountId(account.getId())
-                        .profileId(profile.getId())
-                        .password("correct horse battery staple")
-                        .build()))
+    assertThatThrownBy(() -> service.delete(command))
         .isInstanceOf(ProfileDeletionBlockedException.class)
         .hasMessageContaining("shares");
 
@@ -127,15 +126,14 @@ class ProfileDeletionServiceTest {
     var profile = profileRepository.save(Profile.builder().name("Protected Delete").build());
     managerRepository.save(
         ProfileManager.builder().accountId(account.getId()).profileId(profile.getId()).build());
+    var command =
+        DeleteProfileCommand.builder()
+            .actingAccountId(account.getId())
+            .profileId(profile.getId())
+            .password("wrong password")
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.delete(
-                    DeleteProfileCommand.builder()
-                        .actingAccountId(account.getId())
-                        .profileId(profile.getId())
-                        .password("wrong password")
-                        .build()))
+    assertThatThrownBy(() -> service.delete(command))
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(profileRepository.existsById(profile.getId())).isTrue();
@@ -156,15 +154,14 @@ class ProfileDeletionServiceTest {
             .invitedAccountId(UUID.randomUUID())
             .status(ProfileManagerInvitationStatus.PENDING)
             .build());
+    var command =
+        DeleteProfileCommand.builder()
+            .actingAccountId(account.getId())
+            .profileId(profile.getId())
+            .password("correct horse battery staple")
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.delete(
-                    DeleteProfileCommand.builder()
-                        .actingAccountId(account.getId())
-                        .profileId(profile.getId())
-                        .password("correct horse battery staple")
-                        .build()))
+    assertThatThrownBy(() -> service.delete(command))
         .isInstanceOf(ProfileDeletionBlockedException.class)
         .hasMessageContaining("invitations");
   }
@@ -178,15 +175,14 @@ class ProfileDeletionServiceTest {
         ProfileManager.builder().accountId(account.getId()).profileId(profile.getId()).build());
     managerRepository.save(
         ProfileManager.builder().accountId(UUID.randomUUID()).profileId(profile.getId()).build());
+    var command =
+        DeleteProfileCommand.builder()
+            .actingAccountId(account.getId())
+            .profileId(profile.getId())
+            .password("correct horse battery staple")
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.delete(
-                    DeleteProfileCommand.builder()
-                        .actingAccountId(account.getId())
-                        .profileId(profile.getId())
-                        .password("correct horse battery staple")
-                        .build()))
+    assertThatThrownBy(() -> service.delete(command))
         .isInstanceOf(ProfileDeletionBlockedException.class)
         .hasMessageContaining("one profile manager");
   }

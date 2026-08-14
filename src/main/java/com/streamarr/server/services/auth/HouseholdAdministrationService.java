@@ -51,7 +51,7 @@ public class HouseholdAdministrationService {
     account.setHouseholdRole(command.targetRole());
     accountRepository.saveAndFlush(account);
     sessionRepository.clearAccountSelections(account.getId(), clock.instant());
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(command.actingAccountId())
             .targetAccountId(command.targetAccountId())
@@ -91,7 +91,7 @@ public class HouseholdAdministrationService {
     accountRepository.saveAndFlush(currentOwner);
     nextOwner.setHouseholdRole(HouseholdRole.OWNER);
     accountRepository.saveAndFlush(nextOwner);
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(command.actingAccountId())
             .targetAccountId(command.targetAccountId())

@@ -135,18 +135,17 @@ class HouseholdAdministrationServiceTest {
     var target = householdRepository.save(Household.builder().name("Target").build());
     var admin = saveAccount(AccountRole.ADMIN, target.getId(), HouseholdRole.OWNER);
     var owner = saveAccount(AccountRole.USER, source.getId(), HouseholdRole.OWNER);
+    var command =
+        AccountHouseholdTransferCommand.builder()
+            .actingAccountId(admin.getId())
+            .targetAccountId(owner.getId())
+            .targetHouseholdId(target.getId())
+            .targetRole(HouseholdRole.PARENT)
+            .password(PASSWORD)
+            .reason("Invalid move")
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.transferAccount(
-                    AccountHouseholdTransferCommand.builder()
-                        .actingAccountId(admin.getId())
-                        .targetAccountId(owner.getId())
-                        .targetHouseholdId(target.getId())
-                        .targetRole(HouseholdRole.PARENT)
-                        .password(PASSWORD)
-                        .reason("Invalid move")
-                        .build()))
+    assertThatThrownBy(() -> service.transferAccount(command))
         .isInstanceOf(HouseholdOwnershipTransferRequiredException.class)
         .hasMessageContaining("ownership");
 
@@ -181,18 +180,17 @@ class HouseholdAdministrationServiceTest {
     var target = householdRepository.save(Household.builder().name("Target").build());
     var actor = saveAccount(AccountRole.USER, source.getId(), HouseholdRole.PARENT);
     var transferred = saveAccount(AccountRole.USER, source.getId(), HouseholdRole.MEMBER);
+    var command =
+        AccountHouseholdTransferCommand.builder()
+            .actingAccountId(actor.getId())
+            .targetAccountId(transferred.getId())
+            .targetHouseholdId(target.getId())
+            .targetRole(HouseholdRole.MEMBER)
+            .password(PASSWORD)
+            .reason("Unauthorized move")
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.transferAccount(
-                    AccountHouseholdTransferCommand.builder()
-                        .actingAccountId(actor.getId())
-                        .targetAccountId(transferred.getId())
-                        .targetHouseholdId(target.getId())
-                        .targetRole(HouseholdRole.MEMBER)
-                        .password(PASSWORD)
-                        .reason("Unauthorized move")
-                        .build()))
+    assertThatThrownBy(() -> service.transferAccount(command))
         .isInstanceOf(ServerAdministrationDeniedException.class);
 
     assertThat(transferred.getHomeHouseholdId()).isEqualTo(source.getId());
@@ -223,18 +221,17 @@ class HouseholdAdministrationServiceTest {
             .householdId(source.getId())
             .status(ProfileShareStatus.ACTIVE)
             .build());
+    var command =
+        AccountHouseholdTransferCommand.builder()
+            .actingAccountId(admin.getId())
+            .targetAccountId(localParent.getId())
+            .targetHouseholdId(target.getId())
+            .targetRole(HouseholdRole.PARENT)
+            .password(PASSWORD)
+            .reason("Unsafe move")
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.transferAccount(
-                    AccountHouseholdTransferCommand.builder()
-                        .actingAccountId(admin.getId())
-                        .targetAccountId(localParent.getId())
-                        .targetHouseholdId(target.getId())
-                        .targetRole(HouseholdRole.PARENT)
-                        .password(PASSWORD)
-                        .reason("Unsafe move")
-                        .build()))
+    assertThatThrownBy(() -> service.transferAccount(command))
         .isInstanceOf(KidProfileManagerRequiredException.class);
 
     assertThat(localParent.getHomeHouseholdId()).isEqualTo(source.getId());

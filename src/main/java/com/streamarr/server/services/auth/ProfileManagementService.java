@@ -57,7 +57,7 @@ public class ProfileManagementService {
             .householdId(account.getHomeHouseholdId())
             .status(ProfileShareStatus.ACTIVE)
             .build());
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(account.getId())
             .targetHouseholdId(account.getHomeHouseholdId())
@@ -77,7 +77,7 @@ public class ProfileManagementService {
             .orElseThrow(ProfileManagementDeniedException::new);
     profile.setName(command.name());
     profileRepository.save(profile);
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(command.actingAccountId())
             .targetProfileId(command.profileId())
@@ -97,7 +97,7 @@ public class ProfileManagementService {
                 .invitedAccountId(invite.invitedAccountId())
                 .status(ProfileManagerInvitationStatus.PENDING)
                 .build());
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(invite.actingAccountId())
             .targetAccountId(invite.invitedAccountId())
@@ -123,7 +123,7 @@ public class ProfileManagementService {
             .orElseThrow(ProfileManagementDeniedException::new);
     invitation.setStatus(ProfileManagerInvitationStatus.REJECTED);
     invitationRepository.save(invitation);
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(rejection.actingAccountId())
             .targetProfileId(invitation.getProfileId())
@@ -141,7 +141,7 @@ public class ProfileManagementService {
     requireManager(cancellation.actingAccountId(), invitation.getProfileId());
     invitation.setStatus(ProfileManagerInvitationStatus.CANCELED);
     invitationRepository.save(invitation);
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(cancellation.actingAccountId())
             .targetAccountId(invitation.getInvitedAccountId())
@@ -171,7 +171,7 @@ public class ProfileManagementService {
                 .build());
     invitation.setStatus(ProfileManagerInvitationStatus.ACCEPTED);
     invitationRepository.save(invitation);
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(acceptance.actingAccountId())
             .targetProfileId(invitation.getProfileId())
@@ -194,7 +194,7 @@ public class ProfileManagementService {
     kidManagerPolicy.validateManagerRemoval(
         relinquishment.profileId(), relinquishment.actingAccountId());
     managerRepository.delete(manager);
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(relinquishment.actingAccountId())
             .targetProfileId(relinquishment.profileId())

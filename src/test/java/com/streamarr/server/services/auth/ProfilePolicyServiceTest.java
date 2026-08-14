@@ -84,16 +84,15 @@ class ProfilePolicyServiceTest {
         ProfileManager.builder().accountId(managerId).profileId(adult.getId()).build());
     share(adult, householdId);
     share(kid, householdId);
+    var change =
+        ProfilePolicyChange.builder()
+            .actingAccountId(managerId)
+            .profileId(adult.getId())
+            .classification(ProfileClassification.ADULT)
+            .pinHash(null)
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.changePolicy(
-                    ProfilePolicyChange.builder()
-                        .actingAccountId(managerId)
-                        .profileId(adult.getId())
-                        .classification(ProfileClassification.ADULT)
-                        .pinHash(null)
-                        .build()))
+    assertThatThrownBy(() -> service.changePolicy(change))
         .isInstanceOf(ProfileSafetyViolationException.class)
         .satisfies(
             exception ->
@@ -126,16 +125,15 @@ class ProfilePolicyServiceTest {
     managerRepository.save(
         ProfileManager.builder().accountId(manager.getId()).profileId(profile.getId()).build());
     share(profile, householdId);
+    var change =
+        ProfilePolicyChange.builder()
+            .actingAccountId(manager.getId())
+            .profileId(profile.getId())
+            .classification(ProfileClassification.KID)
+            .maximumAllowedRatingAge(7)
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.changePolicy(
-                    ProfilePolicyChange.builder()
-                        .actingAccountId(manager.getId())
-                        .profileId(profile.getId())
-                        .classification(ProfileClassification.KID)
-                        .maximumAllowedRatingAge(7)
-                        .build()))
+    assertThatThrownBy(() -> service.changePolicy(change))
         .isInstanceOf(KidProfileManagerRequiredException.class);
 
     assertThat(profile.getClassification()).isEqualTo(ProfileClassification.ADULT);

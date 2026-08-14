@@ -48,7 +48,7 @@ public class ProfilePolicyService {
     profile.setMaximumAllowedRatingAge(change.maximumAllowedRatingAge());
     profile.setPinHash(change.pinHash());
     profileRepository.save(profile);
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(change.actingAccountId())
             .targetProfileId(change.profileId())

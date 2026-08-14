@@ -64,7 +64,7 @@ public class ProfileDeletionService {
         profileRepository
             .findById(command.profileId())
             .orElseThrow(ProfileAccessDeniedException::new);
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(command.actingAccountId())
             .targetProfileId(command.profileId())

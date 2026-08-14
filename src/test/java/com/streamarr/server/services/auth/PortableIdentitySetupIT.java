@@ -143,17 +143,9 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
   @DisplayName("Should reject demoting the sole household owner")
   void shouldRejectDemotingTheSoleHouseholdOwner() {
     var setup = createPortableIdentity("Sole Owner");
+    var ownerAccountId = setup.accountId();
 
-    assertThatThrownBy(
-            () ->
-                new TransactionTemplate(transactionManager)
-                    .executeWithoutResult(
-                        _ -> {
-                          var owner =
-                              userAccountRepository.findById(setup.accountId()).orElseThrow();
-                          owner.setHouseholdRole(HouseholdRole.PARENT);
-                          userAccountRepository.saveAndFlush(owner);
-                        }))
+    assertThatThrownBy(() -> demoteSoleOwner(ownerAccountId))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("must have exactly one owner");
   }
@@ -161,13 +153,7 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject committing a profile without a manager")
   void shouldRejectCommittingProfileWithoutManager() {
-    assertThatThrownBy(
-            () ->
-                new TransactionTemplate(transactionManager)
-                    .executeWithoutResult(
-                        _ ->
-                            profileRepository.saveAndFlush(
-                                Profile.builder().name("Managerless Profile").build())))
+    assertThatThrownBy(this::commitManagerlessProfile)
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("must have at least one manager");
   }
@@ -228,31 +214,10 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
   @DisplayName("Should reject active kid share when household adult profile has no PIN")
   void shouldRejectActiveKidShareWhenHouseholdAdultProfileHasNoPin() {
     var setup = createPortableIdentity("Safety Owner");
+    var accountId = setup.accountId();
+    var householdId = setup.householdId();
 
-    assertThatThrownBy(
-            () ->
-                new TransactionTemplate(transactionManager)
-                    .executeWithoutResult(
-                        _ -> {
-                          var kid =
-                              profileRepository.save(
-                                  Profile.builder()
-                                      .name("Restricted Kid")
-                                      .classification(ProfileClassification.KID)
-                                      .maximumAllowedRatingAge(7)
-                                      .build());
-                          profileManagerRepository.save(
-                              ProfileManager.builder()
-                                  .accountId(setup.accountId())
-                                  .profileId(kid.getId())
-                                  .build());
-                          profileShareRepository.save(
-                              ProfileHouseholdShare.builder()
-                                  .profileId(kid.getId())
-                                  .householdId(setup.householdId())
-                                  .status(ProfileShareStatus.ACTIVE)
-                                  .build());
-                        }))
+    assertThatThrownBy(() -> activateKidShareWithoutAdultPin(accountId, householdId))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("requires an effective PIN");
   }
@@ -294,20 +259,9 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
                           .build());
                   return kid.getId();
                 });
+    var localAccountId = local.accountId();
 
-    assertThatThrownBy(
-            () ->
-                new TransactionTemplate(transactionManager)
-                    .executeWithoutResult(
-                        _ -> {
-                          var localManager =
-                              profileManagerRepository.findByProfileId(kidId).stream()
-                                  .filter(
-                                      manager -> manager.getAccountId().equals(local.accountId()))
-                                  .findFirst()
-                                  .orElseThrow();
-                          profileManagerRepository.delete(localManager);
-                        }))
+    assertThatThrownBy(() -> removeLocalManager(kidId, localAccountId))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("requires a local owner or parent manager");
   }
@@ -359,17 +313,9 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
                           .build());
                   return localParent.getId();
                 });
+    var remoteHouseholdId = remote.householdId();
 
-    assertThatThrownBy(
-            () ->
-                new TransactionTemplate(transactionManager)
-                    .executeWithoutResult(
-                        _ -> {
-                          var localParent =
-                              userAccountRepository.findById(localParentId).orElseThrow();
-                          localParent.setHomeHouseholdId(remote.householdId());
-                          userAccountRepository.save(localParent);
-                        }))
+    assertThatThrownBy(() -> moveLocalParent(localParentId, remoteHouseholdId))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("requires a local owner or parent manager");
   }
@@ -378,11 +324,9 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
   @DisplayName("Should reject deleting a profile without explicit deletion authorization")
   void shouldRejectDeletingProfileWithoutExplicitDeletionAuthorization() {
     var setup = createPortableIdentity("Unauthorized Delete");
+    var profileId = setup.profileId();
 
-    assertThatThrownBy(
-            () ->
-                new TransactionTemplate(transactionManager)
-                    .executeWithoutResult(_ -> profileRepository.deleteById(setup.profileId())))
+    assertThatThrownBy(() -> deleteProfileWithoutAuthorization(profileId))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("requires explicit authorization");
   }
@@ -391,20 +335,10 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
   @DisplayName("Should reject ordinary authorized deletion while profile remains shared")
   void shouldRejectOrdinaryAuthorizedDeletionWhileProfileRemainsShared() {
     var setup = createPortableIdentity("Shared Delete");
+    var accountId = setup.accountId();
+    var profileId = setup.profileId();
 
-    assertThatThrownBy(
-            () ->
-                new TransactionTemplate(transactionManager)
-                    .executeWithoutResult(
-                        _ -> {
-                          deletionAuthorizationRepository.saveAndFlush(
-                              ProfileDeletionAuthorization.builder()
-                                  .profileId(setup.profileId())
-                                  .actingAccountId(setup.accountId())
-                                  .mode(ProfileDeletionMode.ORDINARY)
-                                  .build());
-                          profileRepository.deleteById(setup.profileId());
-                        }))
+    assertThatThrownBy(() -> deleteSharedProfile(accountId, profileId))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("requires no household shares");
   }
@@ -578,6 +512,88 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
             profile -> {
               assertThat(profile.getPinHash()).isEqualTo("one-global-pin");
               assertThat(profile.getMaximumAllowedRatingAge()).isEqualTo(16);
+            });
+  }
+
+  private void demoteSoleOwner(UUID ownerAccountId) {
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            _ -> {
+              var owner = userAccountRepository.findById(ownerAccountId).orElseThrow();
+              owner.setHouseholdRole(HouseholdRole.PARENT);
+              userAccountRepository.saveAndFlush(owner);
+            });
+  }
+
+  private void commitManagerlessProfile() {
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            _ ->
+                profileRepository.saveAndFlush(
+                    Profile.builder().name("Managerless Profile").build()));
+  }
+
+  private void activateKidShareWithoutAdultPin(UUID accountId, UUID householdId) {
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            _ -> {
+              var kid =
+                  profileRepository.save(
+                      Profile.builder()
+                          .name("Restricted Kid")
+                          .classification(ProfileClassification.KID)
+                          .maximumAllowedRatingAge(7)
+                          .build());
+              profileManagerRepository.save(
+                  ProfileManager.builder().accountId(accountId).profileId(kid.getId()).build());
+              profileShareRepository.save(
+                  ProfileHouseholdShare.builder()
+                      .profileId(kid.getId())
+                      .householdId(householdId)
+                      .status(ProfileShareStatus.ACTIVE)
+                      .build());
+            });
+  }
+
+  private void removeLocalManager(UUID profileId, UUID localAccountId) {
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            _ -> {
+              var localManager =
+                  profileManagerRepository.findByProfileId(profileId).stream()
+                      .filter(manager -> manager.getAccountId().equals(localAccountId))
+                      .findFirst()
+                      .orElseThrow();
+              profileManagerRepository.delete(localManager);
+            });
+  }
+
+  private void moveLocalParent(UUID localParentId, UUID remoteHouseholdId) {
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            _ -> {
+              var localParent = userAccountRepository.findById(localParentId).orElseThrow();
+              localParent.setHomeHouseholdId(remoteHouseholdId);
+              userAccountRepository.save(localParent);
+            });
+  }
+
+  private void deleteProfileWithoutAuthorization(UUID profileId) {
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(_ -> profileRepository.deleteById(profileId));
+  }
+
+  private void deleteSharedProfile(UUID accountId, UUID profileId) {
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            _ -> {
+              deletionAuthorizationRepository.saveAndFlush(
+                  ProfileDeletionAuthorization.builder()
+                      .profileId(profileId)
+                      .actingAccountId(accountId)
+                      .mode(ProfileDeletionMode.ORDINARY)
+                      .build());
+              profileRepository.deleteById(profileId);
             });
   }
 

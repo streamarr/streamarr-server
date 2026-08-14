@@ -282,16 +282,15 @@ class ServerAdministrationServiceTest {
   void shouldRejectGlobalAdministrationFromNonAdministrator() {
     var account = saveAccount(AccountRole.USER);
     var profile = profileRepository.save(Profile.builder().name("Protected Profile").build());
+    var command =
+        ForceProfileDeletionCommand.builder()
+            .actingAccountId(account.getId())
+            .profileId(profile.getId())
+            .password(PASSWORD)
+            .reason("Unauthorized")
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.forceDeleteProfile(
-                    ForceProfileDeletionCommand.builder()
-                        .actingAccountId(account.getId())
-                        .profileId(profile.getId())
-                        .password(PASSWORD)
-                        .reason("Unauthorized")
-                        .build()))
+    assertThatThrownBy(() -> service.forceDeleteProfile(command))
         .isInstanceOf(ServerAdministrationDeniedException.class);
 
     assertThat(profileRepository.existsById(profile.getId())).isTrue();
@@ -303,16 +302,15 @@ class ServerAdministrationServiceTest {
   void shouldRejectDestructiveOverrideWhenPasswordReauthenticationFails() {
     var admin = saveAccount(AccountRole.ADMIN);
     var profile = profileRepository.save(Profile.builder().name("Protected Profile").build());
+    var command =
+        ForceProfileDeletionCommand.builder()
+            .actingAccountId(admin.getId())
+            .profileId(profile.getId())
+            .password("wrong password")
+            .reason("Recovery")
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.forceDeleteProfile(
-                    ForceProfileDeletionCommand.builder()
-                        .actingAccountId(admin.getId())
-                        .profileId(profile.getId())
-                        .password("wrong password")
-                        .reason("Recovery")
-                        .build()))
+    assertThatThrownBy(() -> service.forceDeleteProfile(command))
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(profileRepository.existsById(profile.getId())).isTrue();
@@ -344,18 +342,17 @@ class ServerAdministrationServiceTest {
             .householdId(localHouseholdId)
             .status(ProfileShareStatus.ACTIVE)
             .build());
+    var command =
+        ProfileManagerOverrideCommand.builder()
+            .actingAccountId(admin.getId())
+            .targetAccountId(localParent.getId())
+            .profileId(kid.getId())
+            .action(ProfileManagerOverrideAction.REMOVE)
+            .password(PASSWORD)
+            .reason("Unsafe override")
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.overrideProfileManager(
-                    ProfileManagerOverrideCommand.builder()
-                        .actingAccountId(admin.getId())
-                        .targetAccountId(localParent.getId())
-                        .profileId(kid.getId())
-                        .action(ProfileManagerOverrideAction.REMOVE)
-                        .password(PASSWORD)
-                        .reason("Unsafe override")
-                        .build()))
+    assertThatThrownBy(() -> service.overrideProfileManager(command))
         .isInstanceOf(KidProfileManagerRequiredException.class);
 
     assertThat(managerRepository.existsByAccountIdAndProfileId(localParent.getId(), kid.getId()))

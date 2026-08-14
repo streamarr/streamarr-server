@@ -11,15 +11,15 @@ public class SecurityAuditService {
 
   private final SecurityAuditEventRepository repository;
 
-  public SecurityAuditEvent record(SecurityAuditRecord record) {
+  public SecurityAuditEvent recordEvent(SecurityAuditRecord auditRecord) {
     return repository.save(
         SecurityAuditEvent.builder()
-            .actingAccountId(record.actingAccountId())
-            .targetAccountId(record.targetAccountId())
-            .targetHouseholdId(record.targetHouseholdId())
-            .targetProfileId(record.targetProfileId())
-            .operation(record.operation())
-            .reason(record.reason())
+            .actingAccountId(auditRecord.actingAccountId())
+            .targetAccountId(auditRecord.targetAccountId())
+            .targetHouseholdId(auditRecord.targetHouseholdId())
+            .targetProfileId(auditRecord.targetProfileId())
+            .operation(auditRecord.operation())
+            .reason(auditRecord.reason())
             .build());
   }
 }

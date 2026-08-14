@@ -43,7 +43,7 @@ public class ProfileSharingService {
                 .householdId(offer.targetHouseholdId())
                 .status(ProfileShareStatus.PENDING)
                 .build());
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(offer.actingAccountId())
             .targetHouseholdId(offer.targetHouseholdId())
@@ -88,7 +88,7 @@ public class ProfileSharingService {
     safetyService.validateActivation(profile, share.getHouseholdId());
     share.setStatus(ProfileShareStatus.ACTIVE);
     var acceptedShare = shareRepository.save(share);
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(acceptance.actingAccountId())
             .targetHouseholdId(share.getHouseholdId())
@@ -115,7 +115,7 @@ public class ProfileSharingService {
 
     shareRepository.delete(share);
     selectionCleaner.clear(share.getProfileId(), share.getHouseholdId());
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(removal.actingAccountId())
             .targetHouseholdId(share.getHouseholdId())
@@ -141,7 +141,7 @@ public class ProfileSharingService {
     }
 
     shareRepository.delete(share);
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(rejection.actingAccountId())
             .targetHouseholdId(share.getHouseholdId())
@@ -163,7 +163,7 @@ public class ProfileSharingService {
     }
 
     shareRepository.delete(share);
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(cancellation.actingAccountId())
             .targetHouseholdId(share.getHouseholdId())
@@ -187,7 +187,7 @@ public class ProfileSharingService {
 
     shareRepository.delete(share);
     selectionCleaner.clear(share.getProfileId(), share.getHouseholdId());
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(departure.actingAccountId())
             .targetHouseholdId(share.getHouseholdId())

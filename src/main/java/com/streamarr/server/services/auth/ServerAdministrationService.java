@@ -51,7 +51,7 @@ public class ServerAdministrationService {
             .actingAccountId(command.actingAccountId())
             .mode(ProfileDeletionMode.FORCE)
             .build());
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(command.actingAccountId())
             .targetProfileId(command.profileId())
@@ -70,7 +70,7 @@ public class ServerAdministrationService {
 
     shareRepository.delete(share);
     selectionCleaner.clear(share.getProfileId(), share.getHouseholdId());
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(command.actingAccountId())
             .targetHouseholdId(share.getHouseholdId())
@@ -95,7 +95,7 @@ public class ServerAdministrationService {
       removeManagement(command);
     }
 
-    auditService.record(
+    auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(command.actingAccountId())
             .targetAccountId(command.targetAccountId())

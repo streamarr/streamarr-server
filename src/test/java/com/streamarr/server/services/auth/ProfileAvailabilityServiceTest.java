@@ -61,8 +61,10 @@ class ProfileAvailabilityServiceTest {
     var account = saveAccount(homeHouseholdId);
     var pending = saveProfile("Pending Profile");
     share(pending, homeHouseholdId, ProfileShareStatus.PENDING);
+    var accountId = account.getId();
+    var pendingProfileId = pending.getId();
 
-    assertThatThrownBy(() -> service.requireSelectableProfile(account.getId(), pending.getId()))
+    assertThatThrownBy(() -> service.requireSelectableProfile(accountId, pendingProfileId))
         .isInstanceOf(ProfileAccessDeniedException.class);
   }
 

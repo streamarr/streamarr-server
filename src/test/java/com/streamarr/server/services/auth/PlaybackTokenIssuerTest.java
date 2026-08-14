@@ -91,10 +91,11 @@ class PlaybackTokenIssuerTest {
     var identity = profileIdentity();
     var foreignSession = sessionOwnedBy(UUID.randomUUID());
     var ttl = Duration.ofHours(1);
+    var playbackAuthority = authority();
 
     // The issuer is the only authority that mints playback capability: whatever future caller
     // asks, an unowned session must never become a token, and reads as missing.
-    assertThatThrownBy(() -> issuer.issue(identity, authority(), foreignSession, ttl))
+    assertThatThrownBy(() -> issuer.issue(identity, playbackAuthority, foreignSession, ttl))
         .isInstanceOf(SessionNotFoundException.class);
   }
 
@@ -104,9 +105,10 @@ class PlaybackTokenIssuerTest {
     var identity = profileIdentity();
     var streamSession = sessionOwnedBy(profileId);
     var ttl = Duration.ofHours(1);
+    var playbackAuthority = authority();
     authorityGate.deny();
 
-    assertThatThrownBy(() -> issuer.issue(identity, authority(), streamSession, ttl))
+    assertThatThrownBy(() -> issuer.issue(identity, playbackAuthority, streamSession, ttl))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 
