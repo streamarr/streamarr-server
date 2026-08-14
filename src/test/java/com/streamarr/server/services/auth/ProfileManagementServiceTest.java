@@ -114,15 +114,13 @@ class ProfileManagementServiceTest {
             .profileId(profileId)
             .name("  ")
             .build();
+    var missingName =
+        CreatePortableProfileCommand.builder()
+            .actingAccountId(accountId)
+            .name(null)
+            .classification(ProfileClassification.ADULT);
 
-    assertThatThrownBy(
-            () ->
-                CreatePortableProfileCommand.builder()
-                    .actingAccountId(accountId)
-                    .name(null)
-                    .classification(ProfileClassification.ADULT)
-                    .build())
-        .isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(missingName::build).isInstanceOf(NullPointerException.class);
     assertThatThrownBy(() -> service.rename(blankName))
         .isInstanceOf(IllegalArgumentException.class);
   }
@@ -184,15 +182,14 @@ class ProfileManagementServiceTest {
     var profileId = UUID.randomUUID();
     managerRepository.save(
         ProfileManager.builder().accountId(managerId).profileId(profileId).build());
+    var invitation =
+        ProfileManagerInvite.builder()
+            .actingAccountId(managerId)
+            .invitedAccountId(managerId)
+            .profileId(profileId)
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.invite(
-                    ProfileManagerInvite.builder()
-                        .actingAccountId(managerId)
-                        .invitedAccountId(managerId)
-                        .profileId(profileId)
-                        .build()))
+    assertThatThrownBy(() -> service.invite(invitation))
         .isInstanceOf(ProfileManagementDeniedException.class);
   }
 
@@ -206,15 +203,14 @@ class ProfileManagementServiceTest {
         ProfileManager.builder().accountId(invitingManagerId).profileId(profileId).build());
     managerRepository.save(
         ProfileManager.builder().accountId(existingManagerId).profileId(profileId).build());
+    var invitation =
+        ProfileManagerInvite.builder()
+            .actingAccountId(invitingManagerId)
+            .invitedAccountId(existingManagerId)
+            .profileId(profileId)
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.invite(
-                    ProfileManagerInvite.builder()
-                        .actingAccountId(invitingManagerId)
-                        .invitedAccountId(existingManagerId)
-                        .profileId(profileId)
-                        .build()))
+    assertThatThrownBy(() -> service.invite(invitation))
         .isInstanceOf(ProfileManagementDeniedException.class);
   }
 
@@ -225,15 +221,14 @@ class ProfileManagementServiceTest {
     var profileId = UUID.randomUUID();
     managerRepository.save(
         ProfileManager.builder().accountId(invitingManagerId).profileId(profileId).build());
+    var invitation =
+        ProfileManagerInvite.builder()
+            .actingAccountId(invitingManagerId)
+            .invitedAccountId(UUID.randomUUID())
+            .profileId(profileId)
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.invite(
-                    ProfileManagerInvite.builder()
-                        .actingAccountId(invitingManagerId)
-                        .invitedAccountId(UUID.randomUUID())
-                        .profileId(profileId)
-                        .build()))
+    assertThatThrownBy(() -> service.invite(invitation))
         .isInstanceOf(ProfileManagementDeniedException.class);
   }
 

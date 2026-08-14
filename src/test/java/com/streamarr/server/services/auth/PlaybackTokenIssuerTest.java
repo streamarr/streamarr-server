@@ -70,8 +70,8 @@ class PlaybackTokenIssuerTest {
   }
 
   @Test
-  @DisplayName("Should reject issuance when identity has no profile")
-  void shouldRejectIssuanceWhenIdentityHasNoProfile() {
+  @DisplayName("Should reject playback authority when identity has no profile")
+  void shouldRejectPlaybackAuthorityWhenIdentityHasNoProfile() {
     var accountScoped =
         AuthenticatedIdentity.builder()
             .accountId(accountId)
@@ -79,12 +79,8 @@ class PlaybackTokenIssuerTest {
             .authSessionId(sessionId)
             .scope(TokenScope.ACCOUNT)
             .build();
-    var streamSession = defaultSessionBuilder().build();
-    var ttl = Duration.ofHours(1);
 
-    assertThatThrownBy(
-            () ->
-                issuer.issue(accountScoped, accountScoped.playbackAuthority(), streamSession, ttl))
+    assertThatThrownBy(accountScoped::playbackAuthority)
         .isInstanceOf(ProfileRequiredException.class);
   }
 
@@ -120,6 +116,7 @@ class PlaybackTokenIssuerTest {
   void shouldExposeOnlyAuthorityExplicitPlaybackIssuanceApi() {
     assertThat(Arrays.stream(PlaybackTokenIssuer.class.getDeclaredMethods()))
         .filteredOn(method -> method.getName().equals("issue"))
+        .isNotEmpty()
         .allMatch(method -> method.getParameterCount() == 4);
   }
 

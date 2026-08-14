@@ -45,11 +45,6 @@ public class SessionScopeService {
   }
 
   @Transactional
-  public TokenContext selectProfile(UUID accountId, UUID sessionId, UUID profileId) {
-    return selectProfile(accountId, sessionId, profileId, null);
-  }
-
-  @Transactional
   public TokenContext selectProfile(
       UUID accountId, UUID sessionId, UUID profileId, String profilePin) {
     var account = loadAccount(accountId);

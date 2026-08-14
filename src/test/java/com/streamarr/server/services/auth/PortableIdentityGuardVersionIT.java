@@ -187,26 +187,26 @@ class PortableIdentityGuardVersionIT extends AbstractIntegrationTest {
   void shouldRejectDuplicateActiveProfileNamesInOneHousehold() {
     var fixture = createFixture();
     var existingName = profileRepository.findById(fixture.profileId()).orElseThrow().getName();
+    var transaction = new TransactionTemplate(transactionManager);
 
     assertThatThrownBy(
             () ->
-                new TransactionTemplate(transactionManager)
-                    .executeWithoutResult(
-                        _ -> {
-                          var duplicate =
-                              profileRepository.save(Profile.builder().name(existingName).build());
-                          managerRepository.save(
-                              ProfileManager.builder()
-                                  .accountId(fixture.accountId())
-                                  .profileId(duplicate.getId())
-                                  .build());
-                          shareRepository.save(
-                              ProfileHouseholdShare.builder()
-                                  .profileId(duplicate.getId())
-                                  .householdId(fixture.householdId())
-                                  .status(ProfileShareStatus.ACTIVE)
-                                  .build());
-                        }))
+                transaction.executeWithoutResult(
+                    _ -> {
+                      var duplicate =
+                          profileRepository.save(Profile.builder().name(existingName).build());
+                      managerRepository.save(
+                          ProfileManager.builder()
+                              .accountId(fixture.accountId())
+                              .profileId(duplicate.getId())
+                              .build());
+                      shareRepository.save(
+                          ProfileHouseholdShare.builder()
+                              .profileId(duplicate.getId())
+                              .householdId(fixture.householdId())
+                              .status(ProfileShareStatus.ACTIVE)
+                              .build());
+                    }))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
@@ -235,15 +235,15 @@ class PortableIdentityGuardVersionIT extends AbstractIntegrationTest {
                           .build());
                   return profile.getId();
                 });
+    var transaction = new TransactionTemplate(transactionManager);
 
     assertThatThrownBy(
             () ->
-                new TransactionTemplate(transactionManager)
-                    .executeWithoutResult(
-                        _ -> {
-                          var profile = profileRepository.findById(secondProfileId).orElseThrow();
-                          profile.setName(existingName.toUpperCase());
-                        }))
+                transaction.executeWithoutResult(
+                    _ -> {
+                      var profile = profileRepository.findById(secondProfileId).orElseThrow();
+                      profile.setName(existingName.toUpperCase());
+                    }))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 

@@ -62,7 +62,7 @@ class SessionScopeServiceTest {
             .build());
     var session = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
 
-    var context = service.selectProfile(account.getId(), session.getId(), profile.getId());
+    var context = service.selectProfile(account.getId(), session.getId(), profile.getId(), null);
 
     assertThat(context.profileId()).isEqualTo(profile.getId());
     assertThat(sessionRepository.findById(session.getId()).orElseThrow().getActiveProfileId())
@@ -166,7 +166,7 @@ class SessionScopeServiceTest {
     assertThatThrownBy(
             () ->
                 service.selectProfile(
-                    missingAccountId, missingAccountSessionId, missingAccountProfileId))
+                    missingAccountId, missingAccountSessionId, missingAccountProfileId, null))
         .isInstanceOf(AuthenticationRequiredException.class);
 
     var account = saveAccount(UUID.randomUUID());
@@ -176,7 +176,9 @@ class SessionScopeServiceTest {
     var otherAccountSessionId = otherAccountSession.getId();
     var otherAccountProfileId = UUID.randomUUID();
     assertThatThrownBy(
-            () -> service.selectProfile(accountId, otherAccountSessionId, otherAccountProfileId))
+            () ->
+                service.selectProfile(
+                    accountId, otherAccountSessionId, otherAccountProfileId, null))
         .isInstanceOf(AuthenticationRequiredException.class);
 
     var revokedSession =
@@ -185,14 +187,15 @@ class SessionScopeServiceTest {
     var revokedSessionId = revokedSession.getId();
     var revokedSessionProfileId = UUID.randomUUID();
     assertThatThrownBy(
-            () -> service.selectProfile(accountId, revokedSessionId, revokedSessionProfileId))
+            () -> service.selectProfile(accountId, revokedSessionId, revokedSessionProfileId, null))
         .isInstanceOf(AuthenticationRequiredException.class);
 
     var liveSession =
         sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
     var liveSessionId = liveSession.getId();
     var unavailableProfileId = UUID.randomUUID();
-    assertThatThrownBy(() -> service.selectProfile(accountId, liveSessionId, unavailableProfileId))
+    assertThatThrownBy(
+            () -> service.selectProfile(accountId, liveSessionId, unavailableProfileId, null))
         .isInstanceOf(ProfileAccessDeniedException.class);
     assertThat(liveSession.getActiveProfileId()).isNull();
   }

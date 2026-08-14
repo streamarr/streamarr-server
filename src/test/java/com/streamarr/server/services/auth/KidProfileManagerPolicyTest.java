@@ -221,8 +221,9 @@ class KidProfileManagerPolicyTest {
     for (var index = 0; index < 3; index++) {
       manage(saveAccount(UUID.randomUUID(), HouseholdRole.PARENT), kid);
     }
+    var kidId = kid.getId();
 
-    assertThatThrownBy(() -> policy.validateKidClassification(kid.getId()))
+    assertThatThrownBy(() -> policy.validateKidClassification(kidId))
         .isInstanceOf(KidProfileManagerRequiredException.class);
 
     org.assertj.core.api.Assertions.assertThat(accountRepository.individualLookups).isZero();
@@ -232,14 +233,20 @@ class KidProfileManagerPolicyTest {
   @Test
   @DisplayName("Should return domain denial when manager removal profile is missing")
   void shouldReturnDomainDenialWhenManagerRemovalProfileIsMissing() {
-    assertThatThrownBy(() -> policy.validateManagerRemoval(UUID.randomUUID(), UUID.randomUUID()))
+    var profileId = UUID.randomUUID();
+    var accountId = UUID.randomUUID();
+
+    assertThatThrownBy(() -> policy.validateManagerRemoval(profileId, accountId))
         .isInstanceOf(ProfileAccessDeniedException.class);
   }
 
   @Test
   @DisplayName("Should return domain denial when share activation profile is missing")
   void shouldReturnDomainDenialWhenShareActivationProfileIsMissing() {
-    assertThatThrownBy(() -> policy.validateShareActivation(UUID.randomUUID(), UUID.randomUUID()))
+    var profileId = UUID.randomUUID();
+    var householdId = UUID.randomUUID();
+
+    assertThatThrownBy(() -> policy.validateShareActivation(profileId, householdId))
         .isInstanceOf(ProfileAccessDeniedException.class);
   }
 

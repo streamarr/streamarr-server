@@ -23,6 +23,7 @@ import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.library.dependencies.SliceAssignment;
 import com.tngtech.archunit.library.dependencies.SliceIdentifier;
+import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.Arrays;
 import org.junit.jupiter.api.DisplayName;
@@ -241,7 +242,7 @@ class ArchitectureTest {
                         .getReturnType()
                         .getPackageName()
                         .startsWith("com.streamarr.server.domain"))
-            .map(method -> method.getName())
+            .map(Method::getName)
             .toList();
 
     assertThat(domainReturningMutations).isEmpty();

@@ -103,12 +103,10 @@ class PortableProfileResolverTest {
   @DisplayName("Should reject blank PIN when creating portable profile")
   void shouldRejectBlankPinWhenCreatingPortableProfile() {
     var fixture = new ResolverFixture();
+    var input =
+        new PortableProfileInputs.ProfileCreation("Guest", ProfileClassification.ADULT, null, "");
 
-    assertThatThrownBy(
-            () ->
-                fixture.resolver.createPortableProfile(
-                    new PortableProfileInputs.ProfileCreation(
-                        "Guest", ProfileClassification.ADULT, null, "")))
+    assertThatThrownBy(() -> fixture.resolver.createPortableProfile(input))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -380,12 +378,11 @@ class PortableProfileResolverTest {
   @DisplayName("Should reject blank PIN when changing portable profile policy")
   void shouldRejectBlankPinWhenChangingPortableProfilePolicy() {
     var fixture = new ResolverFixture();
+    var input =
+        new PortableProfileInputs.PolicyChange(
+            UUID.randomUUID().toString(), ProfileClassification.KID, 7, "");
 
-    assertThatThrownBy(
-            () ->
-                fixture.resolver.changeProfilePolicy(
-                    new PortableProfileInputs.PolicyChange(
-                        UUID.randomUUID().toString(), ProfileClassification.KID, 7, "")))
+    assertThatThrownBy(() -> fixture.resolver.changeProfilePolicy(input))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
