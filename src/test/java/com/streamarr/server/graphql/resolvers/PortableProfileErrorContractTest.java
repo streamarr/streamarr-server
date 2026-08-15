@@ -121,7 +121,7 @@ class PortableProfileErrorContractTest {
     assertThat(error.getMessage())
         .doesNotContain(databaseMessage)
         .doesNotContain(inaccessibleHouseholdId.toString());
-    assertThat(error.getExtensions()).containsKey("code");
+    assertThat(error.getExtensions()).containsEntry("code", "DATABASE_OPERATION_FAILED");
   }
 
   @Test
@@ -136,7 +136,7 @@ class PortableProfileErrorContractTest {
     assertThat(result.getErrors()).hasSize(1);
     var error = result.getErrors().getFirst();
     assertThat(error.getMessage()).doesNotContain("IllegalArgumentException");
-    assertThat(error.getExtensions()).containsKey("code");
+    assertThat(error.getExtensions()).containsEntry("code", "INVALID_INPUT");
   }
 
   private String deleteProfileMutation() {
