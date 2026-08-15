@@ -81,8 +81,10 @@ public class ProfileSharingService {
     kidManagerPolicy.validateShareActivation(profile.getId(), share.getHouseholdId());
 
     safetyService.validateActivation(profile, share.getHouseholdId());
-    share.setStatus(ProfileShareStatus.ACTIVE);
-    var acceptedShare = shareRepository.save(share);
+    var acceptedShare =
+        shareRepository
+            .activatePending(share.getId())
+            .orElseThrow(ProfileAccessDeniedException::new);
     auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(acceptance.actingAccountId())
@@ -135,12 +137,13 @@ public class ProfileSharingService {
       throw new ProfileAccessDeniedException();
     }
 
-    shareRepository.delete(share);
+    var rejectedShare =
+        shareRepository.deletePending(share.getId()).orElseThrow(ProfileAccessDeniedException::new);
     auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(rejection.actingAccountId())
-            .targetHouseholdId(share.getHouseholdId())
-            .targetProfileId(share.getProfileId())
+            .targetHouseholdId(rejectedShare.getHouseholdId())
+            .targetProfileId(rejectedShare.getProfileId())
             .operation(SecurityAuditOperation.PROFILE_SHARE_REJECTED)
             .build());
   }
@@ -157,12 +160,13 @@ public class ProfileSharingService {
       throw new ProfileManagementDeniedException();
     }
 
-    shareRepository.delete(share);
+    var canceledShare =
+        shareRepository.deletePending(share.getId()).orElseThrow(ProfileAccessDeniedException::new);
     auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(cancellation.actingAccountId())
-            .targetHouseholdId(share.getHouseholdId())
-            .targetProfileId(share.getProfileId())
+            .targetHouseholdId(canceledShare.getHouseholdId())
+            .targetProfileId(canceledShare.getProfileId())
             .operation(SecurityAuditOperation.PROFILE_SHARE_CANCELED)
             .build());
   }

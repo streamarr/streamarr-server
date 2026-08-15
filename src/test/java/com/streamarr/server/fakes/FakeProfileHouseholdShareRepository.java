@@ -30,6 +30,25 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
+  public synchronized Optional<ProfileHouseholdShare> activatePending(UUID shareId) {
+    return findById(shareId)
+        .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+        .map(
+            share -> {
+              share.setStatus(ProfileShareStatus.ACTIVE);
+              return save(share);
+            });
+  }
+
+  @Override
+  public synchronized Optional<ProfileHouseholdShare> deletePending(UUID shareId) {
+    var pending =
+        findById(shareId).filter(share -> share.getStatus() == ProfileShareStatus.PENDING);
+    pending.ifPresent(this::delete);
+    return pending;
+  }
+
+  @Override
   public List<ProfileHouseholdShare> findByHouseholdIdAndStatus(
       UUID householdId, ProfileShareStatus status) {
     return database.values().stream()

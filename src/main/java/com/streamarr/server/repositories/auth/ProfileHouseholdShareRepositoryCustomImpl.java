@@ -1,10 +1,14 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.jooq.generated.enums.ProfileShareStatus.ACTIVE;
 import static com.streamarr.server.jooq.generated.enums.ProfileShareStatus.PENDING;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
@@ -57,6 +61,48 @@ public class ProfileHouseholdShareRepositoryCustomImpl
             false);
       }
     }
+  }
+
+  @Override
+  public Optional<ProfileHouseholdShare> activatePending(UUID shareId) {
+    return dsl.update(PROFILE_HOUSEHOLD_SHARE)
+        .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ACTIVE)
+        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
+        .set(
+            PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+        .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
+        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(PENDING))
+        .returning(
+            PROFILE_HOUSEHOLD_SHARE.ID,
+            PROFILE_HOUSEHOLD_SHARE.PROFILE_ID,
+            PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
+        .fetchOptional()
+        .map(
+            updated ->
+                share(
+                    updated.getId(),
+                    updated.getProfileId(),
+                    updated.getHouseholdId(),
+                    ProfileShareStatus.ACTIVE));
+  }
+
+  @Override
+  public Optional<ProfileHouseholdShare> deletePending(UUID shareId) {
+    return dsl.deleteFrom(PROFILE_HOUSEHOLD_SHARE)
+        .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
+        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(PENDING))
+        .returning(
+            PROFILE_HOUSEHOLD_SHARE.ID,
+            PROFILE_HOUSEHOLD_SHARE.PROFILE_ID,
+            PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
+        .fetchOptional()
+        .map(
+            deleted ->
+                share(
+                    deleted.getId(),
+                    deleted.getProfileId(),
+                    deleted.getHouseholdId(),
+                    ProfileShareStatus.PENDING));
   }
 
   private ProfileHouseholdShare share(
