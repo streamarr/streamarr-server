@@ -377,13 +377,15 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
                       .build());
             });
 
-    serverAdministrationService.forceDeleteProfile(
-        ForceProfileDeletionCommand.builder()
-            .actingAccountId(primary.accountId())
-            .profileId(primary.profileId())
-            .password("server-admin-password")
-            .reason("Recover disputed profile")
-            .build());
+    var preparedDeletion =
+        serverAdministrationService.prepare(
+            ForceProfileDeletionCommand.builder()
+                .actingAccountId(primary.accountId())
+                .profileId(primary.profileId())
+                .password("server-admin-password")
+                .reason("Recover disputed profile")
+                .build());
+    serverAdministrationService.forceDeleteProfile(preparedDeletion);
 
     assertThat(profileRepository.existsById(primary.profileId())).isFalse();
     assertThat(profileShareRepository.findByProfileId(primary.profileId())).isEmpty();
@@ -429,15 +431,17 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
                   return transferred.getId();
                 });
 
-    householdAdministrationService.transferAccount(
-        AccountHouseholdTransferCommand.builder()
-            .actingAccountId(source.accountId())
-            .targetAccountId(transferredAccountId)
-            .targetHouseholdId(target.householdId())
-            .targetRole(HouseholdRole.PARENT)
-            .password("transfer-admin-password")
-            .reason("Move account home")
-            .build());
+    var preparedTransfer =
+        householdAdministrationService.prepare(
+            AccountHouseholdTransferCommand.builder()
+                .actingAccountId(source.accountId())
+                .targetAccountId(transferredAccountId)
+                .targetHouseholdId(target.householdId())
+                .targetRole(HouseholdRole.PARENT)
+                .password("transfer-admin-password")
+                .reason("Move account home")
+                .build());
+    householdAdministrationService.transferAccount(preparedTransfer);
 
     var transferred = userAccountRepository.findById(transferredAccountId).orElseThrow();
     assertThat(transferred.getHomeHouseholdId()).isEqualTo(target.householdId());
@@ -472,14 +476,16 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
                       .getId();
                 });
 
-    householdAdministrationService.transferOwnership(
-        HouseholdOwnershipTransferCommand.builder()
-            .actingAccountId(setup.accountId())
-            .householdId(setup.householdId())
-            .targetAccountId(nextOwnerId)
-            .password("owner-password")
-            .reason("Planned handoff")
-            .build());
+    var preparedOwnershipTransfer =
+        householdAdministrationService.prepare(
+            HouseholdOwnershipTransferCommand.builder()
+                .actingAccountId(setup.accountId())
+                .householdId(setup.householdId())
+                .targetAccountId(nextOwnerId)
+                .password("owner-password")
+                .reason("Planned handoff")
+                .build());
+    householdAdministrationService.transferOwnership(preparedOwnershipTransfer);
 
     assertThat(userAccountRepository.findById(setup.accountId()).orElseThrow().getHouseholdRole())
         .isEqualTo(HouseholdRole.PARENT);

@@ -5,6 +5,9 @@ import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitatio
 
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
@@ -65,14 +68,69 @@ public class ProfileManagerInvitationRepositoryCustomImpl
     }
   }
 
+  @Override
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  public Optional<ProfileManagerInvitation> transitionPending(
+      ProfileManagerInvitationTransition transition) {
+    var condition =
+        PROFILE_MANAGER_INVITATION
+            .ID
+            .eq(transition.invitationId())
+            .and(PROFILE_MANAGER_INVITATION.STATUS.eq(PENDING));
+    if (transition.invitedAccountId() != null) {
+      condition =
+          condition.and(
+              PROFILE_MANAGER_INVITATION.INVITED_ACCOUNT_ID.eq(transition.invitedAccountId()));
+    }
+    if (transition.expectedProfileId() != null) {
+      condition =
+          condition.and(PROFILE_MANAGER_INVITATION.PROFILE_ID.eq(transition.expectedProfileId()));
+    }
+
+    var status =
+        com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.valueOf(
+            transition.status().name());
+    return dsl.update(PROFILE_MANAGER_INVITATION)
+        .set(PROFILE_MANAGER_INVITATION.STATUS, status)
+        .set(PROFILE_MANAGER_INVITATION.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
+        .set(
+            PROFILE_MANAGER_INVITATION.LAST_MODIFIED_BY,
+            auditorAware.getCurrentAuditor().orElse(null))
+        .where(condition)
+        .returning(
+            PROFILE_MANAGER_INVITATION.ID,
+            PROFILE_MANAGER_INVITATION.PROFILE_ID,
+            PROFILE_MANAGER_INVITATION.INVITING_ACCOUNT_ID,
+            PROFILE_MANAGER_INVITATION.INVITED_ACCOUNT_ID)
+        .fetchOptional()
+        .map(
+            updated ->
+                invitation(
+                    updated.getId(),
+                    updated.getProfileId(),
+                    updated.getInvitingAccountId(),
+                    updated.getInvitedAccountId(),
+                    transition.status()));
+  }
+
   private ProfileManagerInvitation invitation(
       UUID id, UUID profileId, UUID invitingAccountId, UUID invitedAccountId) {
+    return invitation(
+        id, profileId, invitingAccountId, invitedAccountId, ProfileManagerInvitationStatus.PENDING);
+  }
+
+  private ProfileManagerInvitation invitation(
+      UUID id,
+      UUID profileId,
+      UUID invitingAccountId,
+      UUID invitedAccountId,
+      ProfileManagerInvitationStatus status) {
     return ProfileManagerInvitation.builder()
         .id(id)
         .profileId(profileId)
         .invitingAccountId(invitingAccountId)
         .invitedAccountId(invitedAccountId)
-        .status(ProfileManagerInvitationStatus.PENDING)
+        .status(status)
         .build();
   }
 }

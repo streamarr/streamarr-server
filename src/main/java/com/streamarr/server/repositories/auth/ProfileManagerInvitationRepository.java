@@ -2,6 +2,7 @@ package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -15,4 +16,8 @@ public interface ProfileManagerInvitationRepository
   long countByProfileIdAndStatus(UUID profileId, ProfileManagerInvitationStatus status);
 
   List<ProfileManagerInvitation> findByProfileId(UUID profileId);
+
+  List<ProfileManagerInvitation> findByProfileIdIn(Collection<UUID> profileIds);
+
+  List<ProfileManagerInvitation> findByInvitedAccountId(UUID invitedAccountId);
 }

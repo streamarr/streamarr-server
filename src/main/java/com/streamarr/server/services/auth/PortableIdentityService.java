@@ -118,27 +118,33 @@ public class PortableIdentityService {
   }
 
   public void deleteProfile(DeleteProfileCommand command) {
-    execute(() -> deletionService.delete(command));
+    var preparedDeletion = deletionService.prepare(command);
+    execute(() -> deletionService.delete(preparedDeletion));
   }
 
   public void forceDeleteProfile(ForceProfileDeletionCommand command) {
-    execute(() -> serverAdministrationService.forceDeleteProfile(command));
+    var preparedDeletion = serverAdministrationService.prepare(command);
+    execute(() -> serverAdministrationService.forceDeleteProfile(preparedDeletion));
   }
 
   public void forceUnshareProfile(ForceProfileUnshareCommand command) {
-    execute(() -> serverAdministrationService.forceUnshareProfile(command));
+    var preparedUnshare = serverAdministrationService.prepare(command);
+    execute(() -> serverAdministrationService.forceUnshareProfile(preparedUnshare));
   }
 
   public void overrideProfileManager(ProfileManagerOverrideCommand command) {
-    execute(() -> serverAdministrationService.overrideProfileManager(command));
+    var preparedOverride = serverAdministrationService.prepare(command);
+    execute(() -> serverAdministrationService.overrideProfileManager(preparedOverride));
   }
 
   public void transferAccountHousehold(AccountHouseholdTransferCommand command) {
-    execute(() -> householdAdministrationService.transferAccount(command));
+    var preparedTransfer = householdAdministrationService.prepare(command);
+    execute(() -> householdAdministrationService.transferAccount(preparedTransfer));
   }
 
   public void transferHouseholdOwnership(HouseholdOwnershipTransferCommand command) {
-    execute(() -> householdAdministrationService.transferOwnership(command));
+    var preparedTransfer = householdAdministrationService.prepare(command);
+    execute(() -> householdAdministrationService.transferOwnership(preparedTransfer));
   }
 
   private <T> T execute(Supplier<T> operation) {

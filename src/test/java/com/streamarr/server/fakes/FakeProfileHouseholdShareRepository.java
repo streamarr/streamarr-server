@@ -64,6 +64,20 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
+  public List<ProfileHouseholdShare> findByProfileIdIn(Collection<UUID> profileIds) {
+    return database.values().stream()
+        .filter(share -> profileIds.contains(share.getProfileId()))
+        .toList();
+  }
+
+  @Override
+  public List<ProfileHouseholdShare> findByHouseholdId(UUID householdId) {
+    return database.values().stream()
+        .filter(share -> householdId.equals(share.getHouseholdId()))
+        .toList();
+  }
+
+  @Override
   public boolean existsByProfileIdAndHouseholdIdAndStatus(
       UUID profileId, UUID householdId, ProfileShareStatus status) {
     return database.values().stream()

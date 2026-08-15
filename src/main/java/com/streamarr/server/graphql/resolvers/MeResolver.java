@@ -25,6 +25,8 @@ public class MeResolver {
         .email(view.account().getEmail())
         .displayName(view.account().getDisplayName())
         .role(view.account().getAccountRole().name())
+        .homeHouseholdId(view.account().getHomeHouseholdId())
+        .householdRole(view.account().getHouseholdRole())
         .scope(view.scope().claimValue())
         .profiles(
             view.profiles().stream()

@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -17,6 +18,26 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     return findById(accountId)
         .filter(UserAccount::isEnabled)
         .filter(account -> account.getPasswordHash().equals(expectedPasswordHash))
+        .isPresent();
+  }
+
+  @Override
+  public boolean lockIfServerAdmin(UUID accountId) {
+    return findById(accountId)
+        .filter(UserAccount::isEnabled)
+        .filter(account -> account.getAccountRole() == AccountRole.ADMIN)
+        .isPresent();
+  }
+
+  @Override
+  public boolean lockIfHouseholdAuthority(UUID accountId, UUID householdId) {
+    return findById(accountId)
+        .filter(UserAccount::isEnabled)
+        .filter(
+            account ->
+                account.getAccountRole() == AccountRole.ADMIN
+                    || (householdId.equals(account.getHomeHouseholdId())
+                        && account.getHouseholdRole() == HouseholdRole.OWNER))
         .isPresent();
   }
 

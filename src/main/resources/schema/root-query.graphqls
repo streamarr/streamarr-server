@@ -1,5 +1,8 @@
 type Query {
     me: Me!
+    portableProfileShares: [PortableProfileShare!]!
+    portableProfileManagerInvitations: [PortableProfileManagerInvitation!]!
+    portableProfileManagers: [PortableProfileManager!]!
     movie(id: ID!): Movie
     series(id: ID!): Series
     season(id: ID!): Season

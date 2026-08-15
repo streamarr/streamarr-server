@@ -9,6 +9,7 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -87,11 +88,25 @@ public class HouseholdProfileSafetyService {
   }
 
   private void validateProfiles(List<Profile> profiles) {
+    requireUniqueNames(profiles);
     var profilesRequiringPin =
         profiles.stream().filter(profile -> requiresPin(profile, profiles)).toList();
     if (!profilesRequiringPin.isEmpty()) {
       throw new ProfileSafetyViolationException(
           profilesRequiringPin.stream().map(Profile::getId).toList());
+    }
+  }
+
+  private void requireUniqueNames(List<Profile> profiles) {
+    var normalizedNames = new LinkedHashSet<String>();
+    var unique =
+        profiles.stream()
+            .map(Profile::getName)
+            .map(name -> name.strip().toLowerCase(Locale.ROOT))
+            .allMatch(normalizedNames::add);
+    if (!unique) {
+      throw new IllegalArgumentException(
+          "An active profile name must be unique within a household.");
     }
   }
 

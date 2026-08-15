@@ -14,6 +14,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -83,6 +84,32 @@ class PortableIdentityUpsertRaceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should allow exactly one concurrent pending invitation transition")
+  void shouldAllowExactlyOneConcurrentPendingInvitationTransition() throws Exception {
+    var fixture = createInvitationFixture();
+    var start = new CountDownLatch(1);
+
+    List<Optional<ProfileManagerInvitation>> results;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var acceptance =
+          executor.submit(
+              () -> transitionAfter(start, fixture, ProfileManagerInvitationStatus.ACCEPTED));
+      var cancellation =
+          executor.submit(
+              () -> transitionAfter(start, fixture, ProfileManagerInvitationStatus.CANCELED));
+      start.countDown();
+      results =
+          List.of(acceptance.get(30, TimeUnit.SECONDS), cancellation.get(30, TimeUnit.SECONDS));
+    }
+
+    assertThat(results).filteredOn(Optional::isPresent).hasSize(1);
+    var finalStatus =
+        invitationRepository.findById(fixture.invitationId()).orElseThrow().getStatus();
+    var winningTransition = results.stream().flatMap(Optional::stream).findFirst().orElseThrow();
+    assertThat(winningTransition.getStatus()).isEqualTo(finalStatus);
+  }
+
+  @Test
   @DisplayName("Should define share outcome when conflicting share is deleted concurrently")
   void shouldDefineShareOutcomeWhenConflictingShareIsDeletedConcurrently() throws Exception {
     var fixture = createShareFixture();
@@ -148,6 +175,19 @@ class PortableIdentityUpsertRaceIT extends AbstractIntegrationTest {
                   invitedAccount.getId(),
                   invitation.getId());
             });
+  }
+
+  private Optional<ProfileManagerInvitation> transitionAfter(
+      CountDownLatch start, InvitationFixture fixture, ProfileManagerInvitationStatus status) {
+    await(start);
+    return new TransactionTemplate(transactionManager)
+        .execute(
+            _ ->
+                invitationRepository.transitionPending(
+                    ProfileManagerInvitationTransition.builder()
+                        .invitationId(fixture.invitationId())
+                        .status(status)
+                        .build()));
   }
 
   private ShareFixture createShareFixture() {

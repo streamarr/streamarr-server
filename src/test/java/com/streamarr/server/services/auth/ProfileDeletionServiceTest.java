@@ -79,7 +79,7 @@ class ProfileDeletionServiceTest {
             .password("correct horse battery staple")
             .build();
 
-    assertThatThrownBy(() -> service.delete(command))
+    assertThatThrownBy(() -> delete(command))
         .isInstanceOf(ProfileDeletionBlockedException.class)
         .hasMessageContaining("shares");
 
@@ -94,7 +94,7 @@ class ProfileDeletionServiceTest {
     managerRepository.save(
         ProfileManager.builder().accountId(account.getId()).profileId(profile.getId()).build());
 
-    service.delete(
+    delete(
         DeleteProfileCommand.builder()
             .actingAccountId(account.getId())
             .profileId(profile.getId())
@@ -134,8 +134,7 @@ class ProfileDeletionServiceTest {
             .password("wrong password")
             .build();
 
-    assertThatThrownBy(() -> service.delete(command))
-        .isInstanceOf(InvalidCredentialsException.class);
+    assertThatThrownBy(() -> delete(command)).isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(profileRepository.existsById(profile.getId())).isTrue();
     assertThat(auditRepository.findAll()).isEmpty();
@@ -162,8 +161,7 @@ class ProfileDeletionServiceTest {
             .password("wrong password")
             .build();
 
-    assertThatThrownBy(() -> service.delete(command))
-        .isInstanceOf(InvalidCredentialsException.class);
+    assertThatThrownBy(() -> delete(command)).isInstanceOf(InvalidCredentialsException.class);
   }
 
   @Test
@@ -187,7 +185,7 @@ class ProfileDeletionServiceTest {
             .password("correct horse battery staple")
             .build();
 
-    assertThatThrownBy(() -> service.delete(command))
+    assertThatThrownBy(() -> delete(command))
         .isInstanceOf(ProfileDeletionBlockedException.class)
         .hasMessageContaining("invitations");
   }
@@ -208,7 +206,7 @@ class ProfileDeletionServiceTest {
             .password("correct horse battery staple")
             .build();
 
-    assertThatThrownBy(() -> service.delete(command))
+    assertThatThrownBy(() -> delete(command))
         .isInstanceOf(ProfileDeletionBlockedException.class)
         .hasMessageContaining("one profile manager");
   }
@@ -223,5 +221,9 @@ class ProfileDeletionServiceTest {
             .homeHouseholdId(UUID.randomUUID())
             .householdRole(HouseholdRole.OWNER)
             .build());
+  }
+
+  private void delete(DeleteProfileCommand command) {
+    service.delete(service.prepare(command));
   }
 }

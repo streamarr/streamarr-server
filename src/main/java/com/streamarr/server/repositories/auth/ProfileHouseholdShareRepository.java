@@ -23,6 +23,10 @@ public interface ProfileHouseholdShareRepository
 
   List<ProfileHouseholdShare> findByProfileId(UUID profileId);
 
+  List<ProfileHouseholdShare> findByProfileIdIn(Collection<UUID> profileIds);
+
+  List<ProfileHouseholdShare> findByHouseholdId(UUID householdId);
+
   boolean existsByProfileIdAndHouseholdIdAndStatus(
       UUID profileId, UUID householdId, ProfileShareStatus status);
 

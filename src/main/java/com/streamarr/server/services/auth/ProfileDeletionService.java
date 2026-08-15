@@ -32,9 +32,20 @@ public class ProfileDeletionService {
   private final PasswordEncoder passwordEncoder;
   private final SecurityAuditService auditService;
 
+  public PreparedProfileDeletion prepare(DeleteProfileCommand command) {
+    var account =
+        accountRepository
+            .findById(command.actingAccountId())
+            .orElseThrow(ProfileAccessDeniedException::new);
+    var expectedPasswordHash = account.getPasswordHash();
+    if (!passwordEncoder.matches(command.password(), expectedPasswordHash)) {
+      throw new InvalidCredentialsException();
+    }
+    return new PreparedProfileDeletion(command.actingAccountId(), command.profileId());
+  }
+
   @Transactional
-  public void delete(DeleteProfileCommand command) {
-    requireValidPassword(command);
+  public void delete(PreparedProfileDeletion command) {
     if (!managerRepository.existsByAccountIdAndProfileId(
         command.actingAccountId(), command.profileId())) {
       throw new ProfileManagementDeniedException();
@@ -70,15 +81,5 @@ public class ProfileDeletionService {
             .mode(ProfileDeletionMode.ORDINARY)
             .build());
     profileRepository.delete(profile);
-  }
-
-  private void requireValidPassword(DeleteProfileCommand command) {
-    var account =
-        accountRepository
-            .findById(command.actingAccountId())
-            .orElseThrow(ProfileAccessDeniedException::new);
-    if (!passwordEncoder.matches(command.password(), account.getPasswordHash())) {
-      throw new InvalidCredentialsException();
-    }
   }
 }

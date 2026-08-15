@@ -11,6 +11,7 @@ import com.streamarr.server.exceptions.ProfileManagementDeniedException;
 import com.streamarr.server.exceptions.ProfileManagerInvariantException;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationTransition;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -76,6 +77,7 @@ public class ProfileManagementService {
         profileRepository
             .findById(command.profileId())
             .orElseThrow(ProfileManagementDeniedException::new);
+    safetyService.validatePolicyChange(profile.toBuilder().name(command.name()).build());
     profile.setName(command.name());
     profileRepository.save(profile);
     auditService.recordEvent(
@@ -129,13 +131,13 @@ public class ProfileManagementService {
   public void reject(ProfileManagerInvitationRejection rejection) {
     var invitation =
         invitationRepository
-            .findById(rejection.invitationId())
-            .filter(candidate -> candidate.getStatus() == ProfileManagerInvitationStatus.PENDING)
-            .filter(
-                candidate -> candidate.getInvitedAccountId().equals(rejection.actingAccountId()))
+            .transitionPending(
+                ProfileManagerInvitationTransition.builder()
+                    .invitationId(rejection.invitationId())
+                    .invitedAccountId(rejection.actingAccountId())
+                    .status(ProfileManagerInvitationStatus.REJECTED)
+                    .build())
             .orElseThrow(ProfileManagementDeniedException::new);
-    invitation.setStatus(ProfileManagerInvitationStatus.REJECTED);
-    invitationRepository.save(invitation);
     auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(rejection.actingAccountId())
@@ -152,8 +154,14 @@ public class ProfileManagementService {
             .filter(candidate -> candidate.getStatus() == ProfileManagerInvitationStatus.PENDING)
             .orElseThrow(ProfileManagementDeniedException::new);
     requireManager(cancellation.actingAccountId(), invitation.getProfileId());
-    invitation.setStatus(ProfileManagerInvitationStatus.CANCELED);
-    invitationRepository.save(invitation);
+    invitation =
+        invitationRepository
+            .transitionPending(
+                ProfileManagerInvitationTransition.builder()
+                    .invitationId(cancellation.invitationId())
+                    .status(ProfileManagerInvitationStatus.CANCELED)
+                    .build())
+            .orElseThrow(ProfileManagementDeniedException::new);
     auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(cancellation.actingAccountId())
@@ -167,13 +175,13 @@ public class ProfileManagementService {
       ProfileManagerInvitationAcceptance acceptance, UUID expectedProfileId) {
     var invitation =
         invitationRepository
-            .findById(acceptance.invitationId())
-            .filter(candidate -> candidate.getStatus() == ProfileManagerInvitationStatus.PENDING)
-            .filter(
-                candidate -> candidate.getInvitedAccountId().equals(acceptance.actingAccountId()))
-            .filter(
-                candidate ->
-                    expectedProfileId == null || candidate.getProfileId().equals(expectedProfileId))
+            .transitionPending(
+                ProfileManagerInvitationTransition.builder()
+                    .invitationId(acceptance.invitationId())
+                    .invitedAccountId(acceptance.actingAccountId())
+                    .expectedProfileId(expectedProfileId)
+                    .status(ProfileManagerInvitationStatus.ACCEPTED)
+                    .build())
             .orElseThrow(ProfileManagementDeniedException::new);
 
     var manager =
@@ -182,8 +190,6 @@ public class ProfileManagementService {
                 .accountId(acceptance.actingAccountId())
                 .profileId(invitation.getProfileId())
                 .build());
-    invitation.setStatus(ProfileManagerInvitationStatus.ACCEPTED);
-    invitationRepository.save(invitation);
     auditService.recordEvent(
         SecurityAuditRecord.builder()
             .actingAccountId(acceptance.actingAccountId())

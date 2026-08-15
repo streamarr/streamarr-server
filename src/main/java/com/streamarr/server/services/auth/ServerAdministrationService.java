@@ -34,10 +34,18 @@ public class ServerAdministrationService {
   private final KidProfileManagerPolicy kidManagerPolicy;
   private final SecurityAuditService auditService;
 
-  @Transactional
-  public void forceDeleteProfile(ForceProfileDeletionCommand command) {
+  public PreparedForceProfileDeletion prepare(ForceProfileDeletionCommand command) {
     requireReason(command.reason());
-    requireFreshAuthority(command.actingAccountId(), command.password(), command.profileId());
+    return new PreparedForceProfileDeletion(
+        command.actingAccountId(),
+        command.profileId(),
+        command.reason(),
+        prepareAuthority(command.actingAccountId(), command.password(), command.profileId()));
+  }
+
+  @Transactional
+  public void forceDeleteProfile(PreparedForceProfileDeletion command) {
+    serverAdminAuthorizer.requireFreshAuthority(command.authority());
     var profile =
         profileRepository
             .findById(command.profileId())
@@ -67,10 +75,18 @@ public class ServerAdministrationService {
     profileRepository.delete(profile);
   }
 
-  @Transactional
-  public void forceUnshareProfile(ForceProfileUnshareCommand command) {
+  public PreparedForceProfileUnshare prepare(ForceProfileUnshareCommand command) {
     requireReason(command.reason());
-    requireFreshAuthority(command.actingAccountId(), command.password(), null);
+    return new PreparedForceProfileUnshare(
+        command.actingAccountId(),
+        command.shareId(),
+        command.reason(),
+        prepareAuthority(command.actingAccountId(), command.password(), null));
+  }
+
+  @Transactional
+  public void forceUnshareProfile(PreparedForceProfileUnshare command) {
+    serverAdminAuthorizer.requireFreshAuthority(command.authority());
     var share =
         shareRepository.findById(command.shareId()).orElseThrow(ProfileAccessDeniedException::new);
 
@@ -86,10 +102,20 @@ public class ServerAdministrationService {
             .build());
   }
 
-  @Transactional
-  public void overrideProfileManager(ProfileManagerOverrideCommand command) {
+  public PreparedProfileManagerOverride prepare(ProfileManagerOverrideCommand command) {
     requireReason(command.reason());
-    requireFreshAuthority(command.actingAccountId(), command.password(), command.profileId());
+    return new PreparedProfileManagerOverride(
+        command.actingAccountId(),
+        command.targetAccountId(),
+        command.profileId(),
+        command.action(),
+        command.reason(),
+        prepareAuthority(command.actingAccountId(), command.password(), command.profileId()));
+  }
+
+  @Transactional
+  public void overrideProfileManager(PreparedProfileManagerOverride command) {
+    serverAdminAuthorizer.requireFreshAuthority(command.authority());
     profileRepository.findById(command.profileId()).orElseThrow(ProfileAccessDeniedException::new);
     accountRepository
         .findById(command.targetAccountId())
@@ -111,13 +137,14 @@ public class ServerAdministrationService {
             .build());
   }
 
-  private void grantManagement(ProfileManagerOverrideCommand command) {
+  private void grantManagement(PreparedProfileManagerOverride command) {
     managerRepository.insertIfAbsent(command.targetAccountId(), command.profileId());
   }
 
-  private void requireFreshAuthority(UUID accountId, String password, UUID targetProfileId) {
+  private PasswordReauthentication prepareAuthority(
+      UUID accountId, String password, UUID targetProfileId) {
     try {
-      serverAdminAuthorizer.requireFreshAuthority(accountId, password);
+      return serverAdminAuthorizer.prepare(accountId, password);
     } catch (InvalidCredentialsException exception) {
       auditService.recordFailure(
           SecurityAuditRecord.builder()
@@ -130,7 +157,7 @@ public class ServerAdministrationService {
     }
   }
 
-  private void removeManagement(ProfileManagerOverrideCommand command) {
+  private void removeManagement(PreparedProfileManagerOverride command) {
     var manager =
         managerRepository
             .findByAccountIdAndProfileId(command.targetAccountId(), command.profileId())
@@ -147,4 +174,18 @@ public class ServerAdministrationService {
       throw new IllegalArgumentException("An override reason is required.");
     }
   }
+
+  record PreparedForceProfileDeletion(
+      UUID actingAccountId, UUID profileId, String reason, PasswordReauthentication authority) {}
+
+  record PreparedForceProfileUnshare(
+      UUID actingAccountId, UUID shareId, String reason, PasswordReauthentication authority) {}
+
+  record PreparedProfileManagerOverride(
+      UUID actingAccountId,
+      UUID targetAccountId,
+      UUID profileId,
+      ProfileManagerOverrideAction action,
+      String reason,
+      PasswordReauthentication authority) {}
 }

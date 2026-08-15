@@ -87,7 +87,7 @@ class HouseholdAdministrationServiceTest {
                 .activeProfileId(UUID.randomUUID())
                 .build());
 
-    service.transferAccount(
+    transferAccount(
         AccountHouseholdTransferCommand.builder()
             .actingAccountId(admin.getId())
             .targetAccountId(transferred.getId())
@@ -118,7 +118,7 @@ class HouseholdAdministrationServiceTest {
     var currentOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.OWNER);
     var nextOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.PARENT);
 
-    service.transferOwnership(
+    transferOwnership(
         HouseholdOwnershipTransferCommand.builder()
             .actingAccountId(currentOwner.getId())
             .householdId(household.getId())
@@ -152,7 +152,7 @@ class HouseholdAdministrationServiceTest {
             .reason("Invalid move")
             .build();
 
-    assertThatThrownBy(() -> service.transferAccount(command))
+    assertThatThrownBy(() -> transferAccount(command))
         .isInstanceOf(HouseholdOwnershipTransferRequiredException.class)
         .hasMessageContaining("ownership");
 
@@ -176,7 +176,7 @@ class HouseholdAdministrationServiceTest {
             .reason("Invalid ownership shortcut")
             .build();
 
-    assertThatThrownBy(() -> service.transferAccount(command))
+    assertThatThrownBy(() -> transferAccount(command))
         .isInstanceOf(HouseholdOwnershipTransferRequiredException.class);
   }
 
@@ -197,7 +197,7 @@ class HouseholdAdministrationServiceTest {
             .reason("Unauthorized move")
             .build();
 
-    assertThatThrownBy(() -> service.transferAccount(command))
+    assertThatThrownBy(() -> transferAccount(command))
         .isInstanceOf(ServerAdministrationDeniedException.class);
 
     assertThat(transferred.getHomeHouseholdId()).isEqualTo(source.getId());
@@ -238,7 +238,7 @@ class HouseholdAdministrationServiceTest {
             .reason("Unsafe move")
             .build();
 
-    assertThatThrownBy(() -> service.transferAccount(command))
+    assertThatThrownBy(() -> transferAccount(command))
         .isInstanceOf(KidProfileManagerRequiredException.class);
 
     assertThat(localParent.getHomeHouseholdId()).isEqualTo(source.getId());
@@ -253,7 +253,7 @@ class HouseholdAdministrationServiceTest {
     var currentOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.OWNER);
     var nextOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.PARENT);
 
-    service.transferOwnership(
+    transferOwnership(
         HouseholdOwnershipTransferCommand.builder()
             .actingAccountId(admin.getId())
             .householdId(household.getId())
@@ -282,7 +282,7 @@ class HouseholdAdministrationServiceTest {
             .reason("Unauthorized handoff")
             .build();
 
-    assertThatThrownBy(() -> service.transferOwnership(command))
+    assertThatThrownBy(() -> transferOwnership(command))
         .isInstanceOf(HouseholdAccessDeniedException.class);
   }
 
@@ -304,7 +304,7 @@ class HouseholdAdministrationServiceTest {
             .reason("Disabled administrator")
             .build();
 
-    assertThatThrownBy(() -> service.transferOwnership(command))
+    assertThatThrownBy(() -> transferOwnership(command))
         .isInstanceOf(HouseholdAccessDeniedException.class);
   }
 
@@ -323,7 +323,7 @@ class HouseholdAdministrationServiceTest {
             .reason("Invalid credentials")
             .build();
 
-    assertThatThrownBy(() -> service.transferOwnership(command))
+    assertThatThrownBy(() -> transferOwnership(command))
         .isInstanceOf(InvalidCredentialsException.class);
   }
 
@@ -341,7 +341,7 @@ class HouseholdAdministrationServiceTest {
             .reason("No-op handoff")
             .build();
 
-    assertThatThrownBy(() -> service.transferOwnership(command))
+    assertThatThrownBy(() -> transferOwnership(command))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("already owns");
   }
@@ -370,10 +370,18 @@ class HouseholdAdministrationServiceTest {
             .reason("  ")
             .build();
 
-    assertThatThrownBy(() -> service.transferAccount(missingReason))
+    assertThatThrownBy(() -> transferAccount(missingReason))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> service.transferOwnership(blankReason))
+    assertThatThrownBy(() -> transferOwnership(blankReason))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  private void transferAccount(AccountHouseholdTransferCommand command) {
+    service.transferAccount(service.prepare(command));
+  }
+
+  private void transferOwnership(HouseholdOwnershipTransferCommand command) {
+    service.transferOwnership(service.prepare(command));
   }
 
   private UserAccount saveAccount(

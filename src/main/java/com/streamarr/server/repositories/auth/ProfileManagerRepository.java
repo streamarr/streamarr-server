@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.ProfileManager;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,6 +17,8 @@ public interface ProfileManagerRepository
   List<ProfileManager> findByProfileId(UUID profileId);
 
   List<ProfileManager> findByAccountId(UUID accountId);
+
+  List<ProfileManager> findByProfileIdIn(Collection<UUID> profileIds);
 
   Optional<ProfileManager> findByAccountIdAndProfileId(UUID accountId, UUID profileId);
 

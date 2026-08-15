@@ -4,6 +4,7 @@ import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUN
 import static org.jooq.impl.DSL.inline;
 
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.jooq.generated.enums.AccountRole;
 import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
@@ -35,6 +36,35 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
         .where(USER_ACCOUNT.ID.eq(accountId))
         .and(USER_ACCOUNT.PASSWORD_HASH.eq(expectedPasswordHash))
         .and(USER_ACCOUNT.ENABLED.isTrue())
+        .forUpdate()
+        .fetchOptional()
+        .isPresent();
+  }
+
+  @Override
+  public boolean lockIfServerAdmin(UUID accountId) {
+    return dsl.select(USER_ACCOUNT.ID)
+        .from(USER_ACCOUNT)
+        .where(USER_ACCOUNT.ID.eq(accountId))
+        .and(USER_ACCOUNT.ENABLED.isTrue())
+        .and(USER_ACCOUNT.ACCOUNT_ROLE.eq(AccountRole.ADMIN))
+        .forUpdate()
+        .fetchOptional()
+        .isPresent();
+  }
+
+  @Override
+  public boolean lockIfHouseholdAuthority(UUID accountId, UUID householdId) {
+    var ownsHousehold =
+        USER_ACCOUNT
+            .HOME_HOUSEHOLD_ID
+            .eq(householdId)
+            .and(USER_ACCOUNT.HOUSEHOLD_ROLE.eq(HouseholdRole.OWNER));
+    return dsl.select(USER_ACCOUNT.ID)
+        .from(USER_ACCOUNT)
+        .where(USER_ACCOUNT.ID.eq(accountId))
+        .and(USER_ACCOUNT.ENABLED.isTrue())
+        .and(USER_ACCOUNT.ACCOUNT_ROLE.eq(AccountRole.ADMIN).or(ownsHousehold))
         .forUpdate()
         .fetchOptional()
         .isPresent();

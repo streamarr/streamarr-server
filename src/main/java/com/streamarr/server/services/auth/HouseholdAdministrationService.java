@@ -11,6 +11,7 @@ import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.time.Clock;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -29,10 +30,20 @@ public class HouseholdAdministrationService {
   private final Clock clock;
   private final SecurityAuditService auditService;
 
-  @Transactional
-  public void transferAccount(AccountHouseholdTransferCommand command) {
+  public PreparedAccountHouseholdTransfer prepare(AccountHouseholdTransferCommand command) {
     requireReason(command.reason());
-    serverAdminAuthorizer.requireFreshAuthority(command.actingAccountId(), command.password());
+    return new PreparedAccountHouseholdTransfer(
+        command.actingAccountId(),
+        command.targetAccountId(),
+        command.targetHouseholdId(),
+        command.targetRole(),
+        command.reason(),
+        serverAdminAuthorizer.prepare(command.actingAccountId(), command.password()));
+  }
+
+  @Transactional
+  public void transferAccount(PreparedAccountHouseholdTransfer command) {
+    serverAdminAuthorizer.requireFreshAuthority(command.authority());
     householdRepository
         .findById(command.targetHouseholdId())
         .orElseThrow(HouseholdAccessDeniedException::new);
@@ -62,17 +73,30 @@ public class HouseholdAdministrationService {
             .build());
   }
 
-  @Transactional
-  public void transferOwnership(HouseholdOwnershipTransferCommand command) {
+  public PreparedHouseholdOwnershipTransfer prepare(HouseholdOwnershipTransferCommand command) {
     requireReason(command.reason());
-    householdRepository
-        .findById(command.householdId())
-        .orElseThrow(HouseholdAccessDeniedException::new);
     var actor =
         accountRepository
             .findById(command.actingAccountId())
             .orElseThrow(HouseholdAccessDeniedException::new);
-    requireOwnershipAuthority(actor, command);
+    var authority = prepareOwnershipAuthority(actor, command);
+    return new PreparedHouseholdOwnershipTransfer(
+        command.actingAccountId(),
+        command.householdId(),
+        command.targetAccountId(),
+        command.reason(),
+        authority);
+  }
+
+  @Transactional
+  public void transferOwnership(PreparedHouseholdOwnershipTransfer command) {
+    if (!accountRepository.lockIfHouseholdAuthority(
+        command.actingAccountId(), command.householdId())) {
+      throw new HouseholdAccessDeniedException();
+    }
+    householdRepository
+        .findById(command.householdId())
+        .orElseThrow(HouseholdAccessDeniedException::new);
 
     var currentOwner =
         accountRepository
@@ -102,7 +126,7 @@ public class HouseholdAdministrationService {
             .build());
   }
 
-  private void requireOwnershipAuthority(
+  private PasswordReauthentication prepareOwnershipAuthority(
       UserAccount actor, HouseholdOwnershipTransferCommand command) {
     var isCurrentOwner =
         actor.isEnabled()
@@ -112,9 +136,11 @@ public class HouseholdAdministrationService {
     if (!isCurrentOwner && !isServerAdmin) {
       throw new HouseholdAccessDeniedException();
     }
-    if (!passwordEncoder.matches(command.password(), actor.getPasswordHash())) {
+    var expectedPasswordHash = actor.getPasswordHash();
+    if (!passwordEncoder.matches(command.password(), expectedPasswordHash)) {
       throw new InvalidCredentialsException();
     }
+    return new PasswordReauthentication(actor.getId());
   }
 
   private void requireReason(String reason) {
@@ -122,4 +148,19 @@ public class HouseholdAdministrationService {
       throw new IllegalArgumentException("An administration reason is required.");
     }
   }
+
+  record PreparedAccountHouseholdTransfer(
+      UUID actingAccountId,
+      UUID targetAccountId,
+      UUID targetHouseholdId,
+      HouseholdRole targetRole,
+      String reason,
+      PasswordReauthentication authority) {}
+
+  record PreparedHouseholdOwnershipTransfer(
+      UUID actingAccountId,
+      UUID householdId,
+      UUID targetAccountId,
+      String reason,
+      PasswordReauthentication authority) {}
 }

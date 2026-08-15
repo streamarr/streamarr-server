@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,6 +39,13 @@ public class FakeProfileManagerRepository extends FakeJpaRepository<ProfileManag
   public List<ProfileManager> findByAccountId(UUID accountId) {
     return database.values().stream()
         .filter(manager -> accountId.equals(manager.getAccountId()))
+        .toList();
+  }
+
+  @Override
+  public List<ProfileManager> findByProfileIdIn(Collection<UUID> profileIds) {
+    return database.values().stream()
+        .filter(manager -> profileIds.contains(manager.getProfileId()))
         .toList();
   }
 

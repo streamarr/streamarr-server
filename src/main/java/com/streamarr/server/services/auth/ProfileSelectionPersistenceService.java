@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProfileSelectionPersistenceService {
 
   private final AuthSessionRepository sessionRepository;
+  private final ProfileAvailabilityService profileAvailabilityService;
 
   @Transactional
   public AuthSession select(UUID accountId, UUID sessionId, UUID profileId) {
@@ -22,6 +23,7 @@ public class ProfileSelectionPersistenceService {
             .filter(candidate -> candidate.getAccountId().equals(accountId))
             .filter(candidate -> candidate.getRevokedAt() == null)
             .orElseThrow(AuthenticationRequiredException::new);
+    profileAvailabilityService.requireSelectableProfile(accountId, profileId);
     session.setActiveProfileId(profileId);
     return sessionRepository.save(session);
   }

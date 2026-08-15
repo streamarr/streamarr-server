@@ -13,6 +13,12 @@ public record CreatePortableProfileCommand(
     Integer maximumAllowedRatingAge,
     String pinHash) {
 
+  public CreatePortableProfileCommand {
+    if (maximumAllowedRatingAge != null && maximumAllowedRatingAge < 0) {
+      throw new IllegalArgumentException("maximumAllowedRatingAge must not be negative");
+    }
+  }
+
   public static class CreatePortableProfileCommandBuilder {
     @Override
     public String toString() {

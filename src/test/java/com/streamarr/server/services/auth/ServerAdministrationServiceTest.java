@@ -100,7 +100,7 @@ class ServerAdministrationServiceTest {
     var activeShare = saveShare(profile.getId(), ProfileShareStatus.ACTIVE);
     var pendingShare = saveShare(profile.getId(), ProfileShareStatus.PENDING);
 
-    service.forceDeleteProfile(
+    forceDeleteProfile(
         ForceProfileDeletionCommand.builder()
             .actingAccountId(admin.getId())
             .profileId(profile.getId())
@@ -153,7 +153,7 @@ class ServerAdministrationServiceTest {
             .status(ProfileShareStatus.ACTIVE)
             .build());
 
-    service.forceDeleteProfile(
+    forceDeleteProfile(
         ForceProfileDeletionCommand.builder()
             .actingAccountId(admin.getId())
             .profileId(profile.getId())
@@ -174,7 +174,7 @@ class ServerAdministrationServiceTest {
     var removedShare = saveShare(profile.getId(), ProfileShareStatus.ACTIVE);
     var retainedShare = saveShare(profile.getId(), ProfileShareStatus.ACTIVE);
 
-    service.forceUnshareProfile(
+    forceUnshareProfile(
         ForceProfileUnshareCommand.builder()
             .actingAccountId(admin.getId())
             .shareId(removedShare.getId())
@@ -201,7 +201,7 @@ class ServerAdministrationServiceTest {
     var manager = saveAccount(AccountRole.USER);
     var profile = profileRepository.save(Profile.builder().name("Managed Profile").build());
 
-    service.overrideProfileManager(
+    overrideProfileManager(
         ProfileManagerOverrideCommand.builder()
             .actingAccountId(admin.getId())
             .targetAccountId(manager.getId())
@@ -231,7 +231,7 @@ class ServerAdministrationServiceTest {
     var profile = profileRepository.save(Profile.builder().name("Managed Profile").build());
     managerRepository.save(manager(existingManager.getId(), profile.getId()));
 
-    service.overrideProfileManager(
+    overrideProfileManager(
         ProfileManagerOverrideCommand.builder()
             .actingAccountId(admin.getId())
             .targetAccountId(existingManager.getId())
@@ -278,9 +278,15 @@ class ServerAdministrationServiceTest {
     List<Throwable> failures;
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var first =
-          executor.submit(() -> catchFailure(() -> racingService.overrideProfileManager(command)));
+          executor.submit(
+              () ->
+                  catchFailure(
+                      () -> racingService.overrideProfileManager(racingService.prepare(command))));
       var second =
-          executor.submit(() -> catchFailure(() -> racingService.overrideProfileManager(command)));
+          executor.submit(
+              () ->
+                  catchFailure(
+                      () -> racingService.overrideProfileManager(racingService.prepare(command))));
       failures = Arrays.asList(first.get(), second.get());
     }
 
@@ -300,7 +306,7 @@ class ServerAdministrationServiceTest {
     managerRepository.save(manager(removedManager.getId(), profile.getId()));
     managerRepository.save(manager(retainedManager.getId(), profile.getId()));
 
-    service.overrideProfileManager(
+    overrideProfileManager(
         ProfileManagerOverrideCommand.builder()
             .actingAccountId(admin.getId())
             .targetAccountId(removedManager.getId())
@@ -336,7 +342,7 @@ class ServerAdministrationServiceTest {
             .reason("Remove absent manager")
             .build();
 
-    assertThatThrownBy(() -> service.overrideProfileManager(absentRemoval))
+    assertThatThrownBy(() -> overrideProfileManager(absentRemoval))
         .isInstanceOf(ProfileAccessDeniedException.class);
 
     managerRepository.save(manager(target.getId(), profile.getId()));
@@ -350,7 +356,7 @@ class ServerAdministrationServiceTest {
             .reason("Remove sole manager")
             .build();
 
-    assertThatThrownBy(() -> service.overrideProfileManager(soleRemoval))
+    assertThatThrownBy(() -> overrideProfileManager(soleRemoval))
         .isInstanceOf(ProfileManagerInvariantException.class);
   }
 
@@ -373,9 +379,9 @@ class ServerAdministrationServiceTest {
             .reason("  ")
             .build();
 
-    assertThatThrownBy(() -> service.forceDeleteProfile(missingReason))
+    assertThatThrownBy(() -> forceDeleteProfile(missingReason))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> service.forceUnshareProfile(blankReason))
+    assertThatThrownBy(() -> forceUnshareProfile(blankReason))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -392,7 +398,7 @@ class ServerAdministrationServiceTest {
             .reason("Unauthorized")
             .build();
 
-    assertThatThrownBy(() -> service.forceDeleteProfile(command))
+    assertThatThrownBy(() -> forceDeleteProfile(command))
         .isInstanceOf(ServerAdministrationDeniedException.class);
 
     assertThat(profileRepository.existsById(profile.getId())).isTrue();
@@ -415,7 +421,7 @@ class ServerAdministrationServiceTest {
             .reason("Recovery")
             .build();
 
-    assertThatThrownBy(() -> service.overrideProfileManager(command))
+    assertThatThrownBy(() -> overrideProfileManager(command))
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(auditRepository.findAll())
@@ -442,11 +448,11 @@ class ServerAdministrationServiceTest {
             .build();
 
     for (var attempt = 0; attempt < 2; attempt++) {
-      assertThatThrownBy(() -> service.forceDeleteProfile(command))
+      assertThatThrownBy(() -> forceDeleteProfile(command))
           .isInstanceOf(InvalidCredentialsException.class);
     }
 
-    assertThatThrownBy(() -> service.forceDeleteProfile(command))
+    assertThatThrownBy(() -> forceDeleteProfile(command))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
   }
 
@@ -463,7 +469,7 @@ class ServerAdministrationServiceTest {
             .reason("Recovery")
             .build();
 
-    assertThatThrownBy(() -> service.forceDeleteProfile(command))
+    assertThatThrownBy(() -> forceDeleteProfile(command))
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(profileRepository.existsById(profile.getId())).isTrue();
@@ -512,11 +518,23 @@ class ServerAdministrationServiceTest {
             .reason("Unsafe override")
             .build();
 
-    assertThatThrownBy(() -> service.overrideProfileManager(command))
+    assertThatThrownBy(() -> overrideProfileManager(command))
         .isInstanceOf(KidProfileManagerRequiredException.class);
 
     assertThat(managerRepository.existsByAccountIdAndProfileId(localParent.getId(), kid.getId()))
         .isTrue();
+  }
+
+  private void forceDeleteProfile(ForceProfileDeletionCommand command) {
+    service.forceDeleteProfile(service.prepare(command));
+  }
+
+  private void forceUnshareProfile(ForceProfileUnshareCommand command) {
+    service.forceUnshareProfile(service.prepare(command));
+  }
+
+  private void overrideProfileManager(ProfileManagerOverrideCommand command) {
+    service.overrideProfileManager(service.prepare(command));
   }
 
   private UserAccount saveAccount(AccountRole role) {

@@ -3,6 +3,8 @@ type Me {
     email: String!
     displayName: String!
     role: String!
+    homeHouseholdId: ID!
+    householdRole: HouseholdRoleInput!
     scope: String!
     profiles: [SelectableProfile!]!
 }

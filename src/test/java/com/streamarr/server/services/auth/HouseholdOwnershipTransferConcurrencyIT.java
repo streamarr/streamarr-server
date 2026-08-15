@@ -46,8 +46,8 @@ class HouseholdOwnershipTransferConcurrencyIT extends AbstractIntegrationTest {
   void shouldPreserveExactlyOneOwnerWhenOwnershipTransfersRace() throws Exception {
     var fixture = createFixture();
     var start = new CountDownLatch(1);
-    try (var blockerConnection = dataSource.getConnection();
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var blockerConnection = dataSource.getConnection()) {
       blockerConnection.setAutoCommit(false);
       lockAccount(blockerConnection, fixture.currentOwnerId());
 
@@ -109,14 +109,16 @@ class HouseholdOwnershipTransferConcurrencyIT extends AbstractIntegrationTest {
       CountDownLatch start, Fixture fixture, UUID targetAccountId) {
     awaitStart(start);
     try {
-      householdAdministrationService.transferOwnership(
-          HouseholdOwnershipTransferCommand.builder()
-              .actingAccountId(fixture.currentOwnerId())
-              .householdId(fixture.householdId())
-              .targetAccountId(targetAccountId)
-              .password("ownership-password")
-              .reason("Concurrent handoff")
-              .build());
+      var preparedTransfer =
+          householdAdministrationService.prepare(
+              HouseholdOwnershipTransferCommand.builder()
+                  .actingAccountId(fixture.currentOwnerId())
+                  .householdId(fixture.householdId())
+                  .targetAccountId(targetAccountId)
+                  .password("ownership-password")
+                  .reason("Concurrent handoff")
+                  .build());
+      householdAdministrationService.transferOwnership(preparedTransfer);
       return null;
     } catch (RuntimeException exception) {
       return exception;
@@ -143,7 +145,7 @@ class HouseholdOwnershipTransferConcurrencyIT extends AbstractIntegrationTest {
                             FROM pg_stat_activity
                             WHERE datname = current_database()
                               AND wait_event_type = 'Lock'
-                              AND query ILIKE 'update user_account%'
+                              AND query ILIKE 'select%user_account%for update%'
                             """,
                             Integer.class))
                     .isGreaterThanOrEqualTo(2));

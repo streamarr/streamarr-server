@@ -4,7 +4,10 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationInsertResult;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationTransition;
+import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public class FakeProfileManagerInvitationRepository
@@ -43,9 +46,43 @@ public class FakeProfileManagerInvitationRepository
   }
 
   @Override
+  public synchronized Optional<ProfileManagerInvitation> transitionPending(
+      ProfileManagerInvitationTransition transition) {
+    return findById(transition.invitationId())
+        .filter(invitation -> invitation.getStatus() == ProfileManagerInvitationStatus.PENDING)
+        .filter(
+            invitation ->
+                transition.invitedAccountId() == null
+                    || transition.invitedAccountId().equals(invitation.getInvitedAccountId()))
+        .filter(
+            invitation ->
+                transition.expectedProfileId() == null
+                    || transition.expectedProfileId().equals(invitation.getProfileId()))
+        .map(
+            invitation -> {
+              invitation.setStatus(transition.status());
+              return save(invitation);
+            });
+  }
+
+  @Override
   public List<ProfileManagerInvitation> findByProfileId(UUID profileId) {
     return database.values().stream()
         .filter(invitation -> profileId.equals(invitation.getProfileId()))
+        .toList();
+  }
+
+  @Override
+  public List<ProfileManagerInvitation> findByProfileIdIn(Collection<UUID> profileIds) {
+    return database.values().stream()
+        .filter(invitation -> profileIds.contains(invitation.getProfileId()))
+        .toList();
+  }
+
+  @Override
+  public List<ProfileManagerInvitation> findByInvitedAccountId(UUID invitedAccountId) {
+    return database.values().stream()
+        .filter(invitation -> invitedAccountId.equals(invitation.getInvitedAccountId()))
         .toList();
   }
 }

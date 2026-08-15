@@ -17,15 +17,16 @@ import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.graphql.inputs.PortableProfileInputs;
 import com.streamarr.server.services.auth.AccountHouseholdTransferCommand;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.CapturingHouseholdAdministrationService;
+import com.streamarr.server.services.auth.CapturingProfileDeletionService;
+import com.streamarr.server.services.auth.CapturingServerAdministrationService;
 import com.streamarr.server.services.auth.CreatePortableProfileCommand;
 import com.streamarr.server.services.auth.DeleteProfileCommand;
 import com.streamarr.server.services.auth.ForceProfileDeletionCommand;
 import com.streamarr.server.services.auth.ForceProfileUnshareCommand;
-import com.streamarr.server.services.auth.HouseholdAdministrationService;
 import com.streamarr.server.services.auth.HouseholdOwnershipTransferCommand;
 import com.streamarr.server.services.auth.HouseholdProfileRemoval;
 import com.streamarr.server.services.auth.PortableIdentityService;
-import com.streamarr.server.services.auth.ProfileDeletionService;
 import com.streamarr.server.services.auth.ProfileHomeDeparture;
 import com.streamarr.server.services.auth.ProfileManagementRelinquishment;
 import com.streamarr.server.services.auth.ProfileManagementService;
@@ -45,7 +46,6 @@ import com.streamarr.server.services.auth.ProfileSharingService;
 import com.streamarr.server.services.auth.RemoveProfileContentCeilingCommand;
 import com.streamarr.server.services.auth.RenamePortableProfileCommand;
 import com.streamarr.server.services.auth.ResetProfilePinCommand;
-import com.streamarr.server.services.auth.ServerAdministrationService;
 import com.streamarr.server.services.auth.SetProfileContentCeilingCommand;
 import com.streamarr.server.services.auth.SetProfileKindCommand;
 import com.streamarr.server.services.auth.TokenScope;
@@ -447,7 +447,7 @@ class PortableProfileResolverTest {
             fixture.resolver.deleteProfile(
                 new PortableProfileInputs.ProfileDeletion(profileId.toString(), "secret")))
         .isTrue();
-    assertThat(fixture.deletionService.deletion)
+    assertThat(fixture.deletionService.deletion())
         .isEqualTo(
             DeleteProfileCommand.builder()
                 .actingAccountId(fixture.accountId)
@@ -467,7 +467,7 @@ class PortableProfileResolverTest {
                 new PortableProfileInputs.ForceProfileDeletion(
                     profileId.toString(), "secret", "Recovery")))
         .isTrue();
-    assertThat(fixture.serverAdministrationService.deletion)
+    assertThat(fixture.serverAdministrationService.deletion())
         .isEqualTo(
             ForceProfileDeletionCommand.builder()
                 .actingAccountId(fixture.accountId)
@@ -488,7 +488,7 @@ class PortableProfileResolverTest {
                 new PortableProfileInputs.ForceProfileUnshare(
                     shareId.toString(), "secret", "Recovery")))
         .isTrue();
-    assertThat(fixture.serverAdministrationService.unshare)
+    assertThat(fixture.serverAdministrationService.unshare())
         .isEqualTo(
             ForceProfileUnshareCommand.builder()
                 .actingAccountId(fixture.accountId)
@@ -514,7 +514,7 @@ class PortableProfileResolverTest {
                     "secret",
                     "Recovery")))
         .isTrue();
-    assertThat(fixture.serverAdministrationService.override)
+    assertThat(fixture.serverAdministrationService.override())
         .isEqualTo(
             ProfileManagerOverrideCommand.builder()
                 .actingAccountId(fixture.accountId)
@@ -542,7 +542,7 @@ class PortableProfileResolverTest {
                     "secret",
                     "Recovery")))
         .isTrue();
-    assertThat(fixture.householdAdministrationService.accountTransfer)
+    assertThat(fixture.householdAdministrationService.accountTransfer())
         .isEqualTo(
             AccountHouseholdTransferCommand.builder()
                 .actingAccountId(fixture.accountId)
@@ -566,7 +566,7 @@ class PortableProfileResolverTest {
                 new PortableProfileInputs.OwnershipTransfer(
                     householdId.toString(), targetAccountId.toString(), "secret", "Family change")))
         .isTrue();
-    assertThat(fixture.householdAdministrationService.ownershipTransfer)
+    assertThat(fixture.householdAdministrationService.ownershipTransfer())
         .isEqualTo(
             HouseholdOwnershipTransferCommand.builder()
                 .actingAccountId(fixture.accountId)
@@ -763,68 +763,6 @@ class PortableProfileResolverTest {
     @Override
     public void resetPin(ResetProfilePinCommand command) {
       pinReset = command;
-    }
-  }
-
-  private static final class CapturingProfileDeletionService extends ProfileDeletionService {
-
-    private DeleteProfileCommand deletion;
-
-    private CapturingProfileDeletionService() {
-      super(null, null, null, null, null, null, null, null);
-    }
-
-    @Override
-    public void delete(DeleteProfileCommand command) {
-      deletion = command;
-    }
-  }
-
-  private static final class CapturingServerAdministrationService
-      extends ServerAdministrationService {
-
-    private ForceProfileDeletionCommand deletion;
-    private ForceProfileUnshareCommand unshare;
-    private ProfileManagerOverrideCommand override;
-
-    private CapturingServerAdministrationService() {
-      super(null, null, null, null, null, null, null, null, null, null);
-    }
-
-    @Override
-    public void forceDeleteProfile(ForceProfileDeletionCommand command) {
-      deletion = command;
-    }
-
-    @Override
-    public void forceUnshareProfile(ForceProfileUnshareCommand command) {
-      unshare = command;
-    }
-
-    @Override
-    public void overrideProfileManager(ProfileManagerOverrideCommand command) {
-      override = command;
-    }
-  }
-
-  private static final class CapturingHouseholdAdministrationService
-      extends HouseholdAdministrationService {
-
-    private AccountHouseholdTransferCommand accountTransfer;
-    private HouseholdOwnershipTransferCommand ownershipTransfer;
-
-    private CapturingHouseholdAdministrationService() {
-      super(null, null, null, null, null, null, null, null);
-    }
-
-    @Override
-    public void transferAccount(AccountHouseholdTransferCommand command) {
-      accountTransfer = command;
-    }
-
-    @Override
-    public void transferOwnership(HouseholdOwnershipTransferCommand command) {
-      ownershipTransfer = command;
     }
   }
 

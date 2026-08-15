@@ -59,7 +59,7 @@ class SessionScopeServiceTest {
               new ProfilePinService(NoOpPasswordEncoder.getInstance()),
               credentialThrottle,
               auditService),
-          new ProfileSelectionPersistenceService(sessionRepository),
+          new ProfileSelectionPersistenceService(sessionRepository, availabilityService),
           Clock.systemUTC());
 
   @Test
@@ -129,7 +129,7 @@ class SessionScopeServiceTest {
                 new ProfilePinService(NoOpPasswordEncoder.getInstance()),
                 credentialThrottle,
                 auditService),
-            new ProfileSelectionPersistenceService(trackingSessionRepository),
+            new ProfileSelectionPersistenceService(trackingSessionRepository, availabilityService),
             Clock.systemUTC());
     var homeHouseholdId = UUID.randomUUID();
     var account = saveAccount(homeHouseholdId);

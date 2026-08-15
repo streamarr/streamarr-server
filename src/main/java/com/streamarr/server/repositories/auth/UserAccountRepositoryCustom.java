@@ -13,4 +13,8 @@ public interface UserAccountRepositoryCustom {
    * scalar check avoids returning a stale managed entity from Hibernate's first-level cache.
    */
   boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash);
+
+  boolean lockIfServerAdmin(UUID accountId);
+
+  boolean lockIfHouseholdAuthority(UUID accountId, UUID householdId);
 }
