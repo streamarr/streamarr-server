@@ -228,7 +228,7 @@ public class PortableProfileResolver {
   /**
    * Accepts an invitation to manage a portable profile.
    *
-   * @param input the invitation identifier to accept
+   * @param input the invitation acceptance details
    * @return a summary of the resulting profile management relationship
    */
   @DgsMutation
@@ -248,7 +248,7 @@ public class PortableProfileResolver {
    * Rejects an invitation to manage a profile.
    *
    * @param invitationId the identifier of the management invitation to reject
-   * @return {@code true} when the invitation is rejected
+   * @return {@code true} if the invitation is rejected, {@code false} otherwise
    */
   @DgsMutation
   public boolean rejectProfileManagerInvitation(@InputArgument String invitationId) {
@@ -303,7 +303,7 @@ public class PortableProfileResolver {
    * Changes the kind of a portable profile.
    *
    * @param input the profile identifier and new profile kind
-   * @return {@code true} when the profile kind is changed
+   * @return {@code true} when the operation completes successfully
    */
   @DgsMutation
   public boolean setProfileKind(
@@ -340,10 +340,10 @@ public class PortableProfileResolver {
   }
 
   /**
-   * Removes the content-rating ceiling from a profile.
+   * Removes the maximum content-rating ceiling from a profile.
    *
-   * @param input identifies the profile whose content-rating ceiling should be removed
-   * @return {@code true} when the ceiling is removed
+   * @param input identifies the profile whose content-rating ceiling is removed
+   * @return {@code true} if the ceiling is removed, {@code false} otherwise
    */
   @DgsMutation
   public boolean removeProfileContentCeiling(
@@ -359,10 +359,10 @@ public class PortableProfileResolver {
   }
 
   /**
-   * Resets the PIN for a portable profile.
+   * Resets a portable profile's PIN.
    *
    * @param input the profile identifier and replacement PIN
-   * @return {@code true} when the PIN is reset successfully
+   * @return {@code true} if the PIN is reset successfully, {@code false} otherwise
    */
   @DgsMutation
   public boolean resetProfilePin(
@@ -425,7 +425,7 @@ public class PortableProfileResolver {
    * Forcefully removes a profile share.
    *
    * @param input the share identifier, password, and reason for the unsharing operation
-   * @return {@code true} when the profile share is removed
+   * @return {@code true} if the profile share is removed, {@code false} otherwise
    */
   @DgsMutation
   public boolean forceUnshareProfile(
@@ -444,10 +444,10 @@ public class PortableProfileResolver {
   }
 
   /**
-   * Overrides profile management for an account.
+   * Overrides profile management for a specified account and profile.
    *
-   * @param input the profile manager override details, including the target account, profile, action, password, and reason
-   * @return {@code true} when the override is completed
+   * @param input the override details, including the target account, profile, action, password, and reason
+   * @return {@code true} when the override succeeds
    */
   @DgsMutation
   public boolean overrideProfileManager(
@@ -472,7 +472,7 @@ public class PortableProfileResolver {
    * Transfers an account to a specified household with a designated role.
    *
    * @param input the target account, household, role, password, and transfer reason
-   * @return {@code true} when the transfer succeeds
+   * @return {@code true} if the transfer succeeds, {@code false} otherwise
    */
   @DgsMutation
   public boolean transferAccountHousehold(

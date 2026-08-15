@@ -26,6 +26,13 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
     accountHomes.put(accountId, householdId);
   }
 
+  /**
+   * Reports whether the specified playback authority is currently valid.
+   *
+   * @param authority the playback authority to evaluate
+   * @return never returns because playback authority is not configured
+   * @throws UnsupportedOperationException always, because playback authority is not configured
+   */
   @Override
   public boolean hasLivePlaybackAuthority(PlaybackAuthority authority) {
     throw new UnsupportedOperationException("Live playback authority is not configured");
@@ -82,12 +89,11 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
   }
 
   /**
-   * Clears the active profile selection for live sessions associated with a household.
+   * Clears a profile selection from live sessions associated with a household.
    *
-   * @param profileId   the profile whose selection should be cleared
+   * @param profileId   the profile whose selection is cleared
    * @param householdId the household associated with the sessions
-   * @param now         the current timestamp
-   * @return the number of sessions whose active profile selection was cleared
+   * @return the number of sessions whose selection was cleared
    */
   @Override
   public int clearProfileSelection(UUID profileId, UUID householdId, Instant now) {

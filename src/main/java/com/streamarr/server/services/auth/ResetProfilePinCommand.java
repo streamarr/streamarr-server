@@ -9,6 +9,11 @@ public record ResetProfilePinCommand(
     @NonNull UUID actingAccountId, @NonNull UUID profileId, @NonNull String pinHash) {
 
   public static class ResetProfilePinCommandBuilder {
+    /**
+     * Provides a redacted representation of the command builder.
+     *
+     * @return a string that does not expose PIN data
+     */
     @Override
     public String toString() {
       return "ResetProfilePinCommandBuilder[REDACTED]";
@@ -16,9 +21,9 @@ public record ResetProfilePinCommand(
   }
 
   /**
-   * Returns a representation of the command with the PIN hash redacted.
+   * Formats the command with its acting account and profile identifiers while redacting the PIN hash.
    *
-   * @return the command representation with its PIN hash omitted
+   * @return the command representation with the PIN hash redacted
    */
   @Override
   public String toString() {

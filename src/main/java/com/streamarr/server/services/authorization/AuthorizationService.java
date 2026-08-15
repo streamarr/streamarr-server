@@ -33,10 +33,15 @@ public interface AuthorizationService {
 
   UUID requireAccountId();
 
-  UUID requireHousehold();
+  /**
+ * Requires an authenticated household identity.
+ *
+ * @return the authenticated household identifier
+ */
+UUID requireHousehold();
 
   /**
- * Retrieves the authenticated request's required profile identifier.
+ * Retrieves the authenticated profile identifier.
  *
  * @return the authenticated profile identifier
  */
@@ -49,14 +54,24 @@ UUID requireProfile();
  */
 PlaybackAuthority requirePlaybackAuthority();
 
-  boolean isServerAdmin();
+  /**
+ * Determines whether the authenticated requester has server-administrator privileges.
+ *
+ * @return {@code true} if the requester is a server administrator, {@code false} otherwise
+ */
+boolean isServerAdmin();
 
   /**
  * Requires the current requester to have server administrator privileges.
  */
 void requireServerAdmin();
 
-  void requireHouseholdRole(HouseholdRole minimum);
+  /**
+ * Ensures the authenticated requester has at least the specified household role.
+ *
+ * @param minimum the minimum household role required
+ */
+void requireHouseholdRole(HouseholdRole minimum);
 
   boolean canViewActivityOf(UUID profileId);
 }

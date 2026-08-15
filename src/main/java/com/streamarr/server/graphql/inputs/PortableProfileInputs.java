@@ -77,9 +77,9 @@ public final class PortableProfileInputs {
 
   public record ForceProfileUnshare(String shareId, String password, String reason) {
     /**
-     * Returns a string representation of this input with the password redacted.
+     * Formats this unshare request with its password redacted.
      *
-     * @return a representation containing the share ID and reason
+     * @return a representation containing the share ID, redacted password, and reason
      */
     @Override
     public String toString() {
@@ -95,9 +95,9 @@ public final class PortableProfileInputs {
       String password,
       String reason) {
     /**
-     * Returns a string representation that excludes the password.
+     * Formats this manager override with its password redacted.
      *
-     * @return a representation of this override with the password redacted
+     * @return a representation of this override with the password replaced by {@code <redacted>}
      */
     @Override
     public String toString() {

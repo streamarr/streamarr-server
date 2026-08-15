@@ -56,6 +56,9 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
 
   private final List<UserAccount> accounts = new ArrayList<>();
 
+  /**
+   * Deletes device authorizations and seeded accounts created during the test.
+   */
   @AfterEach
   void deleteSeededRows() {
     authorizationRepository.deleteAll();
@@ -517,6 +520,14 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
             .andExpect(uncacheable()));
   }
 
+  /**
+   * Looks up a device authorization using an authenticated approver and user code.
+   *
+   * @param approver the authenticated account performing the lookup
+   * @param userCode the user code identifying the device authorization
+   * @return the authorization lookup response
+   * @throws Exception if the request or response processing fails
+   */
   private JsonNode lookup(UserAccount approver, String userCode) throws Exception {
     return readJson(
         mockMvc

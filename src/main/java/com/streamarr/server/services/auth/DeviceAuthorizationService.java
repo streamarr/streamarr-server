@@ -132,6 +132,12 @@ public class DeviceAuthorizationService {
     return viewOf(authorization, authorization.getStatus());
   }
 
+  /**
+   * Applies an approval or denial decision to a pending device authorization.
+   *
+   * @param command the decision and account making it
+   * @return the authorization view with the requested decision status
+   */
   @Transactional
   public DeviceAuthorizationView decide(DeviceDecisionCommand command) {
     guessThrottle.registerAttempt(command.decidedByAccountId());

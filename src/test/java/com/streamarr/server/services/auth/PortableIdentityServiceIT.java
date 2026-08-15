@@ -164,10 +164,11 @@ class PortableIdentityServiceIT extends AbstractIntegrationTest {
   }
 
   /**
-   * Waits for a synchronization latch to complete within ten seconds.
+   * Waits for the latch to complete for up to ten seconds.
    *
    * @param latch the latch to await
-   * @throws IllegalStateException if the wait is interrupted or the latch does not complete in time
+   * @throws IllegalStateException if the waiting thread is interrupted
+   * @throws AssertionError if the latch does not complete within ten seconds
    */
   private void awaitLatch(CountDownLatch latch) {
     try {

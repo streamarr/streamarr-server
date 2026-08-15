@@ -265,12 +265,12 @@ public class PortableIdentityService {
   }
 
   /**
-   * Executes an operation within a transaction, retrying eligible SQL serialization or deadlock failures.
+   * Executes an operation transactionally and retries eligible serialization or deadlock failures.
    *
    * @param <T>       the operation result type
-   * @param operation  the operation to execute
-   * @return           the operation result
-   * @throws RuntimeException if the operation fails with a non-retryable error or exceeds the retry limit
+   * @param operation the operation to execute
+   * @return          the operation result
+   * @throws RuntimeException if the operation fails with a non-retryable error or remains unsuccessful after the retry limit
    */
   private <T> T execute(Supplier<T> operation) {
     for (var attempt = 1; ; attempt++) {
@@ -312,6 +312,12 @@ public class PortableIdentityService {
         });
   }
 
+  /**
+   * Finds the first retryable SQL state in the failure's cause chain and chained SQL exceptions.
+   *
+   * @param failure the failure to inspect
+   * @return the matching SQL state, or an empty optional if none is retryable
+   */
   private Optional<String> retryableSqlState(Throwable failure) {
     for (var cause = failure; cause != null; cause = cause.getCause()) {
       if (!(cause instanceof SQLException sqlException)) {

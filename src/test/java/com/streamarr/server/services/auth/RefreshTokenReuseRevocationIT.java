@@ -38,6 +38,9 @@ class RefreshTokenReuseRevocationIT extends AbstractIntegrationTest {
 
   private UserAccount account;
 
+  /**
+   * Deletes the test account and its cascaded data after each test.
+   */
   @AfterEach
   void deleteAccountAndCascades() {
     if (account != null) {

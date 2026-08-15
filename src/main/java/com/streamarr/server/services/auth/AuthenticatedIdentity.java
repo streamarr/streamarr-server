@@ -76,6 +76,13 @@ public record AuthenticatedIdentity(
         .build();
   }
 
+  /**
+   * Extracts the account role from the JWT claims.
+   *
+   * @param jwt the JWT containing the account role claims
+   * @return the first account role specified in the JWT
+   * @throws AuthenticationRequiredException if the JWT contains no roles
+   */
   private static AccountRole roleClaim(Jwt jwt) {
     var roles = jwt.getClaimAsStringList(TokenClaims.ROLES);
     if (roles == null || roles.isEmpty()) {

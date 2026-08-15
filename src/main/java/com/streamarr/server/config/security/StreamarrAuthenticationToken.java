@@ -34,6 +34,11 @@ public class StreamarrAuthenticationToken extends AbstractAuthenticationToken {
     setAuthenticated(true);
   }
 
+  /**
+   * Retrieves the authenticated identity represented by this token.
+   *
+   * @return the authenticated identity
+   */
   @Override
   public AuthenticatedIdentity getPrincipal() {
     return identity;

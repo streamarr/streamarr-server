@@ -59,6 +59,9 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   private final List<UserAccount> accounts = new ArrayList<>();
 
+  /**
+   * Cleans up authorization records, seeded accounts, and test state after each test.
+   */
   @AfterEach
   void deleteSeededRows() {
     gatedIssuer.reset();
@@ -71,6 +74,11 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   @TestConfiguration
   static class GatedIssuerConfig {
 
+    /**
+     * Creates the primary clock used by the integration tests.
+     *
+     * @return the configured gated system clock
+     */
     @Bean
     @Primary
     GatedClock gatedClock() {

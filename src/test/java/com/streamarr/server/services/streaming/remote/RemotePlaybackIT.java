@@ -451,6 +451,13 @@ class RemotePlaybackIT {
     assertThat(command).containsSubsequence("-hls_segment_type", expectedSegmentType);
   }
 
+  /**
+   * Retrieves the value immediately following a flag in a command.
+   *
+   * @param command the command arguments containing the flag and its value
+   * @param flag the flag whose following value should be retrieved
+   * @return the argument immediately following the specified flag
+   */
   private String argument(List<String> command, String flag) {
     return command.get(command.indexOf(flag) + 1);
   }

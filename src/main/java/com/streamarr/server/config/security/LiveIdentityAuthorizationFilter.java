@@ -29,6 +29,9 @@ public class LiveIdentityAuthorizationFilter extends OncePerRequestFilter {
 
   /**
    * Validates live authorization state and adjusts profile-scoped authentication when no active profile exists.
+   *
+   * <p>Playback-scoped and non-Streamarr authentications continue without validation. Authentication failures
+   * are forwarded to the authentication entry point.
    */
   @Override
   protected void doFilterInternal(

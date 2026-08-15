@@ -25,9 +25,9 @@ public record HouseholdOwnershipTransferCommand(
   }
 
   /**
-   * Returns a string representation containing the account identifiers, household identifier, and transfer reason.
+   * Formats this command with its account identifiers, household identifier, and transfer reason.
    *
-   * @return a string representation of this command without its password
+   * @return a string representation containing the identifiers and reason, without the password
    */
   @Override
   public String toString() {

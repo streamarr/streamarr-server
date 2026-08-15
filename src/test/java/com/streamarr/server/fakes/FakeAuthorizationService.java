@@ -48,6 +48,11 @@ public final class FakeAuthorizationService implements AuthorizationService {
     return currentIdentity().accountId();
   }
 
+  /**
+   * Obtains the current household identifier.
+   *
+   * @return the current household identifier
+   */
   @Override
   public UUID requireHousehold() {
     return currentIdentity().householdId();
@@ -89,6 +94,11 @@ public final class FakeAuthorizationService implements AuthorizationService {
     return currentIdentity().role() == AccountRole.ADMIN;
   }
 
+  /**
+   * Requires the current identity to have server administrator privileges.
+   *
+   * @throws AccessDeniedException if the current identity is not a server administrator
+   */
   @Override
   public void requireServerAdmin() {
     if (!isServerAdmin()) {

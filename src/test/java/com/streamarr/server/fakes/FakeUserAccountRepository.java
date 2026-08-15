@@ -42,6 +42,12 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     return super.save(entity);
   }
 
+  /**
+   * Finds the first user account matching the specified email address, ignoring case.
+   *
+   * @param email the email address to search for
+   * @return the matching user account, or an empty optional if none is found
+   */
   @Override
   public Optional<UserAccount> findByEmailIgnoreCase(String email) {
     return database.values().stream()

@@ -14,6 +14,11 @@ public record ProfileManagerOverrideCommand(
     @NonNull String reason) {
 
   public static class ProfileManagerOverrideCommandBuilder {
+    /**
+     * Returns a redacted representation of the builder.
+     *
+     * @return a constant representation that omits sensitive field values
+     */
     @Override
     public String toString() {
       return "ProfileManagerOverrideCommandBuilder[REDACTED]";

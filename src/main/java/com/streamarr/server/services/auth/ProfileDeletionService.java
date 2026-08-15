@@ -35,10 +35,11 @@ public class ProfileDeletionService {
   /**
    * Deletes a profile after validating credentials, management authority, and deletion constraints.
    *
-   * @param command the deletion request containing the acting account, profile, and password
+   * @param command the request containing the acting account, target profile, and password
+   * @throws InvalidCredentialsException if the supplied password is invalid
    * @throws ProfileManagementDeniedException if the acting account cannot manage the profile
    * @throws ProfileDeletionBlockedException if active shares, pending manager invitations, or an invalid manager count prevent deletion
-   * @throws ProfileAccessDeniedException if the profile cannot be accessed
+   * @throws ProfileAccessDeniedException if the acting account or profile cannot be accessed
    */
   @Transactional
   public void delete(DeleteProfileCommand command) {

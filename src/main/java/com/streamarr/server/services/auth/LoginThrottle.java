@@ -29,6 +29,12 @@ public class LoginThrottle {
 
   private final SlidingWindowAttemptBudget<String> budget;
 
+  /**
+   * Creates a login throttle using the configured attempt limit and time window.
+   *
+   * @param properties the login throttling configuration
+   * @param clock      the clock used to measure the throttling window
+   */
   public LoginThrottle(AuthThrottleProperties properties, Clock clock) {
     budget = new SlidingWindowAttemptBudget<>(properties.maxAttempts(), properties.window(), clock);
   }
@@ -36,7 +42,7 @@ public class LoginThrottle {
   /**
    * Registers a login attempt for an account and its source.
    *
-   * @param email the account email associated with the attempt
+   * @param email  the account email associated with the attempt
    * @param source the source associated with the attempt
    * @throws TooManyLoginAttemptsException if the account's attempt budget is exhausted
    */

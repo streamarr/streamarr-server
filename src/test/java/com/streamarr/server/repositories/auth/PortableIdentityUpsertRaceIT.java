@@ -224,6 +224,11 @@ class PortableIdentityUpsertRaceIT extends AbstractIntegrationTest {
       String tableName, CountDownLatch insertCompleted, CountDownLatch transitionCompleted) {
     var paused = new AtomicBoolean();
     return new ExecuteListener() {
+      /**
+       * Pauses execution after the first SQL statement referencing the target table completes.
+       *
+       * @param context the execution context containing the completed SQL statement
+       */
       @Override
       public void executeEnd(ExecuteContext context) {
         var sql = context.sql();

@@ -77,6 +77,11 @@ public class AuthTestSupport {
     return createIdentity(AccountRole.USER);
   }
 
+  /**
+   * Creates an administrator identity with its associated authentication entities.
+   *
+   * @return the created administrator identity
+   */
   public TestIdentity createAdminIdentity() {
     return createIdentity(AccountRole.ADMIN);
   }
@@ -135,10 +140,10 @@ public class AuthTestSupport {
   }
 
   /**
-   * Creates a complete authenticated test identity with the specified account role.
+   * Creates a fully authenticated test identity for the specified account role.
    *
    * @param role the role assigned to the account
-   * @return the created account, household, profile, session, and raw refresh token
+   * @return the created account, household, profile, authentication session, and raw refresh token
    */
   private TestIdentity createIdentity(AccountRole role) {
     return new TransactionTemplate(transactionManager)
@@ -195,6 +200,12 @@ public class AuthTestSupport {
     return accessTokenIssuer.issue(contextBuilder(identity).profileId(null).build()).value();
   }
 
+  /**
+   * Issues an access token for the identity's active profile.
+   *
+   * @param identity the test identity for which to issue the token
+   * @return the encoded profile access token
+   */
   public String profileBearer(TestIdentity identity) {
     return accessTokenIssuer.issue(contextBuilder(identity).build()).value();
   }

@@ -81,7 +81,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   /**
-   * Updates the active profile for an unre revoked authentication session.
+   * Updates the active profile for an unrevoked authentication session.
    *
    * @param session the session whose active profile selection is updated
    * @param now the timestamp recorded as the modification time
@@ -102,7 +102,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   /**
-   * Clears the active profile selection from live sessions for accounts in a household.
+   * Clears the active profile selection from live sessions belonging to accounts in a household.
    *
    * @param profileId the profile whose selection is cleared
    * @param householdId the household associated with the accounts

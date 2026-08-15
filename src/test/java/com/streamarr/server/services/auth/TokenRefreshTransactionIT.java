@@ -102,11 +102,11 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     }
 
     /**
-     * Issues an access token while coordinating test synchronization and optional failure injection.
+     * Issues an access token, optionally coordinating with test synchronization gates.
      *
-     * @param context the token issuance context
+     * @param context the context for token issuance
      * @return the issued access token
-     * @throws IllegalStateException if issuance failure has been injected or the gate is interrupted or times out
+     * @throws IllegalStateException if issuance failure is injected or synchronization is interrupted or times out
      */
     @Override
     public AccessToken issue(TokenContext context) {

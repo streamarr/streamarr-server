@@ -100,6 +100,11 @@ public class StreamingResolver {
     return Optional.ofNullable(input).map(this::buildOptionsFromInput).orElse(defaultOptions());
   }
 
+  /**
+   * Creates streaming options with automatic video quality and default codec and audio settings.
+   *
+   * @return the default streaming options
+   */
   private StreamingOptions defaultOptions() {
     return StreamingOptions.builder()
         .quality(VideoQuality.AUTO)

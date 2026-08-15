@@ -60,6 +60,11 @@ public class AuthController {
                 setupService.isSetupComplete(), deviceAuthorizationService.isPairingEnabled()));
   }
 
+  /**
+   * Logs out the current authentication session and expires its access and refresh cookies.
+   *
+   * @return an empty response with HTTP status 204
+   */
   @PostMapping("/logout")
   public ResponseEntity<Void> logout() {
     var identity = authorizationService.currentIdentity();

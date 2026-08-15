@@ -1316,7 +1316,11 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .getTokenValue();
   }
 
-  /** Minted against the real identity graph with a fixed past clock — expired but well-formed. */
+  /**
+   * Creates an expired access token for the seeded account and profile.
+   *
+   * @return a well-formed access token with an expiration time in the past
+   */
   private String expiredAccessToken() {
     var issued = refreshTokenService.createSession(account, "expired-token-test");
     var cryptoConfig = new TokenCryptoConfig();
@@ -1359,6 +1363,11 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .formatted(email, PASSWORD, setupHouseholdName);
   }
 
+  /**
+   * Authenticates the seeded account and extracts its refresh token.
+   *
+   * @return the refresh token returned by the login endpoint
+   */
   private String loginAndReturnRefreshToken() throws Exception {
     var response =
         mockMvc
@@ -1374,11 +1383,9 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   /**
-   * Redeems a refresh token and extracts the resulting account-scoped refresh token.
+   * Redeems a refresh token and extracts the account-scoped token issued in response.
    *
-   * @param refreshToken the refresh token to redeem
    * @return the refresh token issued by the authentication endpoint
-   * @throws Exception if the request or response processing fails
    */
   private String redeemAndReturnRefreshToken(String refreshToken) throws Exception {
     var response =
@@ -1417,6 +1424,11 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             });
   }
 
+  /**
+   * Creates and persists a portable profile within a transaction.
+   *
+   * @return the created portable profile
+   */
   private Profile createPortableProfile() {
     return new TransactionTemplate(transactionManager).execute(_ -> persistPortableProfile());
   }
@@ -1462,7 +1474,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   /**
-   * Deletes an account and its associated profiles, sharing records, invitations, and orphaned home household.
+   * Deletes an account, its managed profiles and related sharing records, and removes its orphaned home household.
+   * Records authorization for each deleted profile.
    *
    * @param accountId the identifier of the account to delete
    */

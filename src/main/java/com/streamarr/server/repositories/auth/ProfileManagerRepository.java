@@ -37,8 +37,10 @@ List<ProfileManager> findByProfileId(UUID profileId);
 List<ProfileManager> findByAccountId(UUID accountId);
 
   /**
- * Finds the account-profile association for the specified account and profile.
+ * Locates the association for the specified account and profile.
  *
+ * @param accountId the account identifier
+ * @param profileId the profile identifier
  * @return the matching association, if one exists
  */
 Optional<ProfileManager> findByAccountIdAndProfileId(UUID accountId, UUID profileId);

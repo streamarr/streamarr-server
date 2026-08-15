@@ -26,6 +26,12 @@ public class AuthExceptionHandler {
     return respond(HttpStatus.CONFLICT, "SETUP_ALREADY_COMPLETED", e);
   }
 
+  /**
+   * Handles invalid authentication credentials.
+   *
+   * @param e the exception containing the authentication error message
+   * @return an unauthorized response with the {@code INVALID_CREDENTIALS} error code
+   */
   @ExceptionHandler(InvalidCredentialsException.class)
   public ResponseEntity<AuthErrorResponse> handleInvalidCredentials(InvalidCredentialsException e) {
     return respond(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", e);

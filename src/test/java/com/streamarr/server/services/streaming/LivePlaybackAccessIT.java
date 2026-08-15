@@ -30,6 +30,9 @@ class LivePlaybackAccessIT extends AbstractIntegrationTest {
   private AuthTestSupport.TestIdentity identity;
   private StreamSession streamSession;
 
+  /**
+   * Creates and registers an authenticated runtime stream session for the test.
+   */
   @BeforeEach
   void setUp() {
     identity = authTestSupport.createIdentity();

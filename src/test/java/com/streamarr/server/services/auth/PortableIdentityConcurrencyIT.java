@@ -242,9 +242,10 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
   }
 
   /**
-   * Changes the specified profile's kind to adult.
+   * Changes the specified profile's kind to adult and synchronizes at the barrier.
    *
    * @param profileId the identifier of the profile to update
+   * @param barrier   the barrier used to coordinate concurrent mutations
    */
   private void changeKind(UUID profileId, CyclicBarrier barrier) {
     var profile = profileRepository.findById(profileId).orElseThrow();
@@ -282,6 +283,15 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     await(barrier);
   }
 
+  /**
+   * Verifies that another manager exists, synchronizes with the concurrent operation,
+   * and removes the specified manager.
+   *
+   * @param profileId the profile whose manager is being removed
+   * @param accountId the account of the manager being removed
+   * @param barrier the synchronization barrier for the concurrent mutations
+   * @throws IllegalStateException if the manager is not found or no other manager exists
+   */
   private void preflightRelinquish(UUID profileId, UUID accountId, CyclicBarrier barrier) {
     var manager = managerRepository.findByAccountIdAndProfileId(accountId, profileId).orElseThrow();
     if (managerRepository.countByProfileId(profileId) <= 1) {
@@ -503,6 +513,11 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     return null;
   }
 
+  /**
+   * Provides the supported transaction isolation levels and their expected SQL states.
+   *
+   * @return stream of isolation-level names, constants, and expected SQL states
+   */
   private static Stream<Arguments> isolationLevels() {
     return Stream.of(
         Arguments.of("READ COMMITTED", TransactionDefinition.ISOLATION_READ_COMMITTED, "23514"),

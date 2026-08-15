@@ -160,6 +160,13 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
                 .formatted(userCode, decision));
   }
 
+  /**
+   * Adds a bearer-token authorization header to the request.
+   *
+   * @param bearer  the access token
+   * @param request the request to authenticate
+   * @return        the request with the authorization header added
+   */
   private static MockHttpServletRequestBuilder authenticated(
       String bearer, MockHttpServletRequestBuilder request) {
     return request.header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer);

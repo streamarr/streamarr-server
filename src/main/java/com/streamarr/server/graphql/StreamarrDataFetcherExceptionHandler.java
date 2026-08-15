@@ -43,10 +43,10 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
   private final DataFetcherExceptionHandler delegate = new DefaultDataFetcherExceptionHandler();
 
   /**
-   * Converts recognized data-fetching exceptions into GraphQL errors with mapped messages and extensions.
+   * Converts recognized data-fetching exceptions into GraphQL error results and delegates unrecognized exceptions.
    *
-   * @param handlerParameters the parameters containing the data-fetching exception and environment
-   * @return the handled GraphQL error, or the delegated handler result for unrecognized exceptions
+   * @param handlerParameters the exception and data-fetching environment
+   * @return the GraphQL error result or the delegated handler result
    */
   @Override
   public CompletableFuture<DataFetcherExceptionHandlerResult> handleException(

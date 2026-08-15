@@ -13,9 +13,10 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
     implements ProfileHouseholdShareRepository {
 
   /**
-   * Ensures a pending profile-household share exists.
+   * Ensures that a pending profile-household share exists.
    *
-   * @return the existing or newly created share and whether it was inserted
+   * @return the existing share with an insertion flag of {@code false}, or the
+   *         newly created pending share with an insertion flag of {@code true}
    */
   @Override
   public synchronized ProfileHouseholdShareInsertResult insertPendingIfAbsent(

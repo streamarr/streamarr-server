@@ -184,12 +184,12 @@ class PortableIdentityDeletionAuthorizationRaceIT extends AbstractIntegrationTes
   }
 
   /**
-   * Attempts to authorize and delete the fixture's profile.
+   * Authorizes and deletes the fixture's profile within the current transaction.
    *
-   * @param connection        the database connection used for the operation
-   * @param fixture           the fixture containing the profile and authorizing manager IDs
-   * @param deletionStarted   latch signaled when deletion begins
-   * @return {@code null} if deletion succeeds; the SQL exception if it fails
+   * @param connection      the database connection used for the operation
+   * @param fixture         the fixture containing the profile and authorizing manager IDs
+   * @param deletionStarted latch signaled when the deletion operation begins
+   * @return {@code null} if the deletion succeeds; the {@link SQLException} if it fails
    */
   private Throwable deleteProfile(
       Connection connection, Fixture fixture, CountDownLatch deletionStarted) {

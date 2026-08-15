@@ -53,7 +53,7 @@ public class SessionScopeService {
   }
 
   /**
-   * Selects an active profile for an authentication session after validating access.
+   * Selects an active profile for an authentication session after validating access and profile entry authorization.
    *
    * @param profilePin the PIN used to authorize entry into the profile
    * @return a token context containing the account, updated session, and selected profile

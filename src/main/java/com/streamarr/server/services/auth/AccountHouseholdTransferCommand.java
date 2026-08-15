@@ -15,6 +15,11 @@ public record AccountHouseholdTransferCommand(
     @NonNull String reason) {
 
   public static class AccountHouseholdTransferCommandBuilder {
+    /**
+     * Identifies the builder without exposing its field values.
+     *
+     * @return a redacted builder description
+     */
     @Override
     public String toString() {
       return "AccountHouseholdTransferCommandBuilder[REDACTED]";

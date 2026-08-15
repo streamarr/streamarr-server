@@ -70,6 +70,12 @@ public class CredentialGuessThrottle {
     return budget.sweepExpired();
   }
 
+  /**
+   * Reserves an attempt for the specified credential key.
+   *
+   * @param key the credential budget to reserve an attempt from
+   * @throws TooManyCredentialAttemptsException if the attempt budget is exhausted
+   */
   private void register(CredentialKey key) {
     if (budget.reserve(key)) {
       return;

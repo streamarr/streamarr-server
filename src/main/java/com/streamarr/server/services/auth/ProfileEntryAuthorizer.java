@@ -16,8 +16,11 @@ public class ProfileEntryAuthorizer {
   private final SecurityAuditService auditService;
 
   /**
-   * Enforces PIN entry for profiles that require access verification.
+   * Enforces PIN verification when the profile requires access verification.
    *
+   * @param accountId the account that owns the profile
+   * @param profile   the profile requiring access
+   * @param pin       the PIN provided for verification
    * @throws ProfileAccessDeniedException if PIN verification fails
    */
   public void requireEntry(UUID accountId, Profile profile, String pin) {

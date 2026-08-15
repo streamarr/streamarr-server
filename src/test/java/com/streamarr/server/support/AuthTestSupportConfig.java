@@ -20,7 +20,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 public class AuthTestSupportConfig {
 
   /**
-   * Creates the authentication test support bean.
+   * Creates the authentication test support bean for the test application context.
    *
    * @param tokenProperties configuration used to create an expired token issuer
    * @return configured authentication test support

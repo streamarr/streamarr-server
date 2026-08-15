@@ -119,13 +119,12 @@ class HouseholdOwnershipTransferConcurrencyIT extends AbstractIntegrationTest {
   }
 
   /**
-   * Attempts to transfer household ownership to the specified account after the
-   * concurrent transfer test is released.
+   * Attempts to transfer household ownership after the concurrent transfer test is released.
    *
    * @param start           latch controlling when the transfer attempt begins
    * @param fixture         household and account identifiers used for the transfer
-   * @param targetAccountId account to receive household ownership
-   * @return {@code null} if the transfer succeeds, or the thrown runtime exception
+   * @param targetAccountId account receiving household ownership
+   * @return {@code null} if the transfer succeeds, or the runtime exception raised if it fails
    */
   private Throwable transferOwnershipAfter(
       CountDownLatch start, Fixture fixture, UUID targetAccountId) {

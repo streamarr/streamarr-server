@@ -111,6 +111,8 @@ public class ProfileSharingService {
    * Removes an active profile share from the acting account's household.
    *
    * @param removal identifies the share and account performing the removal
+   * @throws ProfileAccessDeniedException if the share or account is missing, the share is inactive,
+   *     or the account cannot administer the share's household
    */
   @Transactional
   public void removeFromHousehold(HouseholdProfileRemoval removal) {

@@ -20,7 +20,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   /**
    * Ensures that a pending share exists for the specified profile and household.
    *
-   * @return the existing or newly created share and whether it was created
+   * @return the existing or newly created share, together with whether it was created
    */
   @Override
   public ProfileHouseholdShareInsertResult insertPendingIfAbsent(UUID profileId, UUID householdId) {
@@ -64,6 +64,15 @@ public class ProfileHouseholdShareRepositoryCustomImpl
     }
   }
 
+  /**
+   * Creates a profile-household share with the specified identifiers and status.
+   *
+   * @param id           the share identifier
+   * @param profileId    the profile identifier
+   * @param householdId the household identifier
+   * @param status       the share status
+   * @return             the constructed profile-household share
+   */
   private ProfileHouseholdShare share(
       UUID id, UUID profileId, UUID householdId, ProfileShareStatus status) {
     return ProfileHouseholdShare.builder()

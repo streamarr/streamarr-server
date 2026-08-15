@@ -11,14 +11,22 @@ public interface AuthSessionRepositoryCustom {
 
   boolean hasLivePlaybackAuthority(PlaybackAuthority authority);
 
-  /** Revokes a live session, returning false when it was missing or already revoked. */
+  /**
+ * Revokes a session when it is currently live.
+ *
+ * @param reason the reason for revocation
+ * @param now    the time used to determine whether the session is live
+ * @return {@code true} if a live session was found and revoked, {@code false} otherwise
+ */
   boolean revoke(UUID sessionId, SessionRevocationReason reason, Instant now);
 
   /**
-   * Persists only the remembered profile selection when the session is still live. Returns false
-   * when the session is missing or revoked; revocation fields are never written from the supplied
-   * entity.
-   */
+ * Updates the remembered profile selection for a live session.
+ *
+ * @param session the session whose selection is updated
+ * @param now the time used to determine whether the session is live
+ * @return {@code true} if the live session was updated, {@code false} if the session is missing or revoked
+ */
   boolean updateSelectionIfLive(AuthSession session, Instant now);
 
   /** Clears remembered selections for a profile in one household after its active share ends. */

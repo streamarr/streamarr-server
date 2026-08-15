@@ -53,6 +53,11 @@ public class SetupService {
   private final WatchHistoryRepository watchHistoryRepository;
   private final PasswordEncoder passwordEncoder;
 
+  /**
+   * Determines whether initial server setup has been claimed.
+   *
+   * @return {@code true} if setup has been claimed, {@code false} otherwise
+   */
   public boolean isSetupComplete() {
     return serverBootstrapRepository.isClaimed();
   }
