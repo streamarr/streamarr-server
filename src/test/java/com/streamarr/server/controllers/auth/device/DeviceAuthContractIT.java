@@ -528,13 +528,6 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
             .andExpect(uncacheable()));
   }
 
-  /**
-   * Adds a bearer authorization header for the specified account to a request.
-   *
-   * @param account the account to authenticate
-   * @param request the request to authenticate
-   * @return the request with an authorization header
-   */
   private MockHttpServletRequestBuilder authenticated(
       UserAccount account, MockHttpServletRequestBuilder request) {
     var session = refreshTokenService.createSession(account, "web").session();
@@ -543,11 +536,6 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     return request.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken.value());
   }
 
-  /**
-   * Creates a test account and registers it for cleanup.
-   *
-   * @return the seeded test account
-   */
   private UserAccount seedAccount() {
     var account = authTestSupport.createAccount();
     accounts.add(account);

@@ -35,17 +35,6 @@ public class PlaybackTokenIssuer {
   private final Clock clock;
   private final PlaybackAuthorityGate authorityGate;
 
-  /**
-   * Issues a signed playback token for an authorized stream session.
-   *
-   * @param identity the authenticated identity requesting playback
-   * @param authority the playback authority to validate and bind to the identity
-   * @param streamSession the stream session to authorize
-   * @param validity the token validity duration
-   * @return the signed playback token with its expiration time and playback scope
-   * @throws AuthenticationRequiredException if playback is disallowed or the authority is not bound to the identity
-   * @throws SessionNotFoundException if the stream session is not owned by the authorized profile
-   */
   public AccessToken issue(
       AuthenticatedIdentity identity,
       PlaybackAuthority authority,
@@ -95,14 +84,6 @@ public class PlaybackTokenIssuer {
         .build();
   }
 
-  /**
-   * Determines whether the playback authority is bound to the authenticated identity.
-   *
-   * @param identity  the authenticated identity
-   * @param authority the playback authority to compare
-   * @return {@code true} if the account, authentication session, and profile identifiers match;
-   *         {@code false} otherwise
-   */
   private boolean isBoundTo(AuthenticatedIdentity identity, PlaybackAuthority authority) {
     return authority.accountId().equals(identity.accountId())
         && authority.authSessionId().equals(identity.authSessionId())

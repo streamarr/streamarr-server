@@ -80,11 +80,6 @@ class HttpPlaybackRevocationIT extends AbstractIntegrationTest {
         .andExpect(status().isNotFound());
   }
 
-  /**
-   * Issues a playback token for the configured stream session.
-   *
-   * @return the issued playback token value
-   */
   private String playbackToken() {
     var authenticatedIdentity =
         AuthenticatedIdentity.fromJwt(jwtDecoder.decode(authTestSupport.profileBearer(identity)));

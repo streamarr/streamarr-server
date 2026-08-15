@@ -46,12 +46,6 @@ public record AuthenticatedIdentity(
     }
   }
 
-  /**
-   * Creates an authenticated identity from JWT claims.
-   *
-   * @param jwt the JWT containing the identity claims
-   * @return the authenticated identity represented by the JWT
-   */
   public static AuthenticatedIdentity fromJwt(Jwt jwt) {
     return AuthenticatedIdentity.builder()
         .accountId(UUID.fromString(jwt.getSubject()))
@@ -84,13 +78,6 @@ public record AuthenticatedIdentity(
     return AccountRole.valueOf(roles.getFirst());
   }
 
-  /**
-   * Converts a JWT claim value to a UUID.
-   *
-   * @param jwt   the JWT containing the claim
-   * @param claim the name of the claim to convert
-   * @return the parsed UUID, or {@code null} when the claim is absent
-   */
   private static UUID uuidClaim(Jwt jwt, String claim) {
     var value = jwt.getClaimAsString(claim);
     if (value == null) {

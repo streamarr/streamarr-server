@@ -34,16 +34,6 @@ public class ServerAdministrationService {
   private final KidProfileManagerPolicy kidManagerPolicy;
   private final SecurityAuditService auditService;
 
-  /**
-   * Permanently deletes a profile through an authorized force-deletion operation.
-   *
-   * <p>Removes associated household shares, selections, invitations, and manager records,
-   * then records the deletion authorization and security audit event.
-   *
-   * @param command the force-deletion request containing the profile, acting account,
-   *                credentials, and reason
-   * @throws ProfileAccessDeniedException if the profile cannot be found
-   */
   @Transactional
   public void forceDeleteProfile(ForceProfileDeletionCommand command) {
     requireReason(command.reason());
@@ -77,11 +67,6 @@ public class ServerAdministrationService {
     profileRepository.delete(profile);
   }
 
-  /**
-   * Forcefully removes a profile's share with a household.
-   *
-   * @param command the authorization, share, and reason details for the unshare operation
-   */
   @Transactional
   public void forceUnshareProfile(ForceProfileUnshareCommand command) {
     requireReason(command.reason());
@@ -101,11 +86,6 @@ public class ServerAdministrationService {
             .build());
   }
 
-  /**
-   * Overrides management access for an account on a profile.
-   *
-   * @param command the authorization, target, action, and reason for the override
-   */
   @Transactional
   public void overrideProfileManager(ProfileManagerOverrideCommand command) {
     requireReason(command.reason());
@@ -131,23 +111,10 @@ public class ServerAdministrationService {
             .build());
   }
 
-  /**
-   * Grants the target account management access to the profile.
-   *
-   * @param command the manager override request containing the target account and profile identifiers
-   */
   private void grantManagement(ProfileManagerOverrideCommand command) {
     managerRepository.insertIfAbsent(command.targetAccountId(), command.profileId());
   }
 
-  /**
-   * Verifies fresh server administrator authority and records failed authentication attempts.
-   *
-   * @param accountId       the account requesting administrator authority
-   * @param password        the password used for verification
-   * @param targetProfileId the profile targeted by the administrative operation
-   * @throws InvalidCredentialsException if password verification fails
-   */
   private void requireFreshAuthority(UUID accountId, String password, UUID targetProfileId) {
     try {
       serverAdminAuthorizer.requireFreshAuthority(accountId, password);
@@ -163,13 +130,6 @@ public class ServerAdministrationService {
     }
   }
 
-  /**
-   * Removes the target account's management relationship from a profile.
-   *
-   * @param command the profile manager override request identifying the profile and account
-   * @throws ProfileAccessDeniedException if the account is not a manager of the profile
-   * @throws ProfileManagerInvariantException if removing the manager would leave the profile without a manager
-   */
   private void removeManagement(ProfileManagerOverrideCommand command) {
     var manager =
         managerRepository
@@ -182,12 +142,6 @@ public class ServerAdministrationService {
     managerRepository.delete(manager);
   }
 
-  /**
-   * Ensures that an administrative override reason is provided.
-   *
-   * @param reason the reason supplied for the administrative action
-   * @throws IllegalArgumentException if the reason is null or blank
-   */
   private void requireReason(String reason) {
     if (reason == null || reason.isBlank()) {
       throw new IllegalArgumentException("An override reason is required.");

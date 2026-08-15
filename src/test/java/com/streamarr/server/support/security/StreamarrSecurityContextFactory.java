@@ -13,13 +13,6 @@ final class StreamarrSecurityContextFactory {
 
   private StreamarrSecurityContextFactory() {}
 
-  /**
-   * Creates a security context for the specified token scope and account role.
-   *
-   * @param scope the token scope used to configure the identity and authority
-   * @param role  the account role assigned to the identity
-   * @return the configured security context
-   */
   static SecurityContext contextFor(TokenScope scope, AccountRole role) {
     var identity =
         AuthenticatedIdentity.builder()

@@ -16,12 +16,6 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
 
   private final Map<UUID, UUID> accountHomes = new HashMap<>();
 
-  /**
-   * Associates an account with a household.
-   *
-   * @param accountId   the account identifier
-   * @param householdId the household identifier
-   */
   public void registerAccountHome(UUID accountId, UUID householdId) {
     accountHomes.put(accountId, householdId);
   }
@@ -62,13 +56,6 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
     return findById(sessionId).isPresent();
   }
 
-  /**
-   * Updates the active profile selection for a live authentication session.
-   *
-   * @param session the session containing the updated profile selection
-   * @param now the current time
-   * @return {@code true} if the session exists and has not been revoked, {@code false} otherwise
-   */
   @Override
   public boolean updateSelectionIfLive(AuthSession session, Instant now) {
     return findById(session.getId())
@@ -81,14 +68,6 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
         .orElse(false);
   }
 
-  /**
-   * Clears the active profile selection for live sessions associated with a household.
-   *
-   * @param profileId   the profile whose selection should be cleared
-   * @param householdId the household associated with the sessions
-   * @param now         the current timestamp
-   * @return the number of sessions whose active profile selection was cleared
-   */
   @Override
   public int clearProfileSelection(UUID profileId, UUID householdId, Instant now) {
     var matches =
@@ -101,12 +80,6 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
     return matches.size();
   }
 
-  /**
-   * Clears active profile selections for all sessions belonging to an account.
-   *
-   * @param accountId the account whose active profile selections are cleared
-   * @return the number of sessions whose active profile selection was cleared
-   */
   @Override
   public int clearAccountSelections(UUID accountId, Instant now) {
     var matches =

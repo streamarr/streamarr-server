@@ -22,12 +22,6 @@ public class AccessTokenIssuer {
   private final AuthTokenProperties properties;
   private final Clock clock;
 
-  /**
-   * Issues an access token with an expiration time based on the configured access-token lifetime.
-   *
-   * @param context the token context containing account and session details
-   * @return the signed access token
-   */
   public AccessToken issue(TokenContext context) {
     // JWT timestamps carry whole seconds; truncate so expiresAt matches the encoded exp claim.
     var now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
@@ -47,14 +41,6 @@ public class AccessTokenIssuer {
     return mint(context, now, cappedExpiry);
   }
 
-  /**
-   * Creates a signed access token containing account, session, scope, and expiration claims.
-   *
-   * @param context   the account and session context for the token
-   * @param now       the token issue time
-   * @param expiresAt the token expiration time
-   * @return          the signed access token
-   */
   private AccessToken mint(TokenContext context, Instant now, Instant expiresAt) {
     var scope = resolveScope(context);
 
@@ -86,12 +72,6 @@ public class AccessTokenIssuer {
         .build();
   }
 
-  /**
-   * Determines the token scope from the presence of a profile identifier.
-   *
-   * @param context the token context containing the optional profile identifier
-   * @return {@code PROFILE} when a profile identifier is present; {@code ACCOUNT} otherwise
-   */
   private TokenScope resolveScope(TokenContext context) {
     if (context.profileId() != null) {
       return TokenScope.PROFILE;

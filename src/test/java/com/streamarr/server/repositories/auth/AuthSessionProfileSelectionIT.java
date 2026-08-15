@@ -59,25 +59,12 @@ class AuthSessionProfileSelectionIT extends AbstractIntegrationTest {
         () -> assertThat(activeProfileId(liveOtherHousehold)).isEqualTo(profileId));
   }
 
-  /**
-   * Creates and tracks a test identity for cleanup after the test.
-   *
-   * @return the created test identity
-   */
   private TestIdentity identity() {
     var identity = authTestSupport.createIdentity();
     identities.add(identity);
     return identity;
   }
 
-  /**
-   * Creates and persists an authentication session for the specified identity and profile.
-   *
-   * @param identity the identity associated with the session
-   * @param profileId the profile selected in the session
-   * @param revokedAt the revocation timestamp, or {@code null} for an active session
-   * @return the persisted authentication session
-   */
   private AuthSession session(TestIdentity identity, UUID profileId, Instant revokedAt) {
     return authSessionRepository.save(
         AuthSession.builder()
@@ -89,12 +76,6 @@ class AuthSessionProfileSelectionIT extends AbstractIntegrationTest {
             .build());
   }
 
-  /**
-   * Retrieves the active profile identifier for a persisted authentication session.
-   *
-   * @param session the authentication session whose active profile is retrieved
-   * @return the session's active profile identifier
-   */
   private UUID activeProfileId(AuthSession session) {
     return authSessionRepository.findById(session.getId()).orElseThrow().getActiveProfileId();
   }

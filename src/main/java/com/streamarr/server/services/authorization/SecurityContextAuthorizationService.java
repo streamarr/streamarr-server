@@ -24,12 +24,6 @@ public class SecurityContextAuthorizationService implements AuthorizationService
   private final RequestAuthorizationStateResolver stateResolver;
   private final ProfileHouseholdShareRepository shareRepository;
 
-  /**
-   * Retrieves the authenticated identity from the current security context.
-   *
-   * @return the authenticated identity
-   * @throws AuthenticationRequiredException if no supported authentication is present
-   */
   @Override
   public AuthenticatedIdentity currentIdentity() {
     var authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -39,22 +33,11 @@ public class SecurityContextAuthorizationService implements AuthorizationService
     throw new AuthenticationRequiredException();
   }
 
-  /**
-   * Retrieves the value of the current authentication token.
-   *
-   * @return the current token value
-   */
   @Override
   public String currentTokenValue() {
     return currentJwt().getTokenValue();
   }
 
-  /**
-   * Retrieves the expiration time of the current authentication token.
-   *
-   * @return the token's expiration time
-   * @throws AuthenticationRequiredException if the token has no expiration time
-   */
   @Override
   public Instant currentTokenExpiry() {
     var expiry = currentJwt().getExpiresAt();
@@ -64,32 +47,16 @@ public class SecurityContextAuthorizationService implements AuthorizationService
     throw new AuthenticationRequiredException();
   }
 
-  /**
-   * Retrieves the authenticated account identifier.
-   *
-   * @return the authenticated account identifier
-   */
   @Override
   public UUID requireAccountId() {
     return state().account().getId();
   }
 
-  /**
-   * Retrieves the identifier of the authenticated account's home household.
-   *
-   * @return the home household identifier
-   */
   @Override
   public UUID requireHousehold() {
     return state().account().getHomeHouseholdId();
   }
 
-  /**
-   * Requires an active profile for the current authentication context.
-   *
-   * @return the active profile identifier
-   * @throws ProfileRequiredException if no profile is active
-   */
   @Override
   public UUID requireProfile() {
     var profileId = state().activeProfileId();
@@ -99,12 +66,6 @@ public class SecurityContextAuthorizationService implements AuthorizationService
     throw new ProfileRequiredException();
   }
 
-  /**
-   * Requires an active profile and creates playback authorization for the current session.
-   *
-   * @return playback authorization containing the authentication session, account, household, and profile identifiers
-   * @throws ProfileRequiredException if no profile is active
-   */
   @Override
   public PlaybackAuthority requirePlaybackAuthority() {
     var state = state();
@@ -120,21 +81,11 @@ public class SecurityContextAuthorizationService implements AuthorizationService
         .build();
   }
 
-  /**
-   * Determines whether the current account has server administrator privileges.
-   *
-   * @return {@code true} if the account role is {@code ADMIN}, {@code false} otherwise
-   */
   @Override
   public boolean isServerAdmin() {
     return state().account().getAccountRole() == AccountRole.ADMIN;
   }
 
-  /**
-   * Requires the current account to have server administrator privileges.
-   *
-   * @throws AccessDeniedException if the current account is not a server administrator
-   */
   @Override
   public void requireServerAdmin() {
     if (!isServerAdmin()) {
@@ -142,12 +93,6 @@ public class SecurityContextAuthorizationService implements AuthorizationService
     }
   }
 
-  /**
-   * Requires the authenticated account to have at least the specified household role.
-   *
-   * @param minimum the minimum household role required
-   * @throws AccessDeniedException if the account's household role is insufficient
-   */
   @Override
   public void requireHouseholdRole(HouseholdRole minimum) {
     var actual = state().account().getHouseholdRole();
@@ -156,12 +101,6 @@ public class SecurityContextAuthorizationService implements AuthorizationService
     }
   }
 
-  /**
-   * Determines whether the current user can view activity for a profile.
-   *
-   * @param profileId the profile whose activity access is being checked
-   * @return {@code true} for administrators, the active profile, or profiles actively shared with a household where the user has a parent-level role; {@code false} otherwise
-   */
   @Override
   public boolean canViewActivityOf(UUID profileId) {
     if (profileId == null) {
@@ -180,12 +119,6 @@ public class SecurityContextAuthorizationService implements AuthorizationService
         profileId, state.account().getHomeHouseholdId(), ProfileShareStatus.ACTIVE);
   }
 
-  /**
-   * Resolves authorization state from the current authenticated security context.
-   *
-   * @return the current authorization state
-   * @throws AuthenticationRequiredException if no supported authentication token is present
-   */
   private RequestAuthorizationStateResolver.AuthorizationState state() {
     var authentication = SecurityContextHolder.getContext().getAuthentication();
     if (authentication instanceof StreamarrAuthenticationToken token) {
@@ -194,12 +127,6 @@ public class SecurityContextAuthorizationService implements AuthorizationService
     throw new AuthenticationRequiredException();
   }
 
-  /**
-   * Retrieves the JWT associated with the current authenticated request.
-   *
-   * @return the current JWT
-   * @throws AuthenticationRequiredException if the request does not have a valid authentication token
-   */
   private Jwt currentJwt() {
     var authentication = SecurityContextHolder.getContext().getAuthentication();
     if (authentication instanceof StreamarrAuthenticationToken token
@@ -209,12 +136,6 @@ public class SecurityContextAuthorizationService implements AuthorizationService
     throw new AuthenticationRequiredException();
   }
 
-  /**
-   * Assigns an authority ranking to a household role.
-   *
-   * @param role the household role to rank
-   * @return the role's authority level
-   */
   private static int rank(HouseholdRole role) {
     return switch (role) {
       case MEMBER -> 0;

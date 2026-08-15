@@ -35,13 +35,6 @@ public class StreamingResolver {
   private final SessionProgressService sessionProgressService;
   private final WatchStatusService watchStatusService;
 
-  /**
-   * Creates a streaming session for the specified media file.
-   *
-   * @param mediaFileId the identifier of the media file to stream
-   * @param options     optional streaming preferences
-   * @return the created streaming session details
-   */
   @DgsMutation
   public StreamSessionDto createStreamSession(
       @InputArgument String mediaFileId, @InputArgument StreamingOptionsInput options) {
@@ -109,13 +102,6 @@ public class StreamingResolver {
         .build();
   }
 
-  /**
-   * Builds streaming options from the supplied input, applying defaults for quality,
-   * supported codecs, audio codecs, and maximum audio channels.
-   *
-   * @param input the requested streaming options
-   * @return the configured streaming options
-   */
   private StreamingOptions buildOptionsFromInput(StreamingOptionsInput input) {
     var quality =
         Optional.ofNullable(input.quality()).map(VideoQuality::valueOf).orElse(VideoQuality.AUTO);
@@ -142,14 +128,6 @@ public class StreamingResolver {
         .build();
   }
 
-  /**
-   * Converts a streaming session into a playback-ready DTO.
-   *
-   * @param session   the streaming session to convert
-   * @param identity  the authenticated identity requesting playback
-   * @param authority the playback authority for the session
-   * @return a DTO containing the session identifier, tokenized stream URL, and transcode mode
-   */
   private StreamSessionDto toDto(
       StreamSession session, AuthenticatedIdentity identity, PlaybackAuthority authority) {
     // The issuer refuses to mint for sessions the caller does not own — every DTO carries a

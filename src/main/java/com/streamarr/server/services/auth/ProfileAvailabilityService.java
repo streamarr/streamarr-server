@@ -25,13 +25,6 @@ public class ProfileAvailabilityService {
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileRepository profileRepository;
 
-  /**
-   * Lists profiles available to the account, preserving household share order.
-   *
-   * @param accountId       the account whose available profiles are requested
-   * @param activeProfileId the profile currently active for the account
-   * @return selectable profile metadata, including active and PIN-protection status
-   */
   @Transactional(readOnly = true)
   public List<SelectableProfile> selectableProfiles(UUID accountId, UUID activeProfileId) {
     var account = loadAccount(accountId);
@@ -56,13 +49,6 @@ public class ProfileAvailabilityService {
         .toList();
   }
 
-  /**
-   * Authorizes access to a profile shared with the account's home household.
-   *
-   * @param accountId the account requesting access
-   * @param profileId the profile to authorize
-   * @return the authorized profile
-   */
   @Transactional(readOnly = true, noRollbackFor = ProfileAccessDeniedException.class)
   public Profile requireSelectableProfile(UUID accountId, UUID profileId) {
     var account = loadAccount(accountId);
@@ -76,13 +62,6 @@ public class ProfileAvailabilityService {
     return profileRepository.findById(profileId).orElseThrow(ProfileAccessDeniedException::new);
   }
 
-  /**
-   * Loads the account identified by the given ID.
-   *
-   * @param accountId the account identifier
-   * @return the matching account
-   * @throws AuthenticationRequiredException if no account exists for the ID
-   */
   private UserAccount loadAccount(UUID accountId) {
     return accountRepository.findById(accountId).orElseThrow(AuthenticationRequiredException::new);
   }

@@ -15,11 +15,6 @@ import org.springframework.context.annotation.Bean;
 @TestConfiguration(proxyBeanMethods = false)
 public class ResolverAuthorizationTestConfig {
 
-  /**
-   * Provides a mocked authorization state resolver configured for test profile contexts.
-   *
-   * @return the configured authorization state resolver mock
-   */
   @Bean
   RequestAuthorizationStateResolver requestAuthorizationStateResolver() {
     var resolver = mock(RequestAuthorizationStateResolver.class);
@@ -27,11 +22,6 @@ public class ResolverAuthorizationTestConfig {
     return resolver;
   }
 
-  /**
-   * Configures a resolver to authorize the profile represented by each authentication token.
-   *
-   * @param resolver the resolver to configure
-   */
   public static void authorizeProfileContext(RequestAuthorizationStateResolver resolver) {
     when(resolver.resolve(any()))
         .thenAnswer(
@@ -53,11 +43,6 @@ public class ResolverAuthorizationTestConfig {
             });
   }
 
-  /**
-   * Provides a mocked profile household share repository for tests.
-   *
-   * @return a mocked profile household share repository
-   */
   @Bean
   ProfileHouseholdShareRepository profileHouseholdShareRepository() {
     return mock(ProfileHouseholdShareRepository.class);

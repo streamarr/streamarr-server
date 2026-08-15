@@ -30,9 +30,6 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
 
   private UserAccount account;
 
-  /**
-   * Deletes the test account and its dependent data after each test.
-   */
   @AfterEach
   void deleteAccountAndCascades() {
     if (account != null) {

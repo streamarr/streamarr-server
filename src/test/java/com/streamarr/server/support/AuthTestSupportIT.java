@@ -41,12 +41,6 @@ class AuthTestSupportIT extends AbstractIntegrationTest {
     }
   }
 
-  /**
-   * Saves an active profile share from one identity's profile to another identity's household.
-   *
-   * @param identity      the identity whose profile is shared
-   * @param otherIdentity the identity whose household receives the share
-   */
   private void saveActiveShare(
       AuthTestSupport.TestIdentity identity, AuthTestSupport.TestIdentity otherIdentity) {
     new TransactionTemplate(transactionManager)
@@ -60,12 +54,6 @@ class AuthTestSupportIT extends AbstractIntegrationTest {
                         .build()));
   }
 
-  /**
-   * Deletes the active profile share from the specified identity's profile to another identity's household.
-   *
-   * @param identity the identity whose profile is shared
-   * @param otherIdentity the identity whose household receives the share
-   */
   private void deleteActiveShare(
       AuthTestSupport.TestIdentity identity, AuthTestSupport.TestIdentity otherIdentity) {
     new TransactionTemplate(transactionManager)

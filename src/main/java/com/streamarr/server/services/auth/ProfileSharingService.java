@@ -28,13 +28,6 @@ public class ProfileSharingService {
   private final KidProfileManagerPolicy kidManagerPolicy;
   private final SecurityAuditService auditService;
 
-  /**
-   * Offers a profile for sharing with a target household.
-   *
-   * @param offer the profile-sharing offer and acting account details
-   * @return the existing or newly created pending household share
-   * @throws ProfileManagementDeniedException if the acting account cannot manage the profile
-   */
   @Transactional
   public ProfileHouseholdShare offer(ProfileShareOffer offer) {
     if (!managerRepository.existsByAccountIdAndProfileId(
@@ -56,13 +49,6 @@ public class ProfileSharingService {
     return result.share();
   }
 
-  /**
-   * Accepts a pending profile share for the acting account's household.
-   *
-   * @param acceptance the share acceptance request
-   * @return the activated profile share
-   * @throws ProfileAccessDeniedException if the share, account, or profile is unavailable, or the acceptance is unauthorized
-   */
   @Transactional
   public ProfileHouseholdShare accept(ProfileShareAcceptance acceptance) {
     var share =
@@ -107,11 +93,6 @@ public class ProfileSharingService {
     return acceptedShare;
   }
 
-  /**
-   * Removes an active profile share from the acting account's household.
-   *
-   * @param removal identifies the share and account performing the removal
-   */
   @Transactional
   public void removeFromHousehold(HouseholdProfileRemoval removal) {
     var share =
@@ -138,11 +119,6 @@ public class ProfileSharingService {
             .build());
   }
 
-  /**
-   * Rejects a pending profile share from the acting account's household.
-   *
-   * @param rejection the share and acting account identifying the rejection
-   */
   @Transactional
   public void reject(ProfileShareRejection rejection) {
     var share =
@@ -169,13 +145,6 @@ public class ProfileSharingService {
             .build());
   }
 
-  /**
-   * Cancels a pending profile share managed by the acting account.
-   *
-   * @param cancellation the share cancellation request
-   * @throws ProfileAccessDeniedException if the share does not exist or is not pending
-   * @throws ProfileManagementDeniedException if the acting account cannot manage the shared profile
-   */
   @Transactional
   public void cancel(ProfileShareCancellation cancellation) {
     var share =
@@ -198,12 +167,6 @@ public class ProfileSharingService {
             .build());
   }
 
-  /**
-   * Removes the active profile share from the acting account's home household.
-   *
-   * @param departure identifies the acting account and profile whose share is removed
-   * @throws ProfileAccessDeniedException if the account or active profile share cannot be found
-   */
   @Transactional
   public void leaveCurrentHome(ProfileHomeDeparture departure) {
     var account =
@@ -228,12 +191,6 @@ public class ProfileSharingService {
             .build());
   }
 
-  /**
-   * Determines whether a household role can administer the household.
-   *
-   * @param householdRole the household role to evaluate
-   * @return {@code true} for owner and parent roles, {@code false} otherwise
-   */
   private boolean canAdministerHousehold(HouseholdRole householdRole) {
     return householdRole == HouseholdRole.OWNER || householdRole == HouseholdRole.PARENT;
   }

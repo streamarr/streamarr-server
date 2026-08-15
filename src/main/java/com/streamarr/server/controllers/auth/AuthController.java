@@ -71,13 +71,6 @@ public class AuthController {
         .build();
   }
 
-  /**
-   * Changes the authenticated account's password and issues refreshed authentication credentials.
-   *
-   * @param request     the current and new password values
-   * @param httpRequest the request used to determine whether credentials should be returned in cookies
-   * @return            the refreshed access and refresh credentials
-   */
   @PostMapping("/change-password")
   public ResponseEntity<AuthTokensResponse> changePassword(
       @Valid @RequestBody ChangePasswordRequest request, HttpServletRequest httpRequest) {
@@ -101,13 +94,6 @@ public class AuthController {
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
-  /**
-   * Selects a profile for the current account and authentication session.
-   *
-   * @param request     the profile selection request, including the profile identifier and PIN
-   * @param httpRequest the HTTP request used to determine the access credential mode
-   * @return            the issued access credential in the response body or a cookie
-   */
   @PostMapping("/select-profile")
   public ResponseEntity<AuthTokensResponse> selectProfile(
       @Valid @RequestBody SelectProfileRequest request, HttpServletRequest httpRequest) {
@@ -120,13 +106,6 @@ public class AuthController {
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
-  /**
-   * Initializes the application and creates an administrative session.
-   *
-   * @param request    setup details and the requested credential delivery mode
-   * @param httpRequest HTTP request used to identify the device
-   * @return a created response containing access and refresh credentials in cookies or the response body
-   */
   @PostMapping(value = "/setup", consumes = APPLICATION_JSON_VALUE)
   public ResponseEntity<AuthTokensResponse> setup(
       @Valid @RequestBody SetupRequest request, HttpServletRequest httpRequest) {
@@ -147,12 +126,6 @@ public class AuthController {
     return respond(HttpStatus.CREATED, accessToken, issued.rawToken(), request.cookieMode());
   }
 
-  /**
-   * Authenticates an account and issues access and refresh credentials.
-   *
-   * @param request the login credentials and requested credential delivery mode
-   * @return an HTTP 200 response containing the issued credentials
-   */
   @PostMapping(value = "/login", consumes = APPLICATION_JSON_VALUE)
   public ResponseEntity<AuthTokensResponse> login(
       @Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {

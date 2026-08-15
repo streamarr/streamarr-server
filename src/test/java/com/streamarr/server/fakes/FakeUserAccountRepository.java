@@ -49,12 +49,6 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
         .findFirst();
   }
 
-  /**
-   * Finds the first account with the specified home household ID and owner role.
-   *
-   * @param homeHouseholdId the home household identifier
-   * @return the matching owner account, if one exists
-   */
   @Override
   public Optional<UserAccount> findOwnerByHomeHouseholdId(UUID homeHouseholdId) {
     return database.values().stream()

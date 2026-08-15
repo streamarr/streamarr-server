@@ -31,57 +31,28 @@ public class AuthExceptionHandler {
     return respond(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", e);
   }
 
-  /**
-   * Handles login attempts that exceed the permitted limit.
-   *
-   * @param e the exception describing the excessive login attempts
-   * @return an error response with HTTP status 429 and code {@code TOO_MANY_ATTEMPTS}
-   */
   @ExceptionHandler(TooManyLoginAttemptsException.class)
   public ResponseEntity<AuthErrorResponse> handleTooManyAttempts(TooManyLoginAttemptsException e) {
     return respond(HttpStatus.TOO_MANY_REQUESTS, "TOO_MANY_ATTEMPTS", e);
   }
 
-  /**
-   * Handles credential attempt limit violations.
-   *
-   * @param e the exception describing the exceeded credential attempt limit
-   * @return an error response with HTTP status 429 and code {@code TOO_MANY_CREDENTIAL_ATTEMPTS}
-   */
   @ExceptionHandler(TooManyCredentialAttemptsException.class)
   public ResponseEntity<AuthErrorResponse> handleTooManyCredentialAttempts(
       TooManyCredentialAttemptsException e) {
     return respond(HttpStatus.TOO_MANY_REQUESTS, "TOO_MANY_CREDENTIAL_ATTEMPTS", e);
   }
 
-  /**
-   * Handles rejected refresh tokens without revealing whether a token was previously valid.
-   *
-   * @return an unauthorized response with the invalid refresh token error code and message
-   */
   @ExceptionHandler({InvalidRefreshTokenException.class, TokenReuseDetectedException.class})
   public ResponseEntity<AuthErrorResponse> handleInvalidRefresh() {
     return respond(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", REFRESH_TOKEN_REJECTED);
   }
 
-  /**
-   * Handles authentication-required exceptions with an unauthorized error response.
-   *
-   * @param e the authentication-required exception
-   * @return an unauthorized response with the {@code AUTHENTICATION_REQUIRED} error code
-   */
   @ExceptionHandler(AuthenticationRequiredException.class)
   public ResponseEntity<AuthErrorResponse> handleAuthenticationRequired(
       AuthenticationRequiredException e) {
     return respond(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", e);
   }
 
-  /**
-   * Handles household access denial errors.
-   *
-   * @param e the exception describing the access denial
-   * @return a forbidden response with the household access denied error code
-   */
   @ExceptionHandler(HouseholdAccessDeniedException.class)
   public ResponseEntity<AuthErrorResponse> handleHouseholdDenied(HouseholdAccessDeniedException e) {
     return respond(HttpStatus.FORBIDDEN, "HOUSEHOLD_ACCESS_DENIED", e);

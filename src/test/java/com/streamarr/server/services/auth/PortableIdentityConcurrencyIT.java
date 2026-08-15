@@ -156,14 +156,6 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     assertThat(managerRepository.countByProfileId(fixture.profileId())).isEqualTo(1);
   }
 
-  /**
-   * Executes two mutations concurrently and returns their results in submission order.
-   *
-   * @param first  the first mutation to execute
-   * @param second the second mutation to execute
-   * @return the results of both mutations in submission order
-   * @throws Exception if either mutation fails or does not complete within 30 seconds
-   */
   private List<MutationResult> race(Callable<MutationResult> first, Callable<MutationResult> second)
       throws Exception {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -173,12 +165,6 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     }
   }
 
-  /**
-   * Verifies that exactly one mutation committed and that the failed mutation produced the expected SQL state.
-   *
-   * @param results              the outcomes of the concurrent mutations
-   * @param expectedFailureState the SQL state expected from the failed mutation
-   */
   private void assertOneCommit(List<MutationResult> results, String expectedFailureState) {
     assertThat(results).filteredOn(MutationResult::committed).hasSize(1);
     assertThat(results).filteredOn(result -> !result.committed()).hasSize(1);
@@ -191,14 +177,6 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
         .isEqualTo(expectedFailureState);
   }
 
-  /**
-   * Creates a transactionally executed mutation that records whether the operation
-   * commits successfully or fails with a SQL state.
-   *
-   * @param isolation the transaction isolation level
-   * @param mutation the operation to execute within the transaction
-   * @return a callable that produces the mutation outcome
-   */
   private Callable<MutationResult> mutation(int isolation, ThrowingRunnable mutation) {
     return () -> {
       var transaction = new TransactionTemplate(transactionManager);
@@ -212,12 +190,6 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     };
   }
 
-  /**
-   * Removes the PIN from an adult profile and waits at the synchronization barrier.
-   *
-   * @param adultProfileId the identifier of the adult profile
-   * @param barrier        the barrier used to synchronize concurrent mutations
-   */
   private void removeAdultPin(UUID adultProfileId, CyclicBarrier barrier) {
     var adult = profileRepository.findById(adultProfileId).orElseThrow();
     adult.setPinHash(null);
@@ -225,12 +197,6 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     await(barrier);
   }
 
-  /**
-   * Activates the kid profile's household share and waits at the synchronization barrier.
-   *
-   * @param fixture the fixture containing the kid profile and household identifiers
-   * @param barrier the barrier used to synchronize concurrent mutations
-   */
   private void activateKidShare(ConcurrencyFixture fixture, CyclicBarrier barrier) {
     shareRepository.saveAndFlush(
         ProfileHouseholdShare.builder()
@@ -241,11 +207,6 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     await(barrier);
   }
 
-  /**
-   * Changes the specified profile's kind to adult.
-   *
-   * @param profileId the identifier of the profile to update
-   */
   private void changeKind(UUID profileId, CyclicBarrier barrier) {
     var profile = profileRepository.findById(profileId).orElseThrow();
     profile.setKind(ProfileKind.ADULT);
@@ -253,12 +214,6 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     await(barrier);
   }
 
-  /**
-   * Raises a profile's maximum allowed rating age to 16 and synchronizes at the barrier.
-   *
-   * @param profileId the profile whose rating ceiling is raised
-   * @param barrier   the barrier used to synchronize the concurrent mutation
-   */
   private void raiseCeiling(UUID profileId, CyclicBarrier barrier) {
     var profile = profileRepository.findById(profileId).orElseThrow();
     profile.setMaximumAllowedRatingAge(16);
@@ -266,12 +221,6 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     await(barrier);
   }
 
-  /**
-   * Removes the local manager from the fixture's kid profile and synchronizes with the concurrent mutation.
-   *
-   * @param fixture the concurrency test data containing the manager and kid profile
-   * @param barrier the barrier used to coordinate concurrent mutations
-   */
   private void removeLocalManager(ConcurrencyFixture fixture, CyclicBarrier barrier) {
     var manager =
         managerRepository
@@ -292,24 +241,10 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     managerRepository.flush();
   }
 
-  /**
-   * Creates the default concurrency-test fixture for a protected adult profile.
-   *
-   * @return the configured concurrency fixture
-   */
   private ConcurrencyFixture createFixture() {
     return createFixture(ProfileKind.ADULT, null, "encoded-pin", "Protected Adult");
   }
 
-  /**
-   * Creates the household, profiles, managers, and active share used by a concurrency test.
-   *
-   * @param kind the kind assigned to the primary profile
-   * @param ceiling the primary profile's maximum allowed rating age
-   * @param pinHash the primary profile's PIN hash
-   * @param name the primary profile's name
-   * @return identifiers for the created household, profiles, and parent account
-   */
   private ConcurrencyFixture createFixture(
       ProfileKind kind, Integer ceiling, String pinHash, String name) {
     return new TransactionTemplate(transactionManager)
@@ -364,11 +299,6 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
             });
   }
 
-  /**
-   * Creates a concurrency fixture with a kid profile managed by local and remote accounts.
-   *
-   * @return a fixture containing the household, profile, and local manager identifiers
-   */
   private ConcurrencyFixture createManagerFixture() {
     return new TransactionTemplate(transactionManager)
         .execute(
@@ -421,11 +351,6 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
             });
   }
 
-  /**
-   * Creates a profile fixture with two managers for concurrent relinquishment testing.
-   *
-   * @return the profile and manager identifiers used by the test
-   */
   private RelinquishmentFixture createRelinquishmentFixture() {
     return new TransactionTemplate(transactionManager)
         .execute(
@@ -474,12 +399,6 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
             });
   }
 
-  /**
-   * Waits for the concurrent mutations to reach the synchronization barrier.
-   *
-   * @param barrier the barrier coordinating the concurrent mutations
-   * @throws IllegalStateException if waiting at the barrier fails
-   */
   private void await(CyclicBarrier barrier) {
     try {
       barrier.await(10, TimeUnit.SECONDS);
@@ -488,12 +407,6 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
     }
   }
 
-  /**
-   * Extracts the SQL state from the first SQL exception in a failure's cause chain.
-   *
-   * @param failure the failure whose cause chain is inspected
-   * @return the SQL state, or {@code null} if no SQL exception is found
-   */
   private String sqlState(Throwable failure) {
     for (var cause = failure; cause != null; cause = cause.getCause()) {
       if (cause instanceof SQLException sqlException) {
@@ -512,10 +425,7 @@ class PortableIdentityConcurrencyIT extends AbstractIntegrationTest {
 
   @FunctionalInterface
   private interface ThrowingRunnable {
-    /**
- * Executes the mutation.
- */
-void run();
+    void run();
   }
 
   private record ConcurrencyFixture(

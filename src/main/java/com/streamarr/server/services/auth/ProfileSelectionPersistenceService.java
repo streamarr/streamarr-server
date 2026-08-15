@@ -14,15 +14,6 @@ public class ProfileSelectionPersistenceService {
 
   private final AuthSessionRepository sessionRepository;
 
-  /**
-   * Selects the active profile for an authenticated session.
-   *
-   * @param accountId the account associated with the session
-   * @param sessionId the session to update
-   * @param profileId the profile to select
-   * @return the updated authentication session
-   * @throws AuthenticationRequiredException if the session does not belong to the account or has been revoked
-   */
   @Transactional
   public AuthSession select(UUID accountId, UUID sessionId, UUID profileId) {
     var session =

@@ -91,11 +91,6 @@ class PortableIdentityDeletionAuthorizationRaceIT extends AbstractIntegrationTes
     }
   }
 
-  /**
-   * Creates the household, accounts, profile, and initial manager association used by the deletion race test.
-   *
-   * @return the identifiers for the profile, original manager, and new manager
-   */
   private Fixture createFixture() {
     return new TransactionTemplate(transactionManager)
         .execute(
@@ -122,13 +117,6 @@ class PortableIdentityDeletionAuthorizationRaceIT extends AbstractIntegrationTes
             });
   }
 
-  /**
-   * Creates a user account associated with the specified household and role.
-   *
-   * @param householdId the household associated with the account
-   * @param householdRole the account's role within the household
-   * @return a configured user account
-   */
   private UserAccount account(UUID householdId, HouseholdRole householdRole) {
     return UserAccount.builder()
         .email("deletion-race-" + UUID.randomUUID() + "@example.com")
@@ -140,13 +128,6 @@ class PortableIdentityDeletionAuthorizationRaceIT extends AbstractIntegrationTes
         .build();
   }
 
-  /**
-   * Acquires a row lock on the specified profile.
-   *
-   * @param connection the database connection used to acquire the lock
-   * @param profileId the identifier of the profile to lock
-   * @throws SQLException if the database operation fails
-   */
   private void lockProfile(Connection connection, UUID profileId) throws SQLException {
     try (var statement =
         connection.prepareStatement(
@@ -156,14 +137,6 @@ class PortableIdentityDeletionAuthorizationRaceIT extends AbstractIntegrationTes
     }
   }
 
-  /**
-   * Grants the new account manager access to the profile and commits the transaction.
-   *
-   * @param connection     the database connection used for the transaction
-   * @param fixture        the fixture containing the profile and new manager identifiers
-   * @param managerWritten signals that the manager insert has completed or failed
-   * @return the SQL exception if the operation fails; otherwise {@code null}
-   */
   private Throwable grantManager(
       Connection connection, Fixture fixture, CountDownLatch managerWritten) {
     try (var statement =
@@ -183,14 +156,6 @@ class PortableIdentityDeletionAuthorizationRaceIT extends AbstractIntegrationTes
     }
   }
 
-  /**
-   * Attempts to authorize and delete the fixture's profile.
-   *
-   * @param connection        the database connection used for the operation
-   * @param fixture           the fixture containing the profile and authorizing manager IDs
-   * @param deletionStarted   latch signaled when deletion begins
-   * @return {@code null} if deletion succeeds; the SQL exception if it fails
-   */
   private Throwable deleteProfile(
       Connection connection, Fixture fixture, CountDownLatch deletionStarted) {
     deletionStarted.countDown();
@@ -213,13 +178,6 @@ class PortableIdentityDeletionAuthorizationRaceIT extends AbstractIntegrationTes
     }
   }
 
-  /**
-   * Retrieves the PostgreSQL backend process ID for a database connection.
-   *
-   * @param connection the database connection
-   * @return the PostgreSQL backend process ID
-   * @throws SQLException if the process ID cannot be retrieved
-   */
   private int currentBackendPid(Connection connection) throws SQLException {
     try (var statement = connection.prepareStatement("SELECT pg_backend_pid()");
         var result = statement.executeQuery()) {
@@ -228,12 +186,6 @@ class PortableIdentityDeletionAuthorizationRaceIT extends AbstractIntegrationTes
     }
   }
 
-  /**
-   * Rolls back the connection and attaches any rollback failure to the original SQL failure.
-   *
-   * @param connection the connection to roll back
-   * @param failure the original SQL failure
-   */
   private void rollback(Connection connection, SQLException failure) {
     try {
       connection.rollback();
@@ -242,11 +194,6 @@ class PortableIdentityDeletionAuthorizationRaceIT extends AbstractIntegrationTes
     }
   }
 
-  /**
-   * Waits until the specified PostgreSQL backend is blocked while waiting for a database lock.
-   *
-   * @param backendPid the PostgreSQL backend process ID to monitor
-   */
   private void awaitBlockedOnDatabaseLock(int backendPid) {
     await()
         .atMost(Duration.ofSeconds(10))
@@ -259,12 +206,6 @@ class PortableIdentityDeletionAuthorizationRaceIT extends AbstractIntegrationTes
                         backendPid)));
   }
 
-  /**
-   * Waits for the latch for up to ten seconds.
-   *
-   * @param latch the latch to await
-   * @throws IllegalStateException if the wait is interrupted or the latch does not complete in time
-   */
   private void awaitLatch(CountDownLatch latch) {
     try {
       assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();

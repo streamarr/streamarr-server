@@ -17,9 +17,6 @@ public class LoginThrottleSweeper {
   private final LoginThrottle throttle;
   private final CredentialGuessThrottle credentialThrottle;
 
-  /**
-   * Removes expired entries from the login and credential throttles.
-   */
   @Scheduled(fixedDelayString = "${auth.throttle.sweep-interval-ms:900000}")
   public void sweep() {
     var loginEntries = throttle.sweepExpired();

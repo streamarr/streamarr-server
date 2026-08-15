@@ -32,9 +32,6 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
 
   private UserAccount account;
 
-  /**
-   * Deletes the test account and its related authentication data after each test.
-   */
   @AfterEach
   void deleteAccountAndCascades() {
     if (account != null) {

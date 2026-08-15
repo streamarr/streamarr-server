@@ -68,11 +68,6 @@ public class AuthTestSupport {
   private final PasswordEncoder passwordEncoder;
   private final PlatformTransactionManager transactionManager;
 
-  /**
-   * Creates a test identity with a user account role.
-   *
-   * @return the created test identity
-   */
   public TestIdentity createIdentity() {
     return createIdentity(AccountRole.USER);
   }
@@ -81,30 +76,14 @@ public class AuthTestSupport {
     return createIdentity(AccountRole.ADMIN);
   }
 
-  /**
-   * Provides the unique password generated for this test support instance.
-   *
-   * @return the generated test password
-   */
   public String password() {
     return password;
   }
 
-  /**
-   * Creates and persists a household owner account with default account attributes.
-   *
-   * @return the created user account
-   */
   public UserAccount createAccount() {
     return createAccount(AccountFixture.defaultAccountBuilder());
   }
 
-  /**
-   * Creates and persists a household owner account with a newly created home household.
-   *
-   * @param accountBuilder builder used to configure the account
-   * @return the persisted account
-   */
   public UserAccount createAccount(UserAccount.UserAccountBuilder<?, ?> accountBuilder) {
     return new TransactionTemplate(transactionManager)
         .execute(
@@ -119,11 +98,6 @@ public class AuthTestSupport {
             });
   }
 
-  /**
-   * Deletes an account and its home household.
-   *
-   * @param account the account to delete
-   */
   public void deleteAccount(UserAccount account) {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
@@ -134,12 +108,6 @@ public class AuthTestSupport {
             });
   }
 
-  /**
-   * Creates a complete authenticated test identity with the specified account role.
-   *
-   * @param role the role assigned to the account
-   * @return the created account, household, profile, session, and raw refresh token
-   */
   private TestIdentity createIdentity(AccountRole role) {
     return new TransactionTemplate(transactionManager)
         .execute(
@@ -185,12 +153,6 @@ public class AuthTestSupport {
             });
   }
 
-  /**
-   * Creates an access-token bearer value for the identity's account without a profile association.
-   *
-   * @param identity the identity for which to issue the account token
-   * @return the issued account access-token value
-   */
   public String accountBearer(TestIdentity identity) {
     return accessTokenIssuer.issue(contextBuilder(identity).profileId(null).build()).value();
   }
@@ -199,13 +161,6 @@ public class AuthTestSupport {
     return accessTokenIssuer.issue(contextBuilder(identity).build()).value();
   }
 
-  /**
-   * Creates a one-hour playback bearer token for the specified stream session.
-   *
-   * @param identity         the authenticated test identity associated with the playback session
-   * @param streamSessionId  the identifier of the stream session authorized by the token
-   * @return                 the issued playback bearer token
-   */
   public String playbackBearer(TestIdentity identity, UUID streamSessionId) {
     var authenticatedIdentity =
         AuthenticatedIdentity.fromJwt(jwtDecoder.decode(profileBearer(identity)));
@@ -226,20 +181,12 @@ public class AuthTestSupport {
         .value();
   }
 
-  /**
-   * Creates an expired bearer token for the identity's profile.
-   *
-   * @return the expired profile token value
-   */
+  /** A well-formed profile token whose lifetime already elapsed — minted on a fixed past clock. */
   public String expiredProfileBearer(TestIdentity identity) {
     return expiredTokenIssuer.issue(contextBuilder(identity).build()).value();
   }
 
-  /**
-   * Deletes the identity's profile, account, household, and associated profile shares.
-   *
-   * @param identity the identity and related entities to delete
-   */
+  /** Deletes everything createIdentity made in one transaction so deferred invariants hold. */
   public void deleteIdentity(TestIdentity identity) {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
@@ -259,12 +206,6 @@ public class AuthTestSupport {
             });
   }
 
-  /**
-   * Creates a request post-processor that adds a bearer authorization header.
-   *
-   * @param token the bearer token to include in the request
-   * @return a request post-processor that adds the authorization header
-   */
   public static RequestPostProcessor bearer(String token) {
     return request -> {
       request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
@@ -272,12 +213,6 @@ public class AuthTestSupport {
     };
   }
 
-  /**
-   * Creates an access-token issuer that produces expired tokens.
-   *
-   * @param properties the access-token configuration used to determine the expiration time
-   * @return an issuer configured with a clock sufficiently far in the past for its tokens to be expired
-   */
   static AccessTokenIssuer expiredIssuer(AuthTokenProperties properties) {
     var cryptoConfig = new TokenCryptoConfig();
     // Rewind past the configured TTL so the minted token is expired even when
@@ -290,12 +225,6 @@ public class AuthTestSupport {
         cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(properties)), properties, pastClock);
   }
 
-  /**
-   * Creates a token context builder for the identity's account, session, and active profile.
-   *
-   * @param identity the identity whose authentication details populate the context
-   * @return a token context builder containing the identity's authentication details
-   */
   private TokenContext.TokenContextBuilder contextBuilder(TestIdentity identity) {
     return TokenContext.builder()
         .account(identity.account())

@@ -77,11 +77,6 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
       return new GatedClock(Clock.systemUTC());
     }
 
-    /**
-     * Creates the primary access-token issuer used by the test configuration.
-     *
-     * @return the configured access-token issuer
-     */
     @Bean
     @Primary
     GatedAccessTokenIssuer gatedAccessTokenIssuer(
@@ -168,19 +163,10 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
     private final AtomicBoolean failNextIssue = new AtomicBoolean();
 
-    /**
-     * Creates a gated access-token issuer with the specified token configuration and clock.
-     */
     GatedAccessTokenIssuer(JwtEncoder jwtEncoder, AuthTokenProperties properties, Clock clock) {
       super(jwtEncoder, properties, clock);
     }
 
-    /**
-     * Issues an access token, optionally injecting a one-time failure for testing.
-     *
-     * @return the issued access token
-     * @throws IllegalStateException if an injected issuance failure is configured
-     */
     @Override
     public AccessToken issue(TokenContext context) {
       if (failNextIssue.getAndSet(false)) {
@@ -338,13 +324,6 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     assertThat(intervalOf(issued.userCode())).isEqualTo(5 + 3 * 5);
   }
 
-  /**
-   * Executes concurrent redemption attempts for a device code.
-   *
-   * @param deviceCode the device code to redeem
-   * @param pollers    the number of concurrent redemption attempts
-   * @return the results of all redemption attempts
-   */
   private List<DevicePollResult> pollConcurrently(String deviceCode, int pollers) throws Exception {
     var start = new CyclicBarrier(pollers);
     var attempts =
@@ -376,11 +355,6 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     return List.copyOf(results);
   }
 
-  /**
-   * Creates and tracks an account for use as an authorization approver.
-   *
-   * @return the created approver account
-   */
   private UserAccount seedApprover() {
     var approver = authTestSupport.createAccount();
     accounts.add(approver);

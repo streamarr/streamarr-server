@@ -16,13 +16,6 @@ public class IdentityQueryService {
   private final UserAccountRepository accountRepository;
   private final ProfileAvailabilityService profileAvailabilityService;
 
-  /**
-   * Builds the authenticated user's account view and selectable profiles.
-   *
-   * @param identity the authenticated user's identity and token scope
-   * @return the account, token scope, and selectable profiles
-   * @throws AuthenticationRequiredException if the account cannot be found
-   */
   @Transactional(readOnly = true)
   public MeView meView(AuthenticatedIdentity identity) {
     var account =

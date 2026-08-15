@@ -15,11 +15,6 @@ public record ResetProfilePinCommand(
     }
   }
 
-  /**
-   * Returns a representation of the command with the PIN hash redacted.
-   *
-   * @return the command representation with its PIN hash omitted
-   */
   @Override
   public String toString() {
     return "ResetProfilePinCommand[actingAccountId=%s, profileId=%s, pinHash=<redacted>]"

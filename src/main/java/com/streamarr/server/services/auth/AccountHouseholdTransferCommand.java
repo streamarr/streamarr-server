@@ -21,11 +21,6 @@ public record AccountHouseholdTransferCommand(
     }
   }
 
-  /**
-   * Returns a representation of this transfer command that excludes the password.
-   *
-   * @return a string containing the transfer details without the password
-   */
   @Override
   public String toString() {
     return "AccountHouseholdTransferCommand[actingAccountId=%s, targetAccountId=%s, targetHouseholdId=%s, targetRole=%s, reason=%s]"

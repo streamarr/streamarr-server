@@ -12,22 +12,12 @@ public record ForceProfileDeletionCommand(
     @NonNull String reason) {
 
   public static class ForceProfileDeletionCommandBuilder {
-    /**
-     * Returns a redacted representation of the builder.
-     *
-     * @return a constant representation that excludes builder contents
-     */
     @Override
     public String toString() {
       return "ForceProfileDeletionCommandBuilder[REDACTED]";
     }
   }
 
-  /**
-   * Formats the command with its account ID, profile ID, and deletion reason.
-   *
-   * @return a string representation that excludes the password
-   */
   @Override
   public String toString() {
     return "ForceProfileDeletionCommand[actingAccountId=%s, profileId=%s, reason=%s]"

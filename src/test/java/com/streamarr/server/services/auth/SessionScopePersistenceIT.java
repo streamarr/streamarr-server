@@ -69,9 +69,6 @@ class SessionScopePersistenceIT extends AbstractIntegrationTest {
         .anyMatch(event -> identity.profile().getId().equals(event.getTargetProfileId()));
   }
 
-  /**
-   * Removes the identity's active profile-household share.
-   */
   private void removeActiveShare() {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
@@ -85,9 +82,6 @@ class SessionScopePersistenceIT extends AbstractIntegrationTest {
             });
   }
 
-  /**
-   * Installs a database trigger that rejects updates to authentication-session revocation fields.
-   */
   private void installRevocationWriteGuard() {
     dsl.execute(
         """

@@ -20,11 +20,6 @@ public record ProfileManagerOverrideCommand(
     }
   }
 
-  /**
-   * Formats the command as a string without exposing the password.
-   *
-   * @return a string containing the command's non-sensitive fields
-   */
   @Override
   public String toString() {
     return "ProfileManagerOverrideCommand[actingAccountId=%s, targetAccountId=%s, profileId=%s, action=%s, reason=%s]"

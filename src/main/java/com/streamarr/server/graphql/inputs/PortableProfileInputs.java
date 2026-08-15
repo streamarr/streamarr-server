@@ -10,11 +10,6 @@ public final class PortableProfileInputs {
 
   public record ProfileCreation(
       String name, ProfileKind kind, Integer maximumAllowedRatingAge, String pin) {
-    /**
-     * Formats the profile creation input for display while redacting the PIN.
-     *
-     * @return a textual representation containing the profile name, kind, and maximum allowed rating age
-     */
     @Override
     public String toString() {
       return "ProfileCreation[name=%s, kind=%s, maximumAllowedRatingAge=%s, pin=<redacted>]"
@@ -39,11 +34,6 @@ public final class PortableProfileInputs {
   public record ProfileContentCeilingChange(String profileId, int maximumAllowedRatingAge) {}
 
   public record ProfilePinReset(String profileId, String newPin) {
-    /**
-     * Formats the profile PIN reset details while redacting the replacement PIN.
-     *
-     * @return a string containing the profile identifier and a redacted PIN
-     */
     @Override
     public String toString() {
       return "ProfilePinReset[profileId=%s, newPin=<redacted>]".formatted(profileId);
@@ -51,11 +41,6 @@ public final class PortableProfileInputs {
   }
 
   public record ProfileDeletion(String profileId, String password) {
-    /**
-     * Formats the profile deletion input while redacting its password.
-     *
-     * @return a string containing the profile ID and a redacted password
-     */
     @Override
     public String toString() {
       return "ProfileDeletion[profileId=%s, password=<redacted>]".formatted(profileId);
@@ -63,11 +48,6 @@ public final class PortableProfileInputs {
   }
 
   public record ForceProfileDeletion(String profileId, String password, String reason) {
-    /**
-     * Formats this deletion request without exposing its password.
-     *
-     * @return a representation containing the profile identifier and deletion reason, with the password redacted
-     */
     @Override
     public String toString() {
       return "ForceProfileDeletion[profileId=%s, password=<redacted>, reason=%s]"
@@ -76,11 +56,6 @@ public final class PortableProfileInputs {
   }
 
   public record ForceProfileUnshare(String shareId, String password, String reason) {
-    /**
-     * Returns a string representation of this input with the password redacted.
-     *
-     * @return a representation containing the share ID and reason
-     */
     @Override
     public String toString() {
       return "ForceProfileUnshare[shareId=%s, password=<redacted>, reason=%s]"
@@ -94,11 +69,6 @@ public final class PortableProfileInputs {
       ProfileManagerOverrideAction action,
       String password,
       String reason) {
-    /**
-     * Returns a string representation that excludes the password.
-     *
-     * @return a representation of this override with the password redacted
-     */
     @Override
     public String toString() {
       return "ManagerOverride[profileId=%s, targetAccountId=%s, action=%s, password=<redacted>, reason=%s]"
@@ -112,11 +82,6 @@ public final class PortableProfileInputs {
       HouseholdRole targetRole,
       String password,
       String reason) {
-    /**
-     * Formats the account transfer details while redacting the password.
-     *
-     * @return a string containing the transfer details without the password
-     */
     @Override
     public String toString() {
       return "AccountTransfer[targetAccountId=%s, targetHouseholdId=%s, targetRole=%s, password=<redacted>, reason=%s]"
@@ -126,11 +91,6 @@ public final class PortableProfileInputs {
 
   public record OwnershipTransfer(
       String householdId, String targetAccountId, String password, String reason) {
-    /**
-     * Returns a representation of this transfer request with the password redacted.
-     *
-     * @return a string containing the household ID, target account ID, and reason
-     */
     @Override
     public String toString() {
       return "OwnershipTransfer[householdId=%s, targetAccountId=%s, password=<redacted>, reason=%s]"

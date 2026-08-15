@@ -42,12 +42,6 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
 
   private final DataFetcherExceptionHandler delegate = new DefaultDataFetcherExceptionHandler();
 
-  /**
-   * Converts recognized data-fetching exceptions into GraphQL errors with mapped messages and extensions.
-   *
-   * @param handlerParameters the parameters containing the data-fetching exception and environment
-   * @return the handled GraphQL error, or the delegated handler result for unrecognized exceptions
-   */
   @Override
   public CompletableFuture<DataFetcherExceptionHandlerResult> handleException(
       DataFetcherExceptionHandlerParameters handlerParameters) {
@@ -68,12 +62,6 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
         DataFetcherExceptionHandlerResult.newResult().error(error).build());
   }
 
-  /**
-   * Removes a {@link CompletionException} wrapper when it has a cause.
-   *
-   * @param exception the exception to unwrap
-   * @return the underlying cause, or the original exception when no cause is available
-   */
   private static Throwable unwrap(Throwable exception) {
     if (exception instanceof CompletionException completion && completion.getCause() != null) {
       return completion.getCause();
@@ -81,23 +69,11 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     return exception;
   }
 
-  /**
-   * Creates GraphQL extensions for a recognized exception.
-   *
-   * @param exception the exception to map to an application error code
-   * @return an extension map containing the error code, or {@code null} when no code is mapped
-   */
   private static Map<String, Object> extensionsFor(Throwable exception) {
     var code = codeFor(exception);
     return code == null ? null : Map.of("code", code);
   }
 
-  /**
-   * Maps a recognized exception to its machine-readable error code.
-   *
-   * @param exception the exception to classify
-   * @return the corresponding error code, or {@code null} when no code is defined
-   */
   private static String codeFor(Throwable exception) {
     return switch (exception) {
       case ProfileRequiredException _ -> "PROFILE_REQUIRED";
@@ -124,12 +100,6 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     };
   }
 
-  /**
-   * Selects the client-facing message for an exception.
-   *
-   * @param exception the exception whose message should be selected
-   * @return a standardized message for recognized failures, or the exception's message otherwise
-   */
   private static String messageFor(Throwable exception) {
     if (exception instanceof DataIntegrityViolationException violation
         && hasSqlState(violation, "23514")) {
@@ -144,13 +114,6 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     return exception.getMessage();
   }
 
-  /**
-   * Determines whether an exception or its cause chain contains an SQL exception with the specified SQL state.
-   *
-   * @param exception    the exception whose cause chain to inspect
-   * @param expectedState the SQL state to find
-   * @return {@code true} if a matching SQL state is found, {@code false} otherwise
-   */
   private static boolean hasSqlState(Throwable exception, String expectedState) {
     var visited = Collections.newSetFromMap(new IdentityHashMap<Throwable, Boolean>());
     for (var current = exception;
@@ -164,13 +127,6 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     return false;
   }
 
-  /**
-   * Determines whether an SQL exception chain contains the specified SQL state.
-   *
-   * @param exception    the first exception in the chain
-   * @param expectedState the SQL state to find
-   * @return {@code true} if the chain contains the expected SQL state, {@code false} otherwise
-   */
   private static boolean sqlExceptionChainContains(SQLException exception, String expectedState) {
     for (var current = exception; current != null; current = current.getNextException()) {
       if (expectedState.equals(current.getSQLState())) {

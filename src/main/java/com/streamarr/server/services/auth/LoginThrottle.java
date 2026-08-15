@@ -33,13 +33,7 @@ public class LoginThrottle {
     budget = new SlidingWindowAttemptBudget<>(properties.maxAttempts(), properties.window(), clock);
   }
 
-  /**
-   * Registers a login attempt for an account and its source.
-   *
-   * @param email the account email associated with the attempt
-   * @param source the source associated with the attempt
-   * @throws TooManyLoginAttemptsException if the account's attempt budget is exhausted
-   */
+  /** Reserves one email slot or throws; source exhaustion only raises the alerting signal. */
   public void registerAttempt(String email, String source) {
     var emailKey = emailKey(email);
     var sourceKey = sourceKey(source);
@@ -57,10 +51,9 @@ public class LoginThrottle {
   }
 
   /**
-   * Clears the account's login-attempt budget after successful authentication and releases the current source attempt.
-   *
-   * @param email  the account email whose budget is cleared
-   * @param source the login source whose current attempt is released
+   * A successful login proves account ownership, so the email budget clears fully; the source
+   * budget only releases this attempt's own slot — one success must not vouch away a source's
+   * accumulated failures against other accounts.
    */
   public void reset(String email, String source) {
     budget.reset(emailKey(email));
@@ -68,20 +61,14 @@ public class LoginThrottle {
   }
 
   /**
-   * Removes entries whose attempts have fully expired.
-   *
-   * @return the number of removed entries
+   * Drops entries whose attempts all fell out of the window. Without this, unique sprayed keys
+   * would accumulate forever — they are never touched again, so per-touch pruning cannot reach
+   * them. Returns the number of evicted entries for observability.
    */
   public int sweepExpired() {
     return budget.sweepExpired();
   }
 
-  /**
-   * Normalizes an email address into a throttling key.
-   *
-   * @param email the email address to normalize
-   * @return the lowercased email prefixed with {@code email:}, or {@code null} if the email is {@code null}
-   */
   private static String emailKey(String email) {
     if (email == null) {
       return null;

@@ -27,12 +27,6 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
 
   private final EntityManager entityManager;
 
-  /**
-   * Determines whether the playback authority is valid for an active session.
-   *
-   * @param authority the session, account, household, and profile identifiers to verify
-   * @return {@code true} if the session is active, the account is enabled, and the profile has an active household share; {@code false} otherwise
-   */
   @Override
   public boolean hasLivePlaybackAuthority(PlaybackAuthority authority) {
     return dsl.fetchExists(
@@ -52,14 +46,6 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE)));
   }
 
-  /**
-   * Revokes an active authentication session.
-   *
-   * @param sessionId the identifier of the session to revoke
-   * @param reason    the reason for revocation
-   * @param now       the revocation timestamp
-   * @return {@code true} if the session was revoked, {@code false} otherwise
-   */
   @Override
   @Transactional
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -80,13 +66,6 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
         > 0;
   }
 
-  /**
-   * Updates the active profile for an unre revoked authentication session.
-   *
-   * @param session the session whose active profile selection is updated
-   * @param now the timestamp recorded as the modification time
-   * @return {@code true} if a session was updated, {@code false} otherwise
-   */
   @Override
   public boolean updateSelectionIfLive(AuthSession session, Instant now) {
     var nowOffset = now.atOffset(ZoneOffset.UTC);
@@ -101,14 +80,6 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
         > 0;
   }
 
-  /**
-   * Clears the active profile selection from live sessions for accounts in a household.
-   *
-   * @param profileId the profile whose selection is cleared
-   * @param householdId the household associated with the accounts
-   * @param now the timestamp recorded as the modification time
-   * @return the number of updated sessions
-   */
   @Override
   public int clearProfileSelection(UUID profileId, UUID householdId, Instant now) {
     var nowOffset = now.atOffset(ZoneOffset.UTC);
@@ -127,13 +98,6 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
         .execute();
   }
 
-  /**
-   * Clears active profile selections for all sessions belonging to an account.
-   *
-   * @param accountId the account whose session selections are cleared
-   * @param now       the timestamp recorded as the modification time
-   * @return the number of sessions updated
-   */
   @Override
   public int clearAccountSelections(UUID accountId, Instant now) {
     var nowOffset = now.atOffset(ZoneOffset.UTC);
@@ -147,12 +111,6 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
         .execute();
   }
 
-  /**
-   * Determines whether an authentication session exists for the specified identifier.
-   *
-   * @param sessionId the authentication session identifier
-   * @return {@code true} if a matching session exists, {@code false} otherwise
-   */
   @Override
   public boolean hasRow(UUID sessionId) {
     return dsl.fetchExists(dsl.selectOne().from(AUTH_SESSION).where(AUTH_SESSION.ID.eq(sessionId)));

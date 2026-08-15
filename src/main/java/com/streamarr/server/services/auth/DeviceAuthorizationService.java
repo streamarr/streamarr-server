@@ -173,13 +173,6 @@ public class DeviceAuthorizationService {
     return view;
   }
 
-  /**
-   * Redeems an approved authorization by issuing account-scoped tokens and marking it consumed.
-   *
-   * @param authorization the approved device authorization
-   * @param now the timestamp at which consumption is recorded
-   * @return a successful result containing the access and refresh tokens, or an expired result when the approving account is missing or disabled
-   */
   private DevicePollResult consume(DeviceAuthorization authorization, Instant now) {
     var approver = findEnabledApprover(authorization);
     if (approver.isEmpty()) {

@@ -46,12 +46,6 @@ public class PortableProfileResolver {
   private final PortableIdentityService portableIdentityService;
   private final ProfilePinService profilePinService;
 
-  /**
-   * Creates a portable profile for the authenticated account.
-   *
-   * @param input the profile name, kind, content-rating limit, and optional PIN
-   * @return a summary of the newly created profile
-   */
   @DgsMutation
   public PortableProfileSummary createPortableProfile(
       @InputArgument("input") PortableProfileInputs.ProfileCreation input) {
@@ -74,12 +68,6 @@ public class PortableProfileResolver {
         profile.getPinHash() != null && !profile.getPinHash().isBlank());
   }
 
-  /**
-   * Renames a portable profile.
-   *
-   * @param input the profile identifier and new name
-   * @return {@code true} when the profile is renamed successfully
-   */
   @DgsMutation
   public boolean renamePortableProfile(
       @InputArgument("input") PortableProfileInputs.ProfileRename input) {
@@ -94,12 +82,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Offers a portable profile to another household.
-   *
-   * @param input the profile and target household identifiers for the share offer
-   * @return a summary of the profile share offer
-   */
   @DgsMutation
   public PortableProfileShareSummary offerProfileShare(
       @InputArgument("input") PortableProfileInputs.ShareOffer input) {
@@ -115,12 +97,6 @@ public class PortableProfileResolver {
                 .build()));
   }
 
-  /**
-   * Accepts a portable profile share for the authenticated account.
-   *
-   * @param input the share identifier and optional management invitation identifier
-   * @return a summary of the accepted profile share
-   */
   @DgsMutation
   public PortableProfileShareSummary acceptProfileShare(
       @InputArgument("input") PortableProfileInputs.ShareAcceptance input) {
@@ -136,12 +112,6 @@ public class PortableProfileResolver {
                 .build()));
   }
 
-  /**
-   * Rejects an offered profile share.
-   *
-   * @param shareId the identifier of the profile share to reject
-   * @return {@code true} when the share is rejected
-   */
   @DgsMutation
   public boolean rejectProfileShare(@InputArgument String shareId) {
     var accountId = authorizationService.requireAccountId();
@@ -151,12 +121,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Cancels a pending profile-sharing offer.
-   *
-   * @param shareId the identifier of the profile-sharing offer to cancel
-   * @return {@code true} when the offer is cancelled
-   */
   @DgsMutation
   public boolean cancelProfileShare(@InputArgument String shareId) {
     var accountId = authorizationService.requireAccountId();
@@ -169,12 +133,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Removes a shared profile from its current household.
-   *
-   * @param shareId the identifier of the profile share to remove
-   * @return {@code true} when the profile is removed
-   */
   @DgsMutation
   public boolean removeProfileFromCurrentHousehold(@InputArgument String shareId) {
     var accountId = authorizationService.requireAccountId();
@@ -187,11 +145,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Removes the authenticated active profile from its current household.
-   *
-   * @return {@code true} when the profile leaves its current household
-   */
   @DgsMutation
   public boolean leaveCurrentHome() {
     var accountId = authorizationService.requireAccountId();
@@ -204,12 +157,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Invites an account to manage a portable profile.
-   *
-   * @param input the profile and account identifiers for the management invitation
-   * @return the created profile manager invitation summary
-   */
   @DgsMutation
   public PortableProfileManagerInvitationSummary inviteProfileManager(
       @InputArgument("input") PortableProfileInputs.ManagerInvite input) {
@@ -225,12 +172,6 @@ public class PortableProfileResolver {
                 .build()));
   }
 
-  /**
-   * Accepts an invitation to manage a portable profile.
-   *
-   * @param input the invitation identifier to accept
-   * @return a summary of the resulting profile management relationship
-   */
   @DgsMutation
   public PortableProfileManagerSummary acceptProfileManagerInvitation(
       @InputArgument("input") PortableProfileInputs.InvitationAcceptance input) {
@@ -244,12 +185,6 @@ public class PortableProfileResolver {
                 .build()));
   }
 
-  /**
-   * Rejects an invitation to manage a profile.
-   *
-   * @param invitationId the identifier of the management invitation to reject
-   * @return {@code true} when the invitation is rejected
-   */
   @DgsMutation
   public boolean rejectProfileManagerInvitation(@InputArgument String invitationId) {
     var accountId = authorizationService.requireAccountId();
@@ -262,12 +197,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Cancels a profile management invitation.
-   *
-   * @param invitationId the identifier of the invitation to cancel
-   * @return {@code true} when the invitation is cancelled
-   */
   @DgsMutation
   public boolean cancelProfileManagerInvitation(@InputArgument String invitationId) {
     var accountId = authorizationService.requireAccountId();
@@ -280,12 +209,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Ends the authenticated account's management of a profile.
-   *
-   * @param input identifies the profile whose management is relinquished
-   * @return {@code true} when management is relinquished
-   */
   @DgsMutation
   public boolean relinquishProfileManagement(
       @InputArgument("input") PortableProfileInputs.ProfileReference input) {
@@ -299,12 +222,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Changes the kind of a portable profile.
-   *
-   * @param input the profile identifier and new profile kind
-   * @return {@code true} when the profile kind is changed
-   */
   @DgsMutation
   public boolean setProfileKind(
       @InputArgument("input") PortableProfileInputs.ProfileKindChange input) {
@@ -319,12 +236,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Sets the maximum content-rating age allowed for a portable profile.
-   *
-   * @param input the profile identifier and maximum allowed rating age
-   * @return {@code true} if the content ceiling is set successfully
-   */
   @DgsMutation
   public boolean setProfileContentCeiling(
       @InputArgument("input") PortableProfileInputs.ProfileContentCeilingChange input) {
@@ -339,12 +250,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Removes the content-rating ceiling from a profile.
-   *
-   * @param input identifies the profile whose content-rating ceiling should be removed
-   * @return {@code true} when the ceiling is removed
-   */
   @DgsMutation
   public boolean removeProfileContentCeiling(
       @InputArgument("input") PortableProfileInputs.ProfileReference input) {
@@ -358,12 +263,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Resets the PIN for a portable profile.
-   *
-   * @param input the profile identifier and replacement PIN
-   * @return {@code true} when the PIN is reset successfully
-   */
   @DgsMutation
   public boolean resetProfilePin(
       @InputArgument("input") PortableProfileInputs.ProfilePinReset input) {
@@ -379,12 +278,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Deletes a portable profile using the supplied password.
-   *
-   * @param input profile identifier and password required for deletion
-   * @return {@code true} when the profile is deleted
-   */
   @DgsMutation
   public boolean deleteProfile(
       @InputArgument("input") PortableProfileInputs.ProfileDeletion input) {
@@ -399,12 +292,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Permanently deletes a profile with server-admin authorization.
-   *
-   * @param input the profile deletion details, including the profile identifier, password, and reason
-   * @return {@code true} when the profile is deleted
-   */
   @DgsMutation
   public boolean forceDeleteProfile(
       @InputArgument("input") PortableProfileInputs.ForceProfileDeletion input) {
@@ -421,12 +308,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Forcefully removes a profile share.
-   *
-   * @param input the share identifier, password, and reason for the unsharing operation
-   * @return {@code true} when the profile share is removed
-   */
   @DgsMutation
   public boolean forceUnshareProfile(
       @InputArgument("input") PortableProfileInputs.ForceProfileUnshare input) {
@@ -443,12 +324,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Overrides profile management for an account.
-   *
-   * @param input the profile manager override details, including the target account, profile, action, password, and reason
-   * @return {@code true} when the override is completed
-   */
   @DgsMutation
   public boolean overrideProfileManager(
       @InputArgument("input") PortableProfileInputs.ManagerOverride input) {
@@ -468,12 +343,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Transfers an account to a specified household with a designated role.
-   *
-   * @param input the target account, household, role, password, and transfer reason
-   * @return {@code true} when the transfer succeeds
-   */
   @DgsMutation
   public boolean transferAccountHousehold(
       @InputArgument("input") PortableProfileInputs.AccountTransfer input) {
@@ -493,12 +362,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Transfers ownership of a household to another account.
-   *
-   * @param input the household, target account, password, and reason for the transfer
-   * @return {@code true} when ownership is transferred successfully
-   */
   @DgsMutation
   public boolean transferHouseholdOwnership(
       @InputArgument("input") PortableProfileInputs.OwnershipTransfer input) {
@@ -516,13 +379,6 @@ public class PortableProfileResolver {
     return true;
   }
 
-  /**
-   * Converts a string identifier to a UUID.
-   *
-   * @param id the identifier to parse
-   * @return the parsed UUID
-   * @throws InvalidIdException if the identifier is not a valid UUID
-   */
   private UUID parseUuid(String id) {
     try {
       return UUID.fromString(id);
@@ -531,12 +387,6 @@ public class PortableProfileResolver {
     }
   }
 
-  /**
-   * Parses an optional identifier into a UUID.
-   *
-   * @param id the identifier to parse, or {@code null}
-   * @return the parsed UUID, or {@code null} when the identifier is {@code null}
-   */
   private UUID parseOptionalUuid(String id) {
     return id == null ? null : parseUuid(id);
   }

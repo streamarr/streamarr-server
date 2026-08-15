@@ -25,21 +25,10 @@ public class HouseholdProfileSafetyService {
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileRepository profileRepository;
 
-  /**
-   * Validates a candidate profile against the active profiles shared with a household.
-   *
-   * @param candidate   the profile to validate
-   * @param householdId the household whose shared profiles are included
-   */
   public void validateActivation(Profile candidate, UUID householdId) {
     validateHousehold(candidate, householdId);
   }
 
-  /**
-   * Validates an updated profile against the active profiles in each household where it is shared.
-   *
-   * @param candidate the updated profile to validate
-   */
   public void validatePolicyChange(Profile candidate) {
     var householdIds =
         shareRepository
@@ -71,12 +60,6 @@ public class HouseholdProfileSafetyService {
                 profilesFor(sharesByHousehold.getOrDefault(householdId, List.of()), profilesById)));
   }
 
-  /**
-   * Validates the candidate profile together with the household's active shared profiles.
-   *
-   * @param candidate   the profile to validate
-   * @param householdId the household whose active shared profiles are included
-   */
   private void validateHousehold(Profile candidate, UUID householdId) {
     var profileIds =
         shareRepository.findByHouseholdIdAndStatus(householdId, ProfileShareStatus.ACTIVE).stream()
@@ -96,13 +79,6 @@ public class HouseholdProfileSafetyService {
     return profilesFor(shares.stream().map(share -> share.getProfileId()).toList(), profilesById);
   }
 
-  /**
-   * Builds an ordered list of unique profiles for the specified identifiers.
-   *
-   * @param profileIds   the profile identifiers to resolve
-   * @param profilesById the profiles indexed by identifier
-   * @return the resolved profiles, excluding identifiers without a matching profile
-   */
   private List<Profile> profilesFor(Iterable<UUID> profileIds, Map<UUID, Profile> profilesById) {
     var profiles = new LinkedHashSet<Profile>();
     profileIds.forEach(profileId -> profiles.add(profilesById.get(profileId)));
@@ -110,12 +86,6 @@ public class HouseholdProfileSafetyService {
     return List.copyOf(profiles);
   }
 
-  /**
-   * Validates that profiles requiring a PIN have one configured.
-   *
-   * @param profiles profiles to validate
-   * @throws ProfileSafetyViolationException if one or more profiles require a PIN but do not have one
-   */
   private void validateProfiles(List<Profile> profiles) {
     var profilesRequiringPin =
         profiles.stream().filter(profile -> requiresPin(profile, profiles)).toList();
@@ -125,13 +95,6 @@ public class HouseholdProfileSafetyService {
     }
   }
 
-  /**
-   * Determines whether a profile must have a PIN based on the child profiles in the household.
-   *
-   * @param profile  the profile being evaluated
-   * @param profiles the profiles in the household
-   * @return {@code true} if the profile has no effective PIN and must have one, {@code false} otherwise
-   */
   private boolean requiresPin(Profile profile, List<Profile> profiles) {
     if (hasEffectivePin(profile)) {
       return false;
@@ -142,23 +105,10 @@ public class HouseholdProfileSafetyService {
         .anyMatch(kid -> requiresPinAlongside(profile, kid));
   }
 
-  /**
-   * Determines whether a profile has a non-null, nonblank PIN hash.
-   *
-   * @param profile the profile to inspect
-   * @return {@code true} if the profile has a non-null, nonblank PIN hash, {@code false} otherwise
-   */
   private boolean hasEffectivePin(Profile profile) {
     return profile.getPinHash() != null && !profile.getPinHash().isBlank();
   }
 
-  /**
-   * Determines whether a profile must have a PIN when sharing a household with a child profile.
-   *
-   * @param profile the profile being evaluated
-   * @param kid     the child profile used for comparison
-   * @return {@code true} if the profile is an adult or has a less restrictive rating ceiling than the child, {@code false} otherwise
-   */
   private boolean requiresPinAlongside(Profile profile, Profile kid) {
     if (profile.getKind() == ProfileKind.ADULT) {
       return true;
@@ -167,13 +117,6 @@ public class HouseholdProfileSafetyService {
     return isLessRestricted(profile.getMaximumAllowedRatingAge(), kid.getMaximumAllowedRatingAge());
   }
 
-  /**
-   * Determines whether a profile's rating ceiling is less restrictive than a child's ceiling.
-   *
-   * @param profileCeiling the profile's allowed rating ceiling
-   * @param kidCeiling the child's allowed rating ceiling
-   * @return {@code true} if the profile ceiling is less restrictive, {@code false} otherwise
-   */
   private boolean isLessRestricted(Integer profileCeiling, Integer kidCeiling) {
     if (profileCeiling == null) {
       return kidCeiling != null;
