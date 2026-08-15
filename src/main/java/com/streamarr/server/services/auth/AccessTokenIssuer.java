@@ -54,7 +54,9 @@ public class AccessTokenIssuer {
             .expiresAt(expiresAt)
             .claim(TokenClaims.ROLES, List.of(context.account().getAccountRole().name()))
             .claim(TokenClaims.SESSION_ID, context.session().getId().toString())
-            .claim(TokenClaims.SCOPE, scope.claimValue());
+            .claim(TokenClaims.SCOPE, scope.claimValue())
+            .claim(TokenClaims.HOUSEHOLD_ID, context.account().getHomeHouseholdId().toString())
+            .claim(TokenClaims.HOUSEHOLD_ROLE, context.account().getHouseholdRole().name());
 
     if (scope == TokenScope.PROFILE) {
       claims.claim(TokenClaims.PROFILE_ID, context.profileId().toString());

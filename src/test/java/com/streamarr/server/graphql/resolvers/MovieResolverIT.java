@@ -1,6 +1,5 @@
 package com.streamarr.server.graphql.resolvers;
 
-import static com.streamarr.server.support.security.ResolverAuthorizationTestConfig.authorizeProfileContext;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.groups.Tuple.tuple;
 
@@ -24,18 +23,15 @@ import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.authorization.RequestAuthorizationStateResolver;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("IntegrationTest")
 @EnableDgsTest
@@ -52,12 +48,6 @@ class MovieResolverIT extends AbstractIntegrationTest {
   @Autowired private RatingRepository ratingRepository;
   @Autowired private ReviewRepository reviewRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
-  @MockitoBean private RequestAuthorizationStateResolver authorizationStateResolver;
-
-  @BeforeEach
-  void authorizeProfile() {
-    authorizeProfileContext(authorizationStateResolver);
-  }
 
   @Test
   @DisplayName("Should resolve all movie relationships when the movie is queried")

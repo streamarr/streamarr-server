@@ -21,7 +21,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class SecurityContextAuthorizationService implements AuthorizationService {
 
-  private final RequestAuthorizationStateResolver stateResolver;
   private final ProfileHouseholdShareRepository shareRepository;
 
   @Override
@@ -49,17 +48,17 @@ public class SecurityContextAuthorizationService implements AuthorizationService
 
   @Override
   public UUID requireAccountId() {
-    return state().account().getId();
+    return currentIdentity().accountId();
   }
 
   @Override
   public UUID requireHousehold() {
-    return state().account().getHomeHouseholdId();
+    return currentIdentity().householdId();
   }
 
   @Override
   public UUID requireProfile() {
-    var profileId = state().activeProfileId();
+    var profileId = currentIdentity().profileId();
     if (profileId != null) {
       return profileId;
     }
@@ -68,22 +67,12 @@ public class SecurityContextAuthorizationService implements AuthorizationService
 
   @Override
   public PlaybackAuthority requirePlaybackAuthority() {
-    var state = state();
-    var profileId = state.activeProfileId();
-    if (profileId == null) {
-      throw new ProfileRequiredException();
-    }
-    return PlaybackAuthority.builder()
-        .authSessionId(currentIdentity().authSessionId())
-        .accountId(state.account().getId())
-        .householdId(state.account().getHomeHouseholdId())
-        .profileId(profileId)
-        .build();
+    return currentIdentity().playbackAuthority();
   }
 
   @Override
   public boolean isServerAdmin() {
-    return state().account().getAccountRole() == AccountRole.ADMIN;
+    return currentIdentity().role() == AccountRole.ADMIN;
   }
 
   @Override
@@ -95,7 +84,7 @@ public class SecurityContextAuthorizationService implements AuthorizationService
 
   @Override
   public void requireHouseholdRole(HouseholdRole minimum) {
-    var actual = state().account().getHouseholdRole();
+    var actual = currentIdentity().householdRole();
     if (rank(actual) < rank(minimum)) {
       throw new AccessDeniedException("Household role " + minimum + " or higher is required.");
     }
@@ -107,24 +96,15 @@ public class SecurityContextAuthorizationService implements AuthorizationService
       return false;
     }
 
-    var state = state();
-    if (state.account().getAccountRole() == AccountRole.ADMIN
-        || profileId.equals(state.activeProfileId())) {
+    var identity = currentIdentity();
+    if (identity.role() == AccountRole.ADMIN || profileId.equals(identity.profileId())) {
       return true;
     }
-    if (rank(state.account().getHouseholdRole()) < rank(HouseholdRole.PARENT)) {
+    if (rank(identity.householdRole()) < rank(HouseholdRole.PARENT)) {
       return false;
     }
     return shareRepository.existsByProfileIdAndHouseholdIdAndStatus(
-        profileId, state.account().getHomeHouseholdId(), ProfileShareStatus.ACTIVE);
-  }
-
-  private RequestAuthorizationStateResolver.AuthorizationState state() {
-    var authentication = SecurityContextHolder.getContext().getAuthentication();
-    if (authentication instanceof StreamarrAuthenticationToken token) {
-      return stateResolver.resolve(token);
-    }
-    throw new AuthenticationRequiredException();
+        profileId, identity.householdId(), ProfileShareStatus.ACTIVE);
   }
 
   private Jwt currentJwt() {

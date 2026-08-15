@@ -17,7 +17,6 @@ import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
-import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -38,11 +37,8 @@ class AuthorizationServiceTest {
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
   private final FakeProfileHouseholdShareRepository shareRepository =
       new FakeProfileHouseholdShareRepository();
-  private final RequestAuthorizationStateResolver stateResolver =
-      new RequestAuthorizationStateResolver(
-          accountRepository, sessionRepository, shareRepository, new MutexFactoryProvider());
   private final AuthorizationService authorizationService =
-      new SecurityContextAuthorizationService(stateResolver, shareRepository);
+      new SecurityContextAuthorizationService(shareRepository);
 
   @AfterEach
   void clearSecurityContext() {
@@ -50,21 +46,51 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should fail profile access closed when signed profile is no longer shared")
-  void shouldFailProfileAccessClosedWhenSignedProfileIsNoLongerShared() {
-    var homeHouseholdId = UUID.randomUUID();
-    var account = saveAccount(homeHouseholdId);
+  @DisplayName("Should authorize from signed snapshot when account state changes")
+  void shouldAuthorizeFromSignedSnapshotWhenAccountStateChanges() {
+    var signedHouseholdId = UUID.randomUUID();
+    var account = saveAccount(signedHouseholdId, HouseholdRole.PARENT, AccountRole.USER);
     var session = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
-    authenticate(account, session, UUID.randomUUID());
+    var profileId = UUID.randomUUID();
+    var identity =
+        AuthenticatedIdentity.builder()
+            .accountId(account.getId())
+            .role(AccountRole.USER)
+            .authSessionId(session.getId())
+            .scope(TokenScope.PROFILE)
+            .householdId(signedHouseholdId)
+            .householdRole(HouseholdRole.PARENT)
+            .profileId(profileId)
+            .build();
+    authenticate(identity, null);
 
-    assertThat(authorizationService.requireHousehold()).isEqualTo(homeHouseholdId);
-    assertThatThrownBy(authorizationService::requireProfile)
-        .isInstanceOf(ProfileRequiredException.class);
+    account.setHomeHouseholdId(UUID.randomUUID());
+    account.setHouseholdRole(HouseholdRole.MEMBER);
+    account.setAccountRole(AccountRole.ADMIN);
+
+    assertThat(authorizationService.requireAccountId()).isEqualTo(account.getId());
+    assertThat(authorizationService.requireHousehold()).isEqualTo(signedHouseholdId);
+    assertThat(authorizationService.requireProfile()).isEqualTo(profileId);
+    assertThat(authorizationService.isServerAdmin()).isFalse();
+    authorizationService.requireHouseholdRole(HouseholdRole.PARENT);
   }
 
   @Test
-  @DisplayName("Should build playback authority from live home and active share")
-  void shouldBuildPlaybackAuthorityFromLiveHomeAndActiveShare() {
+  @DisplayName("Should retain signed profile scope when profile is no longer shared")
+  void shouldRetainSignedProfileScopeWhenProfileIsNoLongerShared() {
+    var homeHouseholdId = UUID.randomUUID();
+    var account = saveAccount(homeHouseholdId);
+    var session = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
+    var profileId = UUID.randomUUID();
+    authenticate(account, session, profileId);
+
+    assertThat(authorizationService.requireHousehold()).isEqualTo(homeHouseholdId);
+    assertThat(authorizationService.requireProfile()).isEqualTo(profileId);
+  }
+
+  @Test
+  @DisplayName("Should build playback authority from signed home and profile")
+  void shouldBuildPlaybackAuthorityFromSignedHomeAndProfile() {
     var homeHouseholdId = UUID.randomUUID();
     var account = saveAccount(homeHouseholdId);
     var session = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
@@ -262,7 +288,9 @@ class AuthorizationServiceTest {
             .accountId(account.getId())
             .role(account.getAccountRole())
             .authSessionId(session.getId())
-            .scope(profileId == null ? TokenScope.ACCOUNT : TokenScope.PROFILE);
+            .scope(profileId == null ? TokenScope.ACCOUNT : TokenScope.PROFILE)
+            .householdId(account.getHomeHouseholdId())
+            .householdRole(account.getHouseholdRole());
     if (profileId != null) {
       builder.profileId(profileId);
     }

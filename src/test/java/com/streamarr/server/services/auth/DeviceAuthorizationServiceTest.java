@@ -9,6 +9,7 @@ import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.DeviceCodeExpiredException;
 import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
@@ -38,6 +39,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
@@ -114,7 +116,12 @@ class DeviceAuthorizationServiceTest {
   @BeforeEach
   void createService() {
     service = serviceWith(CanonicalBaseUrl.of(BASE_URL, false));
-    approver = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    approver =
+        userAccountRepository.save(
+            AccountFixture.defaultAccountBuilder()
+                .homeHouseholdId(UUID.randomUUID())
+                .householdRole(HouseholdRole.MEMBER)
+                .build());
   }
 
   @Test

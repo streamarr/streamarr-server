@@ -13,6 +13,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
 import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.services.auth.TokenClaims;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
 import com.streamarr.server.services.auth.TokenScope;
@@ -391,7 +392,9 @@ class TokenCryptoConfigTest {
             .expiresAt(now.plusSeconds(600))
             .claim(TokenClaims.ROLES, List.of(AccountRole.USER.name()))
             .claim(TokenClaims.SESSION_ID, sessionId.toString())
-            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue());
+            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
+            .claim(TokenClaims.HOUSEHOLD_ID, UUID.randomUUID().toString())
+            .claim(TokenClaims.HOUSEHOLD_ROLE, HouseholdRole.MEMBER.name());
     customizer.accept(claims);
     return encoder
         .encode(

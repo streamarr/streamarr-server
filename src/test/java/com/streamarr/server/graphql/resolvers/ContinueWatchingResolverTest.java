@@ -2,17 +2,14 @@ package com.streamarr.server.graphql.resolvers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
-import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
-import com.streamarr.server.services.authorization.RequestAuthorizationStateResolver;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.services.watchprogress.ContinueWatchingService;
@@ -20,7 +17,6 @@ import com.streamarr.server.support.security.TestIdentityConstants;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
 import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
@@ -45,16 +41,7 @@ class ContinueWatchingResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
   @MockitoBean private ContinueWatchingService continueWatchingService;
-  @MockitoBean private RequestAuthorizationStateResolver authorizationStateResolver;
   @MockitoBean private ProfileHouseholdShareRepository profileShareRepository;
-
-  @BeforeEach
-  void resolveLiveProfileAuthority() {
-    when(authorizationStateResolver.resolve(any()))
-        .thenReturn(
-            new RequestAuthorizationStateResolver.AuthorizationState(
-                UserAccount.builder().id(UUID.randomUUID()).build(), PROFILE_ID));
-  }
 
   @Nested
   @DisplayName("continueWatching query")
@@ -143,9 +130,7 @@ class ContinueWatchingResolverTest {
       var resolver =
           new ContinueWatchingResolver(
               mock(ContinueWatchingService.class),
-              new SecurityContextAuthorizationService(
-                  mock(RequestAuthorizationStateResolver.class),
-                  mock(ProfileHouseholdShareRepository.class)),
+              new SecurityContextAuthorizationService(mock(ProfileHouseholdShareRepository.class)),
               new PaginationService());
       var unsupported = new Object();
 

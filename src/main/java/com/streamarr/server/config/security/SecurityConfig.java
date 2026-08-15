@@ -2,7 +2,6 @@ package com.streamarr.server.config.security;
 
 import com.streamarr.server.services.auth.TokenScope;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
@@ -11,7 +10,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.annotation.web.configurers.CsrfConfigurer;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.header.HeaderWriterFilter;
@@ -27,7 +25,6 @@ public class SecurityConfig {
   private final RestAccessDeniedHandler accessDeniedHandler;
   private final AuthTokenProperties tokenProperties;
   private final AuthCookiePolicy cookiePolicy;
-  private final LiveIdentityAuthorizationFilter liveIdentityAuthorizationFilter;
 
   /**
    * The permit matrix: pre-auth endpoints (shared with the bearer resolver, so the two lists cannot
@@ -46,7 +43,6 @@ public class SecurityConfig {
   SecurityFilterChain securityFilterChain(HttpSecurity http) {
     http.removeConfigurer(CsrfConfigurer.class);
     return http.addFilterAfter(cookieScopedCsrfFilter(), HeaderWriterFilter.class)
-        .addFilterAfter(liveIdentityAuthorizationFilter, BearerTokenAuthenticationFilter.class)
         .authorizeHttpRequests(
             authorize ->
                 authorize
@@ -85,14 +81,6 @@ public class SecurityConfig {
   @Bean
   static RoleHierarchy roleHierarchy() {
     return ScopeHierarchy.roleHierarchy();
-  }
-
-  @Bean
-  static FilterRegistrationBean<LiveIdentityAuthorizationFilter>
-      liveIdentityAuthorizationFilterRegistration(LiveIdentityAuthorizationFilter filter) {
-    var registration = new FilterRegistrationBean<>(filter);
-    registration.setEnabled(false);
-    return registration;
   }
 
   private CsrfFilter cookieScopedCsrfFilter() {

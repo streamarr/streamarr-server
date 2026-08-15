@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.fixtures.AccountFixture;
 import java.time.Clock;
 import java.time.Instant;
@@ -31,9 +32,15 @@ class AccessTokenIssuerTest {
           Clock.fixed(now, ZoneOffset.UTC));
 
   @Test
-  @DisplayName("Should issue account token without profile or household claims")
-  void shouldIssueAccountTokenWithoutProfileOrHouseholdClaims() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+  @DisplayName("Should issue account token with home household snapshot")
+  void shouldIssueAccountTokenWithHomeHouseholdSnapshot() {
+    var householdId = UUID.randomUUID();
+    var account =
+        AccountFixture.defaultAccountBuilder()
+            .id(UUID.randomUUID())
+            .homeHouseholdId(householdId)
+            .householdRole(HouseholdRole.PARENT)
+            .build();
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
 
     var token = issuer.issue(TokenContext.builder().account(account).session(session).build());
@@ -42,13 +49,22 @@ class AccessTokenIssuerTest {
     var decoded = decoder(properties).decode(token.value());
     assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("account");
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isNull();
-    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID)).isNull();
+    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
+        .isEqualTo(householdId.toString());
+    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE))
+        .isEqualTo(HouseholdRole.PARENT.name());
   }
 
   @Test
-  @DisplayName("Should issue profile token without household claims")
-  void shouldIssueProfileTokenWithoutHouseholdClaims() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+  @DisplayName("Should issue profile token with home household snapshot")
+  void shouldIssueProfileTokenWithHomeHouseholdSnapshot() {
+    var householdId = UUID.randomUUID();
+    var account =
+        AccountFixture.defaultAccountBuilder()
+            .id(UUID.randomUUID())
+            .homeHouseholdId(householdId)
+            .householdRole(HouseholdRole.PARENT)
+            .build();
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     var profileId = UUID.randomUUID();
 
@@ -63,14 +79,21 @@ class AccessTokenIssuerTest {
         .isEqualTo(session.getId().toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("profile");
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isEqualTo(profileId.toString());
-    assertThat(decoded.getClaimAsString("hh")).isNull();
-    assertThat(decoded.getClaimAsString("hr")).isNull();
+    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
+        .isEqualTo(householdId.toString());
+    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE))
+        .isEqualTo(HouseholdRole.PARENT.name());
   }
 
   @Test
   @DisplayName("Should cap derived token at source expiry without extending a fresh source")
   void shouldCapDerivedTokenAtSourceExpiryWithoutExtendingFreshSource() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+    var account =
+        AccountFixture.defaultAccountBuilder()
+            .id(UUID.randomUUID())
+            .homeHouseholdId(UUID.randomUUID())
+            .householdRole(HouseholdRole.PARENT)
+            .build();
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     var context = TokenContext.builder().account(account).session(session).build();
 

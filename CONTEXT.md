@@ -53,7 +53,7 @@ _Avoid_: Profile owner, main parent, ProfileAuthority
 
 **Profile Share**:
 A relationship that makes one Profile available to every Account in one Household without duplicating the Profile or its history.
-Either endpoint may end it: the Household may remove the Profile, or a session actively using the Profile in that Household may make the Profile leave.
+Either endpoint may end it: the Household may remove the Profile, or an Account using the Profile in that Household may make the Profile leave.
 _Avoid_: Profile copy, Household membership
 
 **Unshare**:

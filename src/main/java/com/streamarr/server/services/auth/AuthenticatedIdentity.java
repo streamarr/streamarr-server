@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
@@ -18,6 +19,7 @@ public record AuthenticatedIdentity(
     UUID authSessionId,
     TokenScope scope,
     UUID householdId,
+    HouseholdRole householdRole,
     UUID profileId,
     UUID streamSessionId) {
 
@@ -33,8 +35,12 @@ public record AuthenticatedIdentity(
     if (scope == TokenScope.PROFILE && profileId == null) {
       throw new IllegalArgumentException("Profile scope requires profile identity");
     }
-    if (scope != TokenScope.PLAYBACK && householdId != null) {
-      throw new IllegalArgumentException("Only playback scope can carry household identity");
+    if (scope != TokenScope.PLAYBACK && (householdId == null || householdRole == null)) {
+      throw new IllegalArgumentException(
+          "Account and profile scope require a home household identity");
+    }
+    if (scope == TokenScope.PLAYBACK && householdRole != null) {
+      throw new IllegalArgumentException("Playback scope cannot carry a household role");
     }
     if (scope == TokenScope.PLAYBACK
         && (householdId == null || profileId == null || streamSessionId == null)) {
@@ -53,9 +59,15 @@ public record AuthenticatedIdentity(
         .authSessionId(UUID.fromString(jwt.getClaimAsString(TokenClaims.SESSION_ID)))
         .scope(TokenScope.valueOf(jwt.getClaimAsString(TokenClaims.SCOPE).toUpperCase(Locale.ROOT)))
         .householdId(uuidClaim(jwt, TokenClaims.HOUSEHOLD_ID))
+        .householdRole(householdRoleClaim(jwt))
         .profileId(uuidClaim(jwt, TokenClaims.PROFILE_ID))
         .streamSessionId(uuidClaim(jwt, TokenClaims.STREAM_SESSION_ID))
         .build();
+  }
+
+  private static HouseholdRole householdRoleClaim(Jwt jwt) {
+    var value = jwt.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE);
+    return value == null ? null : HouseholdRole.valueOf(value);
   }
 
   public PlaybackAuthority playbackAuthority() {

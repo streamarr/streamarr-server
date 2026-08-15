@@ -345,8 +345,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject issued profile token immediately when active share is removed")
-  void shouldRejectIssuedProfileTokenImmediatelyWhenActiveShareRemoved() throws Exception {
+  @DisplayName("Should retain issued profile scope until expiry when active share is removed")
+  void shouldRetainIssuedProfileScopeUntilExpiryWhenActiveShareRemoved() throws Exception {
     seedSingleProfileIdentity();
     var accessToken = selectProfileToken(loginAndReadField("accessToken"));
 
@@ -364,17 +364,17 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                     .findByProfileIdAndHouseholdId(profile.getId(), household.getId())
                     .ifPresent(profileShareRepository::delete));
 
-    // Live authority is resolved from the current account home and active share on every request.
+    // The signed access token is an authorization snapshot for its bounded lifetime.
     mockMvc
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
                 .header("Authorization", "Bearer " + accessToken))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isNotFound());
   }
 
   @Test
-  @DisplayName("Should retain account surfaces for issued profile token after share removal")
-  void shouldRetainAccountSurfacesForIssuedProfileTokenAfterShareRemoval() throws Exception {
+  @DisplayName("Should retain profile scope for issued token after share removal")
+  void shouldRetainProfileScopeForIssuedTokenAfterShareRemoval() throws Exception {
     seedSingleProfileIdentity();
     var accessToken = selectProfileToken(loginAndReadField("accessToken"));
     new TransactionTemplate(transactionManager)
@@ -393,12 +393,12 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.me.accountId").value(account.getId().toString()))
-        .andExpect(jsonPath("$.data.me.scope").value("account"));
+        .andExpect(jsonPath("$.data.me.scope").value("profile"));
   }
 
   @Test
-  @DisplayName("Should reject issued profile token immediately when account home changes")
-  void shouldRejectIssuedProfileTokenImmediatelyWhenAccountHomeChanges() throws Exception {
+  @DisplayName("Should retain issued profile token until expiry when account home changes")
+  void shouldRetainIssuedProfileTokenUntilExpiryWhenAccountHomeChanges() throws Exception {
     seedSingleProfileIdentity();
     var accessToken = selectProfileToken(loginAndReadField("accessToken"));
 
@@ -442,7 +442,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
                 .header("Authorization", "Bearer " + accessToken))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isNotFound());
   }
 
   @Test
@@ -612,7 +612,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
 
     var claims = decodeToken(objectMapper.readTree(response).get("accessToken").asString());
     assertThat(claims.getClaimAsString("pf")).isEqualTo(profile.getId().toString());
-    assertThat(claims.hasClaim("hh")).isFalse();
+    assertThat(claims.getClaimAsString("hh")).isEqualTo(household.getId().toString());
+    assertThat(claims.getClaimAsString("hr")).isEqualTo("OWNER");
   }
 
   @Test
@@ -889,8 +890,10 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should revoke all other refresh sessions when password changed")
-  void shouldRevokeAllOtherSessionsWhenPasswordChanged() throws Exception {
+  @DisplayName(
+      "Should keep short-lived access tokens and revoke other refresh sessions when password changed")
+  void shouldKeepShortLivedAccessTokensAndRevokeOtherRefreshSessionsWhenPasswordChanged()
+      throws Exception {
     seedSingleProfileIdentity();
     var deviceA = objectMapper.readTree(loginResponseBody());
     var deviceB = objectMapper.readTree(loginResponseBody());
@@ -898,12 +901,17 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     changePassword(deviceA.get("accessToken").asString(), PASSWORD, "a brand new passphrase!")
         .andExpect(status().isOk());
 
-    // Live session authorization revokes both API and refresh authority immediately.
+    // The signed access token remains a bounded authorization snapshot; refresh is revoked.
     mockMvc
         .perform(
-            get("/api/images/{id}", UUID.randomUUID())
-                .header("Authorization", "Bearer " + deviceB.get("accessToken").asString()))
-        .andExpect(status().isUnauthorized());
+            post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + deviceB.get("accessToken").asString())
+                .content("{\"query\": \"{ me { accountId scope } }\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.me.accountId").value(account.getId().toString()))
+        .andExpect(jsonPath("$.data.me.scope").value("account"));
     mockMvc
         .perform(
             post("/api/auth/refresh")
@@ -932,8 +940,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .getResponse()
                 .getContentAsString());
 
-    // The replacement credentials work, while both forms of authority from the old session are
-    // dead immediately.
+    // Both signed access snapshots remain valid until expiry; only the old refresh authority is
+    // revoked immediately.
     mockMvc
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
@@ -941,9 +949,14 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isForbidden());
     mockMvc
         .perform(
-            get("/api/images/{id}", UUID.randomUUID())
-                .header("Authorization", "Bearer " + oldAccessToken))
-        .andExpect(status().isUnauthorized());
+            post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + oldAccessToken)
+                .content("{\"query\": \"{ me { accountId scope } }\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.me.accountId").value(account.getId().toString()))
+        .andExpect(jsonPath("$.data.me.scope").value("account"));
     mockMvc
         .perform(
             post("/api/auth/refresh")
@@ -1079,8 +1092,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should revoke session and clear cookies when logging out")
-  void shouldRevokeSessionAndClearCookiesWhenLoggingOut() throws Exception {
+  @DisplayName("Should revoke refresh session and clear cookies when logging out")
+  void shouldRevokeRefreshSessionAndClearCookiesWhenLoggingOut() throws Exception {
     seedSingleProfileIdentity();
     var login = objectMapper.readTree(loginResponseBody());
     var accessToken = login.get("accessToken").asString();
@@ -1094,12 +1107,17 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(logoutResponse.getCookie("streamarr_access").getMaxAge()).isZero();
     assertThat(logoutResponse.getCookie("streamarr_refresh").getMaxAge()).isZero();
 
-    // Logout revokes API, refresh, and playback authority immediately.
+    // The signed access token remains a bounded authorization snapshot; refresh is revoked.
     mockMvc
         .perform(
-            get("/api/images/{id}", UUID.randomUUID())
-                .header("Authorization", "Bearer " + accessToken))
-        .andExpect(status().isUnauthorized());
+            post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + accessToken)
+                .content("{\"query\": \"{ me { accountId scope } }\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.me.accountId").value(account.getId().toString()))
+        .andExpect(jsonPath("$.data.me.scope").value("account"));
     mockMvc
         .perform(
             post("/api/auth/refresh")

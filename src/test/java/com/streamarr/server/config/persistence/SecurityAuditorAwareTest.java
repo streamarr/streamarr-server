@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import java.util.List;
@@ -36,6 +37,8 @@ class SecurityAuditorAwareTest {
             .role(AccountRole.USER)
             .authSessionId(UUID.randomUUID())
             .scope(TokenScope.ACCOUNT)
+            .householdId(UUID.randomUUID())
+            .householdRole(HouseholdRole.MEMBER)
             .build();
     SecurityContextHolder.getContext()
         .setAuthentication(

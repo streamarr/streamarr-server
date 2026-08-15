@@ -243,8 +243,8 @@ class PortableProfileResolverTest {
   }
 
   @Test
-  @DisplayName("Should derive leave current home account and profile only from live identity")
-  void shouldDeriveLeaveCurrentHomeAccountAndProfileOnlyFromLiveIdentity() {
+  @DisplayName("Should derive leave current home account and profile from authenticated token")
+  void shouldDeriveLeaveCurrentHomeAccountAndProfileFromAuthenticatedToken() {
     var fixture = new ResolverFixture();
 
     assertThat(fixture.resolver.leaveCurrentHome()).isTrue();
@@ -611,6 +611,8 @@ class PortableProfileResolverTest {
                     .role(AccountRole.ADMIN)
                     .authSessionId(UUID.randomUUID())
                     .scope(TokenScope.PROFILE)
+                    .householdId(UUID.randomUUID())
+                    .householdRole(HouseholdRole.OWNER)
                     .build()),
             portableIdentityService,
             new ProfilePinService(NoOpPasswordEncoder.getInstance()));

@@ -49,6 +49,8 @@ class IdentityQueryServiceTest {
             .role(AccountRole.USER)
             .authSessionId(UUID.randomUUID())
             .scope(TokenScope.PROFILE)
+            .householdId(account.getHomeHouseholdId())
+            .householdRole(account.getHouseholdRole())
             .profileId(profile.getId())
             .build();
 
@@ -73,6 +75,8 @@ class IdentityQueryServiceTest {
             .role(AccountRole.USER)
             .authSessionId(UUID.randomUUID())
             .scope(TokenScope.ACCOUNT)
+            .householdId(account.getHomeHouseholdId())
+            .householdRole(account.getHouseholdRole())
             .build();
 
     var view = service.meView(identity);
@@ -91,6 +95,8 @@ class IdentityQueryServiceTest {
             .role(AccountRole.USER)
             .authSessionId(UUID.randomUUID())
             .scope(TokenScope.ACCOUNT)
+            .householdId(UUID.randomUUID())
+            .householdRole(HouseholdRole.MEMBER)
             .build();
 
     assertThatThrownBy(() -> service.meView(identity))

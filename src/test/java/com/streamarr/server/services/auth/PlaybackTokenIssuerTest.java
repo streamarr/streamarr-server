@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
@@ -78,6 +79,8 @@ class PlaybackTokenIssuerTest {
             .role(AccountRole.USER)
             .authSessionId(sessionId)
             .scope(TokenScope.ACCOUNT)
+            .householdId(householdId)
+            .householdRole(HouseholdRole.MEMBER)
             .build();
 
     assertThatThrownBy(accountScoped::playbackAuthority)
@@ -120,6 +123,8 @@ class PlaybackTokenIssuerTest {
             .role(AccountRole.ADMIN)
             .authSessionId(sessionId)
             .scope(TokenScope.PROFILE)
+            .householdId(householdId)
+            .householdRole(HouseholdRole.MEMBER)
             .profileId(profileId)
             .build();
     var streamSession = sessionOwnedBy(profileId);
@@ -157,6 +162,8 @@ class PlaybackTokenIssuerTest {
             .role(AccountRole.USER)
             .authSessionId(sessionId)
             .scope(TokenScope.PROFILE)
+            .householdId(householdId)
+            .householdRole(HouseholdRole.MEMBER)
             .profileId(UUID.randomUUID())
             .build();
     var streamSession = sessionOwnedBy(profileId);
@@ -174,6 +181,8 @@ class PlaybackTokenIssuerTest {
         .role(AccountRole.USER)
         .authSessionId(sessionId)
         .scope(TokenScope.PROFILE)
+        .householdId(householdId)
+        .householdRole(HouseholdRole.MEMBER)
         .profileId(profileId)
         .build();
   }

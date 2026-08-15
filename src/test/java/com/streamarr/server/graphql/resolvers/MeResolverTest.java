@@ -8,6 +8,7 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
@@ -16,7 +17,6 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.IdentityQueryService;
 import com.streamarr.server.services.auth.ProfileAvailabilityService;
 import com.streamarr.server.services.auth.TokenScope;
-import com.streamarr.server.services.authorization.RequestAuthorizationStateResolver;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import java.util.List;
 import java.util.UUID;
@@ -46,7 +46,6 @@ class MeResolverTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private IdentityQueryService identityQueryService;
-  @MockitoBean private RequestAuthorizationStateResolver authorizationStateResolver;
   @MockitoBean private ProfileHouseholdShareRepository profileShareRepository;
 
   private final UUID accountId = UUID.randomUUID();
@@ -105,6 +104,8 @@ class MeResolverTest {
             .role(AccountRole.USER)
             .authSessionId(UUID.randomUUID())
             .scope(TokenScope.ACCOUNT)
+            .householdId(UUID.randomUUID())
+            .householdRole(HouseholdRole.OWNER)
             .build();
     SecurityContextHolder.getContext()
         .setAuthentication(

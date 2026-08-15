@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import java.util.List;
@@ -18,8 +19,26 @@ import org.springframework.security.oauth2.jwt.Jwt;
 class AuthenticatedIdentityTest {
 
   @Test
-  @DisplayName("Should construct profile identity without household claims")
-  void shouldConstructProfileIdentityWithoutHouseholdClaims() {
+  @DisplayName("Should parse home household snapshot from access token")
+  void shouldParseHomeHouseholdSnapshotFromAccessToken() {
+    var householdId = UUID.randomUUID();
+    var jwt =
+        jwtBuilder()
+            .claim(TokenClaims.ROLES, List.of(AccountRole.USER.name()))
+            .claim(TokenClaims.HOUSEHOLD_ID, householdId.toString())
+            .claim(TokenClaims.HOUSEHOLD_ROLE, HouseholdRole.PARENT.name())
+            .build();
+
+    var identity = AuthenticatedIdentity.fromJwt(jwt);
+
+    assertThat(identity.householdId()).isEqualTo(householdId);
+    assertThat(identity.householdRole()).isEqualTo(HouseholdRole.PARENT);
+  }
+
+  @Test
+  @DisplayName("Should construct profile identity with home household snapshot")
+  void shouldConstructProfileIdentityWithHomeHouseholdSnapshot() {
+    var householdId = UUID.randomUUID();
     var profileId = UUID.randomUUID();
 
     var identity =
@@ -28,9 +47,13 @@ class AuthenticatedIdentityTest {
             .role(AccountRole.USER)
             .authSessionId(UUID.randomUUID())
             .scope(TokenScope.PROFILE)
+            .householdId(householdId)
+            .householdRole(HouseholdRole.PARENT)
             .profileId(profileId)
             .build();
 
+    assertThat(identity.householdId()).isEqualTo(householdId);
+    assertThat(identity.householdRole()).isEqualTo(HouseholdRole.PARENT);
     assertThat(identity.profileId()).isEqualTo(profileId);
   }
 
@@ -48,11 +71,17 @@ class AuthenticatedIdentityTest {
   @Test
   @DisplayName("Should reject playback-only claims on another token scope")
   void shouldRejectPlaybackOnlyClaimsOnAnotherTokenScope() {
-    var accountWithHousehold = identityBuilder(TokenScope.ACCOUNT).householdId(UUID.randomUUID());
     var accountWithStream = identityBuilder(TokenScope.ACCOUNT).streamSessionId(UUID.randomUUID());
+    var playbackWithHouseholdRole =
+        identityBuilder(TokenScope.PLAYBACK)
+            .householdId(UUID.randomUUID())
+            .householdRole(HouseholdRole.PARENT)
+            .profileId(UUID.randomUUID())
+            .streamSessionId(UUID.randomUUID());
 
-    assertThatThrownBy(accountWithHousehold::build).isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(accountWithStream::build).isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(playbackWithHouseholdRole::build)
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
@@ -120,11 +149,16 @@ class AuthenticatedIdentityTest {
   }
 
   private AuthenticatedIdentity.AuthenticatedIdentityBuilder identityBuilder(TokenScope scope) {
-    return AuthenticatedIdentity.builder()
-        .accountId(UUID.randomUUID())
-        .role(AccountRole.USER)
-        .authSessionId(UUID.randomUUID())
-        .scope(scope);
+    var builder =
+        AuthenticatedIdentity.builder()
+            .accountId(UUID.randomUUID())
+            .role(AccountRole.USER)
+            .authSessionId(UUID.randomUUID())
+            .scope(scope);
+    if (scope != TokenScope.PLAYBACK) {
+      builder.householdId(UUID.randomUUID()).householdRole(HouseholdRole.MEMBER);
+    }
+    return builder;
   }
 
   private Jwt.Builder jwtBuilder() {
