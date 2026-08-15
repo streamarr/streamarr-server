@@ -57,6 +57,13 @@ public class SetupService {
     return serverBootstrapRepository.isClaimed();
   }
 
+  /**
+   * Initializes the server with its first household, administrator account, and profile.
+   *
+   * @param command the household, administrator, and profile details
+   * @return the created administrator account, household, and profile
+   * @throws SetupAlreadyCompletedException if setup has already been claimed
+   */
   @Transactional
   public SetupResult setup(SetupCommand command) {
     // Fast-path guard only — the atomic claim below stays the arbiter. Without it, every
@@ -97,6 +104,14 @@ public class SetupService {
     return SetupResult.builder().admin(admin).household(household).profile(profile).build();
   }
 
+  /**
+   * Creates an enabled owner-level administrator account for the specified household.
+   *
+   * @param command         setup data containing the administrator's email, display name, and password
+   * @param homeHouseholdId identifier of the administrator's home household
+   * @return                the persisted administrator account
+   * @throws SetupAlreadyCompletedException if another setup operation already claimed the administrator email
+   */
   private UserAccount createAdminAccount(SetupCommand command, UUID homeHouseholdId) {
     // Accounts only exist once setup has won, so a duplicate email before the claim can only
     // be a competing setup that already flushed — report the domain conflict, not the

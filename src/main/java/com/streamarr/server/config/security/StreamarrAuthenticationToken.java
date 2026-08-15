@@ -17,6 +17,13 @@ public class StreamarrAuthenticationToken extends AbstractAuthenticationToken {
   private final transient Object requestAuthorizationMutexKey = new Object();
   private transient AuthorizationState requestAuthorizationState;
 
+  /**
+   * Creates an authenticated token with the specified identity, JWT, and authorities.
+   *
+   * @param identity the authenticated identity
+   * @param token the JWT associated with the authentication
+   * @param authorities the authorities granted to the identity
+   */
   public StreamarrAuthenticationToken(
       AuthenticatedIdentity identity,
       Jwt token,
@@ -32,19 +39,39 @@ public class StreamarrAuthenticationToken extends AbstractAuthenticationToken {
     return identity;
   }
 
+  /**
+   * Retrieves the JWT used as the token's credentials.
+   *
+   * @return the JWT credentials
+   */
   @Override
   public Object getCredentials() {
     return token;
   }
 
+  /**
+   * Retrieves the current request authorization state.
+   *
+   * @return the request authorization state
+   */
   public AuthorizationState getRequestAuthorizationState() {
     return requestAuthorizationState;
   }
 
+  /**
+   * Provides the mutex key used to coordinate request authorization.
+   *
+   * @return the request authorization mutex key
+   */
   public Object getRequestAuthorizationMutexKey() {
     return requestAuthorizationMutexKey;
   }
 
+  /**
+   * Updates the request authorization state.
+   *
+   * @param requestAuthorizationState the new request authorization state
+   */
   public void setRequestAuthorizationState(AuthorizationState requestAuthorizationState) {
     this.requestAuthorizationState = requestAuthorizationState;
   }

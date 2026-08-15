@@ -11,6 +11,12 @@ public record PortableProfileManagerInvitationSummary(
     UUID invitedAccountId,
     ProfileManagerInvitationStatus status) {
 
+  /**
+   * Creates an invitation summary from the specified profile manager invitation.
+   *
+   * @param invitation the invitation to summarize
+   * @return a summary containing the invitation's identifiers and status
+   */
   public static PortableProfileManagerInvitationSummary from(ProfileManagerInvitation invitation) {
     return new PortableProfileManagerInvitationSummary(
         invitation.getId(),

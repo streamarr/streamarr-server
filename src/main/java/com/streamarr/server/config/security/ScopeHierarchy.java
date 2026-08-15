@@ -13,10 +13,22 @@ public final class ScopeHierarchy {
 
   private ScopeHierarchy() {}
 
+  /**
+   * Builds the token-scope hierarchy in which profile-scoped tokens satisfy account-scope checks.
+   *
+   * @return the configured token-scope role hierarchy
+   */
   public static RoleHierarchy roleHierarchy() {
     return RoleHierarchyImpl.fromHierarchy(grants(TokenScope.PROFILE, TokenScope.ACCOUNT));
   }
 
+  /**
+   * Formats a scope hierarchy relationship between two scopes.
+   *
+   * @param higher the scope that grants access
+   * @param lower  the scope whose access is granted
+   * @return the hierarchy relationship in authority-string format
+   */
   private static String grants(TokenScope higher, TokenScope lower) {
     return higher.authority() + " > " + lower.authority();
   }

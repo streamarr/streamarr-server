@@ -17,6 +17,11 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
 
+  /**
+   * Ensures that a pending share exists for the specified profile and household.
+   *
+   * @return the existing or newly created share and whether it was created
+   */
   @Override
   public ProfileHouseholdShareInsertResult insertPendingIfAbsent(UUID profileId, UUID householdId) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);

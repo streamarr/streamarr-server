@@ -15,6 +15,11 @@ public class MeResolver {
   private final AuthorizationService authorizationService;
   private final IdentityQueryService identityQueryService;
 
+  /**
+   * Resolves the authenticated user's account details and selectable profiles.
+   *
+   * @return the authenticated user's account information and profiles
+   */
   @DgsQuery
   public Me me() {
     var identity = authorizationService.currentIdentity();

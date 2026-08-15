@@ -34,6 +34,12 @@ public class RequestAuthorizationStateResolver {
     this.authenticationMutex = mutexFactoryProvider.getMutexFactory();
   }
 
+  /**
+   * Resolves and caches authorization state for an authenticated request.
+   *
+   * @param authentication the authentication token containing the request identity and cached state
+   * @return the resolved authorization state
+   */
   public AuthorizationState resolve(StreamarrAuthenticationToken authentication) {
     var mutex = authenticationMutex.getMutex(authentication.getRequestAuthorizationMutexKey());
     mutex.lock();
@@ -51,6 +57,12 @@ public class RequestAuthorizationStateResolver {
     }
   }
 
+  /**
+   * Loads the authorization state for an authenticated identity.
+   *
+   * @param signedIdentity the authenticated identity to authorize
+   * @return the account and active profile associated with the identity
+   */
   private AuthorizationState load(AuthenticatedIdentity signedIdentity) {
     var account = loadEnabledAccount(signedIdentity.accountId());
     requireLiveSession(signedIdentity, account);
@@ -58,6 +70,13 @@ public class RequestAuthorizationStateResolver {
     return new AuthorizationState(account, activeProfileId);
   }
 
+  /**
+   * Loads the enabled account identified by the specified ID.
+   *
+   * @param accountId the account identifier
+   * @return the enabled user account
+   * @throws AuthenticationRequiredException if the account does not exist or is disabled
+   */
   private UserAccount loadEnabledAccount(UUID accountId) {
     return accountRepository
         .findById(accountId)
@@ -65,6 +84,13 @@ public class RequestAuthorizationStateResolver {
         .orElseThrow(AuthenticationRequiredException::new);
   }
 
+  /**
+   * Ensures that the authenticated identity refers to a non-revoked session belonging to the account.
+   *
+   * @param identity the authenticated identity whose session is validated
+   * @param account the account the session must belong to
+   * @throws AuthenticationRequiredException if the session is missing, belongs to another account, or has been revoked
+   */
   private void requireLiveSession(AuthenticatedIdentity identity, UserAccount account) {
     sessionRepository
         .findById(identity.authSessionId())
@@ -73,6 +99,13 @@ public class RequestAuthorizationStateResolver {
         .orElseThrow(AuthenticationRequiredException::new);
   }
 
+  /**
+   * Resolves the authenticated profile when it has an active share in the account's home household.
+   *
+   * @param identity the authenticated identity containing the profile reference
+   * @param account the account whose home household must contain the active profile share
+   * @return the active profile ID, or {@code null} when no active profile share exists
+   */
   private UUID resolveActiveProfile(AuthenticatedIdentity identity, UserAccount account) {
     var profileId = identity.profileId();
     if (profileId == null) {

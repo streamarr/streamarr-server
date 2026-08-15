@@ -75,6 +75,11 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   @TestConfiguration
   static class GatedIssuerConfig {
 
+    /**
+     * Provides the primary access-token issuer used by integration tests.
+     *
+     * @return the configured gated access-token issuer
+     */
     @Bean
     @Primary
     GatedAccessTokenIssuer gatedAccessTokenIssuer(
@@ -89,10 +94,20 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     private final AtomicBoolean failNextIssue = new AtomicBoolean();
     private final AtomicReference<CountDownLatch> reachedIssue = new AtomicReference<>();
 
+    /**
+     * Creates a gated access-token issuer with the specified token configuration and clock.
+     */
     GatedAccessTokenIssuer(JwtEncoder jwtEncoder, AuthTokenProperties properties, Clock clock) {
       super(jwtEncoder, properties, clock);
     }
 
+    /**
+     * Issues an access token while coordinating test synchronization and optional failure injection.
+     *
+     * @param context the token issuance context
+     * @return the issued access token
+     * @throws IllegalStateException if issuance failure has been injected or the gate is interrupted or times out
+     */
     @Override
     public AccessToken issue(TokenContext context) {
       var arrival = reachedIssue.get();

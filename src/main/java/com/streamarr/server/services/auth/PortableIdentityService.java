@@ -31,6 +31,9 @@ public class PortableIdentityService {
   private final ServerAdministrationService serverAdministrationService;
   private final HouseholdAdministrationService householdAdministrationService;
 
+  /**
+   * Creates a service for coordinating portable identity operations.
+   */
   @Builder
   public PortableIdentityService(
       TransactionTemplate transactionTemplate,
@@ -49,98 +52,226 @@ public class PortableIdentityService {
     this.householdAdministrationService = householdAdministrationService;
   }
 
+  /**
+   * Creates a portable profile from the specified command.
+   *
+   * @param command the profile creation details
+   * @return the created profile
+   */
   public Profile createPortableProfile(CreatePortableProfileCommand command) {
     return execute(() -> managementService.create(command));
   }
 
+  /**
+   * Renames a portable profile.
+   *
+   * @param command the command containing the profile and new name
+   */
   public void renamePortableProfile(RenamePortableProfileCommand command) {
     execute(() -> managementService.rename(command));
   }
 
+  /**
+   * Offers a profile household share.
+   *
+   * @param command the profile share offer to process
+   * @return the created profile household share
+   */
   public ProfileHouseholdShare offerProfileShare(ProfileShareOffer command) {
     return execute(() -> sharingService.offer(command));
   }
 
+  /**
+   * Accepts a profile household share.
+   *
+   * @param command the profile share acceptance command
+   * @return the accepted profile household share
+   */
   public ProfileHouseholdShare acceptProfileShare(ProfileShareAcceptance command) {
     return execute(() -> sharingService.accept(command));
   }
 
+  /**
+   * Rejects a pending profile-sharing request.
+   *
+   * @param command the profile-sharing rejection command
+   */
   public void rejectProfileShare(ProfileShareRejection command) {
     execute(() -> sharingService.reject(command));
   }
 
+  /**
+   * Cancels a pending profile-sharing request.
+   *
+   * @param command the profile-share cancellation command
+   */
   public void cancelProfileShare(ProfileShareCancellation command) {
     execute(() -> sharingService.cancel(command));
   }
 
+  /**
+   * Removes a profile from its current household.
+   *
+   * @param command the profile removal command
+   */
   public void removeProfileFromCurrentHousehold(HouseholdProfileRemoval command) {
     execute(() -> sharingService.removeFromHousehold(command));
   }
 
+  /**
+   * Leaves the profile's current household.
+   *
+   * @param command the command describing the profile's departure
+   */
   public void leaveCurrentHome(ProfileHomeDeparture command) {
     execute(() -> sharingService.leaveCurrentHome(command));
   }
 
+  /**
+   * Invites a profile manager to manage a profile.
+   *
+   * @param command the profile manager invitation command
+   * @return the created profile manager invitation
+   */
   public ProfileManagerInvitation inviteProfileManager(ProfileManagerInvite command) {
     return execute(() -> managementService.invite(command));
   }
 
+  /**
+   * Accepts an invitation to manage a profile.
+   *
+   * @param command the profile manager invitation acceptance command
+   * @return the resulting profile manager
+   */
   public ProfileManager acceptProfileManagerInvitation(ProfileManagerInvitationAcceptance command) {
     return execute(() -> managementService.accept(command));
   }
 
+  /**
+   * Rejects an invitation to manage a profile.
+   *
+   * @param command the profile manager invitation rejection command
+   */
   public void rejectProfileManagerInvitation(ProfileManagerInvitationRejection command) {
     execute(() -> managementService.reject(command));
   }
 
+  /**
+   * Cancels an invitation for profile management.
+   *
+   * @param command the profile manager invitation cancellation command
+   */
   public void cancelProfileManagerInvitation(ProfileManagerInvitationCancellation command) {
     execute(() -> managementService.cancel(command));
   }
 
+  /**
+   * Relinquishes profile management for the specified command.
+   *
+   * @param command the profile management relinquishment request
+   */
   public void relinquishProfileManagement(ProfileManagementRelinquishment command) {
     execute(() -> managementService.relinquish(command));
   }
 
+  /**
+   * Sets the kind of a portable profile.
+   *
+   * @param command the command containing the profile and kind to set
+   */
   public void setProfileKind(SetProfileKindCommand command) {
     execute(() -> policyService.setKind(command));
   }
 
+  /**
+   * Sets the maximum content rating allowed for a profile.
+   *
+   * @param command the command describing the profile and content ceiling
+   */
   public void setProfileContentCeiling(SetProfileContentCeilingCommand command) {
     execute(() -> policyService.setContentCeiling(command));
   }
 
+  /**
+   * Removes the content ceiling from a profile.
+   *
+   * @param command the command describing the profile whose content ceiling should be removed
+   */
   public void removeProfileContentCeiling(RemoveProfileContentCeilingCommand command) {
     execute(() -> policyService.removeContentCeiling(command));
   }
 
+  /**
+   * Resets the PIN for a profile.
+   *
+   * @param command the command containing the profile and PIN reset details
+   */
   public void resetProfilePin(ResetProfilePinCommand command) {
     execute(() -> policyService.resetPin(command));
   }
 
+  /**
+   * Deletes the profile specified by the command.
+   *
+   * @param command the profile deletion command
+   */
   public void deleteProfile(DeleteProfileCommand command) {
     execute(() -> deletionService.delete(command));
   }
 
+  /**
+   * Permanently deletes a profile through server administration.
+   *
+   * @param command the command specifying the profile deletion
+   */
   public void forceDeleteProfile(ForceProfileDeletionCommand command) {
     execute(() -> serverAdministrationService.forceDeleteProfile(command));
   }
 
+  /**
+   * Forcefully removes a profile from its current household share.
+   *
+   * @param command the command describing the profile unshare operation
+   */
   public void forceUnshareProfile(ForceProfileUnshareCommand command) {
     execute(() -> serverAdministrationService.forceUnshareProfile(command));
   }
 
+  /**
+   * Overrides the manager assigned to a profile.
+   *
+   * @param command the command describing the profile manager override
+   */
   public void overrideProfileManager(ProfileManagerOverrideCommand command) {
     execute(() -> serverAdministrationService.overrideProfileManager(command));
   }
 
+  /**
+   * Transfers an account to another household.
+   *
+   * @param command the account household transfer details
+   */
   public void transferAccountHousehold(AccountHouseholdTransferCommand command) {
     execute(() -> householdAdministrationService.transferAccount(command));
   }
 
+  /**
+   * Transfers ownership of a household.
+   *
+   * @param command the household ownership transfer details
+   */
   public void transferHouseholdOwnership(HouseholdOwnershipTransferCommand command) {
     execute(() -> householdAdministrationService.transferOwnership(command));
   }
 
+  /**
+   * Executes an operation within a transaction, retrying eligible SQL serialization or deadlock failures.
+   *
+   * @param <T>       the operation result type
+   * @param operation  the operation to execute
+   * @return           the operation result
+   * @throws RuntimeException if the operation fails with a non-retryable error or exceeds the retry limit
+   */
   private <T> T execute(Supplier<T> operation) {
     for (var attempt = 1; ; attempt++) {
       try {
@@ -168,6 +299,11 @@ public class PortableIdentityService {
     }
   }
 
+  /**
+   * Executes a void operation within a transaction.
+   *
+   * @param operation the operation to execute
+   */
   private void execute(Runnable operation) {
     execute(
         () -> {

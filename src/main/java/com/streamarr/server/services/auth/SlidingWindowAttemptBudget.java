@@ -15,12 +15,26 @@ final class SlidingWindowAttemptBudget<K> {
   private final Clock clock;
   private final ConcurrentHashMap<K, Deque<Instant>> attempts = new ConcurrentHashMap<>();
 
+  /**
+   * Creates a sliding-window attempt budget.
+   *
+   * @param maximumAttempts the maximum number of attempts allowed within the window
+   * @param window          the duration over which attempts are counted
+   * @param clock           the clock used to determine the current time
+   */
   SlidingWindowAttemptBudget(int maximumAttempts, Duration window, Clock clock) {
     this.maximumAttempts = maximumAttempts;
     this.window = window;
     this.clock = clock;
   }
 
+  /**
+   * Attempts to reserve an attempt for the specified key within the configured sliding window.
+   * Null keys are always accepted without tracking.
+   *
+   * @param key the key whose attempt budget is used
+   * @return {@code true} if the reservation succeeds, {@code false} if the key has reached its limit
+   */
   boolean reserve(K key) {
     if (key == null) {
       return true;
@@ -41,12 +55,22 @@ final class SlidingWindowAttemptBudget<K> {
     return reserved.get();
   }
 
+  /**
+   * Clears all tracked attempts for the specified key.
+   *
+   * @param key the key whose tracked attempts are cleared
+   */
   void reset(K key) {
     if (key != null) {
       attempts.remove(key);
     }
   }
 
+  /**
+   * Releases the most recent reservation associated with the key.
+   *
+   * @param key the key whose most recent reservation should be released
+   */
   void release(K key) {
     if (key == null) {
       return;
@@ -60,6 +84,11 @@ final class SlidingWindowAttemptBudget<K> {
         });
   }
 
+  /**
+   * Removes expired attempt histories and empty entries from the budget.
+   *
+   * @return the number of keys whose attempt histories were removed
+   */
   int sweepExpired() {
     var evicted = 0;
     for (var key : attempts.keySet()) {
@@ -71,11 +100,22 @@ final class SlidingWindowAttemptBudget<K> {
     return evicted;
   }
 
+  /**
+   * Removes expired timestamps and returns the remaining timestamp deque.
+   *
+   * @param timestamps the deque of attempt timestamps to prune
+   * @return the deque containing unexpired timestamps, or {@code null} if none remain
+   */
   private Deque<Instant> pruned(Deque<Instant> timestamps) {
     prune(timestamps);
     return timestamps.isEmpty() ? null : timestamps;
   }
 
+  /**
+   * Removes timestamps that fall before the current sliding-window cutoff.
+   *
+   * @param timestamps the deque of attempt timestamps to prune
+   */
   private void prune(Deque<Instant> timestamps) {
     var cutoff = clock.instant().minus(window);
     while (!timestamps.isEmpty() && timestamps.peekFirst().isBefore(cutoff)) {

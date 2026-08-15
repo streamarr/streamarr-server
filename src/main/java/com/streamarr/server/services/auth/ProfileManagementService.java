@@ -32,6 +32,12 @@ public class ProfileManagementService {
   private final ProfileHouseholdShareRepository shareRepository;
   private final HouseholdProfileSafetyService safetyService;
 
+  /**
+   * Creates a portable profile and assigns the acting account as its manager.
+   *
+   * @param command the profile details and acting account identifier
+   * @return the created profile
+   */
   @Transactional
   public Profile create(CreatePortableProfileCommand command) {
     requireName(command.name());
@@ -68,6 +74,11 @@ public class ProfileManagementService {
     return profile;
   }
 
+  /**
+   * Renames a portable profile.
+   *
+   * @param command the rename request containing the profile, new name, and acting account
+   */
   @Transactional
   public void rename(RenamePortableProfileCommand command) {
     requireName(command.name());
@@ -86,6 +97,12 @@ public class ProfileManagementService {
             .build());
   }
 
+  /**
+   * Invites an eligible account to manage a profile.
+   *
+   * @param invite the profile and accounts involved in the invitation
+   * @return the pending invitation
+   */
   @Transactional
   public ProfileManagerInvitation invite(ProfileManagerInvite invite) {
     requireManager(invite.actingAccountId(), invite.profileId());
@@ -120,11 +137,22 @@ public class ProfileManagementService {
         .orElseThrow(ProfileManagementDeniedException::new);
   }
 
+  /**
+   * Accepts a pending profile manager invitation for the acting account.
+   *
+   * @param acceptance the invitation acceptance request
+   * @return the created profile manager association
+   */
   @Transactional
   public ProfileManager accept(ProfileManagerInvitationAcceptance acceptance) {
     return acceptForProfile(acceptance, null);
   }
 
+  /**
+   * Rejects a pending profile manager invitation addressed to the acting account.
+   *
+   * @param rejection the invitation rejection request
+   */
   @Transactional
   public void reject(ProfileManagerInvitationRejection rejection) {
     var invitation =
@@ -144,6 +172,11 @@ public class ProfileManagementService {
             .build());
   }
 
+  /**
+   * Cancels a pending profile manager invitation.
+   *
+   * @param cancellation identifies the invitation and the account requesting cancellation
+   */
   @Transactional
   public void cancel(ProfileManagerInvitationCancellation cancellation) {
     var invitation =
@@ -163,6 +196,14 @@ public class ProfileManagementService {
             .build());
   }
 
+  /**
+   * Accepts a pending invitation for the acting account and creates its profile manager association.
+   *
+   * @param acceptance       the invitation acceptance details and acting account
+   * @param expectedProfileId the profile ID the invitation must target, or {@code null} to allow any profile
+   * @return the created profile manager association
+   * @throws ProfileManagementDeniedException if the invitation is unavailable, not pending, addressed to another account, or targets a different profile
+   */
   ProfileManager acceptForProfile(
       ProfileManagerInvitationAcceptance acceptance, UUID expectedProfileId) {
     var invitation =
@@ -193,6 +234,11 @@ public class ProfileManagementService {
     return manager;
   }
 
+  /**
+   * Removes the acting account's management association from a profile.
+   *
+   * @param relinquishment details identifying the acting account and profile
+   */
   @Transactional
   public void relinquish(ProfileManagementRelinquishment relinquishment) {
     var manager =
@@ -215,12 +261,25 @@ public class ProfileManagementService {
             .build());
   }
 
+  /**
+   * Verifies that an account manages a profile.
+   *
+   * @param accountId the account to verify
+   * @param profileId the profile to access
+   * @throws ProfileManagementDeniedException if the account does not manage the profile
+   */
   private void requireManager(UUID accountId, UUID profileId) {
     if (!managerRepository.existsByAccountIdAndProfileId(accountId, profileId)) {
       throw new ProfileManagementDeniedException();
     }
   }
 
+  /**
+   * Validates that a profile name is present and contains non-whitespace characters.
+   *
+   * @param name the profile name to validate
+   * @throws IllegalArgumentException if the name is null or blank
+   */
   private void requireName(String name) {
     if (name == null || name.isBlank()) {
       throw new IllegalArgumentException("A profile name is required.");

@@ -13,6 +13,13 @@ public class ProfileManagerRepositoryCustomImpl implements ProfileManagerReposit
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
 
+  /**
+   * Inserts an account-profile association when one does not already exist.
+   *
+   * @param accountId the account identifier
+   * @param profileId the profile identifier
+   * @return {@code true} if an association was inserted, {@code false} if it already existed
+   */
   @Override
   public boolean insertIfAbsent(UUID accountId, UUID profileId) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);

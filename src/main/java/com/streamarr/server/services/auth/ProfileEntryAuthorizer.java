@@ -15,6 +15,11 @@ public class ProfileEntryAuthorizer {
   private final CredentialGuessThrottle throttle;
   private final SecurityAuditService auditService;
 
+  /**
+   * Enforces PIN entry for profiles that require access verification.
+   *
+   * @throws ProfileAccessDeniedException if PIN verification fails
+   */
   public void requireEntry(UUID accountId, Profile profile, String pin) {
     if (!pinService.requiresEntry(profile)) {
       return;

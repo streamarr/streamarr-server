@@ -20,6 +20,13 @@ public class ServerAdminAuthorizer {
   private final PasswordEncoder passwordEncoder;
   private final CredentialGuessThrottle throttle;
 
+  /**
+   * Validates fresh server administration authority for an account.
+   *
+   * @param accountId the identifier of the account to authorize
+   * @param password the password supplied for authorization
+   * @return the authorized administrator account
+   */
   public UserAccount requireFreshAuthority(UUID accountId, String password) {
     var account =
         accountRepository.findById(accountId).orElseThrow(ServerAdministrationDeniedException::new);
@@ -34,6 +41,13 @@ public class ServerAdminAuthorizer {
     return account;
   }
 
+  /**
+   * Determines whether a supplied password matches the account's stored password hash.
+   *
+   * @param account  the account whose stored password hash is checked
+   * @param password the supplied password
+   * @return         {@code true} if the password matches the stored hash, {@code false} otherwise
+   */
   private boolean passwordMatches(UserAccount account, String password) {
     try {
       return passwordEncoder.matches(password, account.getPasswordHash());

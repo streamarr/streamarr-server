@@ -87,6 +87,11 @@ class PortableIdentityServiceIT extends AbstractIntegrationTest {
     assertThat(safetyVersion(householdId)).isEqualTo(initialVersion + 2);
   }
 
+  /**
+   * Creates a uniquely named household with an associated owner account.
+   *
+   * @return the identifier of the created household
+   */
   private UUID createHousehold() {
     return new TransactionTemplate(transactionManager)
         .execute(
@@ -107,6 +112,14 @@ class PortableIdentityServiceIT extends AbstractIntegrationTest {
             });
   }
 
+  /**
+   * Performs and commits a concurrent household safety-version update.
+   *
+   * @param connection  the database connection used for the update
+   * @param householdId the household whose safety version is incremented
+   * @param signals     synchronization signals for coordinating the concurrent transaction
+   * @return the SQL exception if the update fails, or {@code null} if it succeeds
+   */
   private Throwable updateConcurrently(
       Connection connection, UUID householdId, RaceSignals signals) {
     awaitLatch(signals.firstReadCompleted());
@@ -125,11 +138,23 @@ class PortableIdentityServiceIT extends AbstractIntegrationTest {
     }
   }
 
+  /**
+   * Retrieves the current safety version for a household.
+   *
+   * @param householdId the household identifier
+   * @return the household's current safety version
+   */
   private long safetyVersion(UUID householdId) {
     return jdbcTemplate.queryForObject(
         "SELECT safety_version FROM household WHERE id = ?", Long.class, householdId);
   }
 
+  /**
+   * Rolls back the connection and attaches any rollback failure to the original SQL exception.
+   *
+   * @param connection the connection to roll back
+   * @param failure the original SQL exception
+   */
   private void rollback(Connection connection, SQLException failure) {
     try {
       connection.rollback();
@@ -138,6 +163,12 @@ class PortableIdentityServiceIT extends AbstractIntegrationTest {
     }
   }
 
+  /**
+   * Waits for a synchronization latch to complete within ten seconds.
+   *
+   * @param latch the latch to await
+   * @throws IllegalStateException if the wait is interrupted or the latch does not complete in time
+   */
   private void awaitLatch(CountDownLatch latch) {
     try {
       assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
@@ -155,11 +186,21 @@ class PortableIdentityServiceIT extends AbstractIntegrationTest {
 
     private final Runnable operation;
 
+    /**
+     * Creates a profile management service that executes the supplied operation.
+     *
+     * @param operation the operation to execute when the service handles a rename
+     */
     private SerializationProfileManagementService(Runnable operation) {
       super(null, null, null, null, null, null, null, null);
       this.operation = operation;
     }
 
+    /**
+     * Executes the configured profile rename operation.
+     *
+     * @param command the portable profile rename command
+     */
     @Override
     public void rename(RenamePortableProfileCommand command) {
       operation.run();

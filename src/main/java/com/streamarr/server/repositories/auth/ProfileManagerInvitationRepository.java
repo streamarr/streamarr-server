@@ -12,7 +12,20 @@ public interface ProfileManagerInvitationRepository
     extends JpaRepository<ProfileManagerInvitation, UUID>,
         ProfileManagerInvitationRepositoryCustom {
 
-  long countByProfileIdAndStatus(UUID profileId, ProfileManagerInvitationStatus status);
+  /**
+ * Counts invitations for a profile with the specified status.
+ *
+ * @param profileId the profile identifier
+ * @param status    the invitation status to match
+ * @return the number of matching invitations
+ */
+long countByProfileIdAndStatus(UUID profileId, ProfileManagerInvitationStatus status);
 
-  List<ProfileManagerInvitation> findByProfileId(UUID profileId);
+  /**
+ * Retrieves all invitations associated with a profile.
+ *
+ * @param profileId the profile identifier
+ * @return the invitations associated with the profile
+ */
+List<ProfileManagerInvitation> findByProfileId(UUID profileId);
 }

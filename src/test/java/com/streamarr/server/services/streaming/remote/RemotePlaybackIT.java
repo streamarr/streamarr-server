@@ -455,6 +455,12 @@ class RemotePlaybackIT {
     return command.get(command.indexOf(flag) + 1);
   }
 
+  /**
+   * Creates a playback-scoped authenticated identity for a stream session.
+   *
+   * @param streamSessionId the stream session associated with the identity
+   * @return an authenticated playback identity with generated account, session, household, and profile identifiers
+   */
   private AuthenticatedIdentity identity(UUID streamSessionId) {
     return AuthenticatedIdentity.builder()
         .accountId(UUID.randomUUID())

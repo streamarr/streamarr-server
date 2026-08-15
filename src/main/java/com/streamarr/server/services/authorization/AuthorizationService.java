@@ -35,13 +35,26 @@ public interface AuthorizationService {
 
   UUID requireHousehold();
 
-  UUID requireProfile();
+  /**
+ * Retrieves the authenticated request's required profile identifier.
+ *
+ * @return the authenticated profile identifier
+ */
+UUID requireProfile();
 
-  PlaybackAuthority requirePlaybackAuthority();
+  /**
+ * Retrieves the authenticated request's playback authorization.
+ *
+ * @return the playback authorization for the authenticated requester
+ */
+PlaybackAuthority requirePlaybackAuthority();
 
   boolean isServerAdmin();
 
-  void requireServerAdmin();
+  /**
+ * Requires the current requester to have server administrator privileges.
+ */
+void requireServerAdmin();
 
   void requireHouseholdRole(HouseholdRole minimum);
 

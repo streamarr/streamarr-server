@@ -523,6 +523,11 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
             });
   }
 
+  /**
+   * Attempts to demote the sole household owner within a transaction.
+   *
+   * @param ownerAccountId the account identifier of the household owner to demote
+   */
   private void demoteSoleOwner(UUID ownerAccountId) {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
@@ -533,6 +538,9 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
             });
   }
 
+  /**
+   * Attempts to persist a profile without an assigned manager.
+   */
   private void commitManagerlessProfile() {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
@@ -541,6 +549,12 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
                     Profile.builder().name("Managerless Profile").build()));
   }
 
+  /**
+   * Creates and activates a child profile share without an adult profile PIN.
+   *
+   * @param accountId   the account assigned as the child's manager
+   * @param householdId the household receiving the active share
+   */
   private void activateKidShareWithoutAdultPin(UUID accountId, UUID householdId) {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
@@ -563,6 +577,12 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
             });
   }
 
+  /**
+   * Removes the specified local account's management assignment from a profile.
+   *
+   * @param profileId      the profile whose manager assignment is removed
+   * @param localAccountId the local account whose management assignment is removed
+   */
   private void removeLocalManager(UUID profileId, UUID localAccountId) {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
@@ -576,6 +596,12 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
             });
   }
 
+  /**
+   * Moves a local parent account to the specified household.
+   *
+   * @param localParentId    the identifier of the parent account to move
+   * @param remoteHouseholdId the identifier of the destination household
+   */
   private void moveLocalParent(UUID localParentId, UUID remoteHouseholdId) {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
@@ -586,11 +612,22 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
             });
   }
 
+  /**
+   * Deletes the specified profile without providing deletion authorization.
+   *
+   * @param profileId the identifier of the profile to delete
+   */
   private void deleteProfileWithoutAuthorization(UUID profileId) {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(_ -> profileRepository.deleteById(profileId));
   }
 
+  /**
+   * Deletes a shared profile after recording ordinary deletion authorization.
+   *
+   * @param accountId the account authorizing the deletion
+   * @param profileId the profile to delete
+   */
   private void deleteSharedProfile(UUID accountId, UUID profileId) {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
@@ -605,6 +642,12 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
             });
   }
 
+  /**
+   * Creates a portable identity with an account, household, profile, active household share, and profile manager.
+   *
+   * @param displayName the display name used to name the account, household, and profile
+   * @return the identifiers of the created account, household, and profile
+   */
   private PortableIdentity createPortableIdentity(String displayName) {
     return new TransactionTemplate(transactionManager)
         .execute(

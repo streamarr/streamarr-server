@@ -18,6 +18,12 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   private final DSLContext dsl;
   private final EntityManager entityManager;
 
+  /**
+   * Finds the owner account associated with a home household.
+   *
+   * @param homeHouseholdId the home household identifier
+   * @return the associated owner account, if one exists
+   */
   @Override
   public Optional<UserAccount> findOwnerByHomeHouseholdId(UUID homeHouseholdId) {
     var query =
@@ -28,6 +34,13 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
         .findFirst();
   }
 
+  /**
+   * Locks the enabled account when its password hash matches the expected value.
+   *
+   * @param accountId the account identifier
+   * @param expectedPasswordHash the password hash expected for the account
+   * @return {@code true} if a matching enabled account exists and is locked, {@code false} otherwise
+   */
   @Override
   public boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash) {
     return dsl.select(USER_ACCOUNT.ID)

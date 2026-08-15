@@ -20,6 +20,14 @@ public class PasswordChangeCompletionService {
   private final RefreshTokenService refreshTokenService;
   private final Clock clock;
 
+  /**
+   * Completes a password change and establishes a replacement authentication session.
+   *
+   * @param command the account, requesting session, expected password hash, and new password hash
+   * @return the updated account, replacement session, and raw refresh token
+   * @throws AuthenticationRequiredException if the credentials changed, the account cannot be found,
+   *         or the requesting session is invalid
+   */
   @Transactional
   public PasswordChangeResult complete(PasswordChangeCompletionCommand command) {
     if (!accountRepository.lockIfCredentialsUnchanged(

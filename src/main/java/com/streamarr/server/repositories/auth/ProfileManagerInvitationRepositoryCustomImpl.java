@@ -17,6 +17,14 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
 
+  /**
+   * Creates a pending profile-manager invitation when one does not already exist.
+   *
+   * @param profileId          the profile associated with the invitation
+   * @param invitingAccountId  the account sending the invitation
+   * @param invitedAccountId   the account receiving the invitation
+   * @return the invitation and whether it was newly created
+   */
   @Override
   public ProfileManagerInvitationInsertResult insertPendingIfAbsent(
       UUID profileId, UUID invitingAccountId, UUID invitedAccountId) {
@@ -65,6 +73,15 @@ public class ProfileManagerInvitationRepositoryCustomImpl
     }
   }
 
+  /**
+   * Creates a pending profile-manager invitation with the specified identifiers.
+   *
+   * @param id                 the invitation identifier
+   * @param profileId          the profile identifier
+   * @param invitingAccountId  the account sending the invitation
+   * @param invitedAccountId   the account receiving the invitation
+   * @return the pending profile-manager invitation
+   */
   private ProfileManagerInvitation invitation(
       UUID id, UUID profileId, UUID invitingAccountId, UUID invitedAccountId) {
     return ProfileManagerInvitation.builder()

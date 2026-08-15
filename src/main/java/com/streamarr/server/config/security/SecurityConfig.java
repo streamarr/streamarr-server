@@ -30,17 +30,14 @@ public class SecurityConfig {
   private final LiveIdentityAuthorizationFilter liveIdentityAuthorizationFilter;
 
   /**
-   * The permit matrix: pre-auth endpoints (shared with the bearer resolver, so the two lists cannot
-   * drift) and health stay open; non-health actuator endpoints are refused for everyone; streams
-   * demand SCOPE_PLAYBACK carried in the playback-URL token (outside the hierarchy); images demand
-   * SCOPE_PROFILE; everything else — GraphQL including introspection and future surfaces — demands
-   * SCOPE_ACCOUNT, which profile tokens satisfy through the scope hierarchy.
+   * Configures the application's Spring Security filter chain and authorization rules.
    *
-   * <p>CSRF (SPA shape: readable host-bound cookie, Xor rendering, header-only submission) protects
-   * unsafe requests from the Streamarr cookie-carrying browser population. Explicitly insecure
-   * development uses an unprefixed fallback. The filter is wired manually because the
-   * resource-server DSL exempts any request its bearer resolver finds a token on — and our resolver
-   * reads the access cookie, which is precisely the ambient credential CSRF must cover.
+   * <p>Public endpoints and health checks are permitted, while actuator endpoints, streams, images,
+   * and all other requests require their respective authorities. The chain also configures JWT
+   * authentication, live-identity authorization, cookie-scoped CSRF protection, and custom
+   * authentication and access-denied handling.
+   *
+   * @return the configured security filter chain
    */
   @Bean
   SecurityFilterChain securityFilterChain(HttpSecurity http) {
@@ -82,11 +79,22 @@ public class SecurityConfig {
         .build();
   }
 
+  /**
+   * Configures the application's role hierarchy.
+   *
+   * @return the configured role hierarchy
+   */
   @Bean
   static RoleHierarchy roleHierarchy() {
     return ScopeHierarchy.roleHierarchy();
   }
 
+  /**
+   * Disables automatic servlet-container registration for the live-identity authorization filter.
+   *
+   * @param filter the live-identity authorization filter
+   * @return the disabled filter registration
+   */
   @Bean
   static FilterRegistrationBean<LiveIdentityAuthorizationFilter>
       liveIdentityAuthorizationFilterRegistration(LiveIdentityAuthorizationFilter filter) {
@@ -95,6 +103,11 @@ public class SecurityConfig {
     return registration;
   }
 
+  /**
+   * Creates the CSRF filter configured for cookie-based requests.
+   *
+   * @return the configured CSRF filter
+   */
   private CsrfFilter cookieScopedCsrfFilter() {
     var tokenRepository =
         new StreamarrCookieCsrfTokenRepository(tokenProperties.refreshTokenTtl(), cookiePolicy);

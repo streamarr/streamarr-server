@@ -46,6 +46,9 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
 
   private final List<UserAccount> accounts = new ArrayList<>();
 
+  /**
+   * Removes device authorization records and deletes all seeded test accounts.
+   */
   @BeforeEach
   @AfterEach
   void deleteSeededRows() {
@@ -162,6 +165,12 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
     return request.header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer);
   }
 
+  /**
+   * Creates a bearer access token for the specified account.
+   *
+   * @param account the account associated with the token
+   * @return the bearer access token value
+   */
   private String bearerFor(UserAccount account) {
     var session = refreshTokenService.createSession(account, "web").session();
     return accessTokenIssuer
@@ -169,6 +178,11 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
         .value();
   }
 
+  /**
+   * Creates a test account and tracks it for cleanup.
+   *
+   * @return the created test account
+   */
   private UserAccount seedAccount() {
     var account = authTestSupport.createAccount();
     accounts.add(account);

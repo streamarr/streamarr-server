@@ -12,12 +12,22 @@ public record ForceProfileUnshareCommand(
     @NonNull String reason) {
 
   public static class ForceProfileUnshareCommandBuilder {
+    /**
+     * Provides a redacted representation of the builder.
+     *
+     * @return a placeholder that excludes builder field values
+     */
     @Override
     public String toString() {
       return "ForceProfileUnshareCommandBuilder[REDACTED]";
     }
   }
 
+  /**
+   * Formats the command for display without exposing the password.
+   *
+   * @return a textual representation containing the acting account ID, share ID, and reason
+   */
   @Override
   public String toString() {
     return "ForceProfileUnshareCommand[actingAccountId=%s, shareId=%s, reason=%s]"

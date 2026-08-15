@@ -123,6 +123,9 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   private String setupHouseholdName;
   private final List<UUID> additionalCleanupAccountIds = new ArrayList<>();
 
+  /**
+   * Removes bootstrap state and all test-created identity data after each test.
+   */
   @AfterEach
   void deleteIdentityGraph() {
     new TransactionTemplate(transactionManager)
@@ -767,6 +770,12 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(secondExpiry).isEqualTo(firstExpiry);
   }
 
+  /**
+   * Selects the configured profile using a bearer token.
+   *
+   * @param bearerToken the account-scoped bearer token used for profile selection
+   * @return the resulting profile-scoped access token
+   */
   private String selectProfileToken(String bearerToken) throws Exception {
     var response =
         mockMvc
@@ -784,6 +793,11 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     return objectMapper.readTree(response).get("accessToken").asString();
   }
 
+  /**
+   * Creates an identity with two profiles and authenticates it with account scope.
+   *
+   * @return the account-scoped access token issued by the login endpoint
+   */
   private String accountScopedTokenWithTwoProfiles() throws Exception {
     seedSingleProfileIdentity();
     createPortableProfile();
@@ -1359,6 +1373,13 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     return objectMapper.readTree(response).get("refreshToken").asString();
   }
 
+  /**
+   * Redeems a refresh token and extracts the resulting account-scoped refresh token.
+   *
+   * @param refreshToken the refresh token to redeem
+   * @return the refresh token issued by the authentication endpoint
+   * @throws Exception if the request or response processing fails
+   */
   private String redeemAndReturnRefreshToken(String refreshToken) throws Exception {
     var response =
         mockMvc
@@ -1376,6 +1397,9 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     return objectMapper.readTree(response).get("refreshToken").asString();
   }
 
+  /**
+   * Seeds a household, owner account, and portable profile for integration tests.
+   */
   private void seedSingleProfileIdentity() {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
@@ -1397,6 +1421,11 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     return new TransactionTemplate(transactionManager).execute(_ -> persistPortableProfile());
   }
 
+  /**
+   * Persists a portable profile linked to the current account and household.
+   *
+   * @return the persisted portable profile
+   */
   private Profile persistPortableProfile() {
     var portableProfile = profileRepository.save(ProfileFixture.defaultProfileBuilder().build());
     profileManagerRepository.save(
@@ -1413,6 +1442,11 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     return portableProfile;
   }
 
+  /**
+   * Deletes the identity associated with an email address.
+   *
+   * @param email the email address of the identity to delete
+   */
   private void deleteIdentityByEmail(String email) {
     if (email == null) {
       return;
@@ -1427,6 +1461,11 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     }
   }
 
+  /**
+   * Deletes an account and its associated profiles, sharing records, invitations, and orphaned home household.
+   *
+   * @param accountId the identifier of the account to delete
+   */
   private void deleteIdentityByAccountId(UUID accountId) {
     var householdId =
         dsl.select(USER_ACCOUNT.HOME_HOUSEHOLD_ID)
@@ -1465,6 +1504,12 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     }
   }
 
+  /**
+   * Gets the SameSite attribute of a cookie.
+   *
+   * @param cookie the cookie whose SameSite attribute is retrieved
+   * @return the cookie's SameSite attribute value
+   */
   private static String sameSiteOf(Cookie cookie) {
     return cookie.getAttribute("SameSite");
   }

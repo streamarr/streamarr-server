@@ -9,6 +9,12 @@ public final class AuthenticatedIdentityFixture {
 
   private AuthenticatedIdentityFixture() {}
 
+  /**
+   * Creates a builder for an authenticated identity with randomly generated identifiers
+   * and default user playback settings.
+   *
+   * @return a preconfigured authenticated identity builder
+   */
   public static AuthenticatedIdentity.AuthenticatedIdentityBuilder defaultIdentityBuilder() {
     return AuthenticatedIdentity.builder()
         .accountId(UUID.randomUUID())

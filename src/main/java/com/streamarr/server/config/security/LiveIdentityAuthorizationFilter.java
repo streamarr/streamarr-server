@@ -27,6 +27,9 @@ public class LiveIdentityAuthorizationFilter extends OncePerRequestFilter {
   private final RequestAuthorizationStateResolver stateResolver;
   private final RestAuthenticationEntryPoint authenticationEntryPoint;
 
+  /**
+   * Validates live authorization state and adjusts profile-scoped authentication when no active profile exists.
+   */
   @Override
   protected void doFilterInternal(
       HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -67,6 +70,11 @@ public class LiveIdentityAuthorizationFilter extends OncePerRequestFilter {
     filterChain.doFilter(request, response);
   }
 
+  /**
+   * Downgrades the current authentication from profile scope to account scope and updates the security context.
+   *
+   * @param token the profile-scoped authentication to replace
+   */
   private void downgradeToAccountScope(StreamarrAuthenticationToken token) {
     var signedIdentity = token.getPrincipal();
     var accountIdentity =

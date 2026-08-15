@@ -248,6 +248,11 @@ class PortableIdentityGuardVersionIT extends AbstractIntegrationTest {
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
+  /**
+   * Creates a household, account, profile, manager relationship, and active profile share for testing.
+   *
+   * @return identifiers for the created household, account, and profile
+   */
   private Fixture createFixture() {
     return new TransactionTemplate(transactionManager)
         .execute(
@@ -274,6 +279,11 @@ class PortableIdentityGuardVersionIT extends AbstractIntegrationTest {
             });
   }
 
+  /**
+   * Creates a user account associated with a newly created household.
+   *
+   * @return the identifier of the created account
+   */
   private UUID createAccount() {
     return new TransactionTemplate(transactionManager)
         .execute(
@@ -285,6 +295,12 @@ class PortableIdentityGuardVersionIT extends AbstractIntegrationTest {
             });
   }
 
+  /**
+   * Builds a user account associated with the specified household.
+   *
+   * @param householdId the household to assign as the account's home household
+   * @return the configured user account
+   */
   private UserAccount account(UUID householdId) {
     return UserAccount.builder()
         .email("guard-version-" + UUID.randomUUID() + "@example.com")
@@ -296,11 +312,23 @@ class PortableIdentityGuardVersionIT extends AbstractIntegrationTest {
         .build();
   }
 
+  /**
+   * Retrieves the management version associated with a profile.
+   *
+   * @param profileId the identifier of the profile
+   * @return the profile's management version
+   */
   private long managementVersion(UUID profileId) {
     return jdbcTemplate.queryForObject(
         "SELECT management_version FROM profile WHERE id = ?", Long.class, profileId);
   }
 
+  /**
+   * Retrieves the household safety version.
+   *
+   * @param householdId the household identifier
+   * @return the household's safety version
+   */
   private long safetyVersion(UUID householdId) {
     return jdbcTemplate.queryForObject(
         "SELECT safety_version FROM household WHERE id = ?", Long.class, householdId);

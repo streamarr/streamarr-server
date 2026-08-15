@@ -9,6 +9,11 @@ public class FakeProfileSelectionCleaner implements ProfileSelectionCleaner {
 
   public final List<ClearedSelection> clearedSelections = new ArrayList<>();
 
+  /**
+   * Records the profile and household selection as cleared.
+   *
+   * @return {@code 1}, indicating one selection was cleared
+   */
   @Override
   public int clear(UUID profileId, UUID householdId) {
     clearedSelections.add(new ClearedSelection(profileId, householdId));

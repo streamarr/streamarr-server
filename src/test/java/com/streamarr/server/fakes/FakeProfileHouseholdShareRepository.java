@@ -12,6 +12,11 @@ import java.util.UUID;
 public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<ProfileHouseholdShare>
     implements ProfileHouseholdShareRepository {
 
+  /**
+   * Ensures a pending profile-household share exists.
+   *
+   * @return the existing or newly created share and whether it was inserted
+   */
   @Override
   public synchronized ProfileHouseholdShareInsertResult insertPendingIfAbsent(
       UUID profileId, UUID householdId) {
@@ -29,6 +34,13 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
     return new ProfileHouseholdShareInsertResult(share, true);
   }
 
+  /**
+   * Finds shares associated with a household and having the specified status.
+   *
+   * @param householdId the household identifier
+   * @param status      the required share status
+   * @return the matching profile-household shares
+   */
   @Override
   public List<ProfileHouseholdShare> findByHouseholdIdAndStatus(
       UUID householdId, ProfileShareStatus status) {
@@ -38,6 +50,13 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
         .toList();
   }
 
+  /**
+   * Finds shares associated with any of the specified households and the given status.
+   *
+   * @param householdIds the household identifiers to match
+   * @param status       the required share status
+   * @return shares matching one of the household identifiers and the specified status
+   */
   @Override
   public List<ProfileHouseholdShare> findByHouseholdIdInAndStatus(
       Collection<UUID> householdIds, ProfileShareStatus status) {
@@ -47,6 +66,13 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
         .toList();
   }
 
+  /**
+   * Finds all profile-household shares for a profile with the specified status.
+   *
+   * @param profileId the profile identifier
+   * @param status    the required share status
+   * @return the matching profile-household shares
+   */
   @Override
   public List<ProfileHouseholdShare> findByProfileIdAndStatus(
       UUID profileId, ProfileShareStatus status) {
@@ -56,6 +82,12 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
         .toList();
   }
 
+  /**
+   * Finds all household shares associated with a profile.
+   *
+   * @param profileId the profile identifier
+   * @return the shares associated with the profile
+   */
   @Override
   public List<ProfileHouseholdShare> findByProfileId(UUID profileId) {
     return database.values().stream()
@@ -63,6 +95,14 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
         .toList();
   }
 
+  /**
+   * Determines whether a profile-household share has the specified status.
+   *
+   * @param profileId   the profile identifier
+   * @param householdId the household identifier
+   * @param status      the share status
+   * @return {@code true} if a matching share exists, {@code false} otherwise
+   */
   @Override
   public boolean existsByProfileIdAndHouseholdIdAndStatus(
       UUID profileId, UUID householdId, ProfileShareStatus status) {
@@ -74,6 +114,13 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
                     && status == share.getStatus());
   }
 
+  /**
+   * Finds the first share associated with the specified profile and household.
+   *
+   * @param profileId   the profile identifier
+   * @param householdId the household identifier
+   * @return the matching share, if one exists
+   */
   @Override
   public Optional<ProfileHouseholdShare> findByProfileIdAndHouseholdId(
       UUID profileId, UUID householdId) {
@@ -83,6 +130,12 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
         .findFirst();
   }
 
+  /**
+   * Counts the household shares associated with a profile.
+   *
+   * @param profileId the profile identifier
+   * @return the number of household shares associated with the profile
+   */
   @Override
   public long countByProfileId(UUID profileId) {
     return database.values().stream()

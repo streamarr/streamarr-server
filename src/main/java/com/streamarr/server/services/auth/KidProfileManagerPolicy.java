@@ -31,6 +31,14 @@ public class KidProfileManagerPolicy {
   private final ProfileHouseholdShareRepository shareRepository;
   private final UserAccountRepository accountRepository;
 
+  /**
+   * Validates that removing an account from a kid profile leaves each shared household with a local manager.
+   *
+   * @param profileId        the profile whose manager is being removed
+   * @param removedAccountId the account being removed as a manager
+   * @throws ProfileAccessDeniedException     if the profile does not exist
+   * @throws KidProfileManagerRequiredException if a shared household would have no qualifying local manager
+   */
   public void validateManagerRemoval(UUID profileId, UUID removedAccountId) {
     var profile =
         profileRepository.findById(profileId).orElseThrow(ProfileAccessDeniedException::new);
@@ -47,6 +55,13 @@ public class KidProfileManagerPolicy {
         householdId -> requireLocalManager(managers, householdId, removedAccountId));
   }
 
+  /**
+   * Validates that an account can leave a household without leaving shared kid profiles
+   * without a qualifying local manager.
+   *
+   * @param accountId  the departing account
+   * @param householdId the household affected by the departure
+   */
   public void validateAccountDeparture(UUID accountId, UUID householdId) {
     var managedProfileIds =
         managerRepository.findByAccountId(accountId).stream()
@@ -65,6 +80,11 @@ public class KidProfileManagerPolicy {
             profile -> requireLocalManager(loadManagers(profile.getId()), householdId, accountId));
   }
 
+  /**
+   * Validates that every household actively sharing a kid profile has an enabled local owner or parent manager.
+   *
+   * @param profileId the profile to validate
+   */
   public void validateKidKind(UUID profileId) {
     var householdIds =
         shareRepository.findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE).stream()
@@ -77,6 +97,12 @@ public class KidProfileManagerPolicy {
     householdIds.forEach(householdId -> requireLocalManager(managers, householdId, null));
   }
 
+  /**
+   * Validates whether a profile can be activated for sharing with a household.
+   *
+   * @param profileId   the profile to validate
+   * @param householdId the household receiving the share
+   */
   public void validateShareActivation(UUID profileId, UUID householdId) {
     var profile =
         profileRepository.findById(profileId).orElseThrow(ProfileAccessDeniedException::new);
@@ -85,6 +111,12 @@ public class KidProfileManagerPolicy {
     }
   }
 
+  /**
+   * Loads the managers and corresponding user accounts for a profile.
+   *
+   * @param profileId the profile whose managers are loaded
+   * @return the profile managers and accounts indexed by account ID
+   */
   private ProfileManagers loadManagers(UUID profileId) {
     var managers = managerRepository.findByProfileId(profileId);
     var accountIds = managers.stream().map(manager -> manager.getAccountId()).toList();
@@ -94,6 +126,14 @@ public class KidProfileManagerPolicy {
     return new ProfileManagers(managers, accountsById);
   }
 
+  /**
+   * Ensures the household retains an enabled local account authorized to manage kid profiles.
+   *
+   * @param profileManagers   the profile managers and their associated accounts
+   * @param householdId       the household that must retain a qualifying manager
+   * @param excludedAccountId the account excluded from consideration
+   * @throws KidProfileManagerRequiredException if no qualifying local manager exists
+   */
   private void requireLocalManager(
       ProfileManagers profileManagers, UUID householdId, UUID excludedAccountId) {
     var hasLocalManager =
@@ -111,6 +151,12 @@ public class KidProfileManagerPolicy {
     }
   }
 
+  /**
+   * Determines whether a household role authorizes management of kid profiles.
+   *
+   * @param role the household role to evaluate
+   * @return {@code true} for the {@code OWNER} or {@code PARENT} role, {@code false} otherwise
+   */
   private boolean canManageKid(HouseholdRole role) {
     return role == HouseholdRole.OWNER || role == HouseholdRole.PARENT;
   }

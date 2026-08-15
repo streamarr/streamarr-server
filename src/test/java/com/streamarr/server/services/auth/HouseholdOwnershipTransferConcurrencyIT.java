@@ -70,6 +70,11 @@ class HouseholdOwnershipTransferConcurrencyIT extends AbstractIntegrationTest {
     }
   }
 
+  /**
+   * Creates a household fixture with an owner and two parent candidates.
+   *
+   * @return the identifiers of the created household, owner, and candidate accounts
+   */
   private Fixture createFixture() {
     return new TransactionTemplate(transactionManager)
         .execute(
@@ -94,6 +99,14 @@ class HouseholdOwnershipTransferConcurrencyIT extends AbstractIntegrationTest {
             });
   }
 
+  /**
+   * Builds a user account associated with a household and household role.
+   *
+   * @param householdId the household associated with the account
+   * @param role        the account's household role
+   * @param password    the plaintext password to encode for the account
+   * @return            the configured user account
+   */
   private UserAccount account(UUID householdId, HouseholdRole role, String password) {
     return UserAccount.builder()
         .email("ownership-race-" + UUID.randomUUID() + "@example.com")
@@ -105,6 +118,15 @@ class HouseholdOwnershipTransferConcurrencyIT extends AbstractIntegrationTest {
         .build();
   }
 
+  /**
+   * Attempts to transfer household ownership to the specified account after the
+   * concurrent transfer test is released.
+   *
+   * @param start           latch controlling when the transfer attempt begins
+   * @param fixture         household and account identifiers used for the transfer
+   * @param targetAccountId account to receive household ownership
+   * @return {@code null} if the transfer succeeds, or the thrown runtime exception
+   */
   private Throwable transferOwnershipAfter(
       CountDownLatch start, Fixture fixture, UUID targetAccountId) {
     awaitStart(start);
@@ -123,6 +145,13 @@ class HouseholdOwnershipTransferConcurrencyIT extends AbstractIntegrationTest {
     }
   }
 
+  /**
+   * Locks the specified user account row for the current database transaction.
+   *
+   * @param connection the database connection used to acquire the row lock
+   * @param accountId the identifier of the account to lock
+   * @throws SQLException if the query cannot be prepared or executed
+   */
   private void lockAccount(Connection connection, UUID accountId) throws SQLException {
     try (var statement =
         connection.prepareStatement("SELECT id FROM user_account WHERE id = ? FOR UPDATE")) {
@@ -131,6 +160,9 @@ class HouseholdOwnershipTransferConcurrencyIT extends AbstractIntegrationTest {
     }
   }
 
+  /**
+   * Waits until at least two ownership transfer statements are blocked by database locks.
+   */
   private void awaitBothTransfersBlocked() {
     await()
         .atMost(Duration.ofSeconds(10))
@@ -149,6 +181,12 @@ class HouseholdOwnershipTransferConcurrencyIT extends AbstractIntegrationTest {
                     .isGreaterThanOrEqualTo(2));
   }
 
+  /**
+   * Counts the owner accounts associated with a household.
+   *
+   * @param householdId the household identifier
+   * @return the number of owner accounts associated with the household
+   */
   private int ownerCount(UUID householdId) {
     return jdbcTemplate.queryForObject(
         """
@@ -161,6 +199,12 @@ class HouseholdOwnershipTransferConcurrencyIT extends AbstractIntegrationTest {
         householdId);
   }
 
+  /**
+   * Waits for the ownership transfer race to begin.
+   *
+   * @param start latch signaling that the transfer tasks may proceed
+   * @throws IllegalStateException if waiting is interrupted
+   */
   private void awaitStart(CountDownLatch start) {
     try {
       assertThat(start.await(10, TimeUnit.SECONDS)).isTrue();

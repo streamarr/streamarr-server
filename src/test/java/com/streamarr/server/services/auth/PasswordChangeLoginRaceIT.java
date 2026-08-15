@@ -52,6 +52,9 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
 
   private UserAccount account;
 
+  /**
+   * Resets password-encoder coordination state and deletes the test account with its related data.
+   */
   @AfterEach
   void deleteAccountAndCascades() {
     passwordEncoder.reset();

@@ -13,20 +13,68 @@ import org.springframework.stereotype.Repository;
 public interface ProfileHouseholdShareRepository
     extends JpaRepository<ProfileHouseholdShare, UUID>, ProfileHouseholdShareRepositoryCustom {
 
-  List<ProfileHouseholdShare> findByHouseholdIdAndStatus(
+  /**
+       * Finds household shares with the specified status.
+       *
+       * @param householdId the household identifier
+       * @param status      the required share status
+       * @return the matching household shares
+       */
+      List<ProfileHouseholdShare> findByHouseholdIdAndStatus(
       UUID householdId, ProfileShareStatus status);
 
-  List<ProfileHouseholdShare> findByHouseholdIdInAndStatus(
+  /**
+       * Finds household shares for the specified households and status.
+       *
+       * @param householdIds the household identifiers to search
+       * @param status       the required share status
+       * @return the matching household shares
+       */
+      List<ProfileHouseholdShare> findByHouseholdIdInAndStatus(
       Collection<UUID> householdIds, ProfileShareStatus status);
 
-  List<ProfileHouseholdShare> findByProfileIdAndStatus(UUID profileId, ProfileShareStatus status);
+  /**
+ * Finds shares for a profile with the specified status.
+ *
+ * @param profileId the profile identifier
+ * @param status    the share status to filter by
+ * @return the matching profile shares
+ */
+List<ProfileHouseholdShare> findByProfileIdAndStatus(UUID profileId, ProfileShareStatus status);
 
-  List<ProfileHouseholdShare> findByProfileId(UUID profileId);
+  /**
+ * Retrieves all household shares associated with a profile.
+ *
+ * @param profileId the profile identifier
+ * @return the profile's household shares
+ */
+List<ProfileHouseholdShare> findByProfileId(UUID profileId);
 
-  boolean existsByProfileIdAndHouseholdIdAndStatus(
+  /**
+       * Determines whether a profile-household share with the specified status exists.
+       *
+       * @param profileId   the profile identifier
+       * @param householdId the household identifier
+       * @param status      the share status
+       * @return {@code true} if a matching share exists, {@code false} otherwise
+       */
+      boolean existsByProfileIdAndHouseholdIdAndStatus(
       UUID profileId, UUID householdId, ProfileShareStatus status);
 
-  Optional<ProfileHouseholdShare> findByProfileIdAndHouseholdId(UUID profileId, UUID householdId);
+  /**
+ * Finds the share associated with a profile and household.
+ *
+ * @param profileId   the profile identifier
+ * @param householdId the household identifier
+ * @return the matching share, if one exists
+ */
+Optional<ProfileHouseholdShare> findByProfileIdAndHouseholdId(UUID profileId, UUID householdId);
 
-  long countByProfileId(UUID profileId);
+  /**
+ * Counts the household shares associated with a profile.
+ *
+ * @param profileId the profile identifier
+ * @return the number of shares associated with the profile
+ */
+long countByProfileId(UUID profileId);
 }

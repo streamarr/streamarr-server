@@ -114,6 +114,11 @@ class PortableIdentityUpsertRaceIT extends AbstractIntegrationTest {
     }
   }
 
+  /**
+   * Creates transactional fixture data for an invitation race test.
+   *
+   * @return identifiers for the profile, accounts, and pending invitation
+   */
   private InvitationFixture createInvitationFixture() {
     return new TransactionTemplate(transactionManager)
         .execute(
@@ -150,6 +155,11 @@ class PortableIdentityUpsertRaceIT extends AbstractIntegrationTest {
             });
   }
 
+  /**
+   * Creates transactional test data for a pending profile household share.
+   *
+   * @return identifiers for the profile, target household, and pending share
+   */
   private ShareFixture createShareFixture() {
     return new TransactionTemplate(transactionManager)
         .execute(
@@ -184,6 +194,13 @@ class PortableIdentityUpsertRaceIT extends AbstractIntegrationTest {
             });
   }
 
+  /**
+   * Creates a user account associated with the specified household.
+   *
+   * @param householdId the account's home household
+   * @param owner whether the account has the owner household role
+   * @return a newly built user account with generated credentials
+   */
   private UserAccount account(UUID householdId, boolean owner) {
     return UserAccount.builder()
         .email("upsert-race-" + UUID.randomUUID() + "@example.com")
@@ -195,6 +212,14 @@ class PortableIdentityUpsertRaceIT extends AbstractIntegrationTest {
         .build();
   }
 
+  /**
+   * Creates an execution listener that pauses after the first SQL statement involving the specified table.
+   *
+   * @param tableName the table name to monitor
+   * @param insertCompleted the latch signaled after the matching statement executes
+   * @param transitionCompleted the latch awaited before execution resumes
+   * @return an execution listener coordinating the concurrent test transition
+   */
   private ExecuteListener pauseAfterInsert(
       String tableName, CountDownLatch insertCompleted, CountDownLatch transitionCompleted) {
     var paused = new AtomicBoolean();
@@ -211,6 +236,12 @@ class PortableIdentityUpsertRaceIT extends AbstractIntegrationTest {
     };
   }
 
+  /**
+   * Waits for the latch to complete within ten seconds.
+   *
+   * @param latch the latch coordinating the concurrent upsert operation
+   * @throws IllegalStateException if the wait is interrupted
+   */
   private void await(CountDownLatch latch) {
     try {
       assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();

@@ -9,6 +9,13 @@ import java.util.UUID;
 public class FakeSecurityAuditEventRepository extends FakeJpaRepository<SecurityAuditEvent>
     implements SecurityAuditEventRepository {
 
+  /**
+   * Finds security audit events for an acting account and operation.
+   *
+   * @param actingAccountId the acting account identifier
+   * @param operation       the audit operation
+   * @return the matching security audit events
+   */
   @Override
   public List<SecurityAuditEvent> findByActingAccountIdAndOperation(
       UUID actingAccountId, SecurityAuditOperation operation) {

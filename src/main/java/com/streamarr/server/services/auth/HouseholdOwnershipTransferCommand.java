@@ -13,12 +13,22 @@ public record HouseholdOwnershipTransferCommand(
     @NonNull String reason) {
 
   public static class HouseholdOwnershipTransferCommandBuilder {
+    /**
+     * Returns a redacted representation of the builder.
+     *
+     * @return a string that omits sensitive field values
+     */
     @Override
     public String toString() {
       return "HouseholdOwnershipTransferCommandBuilder[REDACTED]";
     }
   }
 
+  /**
+   * Returns a string representation containing the account identifiers, household identifier, and transfer reason.
+   *
+   * @return a string representation of this command without its password
+   */
   @Override
   public String toString() {
     return "HouseholdOwnershipTransferCommand[actingAccountId=%s, householdId=%s, targetAccountId=%s, reason=%s]"

@@ -22,6 +22,11 @@ public class ProfilePolicyService {
   private final KidProfileManagerPolicy kidManagerPolicy;
   private final SecurityAuditService auditService;
 
+  /**
+   * Changes the kind of a managed profile.
+   *
+   * @param command the requested profile-kind change and acting account
+   */
   @Transactional
   public void setKind(SetProfileKindCommand command) {
     var profile = requireManagedProfile(command.actingAccountId(), command.profileId());
@@ -35,6 +40,11 @@ public class ProfilePolicyService {
     saveAndAudit(profile, command.actingAccountId(), SecurityAuditOperation.PROFILE_KIND_CHANGED);
   }
 
+  /**
+   * Sets the maximum content-rating age allowed for a managed profile.
+   *
+   * @param command the account, profile, and content-rating age to apply
+   */
   @Transactional
   public void setContentCeiling(SetProfileContentCeilingCommand command) {
     var profile = requireManagedProfile(command.actingAccountId(), command.profileId());
@@ -47,6 +57,11 @@ public class ProfilePolicyService {
         profile, command.actingAccountId(), SecurityAuditOperation.PROFILE_CONTENT_CEILING_SET);
   }
 
+  /**
+   * Removes the maximum content-rating age restriction from a managed profile.
+   *
+   * @param command the request containing the acting account and profile identifiers
+   */
   @Transactional
   public void removeContentCeiling(RemoveProfileContentCeilingCommand command) {
     var profile = requireManagedProfile(command.actingAccountId(), command.profileId());
@@ -58,6 +73,11 @@ public class ProfilePolicyService {
         profile, command.actingAccountId(), SecurityAuditOperation.PROFILE_CONTENT_CEILING_REMOVED);
   }
 
+  /**
+   * Resets the PIN for a managed profile.
+   *
+   * @param command the command containing the acting account, profile, and new PIN hash
+   */
   @Transactional
   public void resetPin(ResetProfilePinCommand command) {
     var profile = requireManagedProfile(command.actingAccountId(), command.profileId());
@@ -68,6 +88,15 @@ public class ProfilePolicyService {
     saveAndAudit(profile, command.actingAccountId(), SecurityAuditOperation.PROFILE_PIN_RESET);
   }
 
+  /**
+   * Retrieves a profile managed by the specified account.
+   *
+   * @param actingAccountId the account requesting access
+   * @param profileId the profile to retrieve
+   * @return the managed profile
+   * @throws ProfileManagementDeniedException if the account does not manage the profile
+   * @throws ProfileAccessDeniedException if the profile cannot be found
+   */
   private Profile requireManagedProfile(UUID actingAccountId, UUID profileId) {
     if (!managerRepository.existsByAccountIdAndProfileId(actingAccountId, profileId)) {
       throw new ProfileManagementDeniedException();
@@ -75,6 +104,13 @@ public class ProfilePolicyService {
     return profileRepository.findById(profileId).orElseThrow(ProfileAccessDeniedException::new);
   }
 
+  /**
+   * Saves the profile and records the corresponding security audit event.
+   *
+   * @param profile the profile to save
+   * @param actingAccountId the account that performed the operation
+   * @param operation the audited security operation
+   */
   private void saveAndAudit(
       Profile profile, UUID actingAccountId, SecurityAuditOperation operation) {
     profileRepository.save(profile);

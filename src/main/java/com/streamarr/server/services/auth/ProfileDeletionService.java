@@ -32,6 +32,14 @@ public class ProfileDeletionService {
   private final PasswordEncoder passwordEncoder;
   private final SecurityAuditService auditService;
 
+  /**
+   * Deletes a profile after validating credentials, management authority, and deletion constraints.
+   *
+   * @param command the deletion request containing the acting account, profile, and password
+   * @throws ProfileManagementDeniedException if the acting account cannot manage the profile
+   * @throws ProfileDeletionBlockedException if active shares, pending manager invitations, or an invalid manager count prevent deletion
+   * @throws ProfileAccessDeniedException if the profile cannot be accessed
+   */
   @Transactional
   public void delete(DeleteProfileCommand command) {
     requireValidPassword(command);
@@ -72,6 +80,13 @@ public class ProfileDeletionService {
     profileRepository.delete(profile);
   }
 
+  /**
+   * Validates the password supplied for the acting account.
+   *
+   * @param command the deletion command containing the acting account identifier and password
+   * @throws ProfileAccessDeniedException if the acting account does not exist
+   * @throws InvalidCredentialsException if the supplied password is invalid
+   */
   private void requireValidPassword(DeleteProfileCommand command) {
     var account =
         accountRepository

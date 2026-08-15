@@ -6,7 +6,13 @@ import java.util.UUID;
 
 public interface UserAccountRepositoryCustom {
 
-  Optional<UserAccount> findOwnerByHomeHouseholdId(UUID homeHouseholdId);
+  /**
+ * Finds the owner account associated with a home household.
+ *
+ * @param homeHouseholdId the home household identifier
+ * @return the associated owner account, if one exists
+ */
+Optional<UserAccount> findOwnerByHomeHouseholdId(UUID homeHouseholdId);
 
   /**
    * Locks an enabled account only while its password hash still matches the caller's snapshot. This

@@ -29,6 +29,11 @@ public class HouseholdAdministrationService {
   private final Clock clock;
   private final SecurityAuditService auditService;
 
+  /**
+   * Transfers an account to a household with the specified household role.
+   *
+   * @param command the transfer details, including authorization, target household, target account, role, and reason
+   */
   @Transactional
   public void transferAccount(AccountHouseholdTransferCommand command) {
     requireReason(command.reason());
@@ -62,6 +67,13 @@ public class HouseholdAdministrationService {
             .build());
   }
 
+  /**
+   * Transfers household ownership to an eligible account in the household.
+   *
+   * @param command the ownership transfer details, including the household, acting account,
+   *                target account, password, and reason
+   * @throws IllegalArgumentException if the target account already owns the household
+   */
   @Transactional
   public void transferOwnership(HouseholdOwnershipTransferCommand command) {
     requireReason(command.reason());
@@ -102,6 +114,14 @@ public class HouseholdAdministrationService {
             .build());
   }
 
+  /**
+   * Verifies that the actor may transfer ownership of the specified household.
+   *
+   * @param actor   the account requesting the ownership transfer
+   * @param command the transfer request containing the household identifier and password
+   * @throws HouseholdAccessDeniedException if the actor is neither the enabled household owner nor an enabled server administrator
+   * @throws InvalidCredentialsException     if the supplied password is invalid
+   */
   private void requireOwnershipAuthority(
       UserAccount actor, HouseholdOwnershipTransferCommand command) {
     var isCurrentOwner =
@@ -117,6 +137,12 @@ public class HouseholdAdministrationService {
     }
   }
 
+  /**
+   * Ensures that an administration reason is provided.
+   *
+   * @param reason the administration reason to validate
+   * @throws IllegalArgumentException if the reason is null or blank
+   */
   private void requireReason(String reason) {
     if (reason == null || reason.isBlank()) {
       throw new IllegalArgumentException("An administration reason is required.");
