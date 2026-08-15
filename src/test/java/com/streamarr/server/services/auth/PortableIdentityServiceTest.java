@@ -131,8 +131,9 @@ class PortableIdentityServiceTest {
           attempts.incrementAndGet();
           throw failure("23514");
         };
+    var command = command();
 
-    assertThatThrownBy(() -> portableIdentityService.createPortableProfile(command()))
+    assertThatThrownBy(() -> portableIdentityService.createPortableProfile(command))
         .isInstanceOf(DataAccessResourceFailureException.class);
 
     assertThat(attempts).hasValue(1);
@@ -148,9 +149,10 @@ class PortableIdentityServiceTest {
           throw failure("40001");
         };
     Thread.currentThread().interrupt();
+    var command = command();
 
     try {
-      assertThatThrownBy(() -> portableIdentityService.createPortableProfile(command()))
+      assertThatThrownBy(() -> portableIdentityService.createPortableProfile(command))
           .isInstanceOf(DataAccessResourceFailureException.class);
 
       assertThat(attempts).hasValue(1);

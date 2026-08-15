@@ -123,9 +123,10 @@ class PlaybackTokenIssuerTest {
             .profileId(profileId)
             .build();
     var streamSession = sessionOwnedBy(profileId);
+    var playbackAuthority = authority();
+    var ttl = Duration.ofHours(1);
 
-    assertThatThrownBy(
-            () -> issuer.issue(foreignIdentity, authority(), streamSession, Duration.ofHours(1)))
+    assertThatThrownBy(() -> issuer.issue(foreignIdentity, playbackAuthority, streamSession, ttl))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 
@@ -140,11 +141,10 @@ class PlaybackTokenIssuerTest {
             .profileId(profileId)
             .build();
     var streamSession = sessionOwnedBy(profileId);
+    var identity = profileIdentity();
+    var ttl = Duration.ofHours(1);
 
-    assertThatThrownBy(
-            () ->
-                issuer.issue(
-                    profileIdentity(), foreignSessionAuthority, streamSession, Duration.ofHours(1)))
+    assertThatThrownBy(() -> issuer.issue(identity, foreignSessionAuthority, streamSession, ttl))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 
@@ -160,11 +160,11 @@ class PlaybackTokenIssuerTest {
             .profileId(UUID.randomUUID())
             .build();
     var streamSession = sessionOwnedBy(profileId);
+    var playbackAuthority = authority();
+    var ttl = Duration.ofHours(1);
 
     assertThatThrownBy(
-            () ->
-                issuer.issue(
-                    foreignProfileIdentity, authority(), streamSession, Duration.ofHours(1)))
+            () -> issuer.issue(foreignProfileIdentity, playbackAuthority, streamSession, ttl))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 

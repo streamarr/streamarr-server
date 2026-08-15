@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+@SuppressWarnings("java:S6539")
 @Slf4j
 @Service
 public class PortableIdentityService {
@@ -159,7 +160,7 @@ public class PortableIdentityService {
             MAX_ATTEMPTS);
         try {
           TimeUnit.MILLISECONDS.sleep(backoffMillis);
-        } catch (InterruptedException interrupted) {
+        } catch (InterruptedException _) {
           Thread.currentThread().interrupt();
           throw exception;
         }

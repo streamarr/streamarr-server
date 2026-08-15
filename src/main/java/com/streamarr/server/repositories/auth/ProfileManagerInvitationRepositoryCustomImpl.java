@@ -53,9 +53,14 @@ public class ProfileManagerInvitationRepositoryCustomImpl
               .forUpdate()
               .fetchOptional();
       if (existing.isPresent()) {
-        var record = existing.orElseThrow();
+        var existingInvitation = existing.orElseThrow();
         return new ProfileManagerInvitationInsertResult(
-            invitation(record.value1(), profileId, record.value2(), invitedAccountId), false);
+            invitation(
+                existingInvitation.value1(),
+                profileId,
+                existingInvitation.value2(),
+                invitedAccountId),
+            false);
       }
     }
   }

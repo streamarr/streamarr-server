@@ -114,14 +114,10 @@ class ProfileManagementServiceTest {
             .profileId(profileId)
             .name("  ")
             .build();
-    assertThatThrownBy(
-            () ->
-                CreatePortableProfileCommand.builder()
-                    .actingAccountId(accountId)
-                    .name(null)
-                    .kind(ProfileKind.ADULT)
-                    .build())
-        .isInstanceOf(NullPointerException.class);
+    var invalidCreation =
+        CreatePortableProfileCommand.builder().actingAccountId(accountId).kind(ProfileKind.ADULT);
+
+    assertThatThrownBy(invalidCreation::build).isInstanceOf(NullPointerException.class);
     assertThatThrownBy(() -> service.rename(blankName))
         .isInstanceOf(IllegalArgumentException.class);
   }

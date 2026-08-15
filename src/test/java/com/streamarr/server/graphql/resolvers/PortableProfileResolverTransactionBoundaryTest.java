@@ -79,12 +79,9 @@ class PortableProfileResolverTransactionBoundaryTest {
             authorizationService(UUID.randomUUID()),
             portableIdentityService(transactionManager, null, null),
             null);
+    var input = new PortableProfileInputs.ProfileKindChange("not-a-uuid", ProfileKind.KID);
 
-    assertThatThrownBy(
-            () ->
-                resolver.setProfileKind(
-                    new PortableProfileInputs.ProfileKindChange("not-a-uuid", ProfileKind.KID)))
-        .isInstanceOf(InvalidIdException.class);
+    assertThatThrownBy(() -> resolver.setProfileKind(input)).isInstanceOf(InvalidIdException.class);
     assertThat(transactionManager.beginCount).isZero();
   }
 
@@ -176,9 +173,13 @@ class PortableProfileResolverTransactionBoundaryTest {
     }
 
     @Override
-    protected void doCommit(DefaultTransactionStatus status) {}
+    protected void doCommit(DefaultTransactionStatus status) {
+      // Test transactions have no commit side effects.
+    }
 
     @Override
-    protected void doRollback(DefaultTransactionStatus status) {}
+    protected void doRollback(DefaultTransactionStatus status) {
+      // Test transactions have no rollback side effects.
+    }
   }
 }

@@ -97,16 +97,16 @@ class SessionScopeServiceTest {
             .status(ProfileShareStatus.ACTIVE)
             .build());
     var session = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
+    var accountId = account.getId();
+    var sessionId = session.getId();
+    var profileId = profile.getId();
 
     for (var attempt = 0; attempt < 2; attempt++) {
-      assertThatThrownBy(
-              () ->
-                  service.selectProfile(account.getId(), session.getId(), profile.getId(), "1357"))
+      assertThatThrownBy(() -> service.selectProfile(accountId, sessionId, profileId, "1357"))
           .isInstanceOf(ProfileAccessDeniedException.class);
     }
 
-    assertThatThrownBy(
-            () -> service.selectProfile(account.getId(), session.getId(), profile.getId(), "2468"))
+    assertThatThrownBy(() -> service.selectProfile(accountId, sessionId, profileId, "2468"))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
     assertThat(auditRepository.findAll())
         .extracting(event -> event.getOperation())
@@ -143,11 +143,11 @@ class SessionScopeServiceTest {
             .build());
     var session =
         trackingSessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
+    var accountId = account.getId();
+    var sessionId = session.getId();
+    var profileId = profile.getId();
 
-    assertThatThrownBy(
-            () ->
-                trackingService.selectProfile(
-                    account.getId(), session.getId(), profile.getId(), "1357"))
+    assertThatThrownBy(() -> trackingService.selectProfile(accountId, sessionId, profileId, "1357"))
         .isInstanceOf(ProfileAccessDeniedException.class);
 
     assertThat(trackingSessionRepository.lockCount()).isZero();

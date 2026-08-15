@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
@@ -50,7 +51,7 @@ class SessionScopePersistenceIT extends AbstractIntegrationTest {
     assertThatCode(() -> tokenRefreshService.refresh(identity.rawRefreshToken()))
         .doesNotThrowAnyException();
     assertThat(authSessionRepository.findById(identity.session().getId()).orElseThrow())
-        .extracting(session -> session.getActiveProfileId())
+        .extracting(AuthSession::getActiveProfileId)
         .isNull();
   }
 

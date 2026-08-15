@@ -20,27 +20,23 @@ class PortableIdentityCommandValidationTest {
   @Test
   @DisplayName("Should reject null security audit operation at construction")
   void shouldRejectNullSecurityAuditOperationAtConstruction() {
-    assertThatThrownBy(
-            () ->
-                SecurityAuditRecord.builder()
-                    .actingAccountId(UUID.randomUUID())
-                    .operation(null)
-                    .reason("administrative action")
-                    .build())
-        .isInstanceOf(NullPointerException.class);
+    var invalidAudit =
+        SecurityAuditRecord.builder()
+            .actingAccountId(UUID.randomUUID())
+            .reason("administrative action");
+
+    assertThatThrownBy(invalidAudit::build).isInstanceOf(NullPointerException.class);
   }
 
   @Test
   @DisplayName("Should reject null profile id in lifecycle command at construction")
   void shouldRejectNullProfileIdInLifecycleCommandAtConstruction() {
-    assertThatThrownBy(
-            () ->
-                ProfileShareOffer.builder()
-                    .actingAccountId(UUID.randomUUID())
-                    .profileId(null)
-                    .targetHouseholdId(UUID.randomUUID())
-                    .build())
-        .isInstanceOf(NullPointerException.class);
+    var invalidOffer =
+        ProfileShareOffer.builder()
+            .actingAccountId(UUID.randomUUID())
+            .targetHouseholdId(UUID.randomUUID());
+
+    assertThatThrownBy(invalidOffer::build).isInstanceOf(NullPointerException.class);
   }
 
   @ParameterizedTest(name = "{0}")

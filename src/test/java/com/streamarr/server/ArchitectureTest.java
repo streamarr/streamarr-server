@@ -323,6 +323,7 @@ class ArchitectureTest {
 
   private static final class GenericDomainReturnFixture {
 
+    @SuppressWarnings("java:S1144")
     private List<Profile> profiles() {
       return List.of();
     }

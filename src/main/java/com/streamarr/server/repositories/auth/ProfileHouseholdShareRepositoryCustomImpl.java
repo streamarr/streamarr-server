@@ -47,13 +47,13 @@ public class ProfileHouseholdShareRepositoryCustomImpl
               .forUpdate()
               .fetchOptional();
       if (existing.isPresent()) {
-        var record = existing.orElseThrow();
+        var existingShare = existing.orElseThrow();
         return new ProfileHouseholdShareInsertResult(
             share(
-                record.value1(),
+                existingShare.value1(),
                 profileId,
                 householdId,
-                ProfileShareStatus.valueOf(record.value2().getLiteral())),
+                ProfileShareStatus.valueOf(existingShare.value2().getLiteral())),
             false);
       }
     }
