@@ -1,6 +1,9 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import graphql.schema.GraphQLNamedType;
+import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
@@ -52,6 +55,30 @@ class PortableIdentityDiscoverySchemaTest {
     softly.assertAll();
   }
 
+  @Test
+  @DisplayName("Should expose profile and household context for reviewing profile shares")
+  void shouldExposeProfileAndHouseholdContextForReviewingProfileShares() throws IOException {
+    var schema = schema();
+    var share = schema.getObjectType("PortableProfileShare");
+
+    assertThatFieldHasType(share, "profile", "PortableProfileSummary");
+    assertThatFieldHasType(share, "household", "PortableHouseholdSummary");
+  }
+
+  @Test
+  @DisplayName("Should expose named people and profiles for reviewing profile management")
+  void shouldExposeNamedPeopleAndProfilesForReviewingProfileManagement() throws IOException {
+    var schema = schema();
+    var invitation = schema.getObjectType("PortableProfileManagerInvitation");
+    var manager = schema.getObjectType("PortableProfileManager");
+
+    assertThatFieldHasType(invitation, "profile", "PortableProfileSummary");
+    assertThatFieldHasType(invitation, "invitingAccount", "PortableAccountSummary");
+    assertThatFieldHasType(invitation, "invitedAccount", "PortableAccountSummary");
+    assertThatFieldHasType(manager, "profile", "PortableProfileSummary");
+    assertThatFieldHasType(manager, "account", "PortableAccountSummary");
+  }
+
   private GraphQLSchema schema() throws IOException {
     var registry = new TypeDefinitionRegistry();
     var parser = new SchemaParser();
@@ -72,5 +99,12 @@ class PortableIdentityDiscoverySchemaTest {
   private boolean hasUnwrappedType(GraphQLType type, String expectedName) {
     return GraphQLTypeUtil.unwrapAll(type) instanceof GraphQLNamedType namedType
         && namedType.getName().equals(expectedName);
+  }
+
+  private void assertThatFieldHasType(
+      GraphQLObjectType owner, String fieldName, String expectedType) {
+    var field = owner.getFieldDefinition(fieldName);
+    assertThat(field).isNotNull();
+    assertThat(hasUnwrappedType(field.getType(), expectedType)).isTrue();
   }
 }

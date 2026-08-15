@@ -29,12 +29,21 @@ type PortableProfileShare {
     profileId: ID!
     householdId: ID!
     status: ProfileShareStatus!
+    profile: PortableProfileSummary
+    household: PortableHouseholdSummary
+}
+
+type PortableHouseholdSummary {
+    id: ID!
+    name: String!
 }
 
 type PortableProfileManager {
     id: ID!
     accountId: ID!
     profileId: ID!
+    profile: PortableProfileSummary
+    account: PortableAccountSummary
 }
 
 type PortableProfileManagerInvitation {
@@ -43,6 +52,14 @@ type PortableProfileManagerInvitation {
     invitingAccountId: ID!
     invitedAccountId: ID!
     status: ProfileManagerInvitationStatus!
+    profile: PortableProfileSummary
+    invitingAccount: PortableAccountSummary
+    invitedAccount: PortableAccountSummary
+}
+
+type PortableAccountSummary {
+    id: ID!
+    displayName: String!
 }
 
 enum ProfileKind {

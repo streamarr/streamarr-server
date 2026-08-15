@@ -3,16 +3,21 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
 import com.streamarr.server.fakes.FakeProfileManagerRepository;
+import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -29,9 +34,16 @@ class PortableIdentityQueryServiceTest {
       new FakeProfileManagerInvitationRepository();
   private final FakeProfileHouseholdShareRepository shareRepository =
       new FakeProfileHouseholdShareRepository();
+  private final FakeProfileRepository profileRepository = new FakeProfileRepository();
+  private final FakeHouseholdRepository householdRepository = new FakeHouseholdRepository();
   private final PortableIdentityQueryService service =
       new PortableIdentityQueryService(
-          accountRepository, managerRepository, invitationRepository, shareRepository);
+          accountRepository,
+          managerRepository,
+          invitationRepository,
+          shareRepository,
+          profileRepository,
+          householdRepository);
 
   @Test
   @DisplayName("Should expose only portable identity administration records the account can act on")
@@ -57,17 +69,45 @@ class PortableIdentityQueryServiceTest {
     var identity = identity(account.getId());
 
     assertThat(service.shares(identity))
-        .extracting(ProfileHouseholdShare::getId)
+        .extracting(view -> view.share().getId())
         .containsExactlyInAnyOrder(managedShare.getId(), householdShare.getId());
     assertThat(service.invitations(identity))
-        .extracting(ProfileManagerInvitation::getId)
+        .extracting(view -> view.invitation().getId())
         .containsExactlyInAnyOrder(outgoingInvitation.getId(), receivedInvitation.getId());
     assertThat(service.managers(identity))
-        .extracting(ProfileManager::getId)
+        .extracting(view -> view.manager().getId())
         .containsExactlyInAnyOrder(
             managerRepository.findByAccountId(account.getId()).getFirst().getId(),
             managedProfileManager.getId(),
             householdProfileManager.getId());
+
+    var shareView =
+        service.shares(identity).stream()
+            .filter(view -> view.share().getId().equals(householdShare.getId()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(shareView.profile().getName()).isEqualTo("Profile " + householdProfileId);
+    assertThat(shareView.household().getName()).isEqualTo("Household " + householdId);
+
+    var invitationView =
+        service.invitations(identity).stream()
+            .filter(view -> view.invitation().getId().equals(outgoingInvitation.getId()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(invitationView.profile().getName()).isEqualTo("Profile " + managedProfileId);
+    assertThat(invitationView.invitingAccount().getDisplayName())
+        .isEqualTo("Portable Query Account");
+    assertThat(invitationView.invitedAccount().getDisplayName())
+        .isEqualTo("Manager " + outgoingInvitation.getInvitedAccountId());
+
+    var managerView =
+        service.managers(identity).stream()
+            .filter(view -> view.manager().getId().equals(managedProfileManager.getId()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(managerView.profile().getName()).isEqualTo("Profile " + managedProfileId);
+    assertThat(managerView.account().getDisplayName())
+        .isEqualTo("Manager " + managedProfileManager.getAccountId());
   }
 
   private UserAccount saveAccount(UUID householdId, HouseholdRole role) {
@@ -83,10 +123,28 @@ class PortableIdentityQueryServiceTest {
   }
 
   private ProfileManager manager(UUID accountId, UUID profileId) {
+    ensureProfile(profileId);
+    if (!accountRepository.existsById(accountId)) {
+      accountRepository.save(
+          UserAccount.builder()
+              .id(accountId)
+              .email("manager-" + accountId + "@example.com")
+              .displayName("Manager " + accountId)
+              .passwordHash("encoded")
+              .accountRole(AccountRole.USER)
+              .homeHouseholdId(UUID.randomUUID())
+              .householdRole(HouseholdRole.MEMBER)
+              .build());
+    }
     return ProfileManager.builder().accountId(accountId).profileId(profileId).build();
   }
 
   private ProfileHouseholdShare saveShare(UUID profileId, UUID householdId) {
+    ensureProfile(profileId);
+    if (!householdRepository.existsById(householdId)) {
+      householdRepository.save(
+          Household.builder().id(householdId).name("Household " + householdId).build());
+    }
     return shareRepository.save(
         ProfileHouseholdShare.builder()
             .profileId(profileId)
@@ -97,6 +155,9 @@ class PortableIdentityQueryServiceTest {
 
   private ProfileManagerInvitation saveInvitation(
       UUID profileId, UUID invitingAccountId, UUID invitedAccountId) {
+    ensureProfile(profileId);
+    manager(invitingAccountId, profileId);
+    manager(invitedAccountId, profileId);
     return invitationRepository.save(
         ProfileManagerInvitation.builder()
             .profileId(profileId)
@@ -106,12 +167,25 @@ class PortableIdentityQueryServiceTest {
             .build());
   }
 
+  private void ensureProfile(UUID profileId) {
+    if (!profileRepository.existsById(profileId)) {
+      profileRepository.save(
+          Profile.builder()
+              .id(profileId)
+              .name("Profile " + profileId)
+              .kind(ProfileKind.ADULT)
+              .build());
+    }
+  }
+
   private AuthenticatedIdentity identity(UUID accountId) {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .role(AccountRole.USER)
         .authSessionId(UUID.randomUUID())
         .scope(TokenScope.ACCOUNT)
+        .householdId(UUID.randomUUID())
+        .householdRole(HouseholdRole.PARENT)
         .build();
   }
 }

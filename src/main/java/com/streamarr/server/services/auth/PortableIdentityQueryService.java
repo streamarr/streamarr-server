@@ -1,20 +1,29 @@
 package com.streamarr.server.services.auth;
 
+import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,34 +37,76 @@ public class PortableIdentityQueryService {
   private final ProfileManagerRepository managerRepository;
   private final ProfileManagerInvitationRepository invitationRepository;
   private final ProfileHouseholdShareRepository shareRepository;
+  private final ProfileRepository profileRepository;
+  private final HouseholdRepository householdRepository;
 
   @Transactional(readOnly = true)
-  public List<ProfileHouseholdShare> shares(AuthenticatedIdentity identity) {
+  public List<ProfileShareView> shares(AuthenticatedIdentity identity) {
     var account = requireAccount(identity);
     var managedProfileIds = managedProfileIds(account.getId());
     var managedShares = shareRepository.findByProfileIdIn(managedProfileIds);
+    List<ProfileHouseholdShare> shares;
     if (!canAdministerHousehold(account.getHouseholdRole())) {
-      return sortedShares(managedShares.stream());
+      shares = sortedShares(managedShares.stream());
+    } else {
+      shares =
+          sortedShares(
+              Stream.concat(
+                  managedShares.stream(),
+                  shareRepository.findByHouseholdId(account.getHomeHouseholdId()).stream()));
     }
-    return sortedShares(
-        Stream.concat(
-            managedShares.stream(),
-            shareRepository.findByHouseholdId(account.getHomeHouseholdId()).stream()));
-  }
-
-  @Transactional(readOnly = true)
-  public List<ProfileManagerInvitation> invitations(AuthenticatedIdentity identity) {
-    var account = requireAccount(identity);
-    return Stream.concat(
-            invitationRepository.findByInvitedAccountId(account.getId()).stream(),
-            invitationRepository.findByProfileIdIn(managedProfileIds(account.getId())).stream())
-        .distinct()
-        .sorted(Comparator.comparing(ProfileManagerInvitation::getId))
+    var profiles =
+        profileRepository
+            .findAllById(shares.stream().map(ProfileHouseholdShare::getProfileId).toList())
+            .stream()
+            .collect(Collectors.toMap(Profile::getId, Function.identity()));
+    var households =
+        householdRepository
+            .findAllById(shares.stream().map(ProfileHouseholdShare::getHouseholdId).toList())
+            .stream()
+            .collect(Collectors.toMap(Household::getId, Function.identity()));
+    return shares.stream()
+        .map(
+            share ->
+                new ProfileShareView(
+                    share,
+                    require(profiles, share.getProfileId()),
+                    require(households, share.getHouseholdId())))
         .toList();
   }
 
   @Transactional(readOnly = true)
-  public List<ProfileManager> managers(AuthenticatedIdentity identity) {
+  public List<ProfileManagerInvitationView> invitations(AuthenticatedIdentity identity) {
+    var account = requireAccount(identity);
+    var invitations =
+        Stream.concat(
+                invitationRepository.findByInvitedAccountId(account.getId()).stream(),
+                invitationRepository.findByProfileIdIn(managedProfileIds(account.getId())).stream())
+            .distinct()
+            .sorted(Comparator.comparing(ProfileManagerInvitation::getId))
+            .toList();
+    var profiles =
+        profilesById(invitations.stream().map(ProfileManagerInvitation::getProfileId).toList());
+    var accountIds =
+        invitations.stream()
+            .flatMap(
+                invitation ->
+                    Stream.of(invitation.getInvitingAccountId(), invitation.getInvitedAccountId()))
+            .toList();
+    var accounts = accountsById(accountIds);
+    return invitations.stream()
+        .map(
+            invitation ->
+                new ProfileManagerInvitationView(
+                    invitation,
+                    require(profiles, invitation.getProfileId()),
+                    require(accounts, invitation.getInvitingAccountId()),
+                    require(accounts, invitation.getInvitedAccountId())))
+        .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public List<ProfileManagerView> managers(AuthenticatedIdentity identity) {
     var account = requireAccount(identity);
     var accessibleProfileIds = managedProfileIds(account.getId());
     if (canAdministerHousehold(account.getHouseholdRole())) {
@@ -63,8 +114,19 @@ public class PortableIdentityQueryService {
           .map(ProfileHouseholdShare::getProfileId)
           .forEach(accessibleProfileIds::add);
     }
-    return managerRepository.findByProfileIdIn(accessibleProfileIds).stream()
-        .sorted(Comparator.comparing(ProfileManager::getId))
+    var managers =
+        managerRepository.findByProfileIdIn(accessibleProfileIds).stream()
+            .sorted(Comparator.comparing(ProfileManager::getId))
+            .toList();
+    var profiles = profilesById(managers.stream().map(ProfileManager::getProfileId).toList());
+    var accounts = accountsById(managers.stream().map(ProfileManager::getAccountId).toList());
+    return managers.stream()
+        .map(
+            manager ->
+                new ProfileManagerView(
+                    manager,
+                    require(profiles, manager.getProfileId()),
+                    require(accounts, manager.getAccountId())))
         .toList();
   }
 
@@ -89,4 +151,29 @@ public class PortableIdentityQueryService {
   private boolean canAdministerHousehold(HouseholdRole role) {
     return role == HouseholdRole.OWNER || role == HouseholdRole.PARENT;
   }
+
+  private <T> T require(Map<UUID, T> values, UUID id) {
+    return Objects.requireNonNull(values.get(id));
+  }
+
+  private Map<UUID, Profile> profilesById(Collection<UUID> profileIds) {
+    return profileRepository.findAllById(profileIds.stream().distinct().toList()).stream()
+        .collect(Collectors.toMap(Profile::getId, Function.identity()));
+  }
+
+  private Map<UUID, UserAccount> accountsById(Collection<UUID> accountIds) {
+    return accountRepository.findAllById(accountIds.stream().distinct().toList()).stream()
+        .collect(Collectors.toMap(UserAccount::getId, Function.identity()));
+  }
+
+  public record ProfileShareView(
+      ProfileHouseholdShare share, Profile profile, Household household) {}
+
+  public record ProfileManagerInvitationView(
+      ProfileManagerInvitation invitation,
+      Profile profile,
+      UserAccount invitingAccount,
+      UserAccount invitedAccount) {}
+
+  public record ProfileManagerView(ProfileManager manager, Profile profile, UserAccount account) {}
 }
