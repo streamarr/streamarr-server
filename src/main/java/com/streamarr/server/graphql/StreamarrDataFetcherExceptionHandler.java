@@ -71,7 +71,17 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
 
   private static Map<String, Object> extensionsFor(Throwable exception) {
     var code = codeFor(exception);
-    return code == null ? null : Map.of("code", code);
+    if (code == null) {
+      return null;
+    }
+    if (exception instanceof ProfileSafetyViolationException violation) {
+      return Map.of(
+          "code",
+          code,
+          "profileIds",
+          violation.profilesRequiringPin().stream().map(Object::toString).toList());
+    }
+    return Map.of("code", code);
   }
 
   private static String codeFor(Throwable exception) {

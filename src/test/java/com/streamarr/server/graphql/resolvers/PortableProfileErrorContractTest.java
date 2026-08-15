@@ -58,12 +58,14 @@ class PortableProfileErrorContractTest {
   }
 
   @Test
-  @DisplayName("Should return corrective profile safety payload without leaking profile ids")
-  void shouldReturnCorrectiveProfileSafetyPayloadWithoutLeakingProfileIds() {
-    var inaccessibleProfileId = UUID.randomUUID();
+  @DisplayName("Should return every profile id requiring a PIN in corrective safety payload")
+  void shouldReturnEveryProfileIdRequiringAPinInCorrectiveSafetyPayload() {
+    var firstProfileId = UUID.randomUUID();
+    var secondProfileId = UUID.randomUUID();
     doAnswer(
             _ ->
-                throwException(new ProfileSafetyViolationException(List.of(inaccessibleProfileId))))
+                throwException(
+                    new ProfileSafetyViolationException(List.of(firstProfileId, secondProfileId))))
         .when(portableIdentityService)
         .deleteProfile(any());
 
@@ -71,9 +73,13 @@ class PortableProfileErrorContractTest {
 
     assertThat(result.getErrors()).hasSize(1);
     var error = result.getErrors().getFirst();
-    assertThat(error.getMessage()).doesNotContain(inaccessibleProfileId.toString());
+    assertThat(error.getMessage())
+        .doesNotContain(firstProfileId.toString())
+        .doesNotContain(secondProfileId.toString());
     assertThat(error.getExtensions()).containsEntry("code", "PROFILE_SAFETY_VIOLATION");
-    assertThat(error.getExtensions().toString()).doesNotContain(inaccessibleProfileId.toString());
+    assertThat(error.getExtensions())
+        .containsEntry(
+            "profileIds", List.of(firstProfileId.toString(), secondProfileId.toString()));
   }
 
   @Test

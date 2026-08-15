@@ -447,6 +447,31 @@ CREATE TRIGGER guard_profile_deletion_authorization
     FOR EACH ROW
 EXECUTE FUNCTION guard_profile_deletion_authorization();
 
+CREATE FUNCTION enforce_profile_deletion_authorization_consumed()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+AS
+$$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM profile_deletion_authorization
+        WHERE id = NEW.id) THEN
+        RAISE EXCEPTION 'Profile deletion authorization must be consumed by deleting its profile in the same transaction'
+            USING ERRCODE = '23514', CONSTRAINT = 'chk_profile_deletion_authorization_consumed';
+    END IF;
+
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER chk_profile_deletion_authorization_consumed
+    AFTER INSERT OR UPDATE
+    ON profile_deletion_authorization
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW
+EXECUTE FUNCTION enforce_profile_deletion_authorization_consumed();
+
 CREATE FUNCTION enforce_profile_manager_invitation_invariants()
     RETURNS TRIGGER
     LANGUAGE plpgsql

@@ -352,6 +352,34 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject committing deletion authorization without deleting its profile")
+  void shouldRejectCommittingDeletionAuthorizationWithoutDeletingItsProfile() {
+    var setup = createPortableIdentity("Unconsumed Deletion Authorization");
+
+    assertThatThrownBy(
+            () ->
+                new TransactionTemplate(transactionManager)
+                    .executeWithoutResult(
+                        _ -> {
+                          profileShareRepository.deleteAll(
+                              profileShareRepository.findByProfileId(setup.profileId()));
+                          profileShareRepository.flush();
+                          deletionAuthorizationRepository.saveAndFlush(
+                              ProfileDeletionAuthorization.builder()
+                                  .profileId(setup.profileId())
+                                  .actingAccountId(setup.accountId())
+                                  .mode(ProfileDeletionMode.ORDINARY)
+                                  .build());
+                        }))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("must be consumed by deleting its profile in the same transaction");
+
+    assertThat(profileRepository.existsById(setup.profileId())).isTrue();
+    assertThat(deletionAuthorizationRepository.findAll())
+        .noneMatch(authorization -> authorization.getProfileId().equals(setup.profileId()));
+  }
+
+  @Test
   @DisplayName("Should atomically force delete a shared co-managed profile as ServerAdmin")
   void shouldAtomicallyForceDeleteSharedCoManagedProfileAsServerAdmin() {
     var primary = createPortableIdentity("Force Delete Admin");
