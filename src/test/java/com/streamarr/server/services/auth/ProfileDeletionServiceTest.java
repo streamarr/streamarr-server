@@ -3,6 +3,7 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
@@ -16,6 +17,7 @@ import com.streamarr.server.domain.auth.SecurityAuditOperation;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.ProfileDeletionBlockedException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeProfileDeletionAuthorizationRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
@@ -23,6 +25,8 @@ import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -56,7 +60,14 @@ class ProfileDeletionServiceTest {
           shareRepository,
           accountRepository,
           deletionAuthorizationRepository,
-          passwordEncoder,
+          new AccountPasswordVerifier(
+              passwordEncoder,
+              new CredentialGuessThrottle(
+                  AuthThrottleProperties.builder()
+                      .maxAttempts(5)
+                      .window(Duration.ofMinutes(15))
+                      .build(),
+                  Clock.systemUTC())),
           auditService);
 
   @Test
@@ -138,6 +149,27 @@ class ProfileDeletionServiceTest {
 
     assertThat(profileRepository.existsById(profile.getId())).isTrue();
     assertThat(auditRepository.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should throttle profile deletion before checking another password")
+  void shouldThrottleProfileDeletionBeforeCheckingAnotherPassword() {
+    var account = saveAccount("correct horse battery staple");
+    var profile = profileRepository.save(Profile.builder().name("Protected Delete").build());
+    managerRepository.save(
+        ProfileManager.builder().accountId(account.getId()).profileId(profile.getId()).build());
+    var commandBuilder =
+        DeleteProfileCommand.builder().actingAccountId(account.getId()).profileId(profile.getId());
+
+    for (var attempt = 0; attempt < 5; attempt++) {
+      assertThatThrownBy(() -> delete(commandBuilder.password("wrong password").build()))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    assertThatThrownBy(
+            () -> delete(commandBuilder.password("correct horse battery staple").build()))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(profileRepository.existsById(profile.getId())).isTrue();
   }
 
   @Test

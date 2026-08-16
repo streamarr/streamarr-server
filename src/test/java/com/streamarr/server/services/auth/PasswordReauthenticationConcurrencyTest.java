@@ -2,6 +2,7 @@ package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
@@ -14,6 +15,8 @@ import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -87,7 +90,14 @@ class PasswordReauthenticationConcurrencyTest {
             shareRepository,
             accountRepository,
             deletionAuthorizationRepository,
-            passwordEncoder,
+            new AccountPasswordVerifier(
+                passwordEncoder,
+                new CredentialGuessThrottle(
+                    AuthThrottleProperties.builder()
+                        .maxAttempts(5)
+                        .window(Duration.ofMinutes(15))
+                        .build(),
+                    Clock.systemUTC())),
             auditService);
     return PortableIdentityService.builder()
         .transactionTemplate(new TransactionTemplate(new NoOpTransactionManager()))

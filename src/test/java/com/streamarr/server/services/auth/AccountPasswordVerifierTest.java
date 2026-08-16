@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.AuthThrottleProperties;
@@ -43,6 +44,36 @@ class AccountPasswordVerifierTest {
         .isInstanceOf(TooManyCredentialAttemptsException.class);
   }
 
+  @Test
+  @DisplayName("Should reset Account password attempts after successful verification")
+  void shouldResetAccountPasswordAttemptsAfterSuccessfulVerification() {
+    var account =
+        AccountFixture.defaultAccountBuilder()
+            .id(UUID.randomUUID())
+            .passwordHash("correct password")
+            .build();
+
+    assertThatThrownBy(() -> verifier.verify(account, "wrong password"))
+        .isInstanceOf(InvalidCredentialsException.class);
+    assertThatCode(() -> verifier.verify(account, "correct password")).doesNotThrowAnyException();
+    assertThatThrownBy(() -> verifier.verify(account, "wrong password"))
+        .isInstanceOf(InvalidCredentialsException.class);
+    assertThatCode(() -> verifier.verify(account, "correct password")).doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("Should reject an unreadable stored Account password hash")
+  void shouldRejectUnreadableStoredAccountPasswordHash() {
+    var account =
+        AccountFixture.defaultAccountBuilder()
+            .id(UUID.randomUUID())
+            .passwordHash("unreadable")
+            .build();
+
+    assertThatThrownBy(() -> verifier.verify(account, "password"))
+        .isInstanceOf(InvalidCredentialsException.class);
+  }
+
   private static final class TestPasswordEncoder implements PasswordEncoder {
 
     @Override
@@ -52,6 +83,9 @@ class AccountPasswordVerifierTest {
 
     @Override
     public boolean matches(CharSequence rawPassword, String encodedPassword) {
+      if (encodedPassword.equals("unreadable")) {
+        throw new IllegalArgumentException("Unreadable test hash");
+      }
       return rawPassword.toString().equals(encodedPassword);
     }
   }

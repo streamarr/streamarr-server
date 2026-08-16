@@ -4,7 +4,6 @@ import com.streamarr.server.domain.auth.ProfileDeletionAuthorization;
 import com.streamarr.server.domain.auth.ProfileDeletionMode;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.SecurityAuditOperation;
-import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.ProfileDeletionBlockedException;
 import com.streamarr.server.exceptions.ProfileManagementDeniedException;
@@ -15,7 +14,6 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,7 +27,7 @@ public class ProfileDeletionService {
   private final ProfileHouseholdShareRepository shareRepository;
   private final UserAccountRepository accountRepository;
   private final ProfileDeletionAuthorizationRepository deletionAuthorizationRepository;
-  private final PasswordEncoder passwordEncoder;
+  private final AccountPasswordVerifier passwordVerifier;
   private final SecurityAuditService auditService;
 
   public PreparedProfileDeletion prepare(DeleteProfileCommand command) {
@@ -37,10 +35,7 @@ public class ProfileDeletionService {
         accountRepository
             .findById(command.actingAccountId())
             .orElseThrow(ProfileAccessDeniedException::new);
-    var expectedPasswordHash = account.getPasswordHash();
-    if (!passwordEncoder.matches(command.password(), expectedPasswordHash)) {
-      throw new InvalidCredentialsException();
-    }
+    passwordVerifier.verify(account, command.password());
     return new PreparedProfileDeletion(command.actingAccountId(), command.profileId());
   }
 

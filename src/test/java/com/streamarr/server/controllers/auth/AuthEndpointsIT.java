@@ -1096,6 +1096,28 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should throttle password changes before checking another password")
+  void shouldThrottlePasswordChangesBeforeCheckingAnotherPassword() throws Exception {
+    seedSingleProfileIdentity();
+    var accessToken = loginAndReadField("accessToken");
+    var newPassword = "a brand new passphrase!";
+
+    for (var attempt = 0; attempt < 5; attempt++) {
+      changePassword(accessToken, "not the current password", newPassword)
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+    }
+
+    changePassword(accessToken, PASSWORD, newPassword)
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("TOO_MANY_CREDENTIAL_ATTEMPTS"));
+
+    var unchangedAccount = userAccountRepository.findById(account.getId()).orElseThrow();
+    assertThat(passwordEncoder.matches(PASSWORD, unchangedAccount.getPasswordHash())).isTrue();
+    assertThat(passwordEncoder.matches(newPassword, unchangedAccount.getPasswordHash())).isFalse();
+  }
+
+  @Test
   @DisplayName("Should reject authenticated auth mutations when no identity is present")
   void shouldRejectAuthenticatedAuthMutationsWhenNoIdentityPresent() throws Exception {
     var passwordMarker = UUID.randomUUID().toString();

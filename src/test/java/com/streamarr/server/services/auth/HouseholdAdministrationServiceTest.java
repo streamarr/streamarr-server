@@ -22,6 +22,7 @@ import com.streamarr.server.exceptions.HouseholdOwnershipTransferRequiredExcepti
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.KidProfileManagerRequiredException;
 import com.streamarr.server.exceptions.ServerAdministrationDeniedException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
@@ -62,16 +63,17 @@ class HouseholdAdministrationServiceTest {
       new CredentialGuessThrottle(
           AuthThrottleProperties.builder().maxAttempts(5).window(Duration.ofMinutes(15)).build(),
           clock);
+  private final AccountPasswordVerifier passwordVerifier =
+      new AccountPasswordVerifier(passwordEncoder, credentialThrottle);
   private final HouseholdAdministrationService service =
       new HouseholdAdministrationService(
           accountRepository,
           householdRepository,
           sessionRepository,
-          new ServerAdminAuthorizer(
-              accountRepository, new AccountPasswordVerifier(passwordEncoder, credentialThrottle)),
+          new ServerAdminAuthorizer(accountRepository, passwordVerifier),
           new KidProfileManagerPolicy(
               profileRepository, managerRepository, shareRepository, accountRepository),
-          passwordEncoder,
+          passwordVerifier,
           clock,
           new SecurityAuditService(auditRepository));
 
@@ -351,6 +353,71 @@ class HouseholdAdministrationServiceTest {
 
     assertThatThrownBy(() -> transferOwnership(command))
         .isInstanceOf(InvalidCredentialsException.class);
+  }
+
+  @Test
+  @DisplayName("Should throttle ownership transfer before checking another password")
+  void shouldThrottleOwnershipTransferBeforeCheckingAnotherPassword() {
+    var household = householdRepository.save(Household.builder().name("Family").build());
+    var owner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.OWNER);
+    var nextOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.PARENT);
+    var commandBuilder =
+        HouseholdOwnershipTransferCommand.builder()
+            .authority(accountIdentity(owner))
+            .householdId(household.getId())
+            .targetAccountId(nextOwner.getId())
+            .reason("Planned ownership handoff");
+
+    for (var attempt = 0; attempt < 5; attempt++) {
+      assertThatThrownBy(() -> transferOwnership(commandBuilder.password("wrong password").build()))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    assertThatThrownBy(() -> transferOwnership(commandBuilder.password(PASSWORD).build()))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(owner.getHouseholdRole()).isEqualTo(HouseholdRole.OWNER);
+    assertThat(nextOwner.getHouseholdRole()).isEqualTo(HouseholdRole.PARENT);
+  }
+
+  @Test
+  @DisplayName("Should share Account password attempts across administration actions")
+  void shouldShareAccountPasswordAttemptsAcrossAdministrationActions() {
+    var household = householdRepository.save(Household.builder().name("Family").build());
+    var targetHousehold = householdRepository.save(Household.builder().name("Target").build());
+    var admin = saveAccount(AccountRole.ADMIN, household.getId(), HouseholdRole.OWNER);
+    var transferred = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.MEMBER);
+    var nextOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.PARENT);
+    var accountTransfer =
+        AccountHouseholdTransferCommand.builder()
+            .actingAccountId(admin.getId())
+            .targetAccountId(transferred.getId())
+            .targetHouseholdId(targetHousehold.getId())
+            .targetRole(HouseholdRole.MEMBER)
+            .password("wrong password")
+            .reason("Account move")
+            .build();
+    var ownershipTransferBuilder =
+        HouseholdOwnershipTransferCommand.builder()
+            .authority(accountIdentity(admin))
+            .householdId(household.getId())
+            .targetAccountId(nextOwner.getId())
+            .reason("Ownership handoff");
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      assertThatThrownBy(() -> transferAccount(accountTransfer))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+    for (var attempt = 0; attempt < 2; attempt++) {
+      assertThatThrownBy(
+              () -> transferOwnership(ownershipTransferBuilder.password("wrong password").build()))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    assertThatThrownBy(() -> transferOwnership(ownershipTransferBuilder.password(PASSWORD).build()))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(transferred.getHomeHouseholdId()).isEqualTo(household.getId());
+    assertThat(admin.getHouseholdRole()).isEqualTo(HouseholdRole.OWNER);
+    assertThat(nextOwner.getHouseholdRole()).isEqualTo(HouseholdRole.PARENT);
   }
 
   @Test

@@ -3,6 +3,7 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
@@ -30,6 +31,15 @@ class PasswordChangeServiceTest {
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
   private final PasswordEncoder passwordEncoder = new TestPasswordEncoder();
   private final Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
+  private final AccountPasswordVerifier passwordVerifier =
+      new AccountPasswordVerifier(
+          passwordEncoder,
+          new CredentialGuessThrottle(
+              AuthThrottleProperties.builder()
+                  .maxAttempts(5)
+                  .window(Duration.ofMinutes(15))
+                  .build(),
+              clock));
   private final RefreshTokenService refreshTokenService =
       new RefreshTokenService(
           sessionRepository,
@@ -45,7 +55,8 @@ class PasswordChangeServiceTest {
       new PasswordChangeCompletionService(
           accountRepository, sessionRepository, tokenRepository, refreshTokenService, clock);
   private final PasswordChangeService service =
-      new PasswordChangeService(accountRepository, completionService, passwordEncoder);
+      new PasswordChangeService(
+          accountRepository, completionService, passwordVerifier, passwordEncoder);
 
   @Test
   @DisplayName("Should fail closed without issuing a token when account is missing")

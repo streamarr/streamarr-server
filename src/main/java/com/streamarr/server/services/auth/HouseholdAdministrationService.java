@@ -5,14 +5,12 @@ import com.streamarr.server.domain.auth.SecurityAuditOperation;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdOwnershipTransferRequiredException;
-import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.time.Clock;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,7 +23,7 @@ public class HouseholdAdministrationService {
   private final AuthSessionRepository sessionRepository;
   private final ServerAdminAuthorizer serverAdminAuthorizer;
   private final KidProfileManagerPolicy kidManagerPolicy;
-  private final PasswordEncoder passwordEncoder;
+  private final AccountPasswordVerifier passwordVerifier;
   private final Clock clock;
   private final SecurityAuditService auditService;
 
@@ -135,11 +133,7 @@ public class HouseholdAdministrationService {
     if (!isCurrentOwner && !isServerAdmin) {
       throw new HouseholdAccessDeniedException();
     }
-    var expectedPasswordHash = actor.getPasswordHash();
-    if (!passwordEncoder.matches(command.password(), expectedPasswordHash)) {
-      throw new InvalidCredentialsException();
-    }
-    return new PasswordReauthentication(actor.getId());
+    return passwordVerifier.verify(actor, command.password());
   }
 
   private void requireReason(String reason) {

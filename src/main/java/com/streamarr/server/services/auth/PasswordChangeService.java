@@ -1,7 +1,6 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
-import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -19,6 +18,7 @@ public class PasswordChangeService {
 
   private final UserAccountRepository userAccountRepository;
   private final PasswordChangeCompletionService completionService;
+  private final AccountPasswordVerifier passwordVerifier;
   private final PasswordEncoder passwordEncoder;
 
   public PasswordChangeResult changePassword(ChangePasswordCommand command) {
@@ -26,9 +26,7 @@ public class PasswordChangeService {
         userAccountRepository
             .findById(command.accountId())
             .orElseThrow(AuthenticationRequiredException::new);
-    if (!passwordEncoder.matches(command.currentPassword(), account.getPasswordHash())) {
-      throw new InvalidCredentialsException();
-    }
+    passwordVerifier.verify(account, command.currentPassword());
     var newPasswordHash = passwordEncoder.encode(command.newPassword());
 
     return completionService.complete(

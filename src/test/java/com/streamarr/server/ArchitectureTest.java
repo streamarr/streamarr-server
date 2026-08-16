@@ -12,6 +12,7 @@ import com.streamarr.server.graphql.resolvers.PortableProfileResolver;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.services.RootServiceCycleFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
+import com.streamarr.server.services.auth.architecturefixture.DirectAccountPasswordMatchFixture;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -156,6 +157,10 @@ class ArchitectureTest {
           .areAssignableTo(PasswordEncoder.class)
           .as("GraphQL adapts input; services own password and PIN policy");
 
+  @ArchTest
+  static final ArchRule authenticatedAccountPasswordMatchesMustUseVerifier =
+      authenticatedAccountPasswordMatchesMustUseVerifier();
+
   // The library services call the filepath, parsers, streaming, and task services; a dependency
   // back the other way puts them in a cycle. FilepathCodec did exactly that from the library
   // package until it moved to services.filepath.
@@ -238,6 +243,18 @@ class ArchitectureTest {
   }
 
   @Test
+  @DisplayName("Should reject direct Account password matching outside approved auth modules")
+  void shouldRejectDirectAccountPasswordMatchingOutsideApprovedAuthModules() {
+    var directPasswordMatcher =
+        new ClassFileImporter().importClasses(DirectAccountPasswordMatchFixture.class);
+
+    assertThatThrownBy(
+            () -> authenticatedAccountPasswordMatchesMustUseVerifier().check(directPasswordMatcher))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("PasswordEncoder.matches");
+  }
+
+  @Test
   @DisplayName("Should keep portable profile domain entities behind GraphQL adapters")
   void shouldKeepPortableProfileDomainEntitiesBehindGraphqlAdapters() {
     var domainReturningMutations =
@@ -287,6 +304,23 @@ class ArchitectureTest {
         .should()
         .beAnnotatedWith(Query.class)
         .as("Repository queries must use derived methods or jOOQ custom fragments");
+  }
+
+  private static ArchRule authenticatedAccountPasswordMatchesMustUseVerifier() {
+    return noClasses()
+        .that()
+        .resideInAPackage("..services.auth..")
+        .and()
+        .doNotHaveSimpleName("AccountPasswordVerifier")
+        .and()
+        .doNotHaveSimpleName("LoginService")
+        .and()
+        .doNotHaveSimpleName("ProfilePinService")
+        .should()
+        .callMethod(PasswordEncoder.class, "matches", CharSequence.class, String.class)
+        .as(
+            "Authenticated Account password checks must use AccountPasswordVerifier; login and"
+                + " Profile PIN have distinct throttle keys");
   }
 
   private static ArchRule serviceDomainsMustBeFreeOfCycles() {
