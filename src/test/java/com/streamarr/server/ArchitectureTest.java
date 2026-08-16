@@ -7,12 +7,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.netflix.graphql.dgs.DgsMutation;
+import com.streamarr.server.controllers.architecturefixture.DirectControllerAccountPasswordMatchFixture;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.graphql.resolvers.PortableProfileResolver;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.services.RootServiceCycleFixture;
 import com.streamarr.server.services.architecturefixture.DirectAccountPasswordMatchFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
+import com.streamarr.server.services.auth.AccountPasswordVerifier;
+import com.streamarr.server.services.auth.LoginService;
+import com.streamarr.server.services.auth.ProfilePinService;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -256,6 +260,19 @@ class ArchitectureTest {
   }
 
   @Test
+  @DisplayName("Should reject direct Account password matching outside services")
+  void shouldRejectDirectAccountPasswordMatchingOutsideServices() {
+    var directPasswordMatcher =
+        new ClassFileImporter().importClasses(DirectControllerAccountPasswordMatchFixture.class);
+
+    assertThat(
+            authenticatedAccountPasswordMatchesMustUseVerifier()
+                .evaluate(directPasswordMatcher)
+                .hasViolation())
+        .isTrue();
+  }
+
+  @Test
   @DisplayName("Should keep portable profile domain entities behind GraphQL adapters")
   void shouldKeepPortableProfileDomainEntitiesBehindGraphqlAdapters() {
     var domainReturningMutations =
@@ -310,13 +327,10 @@ class ArchitectureTest {
   private static ArchRule authenticatedAccountPasswordMatchesMustUseVerifier() {
     return noClasses()
         .that()
-        .resideInAPackage("..services..")
+        .resideInAPackage("com.streamarr.server..")
         .and()
-        .doNotHaveSimpleName("AccountPasswordVerifier")
-        .and()
-        .doNotHaveSimpleName("LoginService")
-        .and()
-        .doNotHaveSimpleName("ProfilePinService")
+        .doNotBelongToAnyOf(
+            AccountPasswordVerifier.class, LoginService.class, ProfilePinService.class)
         .should()
         .callMethod(PasswordEncoder.class, "matches", CharSequence.class, String.class)
         .as(
