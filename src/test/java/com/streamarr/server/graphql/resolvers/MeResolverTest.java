@@ -58,14 +58,14 @@ class MeResolverTest {
   @Test
   @DisplayName("Should return flat profiles when account scoped")
   void shouldReturnFlatProfilesWhenAccountScoped() {
-    authenticateAtAccountScope();
+    var identity = authenticateAtAccountScope(UUID.randomUUID(), HouseholdRole.OWNER);
     var account = AccountFixture.defaultAccountBuilder().id(accountId).build();
     var profileId = UUID.randomUUID();
     when(identityQueryService.meView(any()))
         .thenReturn(
             new IdentityQueryService.MeView(
                 account,
-                TokenScope.ACCOUNT,
+                identity,
                 List.of(
                     new ProfileAvailabilityService.SelectableProfile(
                         profileId, "Andrew", INACTIVE_PROFILE, true))));
@@ -85,6 +85,33 @@ class MeResolverTest {
   }
 
   @Test
+  @DisplayName("Should return signed authority when account state has changed")
+  void shouldReturnSignedAuthorityWhenAccountStateHasChanged() {
+    var signedHouseholdId = UUID.randomUUID();
+    var identity = authenticateAtAccountScope(signedHouseholdId, HouseholdRole.MEMBER);
+    var changedAccount =
+        AccountFixture.defaultAccountBuilder()
+            .id(accountId)
+            .accountRole(AccountRole.ADMIN)
+            .homeHouseholdId(UUID.randomUUID())
+            .householdRole(HouseholdRole.OWNER)
+            .build();
+    when(identityQueryService.meView(any()))
+        .thenReturn(new IdentityQueryService.MeView(changedAccount, identity, List.of()));
+
+    var query = "{ me { role homeHouseholdId householdRole } }";
+    String role = dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.role");
+    String homeHouseholdId =
+        dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.homeHouseholdId");
+    String householdRole =
+        dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.householdRole");
+
+    assertThat(role).isEqualTo(identity.role().name());
+    assertThat(homeHouseholdId).isEqualTo(signedHouseholdId.toString());
+    assertThat(householdRole).isEqualTo(HouseholdRole.MEMBER.name());
+  }
+
+  @Test
   @DisplayName("Should return profile required code when no active profile")
   void shouldReturnProfileRequiredCodeWhenNoActiveProfile() {
     authenticateAtAccountScope();
@@ -98,14 +125,19 @@ class MeResolverTest {
   }
 
   private void authenticateAtAccountScope() {
+    authenticateAtAccountScope(UUID.randomUUID(), HouseholdRole.OWNER);
+  }
+
+  private AuthenticatedIdentity authenticateAtAccountScope(
+      UUID householdId, HouseholdRole householdRole) {
     var identity =
         AuthenticatedIdentity.builder()
             .accountId(accountId)
             .role(AccountRole.USER)
             .authSessionId(UUID.randomUUID())
             .scope(TokenScope.ACCOUNT)
-            .householdId(UUID.randomUUID())
-            .householdRole(HouseholdRole.OWNER)
+            .householdId(householdId)
+            .householdRole(householdRole)
             .build();
     SecurityContextHolder.getContext()
         .setAuthentication(
@@ -113,5 +145,6 @@ class MeResolverTest {
                 identity,
                 null,
                 List.of(new SimpleGrantedAuthority(TokenScope.ACCOUNT.authority()))));
+    return identity;
   }
 }

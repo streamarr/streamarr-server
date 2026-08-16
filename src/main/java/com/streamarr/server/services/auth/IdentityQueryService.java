@@ -22,13 +22,12 @@ public class IdentityQueryService {
         accountRepository
             .findById(identity.accountId())
             .orElseThrow(AuthenticationRequiredException::new);
-    var profiles =
-        profileAvailabilityService.selectableProfiles(account.getId(), identity.profileId());
-    return new MeView(account, identity.scope(), profiles);
+    var profiles = profileAvailabilityService.selectableProfiles(identity, identity.profileId());
+    return new MeView(account, identity, profiles);
   }
 
   public record MeView(
       UserAccount account,
-      TokenScope scope,
+      AuthenticatedIdentity authority,
       List<ProfileAvailabilityService.SelectableProfile> profiles) {}
 }

@@ -110,6 +110,25 @@ class PortableIdentityQueryServiceTest {
         .isEqualTo("Manager " + managedProfileManager.getAccountId());
   }
 
+  @Test
+  @DisplayName("Should hide current household administration records from older signed authority")
+  void shouldHideCurrentHouseholdAdministrationRecordsFromOlderSignedAuthority() {
+    var signedHouseholdId = UUID.randomUUID();
+    var liveHouseholdId = UUID.randomUUID();
+    var account = saveAccount(liveHouseholdId, HouseholdRole.OWNER);
+    var liveProfileId = UUID.randomUUID();
+    var liveShare = saveShare(liveProfileId, liveHouseholdId);
+    var liveManager = managerRepository.save(manager(UUID.randomUUID(), liveProfileId));
+    var identity = identity(account.getId(), signedHouseholdId, HouseholdRole.MEMBER);
+
+    assertThat(service.shares(identity))
+        .extracting(view -> view.share().getId())
+        .doesNotContain(liveShare.getId());
+    assertThat(service.managers(identity))
+        .extracting(view -> view.manager().getId())
+        .doesNotContain(liveManager.getId());
+  }
+
   private UserAccount saveAccount(UUID householdId, HouseholdRole role) {
     return accountRepository.save(
         UserAccount.builder()
@@ -179,13 +198,19 @@ class PortableIdentityQueryServiceTest {
   }
 
   private AuthenticatedIdentity identity(UUID accountId) {
+    var account = accountRepository.findById(accountId).orElseThrow();
+    return identity(accountId, account.getHomeHouseholdId(), account.getHouseholdRole());
+  }
+
+  private AuthenticatedIdentity identity(
+      UUID accountId, UUID householdId, HouseholdRole householdRole) {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .role(AccountRole.USER)
         .authSessionId(UUID.randomUUID())
         .scope(TokenScope.ACCOUNT)
-        .householdId(UUID.randomUUID())
-        .householdRole(HouseholdRole.PARENT)
+        .householdId(householdId)
+        .householdRole(householdRole)
         .build();
   }
 }

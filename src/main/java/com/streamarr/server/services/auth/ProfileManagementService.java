@@ -36,11 +36,6 @@ public class ProfileManagementService {
   @Transactional
   public Profile create(CreatePortableProfileCommand command) {
     requireName(command.name());
-    var account =
-        accountRepository
-            .findById(command.actingAccountId())
-            .filter(candidate -> candidate.isEnabled())
-            .orElseThrow(ProfileManagementDeniedException::new);
     var profile =
         profileRepository.save(
             Profile.builder()
@@ -50,19 +45,22 @@ public class ProfileManagementService {
                 .pinHash(command.pinHash())
                 .build());
     managerRepository.save(
-        ProfileManager.builder().accountId(account.getId()).profileId(profile.getId()).build());
-    kidManagerPolicy.validateShareActivation(profile.getId(), account.getHomeHouseholdId());
-    safetyService.validateActivation(profile, account.getHomeHouseholdId());
+        ProfileManager.builder()
+            .accountId(command.actingAccountId())
+            .profileId(profile.getId())
+            .build());
+    kidManagerPolicy.validateShareActivation(profile.getId(), command.authority().householdId());
+    safetyService.validateActivation(profile, command.authority().householdId());
     shareRepository.save(
         ProfileHouseholdShare.builder()
             .profileId(profile.getId())
-            .householdId(account.getHomeHouseholdId())
+            .householdId(command.authority().householdId())
             .status(ProfileShareStatus.ACTIVE)
             .build());
     auditService.recordEvent(
         SecurityAuditRecord.builder()
-            .actingAccountId(account.getId())
-            .targetHouseholdId(account.getHomeHouseholdId())
+            .actingAccountId(command.actingAccountId())
+            .targetHouseholdId(command.authority().householdId())
             .targetProfileId(profile.getId())
             .operation(SecurityAuditOperation.PROFILE_CREATED)
             .build());

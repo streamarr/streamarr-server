@@ -7,7 +7,6 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
@@ -42,18 +41,17 @@ public class PortableIdentityQueryService {
 
   @Transactional(readOnly = true)
   public List<ProfileShareView> shares(AuthenticatedIdentity identity) {
-    var account = requireAccount(identity);
-    var managedProfileIds = managedProfileIds(account.getId());
+    var managedProfileIds = managedProfileIds(identity.accountId());
     var managedShares = shareRepository.findByProfileIdIn(managedProfileIds);
     List<ProfileHouseholdShare> shares;
-    if (!canAdministerHousehold(account.getHouseholdRole())) {
+    if (!identity.hasHouseholdRole(identity.householdId(), HouseholdRole.PARENT)) {
       shares = sortedShares(managedShares.stream());
     } else {
       shares =
           sortedShares(
               Stream.concat(
                   managedShares.stream(),
-                  shareRepository.findByHouseholdId(account.getHomeHouseholdId()).stream()));
+                  shareRepository.findByHouseholdId(identity.householdId()).stream()));
     }
     var profiles =
         profileRepository
@@ -77,11 +75,12 @@ public class PortableIdentityQueryService {
 
   @Transactional(readOnly = true)
   public List<ProfileManagerInvitationView> invitations(AuthenticatedIdentity identity) {
-    var account = requireAccount(identity);
     var invitations =
         Stream.concat(
-                invitationRepository.findByInvitedAccountId(account.getId()).stream(),
-                invitationRepository.findByProfileIdIn(managedProfileIds(account.getId())).stream())
+                invitationRepository.findByInvitedAccountId(identity.accountId()).stream(),
+                invitationRepository
+                    .findByProfileIdIn(managedProfileIds(identity.accountId()))
+                    .stream())
             .distinct()
             .sorted(Comparator.comparing(ProfileManagerInvitation::getId))
             .toList();
@@ -107,10 +106,9 @@ public class PortableIdentityQueryService {
 
   @Transactional(readOnly = true)
   public List<ProfileManagerView> managers(AuthenticatedIdentity identity) {
-    var account = requireAccount(identity);
-    var accessibleProfileIds = managedProfileIds(account.getId());
-    if (canAdministerHousehold(account.getHouseholdRole())) {
-      shareRepository.findByHouseholdId(account.getHomeHouseholdId()).stream()
+    var accessibleProfileIds = managedProfileIds(identity.accountId());
+    if (identity.hasHouseholdRole(identity.householdId(), HouseholdRole.PARENT)) {
+      shareRepository.findByHouseholdId(identity.householdId()).stream()
           .map(ProfileHouseholdShare::getProfileId)
           .forEach(accessibleProfileIds::add);
     }
@@ -130,13 +128,6 @@ public class PortableIdentityQueryService {
         .toList();
   }
 
-  private UserAccount requireAccount(AuthenticatedIdentity identity) {
-    return accountRepository
-        .findById(identity.accountId())
-        .filter(candidate -> candidate.isEnabled())
-        .orElseThrow(AuthenticationRequiredException::new);
-  }
-
   private Set<UUID> managedProfileIds(UUID accountId) {
     return new HashSet<>(
         managerRepository.findByAccountId(accountId).stream()
@@ -146,10 +137,6 @@ public class PortableIdentityQueryService {
 
   private List<ProfileHouseholdShare> sortedShares(Stream<ProfileHouseholdShare> shares) {
     return shares.distinct().sorted(Comparator.comparing(ProfileHouseholdShare::getId)).toList();
-  }
-
-  private boolean canAdministerHousehold(HouseholdRole role) {
-    return role == HouseholdRole.OWNER || role == HouseholdRole.PARENT;
   }
 
   private <T> T require(Map<UUID, T> values, UUID id) {

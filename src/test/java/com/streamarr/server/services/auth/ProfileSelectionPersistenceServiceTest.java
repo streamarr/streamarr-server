@@ -31,7 +31,7 @@ class ProfileSelectionPersistenceServiceTest {
       new FakeProfileHouseholdShareRepository();
   private final FakeProfileRepository profileRepository = new FakeProfileRepository();
   private final ProfileAvailabilityService profileAvailabilityService =
-      new ProfileAvailabilityService(accountRepository, shareRepository, profileRepository);
+      new ProfileAvailabilityService(shareRepository, profileRepository);
   private final ProfileSelectionPersistenceService service =
       new ProfileSelectionPersistenceService(sessionRepository, profileAvailabilityService);
 
@@ -49,7 +49,7 @@ class ProfileSelectionPersistenceServiceTest {
             .build());
     var session = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
 
-    var selected = service.select(account.getId(), session.getId(), profile.getId());
+    var selected = service.select(identity(account, session), profile.getId());
 
     assertThat(selected.getActiveProfileId()).isEqualTo(profile.getId());
     assertThat(sessionRepository.findById(session.getId()).orElseThrow().getActiveProfileId())
@@ -70,11 +70,11 @@ class ProfileSelectionPersistenceServiceTest {
     var otherAccountSessionId = otherAccountSession.getId();
     var revokedSessionId = revokedSession.getId();
 
-    assertThatThrownBy(() -> service.select(accountId, missingSessionId, profileId))
+    assertThatThrownBy(() -> service.select(identity(accountId, missingSessionId), profileId))
         .isInstanceOf(AuthenticationRequiredException.class);
-    assertThatThrownBy(() -> service.select(accountId, otherAccountSessionId, profileId))
+    assertThatThrownBy(() -> service.select(identity(accountId, otherAccountSessionId), profileId))
         .isInstanceOf(AuthenticationRequiredException.class);
-    assertThatThrownBy(() -> service.select(accountId, revokedSessionId, profileId))
+    assertThatThrownBy(() -> service.select(identity(accountId, revokedSessionId), profileId))
         .isInstanceOf(AuthenticationRequiredException.class);
 
     assertThat(otherAccountSession.getActiveProfileId()).isNull();
@@ -91,5 +91,24 @@ class ProfileSelectionPersistenceServiceTest {
             .homeHouseholdId(householdId)
             .householdRole(HouseholdRole.MEMBER)
             .build());
+  }
+
+  private AuthenticatedIdentity identity(UserAccount account, AuthSession session) {
+    return identity(account.getId(), session.getId(), account.getHomeHouseholdId());
+  }
+
+  private AuthenticatedIdentity identity(UUID accountId, UUID sessionId) {
+    return identity(accountId, sessionId, UUID.randomUUID());
+  }
+
+  private AuthenticatedIdentity identity(UUID accountId, UUID sessionId, UUID householdId) {
+    return AuthenticatedIdentity.builder()
+        .accountId(accountId)
+        .role(AccountRole.USER)
+        .authSessionId(sessionId)
+        .scope(TokenScope.ACCOUNT)
+        .householdId(householdId)
+        .householdRole(HouseholdRole.MEMBER)
+        .build();
   }
 }

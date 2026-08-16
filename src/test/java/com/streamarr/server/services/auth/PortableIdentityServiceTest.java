@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -9,7 +10,6 @@ import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
 import java.sql.SQLException;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.DisplayName;
@@ -164,7 +164,7 @@ class PortableIdentityServiceTest {
 
   private CreatePortableProfileCommand command() {
     return CreatePortableProfileCommand.builder()
-        .actingAccountId(UUID.randomUUID())
+        .authority(accountIdentityBuilder().build())
         .name("Profile")
         .kind(ProfileKind.ADULT)
         .build();

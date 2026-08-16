@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
@@ -75,7 +76,7 @@ class SecretRecordToStringTest {
                 .build()
                 .toString(),
             CreatePortableProfileCommand.builder()
-                .actingAccountId(id)
+                .authority(accountIdentityBuilder().accountId(id).build())
                 .name("Profile")
                 .kind(ProfileKind.ADULT)
                 .pinHash(secret)
@@ -102,7 +103,12 @@ class SecretRecordToStringTest {
                 .build()
                 .toString(),
             HouseholdOwnershipTransferCommand.builder()
-                .actingAccountId(id)
+                .authority(
+                    accountIdentityBuilder()
+                        .accountId(id)
+                        .householdId(id)
+                        .householdRole(HouseholdRole.OWNER)
+                        .build())
                 .householdId(id)
                 .targetAccountId(id)
                 .password(secret)

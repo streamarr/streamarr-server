@@ -25,7 +25,7 @@ public class AccessTokenIssuer {
   public AccessToken issue(TokenContext context) {
     // JWT timestamps carry whole seconds; truncate so expiresAt matches the encoded exp claim.
     var now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
-    return mint(context, now, now.plus(properties.accessTokenTtl()));
+    return mint(identityOf(context), now, now.plus(properties.accessTokenTtl()));
   }
 
   /**
@@ -34,32 +34,30 @@ public class AccessTokenIssuer {
    * — an uncapped reissue would let repeated selection extend access indefinitely. Only setup,
    * login, refresh, and successful password reauthentication start a fresh TTL.
    */
-  public AccessToken issueDerived(TokenContext context, Instant sourceExpiresAt) {
+  public AccessToken issueDerived(AuthenticatedIdentity identity, Instant sourceExpiresAt) {
     var now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
     var freshExpiry = now.plus(properties.accessTokenTtl());
     var cappedExpiry = sourceExpiresAt.isBefore(freshExpiry) ? sourceExpiresAt : freshExpiry;
-    return mint(context, now, cappedExpiry);
+    return mint(identity, now, cappedExpiry);
   }
 
-  private AccessToken mint(TokenContext context, Instant now, Instant expiresAt) {
-    var scope = resolveScope(context);
-
+  private AccessToken mint(AuthenticatedIdentity identity, Instant now, Instant expiresAt) {
     var claims =
         JwtClaimsSet.builder()
             .issuer(properties.issuer())
             .audience(List.of(properties.audience()))
             .id(UUID.randomUUID().toString())
-            .subject(context.account().getId().toString())
+            .subject(identity.accountId().toString())
             .issuedAt(now)
             .expiresAt(expiresAt)
-            .claim(TokenClaims.ROLES, List.of(context.account().getAccountRole().name()))
-            .claim(TokenClaims.SESSION_ID, context.session().getId().toString())
-            .claim(TokenClaims.SCOPE, scope.claimValue())
-            .claim(TokenClaims.HOUSEHOLD_ID, context.account().getHomeHouseholdId().toString())
-            .claim(TokenClaims.HOUSEHOLD_ROLE, context.account().getHouseholdRole().name());
+            .claim(TokenClaims.ROLES, List.of(identity.role().name()))
+            .claim(TokenClaims.SESSION_ID, identity.authSessionId().toString())
+            .claim(TokenClaims.SCOPE, identity.scope().claimValue())
+            .claim(TokenClaims.HOUSEHOLD_ID, identity.householdId().toString())
+            .claim(TokenClaims.HOUSEHOLD_ROLE, identity.householdRole().name());
 
-    if (scope == TokenScope.PROFILE) {
-      claims.claim(TokenClaims.PROFILE_ID, context.profileId().toString());
+    if (identity.scope() == TokenScope.PROFILE) {
+      claims.claim(TokenClaims.PROFILE_ID, identity.profileId().toString());
     }
 
     var jwt =
@@ -70,7 +68,19 @@ public class AccessTokenIssuer {
     return AccessToken.builder()
         .value(jwt.getTokenValue())
         .expiresAt(expiresAt)
-        .scope(scope)
+        .scope(identity.scope())
+        .build();
+  }
+
+  private AuthenticatedIdentity identityOf(TokenContext context) {
+    return AuthenticatedIdentity.builder()
+        .accountId(context.account().getId())
+        .role(context.account().getAccountRole())
+        .authSessionId(context.session().getId())
+        .scope(resolveScope(context))
+        .householdId(context.account().getHomeHouseholdId())
+        .householdRole(context.account().getHouseholdRole())
+        .profileId(context.profileId())
         .build();
   }
 

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
+import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.fixtures.AccountFixture;
@@ -95,12 +96,53 @@ class AccessTokenIssuerTest {
             .householdRole(HouseholdRole.PARENT)
             .build();
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
-    var context = TokenContext.builder().account(account).session(session).build();
+    var context =
+        AuthenticatedIdentity.builder()
+            .accountId(account.getId())
+            .role(account.getAccountRole())
+            .authSessionId(session.getId())
+            .scope(TokenScope.ACCOUNT)
+            .householdId(account.getHomeHouseholdId())
+            .householdRole(account.getHouseholdRole())
+            .build();
 
     var capped = issuer.issueDerived(context, now.plusSeconds(90));
     var fresh = issuer.issueDerived(context, now.plusSeconds(3600));
 
     assertThat(capped.expiresAt()).isEqualTo(now.plusSeconds(90));
     assertThat(fresh.expiresAt()).isEqualTo(now.plus(properties.accessTokenTtl()));
+  }
+
+  @Test
+  @DisplayName("Should preserve signed authority when deriving profile token")
+  void shouldPreserveSignedAuthorityWhenDerivingProfileToken() {
+    var accountId = UUID.randomUUID();
+    var sessionId = UUID.randomUUID();
+    var householdId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
+    var source =
+        AuthenticatedIdentity.builder()
+            .accountId(accountId)
+            .role(AccountRole.USER)
+            .authSessionId(sessionId)
+            .scope(TokenScope.ACCOUNT)
+            .householdId(householdId)
+            .householdRole(HouseholdRole.MEMBER)
+            .build();
+
+    var token = issuer.issueDerived(source.profileScoped(profileId), now.plusSeconds(90));
+
+    var decoded = decoder(properties).decode(token.value());
+    assertThat(decoded.getSubject()).isEqualTo(accountId.toString());
+    assertThat(decoded.getClaimAsStringList(TokenClaims.ROLES))
+        .containsExactly(AccountRole.USER.name());
+    assertThat(decoded.getClaimAsString(TokenClaims.SESSION_ID)).isEqualTo(sessionId.toString());
+    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
+        .isEqualTo(householdId.toString());
+    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE))
+        .isEqualTo(HouseholdRole.MEMBER.name());
+    assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isEqualTo(profileId.toString());
+    assertThat(decoded.getClaimAsString(TokenClaims.SCOPE))
+        .isEqualTo(TokenScope.PROFILE.claimValue());
   }
 }

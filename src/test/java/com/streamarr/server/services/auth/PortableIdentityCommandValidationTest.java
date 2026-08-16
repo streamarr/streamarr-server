@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
@@ -39,6 +40,16 @@ class PortableIdentityCommandValidationTest {
     assertThatThrownBy(invalidOffer::build).isInstanceOf(NullPointerException.class);
   }
 
+  @Test
+  @DisplayName("Should reject account authority in profile home departure command")
+  void shouldRejectAccountAuthorityInProfileHomeDepartureCommand() {
+    var accountAuthority = accountIdentityBuilder().build();
+
+    assertThatThrownBy(() -> new ProfileHomeDeparture(accountAuthority))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("profile authority");
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("invalidLifecycleCommands")
   @DisplayName("Should reject null required lifecycle command values at construction")
@@ -69,7 +80,7 @@ class PortableIdentityCommandValidationTest {
             "household ownership transfer",
             () -> new HouseholdOwnershipTransferCommand(null, id, id, "password", "reason")),
         command("household profile removal", () -> new HouseholdProfileRemoval(null, id)),
-        command("profile home departure", () -> new ProfileHomeDeparture(null, id)),
+        command("profile home departure", () -> new ProfileHomeDeparture(null)),
         command(
             "profile management relinquishment",
             () -> new ProfileManagementRelinquishment(null, id)),

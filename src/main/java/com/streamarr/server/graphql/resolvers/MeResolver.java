@@ -24,10 +24,10 @@ public class MeResolver {
         .accountId(view.account().getId())
         .email(view.account().getEmail())
         .displayName(view.account().getDisplayName())
-        .role(view.account().getAccountRole().name())
-        .homeHouseholdId(view.account().getHomeHouseholdId())
-        .householdRole(view.account().getHouseholdRole())
-        .scope(view.scope().claimValue())
+        .role(view.authority().role().name())
+        .homeHouseholdId(view.authority().householdId())
+        .householdRole(view.authority().householdRole())
+        .scope(view.authority().scope().claimValue())
         .profiles(
             view.profiles().stream()
                 .map(

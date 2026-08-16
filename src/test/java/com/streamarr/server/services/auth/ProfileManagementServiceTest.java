@@ -1,5 +1,7 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountIdentity;
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -62,7 +64,7 @@ class ProfileManagementServiceTest {
     var profile =
         service.create(
             CreatePortableProfileCommand.builder()
-                .actingAccountId(creator.getId())
+                .authority(accountIdentity(creator))
                 .name("Portable Profile")
                 .kind(ProfileKind.ADULT)
                 .maximumAllowedRatingAge(16)
@@ -79,6 +81,31 @@ class ProfileManagementServiceTest {
     assertThat(auditRepository.findAll())
         .extracting(event -> event.getOperation())
         .containsExactly(SecurityAuditOperation.PROFILE_CREATED);
+  }
+
+  @Test
+  @DisplayName("Should create portable profile in signed household after account state changes")
+  void shouldCreatePortableProfileInSignedHouseholdAfterAccountStateChanges() {
+    var signedHouseholdId = UUID.randomUUID();
+    var liveHouseholdId = UUID.randomUUID();
+    var creator = saveAccount(liveHouseholdId, HouseholdRole.OWNER);
+
+    var profile =
+        service.create(
+            CreatePortableProfileCommand.builder()
+                .authority(identity(creator, signedHouseholdId, HouseholdRole.MEMBER))
+                .name("Signed Home Profile")
+                .kind(ProfileKind.ADULT)
+                .build());
+
+    assertThat(
+            shareRepository.existsByProfileIdAndHouseholdIdAndStatus(
+                profile.getId(), signedHouseholdId, ProfileShareStatus.ACTIVE))
+        .isTrue();
+    assertThat(
+            shareRepository.existsByProfileIdAndHouseholdIdAndStatus(
+                profile.getId(), liveHouseholdId, ProfileShareStatus.ACTIVE))
+        .isFalse();
   }
 
   @Test
@@ -115,7 +142,9 @@ class ProfileManagementServiceTest {
             .name("  ")
             .build();
     var invalidCreation =
-        CreatePortableProfileCommand.builder().actingAccountId(accountId).kind(ProfileKind.ADULT);
+        CreatePortableProfileCommand.builder()
+            .authority(accountIdentityBuilder().accountId(accountId).build())
+            .kind(ProfileKind.ADULT);
 
     assertThatThrownBy(invalidCreation::build).isInstanceOf(NullPointerException.class);
     assertThatThrownBy(() -> service.rename(blankName))
@@ -497,6 +526,18 @@ class ProfileManagementServiceTest {
             .homeHouseholdId(householdId)
             .householdRole(role)
             .build());
+  }
+
+  private AuthenticatedIdentity identity(
+      UserAccount account, UUID householdId, HouseholdRole householdRole) {
+    return AuthenticatedIdentity.builder()
+        .accountId(account.getId())
+        .role(account.getAccountRole())
+        .authSessionId(UUID.randomUUID())
+        .scope(TokenScope.ACCOUNT)
+        .householdId(householdId)
+        .householdRole(householdRole)
+        .build();
   }
 
   private void saveAccount(UUID accountId) {

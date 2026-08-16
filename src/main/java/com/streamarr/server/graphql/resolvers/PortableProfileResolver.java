@@ -49,12 +49,12 @@ public class PortableProfileResolver {
   @DgsMutation
   public PortableProfileSummary createPortableProfile(
       @InputArgument("input") PortableProfileInputs.ProfileCreation input) {
-    var accountId = authorizationService.requireAccountId();
+    var authority = authorizationService.currentIdentity();
     var pinHash = input.pin() == null ? null : profilePinService.encode(input.pin());
     var profile =
         portableIdentityService.createPortableProfile(
             CreatePortableProfileCommand.builder()
-                .actingAccountId(accountId)
+                .authority(authority)
                 .name(input.name())
                 .kind(input.kind())
                 .maximumAllowedRatingAge(input.maximumAllowedRatingAge())
@@ -100,13 +100,13 @@ public class PortableProfileResolver {
   @DgsMutation
   public PortableProfileShareSummary acceptProfileShare(
       @InputArgument("input") PortableProfileInputs.ShareAcceptance input) {
-    var accountId = authorizationService.requireAccountId();
+    var authority = authorizationService.currentIdentity();
     var shareId = parseUuid(input.shareId());
     var managementInvitationId = parseOptionalUuid(input.managementInvitationId());
     return PortableProfileShareSummary.from(
         portableIdentityService.acceptProfileShare(
             ProfileShareAcceptance.builder()
-                .actingAccountId(accountId)
+                .authority(authority)
                 .shareId(shareId)
                 .managementInvitationId(managementInvitationId)
                 .build()));
@@ -114,10 +114,10 @@ public class PortableProfileResolver {
 
   @DgsMutation
   public boolean rejectProfileShare(@InputArgument String shareId) {
-    var accountId = authorizationService.requireAccountId();
+    var authority = authorizationService.currentIdentity();
     var parsedShareId = parseUuid(shareId);
     portableIdentityService.rejectProfileShare(
-        ProfileShareRejection.builder().actingAccountId(accountId).shareId(parsedShareId).build());
+        ProfileShareRejection.builder().authority(authority).shareId(parsedShareId).build());
     return true;
   }
 
@@ -135,25 +135,19 @@ public class PortableProfileResolver {
 
   @DgsMutation
   public boolean removeProfileFromCurrentHousehold(@InputArgument String shareId) {
-    var accountId = authorizationService.requireAccountId();
+    var authority = authorizationService.currentIdentity();
     var parsedShareId = parseUuid(shareId);
     portableIdentityService.removeProfileFromCurrentHousehold(
-        HouseholdProfileRemoval.builder()
-            .actingAccountId(accountId)
-            .shareId(parsedShareId)
-            .build());
+        HouseholdProfileRemoval.builder().authority(authority).shareId(parsedShareId).build());
     return true;
   }
 
   @DgsMutation
   public boolean leaveCurrentHome() {
-    var accountId = authorizationService.requireAccountId();
-    var profileId = authorizationService.requireProfile();
+    var authority = authorizationService.currentIdentity();
+    authorizationService.requireProfile();
     portableIdentityService.leaveCurrentHome(
-        ProfileHomeDeparture.builder()
-            .actingAccountId(accountId)
-            .activeProfileId(profileId)
-            .build());
+        ProfileHomeDeparture.builder().authority(authority).build());
     return true;
   }
 
@@ -365,12 +359,12 @@ public class PortableProfileResolver {
   @DgsMutation
   public boolean transferHouseholdOwnership(
       @InputArgument("input") PortableProfileInputs.OwnershipTransfer input) {
-    var accountId = authorizationService.requireAccountId();
+    var authority = authorizationService.currentIdentity();
     var householdId = parseUuid(input.householdId());
     var targetAccountId = parseUuid(input.targetAccountId());
     portableIdentityService.transferHouseholdOwnership(
         HouseholdOwnershipTransferCommand.builder()
-            .actingAccountId(accountId)
+            .authority(authority)
             .householdId(householdId)
             .targetAccountId(targetAccountId)
             .password(input.password())

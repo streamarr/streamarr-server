@@ -16,14 +16,14 @@ public class ProfileSelectionPersistenceService {
   private final ProfileAvailabilityService profileAvailabilityService;
 
   @Transactional
-  public AuthSession select(UUID accountId, UUID sessionId, UUID profileId) {
+  public AuthSession select(AuthenticatedIdentity identity, UUID profileId) {
     var session =
         sessionRepository
-            .lockById(sessionId)
-            .filter(candidate -> candidate.getAccountId().equals(accountId))
+            .lockById(identity.authSessionId())
+            .filter(candidate -> candidate.getAccountId().equals(identity.accountId()))
             .filter(candidate -> candidate.getRevokedAt() == null)
             .orElseThrow(AuthenticationRequiredException::new);
-    profileAvailabilityService.requireSelectableProfile(accountId, profileId);
+    profileAvailabilityService.requireSelectableProfile(identity, profileId);
     session.setActiveProfileId(profileId);
     return sessionRepository.save(session);
   }

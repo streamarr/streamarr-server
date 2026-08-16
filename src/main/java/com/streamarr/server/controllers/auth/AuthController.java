@@ -98,11 +98,10 @@ public class AuthController {
   public ResponseEntity<AuthTokensResponse> selectProfile(
       @Valid @RequestBody SelectProfileRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
-    var context =
-        sessionScopeService.selectProfile(
-            identity.accountId(), identity.authSessionId(), request.profileId(), request.pin());
+    var selectedIdentity =
+        sessionScopeService.selectProfile(identity, request.profileId(), request.pin());
     return respondAccessOnly(
-        accessTokenIssuer.issueDerived(context, authorizationService.currentTokenExpiry()),
+        accessTokenIssuer.issueDerived(selectedIdentity, authorizationService.currentTokenExpiry()),
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 

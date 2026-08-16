@@ -62,7 +62,7 @@ class ProfileShareTransitionRaceIT extends AbstractIntegrationTest {
     var fixture = createFixture();
     var rejectionLoadedShare = new CountDownLatch(1);
     var acceptanceCompleted = new CountDownLatch(1);
-    var service = serviceWithPausedFirstAccountRead(rejectionLoadedShare, acceptanceCompleted);
+    var service = serviceWithPausedFirstShareRead(rejectionLoadedShare, acceptanceCompleted);
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var rejection =
@@ -72,7 +72,7 @@ class ProfileShareTransitionRaceIT extends AbstractIntegrationTest {
                       () ->
                           service.reject(
                               ProfileShareRejection.builder()
-                                  .actingAccountId(fixture.targetAccountId())
+                                  .authority(targetAuthority(fixture))
                                   .shareId(fixture.shareId())
                                   .build())));
 
@@ -84,7 +84,7 @@ class ProfileShareTransitionRaceIT extends AbstractIntegrationTest {
                       () ->
                           service.accept(
                               ProfileShareAcceptance.builder()
-                                  .actingAccountId(fixture.targetAccountId())
+                                  .authority(targetAuthority(fixture))
                                   .shareId(fixture.shareId())
                                   .build())));
 
@@ -141,7 +141,7 @@ class ProfileShareTransitionRaceIT extends AbstractIntegrationTest {
                       () ->
                           service.accept(
                               ProfileShareAcceptance.builder()
-                                  .actingAccountId(fixture.targetAccountId())
+                                  .authority(targetAuthority(fixture))
                                   .shareId(fixture.shareId())
                                   .build())));
 
@@ -166,27 +166,26 @@ class ProfileShareTransitionRaceIT extends AbstractIntegrationTest {
     }
   }
 
-  private ProfileSharingService serviceWithPausedFirstAccountRead(
-      CountDownLatch accountRead, CountDownLatch continueFirstRead) {
+  private ProfileSharingService serviceWithPausedFirstShareRead(
+      CountDownLatch shareRead, CountDownLatch continueFirstRead) {
     var pauseFirstRead = new AtomicBoolean(true);
-    var blockingAccountRepository =
-        (UserAccountRepository)
+    var blockingShareRepository =
+        (ProfileHouseholdShareRepository)
             Proxy.newProxyInstance(
-                UserAccountRepository.class.getClassLoader(),
-                new Class<?>[] {UserAccountRepository.class},
+                ProfileHouseholdShareRepository.class.getClassLoader(),
+                new Class<?>[] {ProfileHouseholdShareRepository.class},
                 (_, method, arguments) -> {
-                  var result = invoke(method, arguments);
+                  var result = invoke(shareRepository, method, arguments);
                   if (method.getName().equals("findById")
                       && pauseFirstRead.compareAndSet(true, false)) {
-                    accountRead.countDown();
+                    shareRead.countDown();
                     await(continueFirstRead);
                   }
                   return result;
                 });
     return new ProfileSharingService(
         managerRepository,
-        shareRepository,
-        blockingAccountRepository,
+        blockingShareRepository,
         profileRepository,
         managementService,
         safetyService,
@@ -215,17 +214,12 @@ class ProfileShareTransitionRaceIT extends AbstractIntegrationTest {
     return new ProfileSharingService(
         blockingManagerRepository,
         shareRepository,
-        accountRepository,
         profileRepository,
         managementService,
         safetyService,
         selectionCleaner,
         kidManagerPolicy,
         auditService);
-  }
-
-  private Object invoke(Method method, Object[] arguments) throws Throwable {
-    return invoke(accountRepository, method, arguments);
   }
 
   private Object invoke(Object target, Method method, Object[] arguments) throws Throwable {
@@ -281,6 +275,17 @@ class ProfileShareTransitionRaceIT extends AbstractIntegrationTest {
         .accountRole(role == HouseholdRole.OWNER ? AccountRole.ADMIN : AccountRole.USER)
         .homeHouseholdId(householdId)
         .householdRole(role)
+        .build();
+  }
+
+  private AuthenticatedIdentity targetAuthority(Fixture fixture) {
+    return AuthenticatedIdentity.builder()
+        .accountId(fixture.targetAccountId())
+        .role(AccountRole.ADMIN)
+        .authSessionId(UUID.randomUUID())
+        .scope(TokenScope.ACCOUNT)
+        .householdId(fixture.targetHouseholdId())
+        .householdRole(HouseholdRole.OWNER)
         .build();
   }
 

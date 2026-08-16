@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -507,7 +508,12 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
     var preparedOwnershipTransfer =
         householdAdministrationService.prepare(
             HouseholdOwnershipTransferCommand.builder()
-                .actingAccountId(setup.accountId())
+                .authority(
+                    accountIdentityBuilder()
+                        .accountId(setup.accountId())
+                        .householdId(setup.householdId())
+                        .householdRole(HouseholdRole.OWNER)
+                        .build())
                 .householdId(setup.householdId())
                 .targetAccountId(nextOwnerId)
                 .password("owner-password")

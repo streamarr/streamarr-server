@@ -617,6 +617,57 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should preserve signed authority when profile selected after account state changes")
+  void shouldPreserveSignedAuthorityWhenProfileSelectedAfterAccountStateChanges() throws Exception {
+    seedSingleProfileIdentity();
+    var sourceHouseholdId = household.getId();
+    var session = refreshTokenService.createSession(account, "stale-authority-test").session();
+    var sourceToken =
+        signedAccessToken(
+            session,
+            claims ->
+                claims
+                    .claim(TokenClaims.HOUSEHOLD_ID, sourceHouseholdId.toString())
+                    .claim(TokenClaims.HOUSEHOLD_ROLE, HouseholdRole.MEMBER.name()));
+
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            _ -> {
+              var movedAccount = userAccountRepository.findById(account.getId()).orElseThrow();
+              movedAccount.setHouseholdRole(HouseholdRole.PARENT);
+              userAccountRepository.saveAndFlush(movedAccount);
+              var replacementOwner =
+                  userAccountRepository.save(
+                      AccountFixture.defaultAccountBuilder()
+                          .email("source-owner-" + UUID.randomUUID() + "@example.com")
+                          .homeHouseholdId(sourceHouseholdId)
+                          .householdRole(HouseholdRole.OWNER)
+                          .build());
+              additionalCleanupAccountIds.add(replacementOwner.getId());
+
+              var liveHousehold =
+                  householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
+              movedAccount.setHomeHouseholdId(liveHousehold.getId());
+              movedAccount.setHouseholdRole(HouseholdRole.OWNER);
+              userAccountRepository.saveAndFlush(movedAccount);
+              profileShareRepository.save(
+                  ProfileHouseholdShare.builder()
+                      .profileId(profile.getId())
+                      .householdId(liveHousehold.getId())
+                      .status(ProfileShareStatus.ACTIVE)
+                      .build());
+            });
+
+    var derivedToken = selectProfileToken(sourceToken);
+    var claims = decodeToken(derivedToken);
+
+    assertThat(claims.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
+        .isEqualTo(sourceHouseholdId.toString());
+    assertThat(claims.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE))
+        .isEqualTo(HouseholdRole.MEMBER.name());
+  }
+
+  @Test
   @DisplayName("Should require profile PIN when selecting PIN protected profile")
   void shouldRequireProfilePinWhenSelectingPinProtectedProfile() throws Exception {
     var accountToken = accountScopedTokenWithTwoProfiles();

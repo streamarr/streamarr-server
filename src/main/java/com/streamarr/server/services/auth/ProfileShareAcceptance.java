@@ -6,4 +6,9 @@ import lombok.NonNull;
 
 @Builder
 public record ProfileShareAcceptance(
-    @NonNull UUID actingAccountId, @NonNull UUID shareId, UUID managementInvitationId) {}
+    @NonNull AuthenticatedIdentity authority, @NonNull UUID shareId, UUID managementInvitationId) {
+
+  public UUID actingAccountId() {
+    return authority.accountId();
+  }
+}

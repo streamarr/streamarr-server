@@ -63,7 +63,6 @@ class ProfileSelectionUnshareConcurrencyTest {
         new ProfileSharingService(
             managerRepository,
             shareRepository,
-            accountRepository,
             profileRepository,
             managementService,
             safetyService,
@@ -72,12 +71,11 @@ class ProfileSelectionUnshareConcurrencyTest {
             auditService);
     var pausingEncoder = new PausingPasswordEncoder();
     var profileAvailabilityService =
-        new ProfileAvailabilityService(accountRepository, shareRepository, profileRepository);
+        new ProfileAvailabilityService(shareRepository, profileRepository);
     var sessionScopeService =
         new SessionScopeService(
             profileAvailabilityService,
             sessionRepository,
-            accountRepository,
             auditService,
             new ProfileEntryAuthorizer(
                 new ProfilePinService(pausingEncoder),
@@ -111,12 +109,12 @@ class ProfileSelectionUnshareConcurrencyTest {
                   catchFailure(
                       () ->
                           sessionScopeService.selectProfile(
-                              account.getId(), session.getId(), profile.getId(), "2468")));
+                              identity(account, session), profile.getId(), "2468")));
       assertThat(pausingEncoder.verificationStarted.await(5, SECONDS)).isTrue();
 
       sharingService.removeFromHousehold(
           HouseholdProfileRemoval.builder()
-              .actingAccountId(account.getId())
+              .authority(identity(account, session))
               .shareId(share.getId())
               .build());
       pausingEncoder.allowVerificationToComplete.countDown();
@@ -138,6 +136,17 @@ class ProfileSelectionUnshareConcurrencyTest {
             .homeHouseholdId(homeHouseholdId)
             .householdRole(HouseholdRole.OWNER)
             .build());
+  }
+
+  private AuthenticatedIdentity identity(UserAccount account, AuthSession session) {
+    return AuthenticatedIdentity.builder()
+        .accountId(account.getId())
+        .role(account.getAccountRole())
+        .authSessionId(session.getId())
+        .scope(TokenScope.ACCOUNT)
+        .householdId(account.getHomeHouseholdId())
+        .householdRole(account.getHouseholdRole())
+        .build();
   }
 
   private Throwable catchFailure(Runnable operation) {

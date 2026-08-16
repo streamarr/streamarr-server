@@ -1,5 +1,7 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountIdentity;
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -120,7 +122,7 @@ class HouseholdAdministrationServiceTest {
 
     transferOwnership(
         HouseholdOwnershipTransferCommand.builder()
-            .actingAccountId(currentOwner.getId())
+            .authority(accountIdentity(currentOwner))
             .householdId(household.getId())
             .targetAccountId(nextOwner.getId())
             .password(PASSWORD)
@@ -133,6 +135,29 @@ class HouseholdAdministrationServiceTest {
         .singleElement()
         .extracting(event -> event.getOperation())
         .isEqualTo(SecurityAuditOperation.HOUSEHOLD_OWNERSHIP_TRANSFERRED);
+  }
+
+  @Test
+  @DisplayName("Should reject live household promotion absent from signed authority")
+  void shouldRejectLiveHouseholdPromotionAbsentFromSignedAuthority() {
+    var signedHouseholdId = UUID.randomUUID();
+    var liveHousehold = householdRepository.save(Household.builder().name("Live Home").build());
+    var promotedOwner = saveAccount(AccountRole.USER, liveHousehold.getId(), HouseholdRole.OWNER);
+    var nextOwner = saveAccount(AccountRole.USER, liveHousehold.getId(), HouseholdRole.PARENT);
+    var command =
+        HouseholdOwnershipTransferCommand.builder()
+            .authority(identity(promotedOwner, signedHouseholdId, HouseholdRole.MEMBER))
+            .householdId(liveHousehold.getId())
+            .targetAccountId(nextOwner.getId())
+            .password(PASSWORD)
+            .reason("Live promotion must not widen signed authority")
+            .build();
+
+    assertThatThrownBy(() -> transferOwnership(command))
+        .isInstanceOf(HouseholdAccessDeniedException.class);
+
+    assertThat(promotedOwner.getHouseholdRole()).isEqualTo(HouseholdRole.OWNER);
+    assertThat(nextOwner.getHouseholdRole()).isEqualTo(HouseholdRole.PARENT);
   }
 
   @Test
@@ -255,7 +280,7 @@ class HouseholdAdministrationServiceTest {
 
     transferOwnership(
         HouseholdOwnershipTransferCommand.builder()
-            .actingAccountId(admin.getId())
+            .authority(accountIdentity(admin))
             .householdId(household.getId())
             .targetAccountId(nextOwner.getId())
             .password(PASSWORD)
@@ -275,7 +300,7 @@ class HouseholdAdministrationServiceTest {
     var nextOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.MEMBER);
     var command =
         HouseholdOwnershipTransferCommand.builder()
-            .actingAccountId(parent.getId())
+            .authority(accountIdentity(parent))
             .householdId(household.getId())
             .targetAccountId(nextOwner.getId())
             .password(PASSWORD)
@@ -297,7 +322,7 @@ class HouseholdAdministrationServiceTest {
     var nextOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.PARENT);
     var command =
         HouseholdOwnershipTransferCommand.builder()
-            .actingAccountId(disabledAdmin.getId())
+            .authority(accountIdentity(disabledAdmin))
             .householdId(household.getId())
             .targetAccountId(nextOwner.getId())
             .password(PASSWORD)
@@ -316,7 +341,7 @@ class HouseholdAdministrationServiceTest {
     var nextOwner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.PARENT);
     var command =
         HouseholdOwnershipTransferCommand.builder()
-            .actingAccountId(owner.getId())
+            .authority(accountIdentity(owner))
             .householdId(household.getId())
             .targetAccountId(nextOwner.getId())
             .password("wrong password")
@@ -334,7 +359,7 @@ class HouseholdAdministrationServiceTest {
     var owner = saveAccount(AccountRole.USER, household.getId(), HouseholdRole.OWNER);
     var command =
         HouseholdOwnershipTransferCommand.builder()
-            .actingAccountId(owner.getId())
+            .authority(accountIdentity(owner))
             .householdId(household.getId())
             .targetAccountId(owner.getId())
             .password(PASSWORD)
@@ -363,7 +388,12 @@ class HouseholdAdministrationServiceTest {
             .build();
     var blankReason =
         HouseholdOwnershipTransferCommand.builder()
-            .actingAccountId(actorId)
+            .authority(
+                accountIdentityBuilder()
+                    .accountId(actorId)
+                    .householdId(householdId)
+                    .householdRole(HouseholdRole.OWNER)
+                    .build())
             .householdId(householdId)
             .targetAccountId(targetId)
             .password(PASSWORD)
@@ -395,5 +425,17 @@ class HouseholdAdministrationServiceTest {
             .homeHouseholdId(householdId)
             .householdRole(householdRole)
             .build());
+  }
+
+  private AuthenticatedIdentity identity(
+      UserAccount account, UUID householdId, HouseholdRole householdRole) {
+    return AuthenticatedIdentity.builder()
+        .accountId(account.getId())
+        .role(account.getAccountRole())
+        .authSessionId(UUID.randomUUID())
+        .scope(TokenScope.ACCOUNT)
+        .householdId(householdId)
+        .householdRole(householdRole)
+        .build();
   }
 }

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -112,7 +113,12 @@ class HouseholdOwnershipTransferConcurrencyIT extends AbstractIntegrationTest {
       var preparedTransfer =
           householdAdministrationService.prepare(
               HouseholdOwnershipTransferCommand.builder()
-                  .actingAccountId(fixture.currentOwnerId())
+                  .authority(
+                      accountIdentityBuilder()
+                          .accountId(fixture.currentOwnerId())
+                          .householdId(fixture.householdId())
+                          .householdRole(HouseholdRole.OWNER)
+                          .build())
                   .householdId(fixture.householdId())
                   .targetAccountId(targetAccountId)
                   .password("ownership-password")

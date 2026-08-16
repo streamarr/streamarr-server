@@ -82,6 +82,31 @@ public record AuthenticatedIdentity(
         .build();
   }
 
+  public AuthenticatedIdentity profileScoped(UUID selectedProfileId) {
+    if (scope == TokenScope.PLAYBACK) {
+      throw new IllegalStateException("Playback authority cannot select a profile");
+    }
+    return AuthenticatedIdentity.builder()
+        .accountId(accountId)
+        .role(role)
+        .authSessionId(authSessionId)
+        .scope(TokenScope.PROFILE)
+        .householdId(householdId)
+        .householdRole(householdRole)
+        .profileId(selectedProfileId)
+        .build();
+  }
+
+  public boolean hasHouseholdRole(UUID targetHouseholdId, HouseholdRole minimumRole) {
+    return Objects.equals(householdId, targetHouseholdId)
+        && householdRole != null
+        && householdRoleRank(householdRole) >= householdRoleRank(minimumRole);
+  }
+
+  public boolean isServerAdmin() {
+    return role == AccountRole.ADMIN;
+  }
+
   private static AccountRole roleClaim(Jwt jwt) {
     var roles = jwt.getClaimAsStringList(TokenClaims.ROLES);
     if (roles == null || roles.isEmpty()) {
@@ -96,5 +121,13 @@ public record AuthenticatedIdentity(
       return null;
     }
     return UUID.fromString(value);
+  }
+
+  private static int householdRoleRank(HouseholdRole value) {
+    return switch (value) {
+      case MEMBER -> 0;
+      case PARENT -> 1;
+      case OWNER -> 2;
+    };
   }
 }

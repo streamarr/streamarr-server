@@ -7,7 +7,6 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.UnwrittenAuthSessionException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
-import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.time.Clock;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +20,6 @@ public class SessionScopeService {
 
   private final ProfileAvailabilityService profileAvailabilityService;
   private final AuthSessionRepository sessionRepository;
-  private final UserAccountRepository userAccountRepository;
   private final SecurityAuditService auditService;
   private final ProfileEntryAuthorizer profileEntryAuthorizer;
   private final ProfileSelectionPersistenceService profileSelectionPersistenceService;
@@ -35,7 +33,7 @@ public class SessionScopeService {
     }
 
     try {
-      profileAvailabilityService.requireSelectableProfile(account.getId(), profileId);
+      profileAvailabilityService.requireSelectableProfile(account, profileId);
       return TokenContext.builder().account(account).session(session).profileId(profileId).build();
     } catch (ProfileAccessDeniedException _) {
       var clearedSession = session.toBuilder().activeProfileId(null).build();
@@ -45,22 +43,15 @@ public class SessionScopeService {
     }
   }
 
-  public TokenContext selectProfile(
-      UUID accountId, UUID sessionId, UUID profileId, String profilePin) {
-    var account = loadAccount(accountId);
-    requireLiveSession(accountId, sessionId);
-    var profile = profileAvailabilityService.requireSelectableProfile(accountId, profileId);
-    profileEntryAuthorizer.requireEntry(accountId, profile, profilePin);
+  public AuthenticatedIdentity selectProfile(
+      AuthenticatedIdentity identity, UUID profileId, String profilePin) {
+    requireLiveSession(identity.accountId(), identity.authSessionId());
+    var profile = profileAvailabilityService.requireSelectableProfile(identity, profileId);
+    profileEntryAuthorizer.requireEntry(identity.accountId(), profile, profilePin);
 
-    var session = profileSelectionPersistenceService.select(accountId, sessionId, profileId);
+    profileSelectionPersistenceService.select(identity, profileId);
 
-    return TokenContext.builder().account(account).session(session).profileId(profileId).build();
-  }
-
-  private UserAccount loadAccount(UUID accountId) {
-    return userAccountRepository
-        .findById(accountId)
-        .orElseThrow(AuthenticationRequiredException::new);
+    return identity.profileScoped(profileId);
   }
 
   private void requireLiveSession(UUID accountId, UUID sessionId) {

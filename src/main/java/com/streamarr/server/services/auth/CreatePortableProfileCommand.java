@@ -7,7 +7,7 @@ import lombok.NonNull;
 
 @Builder
 public record CreatePortableProfileCommand(
-    @NonNull UUID actingAccountId,
+    @NonNull AuthenticatedIdentity authority,
     @NonNull String name,
     @NonNull ProfileKind kind,
     Integer maximumAllowedRatingAge,
@@ -17,6 +17,10 @@ public record CreatePortableProfileCommand(
     if (maximumAllowedRatingAge != null && maximumAllowedRatingAge < 0) {
       throw new IllegalArgumentException("maximumAllowedRatingAge must not be negative");
     }
+  }
+
+  public UUID actingAccountId() {
+    return authority.accountId();
   }
 
   public static class CreatePortableProfileCommandBuilder {
@@ -29,6 +33,6 @@ public record CreatePortableProfileCommand(
   @Override
   public String toString() {
     return "CreatePortableProfileCommand[actingAccountId=%s, name=%s, kind=%s, maximumAllowedRatingAge=%s, pinHash=<redacted>]"
-        .formatted(actingAccountId, name, kind, maximumAllowedRatingAge);
+        .formatted(actingAccountId(), name, kind, maximumAllowedRatingAge);
   }
 }

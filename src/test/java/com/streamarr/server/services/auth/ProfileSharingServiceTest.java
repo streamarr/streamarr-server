@@ -1,5 +1,7 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountIdentity;
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.profileIdentity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -65,7 +67,6 @@ class ProfileSharingServiceTest {
       new ProfileSharingService(
           managerRepository,
           shareRepository,
-          accountRepository,
           profileRepository,
           managementService,
           safetyService,
@@ -181,7 +182,7 @@ class ProfileSharingServiceTest {
     var acceptedShare =
         service.accept(
             ProfileShareAcceptance.builder()
-                .actingAccountId(parent.getId())
+                .authority(accountIdentity(parent))
                 .shareId(pendingShare.getId())
                 .build());
 
@@ -192,6 +193,28 @@ class ProfileSharingServiceTest {
         .singleElement()
         .extracting(event -> event.getOperation())
         .isEqualTo(SecurityAuditOperation.PROFILE_SHARE_ACCEPTED);
+  }
+
+  @Test
+  @DisplayName("Should reject share acceptance outside signed household authority")
+  void shouldRejectShareAcceptanceOutsideSignedHouseholdAuthority() {
+    var signedHouseholdId = UUID.randomUUID();
+    var liveHouseholdId = UUID.randomUUID();
+    var liveParent = saveAccount(liveHouseholdId, HouseholdRole.PARENT);
+    var profile =
+        profileRepository.save(
+            Profile.builder().name("Remote Adult").kind(ProfileKind.ADULT).build());
+    var pendingShare = saveShare(profile.getId(), liveHouseholdId, ProfileShareStatus.PENDING);
+    var acceptance =
+        ProfileShareAcceptance.builder()
+            .authority(identity(liveParent, signedHouseholdId, HouseholdRole.PARENT))
+            .shareId(pendingShare.getId())
+            .build();
+
+    assertThatThrownBy(() -> service.accept(acceptance))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+
+    assertThat(pendingShare.getStatus()).isEqualTo(ProfileShareStatus.PENDING);
   }
 
   @Test
@@ -214,7 +237,7 @@ class ProfileSharingServiceTest {
 
     service.accept(
         ProfileShareAcceptance.builder()
-            .actingAccountId(parent.getId())
+            .authority(accountIdentity(parent))
             .shareId(pendingShare.getId())
             .managementInvitationId(invitation.getId())
             .build());
@@ -231,7 +254,7 @@ class ProfileSharingServiceTest {
     var pending = saveShare(UUID.randomUUID(), UUID.randomUUID(), ProfileShareStatus.PENDING);
     var acceptance =
         ProfileShareAcceptance.builder()
-            .actingAccountId(parent.getId())
+            .authority(accountIdentity(parent))
             .shareId(pending.getId())
             .build();
 
@@ -247,7 +270,7 @@ class ProfileSharingServiceTest {
     var pending = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.PENDING);
     var acceptance =
         ProfileShareAcceptance.builder()
-            .actingAccountId(member.getId())
+            .authority(accountIdentity(member))
             .shareId(pending.getId())
             .build();
 
@@ -263,7 +286,7 @@ class ProfileSharingServiceTest {
     var active = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.ACTIVE);
     var acceptance =
         ProfileShareAcceptance.builder()
-            .actingAccountId(parent.getId())
+            .authority(accountIdentity(parent))
             .shareId(active.getId())
             .build();
 
@@ -293,7 +316,7 @@ class ProfileSharingServiceTest {
                 .build());
     var acceptance =
         ProfileShareAcceptance.builder()
-            .actingAccountId(parent.getId())
+            .authority(accountIdentity(parent))
             .shareId(pendingShare.getId())
             .build();
 
@@ -334,7 +357,7 @@ class ProfileSharingServiceTest {
     var acceptedShare =
         service.accept(
             ProfileShareAcceptance.builder()
-                .actingAccountId(parent.getId())
+                .authority(accountIdentity(parent))
                 .shareId(pendingShare.getId())
                 .managementInvitationId(invitation.getId())
                 .build());
@@ -368,7 +391,7 @@ class ProfileSharingServiceTest {
                 .build());
     var acceptance =
         ProfileShareAcceptance.builder()
-            .actingAccountId(parent.getId())
+            .authority(accountIdentity(parent))
             .shareId(pendingShare.getId())
             .managementInvitationId(otherProfileInvitation.getId())
             .build();
@@ -415,7 +438,7 @@ class ProfileSharingServiceTest {
             () ->
                 service.accept(
                     ProfileShareAcceptance.builder()
-                        .actingAccountId(parent.getId())
+                        .authority(accountIdentity(parent))
                         .shareId(pendingKidShare.getId())
                         .build()))
         .isInstanceOfSatisfying(
@@ -440,7 +463,7 @@ class ProfileSharingServiceTest {
                 .build());
     var removal =
         HouseholdProfileRemoval.builder()
-            .actingAccountId(dad.getId())
+            .authority(accountIdentity(dad))
             .shareId(remoteShare.getId())
             .build();
 
@@ -460,7 +483,7 @@ class ProfileSharingServiceTest {
 
     service.removeFromHousehold(
         HouseholdProfileRemoval.builder()
-            .actingAccountId(owner.getId())
+            .authority(accountIdentity(owner))
             .shareId(active.getId())
             .build());
 
@@ -486,7 +509,7 @@ class ProfileSharingServiceTest {
 
     service.removeFromHousehold(
         HouseholdProfileRemoval.builder()
-            .actingAccountId(dad.getId())
+            .authority(accountIdentity(dad))
             .shareId(dadShare.getId())
             .build());
 
@@ -502,7 +525,7 @@ class ProfileSharingServiceTest {
     var active = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.ACTIVE);
     var removal =
         HouseholdProfileRemoval.builder()
-            .actingAccountId(member.getId())
+            .authority(accountIdentity(member))
             .shareId(active.getId())
             .build();
 
@@ -518,7 +541,7 @@ class ProfileSharingServiceTest {
     var pending = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.PENDING);
     var removal =
         HouseholdProfileRemoval.builder()
-            .actingAccountId(parent.getId())
+            .authority(accountIdentity(parent))
             .shareId(pending.getId())
             .build();
 
@@ -541,7 +564,7 @@ class ProfileSharingServiceTest {
 
     service.reject(
         ProfileShareRejection.builder()
-            .actingAccountId(parent.getId())
+            .authority(accountIdentity(parent))
             .shareId(pending.getId())
             .build());
 
@@ -560,7 +583,7 @@ class ProfileSharingServiceTest {
     var active = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.ACTIVE);
     var rejection =
         ProfileShareRejection.builder()
-            .actingAccountId(parent.getId())
+            .authority(accountIdentity(parent))
             .shareId(active.getId())
             .build();
 
@@ -575,7 +598,7 @@ class ProfileSharingServiceTest {
     var pending = saveShare(UUID.randomUUID(), UUID.randomUUID(), ProfileShareStatus.PENDING);
     var rejection =
         ProfileShareRejection.builder()
-            .actingAccountId(parent.getId())
+            .authority(accountIdentity(parent))
             .shareId(pending.getId())
             .build();
 
@@ -591,7 +614,7 @@ class ProfileSharingServiceTest {
     var pending = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.PENDING);
     var rejection =
         ProfileShareRejection.builder()
-            .actingAccountId(member.getId())
+            .authority(accountIdentity(member))
             .shareId(pending.getId())
             .build();
 
@@ -691,10 +714,7 @@ class ProfileSharingServiceTest {
                 .build());
 
     service.leaveCurrentHome(
-        ProfileHomeDeparture.builder()
-            .actingAccountId(account.getId())
-            .activeProfileId(kid.getId())
-            .build());
+        ProfileHomeDeparture.builder().authority(profileIdentity(account, kid.getId())).build());
 
     assertThat(shareRepository.existsById(currentShare.getId())).isFalse();
     assertThat(shareRepository.existsById(otherShare.getId())).isTrue();
@@ -715,8 +735,7 @@ class ProfileSharingServiceTest {
     var pending = saveShare(UUID.randomUUID(), householdId, ProfileShareStatus.PENDING);
     var departure =
         ProfileHomeDeparture.builder()
-            .actingAccountId(account.getId())
-            .activeProfileId(pending.getProfileId())
+            .authority(profileIdentity(account, pending.getProfileId()))
             .build();
 
     assertThatThrownBy(() -> service.leaveCurrentHome(departure))
@@ -743,5 +762,17 @@ class ProfileSharingServiceTest {
             .homeHouseholdId(homeHouseholdId)
             .householdRole(householdRole)
             .build());
+  }
+
+  private AuthenticatedIdentity identity(
+      UserAccount account, UUID householdId, HouseholdRole householdRole) {
+    return AuthenticatedIdentity.builder()
+        .accountId(account.getId())
+        .role(account.getAccountRole())
+        .authSessionId(UUID.randomUUID())
+        .scope(TokenScope.ACCOUNT)
+        .householdId(householdId)
+        .householdRole(householdRole)
+        .build();
   }
 }

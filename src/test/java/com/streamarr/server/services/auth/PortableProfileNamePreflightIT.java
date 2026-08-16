@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountIdentity;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -81,7 +82,7 @@ class PortableProfileNamePreflightIT extends AbstractIntegrationTest {
 
   private CreatePortableProfileCommand profileCommand(UserAccount owner, String name) {
     return CreatePortableProfileCommand.builder()
-        .actingAccountId(owner.getId())
+        .authority(accountIdentity(owner))
         .name(name)
         .kind(ProfileKind.ADULT)
         .build();

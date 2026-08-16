@@ -30,7 +30,7 @@ class ProfileAvailabilityServiceTest {
   private final TrackingProfileRepository profileRepository = new TrackingProfileRepository();
 
   private final ProfileAvailabilityService service =
-      new ProfileAvailabilityService(accountRepository, shareRepository, profileRepository);
+      new ProfileAvailabilityService(shareRepository, profileRepository);
 
   @Test
   @DisplayName("Should return only active profiles shared into account home")
@@ -45,7 +45,7 @@ class ProfileAvailabilityServiceTest {
     share(pending, homeHouseholdId, ProfileShareStatus.PENDING);
     share(remote, UUID.randomUUID(), ProfileShareStatus.ACTIVE);
 
-    var selectable = service.selectableProfiles(account.getId(), active.getId());
+    var selectable = service.selectableProfiles(account, active.getId());
 
     assertThat(selectable)
         .singleElement()
@@ -65,10 +65,9 @@ class ProfileAvailabilityServiceTest {
     var account = saveAccount(homeHouseholdId);
     var pending = saveProfile("Pending Profile");
     share(pending, homeHouseholdId, ProfileShareStatus.PENDING);
-    var accountId = account.getId();
     var pendingProfileId = pending.getId();
 
-    assertThatThrownBy(() -> service.requireSelectableProfile(accountId, pendingProfileId))
+    assertThatThrownBy(() -> service.requireSelectableProfile(account, pendingProfileId))
         .isInstanceOf(ProfileAccessDeniedException.class);
   }
 
@@ -81,7 +80,7 @@ class ProfileAvailabilityServiceTest {
       share(saveProfile("Profile " + index), homeHouseholdId, ProfileShareStatus.ACTIVE);
     }
 
-    service.selectableProfiles(account.getId(), null);
+    service.selectableProfiles(account, null);
 
     assertThat(profileRepository.individualLookups).isZero();
     assertThat(profileRepository.bulkLookups).isOne();
@@ -95,8 +94,7 @@ class ProfileAvailabilityServiceTest {
     var profile = saveProfile("Selected Profile");
     share(profile, homeHouseholdId, ProfileShareStatus.ACTIVE);
 
-    assertThat(service.requireSelectableProfile(account.getId(), profile.getId()))
-        .isEqualTo(profile);
+    assertThat(service.requireSelectableProfile(account, profile.getId())).isEqualTo(profile);
 
     assertThat(shareRepository.householdListLookups).isZero();
     assertThat(shareRepository.existenceLookups).isOne();

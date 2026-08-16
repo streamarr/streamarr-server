@@ -79,7 +79,7 @@ class PortableProfileResolverTest {
     assertThat(fixture.managementService.creation)
         .isEqualTo(
             CreatePortableProfileCommand.builder()
-                .actingAccountId(fixture.accountId)
+                .authority(fixture.identity)
                 .name("Global Kai")
                 .kind(ProfileKind.KID)
                 .maximumAllowedRatingAge(7)
@@ -179,7 +179,7 @@ class PortableProfileResolverTest {
     assertThat(fixture.sharingService.acceptance)
         .isEqualTo(
             ProfileShareAcceptance.builder()
-                .actingAccountId(fixture.accountId)
+                .authority(fixture.identity)
                 .shareId(shareId)
                 .managementInvitationId(invitationId)
                 .build());
@@ -206,10 +206,7 @@ class PortableProfileResolverTest {
     assertThat(fixture.resolver.rejectProfileShare(shareId.toString())).isTrue();
     assertThat(fixture.sharingService.rejection)
         .isEqualTo(
-            ProfileShareRejection.builder()
-                .actingAccountId(fixture.accountId)
-                .shareId(shareId)
-                .build());
+            ProfileShareRejection.builder().authority(fixture.identity).shareId(shareId).build());
   }
 
   @Test
@@ -236,10 +233,7 @@ class PortableProfileResolverTest {
     assertThat(fixture.resolver.removeProfileFromCurrentHousehold(shareId.toString())).isTrue();
     assertThat(fixture.sharingService.removal)
         .isEqualTo(
-            HouseholdProfileRemoval.builder()
-                .actingAccountId(fixture.accountId)
-                .shareId(shareId)
-                .build());
+            HouseholdProfileRemoval.builder().authority(fixture.identity).shareId(shareId).build());
   }
 
   @Test
@@ -249,11 +243,7 @@ class PortableProfileResolverTest {
 
     assertThat(fixture.resolver.leaveCurrentHome()).isTrue();
     assertThat(fixture.sharingService.departure)
-        .isEqualTo(
-            ProfileHomeDeparture.builder()
-                .actingAccountId(fixture.accountId)
-                .activeProfileId(fixture.profileId)
-                .build());
+        .isEqualTo(ProfileHomeDeparture.builder().authority(fixture.identity).build());
   }
 
   @Test
@@ -569,7 +559,7 @@ class PortableProfileResolverTest {
     assertThat(fixture.householdAdministrationService.ownershipTransfer())
         .isEqualTo(
             HouseholdOwnershipTransferCommand.builder()
-                .actingAccountId(fixture.accountId)
+                .authority(fixture.identity)
                 .householdId(householdId)
                 .targetAccountId(targetAccountId)
                 .password("secret")
@@ -581,6 +571,16 @@ class PortableProfileResolverTest {
 
     private final UUID accountId = UUID.randomUUID();
     private final UUID profileId = UUID.randomUUID();
+    private final AuthenticatedIdentity identity =
+        AuthenticatedIdentity.builder()
+            .accountId(accountId)
+            .profileId(profileId)
+            .role(AccountRole.ADMIN)
+            .authSessionId(UUID.randomUUID())
+            .scope(TokenScope.PROFILE)
+            .householdId(UUID.randomUUID())
+            .householdRole(HouseholdRole.OWNER)
+            .build();
     private final CapturingProfileSharingService sharingService =
         new CapturingProfileSharingService();
     private final CapturingProfileManagementService managementService =
@@ -604,16 +604,7 @@ class PortableProfileResolverTest {
             .build();
     private final PortableProfileResolver resolver =
         new PortableProfileResolver(
-            new FakeAuthorizationService(
-                AuthenticatedIdentity.builder()
-                    .accountId(accountId)
-                    .profileId(profileId)
-                    .role(AccountRole.ADMIN)
-                    .authSessionId(UUID.randomUUID())
-                    .scope(TokenScope.PROFILE)
-                    .householdId(UUID.randomUUID())
-                    .householdRole(HouseholdRole.OWNER)
-                    .build()),
+            new FakeAuthorizationService(identity),
             portableIdentityService,
             new ProfilePinService(NoOpPasswordEncoder.getInstance()));
   }
@@ -634,7 +625,7 @@ class PortableProfileResolverTest {
     private ProfileHomeDeparture departure;
 
     private CapturingProfileSharingService() {
-      super(null, null, null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null);
     }
 
     @Override

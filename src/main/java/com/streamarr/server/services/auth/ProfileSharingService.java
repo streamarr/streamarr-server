@@ -9,7 +9,6 @@ import com.streamarr.server.exceptions.ProfileManagementDeniedException;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
-import com.streamarr.server.repositories.auth.UserAccountRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,7 +19,6 @@ public class ProfileSharingService {
 
   private final ProfileManagerRepository managerRepository;
   private final ProfileHouseholdShareRepository shareRepository;
-  private final UserAccountRepository accountRepository;
   private final ProfileRepository profileRepository;
   private final ProfileManagementService managementService;
   private final HouseholdProfileSafetyService safetyService;
@@ -55,13 +53,7 @@ public class ProfileSharingService {
         shareRepository
             .findById(acceptance.shareId())
             .orElseThrow(ProfileAccessDeniedException::new);
-    var account =
-        accountRepository
-            .findById(acceptance.actingAccountId())
-            .orElseThrow(ProfileAccessDeniedException::new);
-
-    if (!account.getHomeHouseholdId().equals(share.getHouseholdId())
-        || !canAdministerHousehold(account.getHouseholdRole())
+    if (!acceptance.authority().hasHouseholdRole(share.getHouseholdId(), HouseholdRole.PARENT)
         || share.getStatus() != ProfileShareStatus.PENDING) {
       throw new ProfileAccessDeniedException();
     }
@@ -99,13 +91,7 @@ public class ProfileSharingService {
   public void removeFromHousehold(HouseholdProfileRemoval removal) {
     var share =
         shareRepository.findById(removal.shareId()).orElseThrow(ProfileAccessDeniedException::new);
-    var account =
-        accountRepository
-            .findById(removal.actingAccountId())
-            .orElseThrow(ProfileAccessDeniedException::new);
-
-    if (!account.getHomeHouseholdId().equals(share.getHouseholdId())
-        || !canAdministerHousehold(account.getHouseholdRole())
+    if (!removal.authority().hasHouseholdRole(share.getHouseholdId(), HouseholdRole.PARENT)
         || share.getStatus() != ProfileShareStatus.ACTIVE) {
       throw new ProfileAccessDeniedException();
     }
@@ -127,13 +113,8 @@ public class ProfileSharingService {
         shareRepository
             .findById(rejection.shareId())
             .orElseThrow(ProfileAccessDeniedException::new);
-    var account =
-        accountRepository
-            .findById(rejection.actingAccountId())
-            .orElseThrow(ProfileAccessDeniedException::new);
     if (share.getStatus() != ProfileShareStatus.PENDING
-        || !share.getHouseholdId().equals(account.getHomeHouseholdId())
-        || !canAdministerHousehold(account.getHouseholdRole())) {
+        || !rejection.authority().hasHouseholdRole(share.getHouseholdId(), HouseholdRole.PARENT)) {
       throw new ProfileAccessDeniedException();
     }
 
@@ -173,14 +154,10 @@ public class ProfileSharingService {
 
   @Transactional
   public void leaveCurrentHome(ProfileHomeDeparture departure) {
-    var account =
-        accountRepository
-            .findById(departure.actingAccountId())
-            .orElseThrow(ProfileAccessDeniedException::new);
     var share =
         shareRepository
             .findByProfileIdAndHouseholdId(
-                departure.activeProfileId(), account.getHomeHouseholdId())
+                departure.activeProfileId(), departure.authority().householdId())
             .filter(candidate -> candidate.getStatus() == ProfileShareStatus.ACTIVE)
             .orElseThrow(ProfileAccessDeniedException::new);
 
@@ -193,9 +170,5 @@ public class ProfileSharingService {
             .targetProfileId(share.getProfileId())
             .operation(SecurityAuditOperation.PROFILE_LEFT_HOME)
             .build());
-  }
-
-  private boolean canAdministerHousehold(HouseholdRole householdRole) {
-    return householdRole == HouseholdRole.OWNER || householdRole == HouseholdRole.PARENT;
   }
 }

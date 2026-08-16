@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.ProfileKind;
@@ -18,7 +19,7 @@ class PortableIdentityInputValidationTest {
     assertThatThrownBy(
             () ->
                 CreatePortableProfileCommand.builder()
-                    .actingAccountId(UUID.randomUUID())
+                    .authority(accountIdentityBuilder().build())
                     .name("Invalid Ceiling")
                     .kind(ProfileKind.KID)
                     .maximumAllowedRatingAge(-1)

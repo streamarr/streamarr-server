@@ -6,11 +6,15 @@ import lombok.NonNull;
 
 @Builder
 public record HouseholdOwnershipTransferCommand(
-    @NonNull UUID actingAccountId,
+    @NonNull AuthenticatedIdentity authority,
     @NonNull UUID householdId,
     @NonNull UUID targetAccountId,
     @NonNull String password,
     @NonNull String reason) {
+
+  public UUID actingAccountId() {
+    return authority.accountId();
+  }
 
   public static class HouseholdOwnershipTransferCommandBuilder {
     @Override
@@ -22,6 +26,6 @@ public record HouseholdOwnershipTransferCommand(
   @Override
   public String toString() {
     return "HouseholdOwnershipTransferCommand[actingAccountId=%s, householdId=%s, targetAccountId=%s, reason=%s]"
-        .formatted(actingAccountId, householdId, targetAccountId, reason);
+        .formatted(actingAccountId(), householdId, targetAccountId, reason);
   }
 }

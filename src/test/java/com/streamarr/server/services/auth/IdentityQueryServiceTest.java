@@ -27,7 +27,7 @@ class IdentityQueryServiceTest {
       new FakeProfileHouseholdShareRepository();
   private final FakeProfileRepository profileRepository = new FakeProfileRepository();
   private final ProfileAvailabilityService availabilityService =
-      new ProfileAvailabilityService(accountRepository, shareRepository, profileRepository);
+      new ProfileAvailabilityService(shareRepository, profileRepository);
   private final IdentityQueryService service =
       new IdentityQueryService(accountRepository, availabilityService);
 
@@ -82,7 +82,7 @@ class IdentityQueryServiceTest {
     var view = service.meView(identity);
 
     assertThat(view.account()).isEqualTo(account);
-    assertThat(view.scope()).isEqualTo(TokenScope.ACCOUNT);
+    assertThat(view.authority().scope()).isEqualTo(TokenScope.ACCOUNT);
     assertThat(view.profiles()).isEmpty();
   }
 

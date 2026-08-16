@@ -1,6 +1,5 @@
 package com.streamarr.server.services.auth;
 
-import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.SecurityAuditOperation;
 import com.streamarr.server.domain.auth.UserAccount;
@@ -79,7 +78,7 @@ public class HouseholdAdministrationService {
         accountRepository
             .findById(command.actingAccountId())
             .orElseThrow(HouseholdAccessDeniedException::new);
-    var authority = prepareOwnershipAuthority(actor, command);
+    var authority = prepareOwnershipAuthority(command.authority(), actor, command);
     return new PreparedHouseholdOwnershipTransfer(
         command.actingAccountId(),
         command.householdId(),
@@ -127,12 +126,12 @@ public class HouseholdAdministrationService {
   }
 
   private PasswordReauthentication prepareOwnershipAuthority(
-      UserAccount actor, HouseholdOwnershipTransferCommand command) {
+      AuthenticatedIdentity identity,
+      UserAccount actor,
+      HouseholdOwnershipTransferCommand command) {
     var isCurrentOwner =
-        actor.isEnabled()
-            && command.householdId().equals(actor.getHomeHouseholdId())
-            && actor.getHouseholdRole() == HouseholdRole.OWNER;
-    var isServerAdmin = actor.isEnabled() && actor.getAccountRole() == AccountRole.ADMIN;
+        actor.isEnabled() && identity.hasHouseholdRole(command.householdId(), HouseholdRole.OWNER);
+    var isServerAdmin = actor.isEnabled() && identity.isServerAdmin();
     if (!isCurrentOwner && !isServerAdmin) {
       throw new HouseholdAccessDeniedException();
     }
