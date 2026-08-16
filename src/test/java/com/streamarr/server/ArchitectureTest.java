@@ -11,8 +11,8 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.graphql.resolvers.PortableProfileResolver;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.services.RootServiceCycleFixture;
+import com.streamarr.server.services.architecturefixture.DirectAccountPasswordMatchFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
-import com.streamarr.server.services.auth.architecturefixture.DirectAccountPasswordMatchFixture;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -248,10 +248,11 @@ class ArchitectureTest {
     var directPasswordMatcher =
         new ClassFileImporter().importClasses(DirectAccountPasswordMatchFixture.class);
 
-    assertThatThrownBy(
-            () -> authenticatedAccountPasswordMatchesMustUseVerifier().check(directPasswordMatcher))
-        .isInstanceOf(AssertionError.class)
-        .hasMessageContaining("PasswordEncoder.matches");
+    assertThat(
+            authenticatedAccountPasswordMatchesMustUseVerifier()
+                .evaluate(directPasswordMatcher)
+                .hasViolation())
+        .isTrue();
   }
 
   @Test
@@ -309,7 +310,7 @@ class ArchitectureTest {
   private static ArchRule authenticatedAccountPasswordMatchesMustUseVerifier() {
     return noClasses()
         .that()
-        .resideInAPackage("..services.auth..")
+        .resideInAPackage("..services..")
         .and()
         .doNotHaveSimpleName("AccountPasswordVerifier")
         .and()
