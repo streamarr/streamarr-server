@@ -46,7 +46,8 @@ class AuthTokenPropertiesTest {
   void shouldRejectConfigurationWhenAccessTokenTtlExceedsMaximum() {
     var properties = validProperties().accessTokenTtl(Duration.ofMinutes(16)).build();
 
-    // Short credential lifetime remains defense in depth alongside live authorization checks.
+    // Bounded API staleness is a security property: the ADR promises a minutes-scale
+    // ceiling, so configuration cannot silently raise it.
     assertThat(VALIDATOR.validate(properties))
         .extracting(violation -> violation.getPropertyPath().toString())
         .containsExactly("accessTokenTtl");

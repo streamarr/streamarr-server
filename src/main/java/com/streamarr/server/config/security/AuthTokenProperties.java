@@ -19,7 +19,8 @@ public record AuthTokenProperties(
     // RFC 9068 §2.2 aud claim: the resource identifier this server expects for itself.
     String audience,
     List<String> verificationKeys,
-    // Access tokens remain short-lived even though live authorization is resolved per request.
+    // Bounded API staleness rides this ceiling (ADR 0016): revocation prevents renewal, and
+    // access-token expiry bounds the residual authorization window.
     @NotNull @DurationMin(seconds = 0, inclusive = false) @DurationMax(minutes = 15)
         Duration accessTokenTtl,
     @NotNull @DurationMin(seconds = 0, inclusive = false) Duration refreshTokenTtl,

@@ -134,11 +134,12 @@ Content Ceiling, and reset the Profile PIN. Reset replaces the PIN and cannot cl
 Ceiling is independent of Profile Kind and may be set for either a Kid or Adult Profile.
 
 Sessions retain the account and an optional active profile. ES256-signed API access tokens have
-account or profile scope, mandatory strict expiry, and no household id or role claims. Refresh tokens
-rotate and are stored only as digests. Every authenticated API request resolves the live session and
-account authority; household- and profile-sensitive requests also resolve the current home household,
-household role, and active profile share from authoritative database state. Playback additionally checks
-live authority on stream creation and every playlist and segment request, as
+account or profile scope and carry a signed snapshot of the account role, home household, household
+role, and optional selected profile. Ordinary authorization reads those claims without loading the
+session or account on every request; current manager, share, and resource state is still checked when an
+operation requires it. Refresh tokens rotate and are stored only as digests. Refresh and new token
+issuance revalidate the live session, account, home household, roles, and stored profile share. Playback
+additionally checks live authority on stream creation and every playlist and segment request, as
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] specifies.
 
 image::https://raw.githubusercontent.com/streamarr/streamarr-adr/main/adr/diagrams/0022-portable-profile-sharing.png[Portable profile sharing across two account-derived households]
@@ -164,15 +165,15 @@ recover through refresh).
 
 ES256 exists for the planned transcode split: horizontally scaled transcode nodes running
 FFmpeg are the most exposed tier and must never hold a token-minting secret. Signature
-verification alone never authorizes a request, though -- revocation is authoritative state,
-not signature checking. Playback revocation is one indexed live-authority query rather than token
-counters or a persisted stream-session state machine. Workers never verify
-playback tokens; the server remains the playback request gate and segment proxy.
+verification alone never authorizes a playback request, though -- playback revocation is one indexed
+live-authority query rather than token counters or a persisted stream-session state machine. Workers
+never verify playback tokens; the server remains the playback request gate and segment proxy.
 The public verification keys are served at `/.well-known/jwks.json` (ADR 0016).
 
 V049 removed the version claims, cache, PostgreSQL notification feed, counter columns, and
-pooler-mode exception. Strict expiry bounds credential lifetime, while protected API requests,
-refresh, and playback all fail closed against live authorization state.
+pooler-mode exception. Ordinary API access tokens remain valid signed authorization snapshots until
+strict expiry. Refresh and new token issuance revalidate live authority, and playback fails closed on
+every request against its live authorization state.
 
 == Key Design Decisions
 
