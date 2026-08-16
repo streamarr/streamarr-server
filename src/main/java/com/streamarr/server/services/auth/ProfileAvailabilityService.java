@@ -25,14 +25,16 @@ public class ProfileAvailabilityService {
   @Transactional(readOnly = true)
   public List<SelectableProfile> selectableProfiles(
       AuthenticatedIdentity identity, UUID activeProfileId) {
-    return selectableProfiles(identity.householdId(), activeProfileId);
+    return selectableProfilesInHousehold(identity.householdId(), activeProfileId);
   }
 
+  @Transactional(readOnly = true)
   public List<SelectableProfile> selectableProfiles(UserAccount account, UUID activeProfileId) {
-    return selectableProfiles(account.getHomeHouseholdId(), activeProfileId);
+    return selectableProfilesInHousehold(account.getHomeHouseholdId(), activeProfileId);
   }
 
-  private List<SelectableProfile> selectableProfiles(UUID householdId, UUID activeProfileId) {
+  private List<SelectableProfile> selectableProfilesInHousehold(
+      UUID householdId, UUID activeProfileId) {
     var shares = shareRepository.findByHouseholdIdAndStatus(householdId, ProfileShareStatus.ACTIVE);
     var profileIds = shares.stream().map(share -> share.getProfileId()).toList();
     var profilesById =
@@ -54,14 +56,15 @@ public class ProfileAvailabilityService {
 
   @Transactional(readOnly = true, noRollbackFor = ProfileAccessDeniedException.class)
   public Profile requireSelectableProfile(AuthenticatedIdentity identity, UUID profileId) {
-    return requireSelectableProfile(identity.householdId(), profileId);
+    return requireSelectableProfileInHousehold(identity.householdId(), profileId);
   }
 
+  @Transactional(readOnly = true, noRollbackFor = ProfileAccessDeniedException.class)
   public Profile requireSelectableProfile(UserAccount account, UUID profileId) {
-    return requireSelectableProfile(account.getHomeHouseholdId(), profileId);
+    return requireSelectableProfileInHousehold(account.getHomeHouseholdId(), profileId);
   }
 
-  private Profile requireSelectableProfile(UUID householdId, UUID profileId) {
+  private Profile requireSelectableProfileInHousehold(UUID householdId, UUID profileId) {
     var shared =
         shareRepository.existsByProfileIdAndHouseholdIdAndStatus(
             profileId, householdId, ProfileShareStatus.ACTIVE);

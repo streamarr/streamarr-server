@@ -14,6 +14,7 @@ import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
+import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -176,12 +177,19 @@ class PasswordReauthenticationConcurrencyTest {
     }
 
     @Override
-    protected void doBegin(Object transaction, TransactionDefinition definition) {}
+    protected void doBegin(Object transaction, TransactionDefinition definition) {
+      Objects.requireNonNull(transaction);
+      Objects.requireNonNull(definition);
+    }
 
     @Override
-    protected void doCommit(DefaultTransactionStatus status) {}
+    protected void doCommit(DefaultTransactionStatus status) {
+      Objects.requireNonNull(status);
+    }
 
     @Override
-    protected void doRollback(DefaultTransactionStatus status) {}
+    protected void doRollback(DefaultTransactionStatus status) {
+      Objects.requireNonNull(status);
+    }
   }
 }

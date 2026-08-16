@@ -105,8 +105,9 @@ class SessionScopeServiceTest {
             .householdId(signedHouseholdId)
             .householdRole(HouseholdRole.MEMBER)
             .build();
+    var profileId = profile.getId();
 
-    assertThatThrownBy(() -> service.selectProfile(identity, profile.getId(), null))
+    assertThatThrownBy(() -> service.selectProfile(identity, profileId, null))
         .isInstanceOf(ProfileAccessDeniedException.class);
   }
 
@@ -124,16 +125,15 @@ class SessionScopeServiceTest {
             .status(ProfileShareStatus.ACTIVE)
             .build());
     var session = sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
-    var accountId = account.getId();
-    var sessionId = session.getId();
     var profileId = profile.getId();
+    var identity = identity(account, session);
 
     for (var attempt = 0; attempt < 2; attempt++) {
-      assertThatThrownBy(() -> service.selectProfile(identity(account, session), profileId, "1357"))
+      assertThatThrownBy(() -> service.selectProfile(identity, profileId, "1357"))
           .isInstanceOf(ProfileAccessDeniedException.class);
     }
 
-    assertThatThrownBy(() -> service.selectProfile(identity(account, session), profileId, "2468"))
+    assertThatThrownBy(() -> service.selectProfile(identity, profileId, "2468"))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
     assertThat(auditRepository.findAll())
         .extracting(event -> event.getOperation())
@@ -169,12 +169,10 @@ class SessionScopeServiceTest {
             .build());
     var session =
         trackingSessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
-    var accountId = account.getId();
-    var sessionId = session.getId();
     var profileId = profile.getId();
+    var identity = identity(account, session);
 
-    assertThatThrownBy(
-            () -> trackingService.selectProfile(identity(account, session), profileId, "1357"))
+    assertThatThrownBy(() -> trackingService.selectProfile(identity, profileId, "1357"))
         .isInstanceOf(ProfileAccessDeniedException.class);
 
     assertThat(trackingSessionRepository.lockCount()).isZero();
@@ -274,12 +272,9 @@ class SessionScopeServiceTest {
     var missingAccountId = UUID.randomUUID();
     var missingAccountSessionId = UUID.randomUUID();
     var missingAccountProfileId = UUID.randomUUID();
+    var missingAccountIdentity = identity(missingAccountId, missingAccountSessionId);
     assertThatThrownBy(
-            () ->
-                service.selectProfile(
-                    identity(missingAccountId, missingAccountSessionId),
-                    missingAccountProfileId,
-                    null))
+            () -> service.selectProfile(missingAccountIdentity, missingAccountProfileId, null))
         .isInstanceOf(AuthenticationRequiredException.class);
 
     var account = saveAccount(UUID.randomUUID());
@@ -288,12 +283,10 @@ class SessionScopeServiceTest {
     var accountId = account.getId();
     var otherAccountSessionId = otherAccountSession.getId();
     var otherAccountProfileId = UUID.randomUUID();
+    var otherAccountIdentity =
+        identity(accountId, otherAccountSessionId, account.getHomeHouseholdId());
     assertThatThrownBy(
-            () ->
-                service.selectProfile(
-                    identity(accountId, otherAccountSessionId, account.getHomeHouseholdId()),
-                    otherAccountProfileId,
-                    null))
+            () -> service.selectProfile(otherAccountIdentity, otherAccountProfileId, null))
         .isInstanceOf(AuthenticationRequiredException.class);
 
     var revokedSession =
@@ -301,24 +294,18 @@ class SessionScopeServiceTest {
             AuthSession.builder().accountId(account.getId()).revokedAt(Instant.EPOCH).build());
     var revokedSessionId = revokedSession.getId();
     var revokedSessionProfileId = UUID.randomUUID();
+    var revokedSessionIdentity =
+        identity(accountId, revokedSessionId, account.getHomeHouseholdId());
     assertThatThrownBy(
-            () ->
-                service.selectProfile(
-                    identity(accountId, revokedSessionId, account.getHomeHouseholdId()),
-                    revokedSessionProfileId,
-                    null))
+            () -> service.selectProfile(revokedSessionIdentity, revokedSessionProfileId, null))
         .isInstanceOf(AuthenticationRequiredException.class);
 
     var liveSession =
         sessionRepository.save(AuthSession.builder().accountId(account.getId()).build());
     var liveSessionId = liveSession.getId();
     var unavailableProfileId = UUID.randomUUID();
-    assertThatThrownBy(
-            () ->
-                service.selectProfile(
-                    identity(accountId, liveSessionId, account.getHomeHouseholdId()),
-                    unavailableProfileId,
-                    null))
+    var liveSessionIdentity = identity(accountId, liveSessionId, account.getHomeHouseholdId());
+    assertThatThrownBy(() -> service.selectProfile(liveSessionIdentity, unavailableProfileId, null))
         .isInstanceOf(ProfileAccessDeniedException.class);
     assertThat(liveSession.getActiveProfileId()).isNull();
   }

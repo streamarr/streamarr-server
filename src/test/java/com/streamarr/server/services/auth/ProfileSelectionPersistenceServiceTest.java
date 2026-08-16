@@ -69,12 +69,15 @@ class ProfileSelectionPersistenceServiceTest {
     var missingSessionId = UUID.randomUUID();
     var otherAccountSessionId = otherAccountSession.getId();
     var revokedSessionId = revokedSession.getId();
+    var missingSessionIdentity = identity(accountId, missingSessionId);
+    var otherAccountSessionIdentity = identity(accountId, otherAccountSessionId);
+    var revokedSessionIdentity = identity(accountId, revokedSessionId);
 
-    assertThatThrownBy(() -> service.select(identity(accountId, missingSessionId), profileId))
+    assertThatThrownBy(() -> service.select(missingSessionIdentity, profileId))
         .isInstanceOf(AuthenticationRequiredException.class);
-    assertThatThrownBy(() -> service.select(identity(accountId, otherAccountSessionId), profileId))
+    assertThatThrownBy(() -> service.select(otherAccountSessionIdentity, profileId))
         .isInstanceOf(AuthenticationRequiredException.class);
-    assertThatThrownBy(() -> service.select(identity(accountId, revokedSessionId), profileId))
+    assertThatThrownBy(() -> service.select(revokedSessionIdentity, profileId))
         .isInstanceOf(AuthenticationRequiredException.class);
 
     assertThat(otherAccountSession.getActiveProfileId()).isNull();

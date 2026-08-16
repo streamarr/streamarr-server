@@ -16,14 +16,14 @@ class PortableIdentityInputValidationTest {
   @Test
   @DisplayName("Should reject a negative content ceiling when creating a profile")
   void shouldRejectNegativeContentCeilingWhenCreatingProfile() {
-    assertThatThrownBy(
-            () ->
-                CreatePortableProfileCommand.builder()
-                    .authority(accountIdentityBuilder().build())
-                    .name("Invalid Ceiling")
-                    .kind(ProfileKind.KID)
-                    .maximumAllowedRatingAge(-1)
-                    .build())
+    var command =
+        CreatePortableProfileCommand.builder()
+            .authority(accountIdentityBuilder().build())
+            .name("Invalid Ceiling")
+            .kind(ProfileKind.KID)
+            .maximumAllowedRatingAge(-1);
+
+    assertThatThrownBy(command::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("maximumAllowedRatingAge");
   }
@@ -31,13 +31,13 @@ class PortableIdentityInputValidationTest {
   @Test
   @DisplayName("Should reject a negative content ceiling when updating a profile")
   void shouldRejectNegativeContentCeilingWhenUpdatingProfile() {
-    assertThatThrownBy(
-            () ->
-                SetProfileContentCeilingCommand.builder()
-                    .actingAccountId(UUID.randomUUID())
-                    .profileId(UUID.randomUUID())
-                    .maximumAllowedRatingAge(-1)
-                    .build())
+    var command =
+        SetProfileContentCeilingCommand.builder()
+            .actingAccountId(UUID.randomUUID())
+            .profileId(UUID.randomUUID())
+            .maximumAllowedRatingAge(-1);
+
+    assertThatThrownBy(command::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("maximumAllowedRatingAge");
   }

@@ -1,5 +1,7 @@
 package com.streamarr.server.services.auth;
 
+import java.util.Objects;
+
 public final class CapturingProfileDeletionService extends ProfileDeletionService {
 
   private DeleteProfileCommand deletion;
@@ -15,7 +17,9 @@ public final class CapturingProfileDeletionService extends ProfileDeletionServic
   }
 
   @Override
-  public void delete(PreparedProfileDeletion command) {}
+  public void delete(PreparedProfileDeletion command) {
+    Objects.requireNonNull(command);
+  }
 
   public DeleteProfileCommand deletion() {
     return deletion;

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import java.util.Objects;
 import java.util.UUID;
 
 public final class CapturingServerAdministrationService extends ServerAdministrationService {
@@ -23,7 +24,9 @@ public final class CapturingServerAdministrationService extends ServerAdministra
   }
 
   @Override
-  public void forceDeleteProfile(PreparedForceProfileDeletion command) {}
+  public void forceDeleteProfile(PreparedForceProfileDeletion command) {
+    Objects.requireNonNull(command);
+  }
 
   @Override
   public PreparedForceProfileUnshare prepare(ForceProfileUnshareCommand command) {
@@ -36,7 +39,9 @@ public final class CapturingServerAdministrationService extends ServerAdministra
   }
 
   @Override
-  public void forceUnshareProfile(PreparedForceProfileUnshare command) {}
+  public void forceUnshareProfile(PreparedForceProfileUnshare command) {
+    Objects.requireNonNull(command);
+  }
 
   @Override
   public PreparedProfileManagerOverride prepare(ProfileManagerOverrideCommand command) {
@@ -51,7 +56,9 @@ public final class CapturingServerAdministrationService extends ServerAdministra
   }
 
   @Override
-  public void overrideProfileManager(PreparedProfileManagerOverride command) {}
+  public void overrideProfileManager(PreparedProfileManagerOverride command) {
+    Objects.requireNonNull(command);
+  }
 
   public ForceProfileDeletionCommand deletion() {
     return deletion;

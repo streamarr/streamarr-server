@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import java.util.Objects;
 import java.util.UUID;
 
 public final class CapturingHouseholdAdministrationService extends HouseholdAdministrationService {
@@ -24,7 +25,9 @@ public final class CapturingHouseholdAdministrationService extends HouseholdAdmi
   }
 
   @Override
-  public void transferAccount(PreparedAccountHouseholdTransfer command) {}
+  public void transferAccount(PreparedAccountHouseholdTransfer command) {
+    Objects.requireNonNull(command);
+  }
 
   @Override
   public PreparedHouseholdOwnershipTransfer prepare(HouseholdOwnershipTransferCommand command) {
@@ -38,7 +41,9 @@ public final class CapturingHouseholdAdministrationService extends HouseholdAdmi
   }
 
   @Override
-  public void transferOwnership(PreparedHouseholdOwnershipTransfer command) {}
+  public void transferOwnership(PreparedHouseholdOwnershipTransfer command) {
+    Objects.requireNonNull(command);
+  }
 
   public AccountHouseholdTransferCommand accountTransfer() {
     return accountTransfer;

@@ -33,10 +33,9 @@ class PortableProfileNamePreflightIT extends AbstractIntegrationTest {
   void shouldRejectActiveHouseholdProfileNameConflictBeforePersistence() {
     var owner = createOwner();
     portableIdentityService.createPortableProfile(profileCommand(owner, "Living Room"));
+    var conflictingCommand = profileCommand(owner, "living room");
 
-    assertThatThrownBy(
-            () ->
-                portableIdentityService.createPortableProfile(profileCommand(owner, "living room")))
+    assertThatThrownBy(() -> portableIdentityService.createPortableProfile(conflictingCommand))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("name");
   }
@@ -48,15 +47,14 @@ class PortableProfileNamePreflightIT extends AbstractIntegrationTest {
     portableIdentityService.createPortableProfile(profileCommand(owner, "Living Room"));
     var renamed =
         portableIdentityService.createPortableProfile(profileCommand(owner, "Guest Room"));
+    var renameCommand =
+        RenamePortableProfileCommand.builder()
+            .actingAccountId(owner.getId())
+            .profileId(renamed.getId())
+            .name(" living room ")
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                portableIdentityService.renamePortableProfile(
-                    RenamePortableProfileCommand.builder()
-                        .actingAccountId(owner.getId())
-                        .profileId(renamed.getId())
-                        .name(" living room ")
-                        .build()))
+    assertThatThrownBy(() -> portableIdentityService.renamePortableProfile(renameCommand))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("name");
   }

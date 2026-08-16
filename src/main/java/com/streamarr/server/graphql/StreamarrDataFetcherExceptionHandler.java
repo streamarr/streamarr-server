@@ -48,7 +48,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     var exception = unwrap(handlerParameters.getException());
     var extensions = extensionsFor(exception);
 
-    if (extensions == null) {
+    if (extensions.isEmpty()) {
       return delegate.handleException(handlerParameters);
     }
 
@@ -72,7 +72,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
   private static Map<String, Object> extensionsFor(Throwable exception) {
     var code = codeFor(exception);
     if (code == null) {
-      return null;
+      return Map.of();
     }
     if (exception instanceof ProfileSafetyViolationException violation) {
       return Map.of(

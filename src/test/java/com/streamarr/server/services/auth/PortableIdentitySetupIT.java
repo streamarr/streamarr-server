@@ -357,21 +357,7 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
   void shouldRejectCommittingDeletionAuthorizationWithoutDeletingItsProfile() {
     var setup = createPortableIdentity("Unconsumed Deletion Authorization");
 
-    assertThatThrownBy(
-            () ->
-                new TransactionTemplate(transactionManager)
-                    .executeWithoutResult(
-                        _ -> {
-                          profileShareRepository.deleteAll(
-                              profileShareRepository.findByProfileId(setup.profileId()));
-                          profileShareRepository.flush();
-                          deletionAuthorizationRepository.saveAndFlush(
-                              ProfileDeletionAuthorization.builder()
-                                  .profileId(setup.profileId())
-                                  .actingAccountId(setup.accountId())
-                                  .mode(ProfileDeletionMode.ORDINARY)
-                                  .build());
-                        }))
+    assertThatThrownBy(() -> commitUnconsumedDeletionAuthorization(setup))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("must be consumed by deleting its profile in the same transaction");
 
@@ -642,6 +628,22 @@ class PortableIdentitySetupIT extends AbstractIntegrationTest {
                       .mode(ProfileDeletionMode.ORDINARY)
                       .build());
               profileRepository.deleteById(profileId);
+            });
+  }
+
+  private void commitUnconsumedDeletionAuthorization(PortableIdentity identity) {
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            _ -> {
+              profileShareRepository.deleteAll(
+                  profileShareRepository.findByProfileId(identity.profileId()));
+              profileShareRepository.flush();
+              deletionAuthorizationRepository.saveAndFlush(
+                  ProfileDeletionAuthorization.builder()
+                      .profileId(identity.profileId())
+                      .actingAccountId(identity.accountId())
+                      .mode(ProfileDeletionMode.ORDINARY)
+                      .build());
             });
   }
 
