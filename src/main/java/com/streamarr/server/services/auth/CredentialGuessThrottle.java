@@ -25,12 +25,12 @@ public class CredentialGuessThrottle {
     budget.reset(new CredentialKey(CredentialType.PROFILE_PIN, accountId, profileId));
   }
 
-  public void registerServerAdminPasswordAttempt(UUID accountId) {
-    register(new CredentialKey(CredentialType.SERVER_ADMIN_PASSWORD, accountId, null));
+  public void registerAccountPasswordAttempt(UUID accountId) {
+    register(new CredentialKey(CredentialType.ACCOUNT_PASSWORD, accountId, null));
   }
 
-  public void resetServerAdminPasswordAttempts(UUID accountId) {
-    budget.reset(new CredentialKey(CredentialType.SERVER_ADMIN_PASSWORD, accountId, null));
+  public void resetAccountPasswordAttempts(UUID accountId) {
+    budget.reset(new CredentialKey(CredentialType.ACCOUNT_PASSWORD, accountId, null));
   }
 
   public int sweepExpired() {
@@ -50,7 +50,7 @@ public class CredentialGuessThrottle {
 
   private enum CredentialType {
     PROFILE_PIN,
-    SERVER_ADMIN_PASSWORD
+    ACCOUNT_PASSWORD
   }
 
   private record CredentialKey(CredentialType type, UUID accountId, UUID profileId) {}

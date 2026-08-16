@@ -77,7 +77,8 @@ class ServerAdministrationServiceTest {
           shareRepository,
           deletionAuthorizationRepository,
           selectionCleaner,
-          new ServerAdminAuthorizer(accountRepository, passwordEncoder, credentialThrottle),
+          new ServerAdminAuthorizer(
+              accountRepository, new AccountPasswordVerifier(passwordEncoder, credentialThrottle)),
           new KidProfileManagerPolicy(
               profileRepository, managerRepository, shareRepository, accountRepository),
           auditService);
@@ -261,7 +262,9 @@ class ServerAdministrationServiceTest {
             shareRepository,
             deletionAuthorizationRepository,
             selectionCleaner,
-            new ServerAdminAuthorizer(accountRepository, passwordEncoder, credentialThrottle),
+            new ServerAdminAuthorizer(
+                accountRepository,
+                new AccountPasswordVerifier(passwordEncoder, credentialThrottle)),
             new KidProfileManagerPolicy(
                 profileRepository, racingManagerRepository, shareRepository, accountRepository),
             new SecurityAuditService(auditRepository));

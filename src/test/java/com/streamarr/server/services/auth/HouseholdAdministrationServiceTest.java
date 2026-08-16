@@ -67,7 +67,8 @@ class HouseholdAdministrationServiceTest {
           accountRepository,
           householdRepository,
           sessionRepository,
-          new ServerAdminAuthorizer(accountRepository, passwordEncoder, credentialThrottle),
+          new ServerAdminAuthorizer(
+              accountRepository, new AccountPasswordVerifier(passwordEncoder, credentialThrottle)),
           new KidProfileManagerPolicy(
               profileRepository, managerRepository, shareRepository, accountRepository),
           passwordEncoder,

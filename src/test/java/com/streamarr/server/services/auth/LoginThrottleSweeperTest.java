@@ -35,7 +35,7 @@ class LoginThrottleSweeperTest {
   @DisplayName("Should leave nothing to evict when sweep already ran")
   void shouldLeaveNothingToEvictWhenSweepAlreadyRan() {
     throttle.registerAttempt("sprayed@example.com", "198.51.100.9");
-    credentialThrottle.registerServerAdminPasswordAttempt(UUID.randomUUID());
+    credentialThrottle.registerAccountPasswordAttempt(UUID.randomUUID());
     currentTime.updateAndGet(instant -> instant.plus(Duration.ofMinutes(16)));
 
     sweeper.sweep();

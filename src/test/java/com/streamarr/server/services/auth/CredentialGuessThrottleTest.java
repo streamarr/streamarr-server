@@ -40,7 +40,7 @@ class CredentialGuessThrottleTest {
   }
 
   @Test
-  @DisplayName("Should keep profile PIN and administrator password budgets independent")
+  @DisplayName("Should keep profile PIN and account password budgets independent")
   void shouldKeepProfilePinAndAdministratorPasswordBudgetsIndependent() {
     var accountId = UUID.randomUUID();
     var firstProfileId = UUID.randomUUID();
@@ -50,7 +50,7 @@ class CredentialGuessThrottleTest {
     assertThatCode(
             () -> {
               throttle.registerProfilePinAttempt(accountId, UUID.randomUUID());
-              throttle.registerServerAdminPasswordAttempt(accountId);
+              throttle.registerAccountPasswordAttempt(accountId);
             })
         .doesNotThrowAnyException();
   }
@@ -62,14 +62,14 @@ class CredentialGuessThrottleTest {
     var profileId = UUID.randomUUID();
     throttle.registerProfilePinAttempt(accountId, profileId);
     throttle.registerProfilePinAttempt(accountId, profileId);
-    throttle.registerServerAdminPasswordAttempt(accountId);
-    throttle.registerServerAdminPasswordAttempt(accountId);
+    throttle.registerAccountPasswordAttempt(accountId);
+    throttle.registerAccountPasswordAttempt(accountId);
 
     throttle.resetProfilePinAttempts(accountId, profileId);
 
     assertThatCode(() -> throttle.registerProfilePinAttempt(accountId, profileId))
         .doesNotThrowAnyException();
-    assertThatThrownBy(() -> throttle.registerServerAdminPasswordAttempt(accountId))
+    assertThatThrownBy(() -> throttle.registerAccountPasswordAttempt(accountId))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
   }
 
@@ -77,7 +77,7 @@ class CredentialGuessThrottleTest {
   @DisplayName("Should evict expired credential budgets")
   void shouldEvictExpiredCredentialBudgets() {
     throttle.registerProfilePinAttempt(UUID.randomUUID(), UUID.randomUUID());
-    throttle.registerServerAdminPasswordAttempt(UUID.randomUUID());
+    throttle.registerAccountPasswordAttempt(UUID.randomUUID());
     currentTime.updateAndGet(instant -> instant.plus(Duration.ofMinutes(16)));
 
     assertThat(throttle.sweepExpired()).isEqualTo(2);
