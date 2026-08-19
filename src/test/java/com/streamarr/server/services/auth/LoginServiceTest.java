@@ -124,6 +124,19 @@ class LoginServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject login with an empty stored hash after one full-cost burn")
+  void shouldRejectLoginWithEmptyStoredHashAfterOneFullCostBurn() {
+    var account = seedAccount("");
+    var attempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(timingEqualizer.burns()).isEqualTo(1);
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(1);
+  }
+
+  @Test
   @DisplayName("Should rehash password when encoding upgrade needed")
   void shouldRehashPasswordWhenEncodingUpgradeNeeded() {
     var weakHash = weakEncoder.encode(CORRECT_PASSWORD);

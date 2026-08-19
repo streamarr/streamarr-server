@@ -91,6 +91,19 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
+  @DisplayName("Should reject an empty stored hash after exactly one full-cost burn")
+  void shouldRejectEmptyStoredHashAfterExactlyOneFullCostBurn() {
+    var account = enabledAccount("");
+
+    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(equalizer.burns()).isEqualTo(1);
+    assertThat(encoder.completedComparisons()).isEqualTo(1);
+    assertThat(encoder.comparedAgainst()).doesNotContain("");
+  }
+
+  @Test
   @DisplayName("Should throttle before any Argon2 work when the budget is exhausted")
   void shouldThrottleBeforeAnyArgon2WorkWhenBudgetIsExhausted() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));

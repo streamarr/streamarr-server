@@ -54,8 +54,14 @@ public class LoginService {
       timingEqualizer.burn(password);
       return false;
     }
+    var passwordHash = account.getPasswordHash();
+    if (passwordHash == null || passwordHash.isEmpty()) {
+      log.error("Stored password hash for account {} is unreadable.", account.getId());
+      timingEqualizer.burn(password);
+      return false;
+    }
     try {
-      return passwordEncoder.matches(password, account.getPasswordHash());
+      return passwordEncoder.matches(password, passwordHash);
     } catch (IllegalArgumentException e) {
       // An unreadable stored hash must fail like a wrong password, not escape as a raw error
       // that marks the account's broken state.
