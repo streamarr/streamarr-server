@@ -1,0 +1,39 @@
+// Streamarr authorization schema (ADR 0025). Entity attributes are facts the slice builders load;
+// optional attributes are present only for actions whose builders load them, so a policy that needs
+// a live fact must test `has` before reading it — an absent fact reads as "not proven", never as
+// "true".
+namespace Streamarr {
+  // The authenticated Account. `enabled` and `serverAdmin` are live PostgreSQL facts contributed
+  // only for server-administration actions; the token's ServerAdmin claim is never placed here.
+  entity Account {
+    enabled?: Bool,
+    serverAdmin?: Bool,
+  };
+
+  // The singleton root resource server-wide authority is granted on.
+  entity Server;
+
+  action serverAdministration;
+  action libraryAdministration in serverAdministration;
+
+  action addLibrary in libraryAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action removeLibrary in libraryAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action scanLibrary in libraryAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action refreshLibrary in libraryAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+}

@@ -10,13 +10,16 @@ import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.fakes.FakeAccountProfileRepository;
+import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -39,8 +42,10 @@ class AuthorizationServiceTest {
   private final FakeAccountProfileRepository accountProfileRepository =
       new FakeAccountProfileRepository();
 
+  private final FakeAuthorizationDecider decider = new FakeAuthorizationDecider();
+
   private final AuthorizationService authorizationService =
-      new SecurityContextAuthorizationService(profileRepository, accountProfileRepository);
+      new SecurityContextAuthorizationService(profileRepository, accountProfileRepository, decider);
 
   private final UUID accountId = UUID.randomUUID();
   private final UUID householdId = UUID.randomUUID();
@@ -76,19 +81,46 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should report non admin when account role user")
-  void shouldReportNonAdminWhenAccountRoleUser() {
-    authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.USER));
+  @DisplayName("Should return the decider's decision when an intent is decided")
+  void shouldReturnDecidersDecisionWhenIntentIsDecided() {
+    var identity = profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.USER);
+    decider.denyAll();
 
-    assertThat(authorizationService.isServerAdmin()).isFalse();
+    var decision = authorizationService.decide(identity, new Intent.AddLibrary());
+
+    assertThat(decision).isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
+    assertThat(decider.recordedIntents()).containsExactly(new Intent.AddLibrary());
   }
 
   @Test
-  @DisplayName("Should report server admin when account role admin")
-  void shouldReportServerAdminWhenAccountRoleAdmin() {
-    authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.ADMIN));
+  @DisplayName("Should return the allowed value when a whole-surface gate is allowed")
+  void shouldReturnAllowedValueWhenWholeSurfaceGateIsAllowed() {
+    var identity = profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.USER);
 
-    assertThat(authorizationService.isServerAdmin()).isTrue();
+    var value = authorizationService.requireAllowed(identity, new Intent.AddLibrary());
+
+    assertThat(value).isEqualTo(AuthorizationUnit.INSTANCE);
+  }
+
+  @Test
+  @DisplayName("Should throw access denied when a whole-surface gate is denied")
+  void shouldThrowAccessDeniedWhenWholeSurfaceGateIsDenied() {
+    var identity = profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.ADMIN);
+    decider.denyAll();
+
+    assertThatThrownBy(() -> authorizationService.requireAllowed(identity, new Intent.AddLibrary()))
+        .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should throw authorization unavailable when no decision could be made")
+  void shouldThrowAuthorizationUnavailableWhenNoDecisionCouldBeMade() {
+    var identity = profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.ADMIN);
+    decider.failWith(Decision.FailureCause.ENGINE_FAILURE);
+
+    assertThatThrownBy(() -> authorizationService.requireAllowed(identity, new Intent.AddLibrary()))
+        .isInstanceOf(AuthorizationUnavailableException.class)
+        .hasMessage("Authorization is temporarily unavailable.");
   }
 
   @Test
@@ -161,6 +193,41 @@ class AuthorizationServiceTest {
   }
 
   @Test
+  @DisplayName("Should return the validated token expiry when the JWT carries one")
+  void shouldReturnValidatedTokenExpiryWhenJwtCarriesOne() {
+    var expiresAt = Instant.parse("2026-01-01T00:10:00Z");
+    var jwt =
+        Jwt.withTokenValue("signed.jwt.value")
+            .header("typ", "JWT")
+            .subject(accountId.toString())
+            .expiresAt(expiresAt)
+            .build();
+    authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.USER), jwt);
+
+    assertThat(authorizationService.currentTokenExpiry()).isEqualTo(expiresAt);
+  }
+
+  @Test
+  @DisplayName("Should reject the token expiry when unauthenticated or the JWT has no expiry")
+  void shouldRejectTokenExpiryWhenUnauthenticatedOrJwtHasNoExpiry() {
+    assertThatThrownBy(authorizationService::currentTokenExpiry)
+        .isInstanceOf(AuthenticationRequiredException.class);
+
+    authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.USER));
+    assertThatThrownBy(authorizationService::currentTokenExpiry)
+        .isInstanceOf(AuthenticationRequiredException.class);
+
+    var noExpiry =
+        Jwt.withTokenValue("signed.jwt.value")
+            .header("typ", "JWT")
+            .subject(accountId.toString())
+            .build();
+    authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.USER), noExpiry);
+    assertThatThrownBy(authorizationService::currentTokenExpiry)
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
   @DisplayName("Should reject the token value when our token carries no JWT credential")
   void shouldRejectTokenValueWhenStreamarrTokenCarriesNoJwt() {
     authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.USER));
@@ -207,23 +274,6 @@ class AuthorizationServiceTest {
     authenticateWith(profileScopedIdentity(HouseholdRole.PARENT, AccountRole.USER));
 
     assertThatThrownBy(() -> authorizationService.requireHouseholdRole(HouseholdRole.OWNER))
-        .isInstanceOf(AccessDeniedException.class);
-  }
-
-  @Test
-  @DisplayName("Should allow server admin requirement when account role admin")
-  void shouldAllowServerAdminRequirementWhenAccountRoleAdmin() {
-    authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.ADMIN));
-
-    assertThatCode(authorizationService::requireServerAdmin).doesNotThrowAnyException();
-  }
-
-  @Test
-  @DisplayName("Should deny server admin requirement when account role user")
-  void shouldDenyServerAdminRequirementWhenAccountRoleUser() {
-    authenticateWith(profileScopedIdentity(HouseholdRole.OWNER, AccountRole.USER));
-
-    assertThatThrownBy(authorizationService::requireServerAdmin)
         .isInstanceOf(AccessDeniedException.class);
   }
 

@@ -1,5 +1,7 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.auth.AccountAuthorityFacts;
+import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.sql.SQLException;
@@ -10,6 +12,15 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     implements UserAccountRepository {
+
+  @Override
+  public Optional<AccountAuthorityFacts> findAuthorityFacts(UUID accountId) {
+    return findById(accountId)
+        .map(
+            account ->
+                new AccountAuthorityFacts(
+                    account.isEnabled(), account.getAccountRole() == AccountRole.ADMIN));
+  }
 
   @Override
   public boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash) {

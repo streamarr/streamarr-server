@@ -24,6 +24,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.pagination.MediaFilter;
@@ -52,7 +53,8 @@ public class LibraryResolver {
 
   @DgsMutation
   public Library addLibrary(@InputArgument AddLibraryInput input) {
-    authorizationService.requireServerAdmin();
+    authorizationService.requireAllowed(
+        authorizationService.currentIdentity(), new Intent.AddLibrary());
     var library =
         Library.builder()
             .name(input.name())
@@ -70,22 +72,28 @@ public class LibraryResolver {
 
   @DgsMutation
   public boolean removeLibrary(String id) {
-    authorizationService.requireServerAdmin();
-    libraryManagementService.removeLibrary(parseUuid(id));
+    var libraryId = parseUuid(id);
+    authorizationService.requireAllowed(
+        authorizationService.currentIdentity(), new Intent.RemoveLibrary(libraryId));
+    libraryManagementService.removeLibrary(libraryId);
     return true;
   }
 
   @DgsMutation
   public boolean scanLibrary(String id) {
-    authorizationService.requireServerAdmin();
-    libraryManagementService.triggerAsyncScan(parseUuid(id));
+    var libraryId = parseUuid(id);
+    authorizationService.requireAllowed(
+        authorizationService.currentIdentity(), new Intent.ScanLibrary(libraryId));
+    libraryManagementService.triggerAsyncScan(libraryId);
     return true;
   }
 
   @DgsMutation
   public boolean refreshLibrary(String id, @InputArgument ImageRefreshMode imageRefreshMode) {
-    authorizationService.requireServerAdmin();
-    libraryManagementService.triggerAsyncRefresh(parseUuid(id), imageRefreshMode);
+    var libraryId = parseUuid(id);
+    authorizationService.requireAllowed(
+        authorizationService.currentIdentity(), new Intent.RefreshLibrary(libraryId));
+    libraryManagementService.triggerAsyncRefresh(libraryId, imageRefreshMode);
     return true;
   }
 

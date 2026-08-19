@@ -11,6 +11,7 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.domain.metadata.Review;
+import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
@@ -33,7 +34,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
     classes = {
       MovieFieldResolver.class,
       MovieResolver.class,
-      SecurityContextAuthorizationService.class
+      SecurityContextAuthorizationService.class,
+      FakeAuthorizationDecider.class
     })
 @DisplayName("Movie Field Resolver Tests")
 class MovieFieldResolverTest {

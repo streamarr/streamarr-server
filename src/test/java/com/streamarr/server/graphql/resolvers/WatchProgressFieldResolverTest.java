@@ -17,6 +17,7 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
@@ -64,7 +65,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       SeasonFieldResolver.class,
       EpisodeFieldResolver.class,
       WatchProgressFieldResolverTest.TestConfig.class,
-      SecurityContextAuthorizationService.class
+      SecurityContextAuthorizationService.class,
+      FakeAuthorizationDecider.class
     })
 @DisplayName("Watch Progress Field Resolver Tests")
 class WatchProgressFieldResolverTest {

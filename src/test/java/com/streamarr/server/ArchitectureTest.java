@@ -20,6 +20,7 @@ import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFi
 import com.streamarr.server.services.auth.AccountPasswordVerifier;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordTimingEqualizer;
+import com.streamarr.server.services.authorization.AuthorizationDecider;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -181,6 +182,48 @@ class ArchitectureTest {
   // compare a password and own policy the services are supposed to own.
   @ArchTest
   static final ArchRule graphqlMustNotOwnPasswordPolicy = graphqlMustNotOwnPasswordPolicy();
+
+  // Cedar is an implementation detail of the authorization module (ADR 0025): if any other
+  // package could reach the engine or the native bridge it could assemble facts its own way.
+  @ArchTest
+  static final ArchRule onlyTheCedarPackageMayImportCedar =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("..services.authorization.cedar..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage("com.cedarpolicy..", "com.fizzed.jne..")
+          .as("Only services.authorization.cedar may import Cedar or JNE");
+
+  // The facade is the single decision point; the decider interface exists for it alone.
+  @ArchTest
+  static final ArchRule onlyTheFacadeMayKnowTheDecider =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("..services.authorization..")
+          .should()
+          .dependOnClassesThat()
+          .areAssignableTo(AuthorizationDecider.class)
+          .as("Only SecurityContextAuthorizationService knows AuthorizationDecider");
+
+  // Actions, checks, slices, and contributors stay inside the engine package so no caller can
+  // name a Cedar action or supply its own authority facts.
+  @ArchTest
+  static final ArchRule cedarInternalsMustStayPackagePrivate =
+      noClasses()
+          .that()
+          .resideInAPackage("..services.authorization.cedar..")
+          .and()
+          .doNotHaveSimpleName("CedarEngineSelfCheck")
+          .and()
+          .doNotHaveSimpleName("CedarEngineSelfCheckLauncher")
+          .and()
+          .doNotHaveSimpleName("CedarSelfCheckException")
+          .and()
+          .areTopLevelClasses()
+          .should()
+          .bePublic()
+          .as("Cedar engine types are package-private; only the image self-check is public");
 
   @ArchTest
   @DisplayName("Should avoid Path display text when media metadata is processed")

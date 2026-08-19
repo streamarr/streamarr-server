@@ -2,6 +2,7 @@ package com.streamarr.server.graphql;
 
 import com.netflix.graphql.dgs.exceptions.DefaultDataFetcherExceptionHandler;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
@@ -59,6 +60,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
       case HouseholdRequiredException _ -> "HOUSEHOLD_REQUIRED";
       case AuthenticationRequiredException _ -> "AUTHENTICATION_REQUIRED";
       case AccessDeniedException _ -> "FORBIDDEN";
+      case AuthorizationUnavailableException _ -> "AUTHORIZATION_UNAVAILABLE";
       case SessionNotFoundException _ -> "SESSION_NOT_FOUND";
       default -> null;
     };

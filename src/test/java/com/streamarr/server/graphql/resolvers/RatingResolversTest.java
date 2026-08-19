@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.metadata.Rating;
+import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -25,7 +26,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @Tag("UnitTest")
 @EnableDgsTest
 @WithProfileContext
-@SpringBootTest(classes = {RatingResolvers.class, SecurityContextAuthorizationService.class})
+@SpringBootTest(
+    classes = {
+      RatingResolvers.class,
+      SecurityContextAuthorizationService.class,
+      FakeAuthorizationDecider.class
+    })
 @DisplayName("Rating Resolver Tests")
 class RatingResolversTest {
 

@@ -1,0 +1,320 @@
+package com.streamarr.server.services.authorization.cedar;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.cedarpolicy.AuthorizationEngine;
+import com.cedarpolicy.BasicAuthorizationEngine;
+import com.cedarpolicy.model.AuthorizationRequest;
+import com.cedarpolicy.model.AuthorizationResponse;
+import com.cedarpolicy.model.Context;
+import com.cedarpolicy.model.EntityValidationRequest;
+import com.cedarpolicy.model.LevelValidationRequest;
+import com.cedarpolicy.model.PartialAuthorizationRequest;
+import com.cedarpolicy.model.PartialAuthorizationResponse;
+import com.cedarpolicy.model.ValidationRequest;
+import com.cedarpolicy.model.ValidationResponse;
+import com.cedarpolicy.model.entity.Entities;
+import com.cedarpolicy.model.entity.Entity;
+import com.cedarpolicy.model.exception.AuthException;
+import com.cedarpolicy.model.policy.PolicySet;
+import com.cedarpolicy.value.PrimBool;
+import com.cedarpolicy.value.PrimString;
+import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.fakes.FakeUserAccountRepository;
+import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.TokenScope;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
+import com.streamarr.server.services.authorization.Decision;
+import com.streamarr.server.services.authorization.Intent;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
+@Tag("UnitTest")
+@DisplayName("Cedar Authorization Decider Tests")
+class CedarAuthorizationDeciderTest {
+
+  private static final AuthorizationEngine ENGINE = new BasicAuthorizationEngine();
+  private static final CedarPolicyBundle BUNDLE = new CedarPolicyBundle(ENGINE);
+
+  private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
+  private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+  private final CedarAuthorizationDecider decider =
+      decider(ENGINE, new LivePrincipalAuthorityContributor(accounts));
+
+  static Stream<Arguments> libraryAdministrationIntents() {
+    var libraryId = UUID.randomUUID();
+    return Stream.of(
+        Arguments.of(new Intent.AddLibrary()),
+        Arguments.of(new Intent.RemoveLibrary(libraryId)),
+        Arguments.of(new Intent.ScanLibrary(libraryId)),
+        Arguments.of(new Intent.RefreshLibrary(libraryId)));
+  }
+
+  @ParameterizedTest
+  @MethodSource("libraryAdministrationIntents")
+  @DisplayName("Should allow library administration when the live row is an enabled ServerAdmin")
+  void shouldAllowLibraryAdministrationWhenLiveRowIsEnabledServerAdmin(
+      Intent<AuthorizationUnit> intent) {
+    var identity = identityFor(liveAccount(AccountRole.ADMIN, true), AccountRole.USER);
+
+    assertThat(decider.decide(identity, intent))
+        .isEqualTo(new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+  }
+
+  @ParameterizedTest
+  @MethodSource("libraryAdministrationIntents")
+  @DisplayName("Should deny library administration when the live row is not a ServerAdmin")
+  void shouldDenyLibraryAdministrationWhenLiveRowIsNotServerAdmin(
+      Intent<AuthorizationUnit> intent) {
+    // The token still says ADMIN: a revoked claim must never be enough.
+    var identity = identityFor(liveAccount(AccountRole.USER, true), AccountRole.ADMIN);
+
+    assertThat(decider.decide(identity, intent))
+        .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
+  }
+
+  @Test
+  @DisplayName("Should deny when the live ServerAdmin is disabled")
+  void shouldDenyWhenLiveServerAdminIsDisabled() {
+    var identity = identityFor(liveAccount(AccountRole.ADMIN, false), AccountRole.ADMIN);
+
+    assertThat(decider.decide(identity, new Intent.AddLibrary()))
+        .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
+  }
+
+  @Test
+  @DisplayName("Should deny when no authority facts exist for the Account")
+  void shouldDenyWhenNoAuthorityFactsExistForAccount() {
+    var identity = identityFor(UUID.randomUUID(), AccountRole.ADMIN);
+
+    assertThat(decider.decide(identity, new Intent.AddLibrary()))
+        .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
+    assertThat(failClosedCount()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should fail closed when the slice does not conform to the schema")
+  void shouldFailClosedWhenSliceDoesNotConformToSchema() {
+    var malformed =
+        decider(
+            ENGINE,
+            contributor(
+                slice ->
+                    slice.principalAttribute(
+                        LivePrincipalAuthorityContributor.ENABLED, new PrimString("yes"))));
+    var identity = identityFor(liveAccount(AccountRole.ADMIN, true), AccountRole.ADMIN);
+
+    assertThat(malformed.decide(identity, new Intent.AddLibrary()))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.INVALID_SLICE));
+    assertThat(failClosedCount(Decision.FailureCause.INVALID_SLICE)).isEqualTo(1.0);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when the request does not conform to the schema")
+  void shouldFailClosedWhenRequestDoesNotConformToSchema() {
+    var badContext =
+        new RewritingEngine(
+            ENGINE,
+            request ->
+                new AuthorizationRequest(
+                    request.principalEUID,
+                    request.actionEUID,
+                    request.resourceEUID,
+                    new Context(Map.of("unknownKey", new PrimBool(true))),
+                    request.schema,
+                    request.enableRequestValidation));
+    var identity = identityFor(liveAccount(AccountRole.ADMIN, true), AccountRole.ADMIN);
+
+    assertThat(
+            decider(badContext, new LivePrincipalAuthorityContributor(accounts))
+                .decide(identity, new Intent.AddLibrary()))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.INVALID_REQUEST));
+    assertThat(failClosedCount(Decision.FailureCause.INVALID_REQUEST)).isEqualTo(1.0);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when evaluation reports a diagnostic even though it also allows")
+  void shouldFailClosedWhenEvaluationReportsDiagnosticEvenThoughItAlsoAllows() throws Exception {
+    var erroringPolicies =
+        PolicySet.parsePolicies(
+            """
+            @id("permit-everything")
+            permit (principal, action, resource);
+            @id("erroring-forbid")
+            forbid (principal, action, resource) when { principal.serverAdmin == false };
+            """);
+    var engine = new RewritingEngine(ENGINE, Function.identity(), erroringPolicies);
+    var identity = identityFor(liveAccount(AccountRole.ADMIN, true), AccountRole.ADMIN);
+    var noFacts = decider(engine, contributor(_ -> {}));
+
+    assertThat(noFacts.decide(identity, new Intent.AddLibrary()))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.EVALUATION_ERROR));
+    assertThat(failClosedCount(Decision.FailureCause.EVALUATION_ERROR)).isEqualTo(1.0);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when a contributor throws")
+  void shouldFailClosedWhenContributorThrows() {
+    var failing =
+        decider(
+            ENGINE,
+            contributor(
+                _ -> {
+                  throw new IllegalStateException("database unavailable");
+                }));
+    var identity = identityFor(liveAccount(AccountRole.ADMIN, true), AccountRole.ADMIN);
+
+    assertThat(failing.decide(identity, new Intent.AddLibrary()))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+    assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when the engine throws")
+  void shouldFailClosedWhenEngineThrows() {
+    var throwing =
+        new RewritingEngine(
+            ENGINE,
+            _ -> {
+              throw new IllegalStateException("native bridge lost");
+            });
+    var identity = identityFor(liveAccount(AccountRole.ADMIN, true), AccountRole.ADMIN);
+
+    assertThat(
+            decider(throwing, new LivePrincipalAuthorityContributor(accounts))
+                .decide(identity, new Intent.AddLibrary()))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+    assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
+  }
+
+  private CedarAuthorizationDecider decider(
+      AuthorizationEngine engine, FactContributor contributor) {
+    return new CedarAuthorizationDecider(
+        engine, BUNDLE, new SliceAssembler(List.of(contributor)), meters);
+  }
+
+  private static FactContributor contributor(Consumer<EntitySlice> contribution) {
+    return new FactContributor() {
+      @Override
+      public FactRequirement provides() {
+        return FactRequirement.LIVE_PRINCIPAL_AUTHORITY;
+      }
+
+      @Override
+      public void contribute(AuthenticatedIdentity identity, EntitySlice slice) {
+        contribution.accept(slice);
+      }
+    };
+  }
+
+  private UUID liveAccount(AccountRole role, boolean enabled) {
+    return accounts
+        .save(AccountFixture.defaultAccountBuilder().accountRole(role).enabled(enabled).build())
+        .getId();
+  }
+
+  private static AuthenticatedIdentity identityFor(UUID accountId, AccountRole tokenRole) {
+    return AuthenticatedIdentityFixture.defaultIdentityBuilder()
+        .accountId(accountId)
+        .role(tokenRole)
+        .scope(TokenScope.PROFILE)
+        .streamSessionId(null)
+        .build();
+  }
+
+  private double failClosedCount() {
+    return meters.find(CedarAuthorizationDecider.FAIL_CLOSED_METRIC).counters().stream()
+        .mapToDouble(counter -> counter.count())
+        .sum();
+  }
+
+  private double failClosedCount(Decision.FailureCause cause) {
+    return meters
+        .counter(CedarAuthorizationDecider.FAIL_CLOSED_METRIC, "cause", cause.name())
+        .count();
+  }
+
+  /** Delegates to the real engine but lets a test rewrite the request or swap the policy set. */
+  private static final class RewritingEngine implements AuthorizationEngine {
+
+    private final AuthorizationEngine delegate;
+    private final Function<AuthorizationRequest, AuthorizationRequest> rewrite;
+    private final PolicySet policyOverride;
+
+    private RewritingEngine(
+        AuthorizationEngine delegate,
+        Function<AuthorizationRequest, AuthorizationRequest> rewrite) {
+      this(delegate, rewrite, null);
+    }
+
+    private RewritingEngine(
+        AuthorizationEngine delegate,
+        Function<AuthorizationRequest, AuthorizationRequest> rewrite,
+        PolicySet policyOverride) {
+      this.delegate = delegate;
+      this.rewrite = rewrite;
+      this.policyOverride = policyOverride;
+    }
+
+    @Override
+    public AuthorizationResponse isAuthorized(
+        AuthorizationRequest request, PolicySet policySet, Set<Entity> entities)
+        throws AuthException {
+      return delegate.isAuthorized(rewrite.apply(request), policies(policySet), entities);
+    }
+
+    @Override
+    public AuthorizationResponse isAuthorized(
+        AuthorizationRequest request, PolicySet policySet, Entities entities) throws AuthException {
+      return delegate.isAuthorized(rewrite.apply(request), policies(policySet), entities);
+    }
+
+    @Override
+    public PartialAuthorizationResponse isAuthorizedPartial(
+        PartialAuthorizationRequest request, PolicySet policySet, Set<Entity> entities)
+        throws AuthException {
+      return delegate.isAuthorizedPartial(request, policySet, entities);
+    }
+
+    @Override
+    public PartialAuthorizationResponse isAuthorizedPartial(
+        PartialAuthorizationRequest request, PolicySet policySet, Entities entities)
+        throws AuthException {
+      return delegate.isAuthorizedPartial(request, policySet, entities);
+    }
+
+    @Override
+    public ValidationResponse validate(ValidationRequest request) throws AuthException {
+      return delegate.validate(request);
+    }
+
+    @Override
+    public ValidationResponse validateWithLevel(LevelValidationRequest request)
+        throws AuthException {
+      return delegate.validateWithLevel(request);
+    }
+
+    @Override
+    public void validateEntities(EntityValidationRequest request) throws AuthException {
+      delegate.validateEntities(request);
+    }
+
+    private PolicySet policies(PolicySet requested) {
+      return policyOverride == null ? requested : policyOverride;
+    }
+  }
+}

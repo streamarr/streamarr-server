@@ -10,6 +10,7 @@ import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
@@ -36,6 +37,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
     classes = {
       MeResolver.class,
       SecurityContextAuthorizationService.class,
+      FakeAuthorizationDecider.class,
       StreamarrDataFetcherExceptionHandler.class
     })
 @DisplayName("Me Resolver Tests")

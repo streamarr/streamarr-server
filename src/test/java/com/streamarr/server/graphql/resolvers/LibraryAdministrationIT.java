@@ -7,8 +7,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -23,8 +25,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 /**
- * Library administration requires the server ADMIN role (ADR 0015: account-scoped surfaces never
- * reach administration). Ordinary accounts are denied with the FORBIDDEN machine code.
+ * Library administration is a whole-surface gate decided by Cedar from the Account's live
+ * ServerAdmin authority (ADR 0025): the token's role claim is routing and display only, so a
+ * revoked admin is denied and a freshly granted one is allowed on the very next request. Denials
+ * surface as the FORBIDDEN machine code.
  */
 @Tag("IntegrationTest")
 @DisplayName("Library Administration Integration Tests")
@@ -35,6 +39,8 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private LibraryRepository libraryRepository;
+
+  @Autowired private UserAccountRepository userAccountRepository;
 
   private AuthTestSupport.TestIdentity identity;
 
@@ -92,6 +98,80 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.removeLibrary").value(true));
 
     assertThat(libraryRepository.existsById(library.getId())).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should deny library administration when the token claims admin but the live row does not")
+  void shouldDenyLibraryAdministrationWhenTokenClaimsAdminButLiveRowDoesNot() throws Exception {
+    identity = authTestSupport.createAdminIdentity();
+    var adminToken = authTestSupport.profileBearer(identity);
+    demoteToUser(identity);
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+
+    try {
+      postGraphQl(removeLibraryMutation(library.getId()), adminToken)
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+
+      assertThat(libraryRepository.existsById(library.getId())).isTrue();
+    } finally {
+      libraryRepository.deleteById(library.getId());
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should allow library administration when the token claims user but the live row is admin")
+  void shouldAllowLibraryAdministrationWhenTokenClaimsUserButLiveRowIsAdmin() throws Exception {
+    identity = authTestSupport.createIdentity();
+    var userToken = authTestSupport.profileBearer(identity);
+    promoteToAdmin(identity);
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+
+    postGraphQl(removeLibraryMutation(library.getId()), userToken)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.removeLibrary").value(true));
+
+    assertThat(libraryRepository.existsById(library.getId())).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should deny library administration when the live ServerAdmin is disabled")
+  void shouldDenyLibraryAdministrationWhenLiveServerAdminIsDisabled() throws Exception {
+    identity = authTestSupport.createAdminIdentity();
+    var adminToken = authTestSupport.profileBearer(identity);
+    disable(identity);
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+
+    try {
+      postGraphQl(removeLibraryMutation(library.getId()), adminToken)
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+
+      assertThat(libraryRepository.existsById(library.getId())).isTrue();
+    } finally {
+      libraryRepository.deleteById(library.getId());
+    }
+  }
+
+  private void demoteToUser(AuthTestSupport.TestIdentity identity) {
+    var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
+    account.setAccountRole(AccountRole.USER);
+    userAccountRepository.saveAndFlush(account);
+  }
+
+  private void promoteToAdmin(AuthTestSupport.TestIdentity identity) {
+    var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
+    account.setAccountRole(AccountRole.ADMIN);
+    userAccountRepository.saveAndFlush(account);
+  }
+
+  private void disable(AuthTestSupport.TestIdentity identity) {
+    var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
+    account.setEnabled(false);
+    userAccountRepository.saveAndFlush(account);
   }
 
   private String removeLibraryMutation(UUID libraryId) {

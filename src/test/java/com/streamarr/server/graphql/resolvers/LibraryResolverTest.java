@@ -21,6 +21,8 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
+import com.streamarr.server.fakes.FakeAuthorizationDecider;
+import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
@@ -29,6 +31,8 @@ import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.authorization.Decision;
+import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.LibraryManagementService;
@@ -48,6 +52,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import org.jooq.SortOrder;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -73,7 +78,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       CursorValidator.class,
       RelayConnectionAdapter.class,
       JacksonAutoConfiguration.class,
-      SecurityContextAuthorizationService.class
+      SecurityContextAuthorizationService.class,
+      FakeAuthorizationDecider.class,
+      StreamarrDataFetcherExceptionHandler.class
     })
 @DisplayName("Library Resolver Tests")
 class LibraryResolverTest {
@@ -84,6 +91,8 @@ class LibraryResolverTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @Autowired private LibraryResolver libraryResolver;
+
+  @Autowired private FakeAuthorizationDecider authorizationDecider;
 
   @MockitoBean private ProfileRepository profileRepository;
 
@@ -183,15 +192,60 @@ class LibraryResolverTest {
   @WithProfileContext(role = AccountRole.ADMIN)
   class LibraryMutations {
 
+    @AfterEach
+    void allowAgain() {
+      authorizationDecider.allowAll();
+    }
+
     @Test
     @DisplayName("Should return true when scanLibrary called with valid ID")
     void shouldReturnTrueWhenScanLibraryCalledWithValidId() {
+      var libraryId = UUID.randomUUID();
+
       Boolean result =
           dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format("mutation { scanLibrary(id: \"%s\") }", UUID.randomUUID()),
-              "data.scanLibrary");
+              String.format("mutation { scanLibrary(id: \"%s\") }", libraryId), "data.scanLibrary");
 
       assertThat(result).isTrue();
+      assertThat(authorizationDecider.recordedIntents())
+          .contains(new Intent.ScanLibrary(libraryId));
+    }
+
+    @Test
+    @DisplayName("Should return FORBIDDEN with no data when authorization denies")
+    void shouldReturnForbiddenWithNoDataWhenAuthorizationDenies() {
+      authorizationDecider.denyAll();
+
+      var result =
+          dgsQueryExecutor.execute(
+              String.format("mutation { scanLibrary(id: \"%s\") }", UUID.randomUUID()));
+
+      assertThat(result.getErrors())
+          .singleElement()
+          .satisfies(error -> assertThat(error.getExtensions()).containsEntry("code", "FORBIDDEN"));
+      // Boolean! cannot be null, so the denial nulls the whole data envelope.
+      assertThat(result.<Map<String, Object>>getData()).isNull();
+    }
+
+    @Test
+    @DisplayName("Should return AUTHORIZATION_UNAVAILABLE when no decision could be made")
+    void shouldReturnAuthorizationUnavailableWhenNoDecisionCouldBeMade() {
+      authorizationDecider.failWith(Decision.FailureCause.ENGINE_FAILURE);
+
+      var result =
+          dgsQueryExecutor.execute(
+              String.format("mutation { removeLibrary(id: \"%s\") }", UUID.randomUUID()));
+
+      assertThat(result.getErrors())
+          .singleElement()
+          .satisfies(
+              error -> {
+                assertThat(error.getExtensions())
+                    .containsEntry("code", "AUTHORIZATION_UNAVAILABLE");
+                assertThat(error.getMessage())
+                    .contains("Authorization is temporarily unavailable.");
+              });
+      assertThat(result.<Map<String, Object>>getData()).isNull();
     }
 
     @Test
