@@ -304,7 +304,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should hold session lock through issuance when raw token logout races refresh")
   void shouldHoldSessionLockThroughIssuanceWhenRawTokenLogoutRacesRefresh() throws Exception {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = createAccount();
     var issued = refreshTokenService.createSession(account, "tx-device");
 
     var gate = new CountDownLatch(1);

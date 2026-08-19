@@ -5,7 +5,6 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -141,8 +140,8 @@ class TransactionalLibraryMutationIT extends AbstractIntegrationTest {
         .authSessionId(identity.session().getId())
         .scope(TokenScope.PROFILE)
         .householdId(identity.household().getId())
-        .householdRole(HouseholdRole.ADMIN)
-        .serverAdmin(true)
+        .householdRole(identity.account().getHouseholdRole())
+        .serverAdmin(identity.account().isServerAdmin())
         .contextHouseholdId(identity.household().getId())
         .profileId(identity.profile().getId())
         .build();

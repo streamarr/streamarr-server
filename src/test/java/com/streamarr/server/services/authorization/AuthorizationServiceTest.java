@@ -102,9 +102,10 @@ class AuthorizationServiceTest {
   @DisplayName("Should throw access denied when a whole-surface gate is denied")
   void shouldThrowAccessDeniedWhenWholeSurfaceGateIsDenied() {
     var identity = profileScopedIdentity();
+    var intent = new Intent.AddLibrary();
     decider.denyAll();
 
-    assertThatThrownBy(() -> authorizationService.requireAllowed(identity, new Intent.AddLibrary()))
+    assertThatThrownBy(() -> authorizationService.requireAllowed(identity, intent))
         .isInstanceOf(AccessDeniedException.class);
   }
 
@@ -112,9 +113,10 @@ class AuthorizationServiceTest {
   @DisplayName("Should throw authorization unavailable when no decision could be made")
   void shouldThrowAuthorizationUnavailableWhenNoDecisionCouldBeMade() {
     var identity = profileScopedIdentity();
+    var intent = new Intent.AddLibrary();
     decider.failWith(Decision.FailureCause.ENGINE_FAILURE);
 
-    assertThatThrownBy(() -> authorizationService.requireAllowed(identity, new Intent.AddLibrary()))
+    assertThatThrownBy(() -> authorizationService.requireAllowed(identity, intent))
         .isInstanceOf(AuthorizationUnavailableException.class)
         .hasMessage("Authorization is temporarily unavailable.");
   }

@@ -37,12 +37,13 @@ class AuthenticatedIdentityTest {
   @Test
   @DisplayName("Should require the membership household, role, and context household")
   void shouldRequireMembershipHouseholdRoleAndContextHousehold() {
-    assertThatThrownBy(() -> profileScopedBuilder().householdId(null).build())
-        .isInstanceOf(NullPointerException.class);
-    assertThatThrownBy(() -> profileScopedBuilder().householdRole(null).build())
-        .isInstanceOf(NullPointerException.class);
-    assertThatThrownBy(() -> profileScopedBuilder().contextHouseholdId(null).build())
-        .isInstanceOf(NullPointerException.class);
+    var withoutHousehold = profileScopedBuilder().householdId(null);
+    var withoutRole = profileScopedBuilder().householdRole(null);
+    var withoutContext = profileScopedBuilder().contextHouseholdId(null);
+
+    assertThatThrownBy(withoutHousehold::build).isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(withoutRole::build).isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(withoutContext::build).isInstanceOf(NullPointerException.class);
   }
 
   @Test

@@ -139,9 +139,10 @@ class SessionContextServiceTest {
   @DisplayName("Should deny switching to a Household the Account may not use")
   void shouldDenySwitchingToHouseholdAccountMayNotUse() {
     var session = session(account.getHouseholdId(), null);
+    var accountId = account.getId();
+    var sessionId = session.getId();
 
-    assertThatThrownBy(
-            () -> households.selectHousehold(account.getId(), session.getId(), visitedHouseholdId))
+    assertThatThrownBy(() -> households.selectHousehold(accountId, sessionId, visitedHouseholdId))
         .isInstanceOf(HouseholdAccessDeniedException.class);
   }
 
@@ -150,10 +151,12 @@ class SessionContextServiceTest {
   void shouldReadRevokedOrForeignSessionAsUnauthenticatedWhenSwitching() {
     var session = session(account.getHouseholdId(), null);
     sessions.revoke(session.getId(), SessionRevocationReason.LOGOUT, Instant.now());
+    var accountId = account.getId();
+    var sessionId = session.getId();
+    var membershipHouseholdId = account.getHouseholdId();
+
     assertThatThrownBy(
-            () ->
-                households.selectHousehold(
-                    account.getId(), session.getId(), account.getHouseholdId()))
+            () -> households.selectHousehold(accountId, sessionId, membershipHouseholdId))
         .isInstanceOf(AuthenticationRequiredException.class);
 
     var foreign = sessions.save(AuthSession.builder().accountId(UUID.randomUUID()).build());

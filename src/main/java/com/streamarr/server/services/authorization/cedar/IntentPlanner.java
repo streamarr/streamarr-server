@@ -12,7 +12,9 @@ final class IntentPlanner {
 
   private IntentPlanner() {}
 
-  @SuppressWarnings("unchecked")
+  // java:S6878: SelectProfile uses accessors, not a record pattern — the pattern's synthetic
+  // deconstruction branch can never be missed and would break the 100% JaCoCo branch gate.
+  @SuppressWarnings({"unchecked", "java:S6878"})
   static <T> IntentPlan<T> plan(AuthenticatedIdentity identity, Intent<T> intent) {
     var check =
         switch (intent) {

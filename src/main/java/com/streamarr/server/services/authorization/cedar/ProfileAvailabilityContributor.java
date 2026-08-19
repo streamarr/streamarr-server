@@ -1,6 +1,7 @@
 package com.streamarr.server.services.authorization.cedar;
 
 import com.cedarpolicy.value.PrimBool;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.ProfileSafetyRule;
@@ -38,7 +39,6 @@ class ProfileAvailabilityContributor implements FactContributor {
     slice.resourceAttribute(AVAILABLE_IN_CONTEXT, new PrimBool(resource.isPresent()));
     slice.resourceAttribute(LOCKED, new PrimBool(locked.contains(profileId)));
     slice.resourceAttribute(
-        PIN_REQUIRED,
-        new PrimBool(resource.map(profile -> profile.hasEffectivePin()).orElse(false)));
+        PIN_REQUIRED, new PrimBool(resource.map(Profile::hasEffectivePin).orElse(false)));
   }
 }

@@ -67,11 +67,11 @@ public class MeResolver {
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
     return paginationService.getPaginationOptions(
-        firstOrDefault(first, after, last, before), after, last, before);
+        firstOrDefault(first, last, before), after, last, before);
   }
 
   /** A picker-sized default when the client names no page size. */
-  private static int firstOrDefault(int first, String after, int last, String before) {
+  private static int firstOrDefault(int first, int last, String before) {
     if (first == 0 && last == 0 && before == null) {
       return 100;
     }

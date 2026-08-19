@@ -127,9 +127,9 @@ class IdentityQueryServiceTest {
   @DisplayName("Should fail closed when the picker is not allowed")
   void shouldFailClosedWhenPickerIsNotAllowed() {
     authorization.denyAll();
+    var identity = identity(home.getId(), null);
 
-    assertThatThrownBy(() -> service.meView(identity(home.getId(), null)))
-        .isInstanceOf(AccessDeniedException.class);
+    assertThatThrownBy(() -> service.meView(identity)).isInstanceOf(AccessDeniedException.class);
   }
 
   @Test
@@ -144,10 +144,11 @@ class IdentityQueryServiceTest {
             .householdRole(HouseholdRole.MEMBER)
             .contextHouseholdId(home.getId())
             .build();
+    var strangeContext = identity(UUID.randomUUID(), null);
+
     assertThatThrownBy(() -> service.meView(ghost))
         .isInstanceOf(AuthenticationRequiredException.class);
-
-    assertThatThrownBy(() -> service.meView(identity(UUID.randomUUID(), null)))
+    assertThatThrownBy(() -> service.meView(strangeContext))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 

@@ -101,7 +101,10 @@ class ProfileSelectionServiceTest {
   void shouldRefuseProfileThatIsNotAvailableInContextHousehold() {
     var elsewhere = profiles.save(ProfileFixture.defaultProfileBuilder().build());
 
-    assertThatThrownBy(() -> service.selectProfile(identity(), command(elsewhere.getId(), null)))
+    var identity = identity();
+    var command = command(elsewhere.getId(), null);
+
+    assertThatThrownBy(() -> service.selectProfile(identity, command))
         .isInstanceOf(ProfileAccessDeniedException.class);
     assertThat(authorization.recordedIntents()).isEmpty();
   }
@@ -111,7 +114,10 @@ class ProfileSelectionServiceTest {
   void shouldRequirePinWhenProfileHasOne() {
     pin(personal, "4242");
 
-    assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), null)))
+    var identity = identity();
+    var command = command(personal.getId(), null);
+
+    assertThatThrownBy(() -> service.selectProfile(identity, command))
         .isInstanceOf(InvalidProfilePinException.class);
     assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
   }
@@ -122,10 +128,16 @@ class ProfileSelectionServiceTest {
     pin(personal, "4242");
 
     for (var attempt = 0; attempt < 2; attempt++) {
-      assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), "0000")))
+      var identity = identity();
+      var command = command(personal.getId(), "0000");
+
+      assertThatThrownBy(() -> service.selectProfile(identity, command))
           .isInstanceOf(InvalidProfilePinException.class);
     }
-    assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), "4242")))
+    var identity = identity();
+    var command = command(personal.getId(), "4242");
+
+    assertThatThrownBy(() -> service.selectProfile(identity, command))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
   }
 
@@ -151,7 +163,10 @@ class ProfileSelectionServiceTest {
     authorization.denyAll();
 
     // The unpinned Adult is locked because a Kid is available.
-    assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), null)))
+    var identity = identity();
+    var command = command(personal.getId(), null);
+
+    assertThatThrownBy(() -> service.selectProfile(identity, command))
         .isInstanceOf(ProfileLockedException.class);
   }
 
@@ -160,7 +175,10 @@ class ProfileSelectionServiceTest {
   void shouldReportAccessDeniedWhenCedarDeniesForAnyOtherReason() {
     authorization.denyAll();
 
-    assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), null)))
+    var identity = identity();
+    var command = command(personal.getId(), null);
+
+    assertThatThrownBy(() -> service.selectProfile(identity, command))
         .isInstanceOf(ProfileAccessDeniedException.class);
   }
 
@@ -169,7 +187,10 @@ class ProfileSelectionServiceTest {
   void shouldFailClosedWhenNoDecisionCouldBeMade() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
 
-    assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), null)))
+    var identity = identity();
+    var command = command(personal.getId(), null);
+
+    assertThatThrownBy(() -> service.selectProfile(identity, command))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -178,7 +199,10 @@ class ProfileSelectionServiceTest {
   void shouldReadRevokedSessionAsUnauthenticatedWhenRecordingSelection() {
     sessions.revoke(session.getId(), SessionRevocationReason.LOGOUT, Instant.now());
 
-    assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), null)))
+    var identity = identity();
+    var command = command(personal.getId(), null);
+
+    assertThatThrownBy(() -> service.selectProfile(identity, command))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 

@@ -87,8 +87,9 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   @DisplayName("Should refuse demoting the last HouseholdAdmin (T1)")
   void shouldRefuseDemotingLastHouseholdAdmin() {
     var identity = create();
+    var accountId = identity.account().getId();
 
-    assertThatThrownBy(() -> demote(identity.account().getId()))
+    assertThatThrownBy(() -> demote(accountId))
         .isInstanceOf(DataIntegrityViolationException.class)
         .extracting(IdentityInvariantsIT::constraintName)
         .isEqualTo("chk_household_retains_admin");

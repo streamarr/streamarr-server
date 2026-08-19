@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
+import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
 @RequiredArgsConstructor
@@ -23,7 +24,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
         .from(USER_ACCOUNT)
         .where(USER_ACCOUNT.ID.eq(accountId))
         .forShare()
-        .fetchOptional(record -> new AccountAuthorityFacts(record.value1(), record.value2()));
+        .fetchOptional(row -> new AccountAuthorityFacts(row.value1(), row.value2()));
   }
 
   @Override
@@ -52,7 +53,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
         .where(USER_ACCOUNT.ID.eq(accountId))
         .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE))
         .orderBy(isMembership.desc(), PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.asc())
-        .fetch(record -> record.value1());
+        .fetch(Record2::value1);
   }
 
   @Override

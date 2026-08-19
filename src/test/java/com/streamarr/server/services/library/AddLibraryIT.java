@@ -9,7 +9,6 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -141,8 +140,8 @@ class AddLibraryIT extends AbstractIntegrationTest {
         .authSessionId(identity.session().getId())
         .scope(TokenScope.PROFILE)
         .householdId(identity.household().getId())
-        .householdRole(HouseholdRole.ADMIN)
-        .serverAdmin(true)
+        .householdRole(identity.account().getHouseholdRole())
+        .serverAdmin(identity.account().isServerAdmin())
         .contextHouseholdId(identity.household().getId())
         .profileId(identity.profile().getId())
         .build();

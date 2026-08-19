@@ -138,7 +138,7 @@ class MeResolverTest {
         .containsEntry("householdRole", "ADMIN")
         .containsEntry("deviceBound", false)
         .containsEntry("selectedProfile", null);
-    assertThat(me.get("household")).isEqualTo(Map.of("id", householdId.toString(), "name", "Home"));
+    assertThat(me).containsEntry("household", Map.of("id", householdId.toString(), "name", "Home"));
     List<String> households =
         dgsQueryExecutor.executeAndExtractJsonPath(
             ME_QUERY, "data.me.usableHouseholds.edges[*].node.household.name");
