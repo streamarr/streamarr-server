@@ -9,7 +9,7 @@ public class DirectAccountPasswordMatchFixture {
 
   private final PasswordEncoder passwordEncoder;
 
-  public boolean verify(String password, String passwordHash) {
+  private boolean verify(String password, String passwordHash) {
     return passwordEncoder.matches(password, passwordHash);
   }
 }

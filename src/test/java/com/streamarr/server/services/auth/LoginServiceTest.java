@@ -38,6 +38,8 @@ class LoginServiceTest {
   private final PasswordEncoder serviceEncoder = encoderWith(8192, 2);
   private final CountingPasswordEncoder countingEncoder =
       new CountingPasswordEncoder(serviceEncoder);
+  private final CountingTimingEqualizer timingEqualizer =
+      new CountingTimingEqualizer(countingEncoder);
 
   private final FakeUserAccountRepository userAccountRepository = new FakeUserAccountRepository();
 
@@ -68,7 +70,7 @@ class LoginServiceTest {
                   .window(Duration.ofMinutes(15))
                   .build(),
               clock),
-          new PasswordTimingEqualizer(countingEncoder));
+          timingEqualizer);
 
   @Test
   @DisplayName("Should throttle when failures exceed limit")
@@ -314,6 +316,25 @@ class LoginServiceTest {
 
     private int completedVerifications() {
       return completedVerifications.get();
+    }
+  }
+
+  private static final class CountingTimingEqualizer extends PasswordTimingEqualizer {
+
+    private final AtomicInteger burns = new AtomicInteger();
+
+    private CountingTimingEqualizer(PasswordEncoder passwordEncoder) {
+      super(passwordEncoder);
+    }
+
+    @Override
+    public void burn(String password) {
+      burns.incrementAndGet();
+      super.burn(password);
+    }
+
+    private int burns() {
+      return burns.get();
     }
   }
 }

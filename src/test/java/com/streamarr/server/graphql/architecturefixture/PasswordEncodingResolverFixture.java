@@ -9,7 +9,7 @@ public class PasswordEncodingResolverFixture {
 
   private final PasswordEncoder passwordEncoder;
 
-  public String hash(String password) {
+  private String hash(String password) {
     return passwordEncoder.encode(password);
   }
 }
