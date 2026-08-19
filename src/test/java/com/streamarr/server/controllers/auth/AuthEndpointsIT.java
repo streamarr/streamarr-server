@@ -998,6 +998,36 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject password change when the Account is disabled")
+  void shouldRejectPasswordChangeWhenAccountDisabled() throws Exception {
+    seedSingleProfileIdentity();
+    var accessToken = loginAndReadField("accessToken");
+    account.setEnabled(false);
+    userAccountRepository.saveAndFlush(account);
+
+    changePassword(accessToken, PASSWORD, "a brand new passphrase!")
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+  }
+
+  @Test
+  @DisplayName("Should throttle password change after repeated wrong current passwords")
+  void shouldThrottlePasswordChangeAfterRepeatedWrongCurrentPasswords() throws Exception {
+    seedSingleProfileIdentity();
+    var accessToken = loginAndReadField("accessToken");
+
+    for (var attempt = 0; attempt < 5; attempt++) {
+      changePassword(accessToken, "wrong-" + attempt, "irrelevant new one")
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+    }
+
+    changePassword(accessToken, PASSWORD, "a brand new passphrase!")
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"));
+  }
+
+  @Test
   @DisplayName("Should reject authenticated auth mutations when no identity is present")
   void shouldRejectAuthenticatedAuthMutationsWhenNoIdentityPresent() throws Exception {
     var passwordMarker = UUID.randomUUID().toString();
