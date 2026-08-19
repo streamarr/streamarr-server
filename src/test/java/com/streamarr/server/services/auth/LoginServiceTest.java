@@ -67,7 +67,8 @@ class LoginServiceTest {
                   .maxAttempts(5)
                   .window(Duration.ofMinutes(15))
                   .build(),
-              clock));
+              clock),
+          new PasswordTimingEqualizer(countingEncoder));
 
   @Test
   @DisplayName("Should throttle when failures exceed limit")
