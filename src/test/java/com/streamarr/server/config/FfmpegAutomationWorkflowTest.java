@@ -166,6 +166,47 @@ class FfmpegAutomationWorkflowTest {
     assertThat(steps.toString()).doesNotContain("proposed/buildpacks/ffmpeg/bin/update-lock");
   }
 
+  @Test
+  @DisplayName("Should prefer the canonical Ubuntu mirror before installing FFmpeg")
+  void shouldPreferCanonicalUbuntuMirrorBeforeInstallingFfmpeg() throws IOException {
+    var action = yaml(".github/actions/apt-mirrors/action.yml");
+    var actionRuns = map(action.get("runs"));
+    var changePriorities =
+        stepNamed(listOfMaps(actionRuns.get("steps")), "Change APT mirror priorities");
+    var commands = ((String) changePriorities.get("run")).lines().toList();
+    var workflow = yaml(".github/workflows/ci.yml");
+    var application = map(map(workflow.get("jobs")).get("application"));
+    var steps = listOfMaps(application.get("steps"));
+
+    assertThat(actionRuns).containsEntry("using", "composite");
+    assertThat(changePriorities).containsEntry("shell", "bash");
+    assertThat(commands)
+        .anySatisfy(
+            command ->
+                assertThat(command).contains("'/archive.ubuntu.com", "s/priority:2/priority:0/"))
+        .anySatisfy(
+            command ->
+                assertThat(command)
+                    .contains("'/azure.archive.ubuntu.com", "s/priority:0/priority:1/"))
+        .anySatisfy(
+            command ->
+                assertThat(command).contains("'/security.ubuntu.com", "s/priority:3/priority:2/"));
+    assertThat(steps.stream().map(step -> step.get("name")))
+        .containsSubsequence("Change APT mirror priorities", "Install FFmpeg");
+    assertThat(stepNamed(steps, "Change APT mirror priorities"))
+        .containsEntry("uses", "./.github/actions/apt-mirrors");
+  }
+
+  @Test
+  @DisplayName("Should bound FFmpeg installation when Ubuntu mirrors are slow")
+  void shouldBoundFfmpegInstallationWhenUbuntuMirrorsAreSlow() throws IOException {
+    var workflow = yaml(".github/workflows/ci.yml");
+    var application = map(map(workflow.get("jobs")).get("application"));
+    var install = stepNamed(listOfMaps(application.get("steps")), "Install FFmpeg");
+
+    assertThat(install).containsEntry("timeout-minutes", 10);
+  }
+
   private static Stream<JsonNode> nodes(JsonNode values) {
     return StreamSupport.stream(values.spliterator(), false);
   }

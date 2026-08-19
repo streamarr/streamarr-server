@@ -110,7 +110,11 @@ jobs:
       - name: Build and test
         run: ./mvnw --batch-mode verify
 
+      - name: Change APT mirror priorities
+        uses: ./.github/actions/apt-mirrors
+
       - name: Install FFmpeg
+        timeout-minutes: 10
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
 
       # The SmokeTest group is excluded from the regular build (needs real FFmpeg) but is fast
