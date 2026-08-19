@@ -3,10 +3,13 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
@@ -48,7 +51,15 @@ class PasswordChangeServiceTest {
       new PasswordChangeService(
           accountRepository,
           completionService,
-          new AccountPasswordVerifier(passwordEncoder),
+          new AccountPasswordVerifier(
+              passwordEncoder,
+              new PasswordTimingEqualizer(passwordEncoder),
+              new CredentialGuessThrottle(
+                  AuthThrottleProperties.builder()
+                      .maxAttempts(2)
+                      .window(Duration.ofMinutes(15))
+                      .build(),
+                  clock)),
           passwordEncoder);
 
   @Test
@@ -117,6 +128,64 @@ class PasswordChangeServiceTest {
         .isInstanceOf(AuthenticationRequiredException.class);
     assertThat(accountRepository.findById(account.getId()).orElseThrow().getPasswordHash())
         .isEqualTo(originalPasswordHash);
+    assertThat(tokenRepository.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject a password change when the account is disabled")
+  void shouldRejectPasswordChangeWhenAccountDisabled() {
+    var currentPassword = UUID.randomUUID().toString();
+    var originalPasswordHash = passwordEncoder.encode(currentPassword);
+    var account =
+        accountRepository.save(
+            AccountFixture.defaultAccountBuilder()
+                .passwordHash(originalPasswordHash)
+                .enabled(false)
+                .build());
+    var caller =
+        sessionRepository.save(
+            AuthSession.builder().accountId(account.getId()).deviceName("caller").build());
+    var command =
+        commandBuilder()
+            .accountId(account.getId())
+            .sessionId(caller.getId())
+            .currentPassword(currentPassword)
+            .build();
+
+    assertThatThrownBy(() -> service.changePassword(command))
+        .isInstanceOf(InvalidCredentialsException.class);
+    assertThat(accountRepository.findById(account.getId()).orElseThrow().getPasswordHash())
+        .isEqualTo(originalPasswordHash);
+    assertThat(tokenRepository.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should throttle password changes after repeated wrong current passwords")
+  void shouldThrottlePasswordChangesAfterRepeatedWrongCurrentPasswords() {
+    var currentPassword = UUID.randomUUID().toString();
+    var account =
+        accountRepository.save(
+            AccountFixture.defaultAccountBuilder()
+                .passwordHash(passwordEncoder.encode(currentPassword))
+                .build());
+    var caller =
+        sessionRepository.save(
+            AuthSession.builder().accountId(account.getId()).deviceName("caller").build());
+    var wrongCommand =
+        commandBuilder().accountId(account.getId()).sessionId(caller.getId()).build();
+    for (var attempt = 0; attempt < 2; attempt++) {
+      assertThatThrownBy(() -> service.changePassword(wrongCommand))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+    var correctCommand =
+        commandBuilder()
+            .accountId(account.getId())
+            .sessionId(caller.getId())
+            .currentPassword(currentPassword)
+            .build();
+
+    assertThatThrownBy(() -> service.changePassword(correctCommand))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
     assertThat(tokenRepository.findAll()).isEmpty();
   }
 

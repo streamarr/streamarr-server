@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -52,6 +53,18 @@ class AuthExceptionHandlerTest {
         .isEqualTo(
             new AuthErrorResponse(
                 "TOO_MANY_ATTEMPTS", "Too many failed login attempts. Try again later."));
+  }
+
+  @Test
+  @DisplayName("Should respond 429 too many attempts when credential verification throttled")
+  void shouldRespond429TooManyAttemptsWhenCredentialVerificationThrottled() {
+    var response = handler.handleTooManyAttempts(new TooManyCredentialAttemptsException());
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    assertThat(response.getBody())
+        .isEqualTo(
+            new AuthErrorResponse(
+                "TOO_MANY_ATTEMPTS", "Too many failed credential attempts. Try again later."));
   }
 
   @Test
