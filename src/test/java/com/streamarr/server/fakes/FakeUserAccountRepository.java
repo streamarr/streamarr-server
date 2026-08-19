@@ -1,6 +1,7 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -9,6 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -37,6 +40,54 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     return database.values().stream()
         .filter(account -> householdId.equals(account.getHouseholdId()))
         .toList();
+  }
+
+  @Override
+  public boolean tryGrantServerAdmin(UUID accountId) {
+    return transition(accountId, account -> !account.isServerAdmin(), a -> a.setServerAdmin(true));
+  }
+
+  @Override
+  public boolean tryRevokeServerAdmin(UUID accountId) {
+    return transition(accountId, UserAccount::isServerAdmin, a -> a.setServerAdmin(false));
+  }
+
+  @Override
+  public boolean tryPromoteToHouseholdAdmin(UUID accountId) {
+    return transition(
+        accountId,
+        account -> account.getHouseholdRole() != HouseholdRole.ADMIN,
+        account -> account.setHouseholdRole(HouseholdRole.ADMIN));
+  }
+
+  @Override
+  public boolean tryDemoteToHouseholdMember(UUID accountId) {
+    return transition(
+        accountId,
+        account -> account.getHouseholdRole() != HouseholdRole.MEMBER,
+        account -> account.setHouseholdRole(HouseholdRole.MEMBER));
+  }
+
+  @Override
+  public boolean tryDisable(UUID accountId) {
+    return transition(accountId, UserAccount::isEnabled, account -> account.setEnabled(false));
+  }
+
+  @Override
+  public boolean tryEnable(UUID accountId) {
+    return transition(accountId, account -> !account.isEnabled(), a -> a.setEnabled(true));
+  }
+
+  @Override
+  public boolean tryRename(UUID accountId, String displayName) {
+    return transition(accountId, _ -> true, account -> account.setDisplayName(displayName));
+  }
+
+  private boolean transition(
+      UUID accountId, Predicate<UserAccount> transitionable, Consumer<UserAccount> change) {
+    var account = findById(accountId).filter(transitionable);
+    account.ifPresent(change);
+    return account.isPresent();
   }
 
   @Override
