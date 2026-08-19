@@ -17,12 +17,11 @@ import graphql.GraphqlErrorBuilder;
 import graphql.execution.DataFetcherExceptionHandler;
 import graphql.execution.DataFetcherExceptionHandlerParameters;
 import graphql.execution.DataFetcherExceptionHandlerResult;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.ThreadLocalRandom;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
@@ -155,9 +154,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
   }
 
   private static String newRequestId() {
-    var bytes = new byte[4];
-    ThreadLocalRandom.current().nextBytes(bytes);
-    return "req-" + HexFormat.of().formatHex(bytes);
+    return "req-" + UUID.randomUUID().toString().substring(0, 8);
   }
 
   private record Classification(ErrorType type, String code) {

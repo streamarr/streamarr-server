@@ -30,4 +30,15 @@ class OutcomeTest {
 
     assertThat(outcome).isEqualTo(Outcome.rejected("first"));
   }
+
+  @Test
+  @DisplayName("Should fold each outcome through its own function")
+  void shouldFoldEachOutcomeThroughItsOwnFunction() {
+    String accepted =
+        Outcome.<String, String>accepted("ok").fold(r -> "accepted:" + r, r -> "rejected");
+    String rejected = Outcome.<String, String>rejected("no").fold(r -> "accepted", List::toString);
+
+    assertThat(accepted).isEqualTo("accepted:ok");
+    assertThat(rejected).isEqualTo("[no]");
+  }
 }

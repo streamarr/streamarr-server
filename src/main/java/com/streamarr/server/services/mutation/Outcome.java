@@ -1,6 +1,7 @@
 package com.streamarr.server.services.mutation;
 
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * The protocol-independent result of a mutation service (ADR 0026): the work was accepted and
@@ -9,6 +10,14 @@ import java.util.List;
  * request gates.
  */
 public sealed interface Outcome<T, R> {
+
+  /** Collapses the outcome into one value; the GraphQL adapter builds its payload this way. */
+  default <V> V fold(Function<T, V> onAccepted, Function<List<R>, V> onRejected) {
+    return switch (this) {
+      case Accepted<T, R>(var result) -> onAccepted.apply(result);
+      case Rejected<T, R>(var rejections) -> onRejected.apply(rejections);
+    };
+  }
 
   record Accepted<T, R>(T result) implements Outcome<T, R> {}
 

@@ -16,10 +16,8 @@ public final class MutationPayloads {
 
   public static <T, R, E extends MutationError, P> P payload(
       Outcome<T, R> outcome, Function<R, E> toError, BiFunction<T, List<E>, P> envelope) {
-    return switch (outcome) {
-      case Outcome.Accepted<T, R>(var result) -> envelope.apply(result, List.of());
-      case Outcome.Rejected<T, R>(var rejections) ->
-          envelope.apply(null, rejections.stream().map(toError).toList());
-    };
+    return outcome.fold(
+        result -> envelope.apply(result, List.of()),
+        rejections -> envelope.apply(null, rejections.stream().map(toError).toList()));
   }
 }
