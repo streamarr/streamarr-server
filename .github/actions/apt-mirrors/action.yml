@@ -1,0 +1,13 @@
+name: Change APT mirror priorities
+description: Prefer the canonical Ubuntu archive over the Azure mirror
+
+runs:
+  using: composite
+  steps:
+    - name: Change APT mirror priorities
+      shell: bash
+      run: |
+        sudo sed -i '/archive.ubuntu.com\/ubuntu\/\tpriority/ s/priority:2/priority:0/' /etc/apt/apt-mirrors.txt
+        sudo sed -i '/azure.archive.ubuntu.com\/ubuntu\/\tpriority/ s/priority:0/priority:1/' /etc/apt/apt-mirrors.txt
+        sudo sed -i '/security.ubuntu.com\/ubuntu\/\tpriority/ s/priority:3/priority:2/' /etc/apt/apt-mirrors.txt
+        sudo cat /etc/apt/apt-mirrors.txt
