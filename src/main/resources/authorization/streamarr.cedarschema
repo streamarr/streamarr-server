@@ -129,6 +129,11 @@ namespace Streamarr {
     resource: Server,
     context: {},
   };
+  action viewHouseholds in householdAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
   action renameHousehold in householdAdministration appliesTo {
     principal: Account,
     resource: Household,

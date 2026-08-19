@@ -487,6 +487,16 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName("Should reserve the Household catalogue for a live ServerAdmin")
+    void shouldReserveHouseholdCatalogueForLiveServerAdmin() {
+      assertThat(decider.decide(atHome(), new Intent.ViewHouseholds())).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decider.decide(atHome(), new Intent.ViewHouseholds())).isEqualTo(ALLOWED);
+    }
+
+    @Test
     @DisplayName("Should let only a live HouseholdAdmin of that Household or ServerAdmin rename it")
     void shouldLetOnlyLiveHouseholdAdminOfThatHouseholdOrServerAdminRenameIt() {
       var home = account.getHouseholdId();

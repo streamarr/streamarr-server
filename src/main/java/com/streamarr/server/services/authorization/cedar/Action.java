@@ -64,6 +64,7 @@ enum Action {
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   CREATE_HOUSEHOLD(
       "createHousehold", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_HOUSEHOLDS("viewHouseholds", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   RENAME_HOUSEHOLD(
       "renameHousehold",
       ResourceKind.HOUSEHOLD,

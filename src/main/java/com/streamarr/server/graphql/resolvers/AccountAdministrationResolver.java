@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
+import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.dto.AccountAdministration;
@@ -23,6 +24,7 @@ import com.streamarr.server.graphql.mutation.administration.RevokeHouseholdAdmin
 import com.streamarr.server.graphql.mutation.administration.RevokeServerAdminPayload;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.AccountAdministrationService;
+import com.streamarr.server.services.identity.AdministrationQueryService;
 import lombok.RequiredArgsConstructor;
 
 @DgsComponent
@@ -31,6 +33,15 @@ public class AccountAdministrationResolver {
 
   private final AuthorizationService authorizationService;
   private final AccountAdministrationService accountAdministrationService;
+  private final AdministrationQueryService administrationQueryService;
+
+  @DgsQuery
+  public AccountAdministration accountAdministration(@InputArgument String accountId) {
+    return administrationQueryService
+        .accountAdministration(authorizationService.currentIdentity(), Ids.parseUuid(accountId))
+        .map(AccountAdministration::from)
+        .orElse(null);
+  }
 
   @DgsMutation
   public GrantServerAdminPayload grantServerAdmin(@InputArgument GrantServerAdminInput input) {

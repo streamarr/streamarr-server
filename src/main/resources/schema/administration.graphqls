@@ -14,6 +14,27 @@ type AccountAdministration {
 type HouseholdAdministration {
     id: ID!
     name: String!
+    accounts(first: Int, after: String, last: Int, before: String): AccountAdministrationConnection!
+}
+
+type HouseholdAdministrationConnection {
+    edges: [HouseholdAdministrationEdge!]!
+    pageInfo: PageInfo!
+}
+
+type HouseholdAdministrationEdge {
+    node: HouseholdAdministration!
+    cursor: String!
+}
+
+type AccountAdministrationConnection {
+    edges: [AccountAdministrationEdge!]!
+    pageInfo: PageInfo!
+}
+
+type AccountAdministrationEdge {
+    node: AccountAdministration!
+    cursor: String!
 }
 
 input GrantServerAdminInput {

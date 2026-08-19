@@ -37,6 +37,9 @@ public sealed interface Intent<T> {
 
   record ViewHouseholdAdministration(UUID householdId) implements Intent<AuthorizationUnit> {}
 
+  /** The server-wide Household catalogue; ServerAdmin reads all application-domain data. */
+  record ViewHouseholds() implements Intent<AuthorizationUnit> {}
+
   record ViewAccountAdministration(UUID accountId) implements Intent<AuthorizationUnit> {}
 
   record ViewProfileAdministration(UUID profileId) implements Intent<AuthorizationUnit> {}
