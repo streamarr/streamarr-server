@@ -131,6 +131,8 @@ class AuthorizationParityTest {
         new Intent.ViewProfileActivity(id),
         new Intent.ViewHouseholdAdministration(id),
         new Intent.ViewAccountAdministration(id),
-        new Intent.ViewProfileAdministration(id));
+        new Intent.ViewProfileAdministration(id),
+        new Intent.GrantServerAdmin(id),
+        new Intent.RevokeServerAdmin(id));
   }
 }

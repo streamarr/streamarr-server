@@ -87,6 +87,16 @@ namespace Streamarr {
     resource: Account,
     context: {},
   };
+  action grantServerAdmin in accountAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: { freshReauthentication: Bool },
+  };
+  action revokeServerAdmin in accountAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: { freshReauthentication: Bool },
+  };
   action viewProfileAdministration in profileAdministration appliesTo {
     principal: Account,
     resource: Profile,

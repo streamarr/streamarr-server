@@ -264,7 +264,11 @@ class CedarAuthorizationDeciderTest {
   private CedarAuthorizationDecider decider(
       AuthorizationEngine engine, FactContributor contributor) {
     return new CedarAuthorizationDecider(
-        engine, BUNDLE, new SliceAssembler(ContributorStubs.allWith(contributor)), meters);
+        engine,
+        BUNDLE,
+        new SliceAssembler(ContributorStubs.allWith(contributor)),
+        ContributorStubs.systemClockFreshness(),
+        meters);
   }
 
   private static FactContributor contributor(Consumer<EntitySlice> contribution) {
