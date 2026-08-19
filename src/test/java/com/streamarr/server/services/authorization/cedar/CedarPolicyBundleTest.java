@@ -47,10 +47,9 @@ class CedarPolicyBundleTest {
   @Test
   @DisplayName("Should reject a policy without an id annotation")
   void shouldRejectPolicyWithoutIdAnnotation() {
-    assertThatThrownBy(
-            () ->
-                new CedarPolicyBundle(
-                    ENGINE, SCHEMA, List.of("permit (principal, action, resource);")))
+    var sources = List.of("permit (principal, action, resource);");
+
+    assertThatThrownBy(() -> new CedarPolicyBundle(ENGINE, SCHEMA, sources))
         .isInstanceOf(CedarBundleException.class)
         .hasMessageContaining("@id");
   }
@@ -58,10 +57,9 @@ class CedarPolicyBundleTest {
   @Test
   @DisplayName("Should reject a policy with a blank id annotation")
   void shouldRejectPolicyWithBlankIdAnnotation() {
-    assertThatThrownBy(
-            () ->
-                new CedarPolicyBundle(
-                    ENGINE, SCHEMA, List.of("@id(\" \") permit (principal, action, resource);")))
+    var sources = List.of("@id(\" \") permit (principal, action, resource);");
+
+    assertThatThrownBy(() -> new CedarPolicyBundle(ENGINE, SCHEMA, sources))
         .isInstanceOf(CedarBundleException.class)
         .hasMessageContaining("@id");
   }
@@ -70,8 +68,9 @@ class CedarPolicyBundleTest {
   @DisplayName("Should reject duplicate policy ids across files")
   void shouldRejectDuplicatePolicyIdsAcrossFiles() {
     var policy = "@id(\"same\") permit (principal, action, resource);";
+    var sources = List.of(policy, policy);
 
-    assertThatThrownBy(() -> new CedarPolicyBundle(ENGINE, SCHEMA, List.of(policy, policy)))
+    assertThatThrownBy(() -> new CedarPolicyBundle(ENGINE, SCHEMA, sources))
         .isInstanceOf(CedarBundleException.class)
         .hasMessageContaining("Duplicate")
         .hasMessageContaining("same");
@@ -80,10 +79,11 @@ class CedarPolicyBundleTest {
   @Test
   @DisplayName("Should reject policies that do not validate against the schema")
   void shouldRejectPoliciesThatDoNotValidateAgainstSchema() {
-    var unknownAction =
-        "@id(\"unknown\") permit (principal, action == Streamarr::Action::\"nope\", resource);";
+    var sources =
+        List.of(
+            "@id(\"unknown\") permit (principal, action == Streamarr::Action::\"nope\", resource);");
 
-    assertThatThrownBy(() -> new CedarPolicyBundle(ENGINE, SCHEMA, List.of(unknownAction)))
+    assertThatThrownBy(() -> new CedarPolicyBundle(ENGINE, SCHEMA, sources))
         .isInstanceOf(CedarBundleException.class)
         .hasMessageContaining("validation");
   }

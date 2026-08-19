@@ -5,6 +5,8 @@ import com.cedarpolicy.model.AuthorizationRequest;
 import com.cedarpolicy.model.AuthorizationResponse;
 import com.cedarpolicy.model.EntityValidationRequest;
 import com.cedarpolicy.model.entity.Entities;
+import com.cedarpolicy.model.entity.Entity;
+import com.cedarpolicy.model.exception.AuthException;
 import com.cedarpolicy.model.exception.BadRequestException;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationDecider;
@@ -13,6 +15,7 @@ import com.streamarr.server.services.authorization.Decision.FailureCause;
 import com.streamarr.server.services.authorization.Intent;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,10 +46,9 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
     try {
       var slice = sliceAssembler.assemble(identity, check);
       var entities = slice.entities();
-      try {
-        engine.validateEntities(new EntityValidationRequest(bundle.schema(), entities));
-      } catch (BadRequestException e) {
-        return failClosed(FailureCause.INVALID_SLICE, check, e.getErrors().toString());
+      var sliceViolation = sliceViolation(entities);
+      if (sliceViolation.isPresent()) {
+        return failClosed(FailureCause.INVALID_SLICE, check, sliceViolation.get());
       }
       var request =
           new AuthorizationRequest(
@@ -62,6 +64,16 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
     } catch (Exception e) {
       log.error("Authorization failed closed for {} (ENGINE_FAILURE)", check.action(), e);
       return countFailClosed(FailureCause.ENGINE_FAILURE);
+    }
+  }
+
+  /** The schema violations of an assembled slice, or empty when it validates. */
+  private Optional<String> sliceViolation(List<Entity> entities) throws AuthException {
+    try {
+      engine.validateEntities(new EntityValidationRequest(bundle.schema(), entities));
+      return Optional.empty();
+    } catch (BadRequestException e) {
+      return Optional.of(e.getErrors().toString());
     }
   }
 

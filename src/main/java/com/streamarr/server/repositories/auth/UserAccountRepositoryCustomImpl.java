@@ -20,8 +20,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
         .from(USER_ACCOUNT)
         .where(USER_ACCOUNT.ID.eq(accountId))
         .fetchOptional(
-            record ->
-                new AccountAuthorityFacts(record.value1(), record.value2() == AccountRole.ADMIN));
+            row -> new AccountAuthorityFacts(row.value1(), row.value2() == AccountRole.ADMIN));
   }
 
   @Override

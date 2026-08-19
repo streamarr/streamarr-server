@@ -28,6 +28,7 @@ import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.Map;
@@ -238,7 +239,7 @@ class CedarAuthorizationDeciderTest {
 
   private double failClosedCount() {
     return meters.find(CedarAuthorizationDecider.FAIL_CLOSED_METRIC).counters().stream()
-        .mapToDouble(counter -> counter.count())
+        .mapToDouble(Counter::count)
         .sum();
   }
 

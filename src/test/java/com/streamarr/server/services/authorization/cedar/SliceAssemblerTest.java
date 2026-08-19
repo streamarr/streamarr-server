@@ -27,10 +27,9 @@ class SliceAssemblerTest {
   @Test
   @DisplayName("Should fail startup when two contributors provide one fact")
   void shouldFailStartupWhenTwoContributorsProvideOneFact() {
-    var first = contributor("first");
-    var second = contributor("second");
+    var contributors = List.of(contributor("first"), contributor("second"));
 
-    assertThatThrownBy(() -> new SliceAssembler(List.of(first, second)))
+    assertThatThrownBy(() -> new SliceAssembler(contributors))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("Two contributors");
   }
