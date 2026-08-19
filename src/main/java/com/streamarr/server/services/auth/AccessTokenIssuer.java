@@ -1,10 +1,6 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
-import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
-import com.streamarr.server.exceptions.ProfileAccessDeniedException;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
-import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -18,6 +14,11 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Service;
 
+/**
+ * Mints the signed snapshot (ADR 0024) from a validated {@link TokenContext}; it reads nothing from
+ * the database. The identity services that build the context are responsible for the Household and
+ * Profile having been checked live.
+ */
 @Service
 @RequiredArgsConstructor
 public class AccessTokenIssuer {
@@ -25,8 +26,6 @@ public class AccessTokenIssuer {
   private final JwtEncoder jwtEncoder;
   private final AuthTokenProperties properties;
   private final Clock clock;
-  private final HouseholdMembershipRepository membershipRepository;
-  private final AccountProfileRepository accountProfileRepository;
 
   public AccessToken issue(TokenContext context) {
     // JWT timestamps carry whole seconds; truncate so expiresAt matches the encoded exp claim.
@@ -35,10 +34,10 @@ public class AccessTokenIssuer {
   }
 
   /**
-   * Mints a scope-change token whose lifetime is capped by the token that authorized the change:
+   * Mints a context-change token whose lifetime is capped by the token that authorized the change:
    * {@code expiresAt = min(now + TTL, sourceExpiresAt)}. Selection changes context, never authority
    * — an uncapped reissue would let repeated selection extend access indefinitely. Only setup,
-   * login, refresh, and successful password reauthentication start a fresh TTL.
+   * login, and refresh start a fresh TTL.
    */
   public AccessToken issueDerived(TokenContext context, Instant sourceExpiresAt) {
     var now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
@@ -48,25 +47,26 @@ public class AccessTokenIssuer {
   }
 
   private AccessToken mint(TokenContext context, Instant now, Instant expiresAt) {
-    var scope = resolveScope(context);
+    var scope = context.scope();
+    var account = context.account();
 
     var claims =
         JwtClaimsSet.builder()
             .issuer(properties.issuer())
             .audience(List.of(properties.audience()))
             .id(UUID.randomUUID().toString())
-            .subject(context.account().getId().toString())
+            .subject(account.getId().toString())
             .issuedAt(now)
             .expiresAt(expiresAt)
-            .claim(TokenClaims.ROLES, List.of(context.account().getAccountRole().name()))
             .claim(TokenClaims.SESSION_ID, context.session().getId().toString())
-            .claim(TokenClaims.SCOPE, scope.claimValue());
+            .claim(TokenClaims.SCOPE, scope.claimValue())
+            .claim(TokenClaims.HOUSEHOLD_ID, account.getHouseholdId().toString())
+            .claim(TokenClaims.HOUSEHOLD_ROLE, account.getHouseholdRole().name())
+            .claim(TokenClaims.SERVER_ADMIN, account.isServerAdmin())
+            .claim(TokenClaims.CONTEXT_HOUSEHOLD_ID, context.contextHouseholdId().toString());
 
-    if (scope != TokenScope.ACCOUNT) {
-      addHouseholdClaims(claims, context);
-    }
     if (scope == TokenScope.PROFILE) {
-      addProfileClaims(claims, context);
+      claims.claim(TokenClaims.PROFILE_ID, context.profileId().toString());
     }
 
     var jwt =
@@ -79,39 +79,5 @@ public class AccessTokenIssuer {
         .expiresAt(expiresAt)
         .scope(scope)
         .build();
-  }
-
-  private TokenScope resolveScope(TokenContext context) {
-    // TokenContext's constructor guarantees a profile id always rides a household id.
-    if (context.profileId() != null) {
-      return TokenScope.PROFILE;
-    }
-
-    if (context.householdId() != null) {
-      return TokenScope.HOUSEHOLD;
-    }
-
-    return TokenScope.ACCOUNT;
-  }
-
-  private void addHouseholdClaims(JwtClaimsSet.Builder claims, TokenContext context) {
-    var membership =
-        membershipRepository
-            .findByAccountIdAndHouseholdId(context.account().getId(), context.householdId())
-            .orElseThrow(HouseholdAccessDeniedException::new);
-
-    claims
-        .claim(TokenClaims.HOUSEHOLD_ID, context.householdId().toString())
-        .claim(TokenClaims.HOUSEHOLD_ROLE, membership.getHouseholdRole().name());
-  }
-
-  private void addProfileClaims(JwtClaimsSet.Builder claims, TokenContext context) {
-    // A single account_profile row structurally implies membership AND profile-in-household.
-    accountProfileRepository
-        .findByAccountIdAndHouseholdIdAndProfileId(
-            context.account().getId(), context.householdId(), context.profileId())
-        .orElseThrow(ProfileAccessDeniedException::new);
-
-    claims.claim(TokenClaims.PROFILE_ID, context.profileId().toString());
   }
 }

@@ -7,8 +7,9 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
-import com.streamarr.server.jooq.generated.tables.HouseholdMembership.HouseholdMembershipPath;
+import com.streamarr.server.jooq.generated.tables.HouseholdGuard.HouseholdGuardPath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
+import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
 import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
 import com.streamarr.server.jooq.generated.tables.records.HouseholdRecord;
 
@@ -175,22 +176,22 @@ public class Household extends TableImpl<HouseholdRecord> {
      */
     public AuthSessionPath authSession() {
         if (_authSession == null)
-            _authSession = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_HOUSEHOLD.getInverseKey());
+            _authSession = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_CONTEXT_HOUSEHOLD.getInverseKey());
 
         return _authSession;
     }
 
-    private transient HouseholdMembershipPath _householdMembership;
+    private transient HouseholdGuardPath _householdGuard;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.household_membership</code> table
+     * <code>public.household_guard</code> table
      */
-    public HouseholdMembershipPath householdMembership() {
-        if (_householdMembership == null)
-            _householdMembership = new HouseholdMembershipPath(this, null, Keys.HOUSEHOLD_MEMBERSHIP__FK_HOUSEHOLD_MEMBERSHIP_HOUSEHOLD.getInverseKey());
+    public HouseholdGuardPath householdGuard() {
+        if (_householdGuard == null)
+            _householdGuard = new HouseholdGuardPath(this, null, Keys.HOUSEHOLD_GUARD__FK_HOUSEHOLD_GUARD_HOUSEHOLD.getInverseKey());
 
-        return _householdMembership;
+        return _householdGuard;
     }
 
     private transient ProfilePath _profile;
@@ -206,12 +207,30 @@ public class Household extends TableImpl<HouseholdRecord> {
         return _profile;
     }
 
+    private transient ProfileHouseholdSharePath _profileHouseholdShare;
+
     /**
-     * Get the implicit many-to-many join path to the
+     * Get the implicit to-many join path to the
+     * <code>public.profile_household_share</code> table
+     */
+    public ProfileHouseholdSharePath profileHouseholdShare() {
+        if (_profileHouseholdShare == null)
+            _profileHouseholdShare = new ProfileHouseholdSharePath(this, null, Keys.PROFILE_HOUSEHOLD_SHARE__FK_PROFILE_HOUSEHOLD_SHARE_HOUSEHOLD.getInverseKey());
+
+        return _profileHouseholdShare;
+    }
+
+    private transient UserAccountPath _userAccount;
+
+    /**
+     * Get the implicit to-many join path to the
      * <code>public.user_account</code> table
      */
     public UserAccountPath userAccount() {
-        return householdMembership().userAccount();
+        if (_userAccount == null)
+            _userAccount = new UserAccountPath(this, null, Keys.USER_ACCOUNT__FK_USER_ACCOUNT_HOUSEHOLD.getInverseKey());
+
+        return _userAccount;
     }
 
     @Override

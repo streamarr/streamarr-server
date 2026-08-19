@@ -10,12 +10,11 @@ import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
-import com.streamarr.server.fixtures.AccountFixture;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
-import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.AuthTestSupportConfig;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -40,16 +39,20 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 
 @Tag("IntegrationTest")
 @DisplayName("Device Redemption Concurrency Integration Tests")
+@Import(AuthTestSupportConfig.class)
 class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   private static final int POLLERS = 8;
 
   @Autowired private DeviceAuthorizationService deviceAuthorizationService;
+
+  @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private DeviceAuthorizationRepository authorizationRepository;
 
@@ -70,7 +73,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     authorizationRepository.deleteAll();
     for (var accountId : accountIds) {
       // FK cascades sweep auth_session and refresh_token rows.
-      userAccountRepository.deleteById(accountId);
+      authTestSupport.deleteAccount(accountId);
     }
     accountIds.clear();
   }
@@ -87,13 +90,8 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     @Bean
     @Primary
     GatedAccessTokenIssuer gatedAccessTokenIssuer(
-        JwtEncoder jwtEncoder,
-        AuthTokenProperties properties,
-        Clock clock,
-        HouseholdMembershipRepository membershipRepository,
-        AccountProfileRepository accountProfileRepository) {
-      return new GatedAccessTokenIssuer(
-          jwtEncoder, properties, clock, membershipRepository, accountProfileRepository);
+        JwtEncoder jwtEncoder, AuthTokenProperties properties, Clock clock) {
+      return new GatedAccessTokenIssuer(jwtEncoder, properties, clock);
     }
   }
 
@@ -175,13 +173,8 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
     private final AtomicBoolean failNextIssue = new AtomicBoolean();
 
-    GatedAccessTokenIssuer(
-        JwtEncoder jwtEncoder,
-        AuthTokenProperties properties,
-        Clock clock,
-        HouseholdMembershipRepository membershipRepository,
-        AccountProfileRepository accountProfileRepository) {
-      super(jwtEncoder, properties, clock, membershipRepository, accountProfileRepository);
+    GatedAccessTokenIssuer(JwtEncoder jwtEncoder, AuthTokenProperties properties, Clock clock) {
+      super(jwtEncoder, properties, clock);
     }
 
     @Override
@@ -295,7 +288,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
     // A deleted approver no longer authorizes consumption. No write is attempted, so this is a
     // refusal path rather than transaction-rollback evidence.
-    userAccountRepository.deleteById(approver.getId());
+    authTestSupport.deleteAccount(approver.getId());
     accountIds.remove(approver.getId());
 
     assertThat(deviceAuthorizationService.redeem(issued.deviceCode()))
@@ -373,7 +366,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   }
 
   private UserAccount seedApprover() {
-    var approver = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var approver = authTestSupport.createAccount();
     accountIds.add(approver.getId());
     return approver;
   }

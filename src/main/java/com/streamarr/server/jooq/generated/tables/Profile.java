@@ -6,10 +6,13 @@ package com.streamarr.server.jooq.generated.tables;
 
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
-import com.streamarr.server.jooq.generated.tables.AccountProfile.AccountProfilePath;
+import com.streamarr.server.jooq.generated.enums.ProfileKind;
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
+import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
+import com.streamarr.server.jooq.generated.tables.ProfileManager.ProfileManagerPath;
 import com.streamarr.server.jooq.generated.tables.SessionProgress.SessionProgressPath;
+import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
 import com.streamarr.server.jooq.generated.tables.WatchHistory.WatchHistoryPath;
 import com.streamarr.server.jooq.generated.tables.records.ProfileRecord;
 
@@ -19,6 +22,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
@@ -98,6 +102,31 @@ public class Profile extends TableImpl<ProfileRecord> {
      */
     public final TableField<ProfileRecord, String> NAME = createField(DSL.name("name"), SQLDataType.CLOB.nullable(false), this, "");
 
+    /**
+     * The column <code>public.profile.kind</code>.
+     */
+    public final TableField<ProfileRecord, ProfileKind> KIND = createField(DSL.name("kind"), SQLDataType.VARCHAR.nullable(false).defaultValue(DSL.field(DSL.raw("'ADULT'::profile_kind"), SQLDataType.VARCHAR)).asEnumDataType(ProfileKind.class), this, "");
+
+    /**
+     * The column <code>public.profile.maximum_allowed_rating_age</code>.
+     */
+    public final TableField<ProfileRecord, Integer> MAXIMUM_ALLOWED_RATING_AGE = createField(DSL.name("maximum_allowed_rating_age"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.profile.pin_hash</code>.
+     */
+    public final TableField<ProfileRecord, String> PIN_HASH = createField(DSL.name("pin_hash"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.profile.picture</code>.
+     */
+    public final TableField<ProfileRecord, String> PICTURE = createField(DSL.name("picture"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.profile.restricted</code>.
+     */
+    public final TableField<ProfileRecord, Boolean> RESTRICTED = createField(DSL.name("restricted"), SQLDataType.BOOLEAN, this, "");
+
     private Profile(Name alias, Table<ProfileRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -172,7 +201,7 @@ public class Profile extends TableImpl<ProfileRecord> {
 
     @Override
     public List<UniqueKey<ProfileRecord>> getUniqueKeys() {
-        return Arrays.asList(Keys.UQ_PROFILE_HOUSEHOLD_NAME, Keys.UQ_PROFILE_ID_HOUSEHOLD);
+        return Arrays.asList(Keys.UQ_PROFILE_ID_HOUSEHOLD);
     }
 
     @Override
@@ -192,45 +221,43 @@ public class Profile extends TableImpl<ProfileRecord> {
         return _household;
     }
 
-    private transient AccountProfilePath _accountProfile;
+    private transient AuthSessionPath _authSession;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.account_profile</code> table
+     * <code>public.auth_session</code> table
      */
-    public AccountProfilePath accountProfile() {
-        if (_accountProfile == null)
-            _accountProfile = new AccountProfilePath(this, null, Keys.ACCOUNT_PROFILE__FK_ACCOUNT_PROFILE_PROFILE.getInverseKey());
+    public AuthSessionPath authSession() {
+        if (_authSession == null)
+            _authSession = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE.getInverseKey());
 
-        return _accountProfile;
+        return _authSession;
     }
 
-    private transient AuthSessionPath _fkAuthSessionActiveProfile;
+    private transient ProfileHouseholdSharePath _profileHouseholdShare;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.auth_session</code> table, via the
-     * <code>fk_auth_session_active_profile</code> key
+     * <code>public.profile_household_share</code> table
      */
-    public AuthSessionPath fkAuthSessionActiveProfile() {
-        if (_fkAuthSessionActiveProfile == null)
-            _fkAuthSessionActiveProfile = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE.getInverseKey());
+    public ProfileHouseholdSharePath profileHouseholdShare() {
+        if (_profileHouseholdShare == null)
+            _profileHouseholdShare = new ProfileHouseholdSharePath(this, null, Keys.PROFILE_HOUSEHOLD_SHARE__FK_PROFILE_HOUSEHOLD_SHARE_PROFILE.getInverseKey());
 
-        return _fkAuthSessionActiveProfile;
+        return _profileHouseholdShare;
     }
 
-    private transient AuthSessionPath _fkAuthSessionActiveProfileHousehold;
+    private transient ProfileManagerPath _profileManager;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.auth_session</code> table, via the
-     * <code>fk_auth_session_active_profile_household</code> key
+     * <code>public.profile_manager</code> table
      */
-    public AuthSessionPath fkAuthSessionActiveProfileHousehold() {
-        if (_fkAuthSessionActiveProfileHousehold == null)
-            _fkAuthSessionActiveProfileHousehold = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE_HOUSEHOLD.getInverseKey());
+    public ProfileManagerPath profileManager() {
+        if (_profileManager == null)
+            _profileManager = new ProfileManagerPath(this, null, Keys.PROFILE_MANAGER__FK_PROFILE_MANAGER_PROFILE.getInverseKey());
 
-        return _fkAuthSessionActiveProfileHousehold;
+        return _profileManager;
     }
 
     private transient SessionProgressPath _sessionProgress;
@@ -246,6 +273,19 @@ public class Profile extends TableImpl<ProfileRecord> {
         return _sessionProgress;
     }
 
+    private transient UserAccountPath _userAccount;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.user_account</code> table
+     */
+    public UserAccountPath userAccount() {
+        if (_userAccount == null)
+            _userAccount = new UserAccountPath(this, null, Keys.USER_ACCOUNT__FK_USER_ACCOUNT_PERSONAL_PROFILE.getInverseKey());
+
+        return _userAccount;
+    }
+
     private transient WatchHistoryPath _watchHistory;
 
     /**
@@ -257,6 +297,15 @@ public class Profile extends TableImpl<ProfileRecord> {
             _watchHistory = new WatchHistoryPath(this, null, Keys.WATCH_HISTORY__FK_WATCH_HISTORY_PROFILE.getInverseKey());
 
         return _watchHistory;
+    }
+
+    @Override
+    public List<Check<ProfileRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chk_profile_maximum_allowed_rating_age"), "(((maximum_allowed_rating_age IS NULL) OR (maximum_allowed_rating_age >= 0)))", true),
+            Internal.createCheck(this, DSL.name("chk_profile_name_not_blank"), "((btrim(name) <> ''::text))", true),
+            Internal.createCheck(this, DSL.name("chk_profile_pin_hash_not_blank"), "(((pin_hash IS NULL) OR (btrim(pin_hash) <> ''::text)))", true)
+        );
     }
 
     @Override

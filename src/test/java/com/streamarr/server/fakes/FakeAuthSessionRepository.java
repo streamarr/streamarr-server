@@ -2,7 +2,6 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
-import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import java.time.Instant;
 import java.util.List;
@@ -13,8 +12,11 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
     implements AuthSessionRepository {
 
   @Override
-  public boolean hasLivePlaybackAuthority(PlaybackAuthority authority) {
-    throw new UnsupportedOperationException("Live playback authority is not configured");
+  public boolean isLive(UUID sessionId, UUID accountId) {
+    return findById(sessionId)
+        .filter(session -> session.getAccountId().equals(accountId))
+        .filter(session -> session.getRevokedAt() == null)
+        .isPresent();
   }
 
   @Override
@@ -54,8 +56,8 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
         .filter(stored -> stored.getRevokedAt() == null)
         .map(
             stored -> {
-              stored.setActiveHouseholdId(session.getActiveHouseholdId());
-              stored.setActiveProfileId(session.getActiveProfileId());
+              stored.setContextHouseholdId(session.getContextHouseholdId());
+              stored.setSelectedProfileId(session.getSelectedProfileId());
               return true;
             })
         .orElse(false);

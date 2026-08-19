@@ -47,9 +47,6 @@ class HttpPlaybackRevocationIT extends AbstractIntegrationTest {
   @BeforeEach
   void setUp() {
     identity = authTestSupport.createIdentity();
-    identity.session().setActiveHouseholdId(identity.household().getId());
-    identity.session().setActiveProfileId(identity.profile().getId());
-    authSessionRepository.updateSelectionIfLive(identity.session(), Instant.now());
     streamSession = defaultSessionBuilder().authority(authority()).build();
     runtimeRegistry.save(streamSession);
   }

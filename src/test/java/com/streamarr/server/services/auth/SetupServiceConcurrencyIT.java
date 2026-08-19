@@ -9,8 +9,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
-import com.streamarr.server.repositories.auth.HouseholdRepository;
-import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.support.AuthTestSupport;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -34,11 +33,9 @@ class SetupServiceConcurrencyIT extends AbstractIntegrationTest {
 
   @Autowired private SetupService setupService;
 
-  @Autowired private UserAccountRepository userAccountRepository;
-
-  @Autowired private HouseholdRepository householdRepository;
-
   @Autowired private DSLContext dsl;
+
+  @Autowired private AuthTestSupport authTestSupport;
 
   private final List<SetupResult> completedSetups = new CopyOnWriteArrayList<>();
 
@@ -64,8 +61,7 @@ class SetupServiceConcurrencyIT extends AbstractIntegrationTest {
       dsl.deleteFrom(WATCH_HISTORY)
           .where(WATCH_HISTORY.PROFILE_ID.eq(setup.profile().getId()))
           .execute();
-      householdRepository.deleteById(setup.household().getId());
-      userAccountRepository.deleteById(setup.admin().getId());
+      authTestSupport.deleteAccount(setup.admin().getId());
     }
   }
 

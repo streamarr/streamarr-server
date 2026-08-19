@@ -28,9 +28,11 @@ public class AuthSession extends BaseAuditableEntity<AuthSession> {
 
   private String deviceName;
 
-  private UUID activeHouseholdId;
+  /** The one Household this session is using: membership by default, or a visited Household. */
+  private UUID contextHouseholdId;
 
-  private UUID activeProfileId;
+  /** The Profile selected through select-profile; null in Account scope. */
+  private UUID selectedProfileId;
 
   private Instant revokedAt;
 

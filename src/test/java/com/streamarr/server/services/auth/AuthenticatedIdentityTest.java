@@ -1,11 +1,13 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountScopedBuilder;
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.profileScopedBuilder;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.exceptions.ProfileRequiredException;
-import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -17,64 +19,30 @@ import org.springframework.security.oauth2.jwt.Jwt;
 class AuthenticatedIdentityTest {
 
   @Test
-  @DisplayName(
-      "Should reject account scope carrying household or profile identity when constructed")
-  void shouldRejectAccountScopeCarryingHouseholdOrProfileIdentityWhenConstructed() {
-    var identity = defaultIdentityBuilder().scope(TokenScope.ACCOUNT).streamSessionId(null);
-
-    assertThatThrownBy(identity::build)
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("Account scope");
-  }
-
-  @Test
-  @DisplayName("Should reject household scope carrying profile identity when constructed")
-  void shouldRejectHouseholdScopeCarryingProfileIdentityWhenConstructed() {
-    var identity = defaultIdentityBuilder().scope(TokenScope.HOUSEHOLD).streamSessionId(null);
-
-    assertThatThrownBy(identity::build)
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("Household scope");
-  }
-
-  @Test
-  @DisplayName("Should reject profile scope without profile identity when constructed")
-  void shouldRejectProfileScopeWithoutProfileIdentityWhenConstructed() {
-    var identity =
-        defaultIdentityBuilder().scope(TokenScope.PROFILE).profileId(null).streamSessionId(null);
-
-    assertThatThrownBy(identity::build)
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("Profile scope");
-  }
-
-  @Test
-  @DisplayName("Should reject profile identity without household context when constructed")
-  void shouldRejectProfileIdentityWithoutHouseholdContextWhenConstructed() {
-    var identity =
-        defaultIdentityBuilder().scope(TokenScope.PROFILE).householdId(null).streamSessionId(null);
+  @DisplayName("Should reject account scope carrying a selected profile when constructed")
+  void shouldRejectAccountScopeCarryingSelectedProfileWhenConstructed() {
+    var identity = accountScopedBuilder().profileId(UUID.randomUUID());
 
     assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  @DisplayName("Should reject profile identity without household role when constructed")
-  void shouldRejectProfileIdentityWithoutHouseholdRoleWhenConstructed() {
-    var identity =
-        defaultIdentityBuilder()
-            .scope(TokenScope.PROFILE)
-            .householdRole(null)
-            .streamSessionId(null);
+  @DisplayName("Should reject profile scope without a selected profile when constructed")
+  void shouldRejectProfileScopeWithoutSelectedProfileWhenConstructed() {
+    var identity = profileScopedBuilder().profileId(null);
 
     assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  @DisplayName("Should reject playback identity without profile identity when constructed")
-  void shouldRejectPlaybackIdentityWithoutProfileIdentityWhenConstructed() {
-    var identity = defaultIdentityBuilder().profileId(null);
-
-    assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
+  @DisplayName("Should require the membership household, role, and context household")
+  void shouldRequireMembershipHouseholdRoleAndContextHousehold() {
+    assertThatThrownBy(() -> profileScopedBuilder().householdId(null).build())
+        .isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(() -> profileScopedBuilder().householdRole(null).build())
+        .isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(() -> profileScopedBuilder().contextHouseholdId(null).build())
+        .isInstanceOf(NullPointerException.class);
   }
 
   @Test
@@ -88,52 +56,71 @@ class AuthenticatedIdentityTest {
   @Test
   @DisplayName("Should reject non-playback identity carrying a stream session when constructed")
   void shouldRejectNonPlaybackIdentityCarryingStreamSessionWhenConstructed() {
-    var identity =
-        defaultIdentityBuilder().scope(TokenScope.PROFILE).streamSessionId(UUID.randomUUID());
+    var identity = profileScopedBuilder().streamSessionId(UUID.randomUUID());
 
     assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  @DisplayName("Should reject a token missing the roles claim when constructed")
-  void shouldRejectTokenMissingRolesClaimWhenConstructed() {
+  @DisplayName("Should read every signed fact from the token claims")
+  void shouldReadEverySignedFactFromTokenClaims() {
+    var accountId = UUID.randomUUID();
+    var sessionId = UUID.randomUUID();
+    var householdId = UUID.randomUUID();
+    var visitedId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
+    var jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "none")
+            .subject(accountId.toString())
+            .claim(TokenClaims.SESSION_ID, sessionId.toString())
+            .claim(TokenClaims.SCOPE, "profile")
+            .claim(TokenClaims.HOUSEHOLD_ID, householdId.toString())
+            .claim(TokenClaims.HOUSEHOLD_ROLE, "ADMIN")
+            .claim(TokenClaims.SERVER_ADMIN, true)
+            .claim(TokenClaims.CONTEXT_HOUSEHOLD_ID, visitedId.toString())
+            .claim(TokenClaims.PROFILE_ID, profileId.toString())
+            .build();
+
+    var identity = AuthenticatedIdentity.fromJwt(jwt);
+
+    assertThat(identity.accountId()).isEqualTo(accountId);
+    assertThat(identity.authSessionId()).isEqualTo(sessionId);
+    assertThat(identity.scope()).isEqualTo(TokenScope.PROFILE);
+    assertThat(identity.householdId()).isEqualTo(householdId);
+    assertThat(identity.householdRole()).isEqualTo(HouseholdRole.ADMIN);
+    assertThat(identity.serverAdmin()).isTrue();
+    assertThat(identity.contextHouseholdId()).isEqualTo(visitedId);
+    assertThat(identity.profileId()).isEqualTo(profileId);
+    assertThat(identity.playbackAuthority().householdId()).isEqualTo(visitedId);
+  }
+
+  @Test
+  @DisplayName("Should read a missing ServerAdmin claim as not admin")
+  void shouldReadMissingServerAdminClaimAsNotAdmin() {
+    var householdId = UUID.randomUUID();
     var jwt =
         Jwt.withTokenValue("token")
             .header("alg", "none")
             .subject(UUID.randomUUID().toString())
             .claim(TokenClaims.SESSION_ID, UUID.randomUUID().toString())
+            .claim(TokenClaims.SCOPE, "account")
+            .claim(TokenClaims.HOUSEHOLD_ID, householdId.toString())
+            .claim(TokenClaims.HOUSEHOLD_ROLE, "MEMBER")
+            .claim(TokenClaims.CONTEXT_HOUSEHOLD_ID, householdId.toString())
             .build();
 
-    assertThatThrownBy(() -> AuthenticatedIdentity.fromJwt(jwt))
-        .isInstanceOf(AuthenticationRequiredException.class);
+    var identity = AuthenticatedIdentity.fromJwt(jwt);
+
+    assertThat(identity.serverAdmin()).isFalse();
+    assertThat(identity.scope()).isEqualTo(TokenScope.ACCOUNT);
+    assertThat(identity.profileId()).isNull();
   }
 
   @Test
-  @DisplayName("Should reject a token with an empty roles claim when constructed")
-  void shouldRejectTokenWithEmptyRolesClaimWhenConstructed() {
-    var jwt =
-        Jwt.withTokenValue("token")
-            .header("alg", "none")
-            .subject(UUID.randomUUID().toString())
-            .claim(TokenClaims.ROLES, List.of())
-            .build();
-
-    assertThatThrownBy(() -> AuthenticatedIdentity.fromJwt(jwt))
-        .isInstanceOf(AuthenticationRequiredException.class);
-  }
-
-  @Test
-  @DisplayName(
-      "Should reject building a playback authority for an account-scoped identity when constructed")
-  void shouldRejectPlaybackAuthorityForAccountScopedIdentityWhenConstructed() {
-    var identity =
-        defaultIdentityBuilder()
-            .scope(TokenScope.ACCOUNT)
-            .householdId(null)
-            .householdRole(null)
-            .profileId(null)
-            .streamSessionId(null)
-            .build();
+  @DisplayName("Should reject building a playback authority for an account-scoped identity")
+  void shouldRejectPlaybackAuthorityForAccountScopedIdentity() {
+    var identity = accountScopedBuilder().build();
 
     assertThatThrownBy(identity::playbackAuthority).isInstanceOf(ProfileRequiredException.class);
   }

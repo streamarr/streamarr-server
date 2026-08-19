@@ -2,22 +2,22 @@ package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
-import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface AuthSessionRepositoryCustom {
 
-  boolean hasLivePlaybackAuthority(PlaybackAuthority authority);
+  /** Whether the session exists, belongs to the Account, and is unrevoked — read as a scalar. */
+  boolean isLive(UUID sessionId, UUID accountId);
 
   /** Revokes a live session, returning false when it was missing or already revoked. */
   boolean revoke(UUID sessionId, SessionRevocationReason reason, Instant now);
 
   /**
-   * Persists only the remembered household/profile selection when the session is still live.
-   * Returns false when the session is missing or revoked; revocation fields are never written from
-   * the supplied entity.
+   * Persists only the remembered context Household and selected Profile when the session is still
+   * live. Returns false when the session is missing or revoked; revocation fields are never written
+   * from the supplied entity.
    */
   boolean updateSelectionIfLive(AuthSession session, Instant now);
 

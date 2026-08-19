@@ -1,0 +1,221 @@
+package com.streamarr.server.services.identity;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.streamarr.server.config.security.AuthThrottleProperties;
+import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.InvalidProfilePinException;
+import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.ProfileLockedException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
+import com.streamarr.server.fakes.FakeAuthSessionRepository;
+import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
+import com.streamarr.server.fakes.FakeProfileRepository;
+import com.streamarr.server.fakes.FakeUserAccountRepository;
+import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.CredentialGuessThrottle;
+import com.streamarr.server.services.auth.ProfilePinVerifier;
+import com.streamarr.server.services.auth.TokenScope;
+import com.streamarr.server.services.authorization.Decision;
+import com.streamarr.server.services.authorization.Intent;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+@Tag("UnitTest")
+@DisplayName("Profile Selection Service Tests")
+class ProfileSelectionServiceTest {
+
+  private final FakeProfileHouseholdShareRepository shares =
+      new FakeProfileHouseholdShareRepository();
+  private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
+  private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
+  private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
+  private final PasswordEncoder encoder = new PlainEncoder();
+  private final CredentialGuessThrottle throttle =
+      new CredentialGuessThrottle(
+          AuthThrottleProperties.builder().maxAttempts(2).window(Duration.ofMinutes(15)).build(),
+          new MutableClock());
+  private final LiveSessions liveSessions = new LiveSessions(accounts, sessions);
+  private final SessionContextService sessionContext =
+      new SessionContextService(liveSessions, accounts, profiles, sessions, new MutableClock());
+
+  private UserAccount account;
+  private AuthSession session;
+  private Profile personal;
+  private FakeAuthorizationService authorization;
+  private ProfileSelectionService service;
+
+  @BeforeEach
+  void setUp() {
+    account = accounts.save(AccountFixture.defaultAccountBuilder().build());
+    personal =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder()
+                .id(account.getPersonalProfileId())
+                .householdId(account.getHouseholdId())
+                .build());
+    shares.share(personal.getId(), account.getHouseholdId(), true);
+    session =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(account.getId())
+                .contextHouseholdId(account.getHouseholdId())
+                .build());
+    authorization = new FakeAuthorizationService(identity());
+    service =
+        new ProfileSelectionService(
+            profiles, new ProfilePinVerifier(encoder, throttle), authorization, sessionContext);
+  }
+
+  @Test
+  @DisplayName("Should record the selection and return profile context when allowed without a PIN")
+  void shouldRecordSelectionAndReturnProfileContextWhenAllowedWithoutPin() {
+    var context = service.selectProfile(identity(), command(personal.getId(), null));
+
+    assertThat(context.profileId()).isEqualTo(personal.getId());
+    assertThat(context.scope()).isEqualTo(TokenScope.PROFILE);
+    assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId())
+        .isEqualTo(personal.getId());
+    assertThat(authorization.recordedIntents())
+        .containsExactly(new Intent.SelectProfile(personal.getId(), false));
+  }
+
+  @Test
+  @DisplayName("Should refuse a Profile that is not available in the context Household")
+  void shouldRefuseProfileThatIsNotAvailableInContextHousehold() {
+    var elsewhere = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+
+    assertThatThrownBy(() -> service.selectProfile(identity(), command(elsewhere.getId(), null)))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+    assertThat(authorization.recordedIntents()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should require the PIN when the Profile has one")
+  void shouldRequirePinWhenProfileHasOne() {
+    pin(personal, "4242");
+
+    assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), null)))
+        .isInstanceOf(InvalidProfilePinException.class);
+    assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should reject a wrong PIN and throttle repeated guesses")
+  void shouldRejectWrongPinAndThrottleRepeatedGuesses() {
+    pin(personal, "4242");
+
+    for (var attempt = 0; attempt < 2; attempt++) {
+      assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), "0000")))
+          .isInstanceOf(InvalidProfilePinException.class);
+    }
+    assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), "4242")))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should pass a verified PIN to the decision and select the Profile")
+  void shouldPassVerifiedPinToDecisionAndSelectProfile() {
+    pin(personal, "4242");
+
+    var context = service.selectProfile(identity(), command(personal.getId(), "4242"));
+
+    assertThat(context.profileId()).isEqualTo(personal.getId());
+    assertThat(authorization.recordedIntents())
+        .containsExactly(new Intent.SelectProfile(personal.getId(), true));
+  }
+
+  @Test
+  @DisplayName("Should report the lock when Cedar denies a Profile the safety rule locks")
+  void shouldReportLockWhenCedarDeniesProfileSafetyRuleLocks() {
+    var kid =
+        profiles.save(
+            ProfileFixture.kidProfileBuilder().householdId(account.getHouseholdId()).build());
+    shares.share(kid.getId(), account.getHouseholdId(), false);
+    authorization.denyAll();
+
+    // The unpinned Adult is locked because a Kid is available.
+    assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), null)))
+        .isInstanceOf(ProfileLockedException.class);
+  }
+
+  @Test
+  @DisplayName("Should report access denied when Cedar denies for any other reason")
+  void shouldReportAccessDeniedWhenCedarDeniesForAnyOtherReason() {
+    authorization.denyAll();
+
+    assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), null)))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when no decision could be made")
+  void shouldFailClosedWhenNoDecisionCouldBeMade() {
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+
+    assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), null)))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("Should read a revoked session as unauthenticated when recording the selection")
+  void shouldReadRevokedSessionAsUnauthenticatedWhenRecordingSelection() {
+    sessions.revoke(session.getId(), SessionRevocationReason.LOGOUT, Instant.now());
+
+    assertThatThrownBy(() -> service.selectProfile(identity(), command(personal.getId(), null)))
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  private void pin(Profile profile, String pin) {
+    profile.setPinHash(encoder.encode(pin));
+    profiles.save(profile);
+  }
+
+  private SelectProfileCommand command(UUID profileId, String pin) {
+    return SelectProfileCommand.builder()
+        .accountId(account.getId())
+        .sessionId(session.getId())
+        .profileId(profileId)
+        .pin(pin)
+        .build();
+  }
+
+  private AuthenticatedIdentity identity() {
+    return AuthenticatedIdentity.builder()
+        .accountId(account.getId())
+        .authSessionId(session.getId())
+        .scope(TokenScope.ACCOUNT)
+        .householdId(account.getHouseholdId())
+        .householdRole(account.getHouseholdRole())
+        .contextHouseholdId(account.getHouseholdId())
+        .build();
+  }
+
+  private static final class PlainEncoder implements PasswordEncoder {
+    @Override
+    public String encode(CharSequence rawPassword) {
+      return "pin:" + rawPassword;
+    }
+
+    @Override
+    public boolean matches(CharSequence rawPassword, String encodedPassword) {
+      return encode(rawPassword).equals(encodedPassword);
+    }
+  }
+}

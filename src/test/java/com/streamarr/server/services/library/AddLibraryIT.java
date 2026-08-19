@@ -9,7 +9,6 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
-import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -139,11 +138,12 @@ class AddLibraryIT extends AbstractIntegrationTest {
       AuthTestSupport.TestIdentity identity) {
     return AuthenticatedIdentity.builder()
         .accountId(identity.account().getId())
-        .role(AccountRole.ADMIN)
         .authSessionId(identity.session().getId())
         .scope(TokenScope.PROFILE)
         .householdId(identity.household().getId())
-        .householdRole(HouseholdRole.OWNER)
+        .householdRole(HouseholdRole.ADMIN)
+        .serverAdmin(true)
+        .contextHouseholdId(identity.household().getId())
         .profileId(identity.profile().getId())
         .build();
   }

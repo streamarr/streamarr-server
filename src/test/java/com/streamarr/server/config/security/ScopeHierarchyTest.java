@@ -21,7 +21,7 @@ class ScopeHierarchyTest {
   @ParameterizedTest(name = "Should grant account scope when authority is {0}")
   @EnumSource(
       value = TokenScope.class,
-      names = {"PROFILE", "HOUSEHOLD", "ACCOUNT"})
+      names = {"PROFILE", "ACCOUNT"})
   void shouldGrantAccountScopeWhenAuthorityAtOrAboveAccount(TokenScope scope) {
     var accountCheck = factory.hasAuthority(TokenScope.ACCOUNT.authority());
 
@@ -44,7 +44,7 @@ class ScopeHierarchyTest {
   @ParameterizedTest(name = "Should deny playback scope when authority is {0}")
   @EnumSource(
       value = TokenScope.class,
-      names = {"ACCOUNT", "HOUSEHOLD", "PROFILE"})
+      names = {"ACCOUNT", "PROFILE"})
   void shouldDenyPlaybackScopeWhenAuthorityIsApiScoped(TokenScope scope) {
     var playbackCheck = factory.hasAuthority(TokenScope.PLAYBACK.authority());
 

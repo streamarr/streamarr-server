@@ -19,10 +19,8 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
-import com.streamarr.server.fakes.FakeAccountProfileRepository;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeProfileRepository;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
@@ -95,18 +93,12 @@ class StreamingResolverTest {
       return new PlaybackTokenIssuer(
           crypto.jwtEncoder(crypto.tokenSigningKeys(tokenProperties())),
           tokenProperties(),
-          Clock.systemUTC(),
-          authority -> true);
+          Clock.systemUTC());
     }
 
     @Bean
     ProfileRepository profileRepository() {
       return new FakeProfileRepository();
-    }
-
-    @Bean
-    AccountProfileRepository accountProfileRepository() {
-      return new FakeAccountProfileRepository();
     }
 
     @Bean

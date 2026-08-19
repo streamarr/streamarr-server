@@ -4,7 +4,6 @@
 package com.streamarr.server.jooq.generated;
 
 
-import com.streamarr.server.jooq.generated.tables.AccountProfile;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
@@ -14,7 +13,7 @@ import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
 import com.streamarr.server.jooq.generated.tables.Household;
-import com.streamarr.server.jooq.generated.tables.HouseholdMembership;
+import com.streamarr.server.jooq.generated.tables.HouseholdGuard;
 import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
@@ -26,11 +25,14 @@ import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
 import com.streamarr.server.jooq.generated.tables.Person;
 import com.streamarr.server.jooq.generated.tables.Profile;
+import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare;
+import com.streamarr.server.jooq.generated.tables.ProfileManager;
 import com.streamarr.server.jooq.generated.tables.Rating;
 import com.streamarr.server.jooq.generated.tables.RefreshToken;
 import com.streamarr.server.jooq.generated.tables.Review;
 import com.streamarr.server.jooq.generated.tables.SchemaHistory;
 import com.streamarr.server.jooq.generated.tables.Season;
+import com.streamarr.server.jooq.generated.tables.SecurityAuditEvent;
 import com.streamarr.server.jooq.generated.tables.Series;
 import com.streamarr.server.jooq.generated.tables.SeriesCompany;
 import com.streamarr.server.jooq.generated.tables.SeriesDirector;
@@ -40,7 +42,6 @@ import com.streamarr.server.jooq.generated.tables.ServerBootstrap;
 import com.streamarr.server.jooq.generated.tables.SessionProgress;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
-import com.streamarr.server.jooq.generated.tables.records.AccountProfileRecord;
 import com.streamarr.server.jooq.generated.tables.records.AuthSessionRecord;
 import com.streamarr.server.jooq.generated.tables.records.BaseCollectableRecord;
 import com.streamarr.server.jooq.generated.tables.records.CompanyRecord;
@@ -49,7 +50,7 @@ import com.streamarr.server.jooq.generated.tables.records.EpisodeRecord;
 import com.streamarr.server.jooq.generated.tables.records.ExternalIdentifierRecord;
 import com.streamarr.server.jooq.generated.tables.records.FileProcessingTaskRecord;
 import com.streamarr.server.jooq.generated.tables.records.GenreRecord;
-import com.streamarr.server.jooq.generated.tables.records.HouseholdMembershipRecord;
+import com.streamarr.server.jooq.generated.tables.records.HouseholdGuardRecord;
 import com.streamarr.server.jooq.generated.tables.records.HouseholdRecord;
 import com.streamarr.server.jooq.generated.tables.records.ImageRecord;
 import com.streamarr.server.jooq.generated.tables.records.LibraryMetadataRecord;
@@ -61,12 +62,15 @@ import com.streamarr.server.jooq.generated.tables.records.MovieGenreRecord;
 import com.streamarr.server.jooq.generated.tables.records.MoviePersonRecord;
 import com.streamarr.server.jooq.generated.tables.records.MovieRecord;
 import com.streamarr.server.jooq.generated.tables.records.PersonRecord;
+import com.streamarr.server.jooq.generated.tables.records.ProfileHouseholdShareRecord;
+import com.streamarr.server.jooq.generated.tables.records.ProfileManagerRecord;
 import com.streamarr.server.jooq.generated.tables.records.ProfileRecord;
 import com.streamarr.server.jooq.generated.tables.records.RatingRecord;
 import com.streamarr.server.jooq.generated.tables.records.RefreshTokenRecord;
 import com.streamarr.server.jooq.generated.tables.records.ReviewRecord;
 import com.streamarr.server.jooq.generated.tables.records.SchemaHistoryRecord;
 import com.streamarr.server.jooq.generated.tables.records.SeasonRecord;
+import com.streamarr.server.jooq.generated.tables.records.SecurityAuditEventRecord;
 import com.streamarr.server.jooq.generated.tables.records.SeriesCompanyRecord;
 import com.streamarr.server.jooq.generated.tables.records.SeriesDirectorRecord;
 import com.streamarr.server.jooq.generated.tables.records.SeriesGenreRecord;
@@ -96,8 +100,6 @@ public class Keys {
     // UNIQUE and PRIMARY KEY definitions
     // -------------------------------------------------------------------------
 
-    public static final UniqueKey<AccountProfileRecord> ACCOUNT_PROFILE_PKEY = Internal.createUniqueKey(AccountProfile.ACCOUNT_PROFILE, DSL.name("account_profile_pkey"), new TableField[] { AccountProfile.ACCOUNT_PROFILE.ID }, true);
-    public static final UniqueKey<AccountProfileRecord> UQ_ACCOUNT_PROFILE_ACCOUNT_PROFILE = Internal.createUniqueKey(AccountProfile.ACCOUNT_PROFILE, DSL.name("uq_account_profile_account_profile"), new TableField[] { AccountProfile.ACCOUNT_PROFILE.ACCOUNT_ID, AccountProfile.ACCOUNT_PROFILE.PROFILE_ID }, true);
     public static final UniqueKey<AuthSessionRecord> AUTH_SESSION_PKEY = Internal.createUniqueKey(AuthSession.AUTH_SESSION, DSL.name("auth_session_pkey"), new TableField[] { AuthSession.AUTH_SESSION.ID }, true);
     public static final UniqueKey<BaseCollectableRecord> BASE_COLLECTABLE_PKEY = Internal.createUniqueKey(BaseCollectable.BASE_COLLECTABLE, DSL.name("base_collectable_pkey"), new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true);
     public static final UniqueKey<CompanyRecord> COMPANY_PKEY = Internal.createUniqueKey(Company.COMPANY, DSL.name("company_pkey"), new TableField[] { Company.COMPANY.ID }, true);
@@ -113,8 +115,7 @@ public class Keys {
     public static final UniqueKey<GenreRecord> GENRE_PKEY = Internal.createUniqueKey(Genre.GENRE, DSL.name("genre_pkey"), new TableField[] { Genre.GENRE.ID }, true);
     public static final UniqueKey<GenreRecord> GENRE_SOURCE_ID_UNIQUE = Internal.createUniqueKey(Genre.GENRE, DSL.name("genre_source_id_unique"), new TableField[] { Genre.GENRE.SOURCE_ID }, true);
     public static final UniqueKey<HouseholdRecord> HOUSEHOLD_PKEY = Internal.createUniqueKey(Household.HOUSEHOLD, DSL.name("household_pkey"), new TableField[] { Household.HOUSEHOLD.ID }, true);
-    public static final UniqueKey<HouseholdMembershipRecord> HOUSEHOLD_MEMBERSHIP_PKEY = Internal.createUniqueKey(HouseholdMembership.HOUSEHOLD_MEMBERSHIP, DSL.name("household_membership_pkey"), new TableField[] { HouseholdMembership.HOUSEHOLD_MEMBERSHIP.ID }, true);
-    public static final UniqueKey<HouseholdMembershipRecord> UQ_HOUSEHOLD_MEMBERSHIP_ACCOUNT_HOUSEHOLD = Internal.createUniqueKey(HouseholdMembership.HOUSEHOLD_MEMBERSHIP, DSL.name("uq_household_membership_account_household"), new TableField[] { HouseholdMembership.HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID, HouseholdMembership.HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID }, true);
+    public static final UniqueKey<HouseholdGuardRecord> HOUSEHOLD_GUARD_PKEY = Internal.createUniqueKey(HouseholdGuard.HOUSEHOLD_GUARD, DSL.name("household_guard_pkey"), new TableField[] { HouseholdGuard.HOUSEHOLD_GUARD.HOUSEHOLD_ID }, true);
     public static final UniqueKey<ImageRecord> IMAGE_PKEY = Internal.createUniqueKey(Image.IMAGE, DSL.name("image_pkey"), new TableField[] { Image.IMAGE.ID }, true);
     public static final UniqueKey<LibraryRecord> LIBRARY_PKEY = Internal.createUniqueKey(Library.LIBRARY, DSL.name("library_pkey"), new TableField[] { Library.LIBRARY.ID }, true);
     public static final UniqueKey<LibraryMetadataRecord> LIBRARY_METADATA_LIBRARY_ID_LETTER_KEY = Internal.createUniqueKey(LibraryMetadata.LIBRARY_METADATA, DSL.name("library_metadata_library_id_letter_key"), new TableField[] { LibraryMetadata.LIBRARY_METADATA.LIBRARY_ID, LibraryMetadata.LIBRARY_METADATA.LETTER }, true);
@@ -128,8 +129,10 @@ public class Keys {
     public static final UniqueKey<PersonRecord> PERSON_PKEY = Internal.createUniqueKey(Person.PERSON, DSL.name("person_pkey"), new TableField[] { Person.PERSON.ID }, true);
     public static final UniqueKey<PersonRecord> PERSON_SOURCE_ID_UNIQUE = Internal.createUniqueKey(Person.PERSON, DSL.name("person_source_id_unique"), new TableField[] { Person.PERSON.SOURCE_ID }, true);
     public static final UniqueKey<ProfileRecord> PROFILE_PKEY = Internal.createUniqueKey(Profile.PROFILE, DSL.name("profile_pkey"), new TableField[] { Profile.PROFILE.ID }, true);
-    public static final UniqueKey<ProfileRecord> UQ_PROFILE_HOUSEHOLD_NAME = Internal.createUniqueKey(Profile.PROFILE, DSL.name("uq_profile_household_name"), new TableField[] { Profile.PROFILE.HOUSEHOLD_ID, Profile.PROFILE.NAME }, true);
     public static final UniqueKey<ProfileRecord> UQ_PROFILE_ID_HOUSEHOLD = Internal.createUniqueKey(Profile.PROFILE, DSL.name("uq_profile_id_household"), new TableField[] { Profile.PROFILE.ID, Profile.PROFILE.HOUSEHOLD_ID }, true);
+    public static final UniqueKey<ProfileHouseholdShareRecord> PROFILE_HOUSEHOLD_SHARE_PKEY = Internal.createUniqueKey(ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE, DSL.name("profile_household_share_pkey"), new TableField[] { ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.ID }, true);
+    public static final UniqueKey<ProfileManagerRecord> PROFILE_MANAGER_PKEY = Internal.createUniqueKey(ProfileManager.PROFILE_MANAGER, DSL.name("profile_manager_pkey"), new TableField[] { ProfileManager.PROFILE_MANAGER.ID }, true);
+    public static final UniqueKey<ProfileManagerRecord> UQ_PROFILE_MANAGER_ACCOUNT_PROFILE = Internal.createUniqueKey(ProfileManager.PROFILE_MANAGER, DSL.name("uq_profile_manager_account_profile"), new TableField[] { ProfileManager.PROFILE_MANAGER.ACCOUNT_ID, ProfileManager.PROFILE_MANAGER.PROFILE_ID }, true);
     public static final UniqueKey<RatingRecord> RATING_PKEY = Internal.createUniqueKey(Rating.RATING, DSL.name("rating_pkey"), new TableField[] { Rating.RATING.ID }, true);
     public static final UniqueKey<RefreshTokenRecord> REFRESH_TOKEN_PKEY = Internal.createUniqueKey(RefreshToken.REFRESH_TOKEN, DSL.name("refresh_token_pkey"), new TableField[] { RefreshToken.REFRESH_TOKEN.ID }, true);
     public static final UniqueKey<RefreshTokenRecord> UQ_REFRESH_TOKEN_DIGEST = Internal.createUniqueKey(RefreshToken.REFRESH_TOKEN, DSL.name("uq_refresh_token_digest"), new TableField[] { RefreshToken.REFRESH_TOKEN.DIGEST }, true);
@@ -137,6 +140,7 @@ public class Keys {
     public static final UniqueKey<SchemaHistoryRecord> SCHEMA_HISTORY_PK = Internal.createUniqueKey(SchemaHistory.SCHEMA_HISTORY, DSL.name("schema_history_pk"), new TableField[] { SchemaHistory.SCHEMA_HISTORY.INSTALLED_RANK }, true);
     public static final UniqueKey<SeasonRecord> SEASON_PKEY = Internal.createUniqueKey(Season.SEASON, DSL.name("season_pkey"), new TableField[] { Season.SEASON.ID }, true);
     public static final UniqueKey<SeasonRecord> UQ_SEASON = Internal.createUniqueKey(Season.SEASON, DSL.name("uq_season"), new TableField[] { Season.SEASON.SERIES_ID, Season.SEASON.SEASON_NUMBER }, true);
+    public static final UniqueKey<SecurityAuditEventRecord> SECURITY_AUDIT_EVENT_PKEY = Internal.createUniqueKey(SecurityAuditEvent.SECURITY_AUDIT_EVENT, DSL.name("security_audit_event_pkey"), new TableField[] { SecurityAuditEvent.SECURITY_AUDIT_EVENT.ID }, true);
     public static final UniqueKey<SeriesRecord> SERIES_PKEY = Internal.createUniqueKey(Series.SERIES, DSL.name("series_pkey"), new TableField[] { Series.SERIES.ID }, true);
     public static final UniqueKey<SeriesCompanyRecord> SERIES_COMPANY_PKEY = Internal.createUniqueKey(SeriesCompany.SERIES_COMPANY, DSL.name("series_company_pkey"), new TableField[] { SeriesCompany.SERIES_COMPANY.SERIES_ID, SeriesCompany.SERIES_COMPANY.COMPANY_ID }, true);
     public static final UniqueKey<SeriesDirectorRecord> SERIES_DIRECTOR_PKEY = Internal.createUniqueKey(SeriesDirector.SERIES_DIRECTOR, DSL.name("series_director_pkey"), new TableField[] { SeriesDirector.SERIES_DIRECTOR.ID }, true);
@@ -145,6 +149,7 @@ public class Keys {
     public static final UniqueKey<ServerBootstrapRecord> SERVER_BOOTSTRAP_PKEY = Internal.createUniqueKey(ServerBootstrap.SERVER_BOOTSTRAP, DSL.name("server_bootstrap_pkey"), new TableField[] { ServerBootstrap.SERVER_BOOTSTRAP.ID }, true);
     public static final UniqueKey<SessionProgressRecord> SESSION_PROGRESS_PKEY = Internal.createUniqueKey(SessionProgress.SESSION_PROGRESS, DSL.name("session_progress_pkey"), new TableField[] { SessionProgress.SESSION_PROGRESS.ID }, true);
     public static final UniqueKey<SessionProgressRecord> UQ_SESSION_PROGRESS_SESSION = Internal.createUniqueKey(SessionProgress.SESSION_PROGRESS, DSL.name("uq_session_progress_session"), new TableField[] { SessionProgress.SESSION_PROGRESS.SESSION_ID }, true);
+    public static final UniqueKey<UserAccountRecord> UQ_USER_ACCOUNT_PERSONAL_PROFILE = Internal.createUniqueKey(UserAccount.USER_ACCOUNT, DSL.name("uq_user_account_personal_profile"), new TableField[] { UserAccount.USER_ACCOUNT.PERSONAL_PROFILE_ID }, true);
     public static final UniqueKey<UserAccountRecord> USER_ACCOUNT_PKEY = Internal.createUniqueKey(UserAccount.USER_ACCOUNT, DSL.name("user_account_pkey"), new TableField[] { UserAccount.USER_ACCOUNT.ID }, true);
     public static final UniqueKey<WatchHistoryRecord> UQ_WATCH_HISTORY_PROFILE_COLLECTABLE_WATCHED = Internal.createUniqueKey(WatchHistory.WATCH_HISTORY, DSL.name("uq_watch_history_profile_collectable_watched"), new TableField[] { WatchHistory.WATCH_HISTORY.PROFILE_ID, WatchHistory.WATCH_HISTORY.COLLECTABLE_ID, WatchHistory.WATCH_HISTORY.WATCHED_AT }, true);
     public static final UniqueKey<WatchHistoryRecord> WATCH_HISTORY_PKEY = Internal.createUniqueKey(WatchHistory.WATCH_HISTORY, DSL.name("watch_history_pkey"), new TableField[] { WatchHistory.WATCH_HISTORY.ID }, true);
@@ -153,22 +158,16 @@ public class Keys {
     // FOREIGN KEY definitions
     // -------------------------------------------------------------------------
 
-    public static final ForeignKey<AccountProfileRecord, HouseholdMembershipRecord> ACCOUNT_PROFILE__FK_ACCOUNT_PROFILE_MEMBERSHIP = Internal.createForeignKey(AccountProfile.ACCOUNT_PROFILE, DSL.name("fk_account_profile_membership"), new TableField[] { AccountProfile.ACCOUNT_PROFILE.ACCOUNT_ID, AccountProfile.ACCOUNT_PROFILE.HOUSEHOLD_ID }, Keys.UQ_HOUSEHOLD_MEMBERSHIP_ACCOUNT_HOUSEHOLD, new TableField[] { HouseholdMembership.HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID, HouseholdMembership.HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
-    public static final ForeignKey<AccountProfileRecord, ProfileRecord> ACCOUNT_PROFILE__FK_ACCOUNT_PROFILE_PROFILE = Internal.createForeignKey(AccountProfile.ACCOUNT_PROFILE, DSL.name("fk_account_profile_profile"), new TableField[] { AccountProfile.ACCOUNT_PROFILE.PROFILE_ID, AccountProfile.ACCOUNT_PROFILE.HOUSEHOLD_ID }, Keys.UQ_PROFILE_ID_HOUSEHOLD, new TableField[] { Profile.PROFILE.ID, Profile.PROFILE.HOUSEHOLD_ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<AuthSessionRecord, UserAccountRecord> AUTH_SESSION__FK_AUTH_SESSION_ACCOUNT = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_account"), new TableField[] { AuthSession.AUTH_SESSION.ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
-    public static final ForeignKey<AuthSessionRecord, AccountProfileRecord> AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_ACCOUNT_PROFILE = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_active_account_profile"), new TableField[] { AuthSession.AUTH_SESSION.ACCOUNT_ID, AuthSession.AUTH_SESSION.ACTIVE_PROFILE_ID }, Keys.UQ_ACCOUNT_PROFILE_ACCOUNT_PROFILE, new TableField[] { AccountProfile.ACCOUNT_PROFILE.ACCOUNT_ID, AccountProfile.ACCOUNT_PROFILE.PROFILE_ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
-    public static final ForeignKey<AuthSessionRecord, HouseholdRecord> AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_HOUSEHOLD = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_active_household"), new TableField[] { AuthSession.AUTH_SESSION.ACTIVE_HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
-    public static final ForeignKey<AuthSessionRecord, HouseholdMembershipRecord> AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_MEMBERSHIP = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_active_membership"), new TableField[] { AuthSession.AUTH_SESSION.ACCOUNT_ID, AuthSession.AUTH_SESSION.ACTIVE_HOUSEHOLD_ID }, Keys.UQ_HOUSEHOLD_MEMBERSHIP_ACCOUNT_HOUSEHOLD, new TableField[] { HouseholdMembership.HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID, HouseholdMembership.HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
-    public static final ForeignKey<AuthSessionRecord, ProfileRecord> AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_active_profile"), new TableField[] { AuthSession.AUTH_SESSION.ACTIVE_PROFILE_ID }, Keys.PROFILE_PKEY, new TableField[] { Profile.PROFILE.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
-    public static final ForeignKey<AuthSessionRecord, ProfileRecord> AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE_HOUSEHOLD = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_active_profile_household"), new TableField[] { AuthSession.AUTH_SESSION.ACTIVE_PROFILE_ID, AuthSession.AUTH_SESSION.ACTIVE_HOUSEHOLD_ID }, Keys.UQ_PROFILE_ID_HOUSEHOLD, new TableField[] { Profile.PROFILE.ID, Profile.PROFILE.HOUSEHOLD_ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<AuthSessionRecord, ProfileRecord> AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_active_profile"), new TableField[] { AuthSession.AUTH_SESSION.SELECTED_PROFILE_ID }, Keys.PROFILE_PKEY, new TableField[] { Profile.PROFILE.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<AuthSessionRecord, HouseholdRecord> AUTH_SESSION__FK_AUTH_SESSION_CONTEXT_HOUSEHOLD = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_context_household"), new TableField[] { AuthSession.AUTH_SESSION.CONTEXT_HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<BaseCollectableRecord, LibraryRecord> BASE_COLLECTABLE__FK_LIBRARY = Internal.createForeignKey(BaseCollectable.BASE_COLLECTABLE, DSL.name("fk_library"), new TableField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<DeviceAuthorizationRecord, UserAccountRecord> DEVICE_AUTHORIZATION__FK_DEVICE_AUTHORIZATION_DECIDED_BY = Internal.createForeignKey(DeviceAuthorization.DEVICE_AUTHORIZATION, DSL.name("fk_device_authorization_decided_by"), new TableField[] { DeviceAuthorization.DEVICE_AUTHORIZATION.DECIDED_BY_ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<EpisodeRecord, BaseCollectableRecord> EPISODE__FK_BASE_COLLECTABLE = Internal.createForeignKey(Episode.EPISODE, DSL.name("fk_base_collectable"), new TableField[] { Episode.EPISODE.ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<EpisodeRecord, SeasonRecord> EPISODE__FK_SEASON = Internal.createForeignKey(Episode.EPISODE, DSL.name("fk_season"), new TableField[] { Episode.EPISODE.SEASON_ID }, Keys.SEASON_PKEY, new TableField[] { Season.SEASON.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<ExternalIdentifierRecord, BaseCollectableRecord> EXTERNAL_IDENTIFIER__FK_BASE_COLLECTABLE = Internal.createForeignKey(ExternalIdentifier.EXTERNAL_IDENTIFIER, DSL.name("fk_base_collectable"), new TableField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ENTITY_ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<FileProcessingTaskRecord, LibraryRecord> FILE_PROCESSING_TASK__FK_LIBRARY = Internal.createForeignKey(FileProcessingTask.FILE_PROCESSING_TASK, DSL.name("fk_library"), new TableField[] { FileProcessingTask.FILE_PROCESSING_TASK.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
-    public static final ForeignKey<HouseholdMembershipRecord, UserAccountRecord> HOUSEHOLD_MEMBERSHIP__FK_HOUSEHOLD_MEMBERSHIP_ACCOUNT = Internal.createForeignKey(HouseholdMembership.HOUSEHOLD_MEMBERSHIP, DSL.name("fk_household_membership_account"), new TableField[] { HouseholdMembership.HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
-    public static final ForeignKey<HouseholdMembershipRecord, HouseholdRecord> HOUSEHOLD_MEMBERSHIP__FK_HOUSEHOLD_MEMBERSHIP_HOUSEHOLD = Internal.createForeignKey(HouseholdMembership.HOUSEHOLD_MEMBERSHIP, DSL.name("fk_household_membership_household"), new TableField[] { HouseholdMembership.HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<HouseholdGuardRecord, HouseholdRecord> HOUSEHOLD_GUARD__FK_HOUSEHOLD_GUARD_HOUSEHOLD = Internal.createForeignKey(HouseholdGuard.HOUSEHOLD_GUARD, DSL.name("fk_household_guard_household"), new TableField[] { HouseholdGuard.HOUSEHOLD_GUARD.HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<LibraryMetadataRecord, LibraryRecord> LIBRARY_METADATA__LIBRARY_METADATA_LIBRARY_ID_FKEY = Internal.createForeignKey(LibraryMetadata.LIBRARY_METADATA, DSL.name("library_metadata_library_id_fkey"), new TableField[] { LibraryMetadata.LIBRARY_METADATA.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<MediaFileRecord, BaseCollectableRecord> MEDIA_FILE__FK_BASE_COLLECTABLE = Internal.createForeignKey(MediaFile.MEDIA_FILE, DSL.name("fk_base_collectable"), new TableField[] { MediaFile.MEDIA_FILE.MEDIA_ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<MediaFileRecord, LibraryRecord> MEDIA_FILE__FK_LIBRARY = Internal.createForeignKey(MediaFile.MEDIA_FILE, DSL.name("fk_library"), new TableField[] { MediaFile.MEDIA_FILE.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
@@ -182,6 +181,11 @@ public class Keys {
     public static final ForeignKey<MoviePersonRecord, MovieRecord> MOVIE_PERSON__MOVIE_PERSON_MOVIE_ID_FKEY = Internal.createForeignKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_movie_id_fkey"), new TableField[] { MoviePerson.MOVIE_PERSON.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<MoviePersonRecord, PersonRecord> MOVIE_PERSON__MOVIE_PERSON_PERSON_ID_FKEY = Internal.createForeignKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_person_id_fkey"), new TableField[] { MoviePerson.MOVIE_PERSON.PERSON_ID }, Keys.PERSON_PKEY, new TableField[] { Person.PERSON.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<ProfileRecord, HouseholdRecord> PROFILE__FK_PROFILE_HOUSEHOLD = Internal.createForeignKey(Profile.PROFILE, DSL.name("fk_profile_household"), new TableField[] { Profile.PROFILE.HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<ProfileHouseholdShareRecord, HouseholdRecord> PROFILE_HOUSEHOLD_SHARE__FK_PROFILE_HOUSEHOLD_SHARE_HOUSEHOLD = Internal.createForeignKey(ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE, DSL.name("fk_profile_household_share_household"), new TableField[] { ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<ProfileHouseholdShareRecord, UserAccountRecord> PROFILE_HOUSEHOLD_SHARE__FK_PROFILE_HOUSEHOLD_SHARE_OFFERED_BY = Internal.createForeignKey(ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE, DSL.name("fk_profile_household_share_offered_by"), new TableField[] { ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.OFFERED_BY_ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<ProfileHouseholdShareRecord, ProfileRecord> PROFILE_HOUSEHOLD_SHARE__FK_PROFILE_HOUSEHOLD_SHARE_PROFILE = Internal.createForeignKey(ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE, DSL.name("fk_profile_household_share_profile"), new TableField[] { ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.PROFILE_ID }, Keys.PROFILE_PKEY, new TableField[] { Profile.PROFILE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<ProfileManagerRecord, UserAccountRecord> PROFILE_MANAGER__FK_PROFILE_MANAGER_ACCOUNT = Internal.createForeignKey(ProfileManager.PROFILE_MANAGER, DSL.name("fk_profile_manager_account"), new TableField[] { ProfileManager.PROFILE_MANAGER.ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<ProfileManagerRecord, ProfileRecord> PROFILE_MANAGER__FK_PROFILE_MANAGER_PROFILE = Internal.createForeignKey(ProfileManager.PROFILE_MANAGER, DSL.name("fk_profile_manager_profile"), new TableField[] { ProfileManager.PROFILE_MANAGER.PROFILE_ID }, Keys.PROFILE_PKEY, new TableField[] { Profile.PROFILE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<RatingRecord, MovieRecord> RATING__FK_MOVIE = Internal.createForeignKey(Rating.RATING, DSL.name("fk_movie"), new TableField[] { Rating.RATING.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<RefreshTokenRecord, AuthSessionRecord> REFRESH_TOKEN__FK_REFRESH_TOKEN_SESSION = Internal.createForeignKey(RefreshToken.REFRESH_TOKEN, DSL.name("fk_refresh_token_session"), new TableField[] { RefreshToken.REFRESH_TOKEN.SESSION_ID }, Keys.AUTH_SESSION_PKEY, new TableField[] { AuthSession.AUTH_SESSION.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<ReviewRecord, MovieRecord> REVIEW__FK_MOVIE = Internal.createForeignKey(Review.REVIEW, DSL.name("fk_movie"), new TableField[] { Review.REVIEW.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
@@ -196,8 +200,10 @@ public class Keys {
     public static final ForeignKey<SeriesGenreRecord, SeriesRecord> SERIES_GENRE__SERIES_GENRE_SERIES_ID_FKEY = Internal.createForeignKey(SeriesGenre.SERIES_GENRE, DSL.name("series_genre_series_id_fkey"), new TableField[] { SeriesGenre.SERIES_GENRE.SERIES_ID }, Keys.SERIES_PKEY, new TableField[] { Series.SERIES.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<SeriesPersonRecord, PersonRecord> SERIES_PERSON__SERIES_PERSON_PERSON_ID_FKEY = Internal.createForeignKey(SeriesPerson.SERIES_PERSON, DSL.name("series_person_person_id_fkey"), new TableField[] { SeriesPerson.SERIES_PERSON.PERSON_ID }, Keys.PERSON_PKEY, new TableField[] { Person.PERSON.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<SeriesPersonRecord, SeriesRecord> SERIES_PERSON__SERIES_PERSON_SERIES_ID_FKEY = Internal.createForeignKey(SeriesPerson.SERIES_PERSON, DSL.name("series_person_series_id_fkey"), new TableField[] { SeriesPerson.SERIES_PERSON.SERIES_ID }, Keys.SERIES_PKEY, new TableField[] { Series.SERIES.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
-    public static final ForeignKey<ServerBootstrapRecord, UserAccountRecord> SERVER_BOOTSTRAP__FK_SERVER_BOOTSTRAP_ADMIN_ACCOUNT = Internal.createForeignKey(ServerBootstrap.SERVER_BOOTSTRAP, DSL.name("fk_server_bootstrap_admin_account"), new TableField[] { ServerBootstrap.SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<ServerBootstrapRecord, UserAccountRecord> SERVER_BOOTSTRAP__FK_SERVER_BOOTSTRAP_ADMIN_ACCOUNT = Internal.createForeignKey(ServerBootstrap.SERVER_BOOTSTRAP, DSL.name("fk_server_bootstrap_admin_account"), new TableField[] { ServerBootstrap.SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<SessionProgressRecord, MediaFileRecord> SESSION_PROGRESS__FK_SESSION_PROGRESS_MEDIA_FILE = Internal.createForeignKey(SessionProgress.SESSION_PROGRESS, DSL.name("fk_session_progress_media_file"), new TableField[] { SessionProgress.SESSION_PROGRESS.MEDIA_FILE_ID }, Keys.MOVIE_FILE_PKEY, new TableField[] { MediaFile.MEDIA_FILE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<SessionProgressRecord, ProfileRecord> SESSION_PROGRESS__FK_SESSION_PROGRESS_PROFILE = Internal.createForeignKey(SessionProgress.SESSION_PROGRESS, DSL.name("fk_session_progress_profile"), new TableField[] { SessionProgress.SESSION_PROGRESS.PROFILE_ID }, Keys.PROFILE_PKEY, new TableField[] { Profile.PROFILE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<UserAccountRecord, HouseholdRecord> USER_ACCOUNT__FK_USER_ACCOUNT_HOUSEHOLD = Internal.createForeignKey(UserAccount.USER_ACCOUNT, DSL.name("fk_user_account_household"), new TableField[] { UserAccount.USER_ACCOUNT.HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<UserAccountRecord, ProfileRecord> USER_ACCOUNT__FK_USER_ACCOUNT_PERSONAL_PROFILE = Internal.createForeignKey(UserAccount.USER_ACCOUNT, DSL.name("fk_user_account_personal_profile"), new TableField[] { UserAccount.USER_ACCOUNT.PERSONAL_PROFILE_ID }, Keys.PROFILE_PKEY, new TableField[] { Profile.PROFILE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<WatchHistoryRecord, ProfileRecord> WATCH_HISTORY__FK_WATCH_HISTORY_PROFILE = Internal.createForeignKey(WatchHistory.WATCH_HISTORY, DSL.name("fk_watch_history_profile"), new TableField[] { WatchHistory.WATCH_HISTORY.PROFILE_ID }, Keys.PROFILE_PKEY, new TableField[] { Profile.PROFILE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
 }

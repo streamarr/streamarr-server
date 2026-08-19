@@ -1,11 +1,9 @@
 package com.streamarr.server.repositories.auth;
 
 import static com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION;
-import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
-import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
@@ -26,18 +24,13 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   private final EntityManager entityManager;
 
   @Override
-  public boolean hasLivePlaybackAuthority(PlaybackAuthority authority) {
+  public boolean isLive(UUID sessionId, UUID accountId) {
     return dsl.fetchExists(
         dsl.selectOne()
             .from(AUTH_SESSION)
-            .join(USER_ACCOUNT)
-            .on(USER_ACCOUNT.ID.eq(AUTH_SESSION.ACCOUNT_ID))
-            .where(AUTH_SESSION.ID.eq(authority.authSessionId()))
-            .and(AUTH_SESSION.ACCOUNT_ID.eq(authority.accountId()))
-            .and(AUTH_SESSION.ACTIVE_HOUSEHOLD_ID.eq(authority.householdId()))
-            .and(AUTH_SESSION.ACTIVE_PROFILE_ID.eq(authority.profileId()))
-            .and(AUTH_SESSION.REVOKED_AT.isNull())
-            .and(USER_ACCOUNT.ENABLED.isTrue()));
+            .where(AUTH_SESSION.ID.eq(sessionId))
+            .and(AUTH_SESSION.ACCOUNT_ID.eq(accountId))
+            .and(AUTH_SESSION.REVOKED_AT.isNull()));
   }
 
   @Override
@@ -65,8 +58,8 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
     var nowOffset = now.atOffset(ZoneOffset.UTC);
 
     return dsl.update(AUTH_SESSION)
-            .set(AUTH_SESSION.ACTIVE_HOUSEHOLD_ID, session.getActiveHouseholdId())
-            .set(AUTH_SESSION.ACTIVE_PROFILE_ID, session.getActiveProfileId())
+            .set(AUTH_SESSION.CONTEXT_HOUSEHOLD_ID, session.getContextHouseholdId())
+            .set(AUTH_SESSION.SELECTED_PROFILE_ID, session.getSelectedProfileId())
             .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
             .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
             .where(AUTH_SESSION.ID.eq(session.getId()))

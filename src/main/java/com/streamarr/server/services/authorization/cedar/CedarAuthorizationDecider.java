@@ -43,7 +43,7 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
   public <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent) {
     var authorizationContext = "unplanned intent";
     try {
-      var plan = IntentPlanner.plan(intent);
+      var plan = IntentPlanner.plan(identity, intent);
       var check = plan.check();
       authorizationContext = check.action().toString();
       var slice = sliceAssembler.assemble(identity, check);
