@@ -30,10 +30,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.exceptions.InvalidLibraryPathException;
-import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
-import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -45,6 +42,7 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
+import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.RecordingMetadataProvider;
 import com.streamarr.server.fakes.RecordingSeriesMetadataProvider;
 import com.streamarr.server.fakes.SecurityExceptionFileSystem;
@@ -82,6 +80,9 @@ import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolve
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProvider;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
+import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
+import com.streamarr.server.services.mutation.MutationTransactions;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
 import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
@@ -141,6 +142,9 @@ class LibraryManagementServiceTest {
   private final MediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final MovieRepository fakeMovieRepository = new FakeMovieRepository();
   private final SignalingEventPublisher capturingEventPublisher = new SignalingEventPublisher();
+  private final FakeTransactionManager transactionManager = new FakeTransactionManager();
+  private final MutationTransactions mutationTransactions =
+      new MutationTransactions(transactionManager, new ConstraintViolationTranslator());
   private final MovieService movieService =
       new MovieService(
           fakeMovieRepository,
@@ -187,7 +191,8 @@ class LibraryManagementServiceTest {
           new MutexFactoryProvider(),
           libraryRefreshService,
           fileSystem,
-          libraryMutationTransaction);
+          libraryMutationTransaction,
+          mutationTransactions);
 
   private UUID savedLibraryId;
 
@@ -444,7 +449,8 @@ class LibraryManagementServiceTest {
             new MutexFactoryProvider(),
             libraryRefreshService,
             throwingFileSystem,
-            libraryMutationTransaction);
+            libraryMutationTransaction,
+            mutationTransactions);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
@@ -480,7 +486,8 @@ class LibraryManagementServiceTest {
             new MutexFactoryProvider(),
             libraryRefreshService,
             throwingFileSystem,
-            libraryMutationTransaction);
+            libraryMutationTransaction,
+            mutationTransactions);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
@@ -577,7 +584,8 @@ class LibraryManagementServiceTest {
             new MutexFactoryProvider(),
             libraryRefreshService,
             throwingFileSystem,
-            libraryMutationTransaction);
+            libraryMutationTransaction,
+            mutationTransactions);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
@@ -1131,80 +1139,129 @@ class LibraryManagementServiceTest {
   class AddLibraryTests {
 
     @Test
-    @DisplayName("Should throw InvalidLibraryPathException when filepath is null")
-    void shouldThrowInvalidLibraryPathExceptionWhenFilepathIsNull() {
+    @DisplayName("Should reject with PathRequired when filepath is null")
+    void shouldRejectWithPathRequiredWhenFilepathIsNull() {
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", null);
 
-      assertThrows(
-          InvalidLibraryPathException.class,
-          () -> libraryManagementService.addLibrary(identity, library));
+      assertThat(libraryManagementService.addLibrary(identity, library))
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathRequired()));
     }
 
     @Test
-    @DisplayName("Should throw InvalidLibraryPathException when filepath is blank")
-    void shouldThrowInvalidLibraryPathExceptionWhenFilepathIsBlank() {
+    @DisplayName("Should reject with PathRequired when filepath is blank")
+    void shouldRejectWithPathRequiredWhenFilepathIsBlank() {
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "   ");
 
-      assertThrows(
-          InvalidLibraryPathException.class,
-          () -> libraryManagementService.addLibrary(identity, library));
+      assertThat(libraryManagementService.addLibrary(identity, library))
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathRequired()));
     }
 
     @Test
-    @DisplayName("Should throw LibraryAlreadyExistsException when filepath already exists")
-    void shouldThrowLibraryAlreadyExistsExceptionWhenFilepathExists() throws IOException {
+    @DisplayName("Should report every rejection when both name and path are missing")
+    void shouldReportEveryRejectionWhenBothNameAndPathAreMissing() {
+      var library = LibraryFixtureCreator.buildUnsavedLibrary(" ", " ");
+      var librariesBefore = fakeLibraryRepository.count();
+
+      assertThat(libraryManagementService.addLibrary(identity, library))
+          .isEqualTo(
+              Outcome.rejected(
+                  List.of(
+                      new AddLibraryRejection.NameRequired(),
+                      new AddLibraryRejection.PathRequired())));
+      assertThat(fakeLibraryRepository.count()).isEqualTo(librariesBefore);
+    }
+
+    @Test
+    @DisplayName("Should reject with NameRequired when the name is blank")
+    void shouldRejectWithNameRequiredWhenNameIsBlank() throws IOException {
+      var libraryPath = fileSystem.getPath("/unnamed-library");
+      Files.createDirectories(libraryPath);
+      var library = LibraryFixtureCreator.buildUnsavedLibrary("", libraryPath.toString());
+
+      assertThat(libraryManagementService.addLibrary(identity, library))
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.NameRequired()));
+    }
+
+    @Test
+    @DisplayName(
+        "Should reject with PathAlreadyRegistered when the unique index rejects the insert")
+    void shouldRejectWithPathAlreadyRegisteredWhenUniqueIndexRejectsInsert() throws IOException {
       var libraryPath = fileSystem.getPath("/duplicate-library");
       Files.createDirectories(libraryPath);
-
       var firstLibrary =
           LibraryFixtureCreator.buildUnsavedLibrary("First Library", libraryPath.toString());
       libraryManagementService.addLibrary(identity, firstLibrary);
-
       var duplicateLibrary =
           LibraryFixtureCreator.buildUnsavedLibrary("Duplicate Library", libraryPath.toString());
+      var librariesBefore = fakeLibraryRepository.count();
+      var eventsBefore = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class).size();
 
-      assertThrows(
-          LibraryAlreadyExistsException.class,
-          () -> libraryManagementService.addLibrary(identity, duplicateLibrary));
+      var outcome = libraryManagementService.addLibrary(identity, duplicateLibrary);
+
+      assertThat(outcome)
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathAlreadyRegistered()));
+      // Translated only after the losing unit rolled back: one commit (the winner), one rollback.
+      assertThat(transactionManager.commits()).isEqualTo(1);
+      assertThat(transactionManager.rollbacks()).isEqualTo(1);
+      assertThat(fakeLibraryRepository.count()).isEqualTo(librariesBefore);
+      assertThat(capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class))
+          .as("the loser never reaches its publish; the unique index rejects the insert first")
+          .hasSize(eventsBefore);
     }
 
     @Test
-    @DisplayName("Should throw InvalidLibraryPathException when path does not exist on disk")
-    void shouldThrowInvalidLibraryPathExceptionWhenPathDoesNotExist() {
+    @DisplayName("Should reject with PathNotFound when path does not exist on disk")
+    void shouldRejectWithPathNotFoundWhenPathDoesNotExist() {
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/nonexistent/path");
 
-      assertThrows(
-          InvalidLibraryPathException.class,
-          () -> libraryManagementService.addLibrary(identity, library));
+      assertThat(libraryManagementService.addLibrary(identity, library))
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathNotFound()));
     }
 
     @Test
-    @DisplayName("Should throw InvalidLibraryPathException when path is not a directory")
-    void shouldThrowInvalidLibraryPathExceptionWhenPathIsNotDirectory() throws IOException {
+    @DisplayName("Should reject with PathNotFound when the path cannot be parsed")
+    void shouldRejectWithPathNotFoundWhenPathCannotBeParsed() {
+      var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "bad\u0000path");
+
+      assertThat(libraryManagementService.addLibrary(identity, library))
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathNotFound()));
+    }
+
+    @Test
+    @DisplayName("Should reject with PathNotDirectory when path is a file")
+    void shouldRejectWithPathNotDirectoryWhenPathIsFile() throws IOException {
       var filePath = fileSystem.getPath("/library/file.txt");
       Files.createDirectories(filePath.getParent());
       Files.createFile(filePath);
-
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", filePath.toString());
 
-      assertThrows(
-          InvalidLibraryPathException.class,
-          () -> libraryManagementService.addLibrary(identity, library));
+      assertThat(libraryManagementService.addLibrary(identity, library))
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathNotDirectory()));
     }
 
     @Test
-    @DisplayName("Should save library and return with generated ID when valid library provided")
+    @DisplayName("Should reject with PathNotReadable when the filesystem denies access")
+    void shouldRejectWithPathNotReadableWhenFilesystemDeniesAccess() {
+      var deniedService = serviceWith(new SecurityExceptionFileSystem(fileSystem));
+      var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/denied");
+
+      assertThat(deniedService.addLibrary(identity, library))
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathNotReadable()));
+    }
+
+    @Test
+    @DisplayName("Should save library and return it with a generated ID when valid")
     void shouldSaveLibraryAndReturnWithGeneratedId() throws IOException {
       var newLibraryPath = fileSystem.getPath("/new-library");
       Files.createDirectories(newLibraryPath);
-
       var library =
           LibraryFixtureCreator.buildUnsavedLibrary("New Library", newLibraryPath.toString());
 
-      var savedLibrary = libraryManagementService.addLibrary(identity, library);
+      var savedLibrary = accepted(libraryManagementService.addLibrary(identity, library));
 
       assertThat(savedLibrary.getId()).isNotNull();
       assertThat(fakeLibraryRepository.findById(savedLibrary.getId())).isPresent();
+      assertThat(transactionManager.commits()).isEqualTo(1);
     }
 
     @Test
@@ -1232,86 +1289,62 @@ class LibraryManagementServiceTest {
     void shouldStoreFilepathUriAsEncodedUriWhenAddingLibrary() throws IOException {
       var newLibraryPath = fileSystem.getPath("/encoded-library");
       Files.createDirectories(newLibraryPath);
-
       var library =
           LibraryFixtureCreator.buildUnsavedLibrary("Encoded Library", newLibraryPath.toString());
 
-      var savedLibrary = libraryManagementService.addLibrary(identity, library);
+      var savedLibrary = accepted(libraryManagementService.addLibrary(identity, library));
 
       var persisted = fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
       assertThat(persisted.getFilepathUri()).startsWith("jimfs://");
     }
 
     @Test
-    @DisplayName(
-        "Should publish LibraryAddedEvent with correct library ID and filepath when library is added")
+    @DisplayName("Should set status to HEALTHY when adding library with empty directory")
+    void shouldSetStatusToHealthyWhenAddingLibraryWithEmptyDirectory() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/healthy-library");
+      Files.createDirectories(newLibraryPath);
+      var library =
+          LibraryFixtureCreator.buildUnsavedLibrary("Healthy Library", newLibraryPath.toString());
+
+      var savedLibrary = accepted(libraryManagementService.addLibrary(identity, library));
+
+      assertThat(fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow().getStatus())
+          .isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    @Test
+    @DisplayName("Should publish LibraryAddedEvent with the persisted ID and encoded path")
     void shouldPublishLibraryAddedEventWhenLibraryIsAdded() throws IOException {
       var newLibraryPath = fileSystem.getPath("/event-library");
       Files.createDirectories(newLibraryPath);
-
       var library =
           LibraryFixtureCreator.buildUnsavedLibrary("Event Library", newLibraryPath.toString());
+      assertThat(library.getId()).as("Input library should not have an ID").isNull();
 
-      var savedLibrary = libraryManagementService.addLibrary(identity, library);
+      var savedLibrary = accepted(libraryManagementService.addLibrary(identity, library));
 
       var events = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class);
       assertThat(events).hasSize(1);
-      assertThat(events.getFirst().libraryId()).isEqualTo(savedLibrary.getId());
+      assertThat(events.getFirst().libraryId()).isEqualTo(savedLibrary.getId()).isNotNull();
       assertThat(events.getFirst().filepathUri()).isEqualTo(FilepathCodec.encode(newLibraryPath));
     }
 
     @Test
-    @DisplayName("Should publish LibraryAddedEvent with the persisted library ID, not the input")
-    void shouldPublishLibraryAddedEventWithSavedLibraryId() throws IOException {
-      var newLibraryPath = fileSystem.getPath("/persisted-id-library");
+    @DisplayName("Should not start the first scan itself when a library is added")
+    void shouldNotStartFirstScanItselfWhenLibraryIsAdded() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/unscanned-library");
       Files.createDirectories(newLibraryPath);
-
+      Files.createFile(newLibraryPath.resolve("Movie (2020).mkv"));
       var library =
-          LibraryFixtureCreator.buildUnsavedLibrary(
-              "Persisted ID Library", newLibraryPath.toString());
+          LibraryFixtureCreator.buildUnsavedLibrary("Unscanned Library", newLibraryPath.toString());
 
-      assertThat(library.getId()).as("Input library should not have an ID").isNull();
+      var savedLibrary = accepted(libraryManagementService.addLibrary(identity, library));
 
-      var savedLibrary = libraryManagementService.addLibrary(identity, library);
-
-      var events = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class);
-      assertThat(events.getFirst().libraryId())
-          .as("Event should carry the persisted ID")
-          .isEqualTo(savedLibrary.getId())
-          .isNotNull();
-    }
-
-    @Test
-    @DisplayName(
-        "Should throw LibraryPathPermissionDeniedException when filesystem permission denied")
-    void shouldThrowLibraryPathPermissionDeniedExceptionWhenFilesystemPermissionDenied() {
-      var securityExceptionFs = new SecurityExceptionFileSystem(fileSystem);
-
-      var serviceWithSecurityFs =
-          new LibraryManagementService(
-              new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-              new VideoExtensionValidator(),
-              movieFileProcessor,
-              seriesFileProcessor,
-              fakeLibraryRepository,
-              new FakeLibraryMetadataRepository(),
-              fakeMediaFileRepository,
-              movieService,
-              seriesService,
-              capturingEventPublisher,
-              new MutexFactoryProvider(),
-              libraryRefreshService,
-              securityExceptionFs,
-              libraryMutationTransaction);
-
-      var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/secure-path");
-
-      var exception =
-          assertThrows(
-              LibraryPathPermissionDeniedException.class,
-              () -> serviceWithSecurityFs.addLibrary(identity, library));
-
-      assertThat(exception.getMessage()).contains("/secure-path");
+      // The AFTER_COMMIT listener starts the scan; the service only publishes the event.
+      assertThat(fakeMediaFileRepository.findAll()).isEmpty();
+      assertThat(
+              fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow().getScanStartedOn())
+          .isNull();
     }
 
     @Test
@@ -1319,7 +1352,6 @@ class LibraryManagementServiceTest {
     void shouldNotMutateInputLibraryWhenAdding() throws IOException {
       var newLibraryPath = fileSystem.getPath("/no-mutate");
       Files.createDirectories(newLibraryPath);
-
       var library =
           LibraryFixtureCreator.buildUnsavedLibrary("Test Library", newLibraryPath.toString());
 
@@ -1328,31 +1360,9 @@ class LibraryManagementServiceTest {
       assertThat(library.getStatus()).as("Input library should not be mutated").isNull();
     }
 
-    @Test
-    @DisplayName("Should complete async library scan when library is added")
-    void shouldCompleteAsyncLibraryScanWhenLibraryIsAdded() throws IOException {
-      var newLibraryPath = fileSystem.getPath("/async-scan-library");
-      Files.createDirectories(newLibraryPath);
-
-      var library =
-          LibraryFixtureCreator.buildUnsavedLibrary(
-              "Async Scan Library", newLibraryPath.toString());
-
-      var savedLibrary = libraryManagementService.addLibrary(identity, library);
-
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () -> {
-                var refreshedLibrary =
-                    fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
-                assertThat(refreshedLibrary.getScanCompletedOn())
-                    .as("Library scan should complete asynchronously")
-                    .isNotNull();
-                assertThat(refreshedLibrary.getStatus())
-                    .as("Library status should be HEALTHY after async scan")
-                    .isEqualTo(LibraryStatus.HEALTHY);
-              });
+    private Library accepted(Outcome<Library, AddLibraryRejection> outcome) {
+      assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+      return ((Outcome.Accepted<Library, AddLibraryRejection>) outcome).result();
     }
   }
 
@@ -1769,6 +1779,25 @@ class LibraryManagementServiceTest {
         new MutexFactoryProvider());
   }
 
+  private LibraryManagementService serviceWith(FileSystem alternateFileSystem) {
+    return new LibraryManagementService(
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        new VideoExtensionValidator(),
+        movieFileProcessor,
+        seriesFileProcessor,
+        fakeLibraryRepository,
+        new FakeLibraryMetadataRepository(),
+        fakeMediaFileRepository,
+        movieService,
+        seriesService,
+        capturingEventPublisher,
+        new MutexFactoryProvider(),
+        libraryRefreshService,
+        alternateFileSystem,
+        libraryMutationTransaction,
+        mutationTransactions);
+  }
+
   private LibraryManagementService libraryManagementServiceWith(
       MovieFileProcessor movieProcessor, SeriesFileProcessor seriesProcessor) {
     return new LibraryManagementService(
@@ -1785,7 +1814,8 @@ class LibraryManagementServiceTest {
         new MutexFactoryProvider(),
         libraryRefreshService,
         fileSystem,
-        libraryMutationTransaction);
+        libraryMutationTransaction,
+        mutationTransactions);
   }
 
   private LibraryManagementService libraryManagementServiceWithRefreshService(
@@ -1804,7 +1834,8 @@ class LibraryManagementServiceTest {
         new MutexFactoryProvider(),
         refreshService,
         fileSystem,
-        libraryMutationTransaction);
+        libraryMutationTransaction,
+        mutationTransactions);
   }
 
   private Path pathWithDisplayName(String filepathUri, String displayName) throws IOException {

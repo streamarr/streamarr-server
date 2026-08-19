@@ -137,7 +137,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
         "mutation { scanLibrary(id: \\\"58edcb42-4c93-4a05-876f-c48e0c48ff30\\\") }",
         "mutation { refreshLibrary(id: \\\"58edcb42-4c93-4a05-876f-c48e0c48ff30\\\") }",
         "mutation { addLibrary(input: {name: \\\"Denied\\\", filepath: \\\"file:///denied\\\","
-            + " type: MOVIE, backend: LOCAL}) { id } }"
+            + " type: MOVIE, backend: LOCAL}) { library { id } } }"
       })
   @DisplayName("Should deny library administration when account role is user")
   void shouldDenyLibraryAdministrationWhenAccountRoleIsUser(String mutation) throws Exception {

@@ -18,6 +18,7 @@ import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -26,6 +27,8 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
+import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
+import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
@@ -127,6 +130,8 @@ class FileEventProcessorTest {
 
     var seriesFileProcessor = mock(SeriesFileProcessor.class);
     var seriesService = mock(SeriesService.class);
+    var mutationTransactions =
+        new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator());
 
     var libraryManagementService =
         new LibraryManagementService(
@@ -143,7 +148,8 @@ class FileEventProcessorTest {
             new MutexFactoryProvider(),
             mock(LibraryRefreshService.class),
             fileSystem,
-            new FakeLibraryMutationTransaction());
+            new FakeLibraryMutationTransaction(),
+            mutationTransactions);
 
     var taskRepository = new FakeFileProcessingTaskRepository();
     var clock = Clock.fixed(Instant.now(), ZoneId.of("UTC"));

@@ -5,6 +5,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.mutation.Outcome;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -16,7 +17,8 @@ public class LibraryAdministrationService {
   private final AuthorizationService authorizationService;
   private final LibraryManagementService libraryManagementService;
 
-  public Library addLibrary(AuthenticatedIdentity identity, Library library) {
+  public Outcome<Library, AddLibraryRejection> addLibrary(
+      AuthenticatedIdentity identity, Library library) {
     authorizationService.requireAllowed(identity, new Intent.AddLibrary());
     return libraryManagementService.addLibrary(identity, library);
   }

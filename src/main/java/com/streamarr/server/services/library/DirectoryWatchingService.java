@@ -19,7 +19,6 @@ import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.DependsOn;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -129,8 +128,9 @@ public class DirectoryWatchingService implements InitializingBean {
   }
 
   // Watcher may detect files before the initial async scan processes them.
-  // FileProcessingTaskCoordinator deduplicates, so concurrent discovery is safe.
-  @EventListener
+  // FileProcessingTaskCoordinator deduplicates, so concurrent discovery is safe. Watching starts
+  // only after the library row commits; a rolled-back addLibrary must leave no watcher behind.
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
   public void onLibraryAdded(LibraryAddedEvent event) {
     Thread.startVirtualThread(
         () -> {

@@ -37,9 +37,11 @@ import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.library.AddLibraryRejection;
 import com.streamarr.server.services.library.LibraryAdministrationService;
 import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
@@ -302,8 +304,8 @@ class LibraryResolverTest {
     }
 
     @Test
-    @DisplayName("Should map the authenticated identity and input when adding a library")
-    void shouldMapAuthenticatedIdentityAndInputWhenAddingLibrary() {
+    @DisplayName("Should return the library and no user errors when addLibrary is accepted")
+    void shouldReturnLibraryAndNoUserErrorsWhenAddLibraryIsAccepted() {
       var expectedIdentity = authorizationService.currentIdentity();
       var library =
           Library.builder()
@@ -318,22 +320,13 @@ class LibraryResolverTest {
 
       FAKE_LIBRARY_MANAGEMENT_SERVICE.returnLibraryWhenAdded(library);
 
-      String name =
-          dgsQueryExecutor.executeAndExtractJsonPath(
-              """
-              mutation {
-                addLibrary(input: {
-                  name: "Movies"
-                  filepath: "/mpool/media/movies"
-                  type: MOVIE
-                  backend: LOCAL
-                  externalAgentStrategy: TMDB
-                }) { name filepathUri }
-              }
-              """,
-              "data.addLibrary.name");
+      Map<String, Object> payload =
+          dgsQueryExecutor.executeAndExtractJsonPath(ADD_LIBRARY_MUTATION, "data.addLibrary");
 
-      assertThat(name).isEqualTo("Movies");
+      assertThat(payload)
+          .containsEntry(
+              "library", Map.of("name", "Movies", "filepathUri", "file:///mpool/media/movies"))
+          .containsEntry("userErrors", List.of());
       assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.addedIdentity()).isEqualTo(expectedIdentity);
       assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.addedLibrary())
           .satisfies(
@@ -344,6 +337,49 @@ class LibraryResolverTest {
                 assertThat(input.getBackend()).isEqualTo(LibraryBackend.LOCAL);
                 assertThat(input.getExternalAgentStrategy()).isEqualTo(ExternalAgentStrategy.TMDB);
               });
+    }
+
+    @ParameterizedTest(name = "Should return {1} at {2} when addLibrary is rejected with {0}")
+    @MethodSource("com.streamarr.server.graphql.resolvers.LibraryResolverTest#addLibraryRejections")
+    @DisplayName("Should return the typed user error and no library when addLibrary is rejected")
+    @SuppressWarnings("checkstyle:fullyQualifiedName")
+    void shouldReturnTypedUserErrorAndNoLibraryWhenAddLibraryIsRejected(
+        AddLibraryRejection rejection, String typename, String inputPath) {
+      FAKE_LIBRARY_MANAGEMENT_SERVICE.returnOutcomeWhenAdded(Outcome.rejected(rejection));
+
+      var result = dgsQueryExecutor.execute(ADD_LIBRARY_MUTATION);
+
+      assertThat(result.getErrors()).isEmpty();
+      Map<String, Object> data = result.getData();
+      @SuppressWarnings("unchecked")
+      var payload = (Map<String, Object>) data.get("addLibrary");
+      assertThat(payload).containsEntry("library", null);
+      @SuppressWarnings("unchecked")
+      var userErrors = (List<Map<String, Object>>) payload.get("userErrors");
+      assertThat(userErrors)
+          .singleElement()
+          .satisfies(
+              error -> {
+                assertThat(error).containsEntry("__typename", typename);
+                assertThat(error).containsEntry("inputPath", List.of(inputPath));
+                assertThat((String) error.get("message")).isNotBlank().endsWith(".");
+              });
+    }
+
+    @Test
+    @DisplayName("Should report every rejection when addLibrary is rejected for several reasons")
+    void shouldReportEveryRejectionWhenAddLibraryIsRejectedForSeveralReasons() {
+      FAKE_LIBRARY_MANAGEMENT_SERVICE.returnOutcomeWhenAdded(
+          Outcome.rejected(
+              List.of(
+                  new AddLibraryRejection.NameRequired(),
+                  new AddLibraryRejection.PathRequired())));
+
+      List<String> typenames =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              ADD_LIBRARY_MUTATION, "data.addLibrary.userErrors[*].__typename");
+
+      assertThat(typenames).containsExactly("LibraryNameRequiredError", "LibraryPathRequiredError");
     }
 
     @Test
@@ -367,6 +403,43 @@ class LibraryResolverTest {
       assertThat(result.getErrors()).isNotEmpty();
       assertThat(result.getErrors().get(0).getMessage()).contains("Invalid ID format");
     }
+  }
+
+  private static final String ADD_LIBRARY_MUTATION =
+      """
+      mutation {
+        addLibrary(input: {
+          name: "Movies"
+          filepath: "/mpool/media/movies"
+          type: MOVIE
+          backend: LOCAL
+          externalAgentStrategy: TMDB
+        }) {
+          library { name filepathUri }
+          userErrors {
+            __typename
+            ... on MutationError { message }
+            ... on InputMutationError { inputPath }
+          }
+        }
+      }
+      """;
+
+  static Stream<Arguments> addLibraryRejections() {
+    return Stream.of(
+        Arguments.of(new AddLibraryRejection.NameRequired(), "LibraryNameRequiredError", "name"),
+        Arguments.of(
+            new AddLibraryRejection.PathRequired(), "LibraryPathRequiredError", "filepath"),
+        Arguments.of(
+            new AddLibraryRejection.PathNotFound(), "LibraryPathNotFoundError", "filepath"),
+        Arguments.of(
+            new AddLibraryRejection.PathNotDirectory(), "LibraryPathNotDirectoryError", "filepath"),
+        Arguments.of(
+            new AddLibraryRejection.PathNotReadable(), "LibraryPathNotReadableError", "filepath"),
+        Arguments.of(
+            new AddLibraryRejection.PathAlreadyRegistered(),
+            "LibraryPathAlreadyRegisteredError",
+            "filepath"));
   }
 
   static Stream<Arguments> invalidIdOperations() {
@@ -800,8 +873,8 @@ class LibraryResolverTest {
   private static final class FakeLibraryManagementService extends LibraryManagementService {
 
     private AuthenticatedIdentity addedIdentity;
+    private Outcome<Library, AddLibraryRejection> addLibraryOutcome;
     private Library addedLibrary;
-    private Library libraryToReturn;
     private List<LibraryMetadata> alphabetIndex = List.of();
     private RefreshRequest refreshRequest;
 
@@ -820,14 +893,16 @@ class LibraryResolverTest {
           new MutexFactoryProvider(),
           null,
           null,
+          null,
           null);
     }
 
     @Override
-    public Library addLibrary(AuthenticatedIdentity identity, Library library) {
+    public Outcome<Library, AddLibraryRejection> addLibrary(
+        AuthenticatedIdentity identity, Library library) {
       addedIdentity = identity;
       addedLibrary = library;
-      return libraryToReturn != null ? libraryToReturn : library;
+      return addLibraryOutcome != null ? addLibraryOutcome : Outcome.accepted(library);
     }
 
     @Override
@@ -851,7 +926,11 @@ class LibraryResolverTest {
     }
 
     private void returnLibraryWhenAdded(Library library) {
-      libraryToReturn = library;
+      addLibraryOutcome = Outcome.accepted(library);
+    }
+
+    private void returnOutcomeWhenAdded(Outcome<Library, AddLibraryRejection> outcome) {
+      addLibraryOutcome = outcome;
     }
 
     private AuthenticatedIdentity addedIdentity() {
@@ -872,8 +951,8 @@ class LibraryResolverTest {
 
     private void reset() {
       addedIdentity = null;
+      addLibraryOutcome = null;
       addedLibrary = null;
-      libraryToReturn = null;
       alphabetIndex = List.of();
       refreshRequest = null;
     }

@@ -1,0 +1,18 @@
+= Identity and Authorization Workflow Checklist
+
+One row per user-visible workflow that ADR 0024 / ADR 0025 / ADR 0026 govern. A row is complete
+when its server PR is merged and each client column reads *complete* (with the PR), *deferred*
+(no client work in this stack), or *n/a*. The definition of done for the identity rebuild is every
+row complete; a PR that ships a workflow adds or completes its row in the same change.
+
+[options="header",cols="3,2,2,1,1,1"]
+|===
+| Workflow | ADR 0024 section | Cedar action(s) | Server PR | Web | Apple
+
+| Add a library (ADR 0026 tracer: typed payload, typed user errors, AFTER_COMMIT side effects)
+| Authorization architecture › whole-surface gate (ServerAdmin)
+| `addLibrary` ∈ `libraryAdministration` ∈ `serverAdministration`
+| #5
+| deferred (Web PR #1 contract foundation regenerates `AddLibraryError`)
+| n/a
+|===

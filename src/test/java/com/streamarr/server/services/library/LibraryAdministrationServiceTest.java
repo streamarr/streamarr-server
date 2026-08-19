@@ -10,6 +10,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.mutation.Outcome;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -34,9 +35,9 @@ class LibraryAdministrationServiceTest {
   void shouldAuthorizeAndAddLibraryThroughApplicationService() {
     var library = Library.builder().name("Movies").build();
 
-    var addedLibrary = libraryAdministrationService.addLibrary(identity, library);
+    var outcome = libraryAdministrationService.addLibrary(identity, library);
 
-    assertThat(addedLibrary).isSameAs(library);
+    assertThat(outcome).isEqualTo(Outcome.accepted(library));
     assertThat(authorizationService.recordedIntents()).containsExactly(new Intent.AddLibrary());
     assertThat(libraryManagementService.addedIdentity()).contains(identity);
     assertThat(libraryManagementService.addedLibrary()).contains(library);
@@ -119,10 +120,11 @@ class LibraryAdministrationServiceTest {
     }
 
     @Override
-    public Library addLibrary(AuthenticatedIdentity identity, Library library) {
+    public Outcome<Library, AddLibraryRejection> addLibrary(
+        AuthenticatedIdentity identity, Library library) {
       addedIdentity = identity;
       addedLibrary = library;
-      return library;
+      return Outcome.accepted(library);
     }
 
     @Override
