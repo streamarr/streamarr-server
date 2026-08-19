@@ -9,6 +9,15 @@ type Mutation {
     reportStreamSessionTimeline(sessionId: ID!, positionSeconds: Int!, state: PlaybackState!): Boolean!
     markWatched(id: ID!): Boolean!
     markUnwatched(id: ID!): Boolean!
+    grantServerAdmin(input: GrantServerAdminInput!): GrantServerAdminPayload
+    revokeServerAdmin(input: RevokeServerAdminInput!): RevokeServerAdminPayload
+    grantHouseholdAdmin(input: GrantHouseholdAdminInput!): GrantHouseholdAdminPayload
+    revokeHouseholdAdmin(input: RevokeHouseholdAdminInput!): RevokeHouseholdAdminPayload
+    disableAccount(input: DisableAccountInput!): DisableAccountPayload
+    enableAccount(input: EnableAccountInput!): EnableAccountPayload
+    renameAccount(input: RenameAccountInput!): RenameAccountPayload
+    createHousehold(input: CreateHouseholdInput!): CreateHouseholdPayload
+    renameHousehold(input: RenameHouseholdInput!): RenameHouseholdPayload
 }
 
 enum ImageRefreshMode {

@@ -4,19 +4,28 @@ import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.P
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
+import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
+import com.streamarr.server.jooq.generated.tables.records.UserAccountRecord;
+import java.time.Clock;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
+import org.jooq.TableField;
 import org.jooq.impl.DSL;
+import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
 public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCustom {
 
   private final DSLContext dsl;
+  private final AuditorAware<UUID> auditorAware;
+  private final Clock clock;
 
   @Override
   public Optional<AccountAuthorityFacts> findAuthorityFacts(UUID accountId) {
@@ -54,6 +63,63 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
         .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE))
         .orderBy(isMembership.desc(), PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.asc())
         .fetch(Record2::value1);
+  }
+
+  @Override
+  public boolean tryGrantServerAdmin(UUID accountId) {
+    return transition(
+        accountId, USER_ACCOUNT.SERVER_ADMIN, true, USER_ACCOUNT.SERVER_ADMIN.isFalse());
+  }
+
+  @Override
+  public boolean tryRevokeServerAdmin(UUID accountId) {
+    return transition(
+        accountId, USER_ACCOUNT.SERVER_ADMIN, false, USER_ACCOUNT.SERVER_ADMIN.isTrue());
+  }
+
+  @Override
+  public boolean tryPromoteToHouseholdAdmin(UUID accountId) {
+    return transition(
+        accountId,
+        USER_ACCOUNT.HOUSEHOLD_ROLE,
+        HouseholdRole.ADMIN,
+        USER_ACCOUNT.HOUSEHOLD_ROLE.ne(HouseholdRole.ADMIN));
+  }
+
+  @Override
+  public boolean tryDemoteToHouseholdMember(UUID accountId) {
+    return transition(
+        accountId,
+        USER_ACCOUNT.HOUSEHOLD_ROLE,
+        HouseholdRole.MEMBER,
+        USER_ACCOUNT.HOUSEHOLD_ROLE.ne(HouseholdRole.MEMBER));
+  }
+
+  @Override
+  public boolean tryDisable(UUID accountId) {
+    return transition(accountId, USER_ACCOUNT.ENABLED, false, USER_ACCOUNT.ENABLED.isTrue());
+  }
+
+  @Override
+  public boolean tryEnable(UUID accountId) {
+    return transition(accountId, USER_ACCOUNT.ENABLED, true, USER_ACCOUNT.ENABLED.isFalse());
+  }
+
+  @Override
+  public boolean tryRename(UUID accountId, String displayName) {
+    return transition(accountId, USER_ACCOUNT.DISPLAY_NAME, displayName, DSL.trueCondition());
+  }
+
+  private <V> boolean transition(
+      UUID accountId, TableField<UserAccountRecord, V> field, V value, Condition transitionable) {
+    return dsl.update(USER_ACCOUNT)
+            .set(field, value)
+            .set(USER_ACCOUNT.LAST_MODIFIED_ON, clock.instant().atOffset(ZoneOffset.UTC))
+            .set(USER_ACCOUNT.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+            .where(USER_ACCOUNT.ID.eq(accountId))
+            .and(transitionable)
+            .execute()
+        > 0;
   }
 
   @Override

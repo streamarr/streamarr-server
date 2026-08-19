@@ -27,4 +27,24 @@ public interface UserAccountRepositoryCustom {
    * scalar check avoids returning a stale managed entity from Hibernate's first-level cache.
    */
   boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash);
+
+  // Authority transitions are single-column conditional updates: they touch nothing else on the
+  // row (no lost concurrent update), and true means this statement made the change — the audit
+  // and side effects of a transition belong to exactly one winner. False on a row already in the
+  // target state or missing; the deferred triggers judge the final state at commit.
+
+  boolean tryGrantServerAdmin(UUID accountId);
+
+  boolean tryRevokeServerAdmin(UUID accountId);
+
+  boolean tryPromoteToHouseholdAdmin(UUID accountId);
+
+  boolean tryDemoteToHouseholdMember(UUID accountId);
+
+  boolean tryDisable(UUID accountId);
+
+  boolean tryEnable(UUID accountId);
+
+  /** Unconditional rename; true while the Account exists. */
+  boolean tryRename(UUID accountId, String displayName);
 }

@@ -15,6 +15,9 @@ public interface AuthSessionRepositoryCustom {
   /** Revokes a live session, returning false when it was missing or already revoked. */
   boolean revoke(UUID sessionId, SessionRevocationReason reason, Instant now);
 
+  /** Revokes every live session of the Account; disabling ends refresh authority immediately. */
+  int revokeAllForAccount(UUID accountId, SessionRevocationReason reason, Instant now);
+
   /**
    * Persists only the remembered context Household and selected Profile when the session is still
    * live. Returns false when the session is missing or revoked; revocation fields are never written
