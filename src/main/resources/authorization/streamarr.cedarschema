@@ -14,6 +14,8 @@ namespace Streamarr {
     selectedProfile?: Profile,
     contextHouseholdUsable?: Bool,
     sessionLive?: Bool,
+    liveHouseholdRole?: String,
+    liveMembershipHousehold?: Household,
   };
 
   entity Household;
@@ -96,6 +98,41 @@ namespace Streamarr {
     principal: Account,
     resource: Account,
     context: { freshReauthentication: Bool },
+  };
+  action grantHouseholdAdmin in accountAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: {},
+  };
+  action revokeHouseholdAdmin in accountAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: {},
+  };
+  action disableAccount in accountAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: {},
+  };
+  action enableAccount in accountAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: {},
+  };
+  action renameAccount in accountAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: {},
+  };
+  action createHousehold in householdAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action renameHousehold in householdAdministration appliesTo {
+    principal: Account,
+    resource: Household,
+    context: {},
   };
   action viewProfileAdministration in profileAdministration appliesTo {
     principal: Account,

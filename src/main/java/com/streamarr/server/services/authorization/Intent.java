@@ -49,4 +49,22 @@ public sealed interface Intent<T> {
 
   /** Revoke server-wide authority; requiresFreshReauthentication (ADR 0024 §ServerAdmin). */
   record RevokeServerAdmin(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  /** Create an empty Household; live ServerAdmin work. */
+  record CreateHousehold() implements Intent<AuthorizationUnit> {}
+
+  /** Edit a Household's settings — that Household's HouseholdAdmin (live role) or ServerAdmin. */
+  record RenameHousehold(UUID householdId) implements Intent<AuthorizationUnit> {}
+
+  /** Edit an Account's administrative display name — that Account itself or ServerAdmin. */
+  record RenameAccount(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  /** Household role changes are ServerAdmin work (ADR 0024 §ServerAdmin). */
+  record GrantHouseholdAdmin(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  record RevokeHouseholdAdmin(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  record DisableAccount(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  record EnableAccount(UUID accountId) implements Intent<AuthorizationUnit> {}
 }
