@@ -91,8 +91,8 @@ class AuthorizationParityTest {
       if (action.resourceKind() != Action.ResourceKind.SERVER) {
         continue;
       }
-      var group =
-          action == Action.CREATE_HOUSEHOLD ? "householdAdministration" : "libraryAdministration";
+      var householdGroup = action == Action.CREATE_HOUSEHOLD || action == Action.VIEW_HOUSEHOLDS;
+      var group = householdGroup ? "householdAdministration" : "libraryAdministration";
       assertThat(actions.get(action.cedarName()).path("memberOf"))
           .as("group of %s", action)
           .extracting(member -> member.path("id").asText())
@@ -143,6 +143,7 @@ class AuthorizationParityTest {
         new Intent.GrantHouseholdAdmin(id),
         new Intent.RevokeHouseholdAdmin(id),
         new Intent.DisableAccount(id),
-        new Intent.EnableAccount(id));
+        new Intent.EnableAccount(id),
+        new Intent.ViewHouseholds());
   }
 }

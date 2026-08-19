@@ -56,3 +56,15 @@ when {
    resource has availableInPrincipalHousehold && resource.availableInPrincipalHousehold) ||
   (principal has serverAdmin && principal.serverAdmin)
 };
+
+// The server-wide Household catalogue is ServerAdmin's inspection surface.
+@id("view-households-as-live-server-admin")
+permit (
+  principal,
+  action == Streamarr::Action::"viewHouseholds",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  principal has serverAdmin && principal.serverAdmin
+};

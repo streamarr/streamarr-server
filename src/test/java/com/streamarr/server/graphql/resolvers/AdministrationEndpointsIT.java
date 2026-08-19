@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.resolvers;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -343,6 +344,84 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
             """)
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+  }
+
+  @Test
+  @DisplayName("Should list every Household with its Accounts for ServerAdmin only")
+  void shouldListEveryHouseholdWithItsAccountsForServerAdminOnly() throws Exception {
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            query { households(first: 50) { edges { node { id name
+              accounts(first: 10) { edges { node { email householdRole } } } } } } }
+            """)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.households.edges.length()").value(greaterThanOrEqualTo(2)));
+
+    graphql(
+            authTestSupport.accountBearer(resident),
+            """
+            query { households(first: 50) { edges { node { id } } } }
+            """)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+  }
+
+  @Test
+  @DisplayName("Should show a Household to its admin and hide a foreign one as null")
+  void shouldShowHouseholdToItsAdminAndHideForeignOneAsNull() throws Exception {
+    graphql(
+            authTestSupport.accountBearer(resident),
+            """
+            query { householdAdministration(householdId: "%s") { id name
+              accounts(first: 10) { edges { node { email } } } } }
+            """
+                .formatted(resident.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.householdAdministration.id")
+                .value(resident.household().getId().toString()))
+        .andExpect(
+            jsonPath("$.data.householdAdministration.accounts.edges[0].node.email")
+                .value(resident.account().getEmail()));
+
+    graphql(
+            authTestSupport.accountBearer(resident),
+            """
+            query { householdAdministration(householdId: "%s") { id } }
+            """
+                .formatted(serverAdmin.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.householdAdministration").doesNotExist());
+  }
+
+  @Test
+  @DisplayName("Should show Account administration to its Household admin and hide it otherwise")
+  void shouldShowAccountAdministrationToItsHouseholdAdminAndHideItOtherwise() throws Exception {
+    var member = joinHousehold(resident, HouseholdRole.MEMBER);
+
+    graphql(
+            authTestSupport.accountBearer(resident),
+            """
+            query { accountAdministration(accountId: "%s") { id email enabled householdRole } }
+            """
+                .formatted(member.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.accountAdministration.householdRole").value("MEMBER"));
+
+    graphql(
+            authTestSupport.accountBearer(resident),
+            """
+            query { accountAdministration(accountId: "%s") { id } }
+            """
+                .formatted(serverAdmin.account().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.accountAdministration").doesNotExist());
   }
 
   private ResultActions graphql(String bearer, String query) throws Exception {

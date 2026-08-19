@@ -8,4 +8,7 @@ type Query {
     library(id: ID!): Library!
     libraries: [Library!]!
     continueWatching(first: Int): [ContinueWatchingMedia!]!
+    householdAdministration(householdId: ID!): HouseholdAdministration
+    households(first: Int, after: String, last: Int, before: String): HouseholdAdministrationConnection!
+    accountAdministration(accountId: ID!): AccountAdministration
 }

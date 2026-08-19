@@ -34,6 +34,7 @@ final class IntentPlanner {
               AuthorizationCheck.onProfile(Action.VIEW_PROFILE_ACTIVITY, profileId);
           case Intent.ViewHouseholdAdministration(var householdId) ->
               AuthorizationCheck.onHousehold(Action.VIEW_HOUSEHOLD_ADMINISTRATION, householdId);
+          case Intent.ViewHouseholds _ -> AuthorizationCheck.onServer(Action.VIEW_HOUSEHOLDS);
           case Intent.ViewAccountAdministration(var accountId) ->
               AuthorizationCheck.onAccount(Action.VIEW_ACCOUNT_ADMINISTRATION, accountId);
           case Intent.ViewProfileAdministration(var profileId) ->
