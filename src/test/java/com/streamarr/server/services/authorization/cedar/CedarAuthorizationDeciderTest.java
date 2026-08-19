@@ -193,6 +193,25 @@ class CedarAuthorizationDeciderTest {
   }
 
   @Test
+  @DisplayName("Should fail closed without a step-up retry when a group evaluation errors")
+  void shouldFailClosedWithoutStepUpRetryWhenGroupEvaluationErrors() throws Exception {
+    var erroringPolicies =
+        PolicySet.parsePolicies(
+            """
+            @id("erroring-forbid")
+            forbid (principal, action, resource) when { principal.serverAdmin == false };
+            """);
+    var engine = new RewritingEngine(ENGINE, Function.identity(), erroringPolicies);
+    var identity = identityFor(liveAccount(true, true), true);
+    var noFacts = decider(engine, contributor(_ -> {}));
+
+    // A stale caller whose evaluation cannot be completed is Failed, never
+    // REAUTHENTICATION_REQUIRED — the step-up probe only classifies clean denials.
+    assertThat(noFacts.decide(identity, new Intent.GrantServerAdmin(UUID.randomUUID())))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.EVALUATION_ERROR));
+  }
+
+  @Test
   @DisplayName("Should fail closed when a contributor throws")
   void shouldFailClosedWhenContributorThrows() {
     var failing =
