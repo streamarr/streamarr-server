@@ -79,8 +79,8 @@ class PackagedConfigurationTest {
   void shouldLaunchProcfileProcessTypesThroughProcfileBuildpackWhenPackaged() throws IOException {
     var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
 
-    assertThat(buildAction).contains("--buildpack paketo-buildpacks/procfile");
-    assertThat(buildAction).contains("BP_INCLUDE_FILES=Procfile");
+    assertThat(buildAction)
+        .contains("--buildpack paketo-buildpacks/procfile", "BP_INCLUDE_FILES=Procfile");
   }
 
   @Test

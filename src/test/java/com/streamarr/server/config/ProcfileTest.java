@@ -24,12 +24,15 @@ class ProcfileTest {
   void shouldShipSeparateServerAndTranscodeWorkerProcessTypes() throws IOException {
     var processes = processes();
 
-    assertThat(processes).containsOnlyKeys("web", "worker");
-    assertThat(processes.get("web")).endsWith("org.springframework.boot.loader.launch.JarLauncher");
-    assertThat(processes.get("worker"))
-        .isEqualTo(
+    assertThat(processes)
+        .containsOnlyKeys("web", "worker")
+        .containsEntry(
+            "worker",
             "java -Dloader.main=com.streamarr.transcode.worker.TranscodeWorkerApplication"
-                + " org.springframework.boot.loader.launch.PropertiesLauncher");
+                + " org.springframework.boot.loader.launch.PropertiesLauncher")
+        .hasEntrySatisfying(
+            "web",
+            web -> assertThat(web).endsWith("org.springframework.boot.loader.launch.JarLauncher"));
   }
 
   @Test
@@ -43,9 +46,9 @@ class ProcfileTest {
   void shouldEnableNativeAccessForEveryJvmTheBuildStarts() throws IOException {
     var pom = Files.readString(Path.of("pom.xml"));
 
-    assertThat(pom).contains("<native.access.args>" + NATIVE_ACCESS + "</native.access.args>");
     assertThat(pom)
         .contains(
+            "<native.access.args>" + NATIVE_ACCESS + "</native.access.args>",
             "<argLine>${surefire.jacoco.args} ${native.access.args}</argLine>",
             "<argLine>${failsafe.jacoco.args} ${native.access.args}</argLine>",
             "<jvmArguments>${native.access.args}</jvmArguments>");

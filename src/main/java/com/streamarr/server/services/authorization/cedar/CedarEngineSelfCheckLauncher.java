@@ -10,6 +10,9 @@ public final class CedarEngineSelfCheckLauncher {
 
   private CedarEngineSelfCheckLauncher() {}
 
+  // stdout is the contract: verify-cedar-image.sh greps the line, and the launcher runs without
+  // the application's logging configuration.
+  @SuppressWarnings({"java:S106", "java:S1172"})
   public static void main(String[] args) {
     var result = new CedarEngineSelfCheck().run();
     System.out.println(

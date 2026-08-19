@@ -47,7 +47,15 @@ public final class CedarEngineSelfCheck {
   private static final EntityUID SELF_CHECK_ACTION = uid("Streamarr::Action", "selfCheck");
   private static final EntityUID SERVER = uid("Streamarr::Server", "streamarr");
 
-  private final AuthorizationEngine engine = new BasicAuthorizationEngine();
+  private final AuthorizationEngine engine;
+
+  public CedarEngineSelfCheck() {
+    this(new BasicAuthorizationEngine());
+  }
+
+  CedarEngineSelfCheck(AuthorizationEngine engine) {
+    this.engine = engine;
+  }
 
   /** The two decisions the engine produced; both must hold for the check to pass. */
   public record Result(boolean permittedAccountAllowed, boolean strangerAccountDenied) {

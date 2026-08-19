@@ -58,8 +58,8 @@ class CedarDependencyAlignmentTest {
   void shouldKeepCedarOutOfAutomaticDependencyUpdates() throws IOException {
     var renovate = Files.readString(Path.of("renovate.json"));
 
-    assertThat(renovate).contains("com.cedarpolicy:cedar-java");
     assertThat(renovate)
+        .contains("com.cedarpolicy:cedar-java")
         .containsPattern("\"matchPackageNames\":\\s*\\[\\s*\"com.cedarpolicy:cedar-java\"");
   }
 
