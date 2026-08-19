@@ -69,6 +69,8 @@ runs:
           "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
           "${image_revision}"
 
+        .github/actions/pack-build/verify-cedar-image.sh "${build_image}"
+
     - name: Publish verified image tags
       if: inputs.publish == 'true'
       shell: bash

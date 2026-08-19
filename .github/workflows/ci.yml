@@ -37,6 +37,11 @@ jobs:
               - '.github/actions/pack-build/**'
               - '.github/workflows/ci.yml'
               - 'Procfile'
+              - 'pom.xml'
+              - 'mvnw'
+              - 'mvnw.cmd'
+              - '.mvn/**'
+              - 'src/main/java/com/streamarr/server/services/authorization/cedar/**'
 
   ffmpeg_lock:
     name: Verify FFmpeg lock
