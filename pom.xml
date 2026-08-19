@@ -75,6 +75,12 @@
         <checkstyle.version>13.10.0</checkstyle.version>
         <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
         <archunit.version>1.5.0</archunit.version>
+        <!-- Cedar ships a native library; upgrades re-run the multi-arch image self-check and
+             CedarDependencyAlignmentTest deliberately (renovate.json excludes it from automerge). -->
+        <cedar-java.version>4.10.0</cedar-java.version>
+        <!-- cedar-java calls into its Rust engine through JNI; Java 25 warns (and a future release
+             refuses) without this flag, so every JVM that loads it gets it. -->
+        <native.access.args>--enable-native-access=ALL-UNNAMED</native.access.args>
         <grpc.version>1.83.1</grpc.version>
         <protobuf-maven-plugin.version>5.1.8</protobuf-maven-plugin.version>
     </properties>
@@ -83,6 +89,12 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.cedarpolicy</groupId>
+            <artifactId>cedar-java</artifactId>
+            <version>${cedar-java.version}</version>
+            <classifier>uber</classifier>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -414,6 +426,7 @@
                     <profiles>
                         <profile>dev</profile>
                     </profiles>
+                    <jvmArguments>${native.access.args}</jvmArguments>
                 </configuration>
             </plugin>
             <plugin>
@@ -424,6 +437,7 @@
                     <excludes>
                         <exclude>**/com/streamarr/server/jooq/generated/**</exclude>
                         <exclude>**/com/streamarr/server/config/DevDataInitializer.class</exclude>
+                        <exclude>**/com/streamarr/server/services/authorization/cedar/CedarEngineSelfCheckLauncher.class</exclude>
                         <exclude>**/com/streamarr/transcode/v1/**</exclude>
                     </excludes>
                 </configuration>
@@ -565,7 +579,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${surefire-failsafe-plugin.version}</version>
                 <configuration>
-                    <argLine>${surefire.jacoco.args}</argLine>
+                    <argLine>${surefire.jacoco.args} ${native.access.args}</argLine>
                     <excludedGroups>${surefire.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
@@ -574,7 +588,7 @@
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <version>${surefire-failsafe-plugin.version}</version>
                 <configuration>
-                    <argLine>${failsafe.jacoco.args}</argLine>
+                    <argLine>${failsafe.jacoco.args} ${native.access.args}</argLine>
                     <excludedGroups>${failsafe.excludedGroups}</excludedGroups>
                 </configuration>
                 <executions>
