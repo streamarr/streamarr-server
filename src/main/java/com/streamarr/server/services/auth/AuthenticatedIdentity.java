@@ -3,6 +3,7 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
 import lombok.Builder;
@@ -25,7 +26,8 @@ public record AuthenticatedIdentity(
     boolean serverAdmin,
     @NonNull UUID contextHouseholdId,
     UUID profileId,
-    UUID streamSessionId) {
+    UUID streamSessionId,
+    Instant reauthenticatedAt) {
 
   public AuthenticatedIdentity {
     if (scope == TokenScope.ACCOUNT && profileId != null) {
@@ -53,6 +55,7 @@ public record AuthenticatedIdentity(
         .contextHouseholdId(UUID.fromString(jwt.getClaimAsString(TokenClaims.CONTEXT_HOUSEHOLD_ID)))
         .profileId(uuidClaim(jwt, TokenClaims.PROFILE_ID))
         .streamSessionId(uuidClaim(jwt, TokenClaims.STREAM_SESSION_ID))
+        .reauthenticatedAt(jwt.getClaimAsInstant(TokenClaims.REAUTHENTICATED_AT))
         .build();
   }
 

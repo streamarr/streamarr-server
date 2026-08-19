@@ -42,8 +42,22 @@ public class AccessTokenIssuer {
   public AccessToken issueDerived(TokenContext context, Instant sourceExpiresAt) {
     var now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
     var freshExpiry = now.plus(properties.accessTokenTtl());
-    var cappedExpiry = sourceExpiresAt.isBefore(freshExpiry) ? sourceExpiresAt : freshExpiry;
-    return mint(context, now, cappedExpiry);
+    return mint(context, now, earlier(sourceExpiresAt, freshExpiry));
+  }
+
+  /**
+   * Mints the reauthentication ceremony's replacement token (ADR 0024 §Fresh reauthentication): the
+   * context is stamped {@code reauthenticated_at = now} and the token expires at the earlier of the
+   * configured reauthentication window or the source token's expiry.
+   */
+  public AccessToken issueReauthenticated(TokenContext context, Instant sourceExpiresAt) {
+    var now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
+    var windowEnd = now.plus(properties.reauthenticationWindow());
+    return mint(context.withReauthenticatedAt(now), now, earlier(sourceExpiresAt, windowEnd));
+  }
+
+  private static Instant earlier(Instant left, Instant right) {
+    return left.isBefore(right) ? left : right;
   }
 
   private AccessToken mint(TokenContext context, Instant now, Instant expiresAt) {
@@ -67,6 +81,9 @@ public class AccessTokenIssuer {
 
     if (scope == TokenScope.PROFILE) {
       claims.claim(TokenClaims.PROFILE_ID, context.profileId().toString());
+    }
+    if (context.reauthenticatedAt() != null) {
+      claims.claim(TokenClaims.REAUTHENTICATED_AT, context.reauthenticatedAt().getEpochSecond());
     }
 
     var jwt =
