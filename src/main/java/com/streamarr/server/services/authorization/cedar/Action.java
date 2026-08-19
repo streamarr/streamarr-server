@@ -51,18 +51,39 @@ enum Action {
       ResourceKind.PROFILE,
       FactRequirement.SIGNED_PRINCIPAL_CONTEXT,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.PROFILE_MANAGEMENT);
+      FactRequirement.PROFILE_MANAGEMENT),
+  GRANT_SERVER_ADMIN(
+      "grantServerAdmin",
+      ResourceKind.ACCOUNT,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  REVOKE_SERVER_ADMIN(
+      "revokeServerAdmin",
+      ResourceKind.ACCOUNT,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 
   private final String cedarName;
   private final ResourceKind resourceKind;
+  private final FreshReauthentication freshReauthentication;
   private final Set<FactRequirement> facts;
 
   Action(
       String cedarName, ResourceKind resourceKind, FactRequirement first, FactRequirement... rest) {
+    this(cedarName, resourceKind, FreshReauthentication.NOT_REQUIRED, first, rest);
+  }
+
+  Action(
+      String cedarName,
+      ResourceKind resourceKind,
+      FreshReauthentication freshReauthentication,
+      FactRequirement first,
+      FactRequirement... rest) {
     this.cedarName = cedarName;
     this.resourceKind = resourceKind;
+    this.freshReauthentication = freshReauthentication;
     this.facts = Set.copyOf(EnumSet.of(first, rest));
   }
 
@@ -81,6 +102,16 @@ enum Action {
   /** Facts the slice must carry for this action. */
   Set<FactRequirement> facts() {
     return facts;
+  }
+
+  /** Membership in ADR 0024's requiresFreshReauthentication action group. */
+  boolean requiresFreshReauthentication() {
+    return freshReauthentication == FreshReauthentication.REQUIRED;
+  }
+
+  enum FreshReauthentication {
+    REQUIRED,
+    NOT_REQUIRED
   }
 
   enum ResourceKind {

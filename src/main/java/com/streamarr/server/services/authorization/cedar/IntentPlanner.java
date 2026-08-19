@@ -38,6 +38,10 @@ final class IntentPlanner {
               AuthorizationCheck.onAccount(Action.VIEW_ACCOUNT_ADMINISTRATION, accountId);
           case Intent.ViewProfileAdministration(var profileId) ->
               AuthorizationCheck.onProfile(Action.VIEW_PROFILE_ADMINISTRATION, profileId);
+          case Intent.GrantServerAdmin(var accountId) ->
+              AuthorizationCheck.onAccount(Action.GRANT_SERVER_ADMIN, accountId);
+          case Intent.RevokeServerAdmin(var accountId) ->
+              AuthorizationCheck.onAccount(Action.REVOKE_SERVER_ADMIN, accountId);
         };
     return (IntentPlan<T>) new IntentPlan<>(check, AuthorizationUnit.INSTANCE);
   }

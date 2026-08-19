@@ -43,4 +43,10 @@ public sealed interface Intent<T> {
 
   /** The live playback decision for the selected Profile in the context Household (ADR 0018). */
   record Playback() implements Intent<AuthorizationUnit> {}
+
+  /** Grant server-wide authority; requiresFreshReauthentication (ADR 0024 §ServerAdmin). */
+  record GrantServerAdmin(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  /** Revoke server-wide authority; requiresFreshReauthentication (ADR 0024 §ServerAdmin). */
+  record RevokeServerAdmin(UUID accountId) implements Intent<AuthorizationUnit> {}
 }

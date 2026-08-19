@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
+import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -11,12 +12,14 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.auth.ReauthenticationFreshness;
 import com.streamarr.server.services.authorization.AuthorizationDecider;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Clock;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -59,6 +62,16 @@ class CedarAuthorizationWiringTest {
     @Bean
     MeterRegistry meterRegistry() {
       return new SimpleMeterRegistry();
+    }
+
+    @Bean
+    Clock clock() {
+      return Clock.systemUTC();
+    }
+
+    @Bean
+    AuthTokenProperties authTokenProperties() {
+      return AuthTokenProperties.builder().build();
     }
   }
 

@@ -25,6 +25,7 @@ import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -47,6 +48,8 @@ class CedarIdentityPoliciesTest {
       new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
   private static final Decision<AuthorizationUnit> DENIED =
       new Decision.Denied<>(Decision.DenialReason.POLICY);
+  private static final Decision<AuthorizationUnit> REAUTHENTICATION_REQUIRED =
+      new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED);
 
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
@@ -70,6 +73,7 @@ class CedarIdentityPoliciesTest {
                       new ProfileAvailabilityContributor(profiles),
                       new ProfileManagementContributor(profiles, managers, shares, accounts),
                       new AccountHouseholdContributor(accounts))),
+              ContributorStubs.systemClockFreshness(),
               new SimpleMeterRegistry()));
 
   private UserAccount account;
@@ -382,6 +386,90 @@ class CedarIdentityPoliciesTest {
       assertThat(decide(member(), new Intent.ViewProfileAdministration(personal.getId())))
           .isEqualTo(DENIED);
     }
+  }
+
+  @Nested
+  @DisplayName("Administration")
+  class Administration {
+
+    @Test
+    @DisplayName("Should allow ServerAdmin authority changes for a fresh, live, enabled admin")
+    void shouldAllowServerAdminAuthorityChangesForFreshLiveEnabledAdmin() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+      var fresh = withReauthenticatedAt(atHome(), Instant.now());
+
+      assertThat(decide(fresh, new Intent.GrantServerAdmin(target.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(fresh, new Intent.RevokeServerAdmin(target.getId())))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should require reauthentication when only the ceremony is missing")
+    void shouldRequireReauthenticationWhenOnlyCeremonyIsMissing() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+
+      assertThat(decide(atHome(), new Intent.GrantServerAdmin(target.getId())))
+          .isEqualTo(REAUTHENTICATION_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("Should treat a stale or future-dated ceremony claim as not fresh")
+    void shouldTreatStaleOrFutureDatedCeremonyClaimAsNotFresh() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+      var stale = withReauthenticatedAt(atHome(), Instant.now().minus(Duration.ofHours(1)));
+      var future = withReauthenticatedAt(atHome(), Instant.now().plus(Duration.ofHours(1)));
+
+      assertThat(decide(stale, new Intent.GrantServerAdmin(target.getId())))
+          .isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(future, new Intent.GrantServerAdmin(target.getId())))
+          .isEqualTo(REAUTHENTICATION_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("Should never misclassify a true authority denial as reauthentication required")
+    void shouldNeverMisclassifyTrueAuthorityDenialAsReauthenticationRequired() {
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+      var fresh = withReauthenticatedAt(atHome(), Instant.now());
+
+      // Not a ServerAdmin: stale and fresh callers get the same ordinary policy denial.
+      assertThat(decide(atHome(), new Intent.GrantServerAdmin(target.getId())))
+          .isEqualTo(DENIED);
+      assertThat(decide(fresh, new Intent.GrantServerAdmin(target.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should keep the policy denial when the admin Account is disabled")
+    void shouldKeepPolicyDenialWhenAdminAccountIsDisabled() {
+      account.setServerAdmin(true);
+      account.setEnabled(false);
+      accounts.save(account);
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+
+      assertThat(decide(atHome(), new Intent.GrantServerAdmin(target.getId())))
+          .isEqualTo(DENIED);
+    }
+  }
+
+  private AuthenticatedIdentity withReauthenticatedAt(AuthenticatedIdentity base, Instant at) {
+    return AuthenticatedIdentity.builder()
+        .accountId(base.accountId())
+        .authSessionId(base.authSessionId())
+        .scope(base.scope())
+        .householdId(base.householdId())
+        .householdRole(base.householdRole())
+        .serverAdmin(base.serverAdmin())
+        .contextHouseholdId(base.contextHouseholdId())
+        .profileId(base.profileId())
+        .reauthenticatedAt(at)
+        .build();
   }
 
   private AuthenticatedIdentity atHome() {
