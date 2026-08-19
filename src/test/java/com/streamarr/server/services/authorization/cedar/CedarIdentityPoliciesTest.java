@@ -72,7 +72,8 @@ class CedarIdentityPoliciesTest {
                       new SessionLivenessContributor(sessions),
                       new ProfileAvailabilityContributor(profiles),
                       new ProfileManagementContributor(profiles, managers, shares, accounts),
-                      new AccountHouseholdContributor(accounts))),
+                      new AccountHouseholdContributor(accounts),
+                      new LivePrincipalHouseholdContributor(accounts))),
               ContributorStubs.systemClockFreshness(),
               new SimpleMeterRegistry()));
 
@@ -454,6 +455,81 @@ class CedarIdentityPoliciesTest {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
 
       assertThat(decide(atHome(), new Intent.GrantServerAdmin(target.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should reserve account administration writes for a live ServerAdmin")
+    void shouldReserveAccountAdministrationWritesForLiveServerAdmin() {
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+
+      // A HouseholdAdmin is not enough — role changes are ServerAdmin work.
+      assertThat(decide(atHome(), new Intent.GrantHouseholdAdmin(target.getId())))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.GrantHouseholdAdmin(target.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.RevokeHouseholdAdmin(target.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.DisableAccount(target.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.EnableAccount(target.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.CreateHousehold())).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny creating a Household to anyone but a live ServerAdmin")
+    void shouldDenyCreatingHouseholdToAnyoneButLiveServerAdmin() {
+      assertThat(decide(atHome(), new Intent.CreateHousehold())).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should let only a live HouseholdAdmin of that Household or ServerAdmin rename it")
+    void shouldLetOnlyLiveHouseholdAdminOfThatHouseholdOrServerAdminRenameIt() {
+      var home = account.getHouseholdId();
+
+      assertThat(decide(atHome(), new Intent.RenameHousehold(home))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.RenameHousehold(visitedHouseholdId)))
+          .isEqualTo(DENIED);
+
+      // The token says ADMIN, the live row says MEMBER: the live fact decides.
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.RenameHousehold(home))).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.RenameHousehold(visitedHouseholdId)))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should let an Account rename itself and ServerAdmin rename anyone")
+    void shouldLetAccountRenameItselfAndServerAdminRenameAnyone() {
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+
+      // Self-targeted: principal and resource are one entity in the slice.
+      assertThat(decide(member(), new Intent.RenameAccount(account.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(member(), new Intent.RenameAccount(target.getId())))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(member(), new Intent.RenameAccount(target.getId())))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny a disabled Account renaming itself")
+    void shouldDenyDisabledAccountRenamingItself() {
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(decide(member(), new Intent.RenameAccount(account.getId())))
           .isEqualTo(DENIED);
     }
   }

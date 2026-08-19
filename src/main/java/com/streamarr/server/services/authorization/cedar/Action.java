@@ -61,7 +61,21 @@ enum Action {
       "revokeServerAdmin",
       ResourceKind.ACCOUNT,
       FreshReauthentication.REQUIRED,
-      FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  CREATE_HOUSEHOLD(
+      "createHousehold", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  RENAME_HOUSEHOLD(
+      "renameHousehold",
+      ResourceKind.HOUSEHOLD,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.LIVE_PRINCIPAL_HOUSEHOLD),
+  RENAME_ACCOUNT("renameAccount", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  GRANT_HOUSEHOLD_ADMIN(
+      "grantHouseholdAdmin", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  REVOKE_HOUSEHOLD_ADMIN(
+      "revokeHouseholdAdmin", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  DISABLE_ACCOUNT("disableAccount", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  ENABLE_ACCOUNT("enableAccount", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 
