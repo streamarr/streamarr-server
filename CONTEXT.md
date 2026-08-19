@@ -49,7 +49,8 @@ _Avoid_: Account, household profile, user
 
 **Personal Profile**:
 The one Profile that represents an Account (`personalProfileOf`).
-Created with the Account, always available in the Account's own Household through a structural share, and transferred or deleted together with the Account.
+Created with the Account, always available in the Account's own Household through a structural share, and transferred with the Account.
+It is deleted with the Account unless ServerAdmin chooses the keep-Profile path, which removes the link only after the surviving Profile has a valid manager and home anchor.
 _Avoid_: Owner profile, primary profile, account profile
 
 **Profile Kind**:
@@ -69,6 +70,7 @@ _Avoid_: Child account, limited user
 **Unrestricted Adult**:
 Adult kind with no Content Ceiling.
 An Account whose Personal Profile is an unrestricted Adult is *eligible* for administrative and manager authority and is *sovereign* over that Profile: it manages it without a stored manager row, may remove its direct managers, may end its non-structural shares, and may delete Account and Profile together after fresh reauthentication.
+Self-deletion is rejected if any deletion invariant would be violated; the final Account is handled only by ServerAdmin Household teardown.
 _Avoid_: Admin profile, full profile
 
 **Profile PIN**:
@@ -89,7 +91,7 @@ _Avoid_: Profile owner, main parent, ProfileAuthority
 
 **Home anchor**:
 The required local management anchor of a Profile in the Household it belongs to: the linked Account for an unrestricted Adult Personal Profile; otherwise an eligible direct ProfileManager in that Household, who for a restricted Profile must also be a HouseholdAdmin there.
-Every Profile keeps its home anchor across transfer, deletion, demotion, and teardown checks.
+Transfer and every other authority or lifecycle change must leave each surviving Profile with a valid home anchor; an unlinked Profile transfer establishes an eligible destination manager before commit or is rejected.
 _Avoid_: Owner, primary manager
 
 **Supervise / Administer**:
@@ -151,5 +153,6 @@ Ordinary deletion is for an unlinked Profile by its final manager after fresh re
 _Avoid_: Revoke Profile, unshare, archive
 
 **Household teardown**:
-ServerAdmin deleting a Household atomically with the disposition of its final Account, after every other Account and every unlinked Profile worth keeping has been transferred out.
+ServerAdmin deleting a Household atomically with the disposition of its final Account.
+Profiles worth keeping are transferred out first; teardown deletes every Profile that still belongs to the Household and only unshares Profiles that merely visit it.
 _Avoid_: Delete household (as an ordinary mutation), purge
