@@ -159,6 +159,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Services must NEVER import from the graphql package
 - Services never import jOOQ — `DSLContext` stays in the repository layer
 - External API types (TMDB DTOs) must NEVER leak into the service/domain layer
+- Authorization: every point decision goes through `AuthorizationService.decide(identity, intent)` (resource operation whose denial is a typed payload error) or `requireAllowed(identity, intent)` (whole-surface gate → top-level FORBIDDEN) with a typed `Intent`; callers never name a Cedar action, assemble entities, or pass their own reading of authority. Only `services.authorization.cedar` imports Cedar/JNE, only the facade knows `AuthorizationDecider`, and the engine's actions/checks/contributors are package-private. Live ServerAdmin authority is a PostgreSQL fact contributed for the actions that need it — the token's admin claim is routing/display only. `Failed` decisions surface as `AUTHORIZATION_UNAVAILABLE`; diagnostics are logged and metered (`streamarr.authorization.fail_closed`), never returned. The module is held at 100% line/branch coverage by a JaCoCo check (ADR 0025)
 - These rules are enforced by ArchUnit tests (`ArchitectureTest`)
 
 ## Settled Decisions (do not revisit without an ADR)
