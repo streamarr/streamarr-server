@@ -1,5 +1,10 @@
 package com.streamarr.server;
 
+import static com.tngtech.archunit.core.domain.JavaCall.Predicates.target;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.assignableTo;
+import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.name;
+import static com.tngtech.archunit.core.domain.properties.HasOwner.Predicates.With.owner;
+import static com.tngtech.archunit.core.domain.properties.HasParameterTypes.Predicates.rawParameterTypes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
@@ -268,7 +273,10 @@ class ArchitectureTest {
         .doNotBelongToAnyOf(
             AccountPasswordVerifier.class, LoginService.class, PasswordTimingEqualizer.class)
         .should()
-        .callMethod(PasswordEncoder.class, "matches", CharSequence.class, String.class)
+        .callMethodWhere(
+            target(owner(assignableTo(PasswordEncoder.class)))
+                .and(target(name("matches")))
+                .and(target(rawParameterTypes(CharSequence.class, String.class))))
         .as(
             "Authenticated Account password checks must go through AccountPasswordVerifier; only"
                 + " login (distinct email+source throttle) and the timing equalizer compare"
