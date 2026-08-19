@@ -36,7 +36,7 @@
 ### Commit Discipline
 - Only commit when ALL tests pass and ALL warnings are resolved
 - Each commit is a single logical unit of work
-- Commit messages state whether the change is structural or behavioral
+- Commit subjects start with the lowercase prefix `structural:` or `behavioral:` (e.g. `structural: extract password verifier`); this is the server repo's casing — streamarr-web uses the same lowercase prefixes, streamarr-apple uses `STRUCTURAL:`/`BEHAVIORAL:`
 - Small, frequent commits over large, infrequent ones
 - Commit messages must be under 200 words
 - Always use signed commits (`git commit -S`)
@@ -147,6 +147,9 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Use `_` (unnamed variable) for unused caught exceptions and lambda parameters — `catch (IOException _)`
 - Prefer `Stream.toList()` over `Collectors.toList()` when an unmodifiable list is acceptable
 - Use text blocks (`"""`) for multi-line strings in tests (GraphQL queries, JSON fixtures); production code has no string SQL (jOOQ DSL) or inline GraphQL (schema-first)
+
+## Domain Language
+- Identity and viewing vocabulary (Account, Household, Profile, Personal Profile, ProfileManager, share, context Household, Device registration, fresh reauthentication) lives in `CONTEXT.md`; use those terms and their _Avoid_ lists in code, schema, tests, and docs. The rules behind them are ADR 0024 and ADR 0025 in [streamarr-adr](https://github.com/streamarr/streamarr-adr)
 
 ## Architecture Rules
 - Resolvers depend on Services; Services depend on Repositories; Domain depends on nothing
