@@ -109,11 +109,12 @@ class DevicePairingServiceTest {
     var issued = deviceAuthorizationService.issue("TV", "esn-1");
     var code = issued.userCode();
 
+    var caller = identity();
     var withoutHousehold = approve(code, null);
-    assertThatThrownBy(() -> service.decide(identity(), withoutHousehold))
+    assertThatThrownBy(() -> service.decide(caller, withoutHousehold))
         .isInstanceOf(HouseholdRequiredException.class);
     var strangersHousehold = approve(code, UUID.randomUUID());
-    assertThatThrownBy(() -> service.decide(identity(), strangersHousehold))
+    assertThatThrownBy(() -> service.decide(caller, strangersHousehold))
         .isInstanceOf(HouseholdAccessDeniedException.class);
 
     var view = service.decide(identity(), approve(code, visitedHouseholdId));
@@ -130,14 +131,15 @@ class DevicePairingServiceTest {
         EsnBlock.builder().esn("esn-1").householdId(visitedHouseholdId).reason("x").build());
     var scopedApproval =
         approve(deviceAuthorizationService.issue("TV", "esn-1").userCode(), visitedHouseholdId);
-    assertThatThrownBy(() -> service.decide(identity(), scopedApproval))
+    var caller = identity();
+    assertThatThrownBy(() -> service.decide(caller, scopedApproval))
         .isInstanceOf(EsnBlockedException.class);
 
     blocks.save(EsnBlock.builder().esn("esn-2").reason("server-wide").build());
     var serverWideApproval =
         approve(
             deviceAuthorizationService.issue("TV", "esn-2").userCode(), approver.getHouseholdId());
-    assertThatThrownBy(() -> service.decide(identity(), serverWideApproval))
+    assertThatThrownBy(() -> service.decide(caller, serverWideApproval))
         .isInstanceOf(EsnBlockedException.class);
   }
 
@@ -158,7 +160,8 @@ class DevicePairingServiceTest {
     var gatedApproval =
         approve(
             deviceAuthorizationService.issue("TV", "esn-3").userCode(), approver.getHouseholdId());
-    assertThatThrownBy(() -> service.decide(identity(), gatedApproval))
+    var gatedCaller = identity();
+    assertThatThrownBy(() -> service.decide(gatedCaller, gatedApproval))
         .isInstanceOf(AccessDeniedException.class);
   }
 
