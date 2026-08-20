@@ -2,6 +2,7 @@ package com.streamarr.server.services.identity;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
@@ -409,23 +410,21 @@ public class ProfileManagerAdministrationService {
   }
 
   private boolean supervises(UUID accountId, UUID profileId) {
-    var restricted =
-        profileRepository.findById(profileId).map(profile -> profile.isRestricted()).orElse(false);
-    if (!restricted) {
+    if (profileRepository.findById(profileId).filter(Profile::isRestricted).isEmpty()) {
       return false;
     }
     return userAccountRepository
         .findById(accountId)
         .filter(account -> account.getHouseholdRole() == HouseholdRole.ADMIN)
-        .map(account -> shareRepository.isActivelyShared(profileId, account.getHouseholdId()))
-        .orElse(false);
+        .filter(account -> shareRepository.isActivelyShared(profileId, account.getHouseholdId()))
+        .isPresent();
   }
 
   private boolean isEligible(UserAccount account) {
     return profileRepository
         .findById(account.getPersonalProfileId())
-        .map(profile -> !profile.isRestricted())
-        .orElse(false);
+        .filter(profile -> !profile.isRestricted())
+        .isPresent();
   }
 
   private boolean alreadyManages(UserAccount account, UUID profileId) {
