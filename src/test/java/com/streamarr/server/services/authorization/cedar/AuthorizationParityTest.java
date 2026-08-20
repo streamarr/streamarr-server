@@ -197,6 +197,7 @@ class AuthorizationParityTest {
       case ADD_LIBRARY, REMOVE_LIBRARY, SCAN_LIBRARY, REFRESH_LIBRARY -> "libraryAdministration";
       case BLOCK_ESN_SERVER_WIDE, UNBLOCK_ESN_SERVER_WIDE, VIEW_SERVER_DEVICE_ADMINISTRATION ->
           "deviceAdministration";
+      case VIEW_SECURITY_AUDIT -> "serverAdministration";
       case VIEW_PROFILE_PICKER,
           SELECT_PROFILE,
           PLAYBACK,
@@ -245,7 +246,8 @@ class AuthorizationParityTest {
           DELETE_ACCOUNT,
           DELETE_MY_ACCOUNT,
           TRANSFER_PROFILE,
-          ADMINISTRATIVELY_DELETE_PROFILE ->
+          ADMINISTRATIVELY_DELETE_PROFILE,
+          TEAR_DOWN_HOUSEHOLD ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
@@ -328,6 +330,8 @@ class AuthorizationParityTest {
         new Intent.DeleteAccount(id),
         new Intent.DeleteMyAccount(),
         new Intent.TransferProfile(id),
-        new Intent.AdministrativelyDeleteProfile(id));
+        new Intent.AdministrativelyDeleteProfile(id),
+        new Intent.TearDownHousehold(id),
+        new Intent.ViewSecurityAudit());
   }
 }

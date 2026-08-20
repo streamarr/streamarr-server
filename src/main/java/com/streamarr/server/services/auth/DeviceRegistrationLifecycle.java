@@ -45,6 +45,10 @@ public class DeviceRegistrationLifecycle {
         now);
   }
 
+  public void revokeAllByHousehold(UUID householdId, String reason, Instant now) {
+    dropSessions(registrationRepository.revokeAllByHousehold(householdId, reason, now), now);
+  }
+
   public void revokeAllByAccount(UUID authorizingAccountId, String reason, Instant now) {
     dropSessions(registrationRepository.revokeAllByAccount(authorizingAccountId, reason, now), now);
   }
