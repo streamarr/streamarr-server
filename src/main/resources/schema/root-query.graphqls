@@ -22,4 +22,7 @@ type Query {
     householdDevices(householdId: ID!, first: Int, after: String, last: Int, before: String): DeviceRegistrationConnection!
     esnBlocks(householdId: ID!, first: Int, after: String, last: Int, before: String): EsnBlockConnection!
     serverEsnBlocks(first: Int, after: String, last: Int, before: String): EsnBlockConnection!
+    teardownPreflight(householdId: ID!): TeardownPreflightView
+    securityAuditEvents(first: Int, after: String, last: Int, before: String): SecurityAuditEventConnection!
+    profileActivity(profileId: ID!, first: Int, after: String, last: Int, before: String): ProfileActivityConnection!
 }
