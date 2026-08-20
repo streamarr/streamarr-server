@@ -190,6 +190,35 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should set a picture and clear a ceiling through their ordinary edits")
+  void shouldSetPictureAndClearCeilingThroughOrdinaryEdits() {
+    var profile =
+        profiles.save(
+            ProfileFixture.kidProfileBuilder()
+                .householdId(household.getId())
+                .maximumAllowedRatingAge(12)
+                .build());
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.ProfilePolicyChange
+                ? new Decision.Allowed<>(
+                    new ProfilePolicyTransition(
+                        ProfileKind.KID,
+                        null,
+                        ProfilePolicyTransition.Classification.ORDINARY_EDIT))
+                : allowed());
+
+    assertThat(service.setProfilePicture(identity(), profile.getId(), "kai.png"))
+        .isInstanceOf(Outcome.Accepted.class);
+    assertThat(profiles.findById(profile.getId()).orElseThrow().getPicture()).isEqualTo("kai.png");
+
+    assertThat(service.clearProfileContentCeiling(identity(), profile.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+    assertThat(profiles.findById(profile.getId()).orElseThrow().getMaximumAllowedRatingAge())
+        .isNull();
+  }
+
+  @Test
   @DisplayName("Should refuse a malformed PIN before any hashing or writing")
   void shouldRefuseMalformedPinBeforeAnyHashingOrWriting() {
     var profile =
