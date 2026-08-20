@@ -16,6 +16,7 @@ import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
@@ -169,9 +170,9 @@ public class AccountAdministrationService {
     }
     return mutationTransactions.write(
         () -> {
-          if (plan.transition().get()) {
+          if (plan.transition().getAsBoolean()) {
             plan.runAfterTransition();
-            if (plan.audited()) {
+            if (plan.isAudited()) {
               securityAuditEventRepository.append(auditEntry(identity, plan, target.get()));
             }
           }
@@ -190,8 +191,8 @@ public class AccountAdministrationService {
     return switch (authorizationService.decide(identity, intent)) {
       case Decision.Allowed<?> _ -> Optional.empty();
       case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<?> denied ->
-          switch (denied.reason()) {
+      case Decision.Denied<?>(var reason) ->
+          switch (reason) {
             case REAUTHENTICATION_REQUIRED -> Optional.of(plan.reauthenticationRequired().get());
             case POLICY -> {
               if (mayViewAccount(identity, accountId)) {
@@ -228,7 +229,7 @@ public class AccountAdministrationService {
   private record TransitionPlan<R>(
       String operation,
       String reason,
-      Supplier<Boolean> transition,
+      BooleanSupplier transition,
       Runnable afterTransition,
       Supplier<R> notFound,
       Supplier<R> reauthenticationRequired,
@@ -236,7 +237,7 @@ public class AccountAdministrationService {
       Supplier<R> constraintRejection,
       Boolean audited) {
 
-    public Boolean audited() {
+    boolean isAudited() {
       return audited == null || audited;
     }
 
