@@ -13,6 +13,13 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
     implements SessionProgressRepository {
 
   @Override
+  public List<SessionProgress> findByProfileIdOrderByLastModifiedOnDesc(UUID profileId) {
+    return database.values().stream()
+        .filter(progress -> profileId.equals(progress.getProfileId()))
+        .toList();
+  }
+
+  @Override
   public Optional<SessionProgress> findBySessionId(UUID sessionId) {
     return database.values().stream().filter(sp -> sessionId.equals(sp.getSessionId())).findFirst();
   }

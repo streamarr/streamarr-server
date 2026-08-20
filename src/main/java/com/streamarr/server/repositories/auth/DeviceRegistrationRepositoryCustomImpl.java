@@ -62,6 +62,11 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
         DEVICE_REGISTRATION.AUTHORIZING_ACCOUNT_ID.eq(authorizingAccountId), null, reason, now);
   }
 
+  @Override
+  public List<UUID> revokeAllByHousehold(UUID householdId, String reason, Instant now) {
+    return revokeWhere(DEVICE_REGISTRATION.HOUSEHOLD_ID.eq(householdId), null, reason, now);
+  }
+
   private List<UUID> revokeWhere(Condition scope, UUID actorAccountId, String reason, Instant now) {
     return dsl.update(DEVICE_REGISTRATION)
         .set(

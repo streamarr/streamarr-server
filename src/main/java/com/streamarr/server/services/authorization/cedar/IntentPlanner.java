@@ -137,6 +137,10 @@ final class IntentPlanner {
               AuthorizationCheck.onProfile(Action.TRANSFER_PROFILE, profileId);
           case Intent.ForceDeleteProfile(var profileId) ->
               AuthorizationCheck.onProfile(Action.FORCE_DELETE_PROFILE, profileId);
+          case Intent.TearDownHousehold(var householdId) ->
+              AuthorizationCheck.onHousehold(Action.TEAR_DOWN_HOUSEHOLD, householdId);
+          case Intent.ViewSecurityAudit _ ->
+              AuthorizationCheck.onServer(Action.VIEW_SECURITY_AUDIT);
           case Intent.ProfilePolicyChange change ->
               throw new IllegalStateException(
                   "Policy changes are planned with their transition: " + change.getClass());
