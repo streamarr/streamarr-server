@@ -9,6 +9,7 @@ import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
 import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
+import com.streamarr.server.jooq.generated.tables.records.ProfileRecord;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
 import java.time.Clock;
@@ -16,8 +17,10 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
+import org.jooq.UpdateSetMoreStep;
 import org.jooq.impl.DSL;
 import org.springframework.data.domain.AuditorAware;
 
@@ -45,19 +48,40 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
   }
 
   @Override
-  public boolean tryApplyPolicy(
-      UUID profileId, ProfilePolicySnapshot expected, ProfilePolicyTarget target) {
+  public boolean tryApplyPolicy(UUID profileId, ProfilePolicyTarget target) {
     return dsl.update(PROFILE)
             .set(PROFILE.KIND, jooqKind(target.kind()))
             .set(PROFILE.MAXIMUM_ALLOWED_RATING_AGE, target.maximumAllowedRatingAge())
             .set(PROFILE.LAST_MODIFIED_ON, clock.instant().atOffset(ZoneOffset.UTC))
             .set(PROFILE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
             .where(PROFILE.ID.eq(profileId))
-            .and(PROFILE.KIND.eq(jooqKind(expected.kind())))
-            .and(
-                expected.maximumAllowedRatingAge() == null
-                    ? PROFILE.MAXIMUM_ALLOWED_RATING_AGE.isNull()
-                    : PROFILE.MAXIMUM_ALLOWED_RATING_AGE.eq(expected.maximumAllowedRatingAge()))
+            .execute()
+        > 0;
+  }
+
+  @Override
+  public boolean tryRename(UUID profileId, String name) {
+    return updateColumn(profileId, update -> update.set(PROFILE.NAME, name));
+  }
+
+  @Override
+  public boolean trySetPicture(UUID profileId, String picture) {
+    return updateColumn(profileId, update -> update.set(PROFILE.PICTURE, picture));
+  }
+
+  @Override
+  public boolean trySetPinHash(UUID profileId, String pinHash) {
+    return updateColumn(profileId, update -> update.set(PROFILE.PIN_HASH, pinHash));
+  }
+
+  private boolean updateColumn(
+      UUID profileId, UnaryOperator<UpdateSetMoreStep<ProfileRecord>> change) {
+    var update =
+        dsl.update(PROFILE).set(PROFILE.LAST_MODIFIED_ON, clock.instant().atOffset(ZoneOffset.UTC));
+    return change
+            .apply(
+                update.set(PROFILE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null)))
+            .where(PROFILE.ID.eq(profileId))
             .execute()
         > 0;
   }
@@ -66,6 +90,16 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.server.jooq.generated.enums.ProfileKind jooqKind(ProfileKind kind) {
     return com.streamarr.server.jooq.generated.enums.ProfileKind.valueOf(kind.name());
+  }
+
+  @Override
+  public Optional<Profile> findRefreshedById(UUID profileId) {
+    var entity = entityManager.find(Profile.class, profileId);
+    if (entity == null) {
+      return Optional.empty();
+    }
+    entityManager.refresh(entity);
+    return Optional.of(entity);
   }
 
   @Override

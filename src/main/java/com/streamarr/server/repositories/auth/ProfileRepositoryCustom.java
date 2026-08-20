@@ -19,7 +19,25 @@ public interface ProfileRepositoryCustom {
    */
   Optional<ProfilePolicySnapshot> lockPolicyById(UUID profileId);
 
-  /** Conditionally writes the authorized transition; false when the row changed or vanished. */
-  boolean tryApplyPolicy(
-      UUID profileId, ProfilePolicySnapshot expected, ProfilePolicyTarget target);
+  /**
+   * Writes the authorized transition. The caller holds the row lock {@link #lockPolicyById} took in
+   * this transaction, so the state the decision classified cannot have moved; false only when the
+   * row vanished.
+   */
+  boolean tryApplyPolicy(UUID profileId, ProfilePolicyTarget target);
+
+  /** Renames only; the deferred name-uniqueness trigger judges the result at commit. */
+  boolean tryRename(UUID profileId, String name);
+
+  boolean trySetPicture(UUID profileId, String picture);
+
+  /** Writes the PIN hash (null clears); the database refuses a blank hash. */
+  boolean trySetPinHash(UUID profileId, String pinHash);
+
+  /**
+   * The row re-read from the database, not from Hibernate's first-level cache: a policy decision
+   * inside this transaction already JPA-loaded the row, and after the jOOQ write the managed copy
+   * is stale (the hybrid footgun).
+   */
+  Optional<Profile> findRefreshedById(UUID profileId);
 }
