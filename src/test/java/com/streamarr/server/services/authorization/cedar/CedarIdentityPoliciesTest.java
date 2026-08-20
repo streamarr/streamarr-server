@@ -778,12 +778,28 @@ class CedarIdentityPoliciesTest {
       assertThat(decide(atHome(), new Intent.OfferProfileShare(otherPersonal.getId())))
           .isEqualTo(DENIED);
 
-      // An unlinked Profile is offered by any direct manager.
+      // An unlinked Profile is offered by any direct manager — and nobody else.
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      assertThat(decider.decide(atHome(), new Intent.OfferProfileShare(orphan.getId())))
+          .isEqualTo(DENIED);
       managers.save(
           ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
       assertThat(decide(atHome(), new Intent.OfferProfileShare(orphan.getId())))
           .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should strip sovereignty from a restricted Personal Profile's own Account")
+    void shouldStripSovereigntyFromRestrictedPersonalProfilesOwnAccount() {
+      var visit = shares.share(personal.getId(), visitedHouseholdId, false);
+      personal.setMaximumAllowedRatingAge(12);
+      profiles.save(personal);
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+
+      // A supervised person no longer ends their own Profile's visits.
+      assertThat(decider.decide(member(), new Intent.EndProfileShare(visit.getId())))
+          .isEqualTo(DENIED);
     }
 
     @Test

@@ -53,11 +53,12 @@ class ProfileManagementContributor implements FactContributor {
     slice.resourceAttribute(MANAGED_BY_PRINCIPAL, new PrimBool(selfManaged || directManager));
     // A self-managed Personal Profile is offered only by its own Account (ADR 0024 §Profile
     // sharing) — acceptance admits the person, so a retained direct manager cannot offer it.
+    // selfManaged implies a sovereign Personal Profile, so the sovereign arm needs only it and
+    // the other arm needs only the direct grant.
     var sovereignPersonal =
         !restricted && userAccountRepository.findByPersonalProfileId(profileId).isPresent();
     slice.resourceAttribute(
-        OFFERABLE_BY_PRINCIPAL,
-        new PrimBool(sovereignPersonal ? selfManaged : (selfManaged || directManager)));
+        OFFERABLE_BY_PRINCIPAL, new PrimBool(sovereignPersonal ? selfManaged : directManager));
     slice.resourceAttribute(
         AVAILABLE_IN_PRINCIPAL_HOUSEHOLD,
         new PrimBool(shareRepository.isActivelyShared(profileId, identity.householdId())));
