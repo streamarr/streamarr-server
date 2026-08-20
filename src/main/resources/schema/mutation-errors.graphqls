@@ -181,3 +181,39 @@ type InvitationNotPendingError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
+
+type ShareNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ShareNotPendingError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ShareNotActiveError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"One live share per Profile and Household."
+type ProfileAlreadySharedError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"A Household hosting a restricted Profile holds an eligible HouseholdAdmin."
+type NoEligibleAdminError implements MutationError {
+    message: String!
+}
+
+"The Profile's name collides with another available Profile in the target Household."
+type ShareNameConflictError implements MutationError {
+    message: String!
+}
+
+"Nobody ends a structural share while the Account remains a member."
+type StructuralShareError implements MutationError {
+    message: String!
+}

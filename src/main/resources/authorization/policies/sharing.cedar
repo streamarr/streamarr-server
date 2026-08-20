@@ -16,6 +16,8 @@ when {
 };
 
 // The target Household consents through its live HouseholdAdmins; ServerAdmin may act for them.
+// Lifecycle (pending, active, expiry) is the conditional transition's business, not authority's:
+// a decided offer answers with its typed lifecycle error, never a policy denial.
 @id("decide-pending-share-as-target-admin-or-server-admin")
 permit (
   principal,
@@ -26,7 +28,6 @@ permit (
 )
 when {
   principal has enabled && principal.enabled &&
-  resource has pending && resource.pending &&
   ((resource has principalAdminOfTarget && resource.principalAdminOfTarget) ||
    (principal has serverAdmin && principal.serverAdmin))
 };
@@ -40,7 +41,6 @@ permit (
 )
 when {
   principal has enabled && principal.enabled &&
-  resource has pending && resource.pending &&
   ((resource has offeredByPrincipal && resource.offeredByPrincipal) ||
    (principal has serverAdmin && principal.serverAdmin))
 };
@@ -55,7 +55,6 @@ permit (
 )
 when {
   principal has enabled && principal.enabled &&
-  resource has active && resource.active &&
   ((resource has principalAdminOfTarget && resource.principalAdminOfTarget) ||
    (resource has directlyManagedByPrincipal && resource.directlyManagedByPrincipal) ||
    (resource has sovereignOverProfileByPrincipal && resource.sovereignOverProfileByPrincipal) ||
@@ -72,6 +71,5 @@ permit (
 when {
   principal has enabled && principal.enabled &&
   principal has serverAdmin && principal.serverAdmin &&
-  resource has active && resource.active &&
   context.freshReauthentication
 };

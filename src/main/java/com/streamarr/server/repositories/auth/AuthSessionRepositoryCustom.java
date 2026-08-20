@@ -20,6 +20,12 @@ public interface AuthSessionRepositoryCustom {
    */
   int revokeAllForAccount(UUID accountId, SessionRevocationReason reason, Instant now);
 
+  /** Unsharing clears any selection of that Profile in that Household (ADR 0024 §Unshare). */
+  int clearSelections(UUID profileId, UUID householdId, Instant now);
+
+  /** Ending a visitor's access drops their sessions there back to the membership Household. */
+  int resetContextForAccount(UUID accountId, UUID householdId, Instant now);
+
   /**
    * Persists only the remembered context Household and selected Profile when the session is still
    * live. Returns false when the session is missing or revoked; revocation fields are never written

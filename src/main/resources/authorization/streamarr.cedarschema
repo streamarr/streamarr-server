@@ -37,8 +37,6 @@ namespace Streamarr {
 
   // One Profile's share into one Household, as the principal relates to it for one decision.
   entity Share {
-    pending?: Bool,
-    active?: Bool,
     structural?: Bool,
     offeredByPrincipal?: Bool,
     principalAdminOfTarget?: Bool,
