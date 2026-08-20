@@ -151,6 +151,66 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should decline once and let the sovereign remove a direct manager")
+  void shouldDeclineOnceAndLetSovereignRemoveDirectManager() throws Exception {
+    var orphan = managedOrphan();
+    var declining =
+        graphql(
+                authTestSupport.accountBearer(owner),
+                """
+                mutation { inviteProfileManager(input: {profileId: "%s",
+                  recipientAccountId: "%s"}) {
+                  issued { code } userErrors { __typename } } }
+                """
+                    .formatted(orphan.getId(), recipient.account().getId()))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var code =
+        objectMapper
+            .readTree(declining)
+            .path("data")
+            .path("inviteProfileManager")
+            .path("issued")
+            .path("code")
+            .asString();
+
+    graphql(
+            authTestSupport.accountBearer(recipient),
+            """
+            mutation { declineManagerInvitation(input: {code: "%s"}) {
+              invitation { status } userErrors { __typename } } }
+            """
+                .formatted(code))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.declineManagerInvitation.invitation.status").value("DECLINED"));
+
+    // The sovereign curates its own Personal Profile's managers.
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            profileManagerRepository.saveAndFlush(
+                ProfileManager.builder()
+                    .accountId(recipient.account().getId())
+                    .profileId(owner.account().getPersonalProfileId())
+                    .build()));
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            mutation { removeProfileManager(input: {profileId: "%s", accountId: "%s"}) {
+              profileId userErrors { __typename } } }
+            """
+                .formatted(owner.account().getPersonalProfileId(), recipient.account().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.removeProfileManager.userErrors").isEmpty());
+    assertThat(
+            profileManagerRepository.existsByAccountIdAndProfileId(
+                recipient.account().getId(), owner.account().getPersonalProfileId()))
+        .isFalse();
+  }
+
+  @Test
   @DisplayName("Should hold the home anchor when the sole manager relinquishes")
   void shouldHoldHomeAnchorWhenSoleManagerRelinquishes() throws Exception {
     var orphan = managedOrphan();
