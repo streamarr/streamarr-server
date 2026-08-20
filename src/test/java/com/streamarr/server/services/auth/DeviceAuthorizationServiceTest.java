@@ -19,6 +19,7 @@ import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.exceptions.DevicePairingNotConfiguredException;
 import com.streamarr.server.exceptions.EsnRequiredException;
 import com.streamarr.server.exceptions.InvalidUserCodeException;
+import com.streamarr.server.exceptions.SetupIncompleteException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeDeviceAuthorizationRepository;
@@ -26,6 +27,7 @@ import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakeEsnBlockRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
+import com.streamarr.server.fakes.FakeServerBootstrapRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
@@ -81,6 +83,7 @@ class DeviceAuthorizationServiceTest {
   private final FakeDeviceRegistrationRepository registrationRepository =
       new FakeDeviceRegistrationRepository();
   private final FakeEsnBlockRepository esnBlockRepository = new FakeEsnBlockRepository();
+  private final FakeServerBootstrapRepository serverBootstrapRepository = claimedBootstrap();
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
 
   private final DeviceAuthProperties properties =
@@ -780,6 +783,39 @@ class DeviceAuthorizationServiceTest {
     assertThat(sessionRepository.findAll()).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should refuse issuing a code before setup completes")
+  void shouldRefuseIssuingCodeBeforeSetupCompletes() {
+    var service = serviceWith(new FakeServerBootstrapRepository());
+
+    assertThatThrownBy(() -> service.issue("Apple TV", "esn-1"))
+        .isInstanceOf(SetupIncompleteException.class);
+  }
+
+  private static FakeServerBootstrapRepository claimedBootstrap() {
+    var bootstrap = new FakeServerBootstrapRepository();
+    bootstrap.claim(UUID.randomUUID());
+    return bootstrap;
+  }
+
+  private DeviceAuthorizationService serviceWith(FakeServerBootstrapRepository bootstrap) {
+    return new DeviceAuthorizationService(
+        authorizationRepository,
+        userAccountRepository,
+        registrationRepository,
+        esnBlockRepository,
+        bootstrap,
+        new DeviceRegistrationLifecycle(registrationRepository, sessionRepository),
+        refreshTokenService,
+        accessTokenIssuer,
+        new UserCodeGenerator(),
+        new DeviceCodeGenerator(),
+        new DeviceGuessThrottle(properties, clock),
+        properties,
+        CanonicalBaseUrl.of(BASE_URL, false),
+        clock);
+  }
+
   private DeviceAuthorizationService serviceWith(CanonicalBaseUrl baseUrl) {
     return serviceWith(authorizationRepository, new UserCodeGenerator(), baseUrl);
   }
@@ -798,6 +834,7 @@ class DeviceAuthorizationServiceTest {
         userAccountRepository,
         registrationRepository,
         esnBlockRepository,
+        serverBootstrapRepository,
         new DeviceRegistrationLifecycle(registrationRepository, sessionRepository),
         refreshTokenService,
         accessTokenIssuer,
@@ -829,6 +866,7 @@ class DeviceAuthorizationServiceTest {
         userAccountRepository,
         registrationRepository,
         esnBlockRepository,
+        serverBootstrapRepository,
         new DeviceRegistrationLifecycle(registrationRepository, sessionRepository),
         refreshTokenService,
         accessTokenIssuer,

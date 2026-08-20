@@ -11,6 +11,7 @@ import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.exceptions.DevicePairingNotConfiguredException;
 import com.streamarr.server.exceptions.EsnRequiredException;
+import com.streamarr.server.exceptions.SetupIncompleteException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
@@ -18,6 +19,7 @@ import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.repositories.auth.DeviceCodeCollisionException;
 import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
 import com.streamarr.server.repositories.auth.EsnBlockRepository;
+import com.streamarr.server.repositories.auth.ServerBootstrapRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.auth.UserCodeCollisionException;
 import java.nio.charset.StandardCharsets;
@@ -50,6 +52,7 @@ public class DeviceAuthorizationService {
   private final UserAccountRepository userAccountRepository;
   private final DeviceRegistrationRepository deviceRegistrationRepository;
   private final EsnBlockRepository esnBlockRepository;
+  private final ServerBootstrapRepository serverBootstrapRepository;
   private final DeviceRegistrationLifecycle registrationLifecycle;
   private final RefreshTokenService refreshTokenService;
   private final AccessTokenIssuer accessTokenIssuer;
@@ -71,6 +74,13 @@ public class DeviceAuthorizationService {
   public IssuedDeviceCode issue(String rawDeviceName, String esn) {
     if (!isPairingEnabled()) {
       throw new DevicePairingNotConfiguredException();
+    }
+
+    if (!serverBootstrapRepository.isClaimed()) {
+      // A code issued now could never be approved — approval needs a signed-in Account and none
+      // can exist yet. Refusing with a typed code lets the TV send the person to setup instead
+      // of showing a code that silently polls forever.
+      throw new SetupIncompleteException();
     }
 
     if (esn == null || esn.isBlank()) {
