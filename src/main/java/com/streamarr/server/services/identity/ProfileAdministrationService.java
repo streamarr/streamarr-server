@@ -26,6 +26,7 @@ import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
@@ -341,7 +342,7 @@ public class ProfileAdministrationService {
   private Optional<Object> refusalOf(
       AuthenticatedIdentity identity,
       Intent<?> intent,
-      Supplier<Boolean> mayView,
+      BooleanSupplier mayView,
       Supplier<Object> denied,
       Supplier<Object> reauthenticationRequired) {
     return switch (authorizationService.decide(identity, intent)) {
@@ -351,7 +352,7 @@ public class ProfileAdministrationService {
           switch (reason) {
             case REAUTHENTICATION_REQUIRED -> Optional.of(reauthenticationRequired.get());
             case POLICY -> {
-              if (Boolean.TRUE.equals(mayView.get())) {
+              if (mayView.getAsBoolean()) {
                 throw new AccessDeniedException("Not allowed.");
               }
               yield Optional.of(denied.get());

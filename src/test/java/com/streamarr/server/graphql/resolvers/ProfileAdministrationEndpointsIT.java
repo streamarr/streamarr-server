@@ -179,6 +179,66 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should rename, repicture, and clear the ceiling through ordinary edits")
+  void shouldRenameRepictureAndClearCeilingThroughOrdinaryEdits() throws Exception {
+    var kid = kidProfile();
+
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { renameProfile(input: {profileId: "%s", name: "Kai Renamed"}) {
+              profile { name } userErrors { __typename } } }
+            """
+                .formatted(kid.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.renameProfile.profile.name").value("Kai Renamed"));
+
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { renameProfile(input: {profileId: "%s", name: "%s"}) {
+              profile { name } userErrors { __typename } } }
+            """
+                .formatted(kid.getId(), admin.profile().getName()))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.renameProfile.userErrors[0].__typename")
+                .value("ProfileNameTakenError"));
+
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { setProfilePicture(input: {profileId: "%s", picture: "kai.png"}) {
+              profile { picture } userErrors { __typename } } }
+            """
+                .formatted(kid.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.setProfilePicture.profile.picture").value("kai.png"));
+
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { setProfileContentCeiling(input: {profileId: "%s", maximumAllowedRatingAge: 12}) {
+              profile { maximumAllowedRatingAge } userErrors { __typename } } }
+            """
+                .formatted(kid.getId()))
+        .andExpect(status().isOk());
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { clearProfileContentCeiling(input: {profileId: "%s"}) {
+              profile { maximumAllowedRatingAge kind } userErrors { __typename } } }
+            """
+                .formatted(kid.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.clearProfileContentCeiling.profile.maximumAllowedRatingAge")
+                .doesNotExist())
+        .andExpect(jsonPath("$.data.clearProfileContentCeiling.profile.kind").value("KID"));
+  }
+
+  @Test
   @DisplayName("Should refuse clearing a PIN that a Household's safety policy requires")
   void shouldRefuseClearingPinHouseholdSafetyPolicyRequires() throws Exception {
     kidProfile();
