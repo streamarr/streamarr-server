@@ -59,12 +59,14 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void setUp() {
+    authTestSupport.claimBootstrap();
     approver = authTestSupport.createAdminIdentity();
     host = authTestSupport.createIdentity();
   }
 
   @AfterEach
   void tearDown() {
+    authTestSupport.unclaimBootstrap();
     authorizationRepository.deleteAll();
     esnBlockRepository.deleteAll();
     registrationRepository.deleteAll();

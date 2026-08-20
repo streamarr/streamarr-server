@@ -22,6 +22,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -50,6 +51,11 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
 
   @Autowired private AuthTestSupport authTestSupport;
 
+  @BeforeEach
+  void claimBootstrap() {
+    authTestSupport.claimBootstrap();
+  }
+
   @Autowired private DeviceAuthorizationRepository authorizationRepository;
 
   @Autowired private AccessTokenIssuer accessTokenIssuer;
@@ -62,6 +68,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
 
   @AfterEach
   void deleteSeededRows() {
+    authTestSupport.unclaimBootstrap();
     authorizationRepository.deleteAll();
     accountIds.forEach(authTestSupport::deleteAccount);
     accountIds.clear();

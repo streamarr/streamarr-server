@@ -45,6 +45,7 @@ import org.awaitility.Awaitility;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -88,8 +89,15 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   private final List<UUID> accountIds = new ArrayList<>();
 
+  @BeforeEach
+  void claimBootstrap() {
+    authTestSupport.claimBootstrap();
+  }
+
   @AfterEach
   void deleteSeededRows() {
+    // Unclaim before account deletion: T4 only enforces while a claim exists.
+    authTestSupport.unclaimBootstrap();
     gatedIssuer.reset();
     gatedClock.reset();
     authorizationRepository.deleteAll();
