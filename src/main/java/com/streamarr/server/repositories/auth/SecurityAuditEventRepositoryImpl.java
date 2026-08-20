@@ -55,15 +55,15 @@ public class SecurityAuditEventRepositoryImpl implements SecurityAuditEventRepos
     return page.orderBy(SECURITY_AUDIT_EVENT.OCCURRED_AT.desc(), SECURITY_AUDIT_EVENT.ID.desc())
         .limit(limit)
         .fetch(
-            record ->
+            row ->
                 new SecurityAuditEventRecordView(
-                    record.getId(),
-                    record.getOccurredAt().toInstant(),
-                    record.getActorAccountId(),
-                    record.getOperation(),
-                    record.getOutcome(),
-                    record.getReason(),
-                    record.getResources().data()));
+                    row.getId(),
+                    row.getOccurredAt().toInstant(),
+                    row.getActorAccountId(),
+                    row.getOperation(),
+                    row.getOutcome(),
+                    row.getReason(),
+                    row.getResources().data()));
   }
 
   private JSONB resourcesJson(Map<String, UUID> resources) {
