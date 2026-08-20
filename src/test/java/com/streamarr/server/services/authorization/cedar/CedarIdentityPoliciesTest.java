@@ -10,11 +10,13 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
+import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
 import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
@@ -63,6 +65,8 @@ class CedarIdentityPoliciesTest {
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
   private final FakeProfileManagerRepository managers = new FakeProfileManagerRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
+  private final FakeProfileManagerInvitationRepository managerInvitations =
+      new FakeProfileManagerInvitationRepository();
 
   private final AuthorizationService authorizationService =
       new SecurityContextAuthorizationService(
@@ -83,7 +87,8 @@ class CedarIdentityPoliciesTest {
                       new PrincipalEligibilityContributor(accounts, profiles),
                       new ProfileSupervisionContributor(accounts, profiles, shares),
                       new ProfileDeletionContributor(accounts, managers, shares, Clock.systemUTC()),
-                      new ShareFactsContributor(shares, profiles, managers, accounts))),
+                      new ShareFactsContributor(shares, profiles, managers, accounts),
+                      new ManagerInvitationFactsContributor(managerInvitations))),
               new IntentPlanner(new ProfilePolicyPlanner(profiles)),
               ContributorStubs.systemClockFreshness(),
               new SimpleMeterRegistry()),
@@ -1002,6 +1007,132 @@ class CedarIdentityPoliciesTest {
 
   private ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> pendingShareBuilder() {
     return ProfileHouseholdShare.builder().status(ProfileShareStatus.PENDING);
+  }
+
+  @Nested
+  @DisplayName("Direct ProfileManagers")
+  class Managers {
+
+    @Test
+    @DisplayName("Should let a direct manager or a live supervisor invite, and nobody else")
+    void shouldLetDirectManagerOrLiveSupervisorInviteAndNobodyElse() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      assertThat(decide(atHome(), new Intent.InviteProfileManager(orphan.getId())))
+          .isEqualTo(DENIED);
+
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
+      assertThat(decide(atHome(), new Intent.InviteProfileManager(orphan.getId())))
+          .isEqualTo(ALLOWED);
+
+      // A supervising HouseholdAdmin proposes while the restricted Profile is hosted with them.
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      assertThat(decide(atHome(), new Intent.InviteProfileManager(kid.getId())))
+          .isEqualTo(DENIED);
+      shares.share(kid.getId(), account.getHouseholdId(), false);
+      assertThat(decide(atHome(), new Intent.InviteProfileManager(kid.getId())))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should let only the named recipient answer an invitation")
+    void shouldLetOnlyNamedRecipientAnswerInvitation() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var invitation = pendingManagerInvitation(orphan.getId(), account.getId());
+
+      assertThat(decide(atHome(), new Intent.AcceptManagerInvitation(invitation.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.DeclineManagerInvitation(invitation.getId())))
+          .isEqualTo(ALLOWED);
+
+      // Consent is the recipient's alone: even ServerAdmin cannot answer for them.
+      var someoneElse = pendingManagerInvitation(orphan.getId(), UUID.randomUUID());
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.AcceptManagerInvitation(someoneElse.getId())))
+          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.AcceptManagerInvitation(UUID.randomUUID())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should let the inviter or ServerAdmin cancel a pending invitation")
+    void shouldLetInviterOrServerAdminCancelPendingInvitation() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var strangers = pendingManagerInvitation(orphan.getId(), UUID.randomUUID());
+      assertThat(decide(atHome(), new Intent.CancelManagerInvitation(strangers.getId())))
+          .isEqualTo(DENIED);
+
+      var mine = pendingManagerInvitation(orphan.getId(), UUID.randomUUID());
+      mine.setInviterAccountId(account.getId());
+      managerInvitations.save(mine);
+      assertThat(decide(atHome(), new Intent.CancelManagerInvitation(mine.getId())))
+          .isEqualTo(ALLOWED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.CancelManagerInvitation(strangers.getId())))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should tie relinquishing to a stored grant, not self-management")
+    void shouldTieRelinquishingToStoredGrantNotSelfManagement() {
+      // The sovereign self-manages without a row: nothing to relinquish.
+      assertThat(decide(atHome(), new Intent.RelinquishProfileManagement(personal.getId())))
+          .isEqualTo(DENIED);
+
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
+      assertThat(decide(atHome(), new Intent.RelinquishProfileManagement(orphan.getId())))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should let only the sovereign Account remove a direct manager")
+    void shouldLetOnlySovereignAccountRemoveDirectManager() {
+      assertThat(decide(atHome(), new Intent.RemoveProfileManager(personal.getId())))
+          .isEqualTo(ALLOWED);
+
+      // A direct manager of someone else's Profile is a peer, and peers cannot remove peers.
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
+      assertThat(decide(atHome(), new Intent.RemoveProfileManager(orphan.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should reserve the manager override for a fresh ServerAdmin")
+    void shouldReserveManagerOverrideForFreshServerAdmin() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var override = new Intent.OverrideProfileManager(orphan.getId());
+
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), override))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), override)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), override))
+          .isEqualTo(ALLOWED);
+    }
+  }
+
+  private ProfileManagerInvitation pendingManagerInvitation(UUID profileId, UUID recipientId) {
+    return managerInvitations.save(
+        ProfileManagerInvitation.builder()
+            .profileId(profileId)
+            .profileName("Joe")
+            .inviterAccountId(UUID.randomUUID())
+            .inviterDisplayName("Inviter")
+            .recipientAccountId(recipientId)
+            .recipientEmail("recipient@example.com")
+            .expiresAt(Instant.now().plusSeconds(3600))
+            .publicId(UUID.randomUUID().toString())
+            .secretDigest(new byte[] {1})
+            .build());
   }
 
   private AuthenticatedIdentity withReauthenticatedAt(AuthenticatedIdentity base, Instant at) {

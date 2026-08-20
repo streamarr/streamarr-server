@@ -9,6 +9,7 @@ import com.streamarr.server.domain.auth.AccountAuthorityFacts;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -53,6 +54,7 @@ class CedarAuthorizationWiringTest {
   @MockitoBean private ProfileRepository profileRepository;
   @MockitoBean private ProfileManagerRepository profileManagerRepository;
   @MockitoBean private ProfileHouseholdShareRepository shareRepository;
+  @MockitoBean private ProfileManagerInvitationRepository managerInvitationRepository;
 
   @Configuration(proxyBeanMethods = false)
   @ComponentScan(basePackageClasses = CedarEngineConfiguration.class)

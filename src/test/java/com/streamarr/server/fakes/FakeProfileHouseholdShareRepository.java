@@ -210,6 +210,24 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
+  public int invalidatePendingSharesOfferedBy(
+      UUID profileId, UUID offererAccountId, String reason, Instant now) {
+    var pending =
+        database.values().stream()
+            .filter(share -> share.getProfileId().equals(profileId))
+            .filter(share -> offererAccountId.equals(share.getOfferedByAccountId()))
+            .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+            .toList();
+    pending.forEach(
+        share -> {
+          share.setStatus(ProfileShareStatus.INVALIDATED);
+          share.setInvalidationReason(reason);
+          share.setDecidedAt(now);
+        });
+    return pending.size();
+  }
+
+  @Override
   public boolean hasActiveOrPendingShares(UUID profileId, Instant now) {
     return database.values().stream()
         .filter(share -> share.getProfileId().equals(profileId))

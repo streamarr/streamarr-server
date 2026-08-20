@@ -11,6 +11,7 @@ final class CedarIds {
   static final String PROFILE_TYPE = "Streamarr::Profile";
   static final String SERVER_TYPE = "Streamarr::Server";
   static final String SHARE_TYPE = "Streamarr::Share";
+  static final String MANAGER_INVITATION_TYPE = "Streamarr::ManagerInvitation";
   static final String SERVER_ID = "streamarr";
 
   private CedarIds() {}
@@ -29,6 +30,10 @@ final class CedarIds {
 
   static EntityUID share(UUID shareId) {
     return uid(SHARE_TYPE, shareId.toString());
+  }
+
+  static EntityUID managerInvitation(UUID invitationId) {
+    return uid(MANAGER_INVITATION_TYPE, invitationId.toString());
   }
 
   static EntityUID server() {

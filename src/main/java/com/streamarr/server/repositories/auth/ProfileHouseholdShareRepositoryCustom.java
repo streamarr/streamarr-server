@@ -69,4 +69,8 @@ public interface ProfileHouseholdShareRepositoryCustom {
    * Every PENDING share of the Profile becomes INVALIDATED (connected, transferred, or deleted).
    */
   int invalidatePendingByProfileId(UUID profileId, String reason, Instant now);
+
+  /** Invalidates the leaving manager's own PENDING offers of the Profile. */
+  int invalidatePendingSharesOfferedBy(
+      UUID profileId, UUID offererAccountId, String reason, Instant now);
 }

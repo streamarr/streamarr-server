@@ -1,0 +1,393 @@
+package com.streamarr.server.services.identity;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.streamarr.server.config.security.AuthThrottleProperties;
+import com.streamarr.server.config.security.CredentialCodeProperties;
+import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
+import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
+import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
+import com.streamarr.server.fakes.FakeProfileManagerRepository;
+import com.streamarr.server.fakes.FakeProfileRepository;
+import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
+import com.streamarr.server.fakes.FakeTransactionManager;
+import com.streamarr.server.fakes.FakeUserAccountRepository;
+import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.CredentialGuessThrottle;
+import com.streamarr.server.services.auth.OpaqueCodes;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
+import com.streamarr.server.services.authorization.Decision;
+import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
+import com.streamarr.server.services.mutation.MutationTransactions;
+import com.streamarr.server.services.mutation.Outcome;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+/**
+ * The direct-manager lifecycle over fakes: invitation and consent, one winner per transition, the
+ * override boundary, and the invalidation rules that keep stale proposals from restoring disputed
+ * authority.
+ */
+@Tag("UnitTest")
+@DisplayName("Profile Manager Administration Service Tests")
+class ProfileManagerAdministrationServiceTest {
+
+  private static final Instant NOW = Instant.parse("2026-08-19T12:00:00Z");
+
+  private final FakeProfileHouseholdShareRepository shares =
+      new FakeProfileHouseholdShareRepository();
+  private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
+  private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
+  private final FakeProfileManagerRepository managers = new FakeProfileManagerRepository();
+  private final FakeProfileManagerInvitationRepository invitations =
+      new FakeProfileManagerInvitationRepository();
+  private final FakeSecurityAuditEventRepository audit = new FakeSecurityAuditEventRepository();
+  private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+  private final FakeAuthorizationService authorization =
+      new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
+
+  private final ProfileManagerAdministrationService service =
+      new ProfileManagerAdministrationService(
+          authorization,
+          invitations,
+          managers,
+          profiles,
+          accounts,
+          shares,
+          audit,
+          new OpaqueCodes(),
+          new CredentialGuessThrottle(new AuthThrottleProperties(5, Duration.ofMinutes(15)), clock),
+          new CredentialCodeProperties(null, null),
+          new MutationTransactions(
+              new FakeTransactionManager(), new ConstraintViolationTranslator()),
+          clock);
+
+  private UserAccount inviter;
+  private UserAccount recipient;
+  private Profile orphan;
+
+  @BeforeEach
+  void setUp() {
+    inviter = eligibleAccount(authorization.currentIdentity().accountId());
+    recipient = eligibleAccount(UUID.randomUUID());
+    orphan = profiles.save(ProfileFixture.defaultProfileBuilder().name("Joe").build());
+    managers.tryGrant(inviter.getId(), orphan.getId());
+  }
+
+  @Test
+  @DisplayName("Should invite once and replace the older pending invitation for the same pair")
+  void shouldInviteOnceAndReplaceOlderPendingInvitationForSamePair() {
+    var first = issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+    assertThat(first.code()).isNotBlank();
+    assertThat(first.invitation().getProfileName()).isEqualTo("Joe");
+    assertThat(first.invitation().getInviterDisplayName()).isEqualTo(inviter.getDisplayName());
+    assertThat(first.toString()).doesNotContain(first.code());
+
+    var second =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+    assertThat(invitations.findById(first.invitation().getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(second.invitation().getStatus()).isEqualTo(ProfileManagerInvitationStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName("Should validate the recipient before inviting")
+  void shouldValidateRecipientBeforeInviting() {
+    assertThat(
+            rejectionOf(
+                service.inviteProfileManager(identity(), orphan.getId(), UUID.randomUUID())))
+        .isInstanceOf(ManagerRejections.RecipientNotFound.class);
+
+    var restricted = accounts.save(AccountFixture.defaultAccountBuilder().build());
+    profiles.save(ProfileFixture.kidProfileBuilder().id(restricted.getPersonalProfileId()).build());
+    assertThat(
+            rejectionOf(
+                service.inviteProfileManager(identity(), orphan.getId(), restricted.getId())))
+        .isInstanceOf(ManagerRejections.RecipientNotEligible.class);
+
+    assertThat(
+            rejectionOf(service.inviteProfileManager(identity(), orphan.getId(), inviter.getId())))
+        .isInstanceOf(ManagerRejections.AlreadyManager.class);
+  }
+
+  @Test
+  @DisplayName("Should read hidden Profiles as not found under the oracle rule")
+  void shouldReadHiddenProfilesAsNotFoundUnderOracleRule() {
+    authorization.denyAll();
+    assertThat(
+            rejectionOf(
+                service.inviteProfileManager(identity(), orphan.getId(), recipient.getId())))
+        .isInstanceOf(ManagerRejections.ProfileNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should let exactly one decision win a pending invitation")
+  void shouldLetExactlyOneDecisionWinPendingInvitation() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+
+    var accepted = service.acceptManagerInvitation(recipientIdentity(), issued.code());
+    assertThat(accepted).isInstanceOf(Outcome.Accepted.class);
+    assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isTrue();
+    assertThat(audit.entries())
+        .extracting(entry -> entry.operation())
+        .containsExactly("acceptManagerInvitation");
+
+    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), issued.code())))
+        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    assertThat(
+            rejectionOf(service.cancelManagerInvitation(identity(), issued.invitation().getId())))
+        .isInstanceOf(ManagerRejections.InvitationNotPending.class);
+  }
+
+  @Test
+  @DisplayName("Should answer every acceptance miss the same way and throttle guesses")
+  void shouldAnswerEveryAcceptanceMissTheSameWayAndThrottleGuesses() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+
+    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), "garbage")))
+        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), "unknown.secret")))
+        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+
+    var publicId = issued.invitation().getPublicId();
+    for (var attempt = 0; attempt < 5; attempt++) {
+      var guess = publicId + ".guess-" + attempt;
+      assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), guess)))
+          .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    }
+    var throttled = issued.code();
+    var recipientIdentity = recipientIdentity();
+    assertThatThrownBy(() -> service.acceptManagerInvitation(recipientIdentity, throttled))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should refuse acceptance after the inviting manager loses management")
+  void shouldRefuseAcceptanceAfterInvitingManagerLosesManagement() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+    managers.tryRemove(inviter.getId(), orphan.getId());
+
+    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), issued.code())))
+        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+  }
+
+  @Test
+  @DisplayName("Should refuse acceptance when the recipient became ineligible")
+  void shouldRefuseAcceptanceWhenRecipientBecameIneligible() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+    profiles
+        .findById(recipient.getPersonalProfileId())
+        .orElseThrow()
+        .setMaximumAllowedRatingAge(12);
+
+    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), issued.code())))
+        .isInstanceOf(ManagerRejections.RecipientNotEligible.class);
+  }
+
+  @Test
+  @DisplayName("Should grant by override once, invalidating the redundant invitation")
+  void shouldGrantByOverrideOnceInvalidatingRedundantInvitation() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+
+    var granted =
+        service.grantProfileManagerOverride(
+            identity(), orphan.getId(), recipient.getId(), "support");
+    assertThat(granted).isInstanceOf(Outcome.Accepted.class);
+    assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isTrue();
+    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(audit.entries())
+        .extracting(entry -> entry.operation())
+        .containsExactly("grantProfileManagerOverride");
+
+    assertThat(
+            rejectionOf(
+                service.grantProfileManagerOverride(
+                    identity(), orphan.getId(), recipient.getId(), "again")))
+        .isInstanceOf(ManagerRejections.AlreadyManager.class);
+  }
+
+  @Test
+  @DisplayName("Should remove by override once, killing every restorable proposal")
+  void shouldRemoveByOverrideOnceKillingEveryRestorableProposal() {
+    managers.tryGrant(recipient.getId(), orphan.getId());
+    var restorable =
+        invitations.save(pendingInvitation(orphan.getId(), recipient.getId(), inviter.getId()));
+    var offered =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(orphan.getId())
+                .householdId(UUID.randomUUID())
+                .status(ProfileShareStatus.PENDING)
+                .offeredByAccountId(recipient.getId())
+                .expiresAt(NOW.plusSeconds(3600))
+                .build());
+
+    var removed =
+        service.removeProfileManagerOverride(
+            identity(), orphan.getId(), recipient.getId(), "abuse");
+    assertThat(removed).isInstanceOf(Outcome.Accepted.class);
+    assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isFalse();
+    assertThat(invitations.findById(restorable.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(shares.findById(offered.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.INVALIDATED);
+
+    assertThat(
+            rejectionOf(
+                service.removeProfileManagerOverride(
+                    identity(), orphan.getId(), recipient.getId(), "again")))
+        .isInstanceOf(ManagerRejections.NotAManager.class);
+  }
+
+  @Test
+  @DisplayName("Should relinquish once and invalidate the leaver's own proposals")
+  void shouldRelinquishOnceAndInvalidateLeaversOwnProposals() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+
+    var relinquished = service.relinquishProfileManagement(identity(), orphan.getId());
+    assertThat(relinquished).isInstanceOf(Outcome.Accepted.class);
+    assertThat(managers.existsByAccountIdAndProfileId(inviter.getId(), orphan.getId())).isFalse();
+    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+
+    assertThat(rejectionOf(service.relinquishProfileManagement(identity(), orphan.getId())))
+        .isInstanceOf(ManagerRejections.ManagementAlreadyRemoved.class);
+  }
+
+  @Test
+  @DisplayName("Should remove a manager as the sovereign Account over its Personal Profile")
+  void shouldRemoveManagerAsSovereignAccountOverItsPersonalProfile() {
+    var personal =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().id(inviter.getPersonalProfileId()).build());
+    managers.tryGrant(recipient.getId(), personal.getId());
+
+    var removed = service.removeProfileManager(identity(), personal.getId(), recipient.getId());
+    assertThat(removed).isInstanceOf(Outcome.Accepted.class);
+    assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), personal.getId()))
+        .isFalse();
+
+    assertThat(
+            rejectionOf(
+                service.removeProfileManager(identity(), personal.getId(), recipient.getId())))
+        .isInstanceOf(ManagerRejections.NotAManager.class);
+  }
+
+  @Test
+  @DisplayName("Should require the reason first and report a missing ceremony for overrides")
+  void shouldRequireReasonFirstAndReportMissingCeremonyForOverrides() {
+    assertThat(
+            rejectionOf(
+                service.grantProfileManagerOverride(
+                    identity(), orphan.getId(), recipient.getId(), " ")))
+        .isInstanceOf(ManagerRejections.ReasonRequired.class);
+    assertThat(authorization.recordedIntents()).isEmpty();
+
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.OverrideProfileManager
+                ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
+                : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+    assertThat(
+            rejectionOf(
+                service.grantProfileManagerOverride(
+                    identity(), orphan.getId(), recipient.getId(), "support")))
+        .isInstanceOf(ManagerRejections.ReauthenticationRequired.class);
+  }
+
+  @Test
+  @DisplayName("Should scope the invitation queries by visibility and expiry")
+  void shouldScopeInvitationQueriesByVisibilityAndExpiry() {
+    invitations.save(pendingInvitation(orphan.getId(), recipient.getId(), inviter.getId()));
+    var expired = pendingInvitation(orphan.getId(), UUID.randomUUID(), inviter.getId());
+    expired.setExpiresAt(NOW.minusSeconds(1));
+    invitations.save(expired);
+
+    assertThat(service.managerInvitations(identity(), orphan.getId())).hasSize(1);
+    assertThat(service.pendingManagerInvitations(recipientIdentity())).hasSize(1);
+
+    authorization.denyAll();
+    assertThat(service.managerInvitations(identity(), orphan.getId())).isEmpty();
+  }
+
+  private UserAccount eligibleAccount(UUID accountId) {
+    var account =
+        accounts.save(
+            AccountFixture.defaultAccountBuilder()
+                .id(accountId)
+                .householdRole(HouseholdRole.MEMBER)
+                .build());
+    profiles.save(
+        ProfileFixture.defaultProfileBuilder().id(account.getPersonalProfileId()).build());
+    return account;
+  }
+
+  private ProfileManagerInvitation pendingInvitation(
+      UUID profileId, UUID recipientId, UUID inviterId) {
+    return ProfileManagerInvitation.builder()
+        .profileId(profileId)
+        .profileName("Joe")
+        .inviterAccountId(inviterId)
+        .inviterDisplayName("Inviter")
+        .recipientAccountId(recipientId)
+        .recipientEmail("recipient@example.com")
+        .expiresAt(NOW.plusSeconds(3600))
+        .publicId(UUID.randomUUID().toString())
+        .secretDigest(new byte[] {1})
+        .build();
+  }
+
+  private AuthenticatedIdentity identity() {
+    return authorization.currentIdentity();
+  }
+
+  private AuthenticatedIdentity recipientIdentity() {
+    return AuthenticatedIdentityFixture.accountScopedBuilder().accountId(recipient.getId()).build();
+  }
+
+  private static ProfileManagerAdministrationService.IssuedManagerInvitation issued(
+      Outcome<ProfileManagerAdministrationService.IssuedManagerInvitation, ?> outcome) {
+    return outcome.fold(
+        value -> value,
+        rejections -> {
+          throw new AssertionError("expected acceptance but got " + rejections);
+        });
+  }
+
+  private static Object rejectionOf(Outcome<?, ?> outcome) {
+    return switch (outcome) {
+      case Outcome.Rejected<?, ?>(var rejections) -> rejections.getFirst();
+      case Outcome.Accepted<?, ?> accepted ->
+          throw new AssertionError("expected a rejection but got " + accepted);
+    };
+  }
+}

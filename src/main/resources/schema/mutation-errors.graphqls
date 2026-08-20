@@ -253,3 +253,39 @@ type ReofferHouseholdNotSharedError implements InputMutationError & MutationErro
     message: String!
     inputPath: [String!]!
 }
+
+type RecipientNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"Eligible means the Account's own Personal Profile is an unrestricted Adult."
+type RecipientNotEligibleError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type AlreadyManagerError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The one deliberate answer for every miss: unknown, expired, decided, or hidden."
+type ManagerInvitationNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ManagementAlreadyRemovedError implements MutationError {
+    message: String!
+}
+
+type NotAManagerError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"T6: every Profile retains its required home management anchor."
+type ManagerAnchorRequiredError implements MutationError {
+    message: String!
+}
