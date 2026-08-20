@@ -56,6 +56,21 @@ final class IntentPlanner {
               AuthorizationCheck.onAccount(Action.DISABLE_ACCOUNT, accountId);
           case Intent.EnableAccount(var accountId) ->
               AuthorizationCheck.onAccount(Action.ENABLE_ACCOUNT, accountId);
+          case Intent.CreateProfile(var householdId) ->
+              AuthorizationCheck.onHousehold(Action.CREATE_PROFILE, householdId);
+          case Intent.RenameProfile(var profileId) ->
+              AuthorizationCheck.onProfile(Action.EDIT_PROFILE, profileId);
+          case Intent.SetProfilePicture(var profileId) ->
+              AuthorizationCheck.onProfile(Action.EDIT_PROFILE, profileId);
+          case Intent.ManageProfilePin(var profileId) ->
+              AuthorizationCheck.onProfile(Action.MANAGE_PROFILE_PIN, profileId);
+          case Intent.OverrideProfilePin(var profileId) ->
+              AuthorizationCheck.onProfile(Action.OVERRIDE_PROFILE_PIN, profileId);
+          case Intent.DeleteProfile(var profileId) ->
+              AuthorizationCheck.onProfile(Action.DELETE_PROFILE, profileId);
+          case Intent.ProfilePolicyChange change ->
+              throw new IllegalStateException(
+                  "Policy changes are planned with their transition: " + change.getClass());
         };
     return (IntentPlan<T>) new IntentPlan<>(check, AuthorizationUnit.INSTANCE);
   }

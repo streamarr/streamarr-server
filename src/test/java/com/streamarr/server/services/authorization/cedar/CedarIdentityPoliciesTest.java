@@ -6,6 +6,7 @@ import com.cedarpolicy.BasicAuthorizationEngine;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
@@ -23,6 +24,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.authorization.ProfilePolicyTransition;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
@@ -74,7 +76,11 @@ class CedarIdentityPoliciesTest {
                       new ProfileAvailabilityContributor(profiles),
                       new ProfileManagementContributor(profiles, managers, shares, accounts),
                       new AccountHouseholdContributor(accounts),
-                      new LivePrincipalHouseholdContributor(accounts))),
+                      new LivePrincipalHouseholdContributor(accounts),
+                      new PrincipalEligibilityContributor(accounts, profiles),
+                      new ProfileSupervisionContributor(accounts, profiles, shares),
+                      new ProfileDeletionContributor(accounts, managers, shares))),
+              new ProfilePolicyPlanner(profiles),
               ContributorStubs.systemClockFreshness(),
               new SimpleMeterRegistry()));
 
@@ -535,6 +541,189 @@ class CedarIdentityPoliciesTest {
       accounts.save(account);
 
       assertThat(decide(member(), new Intent.RenameAccount(account.getId()))).isEqualTo(DENIED);
+    }
+  }
+
+  @Nested
+  @DisplayName("Profile management")
+  class ProfileManagement {
+
+    @Test
+    @DisplayName("Should let an eligible local admin or ServerAdmin create a Profile")
+    void shouldLetEligibleLocalAdminOrServerAdminCreateProfile() {
+      assertThat(decide(atHome(), new Intent.CreateProfile(account.getHouseholdId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.CreateProfile(visitedHouseholdId)))
+          .isEqualTo(DENIED);
+
+      // The live row decides the role, not the token claim.
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.CreateProfile(account.getHouseholdId())))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.CreateProfile(visitedHouseholdId)))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should refuse Profile creation to an admin whose own Profile is restricted")
+    void shouldRefuseProfileCreationToAdminWhoseOwnProfileIsRestricted() {
+      personal.setMaximumAllowedRatingAge(12);
+      profiles.save(personal);
+
+      assertThat(decide(atHome(), new Intent.CreateProfile(account.getHouseholdId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should let managers and supervisors edit but only managers change kind")
+    void shouldLetManagersAndSupervisorsEditButOnlyManagersChangeKind() {
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      shares.share(kid.getId(), account.getHouseholdId(), false);
+
+      // Supervising HouseholdAdmin (restricted Profile shared into their Household).
+      assertThat(decide(atHome(), new Intent.RenameProfile(kid.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.ManageProfilePin(kid.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(
+              decide(
+                  atHome(), new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT)))
+          .isEqualTo(DENIED);
+
+      // A live MEMBER of the hosting Household supervises nothing.
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+      assertThat(decide(member(), new Intent.RenameProfile(kid.getId()))).isEqualTo(DENIED);
+
+      // A direct manager changes kind (ceilinged: the target stays restricted).
+      kid.setMaximumAllowedRatingAge(12);
+      profiles.save(kid);
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(kid.getId()).build());
+      assertThat(
+              decide(
+                  member(), new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT)))
+          .isInstanceOf(Decision.Allowed.class);
+    }
+
+    @Test
+    @DisplayName("Should require fresh reauthentication to lift the final restriction")
+    void shouldRequireFreshReauthenticationToLiftFinalRestriction() {
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(kid.getId()).build());
+      var lift = new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT);
+
+      assertThat(decide(atHome(), lift))
+          .isEqualTo(new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED));
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), lift))
+          .isEqualTo(
+              new Decision.Allowed<>(
+                  new ProfilePolicyTransition(
+                      ProfileKind.ADULT,
+                      null,
+                      ProfilePolicyTransition.Classification.LIFT_FINAL_RESTRICTION)));
+    }
+
+    @Test
+    @DisplayName("Should reserve restricting a sovereign Adult for a fresh ServerAdmin")
+    void shouldReserveRestrictingSovereignAdultForFreshServerAdmin() {
+      var sovereign = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      profiles.linkTo(sovereign.getId(), UUID.randomUUID());
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(sovereign.getId()).build());
+      var restrict = new Intent.SetProfileContentCeiling(sovereign.getId(), 12);
+
+      // Even a fresh direct manager cannot restrict a sovereign Adult.
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), restrict))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), restrict))
+          .isEqualTo(new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED));
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), restrict))
+          .isEqualTo(
+              new Decision.Allowed<>(
+                  new ProfilePolicyTransition(
+                      ProfileKind.ADULT,
+                      12,
+                      ProfilePolicyTransition.Classification.RESTRICT_SOVEREIGN_ADULT)));
+    }
+
+    @Test
+    @DisplayName("Should return the normalized transition as the allowed value")
+    void shouldReturnNormalizedTransitionAsAllowedValue() {
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(kid.getId()).build());
+
+      var decision = decide(atHome(), new Intent.SetProfileContentCeiling(kid.getId(), 12));
+
+      assertThat(decision)
+          .isEqualTo(
+              new Decision.Allowed<>(
+                  new ProfilePolicyTransition(
+                      ProfileKind.KID, 12, ProfilePolicyTransition.Classification.ORDINARY_EDIT)));
+    }
+
+    @Test
+    @DisplayName("Should reserve the PIN override for a fresh ServerAdmin")
+    void shouldReservePinOverrideForFreshServerAdmin() {
+      var override = new Intent.OverrideProfilePin(personal.getId());
+
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), override))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), override)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), override))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should allow ordinary deletion only to the fresh sole manager")
+    void shouldAllowOrdinaryDeletionOnlyToFreshSoleManager() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
+      var delete = new Intent.DeleteProfile(orphan.getId());
+      var fresh = withReauthenticatedAt(atHome(), Instant.now());
+
+      assertThat(decide(atHome(), delete)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(fresh, delete)).isEqualTo(ALLOWED);
+
+      // A live share keeps the Profile undeletable.
+      var share = shares.share(orphan.getId(), visitedHouseholdId, false);
+      assertThat(decide(fresh, delete)).isEqualTo(DENIED);
+      shares.deleteById(share.getId());
+
+      // A co-manager keeps a veto until they relinquish.
+      managers.save(
+          ProfileManager.builder().accountId(UUID.randomUUID()).profileId(orphan.getId()).build());
+      assertThat(decide(fresh, delete)).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should refuse deleting a linked Personal Profile standalone")
+    void shouldRefuseDeletingLinkedPersonalProfileStandalone() {
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(personal.getId()).build());
+      // The personal Profile is linked (some Account's personalProfileId points at it).
+      var owner = accounts.save(AccountFixture.defaultAccountBuilder().build());
+      owner.setPersonalProfileId(personal.getId());
+      accounts.save(owner);
+
+      assertThat(
+              decide(
+                  withReauthenticatedAt(atHome(), Instant.now()),
+                  new Intent.DeleteProfile(personal.getId())))
+          .isEqualTo(DENIED);
     }
   }
 
