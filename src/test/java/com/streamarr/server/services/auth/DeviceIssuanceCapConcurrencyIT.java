@@ -6,6 +6,8 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.AuthTestSupportConfig;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.concurrent.Callable;
@@ -16,10 +18,12 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Import;
 
 /**
  * The outstanding-code cap is advertised as a hard global limit, and it is the only thing bounding
@@ -27,17 +31,26 @@ import org.springframework.beans.factory.annotation.Autowired;
  * concurrent caller read the same under-cap count and insert anyway.
  */
 @Tag("IntegrationTest")
+@Import(AuthTestSupportConfig.class)
 @DisplayName("Device Issuance Cap Concurrency Integration Tests")
 class DeviceIssuanceCapConcurrencyIT extends AbstractIntegrationTest {
 
   @Autowired private DeviceAuthorizationService deviceAuthorizationService;
 
+  @Autowired private AuthTestSupport authTestSupport;
+
   @Autowired private DeviceAuthorizationRepository authorizationRepository;
 
   @Autowired private DeviceAuthProperties properties;
 
+  @BeforeEach
+  void claimBootstrap() {
+    authTestSupport.claimBootstrap();
+  }
+
   @AfterEach
   void deleteSeededRows() {
+    authTestSupport.unclaimBootstrap();
     authorizationRepository.deleteAll();
   }
 

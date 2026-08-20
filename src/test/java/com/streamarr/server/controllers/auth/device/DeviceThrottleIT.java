@@ -51,8 +51,20 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   private final List<UUID> accountIds = new ArrayList<>();
 
   @BeforeEach
+  void seedBaseline() {
+    authTestSupport.claimBootstrap();
+    deleteSeededRows();
+  }
+
   @AfterEach
-  void deleteSeededRows() {
+  void restoreBaseline() {
+    // Unclaim first: T4 only enforces while a claim exists, and the deletions below may remove
+    // the database's last enabled ServerAdmin.
+    authTestSupport.unclaimBootstrap();
+    deleteSeededRows();
+  }
+
+  private void deleteSeededRows() {
     authorizationRepository.deleteAll();
     accountIds.forEach(authTestSupport::deleteAccount);
     accountIds.clear();

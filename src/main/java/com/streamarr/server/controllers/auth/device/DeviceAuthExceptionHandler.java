@@ -12,6 +12,7 @@ import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidDecisionException;
 import com.streamarr.server.exceptions.InvalidEsnException;
 import com.streamarr.server.exceptions.InvalidUserCodeException;
+import com.streamarr.server.exceptions.SetupIncompleteException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import java.time.Duration;
 import org.springframework.http.HttpHeaders;
@@ -59,6 +60,11 @@ public class DeviceAuthExceptionHandler {
   @ExceptionHandler(EsnBlockedException.class)
   public ResponseEntity<AuthErrorResponse> handleEsnBlocked(EsnBlockedException e) {
     return respond(HttpStatus.FORBIDDEN, "ESN_BLOCKED", e);
+  }
+
+  @ExceptionHandler(SetupIncompleteException.class)
+  public ResponseEntity<AuthErrorResponse> handleSetupIncomplete(SetupIncompleteException e) {
+    return respond(HttpStatus.CONFLICT, "SETUP_INCOMPLETE", e);
   }
 
   @ExceptionHandler(DevicePairingNotConfiguredException.class)

@@ -4,11 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.AuthTestSupportConfig;
 import java.security.SecureRandom;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -20,16 +23,28 @@ import org.springframework.context.annotation.Primary;
 
 @Tag("IntegrationTest")
 @DisplayName("Device Authorization Collision Integration Tests")
-@Import(DeviceAuthorizationCollisionIT.CollisionCodeConfig.class)
+@Import({DeviceAuthorizationCollisionIT.CollisionCodeConfig.class, AuthTestSupportConfig.class})
 class DeviceAuthorizationCollisionIT extends AbstractIntegrationTest {
 
   @Autowired private DeviceAuthorizationService deviceAuthorizationService;
+
+  @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private DeviceAuthorizationRepository authorizationRepository;
 
   @Autowired private SequenceUserCodeGenerator userCodeGenerator;
 
   @Autowired private SequenceSecureRandom deviceCodeRandom;
+
+  @BeforeEach
+  void claimBootstrap() {
+    authTestSupport.claimBootstrap();
+  }
+
+  @AfterEach
+  void unclaimBootstrap() {
+    authTestSupport.unclaimBootstrap();
+  }
 
   @AfterEach
   void deleteSeededRows() {
