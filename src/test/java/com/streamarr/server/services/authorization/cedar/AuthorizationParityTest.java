@@ -107,12 +107,19 @@ class AuthorizationParityTest {
     var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
     var ceilingedKid =
         profiles.save(ProfileFixture.kidProfileBuilder().maximumAllowedRatingAge(12).build());
+    var unrestrictedAdult = profiles.save(ProfileFixture.defaultProfileBuilder().build());
     var sovereign = profiles.save(ProfileFixture.defaultProfileBuilder().build());
     profiles.linkTo(sovereign.getId(), UUID.randomUUID());
 
     return List.of(
             // KID gaining a ceiling: still restricted, same kind — an ordinary edit.
             planner.plan(new Intent.SetProfileContentCeiling(kid.getId(), 12)),
+            // Ceilinged KID losing only the ceiling: still a KID — an ordinary edit.
+            planner.plan(new Intent.ClearProfileContentCeiling(ceilingedKid.getId())),
+            // An UNLINKED unrestricted Adult gaining a ceiling: its managers may restrict it.
+            planner.plan(new Intent.SetProfileContentCeiling(unrestrictedAdult.getId(), 12)),
+            // Clearing a ceiling that is not set: unrestricted stays unrestricted.
+            planner.plan(new Intent.ClearProfileContentCeiling(unrestrictedAdult.getId())),
             // Ceilinged KID becoming a ceilinged ADULT: a kind change, still restricted.
             planner.plan(new Intent.ChangeProfileKind(ceilingedKid.getId(), ProfileKind.ADULT)),
             // KID becoming an unrestricted ADULT: the final restriction lifts.
@@ -190,6 +197,7 @@ class AuthorizationParityTest {
         new Intent.ViewHouseholds(),
         new Intent.CreateProfile(id),
         new Intent.RenameProfile(id),
+        new Intent.SetProfilePicture(id),
         new Intent.ManageProfilePin(id),
         new Intent.OverrideProfilePin(id),
         new Intent.DeleteProfile(id));

@@ -313,8 +313,8 @@ public class ProfileAdministrationService {
       case Decision.Allowed<ProfilePolicyTransition>(var transition) -> transition;
       case Decision.Failed<ProfilePolicyTransition> _ ->
           throw new AuthorizationUnavailableException();
-      case Decision.Denied<ProfilePolicyTransition> denied ->
-          throw switch (denied.reason()) {
+      case Decision.Denied<ProfilePolicyTransition>(var reason) ->
+          throw switch (reason) {
             case REAUTHENTICATION_REQUIRED ->
                 new MutationRejection(new ProfileRejections.ReauthenticationRequired());
             case POLICY -> {
@@ -347,8 +347,8 @@ public class ProfileAdministrationService {
     return switch (authorizationService.decide(identity, intent)) {
       case Decision.Allowed<?> _ -> Optional.empty();
       case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<?> deniedDecision ->
-          switch (deniedDecision.reason()) {
+      case Decision.Denied<?>(var reason) ->
+          switch (reason) {
             case REAUTHENTICATION_REQUIRED -> Optional.of(reauthenticationRequired.get());
             case POLICY -> {
               if (Boolean.TRUE.equals(mayView.get())) {

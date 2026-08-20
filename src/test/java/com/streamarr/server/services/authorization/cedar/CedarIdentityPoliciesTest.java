@@ -709,6 +709,17 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName("Should refuse supervision to an admin whose own Profile is restricted")
+    void shouldRefuseSupervisionToAdminWhoseOwnProfileIsRestricted() {
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      shares.share(kid.getId(), account.getHouseholdId(), false);
+      personal.setMaximumAllowedRatingAge(12);
+      profiles.save(personal);
+
+      assertThat(decider.decide(atHome(), new Intent.RenameProfile(kid.getId()))).isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should deny a policy change for a Profile that does not exist")
     void shouldDenyPolicyChangeForProfileThatDoesNotExist() {
       assertThat(

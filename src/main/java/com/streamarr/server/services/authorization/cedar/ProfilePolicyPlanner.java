@@ -37,27 +37,43 @@ class ProfilePolicyPlanner {
 
   private static ProfilePolicyTransition classify(
       ProfilePolicySnapshot current, Intent.ProfilePolicyChange intent) {
-    var targetKind =
-        intent instanceof Intent.ChangeProfileKind(var ignored, var kind) ? kind : current.kind();
-    var targetCeiling =
-        switch (intent) {
-          case Intent.ChangeProfileKind _ -> current.maximumAllowedRatingAge();
-          case Intent.SetProfileContentCeiling(var ignored, var age) -> Integer.valueOf(age);
-          case Intent.ClearProfileContentCeiling _ -> null;
-        };
+    var targetKind = current.kind();
+    if (intent instanceof Intent.ChangeProfileKind change) {
+      targetKind = change.kind();
+    }
+    var targetCeiling = targetCeilingOf(current, intent);
     var restrictedAfter = targetKind == ProfileKind.KID || targetCeiling != null;
     return new ProfilePolicyTransition(
         targetKind, targetCeiling, classification(current, targetKind, restrictedAfter));
   }
 
+  private static Integer targetCeilingOf(
+      ProfilePolicySnapshot current, Intent.ProfilePolicyChange intent) {
+    if (intent instanceof Intent.SetProfileContentCeiling set) {
+      return set.maximumAllowedRatingAge();
+    }
+    if (intent instanceof Intent.ClearProfileContentCeiling) {
+      return null;
+    }
+    return current.maximumAllowedRatingAge();
+  }
+
   private static Classification classification(
       ProfilePolicySnapshot current, ProfileKind targetKind, boolean restrictedAfter) {
-    if (!current.restricted() && restrictedAfter && current.linked()) {
+    if (current.restricted()) {
+      if (!restrictedAfter) {
+        return Classification.LIFT_FINAL_RESTRICTION;
+      }
+      return kindChangeOrOrdinary(current, targetKind);
+    }
+    if (restrictedAfter && current.linked()) {
       return Classification.RESTRICT_SOVEREIGN_ADULT;
     }
-    if (current.restricted() && !restrictedAfter) {
-      return Classification.LIFT_FINAL_RESTRICTION;
-    }
+    return kindChangeOrOrdinary(current, targetKind);
+  }
+
+  private static Classification kindChangeOrOrdinary(
+      ProfilePolicySnapshot current, ProfileKind targetKind) {
     if (targetKind != current.kind()) {
       return Classification.KIND_CHANGE;
     }
