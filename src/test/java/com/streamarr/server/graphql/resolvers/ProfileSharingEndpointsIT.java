@@ -1,0 +1,412 @@
+package com.streamarr.server.graphql.resolvers;
+
+import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileManager;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.fixtures.HouseholdFixture;
+import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.repositories.auth.AuthSessionRepository;
+import com.streamarr.server.repositories.auth.HouseholdRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.support.AuthTestSupport;
+import java.util.Map;
+import java.util.UUID;
+import org.jooq.DSLContext;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.ObjectMapper;
+
+/**
+ * The sharing lifecycle through the GraphQL boundary against real PostgreSQL and Cedar: offers and
+ * their decisions, T7's eligible-admin activation rule, T8's name rule, T3's structural rule, the
+ * fresh-reauthenticated force-end, the preflight, and the unshare session effects.
+ */
+@Tag("IntegrationTest")
+@DisplayName("Profile Sharing Endpoints Integration Tests")
+class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
+
+  @Autowired private MockMvc mockMvc;
+  @Autowired private ObjectMapper objectMapper;
+  @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private ProfileRepository profileRepository;
+  @Autowired private ProfileManagerRepository profileManagerRepository;
+  @Autowired private ProfileHouseholdShareRepository shareRepository;
+  @Autowired private HouseholdRepository householdRepository;
+  @Autowired private AuthSessionRepository authSessionRepository;
+  @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private DSLContext dsl;
+
+  private AuthTestSupport.TestIdentity owner;
+  private AuthTestSupport.TestIdentity host;
+
+  @BeforeEach
+  void setUp() {
+    owner = authTestSupport.createIdentity();
+    host = authTestSupport.createIdentity();
+  }
+
+  @AfterEach
+  void tearDown() {
+    dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
+    authTestSupport.deleteIdentity(host);
+    authTestSupport.deleteIdentity(owner);
+  }
+
+  @Test
+  @DisplayName("Should run the share loop from offer through acceptance to availability")
+  void shouldRunShareLoopFromOfferThroughAcceptanceToAvailability() throws Exception {
+    var orphan = managedOrphan();
+
+    var shareId = offer(orphan, host.household().getId());
+
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            query { pendingShareOffers(householdId: "%s") { edges { node { id status } } } }
+            """
+                .formatted(host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.pendingShareOffers.edges[0].node.id").value(shareId));
+
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { acceptProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.acceptProfileShare.share.status").value("ACTIVE"));
+
+    assertThat(shareRepository.isActivelyShared(orphan.getId(), host.household().getId())).isTrue();
+
+    // One live share per pair: a second offer refuses.
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+              share { id } userErrors { __typename } } }
+            """
+                .formatted(orphan.getId(), host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.offerProfileShare.userErrors[0].__typename")
+                .value("ProfileAlreadySharedError"));
+  }
+
+  @Test
+  @DisplayName("Should refuse activating a restricted share into a Household with no admin")
+  void shouldRefuseActivatingRestrictedShareIntoHouseholdWithNoAdmin() throws Exception {
+    var kid = managedKid();
+    var empty =
+        householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    try {
+      var shareId = offer(kid, empty.getId());
+
+      // ServerAdmin may accept on the Household's behalf, but T7 still needs an eligible admin.
+      var serverAdmin = authTestSupport.createAdminIdentity();
+      try {
+        graphql(
+                authTestSupport.accountBearer(serverAdmin),
+                """
+                mutation { acceptProfileShare(input: {shareId: "%s"}) {
+                  share { status } userErrors { __typename } } }
+                """
+                    .formatted(shareId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(
+                jsonPath("$.data.acceptProfileShare.userErrors[0].__typename")
+                    .value("NoEligibleAdminError"));
+      } finally {
+        authTestSupport.deleteIdentity(serverAdmin);
+      }
+    } finally {
+      householdRepository.deleteById(empty.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should refuse activating a share whose name collides in the target")
+  void shouldRefuseActivatingShareWhoseNameCollidesInTarget() throws Exception {
+    var twin =
+        transactionTemplate.execute(
+            _ -> {
+              var profile =
+                  profileRepository.saveAndFlush(
+                      ProfileFixture.defaultProfileBuilder()
+                          .householdId(owner.household().getId())
+                          .name(host.profile().getName().toUpperCase())
+                          .build());
+              profileManagerRepository.saveAndFlush(
+                  ProfileManager.builder()
+                      .accountId(owner.account().getId())
+                      .profileId(profile.getId())
+                      .build());
+              shareRepository.saveAndFlush(
+                  ProfileHouseholdShare.builder()
+                      .profileId(profile.getId())
+                      .householdId(owner.household().getId())
+                      .status(ProfileShareStatus.ACTIVE)
+                      .build());
+              return profile;
+            });
+    var shareId = offer(twin, host.household().getId());
+
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { acceptProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.acceptProfileShare.userErrors[0].__typename")
+                .value("ShareNameConflictError"));
+  }
+
+  @Test
+  @DisplayName("Should let one decision win and answer the loser with not-pending")
+  void shouldLetOneDecisionWinAndAnswerLoserWithNotPending() throws Exception {
+    var orphan = managedOrphan();
+    var shareId = offer(orphan, host.household().getId());
+
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { rejectProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.rejectProfileShare.share.status").value("REJECTED"));
+
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            mutation { cancelProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.cancelProfileShare.userErrors[0].__typename")
+                .value("ShareNotPendingError"));
+  }
+
+  @Test
+  @DisplayName("Should end a visitor's share, clear their context, and keep structural shares")
+  void shouldEndVisitorsShareClearTheirContextAndKeepStructuralShares() throws Exception {
+    // The owner's Personal Profile visits the host's Household.
+    var visitShareId =
+        transactionTemplate.execute(
+            _ ->
+                shareRepository
+                    .saveAndFlush(
+                        ProfileHouseholdShare.builder()
+                            .profileId(owner.profile().getId())
+                            .householdId(host.household().getId())
+                            .status(ProfileShareStatus.ACTIVE)
+                            .build())
+                    .getId());
+    var session = owner.session();
+    session.setContextHouseholdId(host.household().getId());
+    authSessionRepository.saveAndFlush(session);
+
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { endProfileShare(input: {shareId: "%s"}) {
+              share { status endedAt } userErrors { __typename } } }
+            """
+                .formatted(visitShareId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.endProfileShare.share.status").value("ENDED"));
+
+    // The visitor's session dropped back to the membership Household.
+    assertThat(
+            authSessionRepository
+                .findById(owner.session().getId())
+                .orElseThrow()
+                .getContextHouseholdId())
+        .isNull();
+
+    // The structural share refuses to end for everyone.
+    var structuralShareId =
+        shareRepository
+            .findByProfileIdAndHouseholdIdAndStatus(
+                owner.profile().getId(), owner.household().getId(), ProfileShareStatus.ACTIVE)
+            .orElseThrow()
+            .getId();
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            mutation { endProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(structuralShareId))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.endProfileShare.userErrors[0].__typename")
+                .value("StructuralShareError"));
+  }
+
+  @Test
+  @DisplayName("Should reserve force-end for a fresh ServerAdmin and audit the win")
+  void shouldReserveForceEndForFreshServerAdminAndAuditWin() throws Exception {
+    var orphan = managedOrphan();
+    var shareId = offer(orphan, host.household().getId());
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { acceptProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk());
+
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    try {
+      graphql(
+              authTestSupport.accountBearer(serverAdmin),
+              """
+              mutation { forceEndProfileShare(input: {shareId: "%s", reason: "abuse report"}) {
+                share { status } userErrors { __typename } } }
+              """
+                  .formatted(shareId))
+          .andExpect(status().isOk())
+          .andExpect(
+              jsonPath("$.data.forceEndProfileShare.userErrors[0].__typename")
+                  .value("ReauthenticationRequiredError"));
+
+      graphql(
+              authTestSupport.freshAccountBearer(serverAdmin),
+              """
+              mutation { forceEndProfileShare(input: {shareId: "%s", reason: "abuse report"}) {
+                share { status } userErrors { __typename } } }
+              """
+                  .formatted(shareId))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.data.forceEndProfileShare.share.status").value("ENDED"));
+
+      assertThat(
+              dsl.fetchCount(
+                  SECURITY_AUDIT_EVENT, SECURITY_AUDIT_EVENT.OPERATION.eq("forceEndProfileShare")))
+          .isEqualTo(1);
+    } finally {
+      authTestSupport.deleteIdentity(serverAdmin);
+    }
+  }
+
+  @Test
+  @DisplayName("Should answer the offerer's preflight with only the lock and name facts")
+  void shouldAnswerOfferersPreflightWithOnlyLockAndNameFacts() throws Exception {
+    var kid = managedKid();
+    var shareId = offer(kid, host.household().getId());
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { acceptProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist());
+
+    // The owner's unpinned Adult Personal Profile would lock next to the Kid; its name is unique.
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            query { sharePreflight(profileId: "%s", householdId: "%s") { wouldLock nameConflict } }
+            """
+                .formatted(owner.profile().getId(), host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.sharePreflight.wouldLock").value(true))
+        .andExpect(jsonPath("$.data.sharePreflight.nameConflict").value(false));
+  }
+
+  private String offer(Profile profile, UUID householdId) throws Exception {
+    var response =
+        graphql(
+                authTestSupport.accountBearer(owner),
+                """
+                mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+                  share { id status } userErrors { __typename } } }
+                """
+                    .formatted(profile.getId(), householdId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper
+        .readTree(response)
+        .path("data")
+        .path("offerProfileShare")
+        .path("share")
+        .path("id")
+        .asString();
+  }
+
+  /** An unlinked Adult Profile the owner solely manages, available at home. */
+  private Profile managedOrphan() {
+    return managedProfile(ProfileFixture.defaultProfileBuilder());
+  }
+
+  /** A Kid Profile the owner manages, anchored by the owner (a HouseholdAdmin). */
+  private Profile managedKid() {
+    return managedProfile(ProfileFixture.kidProfileBuilder());
+  }
+
+  private Profile managedProfile(Profile.ProfileBuilder<?, ?> builder) {
+    return transactionTemplate.execute(
+        _ -> {
+          var profile =
+              profileRepository.saveAndFlush(
+                  builder.householdId(owner.household().getId()).build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(owner.account().getId())
+                  .profileId(profile.getId())
+                  .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(owner.household().getId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .build());
+          return profile;
+        });
+  }
+
+  private ResultActions graphql(String bearer, String query) throws Exception {
+    return mockMvc.perform(
+        post("/graphql")
+            .contentType(MediaType.APPLICATION_JSON)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
+            .content(objectMapper.writeValueAsString(Map.of("query", query))));
+  }
+}

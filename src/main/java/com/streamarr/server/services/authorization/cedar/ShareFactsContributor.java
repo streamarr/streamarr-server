@@ -3,7 +3,6 @@ package com.streamarr.server.services.authorization.cedar;
 import com.cedarpolicy.value.PrimBool;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
-import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -21,8 +20,6 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 class ShareFactsContributor implements FactContributor {
 
-  static final String PENDING = "pending";
-  static final String ACTIVE = "active";
   static final String STRUCTURAL = "structural";
   static final String OFFERED_BY_PRINCIPAL = "offeredByPrincipal";
   static final String PRINCIPAL_ADMIN_OF_TARGET = "principalAdminOfTarget";
@@ -47,8 +44,6 @@ class ShareFactsContributor implements FactContributor {
       return;
     }
     var found = share.get();
-    slice.resourceAttribute(PENDING, new PrimBool(found.getStatus() == ProfileShareStatus.PENDING));
-    slice.resourceAttribute(ACTIVE, new PrimBool(found.getStatus() == ProfileShareStatus.ACTIVE));
     slice.resourceAttribute(STRUCTURAL, new PrimBool(found.isStructural()));
     slice.resourceAttribute(
         OFFERED_BY_PRINCIPAL,
