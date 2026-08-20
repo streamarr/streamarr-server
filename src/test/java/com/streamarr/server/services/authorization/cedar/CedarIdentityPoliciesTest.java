@@ -710,6 +710,16 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName("Should deny a policy change for a Profile that does not exist")
+    void shouldDenyPolicyChangeForProfileThatDoesNotExist() {
+      assertThat(
+              decider.decide(
+                  withReauthenticatedAt(atHome(), Instant.now()),
+                  new Intent.ChangeProfileKind(UUID.randomUUID(), ProfileKind.ADULT)))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should refuse deleting a linked Personal Profile standalone")
     void shouldRefuseDeletingLinkedPersonalProfileStandalone() {
       managers.save(

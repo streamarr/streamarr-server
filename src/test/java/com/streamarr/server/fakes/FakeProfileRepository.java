@@ -9,7 +9,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -48,21 +47,40 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   }
 
   @Override
-  public boolean tryApplyPolicy(
-      UUID profileId, ProfilePolicySnapshot expected, ProfilePolicyTarget target) {
-    var profile =
-        findById(profileId)
-            .filter(current -> current.getKind() == expected.kind())
-            .filter(
-                current ->
-                    Objects.equals(
-                        current.getMaximumAllowedRatingAge(), expected.maximumAllowedRatingAge()));
+  public boolean tryApplyPolicy(UUID profileId, ProfilePolicyTarget target) {
+    var profile = findById(profileId);
     profile.ifPresent(
         current -> {
           current.setKind(target.kind());
           current.setMaximumAllowedRatingAge(target.maximumAllowedRatingAge());
         });
     return profile.isPresent();
+  }
+
+  @Override
+  public boolean tryRename(UUID profileId, String name) {
+    var profile = findById(profileId);
+    profile.ifPresent(current -> current.setName(name));
+    return profile.isPresent();
+  }
+
+  @Override
+  public boolean trySetPicture(UUID profileId, String picture) {
+    var profile = findById(profileId);
+    profile.ifPresent(current -> current.setPicture(picture));
+    return profile.isPresent();
+  }
+
+  @Override
+  public boolean trySetPinHash(UUID profileId, String pinHash) {
+    var profile = findById(profileId);
+    profile.ifPresent(current -> current.setPinHash(pinHash));
+    return profile.isPresent();
+  }
+
+  @Override
+  public Optional<Profile> findRefreshedById(UUID profileId) {
+    return findById(profileId);
   }
 
   @Override
