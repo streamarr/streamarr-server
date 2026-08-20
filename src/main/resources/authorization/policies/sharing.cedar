@@ -1,0 +1,77 @@
+// Profile sharing (ADR 0024 §Profile sharing): a share makes one Profile available to a Household
+// without copying data. Share-derived authority never creates another portable relationship.
+
+// ServerAdmin or a manager offers; a self-managed Personal Profile is offered only by its own
+// Account, because acceptance admits the person to the Household.
+@id("offer-profile-share-as-offerable-manager-or-server-admin")
+permit (
+  principal,
+  action == Streamarr::Action::"offerProfileShare",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  ((resource has offerableByPrincipal && resource.offerableByPrincipal) ||
+   (principal has serverAdmin && principal.serverAdmin))
+};
+
+// The target Household consents through its live HouseholdAdmins; ServerAdmin may act for them.
+@id("decide-pending-share-as-target-admin-or-server-admin")
+permit (
+  principal,
+  action in
+    [Streamarr::Action::"acceptProfileShare",
+     Streamarr::Action::"rejectProfileShare"],
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  resource has pending && resource.pending &&
+  ((resource has principalAdminOfTarget && resource.principalAdminOfTarget) ||
+   (principal has serverAdmin && principal.serverAdmin))
+};
+
+// The offerer may withdraw while pending; ServerAdmin may always.
+@id("cancel-pending-share-as-offerer-or-server-admin")
+permit (
+  principal,
+  action == Streamarr::Action::"cancelProfileShare",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  resource has pending && resource.pending &&
+  ((resource has offeredByPrincipal && resource.offeredByPrincipal) ||
+   (principal has serverAdmin && principal.serverAdmin))
+};
+
+// An active share ends by target HouseholdAdmin, a direct manager, the sovereign Account, or
+// ServerAdmin; the structural-share rule is the database's T3, which no policy can override.
+@id("end-active-share-as-target-admin-manager-sovereign-or-server-admin")
+permit (
+  principal,
+  action == Streamarr::Action::"endProfileShare",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  resource has active && resource.active &&
+  ((resource has principalAdminOfTarget && resource.principalAdminOfTarget) ||
+   (resource has directlyManagedByPrincipal && resource.directlyManagedByPrincipal) ||
+   (resource has sovereignOverProfileByPrincipal && resource.sovereignOverProfileByPrincipal) ||
+   (principal has serverAdmin && principal.serverAdmin))
+};
+
+// Force-end is a fresh-reauthenticated ServerAdmin override with an audited reason.
+@id("force-end-active-share-as-fresh-server-admin")
+permit (
+  principal,
+  action == Streamarr::Action::"forceEndProfileShare",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  principal has serverAdmin && principal.serverAdmin &&
+  resource has active && resource.active &&
+  context.freshReauthentication
+};

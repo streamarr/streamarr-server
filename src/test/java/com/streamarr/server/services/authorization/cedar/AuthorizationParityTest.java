@@ -58,6 +58,7 @@ class AuthorizationParityTest {
       case HOUSEHOLD -> "Household";
       case ACCOUNT -> "Account";
       case PROFILE -> "Profile";
+      case SHARE -> "Share";
     };
   }
 
@@ -270,6 +271,12 @@ class AuthorizationParityTest {
         new Intent.IssueAccountInvitation(),
         new Intent.CancelAccountInvitation(),
         new Intent.ViewAccountInvitations(),
-        new Intent.IssuePasswordReset(id));
+        new Intent.IssuePasswordReset(id),
+        new Intent.OfferProfileShare(id),
+        new Intent.AcceptProfileShare(id),
+        new Intent.RejectProfileShare(id),
+        new Intent.CancelProfileShare(id),
+        new Intent.EndProfileShare(id),
+        new Intent.ForceEndProfileShare(id));
   }
 }

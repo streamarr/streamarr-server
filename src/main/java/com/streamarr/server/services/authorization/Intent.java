@@ -115,4 +115,28 @@ public sealed interface Intent {
 
   /** Issue a password-reset code; requiresFreshReauthentication with a reason (ADR 0024). */
   record IssuePasswordReset(UUID accountId) implements UnitIntent {}
+
+  /**
+   * Offer one Profile to a Household (ADR 0024 §Profile sharing): ServerAdmin, a direct manager —
+   * or, for a self-managed Personal Profile, only its own Account, because acceptance admits the
+   * person.
+   */
+  record OfferProfileShare(UUID profileId) implements UnitIntent {}
+
+  /** Target HouseholdAdmin (live) or ServerAdmin decides a pending offer. */
+  record AcceptProfileShare(UUID shareId) implements UnitIntent {}
+
+  record RejectProfileShare(UUID shareId) implements UnitIntent {}
+
+  /** The offerer or ServerAdmin withdraws a pending offer. */
+  record CancelProfileShare(UUID shareId) implements UnitIntent {}
+
+  /**
+   * End an active share: a target HouseholdAdmin, a direct manager of the Profile, the sovereign
+   * Personal Profile Account, or ServerAdmin. Nobody ends a structural share.
+   */
+  record EndProfileShare(UUID shareId) implements UnitIntent {}
+
+  /** ServerAdmin force-end; requiresFreshReauthentication with a reason. */
+  record ForceEndProfileShare(UUID shareId) implements UnitIntent {}
 }

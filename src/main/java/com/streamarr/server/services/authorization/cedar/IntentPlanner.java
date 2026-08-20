@@ -93,6 +93,18 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onServer(Action.VIEW_ACCOUNT_INVITATIONS));
       case Intent.IssuePasswordReset(var accountId) ->
           unitPlan(AuthorizationCheck.onAccount(Action.ISSUE_PASSWORD_RESET, accountId));
+      case Intent.OfferProfileShare(var profileId) ->
+          unitPlan(AuthorizationCheck.onProfile(Action.OFFER_PROFILE_SHARE, profileId));
+      case Intent.AcceptProfileShare(var shareId) ->
+          unitPlan(AuthorizationCheck.onShare(Action.ACCEPT_PROFILE_SHARE, shareId));
+      case Intent.RejectProfileShare(var shareId) ->
+          unitPlan(AuthorizationCheck.onShare(Action.REJECT_PROFILE_SHARE, shareId));
+      case Intent.CancelProfileShare(var shareId) ->
+          unitPlan(AuthorizationCheck.onShare(Action.CANCEL_PROFILE_SHARE, shareId));
+      case Intent.EndProfileShare(var shareId) ->
+          unitPlan(AuthorizationCheck.onShare(Action.END_PROFILE_SHARE, shareId));
+      case Intent.ForceEndProfileShare(var shareId) ->
+          unitPlan(AuthorizationCheck.onShare(Action.FORCE_END_PROFILE_SHARE, shareId));
     };
   }
 

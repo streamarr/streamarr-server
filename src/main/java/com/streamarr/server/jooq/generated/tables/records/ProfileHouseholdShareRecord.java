@@ -206,6 +206,22 @@ public class ProfileHouseholdShareRecord extends UpdatableRecordImpl<ProfileHous
         return (OffsetDateTime) get(12);
     }
 
+    /**
+     * Setter for
+     * <code>public.profile_household_share.invalidation_reason</code>.
+     */
+    public void setInvalidationReason(String value) {
+        set(13, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.profile_household_share.invalidation_reason</code>.
+     */
+    public String getInvalidationReason() {
+        return (String) get(13);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -229,7 +245,7 @@ public class ProfileHouseholdShareRecord extends UpdatableRecordImpl<ProfileHous
     /**
      * Create a detached, initialised ProfileHouseholdShareRecord
      */
-    public ProfileHouseholdShareRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID profileId, UUID householdId, ProfileShareStatus status, Boolean structural, UUID offeredByAccountId, OffsetDateTime expiresAt, OffsetDateTime decidedAt, OffsetDateTime endedAt) {
+    public ProfileHouseholdShareRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID profileId, UUID householdId, ProfileShareStatus status, Boolean structural, UUID offeredByAccountId, OffsetDateTime expiresAt, OffsetDateTime decidedAt, OffsetDateTime endedAt, String invalidationReason) {
         super(ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE);
 
         setId(id);
@@ -245,6 +261,7 @@ public class ProfileHouseholdShareRecord extends UpdatableRecordImpl<ProfileHous
         setExpiresAt(expiresAt);
         setDecidedAt(decidedAt);
         setEndedAt(endedAt);
+        setInvalidationReason(invalidationReason);
         resetTouchedOnNotNull();
     }
 }

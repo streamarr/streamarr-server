@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 class ProfileManagementContributor implements FactContributor {
 
   static final String MANAGED_BY_PRINCIPAL = "managedByPrincipal";
+  static final String OFFERABLE_BY_PRINCIPAL = "offerableByPrincipal";
   static final String AVAILABLE_IN_PRINCIPAL_HOUSEHOLD = "availableInPrincipalHousehold";
 
   private final ProfileRepository profileRepository;
@@ -52,6 +53,13 @@ class ProfileManagementContributor implements FactContributor {
             .findByAccountIdAndProfileId(identity.accountId(), profileId)
             .isPresent();
     slice.resourceAttribute(MANAGED_BY_PRINCIPAL, new PrimBool(selfManaged || directManager));
+    // A self-managed Personal Profile is offered only by its own Account (ADR 0024 §Profile
+    // sharing) — acceptance admits the person, so a retained direct manager cannot offer it.
+    var sovereignPersonal =
+        !restricted && userAccountRepository.findByPersonalProfileId(profileId).isPresent();
+    slice.resourceAttribute(
+        OFFERABLE_BY_PRINCIPAL,
+        new PrimBool(sovereignPersonal ? selfManaged : (selfManaged || directManager)));
     slice.resourceAttribute(
         AVAILABLE_IN_PRINCIPAL_HOUSEHOLD,
         new PrimBool(shareRepository.isActivelyShared(profileId, identity.householdId())));

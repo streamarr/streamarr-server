@@ -47,4 +47,6 @@ public class ProfileHouseholdShare extends BaseAuditableEntity<ProfileHouseholdS
   private Instant decidedAt;
 
   private Instant endedAt;
+
+  private String invalidationReason;
 }
