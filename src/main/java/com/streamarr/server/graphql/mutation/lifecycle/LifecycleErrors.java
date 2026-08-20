@@ -9,6 +9,8 @@ public final class LifecycleErrors {
   private static final String ACCOUNT_ID = "accountId";
   private static final String PROFILE_ID = "profileId";
   private static final String DESTINATION = "destinationHouseholdId";
+  private static final String LOCAL_MANAGER = "localManagerAccountId";
+  private static final String NO_SUCH_ACCOUNT = "No such Account.";
 
   private LifecycleErrors() {}
 
@@ -45,7 +47,7 @@ public final class LifecycleErrors {
               InputPath.of("replacementManagerAccountId"));
       case TransferRejections.ReplacementManagerNotFound _ ->
           new ReplacementManagerNotFoundError(
-              "No such Account.", InputPath.of("replacementManagerAccountId"));
+              NO_SUCH_ACCOUNT, InputPath.of("replacementManagerAccountId"));
       case TransferRejections.ReplacementManagerNotEligible _ -> replacementNotEligible();
       case TransferRejections.AnchorRequired _ -> anchorRequired();
       case TransferRejections.NoEligibleAdmin _ -> noEligibleAdmin();
@@ -77,9 +79,9 @@ public final class LifecycleErrors {
       case TransferRejections.LocalManagerRequired _ ->
           new LocalManagerRequiredError(
               "Name the eligible local manager who anchors the Profile.",
-              InputPath.of("localManagerAccountId"));
+              InputPath.of(LOCAL_MANAGER));
       case TransferRejections.LocalManagerNotFound _ ->
-          new LocalManagerNotFoundError("No such Account.", InputPath.of("localManagerAccountId"));
+          new LocalManagerNotFoundError(NO_SUCH_ACCOUNT, InputPath.of(LOCAL_MANAGER));
       case TransferRejections.ReplacementManagerNotEligible _ -> replacementNotEligible();
       case TransferRejections.NameConflict _ -> nameTaken();
       case TransferRejections.NoEligibleAdmin _ -> noEligibleAdmin();
@@ -97,7 +99,7 @@ public final class LifecycleErrors {
   }
 
   private static AccountNotFoundError accountNotFound() {
-    return new AccountNotFoundError("No such Account.", InputPath.of(ACCOUNT_ID));
+    return new AccountNotFoundError(NO_SUCH_ACCOUNT, InputPath.of(ACCOUNT_ID));
   }
 
   private static ProfileNotFoundError profileNotFound() {
@@ -142,7 +144,7 @@ public final class LifecycleErrors {
   private static ReplacementManagerNotEligibleError replacementNotEligible() {
     return new ReplacementManagerNotEligibleError(
         "The anchor lives in the Profile's Household and is themselves an unrestricted Adult.",
-        InputPath.of("localManagerAccountId"));
+        InputPath.of(LOCAL_MANAGER));
   }
 
   private static ProfileLinkedError profileLinked() {
