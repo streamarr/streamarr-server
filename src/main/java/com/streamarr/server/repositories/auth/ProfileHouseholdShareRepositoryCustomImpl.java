@@ -205,6 +205,48 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
+  public void upsertStructuralHomeShare(UUID profileId, UUID householdId, Instant now) {
+    var updated =
+        dsl.update(PROFILE_HOUSEHOLD_SHARE)
+            .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
+            .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
+            .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
+            .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
+            .set(
+                PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY,
+                auditorAware.getCurrentAuditor().orElse(null))
+            .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
+            .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
+            .and(
+                PROFILE_HOUSEHOLD_SHARE.STATUS.in(
+                    ProfileShareStatus.PENDING, ProfileShareStatus.ACTIVE))
+            .execute();
+    if (updated == 0) {
+      dsl.insertInto(PROFILE_HOUSEHOLD_SHARE)
+          .set(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, profileId)
+          .set(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID, householdId)
+          .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
+          .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
+          .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
+          .execute();
+    }
+  }
+
+  @Override
+  public int invalidatePendingSharesForProfile(UUID profileId, String reason, Instant now) {
+    return dsl.update(PROFILE_HOUSEHOLD_SHARE)
+        .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.INVALIDATED)
+        .set(PROFILE_HOUSEHOLD_SHARE.INVALIDATION_REASON, reason)
+        .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
+        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
+        .set(
+            PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+        .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
+        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
+        .execute();
+  }
+
+  @Override
   public boolean hasActiveOrPendingShares(UUID profileId, Instant now) {
     var pendingAndLive =
         PROFILE_HOUSEHOLD_SHARE

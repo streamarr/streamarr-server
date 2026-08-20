@@ -58,4 +58,13 @@ public interface ProfileHouseholdShareRepositoryCustom {
 
   /** ACTIVE becomes ENDED. The deferred T3 judges structural shares at commit. */
   boolean tryEndActive(UUID shareId, Instant now);
+
+  /**
+   * Connecting makes the Profile someone's Personal Profile: its home availability becomes the
+   * structural share, whether it was active, still pending, or missing.
+   */
+  void upsertStructuralHomeShare(UUID profileId, UUID householdId, Instant now);
+
+  /** Invalidates every PENDING offer of the Profile (connected, transferred, or deleted). */
+  int invalidatePendingSharesForProfile(UUID profileId, String reason, Instant now);
 }

@@ -49,6 +49,25 @@ public final class CredentialErrors {
           new MaximumAllowedRatingAgeInvalidError(
               "Enter a non-negative maximum allowed rating age.",
               InputPath.of("maximumAllowedRatingAge"));
+      case CredentialRejections.ConnectProfileRequired _ ->
+          new ConnectProfileRequiredError(
+              "Name the Profile this invitation connects.", InputPath.of("profileId"));
+      case CredentialRejections.ConnectProfileNotFound _ ->
+          new ConnectProfileNotFoundError("No such Profile.", InputPath.of("profileId"));
+      case CredentialRejections.ProfileAlreadyLinked _ ->
+          new ProfileAlreadyLinkedError(
+              "That Profile already belongs to an Account.", InputPath.of("profileId"));
+      case CredentialRejections.ProfileNotInHousehold _ ->
+          new ProfileNotInHouseholdError(
+              "CONNECT joins the recipient to the Profile's own Household.",
+              InputPath.of("householdId"));
+      case CredentialRejections.ReofferHouseholdNotFound _ ->
+          new ReofferHouseholdNotFoundError(
+              "No such Household.", InputPath.of("reofferHouseholdIds"));
+      case CredentialRejections.ReofferHouseholdNotShared _ ->
+          new ReofferHouseholdNotSharedError(
+              "Only a Household the Profile actively visits can be offered it afresh.",
+              InputPath.of("reofferHouseholdIds"));
     };
   }
 
