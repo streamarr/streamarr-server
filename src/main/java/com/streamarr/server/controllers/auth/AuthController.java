@@ -3,6 +3,7 @@ package com.streamarr.server.controllers.auth;
 import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
 
 import com.streamarr.server.config.security.StreamarrBearerTokenResolver;
+import com.streamarr.server.exceptions.DeviceBoundSessionException;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.ChangePasswordCommand;
@@ -108,6 +109,10 @@ public class AuthController {
   public ResponseEntity<AuthTokensResponse> selectHousehold(
       @Valid @RequestBody SelectHouseholdRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
+    if (identity.deviceBound()) {
+      // A TV is registered to one Household context; it never switches (ADR 0024 §Devices).
+      throw new DeviceBoundSessionException();
+    }
     var context =
         householdContextService.selectHousehold(
             identity.accountId(), identity.authSessionId(), request.householdId());

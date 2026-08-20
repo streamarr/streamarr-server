@@ -8,6 +8,8 @@ import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.DeviceAuthorizationStatus;
+import com.streamarr.server.jooq.generated.tables.DeviceRegistration.DeviceRegistrationPath;
+import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
 import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
 import com.streamarr.server.jooq.generated.tables.records.DeviceAuthorizationRecord;
 
@@ -135,6 +137,16 @@ public class DeviceAuthorization extends TableImpl<DeviceAuthorizationRecord> {
      */
     public final TableField<DeviceAuthorizationRecord, Integer> POLL_INTERVAL_SECONDS = createField(DSL.name("poll_interval_seconds"), SQLDataType.INTEGER.nullable(false), this, "");
 
+    /**
+     * The column <code>public.device_authorization.esn</code>.
+     */
+    public final TableField<DeviceAuthorizationRecord, String> ESN = createField(DSL.name("esn"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.device_authorization.chosen_household_id</code>.
+     */
+    public final TableField<DeviceAuthorizationRecord, UUID> CHOSEN_HOUSEHOLD_ID = createField(DSL.name("chosen_household_id"), SQLDataType.UUID, this, "");
+
     private DeviceAuthorization(Name alias, Table<DeviceAuthorizationRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -221,7 +233,19 @@ public class DeviceAuthorization extends TableImpl<DeviceAuthorizationRecord> {
 
     @Override
     public List<ForeignKey<DeviceAuthorizationRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.DEVICE_AUTHORIZATION__FK_DEVICE_AUTHORIZATION_DECIDED_BY);
+        return Arrays.asList(Keys.DEVICE_AUTHORIZATION__FK_DEVICE_AUTHORIZATION_CHOSEN_HOUSEHOLD, Keys.DEVICE_AUTHORIZATION__FK_DEVICE_AUTHORIZATION_DECIDED_BY);
+    }
+
+    private transient HouseholdPath _household;
+
+    /**
+     * Get the implicit join path to the <code>public.household</code> table.
+     */
+    public HouseholdPath household() {
+        if (_household == null)
+            _household = new HouseholdPath(this, Keys.DEVICE_AUTHORIZATION__FK_DEVICE_AUTHORIZATION_CHOSEN_HOUSEHOLD, null);
+
+        return _household;
     }
 
     private transient UserAccountPath _userAccount;
@@ -234,6 +258,19 @@ public class DeviceAuthorization extends TableImpl<DeviceAuthorizationRecord> {
             _userAccount = new UserAccountPath(this, Keys.DEVICE_AUTHORIZATION__FK_DEVICE_AUTHORIZATION_DECIDED_BY, null);
 
         return _userAccount;
+    }
+
+    private transient DeviceRegistrationPath _deviceRegistration;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.device_registration</code> table
+     */
+    public DeviceRegistrationPath deviceRegistration() {
+        if (_deviceRegistration == null)
+            _deviceRegistration = new DeviceRegistrationPath(this, null, Keys.DEVICE_REGISTRATION__FK_DEVICE_REGISTRATION_AUTHORIZATION.getInverseKey());
+
+        return _deviceRegistration;
     }
 
     @Override

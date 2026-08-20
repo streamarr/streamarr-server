@@ -13,6 +13,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
@@ -24,6 +25,7 @@ import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -65,6 +67,8 @@ class ProfileSharingServiceTest {
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
+  private final FakeDeviceRegistrationRepository registrations =
+      new FakeDeviceRegistrationRepository();
   private final FakeSecurityAuditEventRepository audit = new FakeSecurityAuditEventRepository();
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
@@ -83,6 +87,7 @@ class ProfileSharingServiceTest {
             households,
             accounts,
             sessions,
+            new DeviceRegistrationLifecycle(registrations, sessions),
             audit,
             new MutationTransactions(
                 new FakeTransactionManager(), new ConstraintViolationTranslator()),

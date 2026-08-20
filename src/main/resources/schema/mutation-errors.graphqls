@@ -273,3 +273,27 @@ type NotAManagerError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
+type RegistrationNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type RegistrationNotActiveError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type EsnRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type EsnAlreadyBlockedError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type EsnBlockNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}

@@ -142,7 +142,7 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   private static MockHttpServletRequestBuilder issueCode() {
     return post("/api/auth/device/code")
         .contentType(MediaType.APPLICATION_JSON)
-        .content("{\"deviceName\": \"Apple TV\"}");
+        .content("{\"deviceName\": \"Apple TV\", \"esn\": \"esn-1\"}");
   }
 
   private MockHttpServletRequestBuilder lookup(String bearer, String userCode) {

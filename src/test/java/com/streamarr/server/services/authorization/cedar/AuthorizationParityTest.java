@@ -60,6 +60,8 @@ class AuthorizationParityTest {
       case PROFILE -> "Profile";
       case SHARE -> "Share";
       case MANAGER_INVITATION -> "ManagerInvitation";
+      case GRANT -> "Grant";
+      case REGISTRATION -> "Registration";
     };
   }
 
@@ -175,7 +177,12 @@ class AuthorizationParityTest {
 
   @ParameterizedTest(name = "{0}")
   @ValueSource(
-      strings = {"householdAdministration", "invitationAdministration", "libraryAdministration"})
+      strings = {
+        "householdAdministration",
+        "invitationAdministration",
+        "libraryAdministration",
+        "deviceAdministration"
+      })
   @DisplayName(
       "Should keep every administration group under server administration when schema parity is checked")
   void shouldKeepEveryAdministrationGroupUnderServerAdministrationWhenSchemaParityIsChecked(
@@ -192,6 +199,10 @@ class AuthorizationParityTest {
       case ISSUE_ACCOUNT_INVITATION, CANCEL_ACCOUNT_INVITATION, VIEW_ACCOUNT_INVITATIONS ->
           "invitationAdministration";
       case ADD_LIBRARY, REMOVE_LIBRARY, SCAN_LIBRARY, REFRESH_LIBRARY -> "libraryAdministration";
+      case BLOCK_ESN_SERVER_WIDE,
+          UNBLOCK_ESN_SERVER_WIDE,
+          VIEW_SERVER_DEVICE_ADMINISTRATION ->
+          "deviceAdministration";
       case VIEW_PROFILE_PICKER,
           SELECT_PROFILE,
           PLAYBACK,
@@ -230,7 +241,12 @@ class AuthorizationParityTest {
           DECLINE_MANAGER_INVITATION,
           RELINQUISH_PROFILE_MANAGEMENT,
           REMOVE_PROFILE_MANAGER,
-          OVERRIDE_PROFILE_MANAGER ->
+          OVERRIDE_PROFILE_MANAGER,
+          LINK_DEVICE,
+          REVOKE_DEVICE_REGISTRATION,
+          BLOCK_ESN,
+          UNBLOCK_ESN,
+          VIEW_DEVICE_ADMINISTRATION ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
@@ -300,6 +316,14 @@ class AuthorizationParityTest {
         new Intent.DeclineManagerInvitation(id),
         new Intent.RelinquishProfileManagement(id),
         new Intent.RemoveProfileManager(id),
-        new Intent.OverrideProfileManager(id));
+        new Intent.OverrideProfileManager(id),
+        new Intent.LinkDevice(id),
+        new Intent.RevokeDeviceRegistration(id),
+        new Intent.BlockEsn(id),
+        new Intent.BlockEsnServerWide(),
+        new Intent.UnblockEsn(id),
+        new Intent.UnblockEsnServerWide(),
+        new Intent.ViewDeviceAdministration(id),
+        new Intent.ViewServerDeviceAdministration());
   }
 }

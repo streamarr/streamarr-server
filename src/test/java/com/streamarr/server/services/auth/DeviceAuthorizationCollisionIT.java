@@ -42,9 +42,11 @@ class DeviceAuthorizationCollisionIT extends AbstractIntegrationTest {
     userCodeGenerator.prepare(List.of("BBBBBBBB", "BBBBBBBB", "CCCCCCCC"));
     deviceCodeRandom.prepare(List.of(filledBytes(1), filledBytes(2)));
 
-    assertThat(deviceAuthorizationService.issue("First").userCode()).isEqualTo("BBBB-BBBB");
+    assertThat(deviceAuthorizationService.issue("First", "esn-1").userCode())
+        .isEqualTo("BBBB-BBBB");
 
-    assertThat(deviceAuthorizationService.issue("Second").userCode()).isEqualTo("CCCC-CCCC");
+    assertThat(deviceAuthorizationService.issue("Second", "esn-1").userCode())
+        .isEqualTo("CCCC-CCCC");
   }
 
   @Test
@@ -53,8 +55,8 @@ class DeviceAuthorizationCollisionIT extends AbstractIntegrationTest {
     userCodeGenerator.prepare(List.of("BBBBBBBB", "CCCCCCCC", "DDDDDDDD"));
     deviceCodeRandom.prepare(List.of(filledBytes(1), filledBytes(1), filledBytes(2)));
 
-    var first = deviceAuthorizationService.issue("First");
-    var second = deviceAuthorizationService.issue("Second");
+    var first = deviceAuthorizationService.issue("First", "esn-1");
+    var second = deviceAuthorizationService.issue("Second", "esn-1");
 
     assertThat(second.deviceCode()).isNotEqualTo(first.deviceCode());
     assertThat(authorizationRepository.findAll()).hasSize(2);

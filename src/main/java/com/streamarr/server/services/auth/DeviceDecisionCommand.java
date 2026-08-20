@@ -5,7 +5,7 @@ import lombok.Builder;
 
 @Builder
 public record DeviceDecisionCommand(
-    String userCode, DeviceDecision decision, UUID decidedByAccountId) {
+    String userCode, DeviceDecision decision, UUID decidedByAccountId, UUID chosenHouseholdId) {
 
   public static class DeviceDecisionCommandBuilder {
 

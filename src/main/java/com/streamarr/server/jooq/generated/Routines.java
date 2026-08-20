@@ -5,6 +5,7 @@ package com.streamarr.server.jooq.generated;
 
 
 import com.streamarr.server.jooq.generated.routines.AccountIsEligible;
+import com.streamarr.server.jooq.generated.routines.AssertDeviceRegistrationsSupported;
 import com.streamarr.server.jooq.generated.routines.AssertEnabledServerAdminRemains;
 import com.streamarr.server.jooq.generated.routines.AssertHouseholdProfileNamesUnique;
 import com.streamarr.server.jooq.generated.routines.AssertHouseholdRetainsAdmin;
@@ -13,6 +14,7 @@ import com.streamarr.server.jooq.generated.routines.AssertProfileHomeAnchor;
 import com.streamarr.server.jooq.generated.routines.AssertRestrictedAccountHoldsNoAuthority;
 import com.streamarr.server.jooq.generated.routines.AssertRestrictedSharesSupervised;
 import com.streamarr.server.jooq.generated.routines.BumpHouseholdGuards;
+import com.streamarr.server.jooq.generated.routines.EsnIsBlocked;
 import com.streamarr.server.jooq.generated.routines.UuidGenerateV1;
 import com.streamarr.server.jooq.generated.routines.UuidGenerateV1mc;
 import com.streamarr.server.jooq.generated.routines.UuidGenerateV3;
@@ -72,6 +74,19 @@ public class Routines {
         f.setCandidateAccountId(candidateAccountId);
 
         return f.asField();
+    }
+
+    /**
+     * Call <code>public.assert_device_registrations_supported</code>
+     */
+    public static void assertDeviceRegistrationsSupported(
+          Configuration configuration
+        , UUID candidateAccountId
+    ) {
+        AssertDeviceRegistrationsSupported p = new AssertDeviceRegistrationsSupported();
+        p.setCandidateAccountId(candidateAccountId);
+
+        p.execute(configuration);
     }
 
     /**
@@ -176,6 +191,50 @@ public class Routines {
         p.setHouseholdIds(householdIds);
 
         p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.esn_is_blocked</code>
+     */
+    public static Boolean esnIsBlocked(
+          Configuration configuration
+        , String candidateEsn
+        , UUID candidateHouseholdId
+    ) {
+        EsnIsBlocked f = new EsnIsBlocked();
+        f.setCandidateEsn(candidateEsn);
+        f.setCandidateHouseholdId(candidateHouseholdId);
+
+        f.execute(configuration);
+        return f.getReturnValue();
+    }
+
+    /**
+     * Get <code>public.esn_is_blocked</code> as a field.
+     */
+    public static Field<Boolean> esnIsBlocked(
+          String candidateEsn
+        , UUID candidateHouseholdId
+    ) {
+        EsnIsBlocked f = new EsnIsBlocked();
+        f.setCandidateEsn(candidateEsn);
+        f.setCandidateHouseholdId(candidateHouseholdId);
+
+        return f.asField();
+    }
+
+    /**
+     * Get <code>public.esn_is_blocked</code> as a field.
+     */
+    public static Field<Boolean> esnIsBlocked(
+          Field<String> candidateEsn
+        , Field<UUID> candidateHouseholdId
+    ) {
+        EsnIsBlocked f = new EsnIsBlocked();
+        f.setCandidateEsn(candidateEsn);
+        f.setCandidateHouseholdId(candidateHouseholdId);
+
+        return f.asField();
     }
 
     /**

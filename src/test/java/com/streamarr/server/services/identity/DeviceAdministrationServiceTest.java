@@ -1,0 +1,204 @@
+package com.streamarr.server.services.identity;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.DeviceRegistration;
+import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
+import com.streamarr.server.domain.auth.EsnBlock;
+import com.streamarr.server.fakes.FakeAuthSessionRepository;
+import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
+import com.streamarr.server.fakes.FakeEsnBlockRepository;
+import com.streamarr.server.fakes.FakeHouseholdRepository;
+import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
+import com.streamarr.server.fakes.FakeTransactionManager;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.fixtures.HouseholdFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
+import com.streamarr.server.services.authorization.Decision;
+import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
+import com.streamarr.server.services.mutation.MutationTransactions;
+import com.streamarr.server.services.mutation.Outcome;
+import java.time.Clock;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Device administration over fakes: revocation ends sessions with the registration, a block revokes
+ * every matching registration first (T10's shape), and the reads scope by visibility.
+ */
+@Tag("UnitTest")
+@DisplayName("Device Administration Service Tests")
+class DeviceAdministrationServiceTest {
+
+  private final FakeDeviceRegistrationRepository registrations =
+      new FakeDeviceRegistrationRepository();
+  private final FakeEsnBlockRepository blocks = new FakeEsnBlockRepository();
+  private final FakeHouseholdRepository households = new FakeHouseholdRepository();
+  private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
+  private final FakeSecurityAuditEventRepository audit = new FakeSecurityAuditEventRepository();
+  private final FakeAuthorizationService authorization =
+      new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
+
+  private final DeviceAdministrationService service =
+      new DeviceAdministrationService(
+          authorization,
+          registrations,
+          blocks,
+          households,
+          new DeviceRegistrationLifecycle(registrations, sessions),
+          audit,
+          new MutationTransactions(
+              new FakeTransactionManager(), new ConstraintViolationTranslator()),
+          Clock.systemUTC());
+
+  private UUID householdId;
+
+  @BeforeEach
+  void setUp() {
+    householdId = households.save(HouseholdFixture.defaultHouseholdBuilder().build()).getId();
+  }
+
+  @Test
+  @DisplayName("Should revoke a registration once, dropping its sessions with it")
+  void shouldRevokeRegistrationOnceDroppingItsSessionsWithIt() {
+    var registration = activeRegistration("esn-1");
+    var session =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(UUID.randomUUID())
+                .registrationId(registration.getId())
+                .deviceName("tv")
+                .build());
+
+    var revoked = service.revokeDeviceRegistration(identity(), registration.getId());
+
+    assertThat(revoked).isInstanceOf(Outcome.Accepted.class);
+    assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(sessions.findById(session.getId()).orElseThrow().getRevokedAt()).isNotNull();
+    assertThat(audit.entries())
+        .extracting(entry -> entry.operation())
+        .containsExactly("revokeDeviceRegistration");
+
+    assertThat(rejectionOf(service.revokeDeviceRegistration(identity(), registration.getId())))
+        .isInstanceOf(DeviceRejections.RegistrationNotActive.class);
+  }
+
+  @Test
+  @DisplayName("Should read hidden registrations as not found under the oracle rule")
+  void shouldReadHiddenRegistrationsAsNotFoundUnderOracleRule() {
+    var registration = activeRegistration("esn-1");
+    authorization.denyAll();
+
+    assertThat(rejectionOf(service.revokeDeviceRegistration(identity(), registration.getId())))
+        .isInstanceOf(DeviceRejections.RegistrationNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should block an ESN only after revoking everything it still matches")
+  void shouldBlockEsnOnlyAfterRevokingEverythingItStillMatches() {
+    var registration = activeRegistration("esn-1");
+
+    assertThat(rejectionOf(service.blockEsn(identity(), householdId, " ", "stolen")))
+        .isInstanceOf(DeviceRejections.EsnRequired.class);
+    assertThat(rejectionOf(service.blockEsn(identity(), householdId, "esn-1", " ")))
+        .isInstanceOf(DeviceRejections.ReasonRequired.class);
+    assertThat(rejectionOf(service.blockEsn(identity(), UUID.randomUUID(), "esn-1", "stolen")))
+        .isInstanceOf(DeviceRejections.HouseholdNotFound.class);
+
+    var blocked = service.blockEsn(identity(), householdId, "esn-1", "stolen");
+
+    assertThat(blocked).isInstanceOf(Outcome.Accepted.class);
+    assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(blocks.existsByEsnAndHouseholdId("esn-1", householdId)).isTrue();
+    assertThat(audit.entries()).extracting(entry -> entry.operation()).containsExactly("blockEsn");
+  }
+
+  @Test
+  @DisplayName("Should reserve the server-wide block for the fresh ceremony")
+  void shouldReserveServerWideBlockForFreshCeremony() {
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.BlockEsnServerWide
+                ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
+                : allowed());
+    assertThat(rejectionOf(service.blockEsnServerWide(identity(), "esn-1", "stolen")))
+        .isInstanceOf(DeviceRejections.ReauthenticationRequired.class);
+
+    authorization.allowAll();
+    var blocked = service.blockEsnServerWide(identity(), "esn-1", "stolen");
+    assertThat(blocked).isInstanceOf(Outcome.Accepted.class);
+    assertThat(blocks.existsByEsnAndHouseholdIdIsNull("esn-1")).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should unblock exactly the named scope")
+  void shouldUnblockExactlyNamedScope() {
+    blocks.save(EsnBlock.builder().esn("esn-1").householdId(householdId).reason("old").build());
+    blocks.save(EsnBlock.builder().esn("esn-1").reason("server-wide").build());
+
+    assertThat(rejectionOf(service.unblockEsn(identity(), householdId, "esn-9")))
+        .isInstanceOf(DeviceRejections.BlockNotFound.class);
+
+    assertThat(service.unblockEsn(identity(), householdId, "esn-1"))
+        .isInstanceOf(Outcome.Accepted.class);
+    assertThat(blocks.existsByEsnAndHouseholdId("esn-1", householdId)).isFalse();
+    assertThat(blocks.existsByEsnAndHouseholdIdIsNull("esn-1")).isTrue();
+
+    assertThat(service.unblockEsnServerWide(identity(), "esn-1"))
+        .isInstanceOf(Outcome.Accepted.class);
+    assertThat(blocks.existsByEsnAndHouseholdIdIsNull("esn-1")).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should scope the device reads by visibility")
+  void shouldScopeDeviceReadsByVisibility() {
+    activeRegistration("esn-1");
+    blocks.save(EsnBlock.builder().esn("esn-2").householdId(householdId).reason("x").build());
+    blocks.save(EsnBlock.builder().esn("esn-3").reason("server-wide").build());
+
+    assertThat(service.householdDevices(identity(), householdId)).hasSize(1);
+    assertThat(service.esnBlocks(identity(), householdId)).hasSize(1);
+    assertThat(service.serverEsnBlocks(identity())).hasSize(1);
+
+    authorization.denyAll();
+    assertThat(service.householdDevices(identity(), householdId)).isEmpty();
+    assertThat(service.esnBlocks(identity(), householdId)).isEmpty();
+    assertThat(service.serverEsnBlocks(identity())).isEmpty();
+  }
+
+  private DeviceRegistration activeRegistration(String esn) {
+    return registrations.save(
+        DeviceRegistration.builder()
+            .esn(esn)
+            .displayName("Living Room TV")
+            .householdId(householdId)
+            .authorizingAccountId(UUID.randomUUID())
+            .build());
+  }
+
+  private AuthenticatedIdentity identity() {
+    return authorization.currentIdentity();
+  }
+
+  private static Decision<?> allowed() {
+    return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
+  }
+
+  private static Object rejectionOf(Outcome<?, ?> outcome) {
+    return switch (outcome) {
+      case Outcome.Rejected<?, ?>(var rejections) -> rejections.getFirst();
+      case Outcome.Accepted<?, ?> accepted ->
+          throw new AssertionError("expected a rejection but got " + accepted);
+    };
+  }
+}

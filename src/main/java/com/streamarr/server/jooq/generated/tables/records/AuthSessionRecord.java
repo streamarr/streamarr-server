@@ -190,6 +190,20 @@ public class AuthSessionRecord extends UpdatableRecordImpl<AuthSessionRecord> {
         return (UUID) get(11);
     }
 
+    /**
+     * Setter for <code>public.auth_session.registration_id</code>.
+     */
+    public void setRegistrationId(UUID value) {
+        set(12, value);
+    }
+
+    /**
+     * Getter for <code>public.auth_session.registration_id</code>.
+     */
+    public UUID getRegistrationId() {
+        return (UUID) get(12);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -213,7 +227,7 @@ public class AuthSessionRecord extends UpdatableRecordImpl<AuthSessionRecord> {
     /**
      * Create a detached, initialised AuthSessionRecord
      */
-    public AuthSessionRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID accountId, String deviceName, UUID selectedProfileId, OffsetDateTime revokedAt, SessionRevocationReason revokedReason, OffsetDateTime lastUsedAt, UUID contextHouseholdId) {
+    public AuthSessionRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID accountId, String deviceName, UUID selectedProfileId, OffsetDateTime revokedAt, SessionRevocationReason revokedReason, OffsetDateTime lastUsedAt, UUID contextHouseholdId, UUID registrationId) {
         super(AuthSession.AUTH_SESSION);
 
         setId(id);
@@ -228,6 +242,7 @@ public class AuthSessionRecord extends UpdatableRecordImpl<AuthSessionRecord> {
         setRevokedReason(revokedReason);
         setLastUsedAt(lastUsedAt);
         setContextHouseholdId(contextHouseholdId);
+        setRegistrationId(registrationId);
         resetTouchedOnNotNull();
     }
 }

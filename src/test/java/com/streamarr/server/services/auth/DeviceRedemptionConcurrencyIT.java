@@ -97,7 +97,8 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   static class GatedClock extends Clock {
 
-    private static final int APPROVAL_CLOCK_CALLS_BEFORE_WRITE = 3;
+    // decide() reads the row, takes one clock instant, then writes: park on that single call.
+    private static final int APPROVAL_CLOCK_CALLS_BEFORE_WRITE = 1;
 
     private final Clock delegate;
     private final AtomicReference<Thread> gatedThread = new AtomicReference<>();
@@ -198,7 +199,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   @DisplayName("Should create exactly one session when many pollers race an approved grant")
   void shouldCreateExactlyOneSessionWhenManyPollersRaceApprovedGrant() throws Exception {
     var approver = seedApprover();
-    var issued = deviceAuthorizationService.issue("Apple TV");
+    var issued = deviceAuthorizationService.issue("Apple TV", "esn-1");
     approve(issued.userCode(), approver);
 
     var results = pollConcurrently(issued.deviceCode(), POLLERS);
@@ -214,7 +215,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   @DisplayName("Should return pending when a poll locks the row before approval commits")
   void shouldReturnPendingWhenPollLocksRowBeforeApprovalCommits() throws Exception {
     var approver = seedApprover();
-    var issued = deviceAuthorizationService.issue("Apple TV");
+    var issued = deviceAuthorizationService.issue("Apple TV", "esn-1");
     gatedClock.prepareApprovalHold();
 
     DevicePollResult result;
@@ -246,7 +247,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   void shouldPreserveWinningDecisionWhenTwoApproversRace() throws Exception {
     var losingApprover = seedApprover();
     var winningApprover = seedApprover();
-    var issued = deviceAuthorizationService.issue("Apple TV");
+    var issued = deviceAuthorizationService.issue("Apple TV", "esn-1");
     gatedClock.prepareApprovalHold();
 
     DeviceAuthorizationDetails winningDecision;
@@ -283,7 +284,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   @DisplayName("Should refuse an approved grant when its approver has been deleted")
   void shouldRefuseApprovedGrantWhenApproverDeleted() {
     var approver = seedApprover();
-    var issued = deviceAuthorizationService.issue("Apple TV");
+    var issued = deviceAuthorizationService.issue("Apple TV", "esn-1");
     approve(issued.userCode(), approver);
 
     // A deleted approver no longer authorizes consumption. No write is attempted, so this is a
@@ -300,7 +301,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   @DisplayName("Should roll back session creation when access-token issuance fails")
   void shouldRollBackSessionCreationWhenAccessTokenIssuanceFails() {
     var approver = seedApprover();
-    var issued = deviceAuthorizationService.issue("Apple TV");
+    var issued = deviceAuthorizationService.issue("Apple TV", "esn-1");
     var deviceCode = issued.deviceCode();
     approve(issued.userCode(), approver);
     gatedIssuer.failNextIssuance();
@@ -320,7 +321,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   @DisplayName("Should advance the cadence exactly once per poll when polls arrive concurrently")
   void shouldAdvanceCadenceExactlyOncePerPollWhenPollsArriveConcurrently() throws Exception {
     seedApprover();
-    var issued = deviceAuthorizationService.issue("Apple TV");
+    var issued = deviceAuthorizationService.issue("Apple TV", "esn-1");
 
     var results = pollConcurrently(issued.deviceCode(), 4);
 

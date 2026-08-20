@@ -9,15 +9,22 @@ import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
+import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
+import com.streamarr.server.domain.auth.EsnBlock;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.DeviceCodeExpiredException;
 import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.exceptions.DevicePairingNotConfiguredException;
+import com.streamarr.server.exceptions.EsnRequiredException;
 import com.streamarr.server.exceptions.InvalidUserCodeException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeDeviceAuthorizationRepository;
+import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
+import com.streamarr.server.fakes.FakeEsnBlockRepository;
+import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.MutableClock;
@@ -38,6 +45,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,8 +73,14 @@ class DeviceAuthorizationServiceTest {
 
   private final FakeDeviceAuthorizationRepository authorizationRepository =
       new FakeDeviceAuthorizationRepository();
-  private final FakeUserAccountRepository userAccountRepository = new FakeUserAccountRepository();
+  private final FakeProfileHouseholdShareRepository shares =
+      new FakeProfileHouseholdShareRepository();
+  private final FakeUserAccountRepository userAccountRepository =
+      new FakeUserAccountRepository(shares);
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
+  private final FakeDeviceRegistrationRepository registrationRepository =
+      new FakeDeviceRegistrationRepository();
+  private final FakeEsnBlockRepository esnBlockRepository = new FakeEsnBlockRepository();
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
 
   private final DeviceAuthProperties properties =
@@ -120,7 +134,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should return an absolute verification URI and server timings when issuing a code")
   void shouldReturnAbsoluteVerificationUriAndServerTimingsWhenIssuingCode() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
 
     assertThat(issued.verificationUri()).isEqualTo(BASE_URL + "/link");
     assertThat(issued.interval()).isEqualTo(5);
@@ -144,7 +158,7 @@ class DeviceAuthorizationServiceTest {
             .build();
     var configuredService = serviceWith(configuredProperties);
 
-    var issued = configuredService.issue("Apple TV");
+    var issued = configuredService.issue("Apple TV", "esn-1");
 
     assertThat(issued.interval()).isEqualTo(37);
     assertThat(issued.expiresIn()).isEqualTo(Duration.ofMinutes(17).toSeconds());
@@ -153,7 +167,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should return a canonical 256-bit base64url device code when issuing a grant")
   void shouldReturnCanonical256BitBase64urlDeviceCodeWhenIssuingGrant() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
 
     var decoded = Base64.getUrlDecoder().decode(issued.deviceCode());
 
@@ -165,7 +179,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should store only the SHA-256 digest when persisting a device code")
   void shouldStoreOnlySha256DigestWhenPersistingDeviceCode() throws Exception {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
     var expectedDigest =
         Base64.getUrlEncoder()
             .withoutPadding()
@@ -185,14 +199,14 @@ class DeviceAuthorizationServiceTest {
     var unconfigured = serviceWith(CanonicalBaseUrl.absent());
 
     assertThat(unconfigured.isPairingEnabled()).isFalse();
-    assertThatThrownBy(() -> unconfigured.issue("Apple TV"))
+    assertThatThrownBy(() -> unconfigured.issue("Apple TV", "esn-1"))
         .isInstanceOf(DevicePairingNotConfiguredException.class);
   }
 
   @Test
   @DisplayName("Should let an existing grant finish when new issuance is disabled")
   void shouldLetExistingGrantFinishWhenNewIssuanceDisabled() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
 
     // Only new issuance is gated; a code already shown to a person must never be stranded.
     var unconfigured = serviceWith(CanonicalBaseUrl.absent());
@@ -207,7 +221,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should report pending when the code has not been approved")
   void shouldReportPendingWhenCodeNotApproved() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
 
     advanceClock(Duration.ofSeconds(5));
 
@@ -223,7 +237,7 @@ class DeviceAuthorizationServiceTest {
   @DisplayName(
       "Should allow an immediate poll and leave the interval untouched when no poll preceded it")
   void shouldAllowImmediatePollAndLeaveIntervalUntouchedWhenNoPollPrecededIt() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
 
     assertThat(service.redeem(issued.deviceCode())).isInstanceOf(DevicePollResult.Pending.class);
     assertThat(storedInterval()).isEqualTo(5);
@@ -232,7 +246,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should slow down the caller when a poll arrives before the cadence allows")
   void shouldSlowDownCallerWhenPollArrivesBeforeCadenceAllows() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
     service.redeem(issued.deviceCode());
 
     assertThat(service.redeem(issued.deviceCode())).isInstanceOf(DevicePollResult.SlowDown.class);
@@ -241,7 +255,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should raise the interval by five cumulative seconds when polls arrive early")
   void shouldRaiseIntervalByFiveCumulativeSecondsWhenPollsArriveEarly() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
 
     // Issued at t=0, and the gate opens on the poll before, so the first one is never early.
     assertThat(service.redeem(issued.deviceCode())).isInstanceOf(DevicePollResult.Pending.class);
@@ -263,7 +277,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should fail fast when the cumulative polling interval would overflow")
   void shouldFailFastWhenCumulativePollingIntervalWouldOverflow() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
     var deviceCode = issued.deviceCode();
     var authorization = authorizationRepository.findAll().getFirst();
     authorization.setPollIntervalSeconds(Integer.MAX_VALUE - 4);
@@ -276,7 +290,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should mint a session at the winning poll when the grant is approved")
   void shouldMintSessionAtWinningPollWhenGrantApproved() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
     approve(issued.userCode());
 
     assertThat(sessionRepository.findAll()).isEmpty();
@@ -290,10 +304,9 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Should create an Account-scoped session at the picker when a Device grant is approved")
-  void shouldCreateAccountScopedSessionAtPickerWhenDeviceGrantIsApproved() {
-    var issued = service.issue("Apple TV");
+  @DisplayName("Should create an account-scoped session in the approver's Household at the picker")
+  void shouldCreateAccountScopedSessionInApproversHouseholdAtPicker() {
+    var issued = service.issue("Apple TV", "esn-1");
     approve(issued.userCode());
 
     var result = service.redeem(issued.deviceCode());
@@ -314,7 +327,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should report expired when the grant has already been consumed")
   void shouldReportExpiredWhenGrantAlreadyConsumed() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
     approve(issued.userCode());
     service.redeem(issued.deviceCode());
 
@@ -325,7 +338,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should report denial as its own terminal state when the request was denied")
   void shouldReportDenialAsOwnTerminalStateWhenRequestDenied() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
     decide(issued.userCode(), DeviceDecision.DENY);
 
     assertThat(service.redeem(issued.deviceCode())).isInstanceOf(DevicePollResult.Denied.class);
@@ -335,7 +348,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should remain pending when immediately before the code lifetime ends")
   void shouldRemainPendingWhenImmediatelyBeforeCodeLifetimeEnds() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
 
     advanceClock(properties.codeTtl().minusNanos(1));
 
@@ -345,7 +358,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should report expired when the exact code lifetime boundary is reached")
   void shouldReportExpiredWhenExactCodeLifetimeBoundaryReached() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
 
     advanceClock(properties.codeTtl());
 
@@ -372,9 +385,79 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
+  @DisplayName("Should require the ESN when issuing a code")
+  void shouldRequireEsnWhenIssuingCode() {
+    assertThatThrownBy(() -> service.issue("Apple TV", null))
+        .isInstanceOf(EsnRequiredException.class);
+    assertThatThrownBy(() -> service.issue("Apple TV", " "))
+        .isInstanceOf(EsnRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should register the TV to the chosen Household at the winning poll")
+  void shouldRegisterTvToChosenHouseholdAtWinningPoll() {
+    var household = UUID.randomUUID();
+    shares.share(approver.getPersonalProfileId(), household, false);
+    var issued = service.issue("Apple TV", "esn-1");
+    service.decide(decisionCommandFor(issued.userCode(), household));
+
+    var result = service.redeem(issued.deviceCode());
+
+    assertThat(result).isInstanceOf(DevicePollResult.Success.class);
+    var registration = registrationRepository.findAll().getFirst();
+    assertThat(registration.getEsn()).isEqualTo("esn-1");
+    assertThat(registration.getHouseholdId()).isEqualTo(household);
+    assertThat(registration.getAuthorizingAccountId()).isEqualTo(approver.getId());
+    assertThat(registration.getStatus()).isEqualTo(DeviceRegistrationStatus.ACTIVE);
+    var session = sessionRepository.findAll().getFirst();
+    assertThat(session.getRegistrationId()).isEqualTo(registration.getId());
+    assertThat(session.getContextHouseholdId()).isEqualTo(household);
+  }
+
+  @Test
+  @DisplayName("Should supersede the previous registration when the same ESN pairs again")
+  void shouldSupersedePreviousRegistrationWhenSameEsnPairsAgain() {
+    var first = service.issue("Apple TV", "esn-1");
+    service.decide(decisionCommandFor(first.userCode(), approver.getHouseholdId()));
+    assertThat(service.redeem(first.deviceCode())).isInstanceOf(DevicePollResult.Success.class);
+    var firstRegistration = registrationRepository.findAll().getFirst();
+    var firstSession = sessionRepository.findAll().getFirst();
+
+    var second = service.issue("Apple TV", "esn-1");
+    service.decide(decisionCommandFor(second.userCode(), approver.getHouseholdId()));
+    assertThat(service.redeem(second.deviceCode())).isInstanceOf(DevicePollResult.Success.class);
+
+    assertThat(registrationRepository.findById(firstRegistration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(sessionRepository.findById(firstSession.getId()).orElseThrow().getRevokedAt())
+        .isNotNull();
+  }
+
+  @Test
+  @DisplayName("Should answer expired when approval facts went stale before the winning poll")
+  void shouldAnswerExpiredWhenApprovalFactsWentStaleBeforeWinningPoll() {
+    // The chosen Household became unusable after approval.
+    var household = UUID.randomUUID();
+    var visit = shares.share(approver.getPersonalProfileId(), household, false);
+    var issued = service.issue("Apple TV", "esn-1");
+    service.decide(decisionCommandFor(issued.userCode(), household));
+    visit.setStatus(ProfileShareStatus.ENDED);
+    shares.save(visit);
+    assertThat(service.redeem(issued.deviceCode())).isInstanceOf(DevicePollResult.Expired.class);
+
+    // The ESN was blocked between approval and the winning poll.
+    var blocked = service.issue("Apple TV", "esn-2");
+    service.decide(decisionCommandFor(blocked.userCode(), approver.getHouseholdId()));
+    esnBlockRepository.save(EsnBlock.builder().esn("esn-2").reason("stolen").build());
+    assertThat(service.redeem(blocked.deviceCode())).isInstanceOf(DevicePollResult.Expired.class);
+    assertThat(registrationRepository.findAll())
+        .noneMatch(registration -> "esn-2".equals(registration.getEsn()));
+  }
+
+  @Test
   @DisplayName("Should show the requesting device when an approver looks up a pending code")
   void shouldShowRequestingDeviceWhenApproverLooksUpPendingCode() {
-    var issued = service.issue("Living Room Apple TV");
+    var issued = service.issue("Living Room Apple TV", "esn-1");
 
     var view = service.lookup(issued.userCode(), approver.getId());
 
@@ -387,7 +470,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should accept a typed code when case and separator formatting vary")
   void shouldAcceptTypedCodeWhenCaseAndSeparatorFormattingVary() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
 
     assertThat(service.lookup(issued.userCode().toLowerCase(Locale.ROOT), approver.getId()))
         .isNotNull();
@@ -397,7 +480,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should collapse the result into not-found when lookup receives an expired code")
   void shouldCollapseResultIntoNotFoundWhenLookupReceivesExpiredCode() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
 
     advanceClock(Duration.ofMinutes(11));
 
@@ -413,7 +496,7 @@ class DeviceAuthorizationServiceTest {
   @DisplayName(
       "Should report expiration rather than unknown when an approver decides an expired code")
   void shouldReportExpirationRatherThanUnknownWhenApproverDecidesExpiredCode() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
 
     advanceClock(Duration.ofMinutes(11));
 
@@ -425,7 +508,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should reject a decision when the request was already decided")
   void shouldRejectDecisionWhenRequestAlreadyDecided() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
     approve(issued.userCode());
 
     var userCode = issued.userCode();
@@ -446,7 +529,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should echo the decision that happened when the request is decided")
   void shouldEchoActualDecisionWhenRequestDecided() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
 
     var view = decide(issued.userCode(), DeviceDecision.DENY);
 
@@ -458,7 +541,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should record who decided when the outcome is approval or denial")
   void shouldRecordWhoDecidedWhenOutcomeApprovalOrDenial() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
     decide(issued.userCode(), DeviceDecision.DENY);
 
     assertThat(authorizationRepository.findAll())
@@ -473,11 +556,11 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should refuse issuance when the outstanding-code cap is reached")
   void shouldRefuseIssuanceWhenOutstandingCodeCapReached() {
-    service.issue("One");
-    service.issue("Two");
-    service.issue("Three");
+    service.issue("One", "esn-1");
+    service.issue("Two", "esn-1");
+    service.issue("Three", "esn-1");
 
-    assertThatThrownBy(() -> service.issue("Four"))
+    assertThatThrownBy(() -> service.issue("Four", "esn-1"))
         .isInstanceOf(TooManyDeviceAttemptsException.class)
         .satisfies(
             e ->
@@ -489,26 +572,26 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should free issuance capacity when outstanding codes expire")
   void shouldFreeIssuanceCapacityWhenOutstandingCodesExpire() {
-    service.issue("One");
-    service.issue("Two");
-    service.issue("Three");
+    service.issue("One", "esn-1");
+    service.issue("Two", "esn-1");
+    service.issue("Three", "esn-1");
 
     advanceClock(Duration.ofMinutes(11));
 
-    assertThat(service.issue("Four").deviceCode()).isNotBlank();
+    assertThat(service.issue("Four", "esn-1").deviceCode()).isNotBlank();
   }
 
   @ParameterizedTest
   @EnumSource(DeviceDecision.class)
   @DisplayName("Should free issuance capacity when an outstanding code is decided")
   void shouldFreeIssuanceCapacityWhenOutstandingCodeDecided(DeviceDecision decision) {
-    var first = service.issue("One");
-    service.issue("Two");
-    service.issue("Three");
+    var first = service.issue("One", "esn-1");
+    service.issue("Two", "esn-1");
+    service.issue("Three", "esn-1");
 
     decide(first.userCode(), decision);
 
-    assertThat(service.issue("Four").deviceCode()).isNotBlank();
+    assertThat(service.issue("Four", "esn-1").deviceCode()).isNotBlank();
   }
 
   @Test
@@ -516,10 +599,10 @@ class DeviceAuthorizationServiceTest {
   void shouldWarnOnlyWhenIssuanceFirstNearsAndThenReachesCapacity(CapturedOutput output) {
     var capacityService = serviceWithCapacity(4);
 
-    capacityService.issue("One");
-    capacityService.issue("Two");
-    capacityService.issue("Three");
-    capacityService.issue("Four");
+    capacityService.issue("One", "esn-1");
+    capacityService.issue("Two", "esn-1");
+    capacityService.issue("Three", "esn-1");
+    capacityService.issue("Four", "esn-1");
 
     assertThat(output.getAll())
         .contains("issuance at 2 of 4")
@@ -530,13 +613,13 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should base the capacity retry on the oldest expiry when the cap is reached")
   void shouldBaseCapacityRetryOnOldestExpiryWhenCapReached() {
-    service.issue("Oldest");
+    service.issue("Oldest", "esn-1");
     advanceClock(Duration.ofMinutes(2));
-    service.issue("Middle");
+    service.issue("Middle", "esn-1");
     advanceClock(Duration.ofMinutes(2));
-    service.issue("Newest");
+    service.issue("Newest", "esn-1");
 
-    assertThatThrownBy(() -> service.issue("Refused"))
+    assertThatThrownBy(() -> service.issue("Refused", "esn-1"))
         .isInstanceOf(TooManyDeviceAttemptsException.class)
         .satisfies(
             failure ->
@@ -559,7 +642,7 @@ class DeviceAuthorizationServiceTest {
         };
     var failingService = serviceWith(throwingRepository, new UserCodeGenerator());
 
-    assertThatThrownBy(() -> failingService.issue("Apple TV")).isSameAs(failure);
+    assertThatThrownBy(() -> failingService.issue("Apple TV", "esn-1")).isSameAs(failure);
   }
 
   @Test
@@ -576,8 +659,8 @@ class DeviceAuthorizationServiceTest {
               }
             });
 
-    assertThat(collidingService.issue("First").userCode()).isEqualTo("BBBB-BBBB");
-    assertThat(collidingService.issue("Second").userCode()).isEqualTo("CCCC-CCCC");
+    assertThat(collidingService.issue("First", "esn-1").userCode()).isEqualTo("BBBB-BBBB");
+    assertThat(collidingService.issue("Second", "esn-1").userCode()).isEqualTo("CCCC-CCCC");
     assertThat(authorizationRepository.findAll()).hasSize(2);
   }
 
@@ -597,7 +680,7 @@ class DeviceAuthorizationServiceTest {
         };
     var collidingService = serviceWith(collidingRepository, new UserCodeGenerator());
 
-    assertThatThrownBy(() -> collidingService.issue("Apple TV"))
+    assertThatThrownBy(() -> collidingService.issue("Apple TV", "esn-1"))
         .isInstanceOf(IllegalStateException.class)
         .hasCause(collision);
   }
@@ -614,9 +697,9 @@ class DeviceAuthorizationServiceTest {
                 return "BBBBBBBB";
               }
             });
-    collidingService.issue("First");
+    collidingService.issue("First", "esn-1");
 
-    assertThatThrownBy(() -> collidingService.issue("Second"))
+    assertThatThrownBy(() -> collidingService.issue("Second", "esn-1"))
         .isInstanceOf(IllegalStateException.class)
         .hasCauseInstanceOf(UserCodeCollisionException.class);
   }
@@ -632,7 +715,7 @@ class DeviceAuthorizationServiceTest {
           }
         };
     var losingService = serviceWith(losingRepository, new UserCodeGenerator());
-    var issued = losingService.issue("Apple TV");
+    var issued = losingService.issue("Apple TV", "esn-1");
     var command =
         DeviceDecisionCommand.builder()
             .userCode(issued.userCode())
@@ -657,7 +740,7 @@ class DeviceAuthorizationServiceTest {
           }
         };
     var losingService = serviceWith(losingRepository, new UserCodeGenerator());
-    var issued = losingService.issue("Apple TV");
+    var issued = losingService.issue("Apple TV", "esn-1");
     var command = decisionCommand(issued.userCode());
 
     assertThatThrownBy(() -> losingService.decide(command))
@@ -676,7 +759,7 @@ class DeviceAuthorizationServiceTest {
           }
         };
     var losingService = serviceWith(losingRepository, new UserCodeGenerator());
-    var issued = losingService.issue("Apple TV");
+    var issued = losingService.issue("Apple TV", "esn-1");
     var command = decisionCommand(issued.userCode());
 
     assertThatThrownBy(() -> losingService.decide(command))
@@ -686,7 +769,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should refuse the grant when its approver has since been disabled")
   void shouldRefuseGrantWhenApproverSinceDisabled() {
-    var issued = service.issue("Apple TV");
+    var issued = service.issue("Apple TV", "esn-1");
     approve(issued.userCode());
 
     approver.setEnabled(false);
@@ -712,6 +795,9 @@ class DeviceAuthorizationServiceTest {
     return new DeviceAuthorizationService(
         repository,
         userAccountRepository,
+        registrationRepository,
+        esnBlockRepository,
+        new DeviceRegistrationLifecycle(registrationRepository, sessionRepository),
         refreshTokenService,
         accessTokenIssuer,
         generator,
@@ -740,6 +826,9 @@ class DeviceAuthorizationServiceTest {
     return new DeviceAuthorizationService(
         authorizationRepository,
         userAccountRepository,
+        registrationRepository,
+        esnBlockRepository,
+        new DeviceRegistrationLifecycle(registrationRepository, sessionRepository),
         refreshTokenService,
         accessTokenIssuer,
         new UserCodeGenerator(),
@@ -767,6 +856,15 @@ class DeviceAuthorizationServiceTest {
         .userCode(userCode)
         .decision(DeviceDecision.APPROVE)
         .decidedByAccountId(approver.getId())
+        .build();
+  }
+
+  private DeviceDecisionCommand decisionCommandFor(String userCode, UUID householdId) {
+    return DeviceDecisionCommand.builder()
+        .userCode(userCode)
+        .decision(DeviceDecision.APPROVE)
+        .decidedByAccountId(approver.getId())
+        .chosenHouseholdId(householdId)
         .build();
   }
 
