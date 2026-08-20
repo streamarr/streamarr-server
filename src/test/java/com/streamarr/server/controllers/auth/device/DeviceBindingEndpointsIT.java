@@ -257,6 +257,99 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
         .isEqualTo(DeviceRegistrationStatus.REVOKED);
   }
 
+  @Test
+  @DisplayName("Should administer devices and ESN blocks through every seat and connection")
+  void shouldAdministerDevicesAndEsnBlocksThroughEverySeatAndConnection() throws Exception {
+    var issued = issueCode("Den TV", "esn-admin");
+    approve(issued.get("userCode").asString(), approver.household().getId());
+    pollSuccessfully(issued.get("deviceCode").asString());
+    var bearer = authTestSupport.accountBearer(approver);
+
+    graphql(
+            bearer,
+            """
+            query { householdDevices(householdId: "%s") {
+              edges { node { esn displayName status pairedAt } } } }
+            """
+                .formatted(approver.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.householdDevices.edges[0].node.esn").value("esn-admin"))
+        .andExpect(jsonPath("$.data.householdDevices.edges[0].node.status").value("ACTIVE"));
+
+    // Server-wide blocks are the fresh ceremony's; the stale bearer earns the typed answer.
+    graphql(
+            bearer,
+            """
+            mutation { blockEsnServerWide(input: {esn: "esn-wide", reason: "stolen"}) {
+              block { esn } userErrors { __typename } } }
+            """)
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.blockEsnServerWide.userErrors[0].__typename")
+                .value("ReauthenticationRequiredError"));
+    graphql(
+            authTestSupport.freshAccountBearer(approver),
+            """
+            mutation { blockEsnServerWide(input: {esn: "esn-wide", reason: "stolen"}) {
+              block { esn householdId } userErrors { __typename } } }
+            """)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.blockEsnServerWide.block.esn").value("esn-wide"))
+        .andExpect(jsonPath("$.data.blockEsnServerWide.block.householdId").doesNotExist());
+
+    graphql(bearer, "query { serverEsnBlocks { edges { node { esn reason } } } }")
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.serverEsnBlocks.edges[0].node.esn").value("esn-wide"));
+
+    graphql(
+            bearer,
+            """
+            mutation { blockEsn(input: {householdId: "%s", esn: "esn-local", reason: "loaner"}) {
+              block { esn } userErrors { __typename } } }
+            """
+                .formatted(approver.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.blockEsn.userErrors").isEmpty());
+    graphql(
+            bearer,
+            """
+            query { esnBlocks(householdId: "%s") { edges { node { esn } } } }
+            """
+                .formatted(approver.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.esnBlocks.edges[0].node.esn").value("esn-local"));
+
+    graphql(
+            bearer,
+            """
+            mutation { unblockEsn(input: {householdId: "%s", esn: "esn-local"}) {
+              esn userErrors { __typename } } }
+            """
+                .formatted(approver.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.unblockEsn.esn").value("esn-local"));
+    graphql(
+            bearer,
+            """
+            mutation { unblockEsn(input: {householdId: "%s", esn: "esn-local"}) {
+              esn userErrors { __typename } } }
+            """
+                .formatted(approver.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.unblockEsn.userErrors[0].__typename").value("EsnBlockNotFoundError"));
+
+    graphql(
+            authTestSupport.accountBearer(approver),
+            """
+            mutation { unblockEsnServerWide(input: {esn: "esn-wide"}) {
+              esn userErrors { __typename } } }
+            """)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.unblockEsnServerWide.esn").value("esn-wide"));
+  }
+
   /** An active visit of the approver's Personal Profile into the host's Household. */
   private ProfileHouseholdShare visit(
       AuthTestSupport.TestIdentity visitor, AuthTestSupport.TestIdentity hosting) {

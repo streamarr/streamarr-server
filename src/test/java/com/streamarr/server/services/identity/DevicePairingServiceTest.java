@@ -25,6 +25,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceAuthorizationService;
 import com.streamarr.server.services.auth.DeviceAuthorizationServiceHarness;
 import com.streamarr.server.services.auth.DeviceDecision;
+import com.streamarr.server.services.identity.DevicePairingService.EligibleHouseholdView;
 import com.streamarr.server.services.identity.DevicePairingService.PairingDecisionCommand;
 import java.time.Clock;
 import java.util.UUID;
@@ -98,7 +99,7 @@ class DevicePairingServiceTest {
 
     assertThat(lookup.authorization().deviceName()).isEqualTo("Living Room TV");
     assertThat(lookup.households())
-        .extracting(household -> household.id())
+        .extracting(EligibleHouseholdView::id)
         .containsExactly(approver.getHouseholdId(), visitedHouseholdId);
   }
 
@@ -108,10 +109,11 @@ class DevicePairingServiceTest {
     var issued = deviceAuthorizationService.issue("TV", "esn-1");
     var code = issued.userCode();
 
-    assertThatThrownBy(() -> service.decide(identity(), approve(code, null)))
+    var withoutHousehold = approve(code, null);
+    assertThatThrownBy(() -> service.decide(identity(), withoutHousehold))
         .isInstanceOf(HouseholdRequiredException.class);
-    var stranger = UUID.randomUUID();
-    assertThatThrownBy(() -> service.decide(identity(), approve(code, stranger)))
+    var strangersHousehold = approve(code, UUID.randomUUID());
+    assertThatThrownBy(() -> service.decide(identity(), strangersHousehold))
         .isInstanceOf(HouseholdAccessDeniedException.class);
 
     var view = service.decide(identity(), approve(code, visitedHouseholdId));
@@ -126,14 +128,16 @@ class DevicePairingServiceTest {
   void shouldRefuseApprovingBlockedEsnInEitherScope() {
     blocks.save(
         EsnBlock.builder().esn("esn-1").householdId(visitedHouseholdId).reason("x").build());
-    var scoped = deviceAuthorizationService.issue("TV", "esn-1").userCode();
-    assertThatThrownBy(() -> service.decide(identity(), approve(scoped, visitedHouseholdId)))
+    var scopedApproval =
+        approve(deviceAuthorizationService.issue("TV", "esn-1").userCode(), visitedHouseholdId);
+    assertThatThrownBy(() -> service.decide(identity(), scopedApproval))
         .isInstanceOf(EsnBlockedException.class);
 
     blocks.save(EsnBlock.builder().esn("esn-2").reason("server-wide").build());
-    var serverWide = deviceAuthorizationService.issue("TV", "esn-2").userCode();
-    var home = approver.getHouseholdId();
-    assertThatThrownBy(() -> service.decide(identity(), approve(serverWide, home)))
+    var serverWideApproval =
+        approve(
+            deviceAuthorizationService.issue("TV", "esn-2").userCode(), approver.getHouseholdId());
+    assertThatThrownBy(() -> service.decide(identity(), serverWideApproval))
         .isInstanceOf(EsnBlockedException.class);
   }
 
@@ -151,9 +155,10 @@ class DevicePairingServiceTest {
     assertThat(view.status()).isEqualTo(DeviceAuthorizationStatus.DENIED);
 
     authorization.denyAll();
-    var gated = deviceAuthorizationService.issue("TV", "esn-3").userCode();
-    var home = approver.getHouseholdId();
-    assertThatThrownBy(() -> service.decide(identity(), approve(gated, home)))
+    var gatedApproval =
+        approve(
+            deviceAuthorizationService.issue("TV", "esn-3").userCode(), approver.getHouseholdId());
+    assertThatThrownBy(() -> service.decide(identity(), gatedApproval))
         .isInstanceOf(AccessDeniedException.class);
   }
 

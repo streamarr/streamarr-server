@@ -22,9 +22,8 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
 
   @Override
   public boolean tryRevoke(UUID registrationId, UUID actorAccountId, String reason, Instant now) {
-    return revokeWhere(DEVICE_REGISTRATION.ID.eq(registrationId), actorAccountId, reason, now)
-            .size()
-        > 0;
+    return !revokeWhere(DEVICE_REGISTRATION.ID.eq(registrationId), actorAccountId, reason, now)
+        .isEmpty();
   }
 
   @Override
