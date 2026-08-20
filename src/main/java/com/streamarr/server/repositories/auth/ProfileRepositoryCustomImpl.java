@@ -83,6 +83,12 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
   }
 
   @Override
+  public boolean tryRehome(UUID profileId, UUID destinationHouseholdId) {
+    return updateColumn(
+        profileId, update -> update.set(PROFILE.HOUSEHOLD_ID, destinationHouseholdId));
+  }
+
+  @Override
   public boolean tryRename(UUID profileId, String name) {
     return updateColumn(profileId, update -> update.set(PROFILE.NAME, name));
   }

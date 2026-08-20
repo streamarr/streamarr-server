@@ -192,6 +192,19 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
+  public boolean tryDemoteStructural(UUID profileId, UUID householdId, Instant now) {
+    var structural =
+        database.values().stream()
+            .filter(share -> share.getProfileId().equals(profileId))
+            .filter(share -> share.getHouseholdId().equals(householdId))
+            .filter(ProfileHouseholdShare::isStructural)
+            .filter(share -> share.getStatus() == ProfileShareStatus.ACTIVE)
+            .findFirst();
+    structural.ifPresent(share -> share.setStructural(false));
+    return structural.isPresent();
+  }
+
+  @Override
   public int invalidatePendingSharesOfferedBy(
       UUID profileId, UUID offererAccountId, String reason, Instant now) {
     var pending =
@@ -206,6 +219,23 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
           share.setInvalidationReason(reason);
           share.setDecidedAt(now);
           AuditFieldSetter.setLastModifiedOn(share, now);
+        });
+    return pending.size();
+  }
+
+  @Override
+  public int invalidatePendingSharesOfferedByAccount(
+      UUID offererAccountId, String reason, Instant now) {
+    var pending =
+        database.values().stream()
+            .filter(share -> offererAccountId.equals(share.getOfferedByAccountId()))
+            .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+            .toList();
+    pending.forEach(
+        share -> {
+          share.setStatus(ProfileShareStatus.INVALIDATED);
+          share.setInvalidationReason(reason);
+          share.setDecidedAt(now);
         });
     return pending.size();
   }

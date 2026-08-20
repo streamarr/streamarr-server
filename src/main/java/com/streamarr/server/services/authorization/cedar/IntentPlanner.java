@@ -127,6 +127,16 @@ final class IntentPlanner {
               AuthorizationCheck.onHousehold(Action.VIEW_DEVICE_ADMINISTRATION, householdId);
           case Intent.ViewServerDeviceAdministration _ ->
               AuthorizationCheck.onServer(Action.VIEW_SERVER_DEVICE_ADMINISTRATION);
+          case Intent.TransferAccount(var accountId) ->
+              AuthorizationCheck.onAccount(Action.TRANSFER_ACCOUNT, accountId);
+          case Intent.DeleteAccount(var accountId) ->
+              AuthorizationCheck.onAccount(Action.DELETE_ACCOUNT, accountId);
+          case Intent.DeleteMyAccount _ ->
+              AuthorizationCheck.onAccount(Action.DELETE_MY_ACCOUNT, identity.accountId());
+          case Intent.TransferProfile(var profileId) ->
+              AuthorizationCheck.onProfile(Action.TRANSFER_PROFILE, profileId);
+          case Intent.ForceDeleteProfile(var profileId) ->
+              AuthorizationCheck.onProfile(Action.FORCE_DELETE_PROFILE, profileId);
           case Intent.ProfilePolicyChange change ->
               throw new IllegalStateException(
                   "Policy changes are planned with their transition: " + change.getClass());
