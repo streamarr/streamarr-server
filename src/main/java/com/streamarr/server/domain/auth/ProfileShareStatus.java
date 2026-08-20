@@ -7,5 +7,6 @@ public enum ProfileShareStatus {
   REJECTED,
   CANCELED,
   EXPIRED,
+  INVALIDATED,
   ENDED
 }

@@ -32,6 +32,18 @@ namespace Streamarr {
     unlinked?: Bool,
     shareFree?: Bool,
     principalSoleManager?: Bool,
+    offerableByPrincipal?: Bool,
+  };
+
+  // One Profile's share into one Household, as the principal relates to it for one decision.
+  entity Share {
+    pending?: Bool,
+    active?: Bool,
+    structural?: Bool,
+    offeredByPrincipal?: Bool,
+    principalAdminOfTarget?: Bool,
+    directlyManagedByPrincipal?: Bool,
+    sovereignOverProfileByPrincipal?: Bool,
   };
 
   // The singleton root resource server-wide authority is granted on.
@@ -208,6 +220,37 @@ namespace Streamarr {
   action issuePasswordReset in accountAdministration appliesTo {
     principal: Account,
     resource: Account,
+    context: { freshReauthentication: Bool },
+  };
+  action shareAdministration;
+  action offerProfileShare in shareAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
+  action acceptProfileShare in shareAdministration appliesTo {
+    principal: Account,
+    resource: Share,
+    context: {},
+  };
+  action rejectProfileShare in shareAdministration appliesTo {
+    principal: Account,
+    resource: Share,
+    context: {},
+  };
+  action cancelProfileShare in shareAdministration appliesTo {
+    principal: Account,
+    resource: Share,
+    context: {},
+  };
+  action endProfileShare in shareAdministration appliesTo {
+    principal: Account,
+    resource: Share,
+    context: {},
+  };
+  action forceEndProfileShare in shareAdministration appliesTo {
+    principal: Account,
+    resource: Share,
     context: { freshReauthentication: Bool },
   };
   action viewProfileAdministration in profileAdministration appliesTo {
