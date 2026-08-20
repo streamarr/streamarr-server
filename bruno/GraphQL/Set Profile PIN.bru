@@ -1,0 +1,43 @@
+meta {
+  name: Set Profile PIN
+  type: graphql
+  seq: 11
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: inherit
+}
+
+body:graphql {
+  mutation {
+    setProfilePin(
+      input: {
+        profileId: "{{NEW_PROFILE_ID}}"
+        pin: "{{NEW_PROFILE_PIN}}"
+      }
+    ) {
+      profile {
+        id
+        name
+        pinConfigured
+      }
+      userErrors {
+        __typename
+        ... on MutationError {
+          message
+        }
+      }
+    }
+  }
+}
+
+tests {
+  test("Should configure the PIN with no user errors", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.not.have.property("errors");
+    expect(res.body.data.setProfilePin.userErrors).to.be.empty;
+    expect(res.body.data.setProfilePin.profile.pinConfigured).to.equal(true);
+  });
+}
