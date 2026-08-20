@@ -4,6 +4,7 @@
 package com.streamarr.server.jooq.generated;
 
 
+import com.streamarr.server.jooq.generated.tables.AccountInvitation;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
@@ -23,6 +24,7 @@ import com.streamarr.server.jooq.generated.tables.MovieCompany;
 import com.streamarr.server.jooq.generated.tables.MovieDirector;
 import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
+import com.streamarr.server.jooq.generated.tables.PasswordResetCode;
 import com.streamarr.server.jooq.generated.tables.Person;
 import com.streamarr.server.jooq.generated.tables.Profile;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare;
@@ -42,6 +44,7 @@ import com.streamarr.server.jooq.generated.tables.ServerBootstrap;
 import com.streamarr.server.jooq.generated.tables.SessionProgress;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
+import com.streamarr.server.jooq.generated.tables.records.AccountInvitationRecord;
 import com.streamarr.server.jooq.generated.tables.records.AuthSessionRecord;
 import com.streamarr.server.jooq.generated.tables.records.BaseCollectableRecord;
 import com.streamarr.server.jooq.generated.tables.records.CompanyRecord;
@@ -61,6 +64,7 @@ import com.streamarr.server.jooq.generated.tables.records.MovieDirectorRecord;
 import com.streamarr.server.jooq.generated.tables.records.MovieGenreRecord;
 import com.streamarr.server.jooq.generated.tables.records.MoviePersonRecord;
 import com.streamarr.server.jooq.generated.tables.records.MovieRecord;
+import com.streamarr.server.jooq.generated.tables.records.PasswordResetCodeRecord;
 import com.streamarr.server.jooq.generated.tables.records.PersonRecord;
 import com.streamarr.server.jooq.generated.tables.records.ProfileHouseholdShareRecord;
 import com.streamarr.server.jooq.generated.tables.records.ProfileManagerRecord;
@@ -100,6 +104,8 @@ public class Keys {
     // UNIQUE and PRIMARY KEY definitions
     // -------------------------------------------------------------------------
 
+    public static final UniqueKey<AccountInvitationRecord> ACCOUNT_INVITATION_PKEY = Internal.createUniqueKey(AccountInvitation.ACCOUNT_INVITATION, DSL.name("account_invitation_pkey"), new TableField[] { AccountInvitation.ACCOUNT_INVITATION.ID }, true);
+    public static final UniqueKey<AccountInvitationRecord> UQ_ACCOUNT_INVITATION_PUBLIC_ID = Internal.createUniqueKey(AccountInvitation.ACCOUNT_INVITATION, DSL.name("uq_account_invitation_public_id"), new TableField[] { AccountInvitation.ACCOUNT_INVITATION.PUBLIC_ID }, true);
     public static final UniqueKey<AuthSessionRecord> AUTH_SESSION_PKEY = Internal.createUniqueKey(AuthSession.AUTH_SESSION, DSL.name("auth_session_pkey"), new TableField[] { AuthSession.AUTH_SESSION.ID }, true);
     public static final UniqueKey<BaseCollectableRecord> BASE_COLLECTABLE_PKEY = Internal.createUniqueKey(BaseCollectable.BASE_COLLECTABLE, DSL.name("base_collectable_pkey"), new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true);
     public static final UniqueKey<CompanyRecord> COMPANY_PKEY = Internal.createUniqueKey(Company.COMPANY, DSL.name("company_pkey"), new TableField[] { Company.COMPANY.ID }, true);
@@ -126,6 +132,8 @@ public class Keys {
     public static final UniqueKey<MovieDirectorRecord> MOVIE_DIRECTOR_PKEY = Internal.createUniqueKey(MovieDirector.MOVIE_DIRECTOR, DSL.name("movie_director_pkey"), new TableField[] { MovieDirector.MOVIE_DIRECTOR.ID }, true);
     public static final UniqueKey<MovieGenreRecord> MOVIE_GENRE_PKEY = Internal.createUniqueKey(MovieGenre.MOVIE_GENRE, DSL.name("movie_genre_pkey"), new TableField[] { MovieGenre.MOVIE_GENRE.MOVIE_ID, MovieGenre.MOVIE_GENRE.GENRE_ID }, true);
     public static final UniqueKey<MoviePersonRecord> MOVIE_PERSON_PKEY = Internal.createUniqueKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_pkey"), new TableField[] { MoviePerson.MOVIE_PERSON.ID }, true);
+    public static final UniqueKey<PasswordResetCodeRecord> PASSWORD_RESET_CODE_PKEY = Internal.createUniqueKey(PasswordResetCode.PASSWORD_RESET_CODE, DSL.name("password_reset_code_pkey"), new TableField[] { PasswordResetCode.PASSWORD_RESET_CODE.ID }, true);
+    public static final UniqueKey<PasswordResetCodeRecord> UQ_PASSWORD_RESET_CODE_PUBLIC_ID = Internal.createUniqueKey(PasswordResetCode.PASSWORD_RESET_CODE, DSL.name("uq_password_reset_code_public_id"), new TableField[] { PasswordResetCode.PASSWORD_RESET_CODE.PUBLIC_ID }, true);
     public static final UniqueKey<PersonRecord> PERSON_PKEY = Internal.createUniqueKey(Person.PERSON, DSL.name("person_pkey"), new TableField[] { Person.PERSON.ID }, true);
     public static final UniqueKey<PersonRecord> PERSON_SOURCE_ID_UNIQUE = Internal.createUniqueKey(Person.PERSON, DSL.name("person_source_id_unique"), new TableField[] { Person.PERSON.SOURCE_ID }, true);
     public static final UniqueKey<ProfileRecord> PROFILE_PKEY = Internal.createUniqueKey(Profile.PROFILE, DSL.name("profile_pkey"), new TableField[] { Profile.PROFILE.ID }, true);
@@ -158,6 +166,9 @@ public class Keys {
     // FOREIGN KEY definitions
     // -------------------------------------------------------------------------
 
+    public static final ForeignKey<AccountInvitationRecord, HouseholdRecord> ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_HOUSEHOLD = Internal.createForeignKey(AccountInvitation.ACCOUNT_INVITATION, DSL.name("fk_account_invitation_household"), new TableField[] { AccountInvitation.ACCOUNT_INVITATION.HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<AccountInvitationRecord, UserAccountRecord> ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_ISSUER = Internal.createForeignKey(AccountInvitation.ACCOUNT_INVITATION, DSL.name("fk_account_invitation_issuer"), new TableField[] { AccountInvitation.ACCOUNT_INVITATION.ISSUER_ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<AccountInvitationRecord, UserAccountRecord> ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_LOCAL_MANAGER = Internal.createForeignKey(AccountInvitation.ACCOUNT_INVITATION, DSL.name("fk_account_invitation_local_manager"), new TableField[] { AccountInvitation.ACCOUNT_INVITATION.LOCAL_MANAGER_ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<AuthSessionRecord, UserAccountRecord> AUTH_SESSION__FK_AUTH_SESSION_ACCOUNT = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_account"), new TableField[] { AuthSession.AUTH_SESSION.ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<AuthSessionRecord, ProfileRecord> AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_active_profile"), new TableField[] { AuthSession.AUTH_SESSION.SELECTED_PROFILE_ID }, Keys.PROFILE_PKEY, new TableField[] { Profile.PROFILE.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<AuthSessionRecord, HouseholdRecord> AUTH_SESSION__FK_AUTH_SESSION_CONTEXT_HOUSEHOLD = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_context_household"), new TableField[] { AuthSession.AUTH_SESSION.CONTEXT_HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
@@ -180,6 +191,8 @@ public class Keys {
     public static final ForeignKey<MovieGenreRecord, MovieRecord> MOVIE_GENRE__MOVIE_GENRE_MOVIE_ID_FKEY = Internal.createForeignKey(MovieGenre.MOVIE_GENRE, DSL.name("movie_genre_movie_id_fkey"), new TableField[] { MovieGenre.MOVIE_GENRE.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<MoviePersonRecord, MovieRecord> MOVIE_PERSON__MOVIE_PERSON_MOVIE_ID_FKEY = Internal.createForeignKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_movie_id_fkey"), new TableField[] { MoviePerson.MOVIE_PERSON.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<MoviePersonRecord, PersonRecord> MOVIE_PERSON__MOVIE_PERSON_PERSON_ID_FKEY = Internal.createForeignKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_person_id_fkey"), new TableField[] { MoviePerson.MOVIE_PERSON.PERSON_ID }, Keys.PERSON_PKEY, new TableField[] { Person.PERSON.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<PasswordResetCodeRecord, UserAccountRecord> PASSWORD_RESET_CODE__FK_PASSWORD_RESET_CODE_ACCOUNT = Internal.createForeignKey(PasswordResetCode.PASSWORD_RESET_CODE, DSL.name("fk_password_reset_code_account"), new TableField[] { PasswordResetCode.PASSWORD_RESET_CODE.ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<PasswordResetCodeRecord, UserAccountRecord> PASSWORD_RESET_CODE__FK_PASSWORD_RESET_CODE_ISSUER = Internal.createForeignKey(PasswordResetCode.PASSWORD_RESET_CODE, DSL.name("fk_password_reset_code_issuer"), new TableField[] { PasswordResetCode.PASSWORD_RESET_CODE.ISSUER_ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<ProfileRecord, HouseholdRecord> PROFILE__FK_PROFILE_HOUSEHOLD = Internal.createForeignKey(Profile.PROFILE, DSL.name("fk_profile_household"), new TableField[] { Profile.PROFILE.HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<ProfileHouseholdShareRecord, HouseholdRecord> PROFILE_HOUSEHOLD_SHARE__FK_PROFILE_HOUSEHOLD_SHARE_HOUSEHOLD = Internal.createForeignKey(ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE, DSL.name("fk_profile_household_share_household"), new TableField[] { ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<ProfileHouseholdShareRecord, UserAccountRecord> PROFILE_HOUSEHOLD_SHARE__FK_PROFILE_HOUSEHOLD_SHARE_OFFERED_BY = Internal.createForeignKey(ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE, DSL.name("fk_profile_household_share_offered_by"), new TableField[] { ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.OFFERED_BY_ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);

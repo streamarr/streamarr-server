@@ -4,6 +4,7 @@
 package com.streamarr.server.jooq.generated;
 
 
+import com.streamarr.server.jooq.generated.tables.AccountInvitation;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.DeviceAuthorization;
@@ -18,6 +19,7 @@ import com.streamarr.server.jooq.generated.tables.MovieCompany;
 import com.streamarr.server.jooq.generated.tables.MovieDirector;
 import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
+import com.streamarr.server.jooq.generated.tables.PasswordResetCode;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare;
 import com.streamarr.server.jooq.generated.tables.ProfileManager;
 import com.streamarr.server.jooq.generated.tables.Rating;
@@ -54,6 +56,7 @@ public class Indexes {
     public static final Index EXTERNAL_IDENTIFIER_ID_IDX = Internal.createIndex(DSL.name("external_identifier_id_idx"), ExternalIdentifier.EXTERNAL_IDENTIFIER, new OrderField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ID }, true);
     public static final Index FILE_PROCESSING_TASK_CLAIMABLE_IDX = Internal.createIndex(DSL.name("file_processing_task_claimable_idx"), FileProcessingTask.FILE_PROCESSING_TASK, new OrderField[] { FileProcessingTask.FILE_PROCESSING_TASK.STATUS }, false);
     public static final Index FILE_PROCESSING_TASK_FILEPATH_URI_ACTIVE_IDX = Internal.createIndex(DSL.name("file_processing_task_filepath_uri_active_idx"), FileProcessingTask.FILE_PROCESSING_TASK, new OrderField[] { FileProcessingTask.FILE_PROCESSING_TASK.FILEPATH_URI }, true);
+    public static final Index IDX_ACCOUNT_INVITATION_ISSUER = Internal.createIndex(DSL.name("idx_account_invitation_issuer"), AccountInvitation.ACCOUNT_INVITATION, new OrderField[] { AccountInvitation.ACCOUNT_INVITATION.ISSUER_ACCOUNT_ID }, false);
     public static final Index IDX_AUTH_SESSION_ACCOUNT_ID = Internal.createIndex(DSL.name("idx_auth_session_account_id"), AuthSession.AUTH_SESSION, new OrderField[] { AuthSession.AUTH_SESSION.ACCOUNT_ID }, false);
     public static final Index IDX_AUTH_SESSION_CONTEXT_HOUSEHOLD_ID = Internal.createIndex(DSL.name("idx_auth_session_context_household_id"), AuthSession.AUTH_SESSION, new OrderField[] { AuthSession.AUTH_SESSION.CONTEXT_HOUSEHOLD_ID }, false);
     public static final Index IDX_AUTH_SESSION_SELECTED_PROFILE_ID = Internal.createIndex(DSL.name("idx_auth_session_selected_profile_id"), AuthSession.AUTH_SESSION, new OrderField[] { AuthSession.AUTH_SESSION.SELECTED_PROFILE_ID }, false);
@@ -77,6 +80,7 @@ public class Indexes {
     public static final Index IDX_MOVIE_RELEASEDATE_ID = Internal.createIndex(DSL.name("idx_movie_releasedate_id"), Movie.MOVIE, new OrderField[] { Movie.MOVIE.RELEASE_DATE, Movie.MOVIE.ID }, false);
     public static final Index IDX_MOVIE_RUNTIME_DESC_ID = Internal.createIndex(DSL.name("idx_movie_runtime_desc_id"), Movie.MOVIE, new OrderField[] { Movie.MOVIE.RUNTIME.desc(), Movie.MOVIE.ID.desc() }, false);
     public static final Index IDX_MOVIE_RUNTIME_ID = Internal.createIndex(DSL.name("idx_movie_runtime_id"), Movie.MOVIE, new OrderField[] { Movie.MOVIE.RUNTIME, Movie.MOVIE.ID }, false);
+    public static final Index IDX_PASSWORD_RESET_CODE_ISSUER = Internal.createIndex(DSL.name("idx_password_reset_code_issuer"), PasswordResetCode.PASSWORD_RESET_CODE, new OrderField[] { PasswordResetCode.PASSWORD_RESET_CODE.ISSUER_ACCOUNT_ID }, false);
     public static final Index IDX_PROFILE_HOUSEHOLD_SHARE_HOUSEHOLD_STATUS = Internal.createIndex(DSL.name("idx_profile_household_share_household_status"), ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE, new OrderField[] { ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID, ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.STATUS }, false);
     public static final Index IDX_PROFILE_MANAGER_PROFILE_ID = Internal.createIndex(DSL.name("idx_profile_manager_profile_id"), ProfileManager.PROFILE_MANAGER, new OrderField[] { ProfileManager.PROFILE_MANAGER.PROFILE_ID }, false);
     public static final Index IDX_RATING_MOVIE_ID = Internal.createIndex(DSL.name("idx_rating_movie_id"), Rating.RATING, new OrderField[] { Rating.RATING.MOVIE_ID }, false);
@@ -106,6 +110,7 @@ public class Indexes {
     public static final Index LIBRARY_FILEPATH_URI_IDX = Internal.createIndex(DSL.name("library_filepath_uri_idx"), Library.LIBRARY, new OrderField[] { Library.LIBRARY.FILEPATH_URI }, true);
     public static final Index MEDIA_FILE_FILEPATH_URI_IDX = Internal.createIndex(DSL.name("media_file_filepath_uri_idx"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.FILEPATH_URI }, true);
     public static final Index SCHEMA_HISTORY_S_IDX = Internal.createIndex(DSL.name("schema_history_s_idx"), SchemaHistory.SCHEMA_HISTORY, new OrderField[] { SchemaHistory.SCHEMA_HISTORY.SUCCESS }, false);
+    public static final Index UQ_PASSWORD_RESET_CODE_PENDING_ACCOUNT = Internal.createIndex(DSL.name("uq_password_reset_code_pending_account"), PasswordResetCode.PASSWORD_RESET_CODE, new OrderField[] { PasswordResetCode.PASSWORD_RESET_CODE.ACCOUNT_ID }, true);
     public static final Index UQ_PROFILE_HOUSEHOLD_SHARE_LIVE = Internal.createIndex(DSL.name("uq_profile_household_share_live"), ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE, new OrderField[] { ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID }, true);
     public static final Index UQ_REFRESH_TOKEN_ACTIVE_SESSION = Internal.createIndex(DSL.name("uq_refresh_token_active_session"), RefreshToken.REFRESH_TOKEN, new OrderField[] { RefreshToken.REFRESH_TOKEN.SESSION_ID }, true);
 }

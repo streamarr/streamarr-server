@@ -8,9 +8,11 @@ import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.HouseholdRole;
+import com.streamarr.server.jooq.generated.tables.AccountInvitation.AccountInvitationPath;
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.DeviceAuthorization.DeviceAuthorizationPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
+import com.streamarr.server.jooq.generated.tables.PasswordResetCode.PasswordResetCodePath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
 import com.streamarr.server.jooq.generated.tables.ProfileManager.ProfileManagerPath;
@@ -244,6 +246,34 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
         return _profile;
     }
 
+    private transient AccountInvitationPath _fkAccountInvitationIssuer;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.account_invitation</code> table, via the
+     * <code>fk_account_invitation_issuer</code> key
+     */
+    public AccountInvitationPath fkAccountInvitationIssuer() {
+        if (_fkAccountInvitationIssuer == null)
+            _fkAccountInvitationIssuer = new AccountInvitationPath(this, null, Keys.ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_ISSUER.getInverseKey());
+
+        return _fkAccountInvitationIssuer;
+    }
+
+    private transient AccountInvitationPath _fkAccountInvitationLocalManager;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.account_invitation</code> table, via the
+     * <code>fk_account_invitation_local_manager</code> key
+     */
+    public AccountInvitationPath fkAccountInvitationLocalManager() {
+        if (_fkAccountInvitationLocalManager == null)
+            _fkAccountInvitationLocalManager = new AccountInvitationPath(this, null, Keys.ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_LOCAL_MANAGER.getInverseKey());
+
+        return _fkAccountInvitationLocalManager;
+    }
+
     private transient AuthSessionPath _authSession;
 
     /**
@@ -268,6 +298,34 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
             _deviceAuthorization = new DeviceAuthorizationPath(this, null, Keys.DEVICE_AUTHORIZATION__FK_DEVICE_AUTHORIZATION_DECIDED_BY.getInverseKey());
 
         return _deviceAuthorization;
+    }
+
+    private transient PasswordResetCodePath _fkPasswordResetCodeAccount;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.password_reset_code</code> table, via the
+     * <code>fk_password_reset_code_account</code> key
+     */
+    public PasswordResetCodePath fkPasswordResetCodeAccount() {
+        if (_fkPasswordResetCodeAccount == null)
+            _fkPasswordResetCodeAccount = new PasswordResetCodePath(this, null, Keys.PASSWORD_RESET_CODE__FK_PASSWORD_RESET_CODE_ACCOUNT.getInverseKey());
+
+        return _fkPasswordResetCodeAccount;
+    }
+
+    private transient PasswordResetCodePath _fkPasswordResetCodeIssuer;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.password_reset_code</code> table, via the
+     * <code>fk_password_reset_code_issuer</code> key
+     */
+    public PasswordResetCodePath fkPasswordResetCodeIssuer() {
+        if (_fkPasswordResetCodeIssuer == null)
+            _fkPasswordResetCodeIssuer = new PasswordResetCodePath(this, null, Keys.PASSWORD_RESET_CODE__FK_PASSWORD_RESET_CODE_ISSUER.getInverseKey());
+
+        return _fkPasswordResetCodeIssuer;
     }
 
     private transient ProfileHouseholdSharePath _profileHouseholdShare;

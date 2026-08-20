@@ -4,6 +4,7 @@
 package com.streamarr.server.jooq.generated;
 
 
+import com.streamarr.server.jooq.generated.tables.AccountInvitation;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
@@ -23,6 +24,7 @@ import com.streamarr.server.jooq.generated.tables.MovieCompany;
 import com.streamarr.server.jooq.generated.tables.MovieDirector;
 import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
+import com.streamarr.server.jooq.generated.tables.PasswordResetCode;
 import com.streamarr.server.jooq.generated.tables.Person;
 import com.streamarr.server.jooq.generated.tables.Profile;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare;
@@ -49,6 +51,11 @@ import com.streamarr.server.jooq.generated.tables.WatchHistory;
  */
 @SuppressWarnings({ "all", "unchecked", "rawtypes", "this-escape" })
 public class Tables {
+
+    /**
+     * The table <code>public.account_invitation</code>.
+     */
+    public static final AccountInvitation ACCOUNT_INVITATION = AccountInvitation.ACCOUNT_INVITATION;
 
     /**
      * The table <code>public.auth_session</code>.
@@ -144,6 +151,11 @@ public class Tables {
      * The table <code>public.movie_person</code>.
      */
     public static final MoviePerson MOVIE_PERSON = MoviePerson.MOVIE_PERSON;
+
+    /**
+     * The table <code>public.password_reset_code</code>.
+     */
+    public static final PasswordResetCode PASSWORD_RESET_CODE = PasswordResetCode.PASSWORD_RESET_CODE;
 
     /**
      * The table <code>public.person</code>.
