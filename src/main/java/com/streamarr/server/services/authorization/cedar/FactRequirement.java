@@ -27,5 +27,7 @@ enum FactRequirement {
   /** The resource Profile's deletability facts: linkage, shares, and the sole-manager rule. */
   PROFILE_DELETION,
   /** The resource Share's structural flag and the principal's relationships to it, read live. */
-  SHARE_FACTS
+  SHARE_FACTS,
+  /** The resource manager invitation's parties relative to the principal, read live. */
+  MANAGER_INVITATION_FACTS
 }

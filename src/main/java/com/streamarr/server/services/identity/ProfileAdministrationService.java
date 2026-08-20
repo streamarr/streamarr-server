@@ -13,6 +13,7 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
@@ -61,6 +62,7 @@ public class ProfileAdministrationService {
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
   private final AccountInvitationRepository accountInvitationRepository;
+  private final ProfileManagerInvitationRepository profileManagerInvitationRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final ProfilePinHasher profilePinHasher;
   private final MutationTransactions mutationTransactions;
@@ -413,6 +415,8 @@ public class ProfileAdministrationService {
           profileRepository.lockProfileDeletionAcrossHouseholds(profileId);
           accountInvitationRepository.invalidatePendingByProfileId(
               profileId, "Profile deleted", clock.instant());
+          profileManagerInvitationRepository.invalidatePendingForProfile(
+              profileId, "Profile deleted", clock.instant());
           profileRepository.deleteById(profileId);
           profileRepository.flush();
           securityAuditEventRepository.append(
@@ -443,6 +447,8 @@ public class ProfileAdministrationService {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
 
+          invalidateRecipientProposalsWhenRestricted(profileId, transition);
+
           // The decision above JPA-loaded this row in this transaction; re-read past the
           // first-level cache or the payload would show the pre-transition state.
           return profileRepository.findRefreshedById(profileId).orElseThrow();
@@ -457,6 +463,26 @@ public class ProfileAdministrationService {
                   Optional.of(new ProfileRejections.HostingHouseholdLacksEligibleAdmin());
               default -> Optional.empty();
             });
+  }
+
+  /**
+   * Restricting a linked Personal Profile ends the person's eligibility (ADR 0024): a pending
+   * manager invitation naming them must not outlive it and later restore authority T5 forbids.
+   */
+  private void invalidateRecipientProposalsWhenRestricted(
+      UUID profileId, ProfilePolicyTransition transition) {
+    var restricted =
+        transition.targetKind() == ProfileKind.KID || transition.targetCeiling() != null;
+    if (!restricted) {
+      return;
+    }
+
+    userAccountRepository
+        .findByPersonalProfileId(profileId)
+        .ifPresent(
+            linked ->
+                profileManagerInvitationRepository.invalidatePendingForRecipient(
+                    linked.getId(), "recipient became ineligible", clock.instant()));
   }
 
   private ProfilePolicyTransition decideTransition(

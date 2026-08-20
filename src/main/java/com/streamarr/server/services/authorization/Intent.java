@@ -140,4 +140,22 @@ public sealed interface Intent {
 
   /** The ServerAdmin administrative end; requiresFreshReauthentication with a reason. */
   record AdministrativelyEndProfileShare(UUID shareId) implements UnitIntent {}
+
+  /** Propose another eligible Account as a direct ProfileManager (ADR 0024 §ProfileManager). */
+  record InviteProfileManager(UUID profileId) implements UnitIntent {}
+
+  record CancelManagerInvitation(UUID invitationId) implements UnitIntent {}
+
+  record AcceptManagerInvitation(UUID invitationId) implements UnitIntent {}
+
+  record DeclineManagerInvitation(UUID invitationId) implements UnitIntent {}
+
+  /** Give up the principal's own direct manager grant. */
+  record RelinquishProfileManagement(UUID profileId) implements UnitIntent {}
+
+  /** The sovereign Account removes a direct manager of its own Personal Profile. */
+  record RemoveProfileManager(UUID profileId) implements UnitIntent {}
+
+  /** ServerAdmin grants or removes management as a fresh-reauthenticated, audited override. */
+  record OverrideProfileManager(UUID profileId) implements UnitIntent {}
 }

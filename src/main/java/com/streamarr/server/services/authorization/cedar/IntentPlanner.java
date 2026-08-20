@@ -105,6 +105,26 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onShare(Action.END_PROFILE_SHARE, shareId));
       case Intent.AdministrativelyEndProfileShare(var shareId) ->
           unitPlan(AuthorizationCheck.onShare(Action.ADMINISTRATIVELY_END_PROFILE_SHARE, shareId));
+      case Intent.InviteProfileManager(var profileId) ->
+          unitPlan(AuthorizationCheck.onProfile(Action.INVITE_PROFILE_MANAGER, profileId));
+      case Intent.CancelManagerInvitation(var invitationId) ->
+          unitPlan(
+              AuthorizationCheck.onManagerInvitation(
+                  Action.CANCEL_MANAGER_INVITATION, invitationId));
+      case Intent.AcceptManagerInvitation(var invitationId) ->
+          unitPlan(
+              AuthorizationCheck.onManagerInvitation(
+                  Action.ACCEPT_MANAGER_INVITATION, invitationId));
+      case Intent.DeclineManagerInvitation(var invitationId) ->
+          unitPlan(
+              AuthorizationCheck.onManagerInvitation(
+                  Action.DECLINE_MANAGER_INVITATION, invitationId));
+      case Intent.RelinquishProfileManagement(var profileId) ->
+          unitPlan(AuthorizationCheck.onProfile(Action.RELINQUISH_PROFILE_MANAGEMENT, profileId));
+      case Intent.RemoveProfileManager(var profileId) ->
+          unitPlan(AuthorizationCheck.onProfile(Action.REMOVE_PROFILE_MANAGER, profileId));
+      case Intent.OverrideProfileManager(var profileId) ->
+          unitPlan(AuthorizationCheck.onProfile(Action.OVERRIDE_PROFILE_MANAGER, profileId));
     };
   }
 

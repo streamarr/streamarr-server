@@ -12,6 +12,7 @@ import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
 import com.streamarr.server.jooq.generated.tables.ProfileManager.ProfileManagerPath;
+import com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.ProfileManagerInvitationPath;
 import com.streamarr.server.jooq.generated.tables.SessionProgress.SessionProgressPath;
 import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
 import com.streamarr.server.jooq.generated.tables.WatchHistory.WatchHistoryPath;
@@ -246,6 +247,19 @@ public class Profile extends TableImpl<ProfileRecord> {
             _authSession = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE.getInverseKey());
 
         return _authSession;
+    }
+
+    private transient ProfileManagerInvitationPath _profileManagerInvitation;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.profile_manager_invitation</code> table
+     */
+    public ProfileManagerInvitationPath profileManagerInvitation() {
+        if (_profileManagerInvitation == null)
+            _profileManagerInvitation = new ProfileManagerInvitationPath(this, null, Keys.PROFILE_MANAGER_INVITATION__FK_PM_INVITATION_PROFILE.getInverseKey());
+
+        return _profileManagerInvitation;
     }
 
     private transient ProfileHouseholdSharePath _profileHouseholdShare;

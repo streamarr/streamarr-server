@@ -167,7 +167,43 @@ enum Action {
       ResourceKind.SHARE,
       FreshReauthentication.REQUIRED,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.SHARE_FACTS);
+      FactRequirement.SHARE_FACTS),
+  INVITE_PROFILE_MANAGER(
+      "inviteProfileManager",
+      ResourceKind.PROFILE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_MANAGEMENT,
+      FactRequirement.PROFILE_SUPERVISION),
+  CANCEL_MANAGER_INVITATION(
+      "cancelManagerInvitation",
+      ResourceKind.MANAGER_INVITATION,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.MANAGER_INVITATION_FACTS),
+  ACCEPT_MANAGER_INVITATION(
+      "acceptManagerInvitation",
+      ResourceKind.MANAGER_INVITATION,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.MANAGER_INVITATION_FACTS),
+  DECLINE_MANAGER_INVITATION(
+      "declineManagerInvitation",
+      ResourceKind.MANAGER_INVITATION,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.MANAGER_INVITATION_FACTS),
+  RELINQUISH_PROFILE_MANAGEMENT(
+      "relinquishProfileManagement",
+      ResourceKind.PROFILE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_MANAGEMENT),
+  REMOVE_PROFILE_MANAGER(
+      "removeProfileManager",
+      ResourceKind.PROFILE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_MANAGEMENT),
+  OVERRIDE_PROFILE_MANAGER(
+      "overrideProfileManager",
+      ResourceKind.PROFILE,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 
@@ -224,6 +260,7 @@ enum Action {
     HOUSEHOLD,
     ACCOUNT,
     PROFILE,
-    SHARE
+    SHARE,
+    MANAGER_INVITATION
   }
 }
