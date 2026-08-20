@@ -9,11 +9,14 @@ import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
+import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
 import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
@@ -64,6 +67,8 @@ class ProfileAdministrationServiceTest {
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
   private final FakeAccountInvitationRepository invitations = new FakeAccountInvitationRepository();
+  private final FakeProfileManagerInvitationRepository managerInvitations =
+      new FakeProfileManagerInvitationRepository();
   private final FakeSecurityAuditEventRepository audit = new FakeSecurityAuditEventRepository();
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
@@ -79,6 +84,7 @@ class ProfileAdministrationServiceTest {
           households,
           accounts,
           invitations,
+          managerInvitations,
           audit,
           new ProfilePinHasher(encoder),
           new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),
@@ -602,6 +608,75 @@ class ProfileAdministrationServiceTest {
         .isEqualTo(AccountInvitationStatus.INVALIDATED);
     assertThat(invitations.findById(decided.getId()).orElseThrow().getStatus())
         .isEqualTo(AccountInvitationStatus.ACCEPTED);
+  }
+
+  @Test
+  @DisplayName("Should invalidate pending manager invitations when the Profile is deleted")
+  void shouldInvalidatePendingManagerInvitationsWhenProfileIsDeleted() {
+    var orphan =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var invitation =
+        managerInvitations.save(
+            ProfileManagerInvitation.builder()
+                .profileId(orphan.getId())
+                .profileName("Joe")
+                .inviterAccountId(UUID.randomUUID())
+                .inviterDisplayName("Inviter")
+                .recipientAccountId(UUID.randomUUID())
+                .recipientEmail("recipient@example.com")
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .publicId("manager-pub")
+                .secretDigest(new byte[] {1})
+                .build());
+
+    service.deleteProfile(identity(), orphan.getId());
+
+    assertThat(managerInvitations.findById(invitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+  }
+
+  @Test
+  @DisplayName("Should invalidate a restricted person's pending manager invitations")
+  void shouldInvalidateRestrictedPersonsPendingManagerInvitations() {
+    var member = accounts.save(AccountFixture.defaultAccountBuilder().build());
+    var personal =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder()
+                .id(member.getPersonalProfileId())
+                .householdId(member.getHouseholdId())
+                .build());
+    var orphan =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var invitation =
+        managerInvitations.save(
+            ProfileManagerInvitation.builder()
+                .profileId(orphan.getId())
+                .profileName("Joe")
+                .inviterAccountId(UUID.randomUUID())
+                .inviterDisplayName("Inviter")
+                .recipientAccountId(member.getId())
+                .recipientEmail(member.getEmail())
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .publicId("restricting-pub")
+                .secretDigest(new byte[] {1})
+                .build());
+
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.ProfilePolicyChange
+                ? new Decision.Allowed<>(
+                    new ProfilePolicyTransition(
+                        ProfileKind.ADULT,
+                        12,
+                        ProfilePolicyTransition.Classification.RESTRICT_SOVEREIGN_ADULT))
+                : allowed());
+    service.setProfileContentCeiling(identity(), personal.getId(), 12);
+
+    // Eligibility ends with the restriction: no pending proposal may outlive it.
+    assertThat(managerInvitations.findById(invitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
   }
 
   @Test

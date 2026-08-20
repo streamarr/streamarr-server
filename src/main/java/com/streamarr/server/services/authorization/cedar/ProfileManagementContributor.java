@@ -19,6 +19,9 @@ import org.springframework.stereotype.Component;
 class ProfileManagementContributor implements FactContributor {
 
   static final String MANAGED_BY_PRINCIPAL = "managedByPrincipal";
+  static final String DIRECTLY_MANAGED_BY_PRINCIPAL = "directlyManagedByPrincipal";
+  static final String SOVEREIGN_PERSONAL_PROFILE_OF_PRINCIPAL =
+      "sovereignPersonalProfileOfPrincipal";
   static final String OFFERABLE_BY_PRINCIPAL = "offerableByPrincipal";
   static final String AVAILABLE_IN_PRINCIPAL_HOUSEHOLD = "availableInPrincipalHousehold";
 
@@ -51,6 +54,10 @@ class ProfileManagementContributor implements FactContributor {
     var directManager =
         profileManagerRepository.existsByAccountIdAndProfileId(identity.accountId(), profileId);
     slice.resourceAttribute(MANAGED_BY_PRINCIPAL, new PrimBool(selfManaged || directManager));
+    // Relinquishing needs a stored grant to give up; self-management has no row to relinquish.
+    slice.resourceAttribute(DIRECTLY_MANAGED_BY_PRINCIPAL, new PrimBool(directManager));
+    // The sovereign Account curates its own Personal Profile's managers.
+    slice.resourceAttribute(SOVEREIGN_PERSONAL_PROFILE_OF_PRINCIPAL, new PrimBool(selfManaged));
     // A self-managed Personal Profile is offered only by its own Account (ADR 0024 §Profile
     // sharing) — acceptance admits the person, so a retained direct manager cannot offer it.
     // selfManaged implies a sovereign Personal Profile, so the sovereign arm needs only it and

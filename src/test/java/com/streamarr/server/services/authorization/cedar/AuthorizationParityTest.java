@@ -60,6 +60,7 @@ class AuthorizationParityTest {
       case ACCOUNT -> "Account";
       case PROFILE -> "Profile";
       case SHARE -> "Share";
+      case MANAGER_INVITATION -> "ManagerInvitation";
     };
   }
 
@@ -280,6 +281,13 @@ class AuthorizationParityTest {
         new Intent.RejectProfileShare(id),
         new Intent.CancelProfileShare(id),
         new Intent.EndProfileShare(id),
-        new Intent.ForceEndProfileShare(id));
+        new Intent.ForceEndProfileShare(id),
+        new Intent.InviteProfileManager(id),
+        new Intent.CancelManagerInvitation(id),
+        new Intent.AcceptManagerInvitation(id),
+        new Intent.DeclineManagerInvitation(id),
+        new Intent.RelinquishProfileManagement(id),
+        new Intent.RemoveProfileManager(id),
+        new Intent.OverrideProfileManager(id));
   }
 }

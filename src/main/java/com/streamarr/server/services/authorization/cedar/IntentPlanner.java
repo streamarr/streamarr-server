@@ -92,6 +92,23 @@ final class IntentPlanner {
               AuthorizationCheck.onShare(Action.END_PROFILE_SHARE, shareId);
           case Intent.ForceEndProfileShare(var shareId) ->
               AuthorizationCheck.onShare(Action.FORCE_END_PROFILE_SHARE, shareId);
+          case Intent.InviteProfileManager(var profileId) ->
+              AuthorizationCheck.onProfile(Action.INVITE_PROFILE_MANAGER, profileId);
+          case Intent.CancelManagerInvitation(var invitationId) ->
+              AuthorizationCheck.onManagerInvitation(
+                  Action.CANCEL_MANAGER_INVITATION, invitationId);
+          case Intent.AcceptManagerInvitation(var invitationId) ->
+              AuthorizationCheck.onManagerInvitation(
+                  Action.ACCEPT_MANAGER_INVITATION, invitationId);
+          case Intent.DeclineManagerInvitation(var invitationId) ->
+              AuthorizationCheck.onManagerInvitation(
+                  Action.DECLINE_MANAGER_INVITATION, invitationId);
+          case Intent.RelinquishProfileManagement(var profileId) ->
+              AuthorizationCheck.onProfile(Action.RELINQUISH_PROFILE_MANAGEMENT, profileId);
+          case Intent.RemoveProfileManager(var profileId) ->
+              AuthorizationCheck.onProfile(Action.REMOVE_PROFILE_MANAGER, profileId);
+          case Intent.OverrideProfileManager(var profileId) ->
+              AuthorizationCheck.onProfile(Action.OVERRIDE_PROFILE_MANAGER, profileId);
           case Intent.ProfilePolicyChange change ->
               throw new IllegalStateException(
                   "Policy changes are planned with their transition: " + change.getClass());

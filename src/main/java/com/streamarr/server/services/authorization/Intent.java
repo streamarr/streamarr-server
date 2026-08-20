@@ -148,4 +148,22 @@ public sealed interface Intent<T> {
 
   /** ServerAdmin force-end; requiresFreshReauthentication with a reason. */
   record ForceEndProfileShare(UUID shareId) implements Intent<AuthorizationUnit> {}
+
+  /** Propose another eligible Account as a direct ProfileManager (ADR 0024 §ProfileManager). */
+  record InviteProfileManager(UUID profileId) implements Intent<AuthorizationUnit> {}
+
+  record CancelManagerInvitation(UUID invitationId) implements Intent<AuthorizationUnit> {}
+
+  record AcceptManagerInvitation(UUID invitationId) implements Intent<AuthorizationUnit> {}
+
+  record DeclineManagerInvitation(UUID invitationId) implements Intent<AuthorizationUnit> {}
+
+  /** Give up the principal's own direct manager grant. */
+  record RelinquishProfileManagement(UUID profileId) implements Intent<AuthorizationUnit> {}
+
+  /** The sovereign Account removes a direct manager of its own Personal Profile. */
+  record RemoveProfileManager(UUID profileId) implements Intent<AuthorizationUnit> {}
+
+  /** ServerAdmin grants or removes management as a fresh-reauthenticated, audited override. */
+  record OverrideProfileManager(UUID profileId) implements Intent<AuthorizationUnit> {}
 }
