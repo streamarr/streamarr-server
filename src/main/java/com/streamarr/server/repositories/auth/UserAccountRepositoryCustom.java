@@ -56,4 +56,7 @@ public interface UserAccountRepositoryCustom {
 
   /** Unconditional rename; true while the Account exists. */
   boolean tryRename(UUID accountId, String displayName);
+
+  /** Writes only the password hash; a reset must not overwrite unrelated concurrent changes. */
+  boolean trySetPasswordHash(UUID accountId, String passwordHash);
 }

@@ -149,6 +149,11 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     return transition(accountId, _ -> true, account -> account.setDisplayName(displayName));
   }
 
+  @Override
+  public boolean trySetPasswordHash(UUID accountId, String passwordHash) {
+    return transition(accountId, _ -> true, account -> account.setPasswordHash(passwordHash));
+  }
+
   private boolean transition(
       UUID accountId, Predicate<UserAccount> transitionable, Consumer<UserAccount> change) {
     var account = findById(accountId).filter(transitionable);

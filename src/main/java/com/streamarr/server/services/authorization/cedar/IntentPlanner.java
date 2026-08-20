@@ -70,6 +70,14 @@ final class IntentPlanner {
               AuthorizationCheck.onProfile(Action.OVERRIDE_PROFILE_PIN, profileId);
           case Intent.DeleteProfile(var profileId) ->
               AuthorizationCheck.onProfile(Action.DELETE_PROFILE, profileId);
+          case Intent.IssueAccountInvitation _ ->
+              AuthorizationCheck.onServer(Action.ISSUE_ACCOUNT_INVITATION);
+          case Intent.CancelAccountInvitation _ ->
+              AuthorizationCheck.onServer(Action.CANCEL_ACCOUNT_INVITATION);
+          case Intent.ViewAccountInvitations _ ->
+              AuthorizationCheck.onServer(Action.VIEW_ACCOUNT_INVITATIONS);
+          case Intent.IssuePasswordReset(var accountId) ->
+              AuthorizationCheck.onAccount(Action.ISSUE_PASSWORD_RESET, accountId);
           case Intent.ProfilePolicyChange change ->
               throw new IllegalStateException(
                   "Policy changes are planned with their transition: " + change.getClass());

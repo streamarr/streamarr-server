@@ -157,9 +157,13 @@ class AuthorizationParityTest {
       if (action.resourceKind() != Action.ResourceKind.SERVER) {
         continue;
       }
-
-      var householdGroup = action == Action.CREATE_HOUSEHOLD || action == Action.VIEW_HOUSEHOLDS;
-      var group = householdGroup ? "householdAdministration" : "libraryAdministration";
+      var group =
+          switch (action) {
+            case CREATE_HOUSEHOLD, VIEW_HOUSEHOLDS -> "householdAdministration";
+            case ISSUE_ACCOUNT_INVITATION, CANCEL_ACCOUNT_INVITATION, VIEW_ACCOUNT_INVITATIONS ->
+                "invitationAdministration";
+            default -> "libraryAdministration";
+          };
       assertThat(actions.get(action.cedarName()).path("memberOf"))
           .as("group of %s", action)
           .extracting(member -> member.path("id").asText())
@@ -218,6 +222,10 @@ class AuthorizationParityTest {
         new Intent.SetProfilePicture(id),
         new Intent.ManageProfilePin(id),
         new Intent.OverrideProfilePin(id),
-        new Intent.DeleteProfile(id));
+        new Intent.DeleteProfile(id),
+        new Intent.IssueAccountInvitation(),
+        new Intent.CancelAccountInvitation(),
+        new Intent.ViewAccountInvitations(),
+        new Intent.IssuePasswordReset(id));
   }
 }
