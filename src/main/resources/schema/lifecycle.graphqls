@@ -1,0 +1,124 @@
+# Transfers and deletion (ADR 0024 §Transfers, §Account deletion; ADR 0026 shapes).
+
+enum SourceAccess {
+    "End the old Household's access: structural share, registrations, sessions."
+    END
+    "Keep the old share as an ordinary visit; warn when the Profile is restricted."
+    KEEP_AS_VISITOR
+}
+
+enum ProfileDisposition {
+    "Preserve and unlink the Profile behind a named replacement anchor."
+    KEEP
+    "Delete the Account and Profile pair."
+    ERASE
+}
+
+input TransferAccountInput {
+    accountId: ID!
+    destinationHouseholdId: ID!
+    "Defaults to END."
+    sourceAccess: SourceAccess
+    reason: String
+}
+
+type TransferAccountPayload {
+    account: AccountAdministration
+    userErrors: [TransferAccountError!]!
+}
+
+union TransferAccountError =
+    AccountNotFoundError
+  | HouseholdNotFoundError
+  | SameHouseholdError
+  | FinalAccountError
+  | LastHouseholdAdminError
+  | NoEligibleAdminError
+  | ProfileNameTakenError
+  | HomeAnchorRequiredError
+  | RestrictedFirstAccountError
+
+input DeleteAccountInput {
+    accountId: ID!
+    profileDisposition: ProfileDisposition!
+    "Required for KEEP: the eligible local manager who anchors the preserved Profile."
+    replacementManagerAccountId: ID
+    reason: String!
+}
+
+type DeleteAccountPayload {
+    accountId: ID
+    userErrors: [DeleteAccountError!]!
+}
+
+union DeleteAccountError =
+    AccountNotFoundError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+  | FinalAccountError
+  | LastHouseholdAdminError
+  | LastServerAdminError
+  | ReplacementManagerRequiredError
+  | ReplacementManagerNotFoundError
+  | ReplacementManagerNotEligibleError
+  | HomeAnchorRequiredError
+  | NoEligibleAdminError
+
+input DeleteMyAccountInput {
+    "Type the literal word DELETE."
+    confirmation: String!
+}
+
+type DeleteMyAccountPayload {
+    accountId: ID
+    userErrors: [DeleteMyAccountError!]!
+}
+
+union DeleteMyAccountError =
+    ConfirmationRequiredError
+  | ReauthenticationRequiredError
+  | FinalAccountError
+  | LastHouseholdAdminError
+  | LastServerAdminError
+  | HomeAnchorRequiredError
+  | NoEligibleAdminError
+
+input TransferProfileInput {
+    profileId: ID!
+    destinationHouseholdId: ID!
+    "The eligible destination manager who anchors the Profile before commit."
+    localManagerAccountId: ID
+    reason: String
+}
+
+type TransferProfilePayload {
+    profile: ProfileAdministration
+    userErrors: [TransferProfileError!]!
+}
+
+union TransferProfileError =
+    ProfileNotFoundError
+  | HouseholdNotFoundError
+  | SameHouseholdError
+  | ProfileLinkedError
+  | LocalManagerRequiredError
+  | LocalManagerNotFoundError
+  | ReplacementManagerNotEligibleError
+  | ProfileNameTakenError
+  | NoEligibleAdminError
+
+input ForceDeleteProfileInput {
+    profileId: ID!
+    reason: String!
+}
+
+type ForceDeleteProfilePayload {
+    profileId: ID
+    userErrors: [ForceDeleteProfileError!]!
+}
+
+union ForceDeleteProfileError =
+    ProfileNotFoundError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+  | ProfileLinkedError

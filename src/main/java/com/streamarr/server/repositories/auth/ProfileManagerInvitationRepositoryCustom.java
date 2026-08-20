@@ -19,6 +19,9 @@ public interface ProfileManagerInvitationRepositoryCustom {
   /** Invalidates a leaving inviter's outstanding proposals for one Profile. */
   int invalidatePendingInvitedBy(UUID inviterAccountId, UUID profileId, String reason, Instant now);
 
+  /** Invalidates every PENDING invitation a deleted inviter proposed, across all Profiles. */
+  int invalidatePendingForInviter(UUID inviterAccountId, String reason, Instant now);
+
   /** Invalidates every PENDING invitation naming the recipient (deleted or ineligible). */
   int invalidatePendingByRecipientAccountId(UUID recipientAccountId, String reason, Instant now);
 }

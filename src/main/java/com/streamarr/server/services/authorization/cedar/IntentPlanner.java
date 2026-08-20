@@ -144,6 +144,16 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onHousehold(Action.VIEW_DEVICE_ADMINISTRATION, householdId));
       case Intent.ViewServerDeviceAdministration _ ->
           unitPlan(AuthorizationCheck.onServer(Action.VIEW_SERVER_DEVICE_ADMINISTRATION));
+      case Intent.TransferAccount(var accountId) ->
+          unitPlan(AuthorizationCheck.onAccount(Action.TRANSFER_ACCOUNT, accountId));
+      case Intent.DeleteAccount(var accountId) ->
+          unitPlan(AuthorizationCheck.onAccount(Action.DELETE_ACCOUNT, accountId));
+      case Intent.DeleteMyAccount _ ->
+          unitPlan(AuthorizationCheck.onAccount(Action.DELETE_MY_ACCOUNT, identity.accountId()));
+      case Intent.TransferProfile(var profileId) ->
+          unitPlan(AuthorizationCheck.onProfile(Action.TRANSFER_PROFILE, profileId));
+      case Intent.ForceDeleteProfile(var profileId) ->
+          unitPlan(AuthorizationCheck.onProfile(Action.FORCE_DELETE_PROFILE, profileId));
     };
   }
 

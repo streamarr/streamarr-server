@@ -68,6 +68,12 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   }
 
   @Override
+  public int invalidatePendingForInviter(UUID inviterAccountId, String reason, Instant now) {
+    return invalidate(
+        PROFILE_MANAGER_INVITATION.INVITER_ACCOUNT_ID.eq(inviterAccountId), reason, now);
+  }
+
+  @Override
   public int invalidatePendingByRecipientAccountId(
       UUID recipientAccountId, String reason, Instant now) {
     return invalidate(

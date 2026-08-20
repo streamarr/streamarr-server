@@ -212,6 +212,19 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
+  public boolean tryDemoteStructural(UUID profileId, UUID householdId, Instant now) {
+    var structural =
+        database.values().stream()
+            .filter(share -> share.getProfileId().equals(profileId))
+            .filter(share -> share.getHouseholdId().equals(householdId))
+            .filter(ProfileHouseholdShare::isStructural)
+            .filter(share -> share.getStatus() == ProfileShareStatus.ACTIVE)
+            .findFirst();
+    structural.ifPresent(share -> share.setStructural(false));
+    return structural.isPresent();
+  }
+
+  @Override
   public int invalidatePendingByProfileIdOfferedBy(
       UUID profileId, UUID offererAccountId, String reason, Instant now) {
     var pending =

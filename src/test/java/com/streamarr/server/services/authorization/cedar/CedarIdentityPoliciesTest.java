@@ -1278,6 +1278,67 @@ class CedarIdentityPoliciesTest {
     }
   }
 
+  @Nested
+  @DisplayName("Transfers and deletion")
+  class TransfersAndDeletion {
+
+    @Test
+    @DisplayName("Should reserve transfers for a live ServerAdmin")
+    void shouldReserveTransfersForLiveServerAdmin() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+
+      assertThat(decider.decide(atHome(), new Intent.TransferAccount(account.getId())))
+          .isEqualTo(DENIED);
+      assertThat(decider.decide(atHome(), new Intent.TransferProfile(orphan.getId())))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decider.decide(atHome(), new Intent.TransferAccount(account.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decider.decide(atHome(), new Intent.TransferProfile(orphan.getId())))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should reserve deletions for a fresh ServerAdmin")
+    void shouldReserveDeletionsForFreshServerAdmin() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var deleteAccount = new Intent.DeleteAccount(UUID.randomUUID());
+      var forceDelete = new Intent.ForceDeleteProfile(orphan.getId());
+
+      assertThat(decider.decide(withReauthenticatedAt(atHome(), Instant.now()), deleteAccount))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decider.decide(atHome(), deleteAccount)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decider.decide(atHome(), forceDelete)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decider.decide(withReauthenticatedAt(atHome(), Instant.now()), deleteAccount))
+          .isEqualTo(ALLOWED);
+      assertThat(decider.decide(withReauthenticatedAt(atHome(), Instant.now()), forceDelete))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should let only the fresh, eligible person delete their own Account")
+    void shouldLetOnlyFreshEligiblePersonDeleteTheirOwnAccount() {
+      var selfDeletion = new Intent.DeleteMyAccount();
+
+      assertThat(decider.decide(atHome(), selfDeletion)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decider.decide(withReauthenticatedAt(atHome(), Instant.now()), selfDeletion))
+          .isEqualTo(ALLOWED);
+
+      // A restricted Personal Profile ends eligibility; the ceremony cannot help.
+      personal.setMaximumAllowedRatingAge(12);
+      profiles.save(personal);
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+      assertThat(decider.decide(withReauthenticatedAt(member(), Instant.now()), selfDeletion))
+          .isEqualTo(DENIED);
+    }
+  }
+
   private ProfileHouseholdShare pendingShare(UUID profileId, UUID householdId) {
     return shares.save(
         ProfileHouseholdShare.builder()

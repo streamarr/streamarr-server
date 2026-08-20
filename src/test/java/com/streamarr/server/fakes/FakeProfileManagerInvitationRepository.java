@@ -82,6 +82,12 @@ public class FakeProfileManagerInvitationRepository
   }
 
   @Override
+  public int invalidatePendingForInviter(UUID inviterAccountId, String reason, Instant now) {
+    return invalidate(
+        invitation -> inviterAccountId.equals(invitation.getInviterAccountId()), reason, now);
+  }
+
+  @Override
   public int invalidatePendingByRecipientAccountId(
       UUID recipientAccountId, String reason, Instant now) {
     return invalidate(

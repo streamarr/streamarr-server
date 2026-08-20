@@ -180,4 +180,19 @@ public sealed interface Intent {
   record ViewDeviceAdministration(UUID householdId) implements UnitIntent {}
 
   record ViewServerDeviceAdministration() implements UnitIntent {}
+
+  /** Move an Account — and its Personal Profile with it — to another Household (ADR 0024). */
+  record TransferAccount(UUID accountId) implements UnitIntent {}
+
+  /** ServerAdmin deletion of an Account; fresh-reauthenticated, with an audited reason. */
+  record DeleteAccount(UUID accountId) implements UnitIntent {}
+
+  /** Self-deletion by an enabled Account with an unrestricted Adult Personal Profile. */
+  record DeleteMyAccount() implements UnitIntent {}
+
+  /** Move an unlinked Profile to another Household, anchoring it there first. */
+  record TransferProfile(UUID profileId) implements UnitIntent {}
+
+  /** ServerAdmin force-deletion of an unlinked Profile; fresh, with an audited reason. */
+  record ForceDeleteProfile(UUID profileId) implements UnitIntent {}
 }

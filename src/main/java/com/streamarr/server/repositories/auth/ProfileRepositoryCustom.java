@@ -34,6 +34,9 @@ public interface ProfileRepositoryCustom {
    */
   boolean tryApplyPolicy(UUID profileId, ProfilePolicyTarget target);
 
+  /** Moves the Profile's home Household; the deferred anchors judge the result at commit. */
+  boolean tryRehome(UUID profileId, UUID destinationHouseholdId);
+
   /** Renames only; the deferred name-uniqueness trigger judges the result at commit. */
   boolean tryRename(UUID profileId, String name);
 
