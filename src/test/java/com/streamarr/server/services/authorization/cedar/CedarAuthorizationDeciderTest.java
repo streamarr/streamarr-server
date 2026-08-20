@@ -25,6 +25,7 @@ import com.cedarpolicy.model.exception.AuthException;
 import com.cedarpolicy.model.policy.PolicySet;
 import com.cedarpolicy.value.PrimBool;
 import com.cedarpolicy.value.PrimString;
+import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
@@ -284,6 +285,7 @@ class CedarAuthorizationDeciderTest {
         engine,
         BUNDLE,
         new SliceAssembler(ContributorStubs.allWith(contributor)),
+        new ProfilePolicyPlanner(new FakeProfileRepository()),
         ContributorStubs.systemClockFreshness(),
         meters);
   }

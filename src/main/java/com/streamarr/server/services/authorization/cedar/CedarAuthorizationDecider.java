@@ -38,14 +38,19 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
   private final AuthorizationEngine engine;
   private final CedarPolicyBundle bundle;
   private final SliceAssembler sliceAssembler;
+  private final ProfilePolicyPlanner profilePolicyPlanner;
   private final ReauthenticationFreshness reauthenticationFreshness;
   private final MeterRegistry meterRegistry;
 
   @Override
+  @SuppressWarnings("unchecked")
   public <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent) {
     var authorizationContext = "unplanned intent";
     try {
-      var plan = IntentPlanner.plan(identity, intent);
+      var plan =
+          intent instanceof Intent.ProfilePolicyChange change
+              ? (IntentPlan<T>) profilePolicyPlanner.plan(change)
+              : IntentPlanner.plan(identity, intent);
       var check = plan.check();
       authorizationContext = check.action().toString();
       var slice = sliceAssembler.assemble(identity, check);

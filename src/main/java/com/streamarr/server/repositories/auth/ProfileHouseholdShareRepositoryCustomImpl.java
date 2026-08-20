@@ -14,6 +14,17 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   private final DSLContext dsl;
 
   @Override
+  public boolean hasLiveOrPendingShares(UUID profileId) {
+    return dsl.fetchExists(
+        dsl.selectOne()
+            .from(PROFILE_HOUSEHOLD_SHARE)
+            .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
+            .and(
+                PROFILE_HOUSEHOLD_SHARE.STATUS.in(
+                    ProfileShareStatus.ACTIVE, ProfileShareStatus.PENDING)));
+  }
+
+  @Override
   public boolean isActivelyShared(UUID profileId, UUID householdId) {
     return dsl.fetchExists(
         dsl.selectOne()

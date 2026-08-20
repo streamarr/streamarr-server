@@ -1,13 +1,18 @@
 package com.streamarr.server.services.authorization.cedar;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.cedarpolicy.BasicAuthorizationEngine;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Intent;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -70,15 +75,53 @@ class AuthorizationParityTest {
               }
             });
     var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
-    var planned =
-        allIntents().stream()
-            .map(intent -> IntentPlanner.plan(identity, intent).check().action().cedarName())
-            .toList();
+    var planned = new LinkedHashSet<String>();
+    allIntents().stream()
+        .map(intent -> IntentPlanner.plan(identity, intent).check().action().cedarName())
+        .forEach(planned::add);
+    planned.addAll(policyChangeActions());
 
     assertThat(planned).containsExactlyInAnyOrderElementsOf(concrete);
     assertThat(Action.values())
         .extracting(Action::cedarName)
         .containsExactlyInAnyOrderElementsOf(concrete);
+  }
+
+  @Test
+  @DisplayName("Should refuse to plan a policy change without its transition")
+  void shouldRefuseToPlanPolicyChangeWithoutItsTransition() {
+    var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
+    var change = new Intent.ChangeProfileKind(UUID.randomUUID(), ProfileKind.ADULT);
+
+    assertThatThrownBy(() -> IntentPlanner.plan(identity, change))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  /**
+   * Every transition classification, planned through the real classifier over one fake so the
+   * classification-to-action map stays covered here.
+   */
+  private static List<String> policyChangeActions() {
+    var profiles = new FakeProfileRepository();
+    var planner = new ProfilePolicyPlanner(profiles);
+    var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+    var ceilingedKid =
+        profiles.save(ProfileFixture.kidProfileBuilder().maximumAllowedRatingAge(12).build());
+    var sovereign = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+    profiles.linkTo(sovereign.getId(), UUID.randomUUID());
+
+    return List.of(
+            // KID gaining a ceiling: still restricted, same kind — an ordinary edit.
+            planner.plan(new Intent.SetProfileContentCeiling(kid.getId(), 12)),
+            // Ceilinged KID becoming a ceilinged ADULT: a kind change, still restricted.
+            planner.plan(new Intent.ChangeProfileKind(ceilingedKid.getId(), ProfileKind.ADULT)),
+            // KID becoming an unrestricted ADULT: the final restriction lifts.
+            planner.plan(new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT)),
+            // A linked unrestricted Adult gaining a ceiling: restricting a sovereign Adult.
+            planner.plan(new Intent.SetProfileContentCeiling(sovereign.getId(), 12)))
+        .stream()
+        .map(plan -> plan.check().action().cedarName())
+        .toList();
   }
 
   @Test
@@ -144,6 +187,11 @@ class AuthorizationParityTest {
         new Intent.RevokeHouseholdAdmin(id),
         new Intent.DisableAccount(id),
         new Intent.EnableAccount(id),
-        new Intent.ViewHouseholds());
+        new Intent.ViewHouseholds(),
+        new Intent.CreateProfile(id),
+        new Intent.RenameProfile(id),
+        new Intent.ManageProfilePin(id),
+        new Intent.OverrideProfilePin(id),
+        new Intent.DeleteProfile(id));
   }
 }
