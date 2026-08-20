@@ -36,8 +36,7 @@ public class FakeSecurityAuditEventRepository implements SecurityAuditEventRepos
       Instant beforeOccurredAt, UUID beforeId, int limit) {
     return records.stream()
         .sorted(Comparator.comparing(SecurityAuditEventRecordView::occurredAt).reversed())
-        .filter(
-            record -> beforeOccurredAt == null || record.occurredAt().isBefore(beforeOccurredAt))
+        .filter(row -> beforeOccurredAt == null || row.occurredAt().isBefore(beforeOccurredAt))
         .limit(limit)
         .toList();
   }
