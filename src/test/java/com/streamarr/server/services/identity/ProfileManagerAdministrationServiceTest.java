@@ -211,6 +211,55 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should let only the named recipient decline, once")
+  void shouldLetOnlyNamedRecipientDeclineOnce() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+
+    // A different authenticated holder of the code learns nothing beyond the one answer;
+    // Cedar's recipient policy is stubbed as the denial here and proven in the policy tests.
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.DeclineManagerInvitation
+                ? new Decision.Denied<>(Decision.DenialReason.POLICY)
+                : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+    assertThat(rejectionOf(service.declineManagerInvitation(identity(), issued.code())))
+        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+
+    authorization.allowAll();
+    var declined = service.declineManagerInvitation(recipientIdentity(), issued.code());
+    assertThat(declined).isInstanceOf(Outcome.Accepted.class);
+    assertThat(rejectionOf(service.declineManagerInvitation(recipientIdentity(), issued.code())))
+        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should honor an invitation whose inviter still supervises the restricted Profile")
+  void shouldHonorInvitationWhoseInviterStillSupervisesRestrictedProfile() {
+    var kid = profiles.save(ProfileFixture.kidProfileBuilder().name("Kid").build());
+    shares.share(kid.getId(), inviter.getHouseholdId(), false);
+    inviter.setHouseholdRole(HouseholdRole.ADMIN);
+    accounts.save(inviter);
+    var issued = issued(service.inviteProfileManager(identity(), kid.getId(), recipient.getId()));
+    // No direct manager row for the inviter: supervision alone keeps the proposal standing.
+    managers.tryRemove(inviter.getId(), kid.getId());
+
+    assertThat(service.acceptManagerInvitation(recipientIdentity(), issued.code()))
+        .isInstanceOf(Outcome.Accepted.class);
+  }
+
+  @Test
+  @DisplayName("Should refuse granting an override to an unknown Account")
+  void shouldRefuseGrantingOverrideToUnknownAccount() {
+    assertThat(
+            rejectionOf(
+                service.grantProfileManagerOverride(
+                    identity(), orphan.getId(), UUID.randomUUID(), "support")))
+        .isInstanceOf(ManagerRejections.RecipientNotFound.class);
+  }
+
+  @Test
   @DisplayName("Should grant by override once, invalidating the redundant invitation")
   void shouldGrantByOverrideOnceInvalidatingRedundantInvitation() {
     var issued =
