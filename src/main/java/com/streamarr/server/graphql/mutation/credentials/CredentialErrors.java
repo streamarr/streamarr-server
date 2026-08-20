@@ -30,6 +30,25 @@ public final class CredentialErrors {
               InputPath.of("localManagerAccountId"));
       case InvitationRejections.LocalManagerNotFound _ ->
           new LocalManagerNotFoundError("No such Account.", InputPath.of("localManagerAccountId"));
+      case InvitationRejections.ConnectProfileRequired _ ->
+          new ConnectProfileRequiredError(
+              "Name the Profile this invitation connects.", InputPath.of("profileId"));
+      case InvitationRejections.ConnectProfileNotFound _ ->
+          new ConnectProfileNotFoundError("No such Profile.", InputPath.of("profileId"));
+      case InvitationRejections.ProfileAlreadyLinked _ ->
+          new ProfileAlreadyLinkedError(
+              "That Profile already belongs to an Account.", InputPath.of("profileId"));
+      case InvitationRejections.ProfileNotInHousehold _ ->
+          new ProfileNotInHouseholdError(
+              "CONNECT joins the recipient to the Profile's own Household.",
+              InputPath.of("householdId"));
+      case InvitationRejections.ReofferHouseholdNotFound _ ->
+          new ReofferHouseholdNotFoundError(
+              "No such Household.", InputPath.of("reofferHouseholdIds"));
+      case InvitationRejections.ReofferHouseholdNotShared _ ->
+          new ReofferHouseholdNotSharedError(
+              "Only a Household the Profile actively visits can be offered it afresh.",
+              InputPath.of("reofferHouseholdIds"));
     };
   }
 

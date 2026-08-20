@@ -47,6 +47,11 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
   }
 
   @Override
+  public int invalidatePendingForProfile(UUID profileId, String reason, Instant now) {
+    return invalidate(ACCOUNT_INVITATION.PROFILE_ID.eq(profileId), reason, now);
+  }
+
+  @Override
   public int invalidateIssuedBy(UUID issuerAccountId, String reason, Instant now) {
     return invalidate(ACCOUNT_INVITATION.ISSUER_ACCOUNT_ID.eq(issuerAccountId), reason, now);
   }

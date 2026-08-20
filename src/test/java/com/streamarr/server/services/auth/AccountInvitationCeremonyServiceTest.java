@@ -6,14 +6,23 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AccountInvitation;
+import com.streamarr.server.domain.auth.AccountInvitationMode;
+import com.streamarr.server.domain.auth.AccountInvitationReoffer;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
+import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfileManager;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
+import com.streamarr.server.fakes.FakeAccountInvitationReofferRepository;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
+import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
@@ -21,6 +30,8 @@ import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.fixtures.HouseholdFixture;
+import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AccountInvitationCeremonyService.AcceptInvitationCommand;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import java.time.Clock;
@@ -53,6 +64,9 @@ class AccountInvitationCeremonyServiceTest {
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
+  private final FakeAccountInvitationReofferRepository reoffers =
+      new FakeAccountInvitationReofferRepository();
+  private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final FakeRefreshTokenRepository refreshTokens = new FakeRefreshTokenRepository();
   private final OpaqueCodes opaqueCodes = new OpaqueCodes();
   private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
@@ -68,6 +82,9 @@ class AccountInvitationCeremonyServiceTest {
           profiles,
           managers,
           shares,
+          reoffers,
+          households,
+          sessions,
           new RefreshTokenService(
               sessions,
               refreshTokens,
@@ -83,6 +100,7 @@ class AccountInvitationCeremonyServiceTest {
           new PlainEncoder(),
           new TransactionTemplate(new FakeTransactionManager()),
           new ConstraintViolationTranslator(),
+          new CredentialCodeProperties(null, null),
           clock);
 
   @Test
@@ -216,6 +234,177 @@ class AccountInvitationCeremonyServiceTest {
               }
             })
         .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("Should connect the Profile, end its visits, and reoffer exactly once")
+  void shouldConnectProfileEndItsVisitsAndReofferExactlyOnce() {
+    var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var previous =
+        households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
+    var third = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var orphan =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(home.getId()).name("Joe").build());
+    accounts.save(AccountFixture.defaultAccountBuilder().householdId(home.getId()).build());
+    shares.share(orphan.getId(), home.getId(), false);
+    var visit = shares.share(orphan.getId(), previous.getId(), false);
+    var pendingOffer =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(orphan.getId())
+                .householdId(third.getId())
+                .status(ProfileShareStatus.PENDING)
+                .expiresAt(NOW.plus(Duration.ofDays(7)))
+                .build());
+    var watching =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(UUID.randomUUID())
+                .contextHouseholdId(previous.getId())
+                .selectedProfileId(orphan.getId())
+                .deviceName("tv")
+                .build());
+    var issued = pendingConnectInvitation(orphan.getId(), home.getId(), previous.getId());
+
+    var accepted =
+        service.accept(
+            AcceptInvitationCommand.builder()
+                .code(issued.code())
+                .displayName("Joe H")
+                .password("a strong passphrase")
+                .deviceName("web")
+                .build());
+
+    var account = accepted.account();
+    assertThat(account.getPersonalProfileId()).isEqualTo(orphan.getId());
+    assertThat(profiles.count()).isEqualTo(1);
+    var homeShare =
+        shares.findAll().stream()
+            .filter(share -> share.getHouseholdId().equals(home.getId()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(homeShare.getStatus()).isEqualTo(ProfileShareStatus.ACTIVE);
+    assertThat(homeShare.isStructural()).isTrue();
+    assertThat(shares.findById(visit.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.ENDED);
+    assertThat(shares.findById(pendingOffer.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.INVALIDATED);
+    assertThat(sessions.findById(watching.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    var reoffered =
+        shares.findAll().stream()
+            .filter(share -> share.getHouseholdId().equals(previous.getId()))
+            .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+            .toList();
+    assertThat(reoffered).hasSize(1);
+    assertThat(reoffered.getFirst().getOfferedByAccountId()).isEqualTo(account.getId());
+    assertThat(reoffered.getFirst().getExpiresAt()).isAfter(NOW);
+  }
+
+  @Test
+  @DisplayName("Should invalidate rival CONNECT invitations for the Profile when one wins")
+  void shouldInvalidateRivalConnectInvitationsForProfileWhenOneWins() {
+    var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var orphan =
+        profiles.save(ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
+    accounts.save(AccountFixture.defaultAccountBuilder().householdId(home.getId()).build());
+    var winner = pendingConnectInvitation(orphan.getId(), home.getId(), null);
+    pendingConnectInvitation(orphan.getId(), home.getId(), null);
+
+    service.accept(acceptCommand(winner.code()));
+
+    var statuses = invitations.findAll().stream().map(AccountInvitation::getStatus).toList();
+    assertThat(statuses)
+        .containsExactlyInAnyOrder(
+            AccountInvitationStatus.ACCEPTED, AccountInvitationStatus.INVALIDATED);
+  }
+
+  @Test
+  @DisplayName("Should refuse a CONNECT acceptance when the Profile is gone or already linked")
+  void shouldRefuseConnectAcceptanceWhenProfileGoneOrAlreadyLinked() {
+    var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var orphan =
+        profiles.save(ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
+    accounts.save(AccountFixture.defaultAccountBuilder().householdId(home.getId()).build());
+    var issued = pendingConnectInvitation(orphan.getId(), home.getId(), null);
+    accounts.save(AccountFixture.defaultAccountBuilder().personalProfileId(orphan.getId()).build());
+
+    var linkedCode = issued.code();
+    assertThatThrownBy(() -> service.accept(acceptCommand(linkedCode)))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+
+    var vanished = pendingConnectInvitation(null, home.getId(), null);
+    var vanishedCode = vanished.code();
+    assertThatThrownBy(() -> service.lookup(vanishedCode))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+    assertThatThrownBy(() -> service.accept(acceptCommand(vanishedCode)))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+  }
+
+  @Test
+  @DisplayName("Should preview the remaining managers, ending visits, and reoffers")
+  void shouldPreviewRemainingManagersEndingVisitsAndReoffers() {
+    var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var previous =
+        households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
+    var orphan =
+        profiles.save(ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
+    var manager =
+        accounts.save(
+            AccountFixture.defaultAccountBuilder()
+                .householdId(home.getId())
+                .displayName("Nina")
+                .build());
+    managers.save(
+        ProfileManager.builder().accountId(manager.getId()).profileId(orphan.getId()).build());
+    shares.share(orphan.getId(), previous.getId(), false);
+    var issued = pendingConnectInvitation(orphan.getId(), home.getId(), previous.getId());
+
+    var preview = service.lookup(issued.code());
+
+    assertThat(preview.mode()).isEqualTo(AccountInvitationMode.CONNECT);
+    assertThat(preview.remainingManagers()).containsExactly("Nina");
+    assertThat(preview.endingHouseholds()).containsExactly("Cabin");
+    assertThat(preview.reofferHouseholds()).containsExactly("Cabin");
+  }
+
+  private OpaqueCodes.IssuedCode pendingConnectInvitation(
+      UUID profileId, UUID householdId, UUID reofferHouseholdId) {
+    var issued = opaqueCodes.issue();
+    var invitation =
+        invitations.save(
+            AccountInvitation.builder()
+                .recipientEmail("joe@example.com")
+                .householdId(householdId)
+                .householdName("Home")
+                .householdRole(HouseholdRole.MEMBER)
+                .mode(AccountInvitationMode.CONNECT)
+                .profileId(profileId)
+                .profileName("Joe")
+                .profileKind(ProfileKind.ADULT)
+                .issuerAccountId(UUID.randomUUID())
+                .expiresAt(NOW.plus(Duration.ofDays(7)))
+                .publicId(issued.publicId())
+                .secretDigest(issued.digest())
+                .build());
+    if (reofferHouseholdId != null) {
+      reoffers.save(
+          AccountInvitationReoffer.builder()
+              .invitationId(invitation.getId())
+              .householdId(reofferHouseholdId)
+              .householdName("Cabin")
+              .build());
+    }
+    return issued;
+  }
+
+  private static AcceptInvitationCommand acceptCommand(String code) {
+    return AcceptInvitationCommand.builder()
+        .code(code)
+        .displayName("Joe H")
+        .password("a strong passphrase")
+        .deviceName("web")
+        .build();
   }
 
   private PendingInvitation.PendingInvitationBuilder pendingInvitationBuilder() {

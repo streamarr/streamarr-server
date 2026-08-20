@@ -25,6 +25,7 @@ import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 
 @DgsComponent
@@ -59,6 +60,12 @@ public class CredentialAdministrationResolver {
                     .recipientEmail(input.recipientEmail())
                     .householdId(Ids.parseUuid(input.householdId()))
                     .householdRole(input.householdRole())
+                    .mode(input.mode())
+                    .profileId(input.profileId() == null ? null : Ids.parseUuid(input.profileId()))
+                    .reofferHouseholdIds(
+                        input.reofferHouseholdIds() == null
+                            ? List.of()
+                            : input.reofferHouseholdIds().stream().map(Ids::parseUuid).toList())
                     .profileName(input.profileName())
                     .profileKind(input.profileKind())
                     .maximumAllowedRatingAge(input.maximumAllowedRatingAge())

@@ -147,6 +147,48 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
+  public void upsertStructuralHomeShare(UUID profileId, UUID householdId, Instant now) {
+    var live =
+        database.values().stream()
+            .filter(share -> share.getProfileId().equals(profileId))
+            .filter(share -> share.getHouseholdId().equals(householdId))
+            .filter(
+                share ->
+                    share.getStatus() == ProfileShareStatus.PENDING
+                        || share.getStatus() == ProfileShareStatus.ACTIVE)
+            .findFirst();
+    if (live.isPresent()) {
+      live.get().setStatus(ProfileShareStatus.ACTIVE);
+      live.get().setStructural(true);
+      live.get().setDecidedAt(now);
+      return;
+    }
+    save(
+        ProfileHouseholdShare.builder()
+            .profileId(profileId)
+            .householdId(householdId)
+            .status(ProfileShareStatus.ACTIVE)
+            .structural(true)
+            .build());
+  }
+
+  @Override
+  public int invalidatePendingSharesForProfile(UUID profileId, String reason, Instant now) {
+    var pending =
+        database.values().stream()
+            .filter(share -> share.getProfileId().equals(profileId))
+            .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+            .toList();
+    pending.forEach(
+        share -> {
+          share.setStatus(ProfileShareStatus.INVALIDATED);
+          share.setInvalidationReason(reason);
+          share.setDecidedAt(now);
+        });
+    return pending.size();
+  }
+
+  @Override
   public boolean hasLiveOrPendingShares(UUID profileId) {
     return database.values().stream()
         .filter(share -> share.getProfileId().equals(profileId))

@@ -13,4 +13,10 @@ public sealed interface IssueAccountInvitationError extends MutationError
         HouseholdNotFoundError,
         RestrictedFirstAccountError,
         LocalManagerRequiredError,
-        LocalManagerNotFoundError {}
+        LocalManagerNotFoundError,
+        ConnectProfileRequiredError,
+        ConnectProfileNotFoundError,
+        ProfileAlreadyLinkedError,
+        ProfileNotInHouseholdError,
+        ReofferHouseholdNotFoundError,
+        ReofferHouseholdNotSharedError {}
