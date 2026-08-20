@@ -162,7 +162,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
         .perform(
             post("/api/auth/device/code")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"deviceName\": \"Apple TV\"}"))
+                .content("{\"deviceName\": \"Apple TV\", \"esn\": \"esn-1\"}"))
         .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
 
     mockMvc
@@ -186,7 +186,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
             post("/api/auth/device/code")
                 .cookie(staleAccessCookie)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"deviceName\": \"Apple TV\"}"))
+                .content("{\"deviceName\": \"Apple TV\", \"esn\": \"esn-1\"}"))
         .andExpect(status().isForbidden());
 
     mockMvc

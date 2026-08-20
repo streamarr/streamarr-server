@@ -133,6 +133,24 @@ final class IntentPlanner {
           unitPlan(
               AuthorizationCheck.onProfile(
                   Action.ADMINISTRATIVELY_REMOVE_PROFILE_MANAGER, profileId));
+      case Intent.LinkDevice(var grantId) ->
+          unitPlan(AuthorizationCheck.onGrant(Action.LINK_DEVICE, grantId));
+      case Intent.RevokeDeviceRegistration(var registrationId) ->
+          unitPlan(
+              AuthorizationCheck.onRegistration(
+                  Action.REVOKE_DEVICE_REGISTRATION, registrationId));
+      case Intent.BlockEsn(var householdId) ->
+          unitPlan(AuthorizationCheck.onHousehold(Action.BLOCK_ESN, householdId));
+      case Intent.BlockEsnServerWide _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.BLOCK_ESN_SERVER_WIDE));
+      case Intent.UnblockEsn(var householdId) ->
+          unitPlan(AuthorizationCheck.onHousehold(Action.UNBLOCK_ESN, householdId));
+      case Intent.UnblockEsnServerWide _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.UNBLOCK_ESN_SERVER_WIDE));
+      case Intent.ViewDeviceAdministration(var householdId) ->
+          unitPlan(AuthorizationCheck.onHousehold(Action.VIEW_DEVICE_ADMINISTRATION, householdId));
+      case Intent.ViewServerDeviceAdministration _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.VIEW_SERVER_DEVICE_ADMINISTRATION));
     };
   }
 

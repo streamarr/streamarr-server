@@ -66,6 +66,7 @@ public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceA
     var authorization = match.get();
     authorization.setStatus(command.status());
     authorization.setDecidedByAccountId(command.decidedByAccountId());
+    authorization.setChosenHouseholdId(command.chosenHouseholdId());
     authorization.setDecidedAt(command.now());
     return 1;
   }
@@ -102,6 +103,7 @@ public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceA
               .userCode(command.userCode())
               .status(DeviceAuthorizationStatus.PENDING)
               .deviceName(command.deviceName())
+              .esn(command.esn())
               .expiresAt(command.expiresAt())
               .nextPollAt(command.nextPollAt())
               .pollIntervalSeconds(command.pollIntervalSeconds())

@@ -12,6 +12,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -60,6 +61,7 @@ public class ProfileSharingService {
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
   private final AuthSessionRepository authSessionRepository;
+  private final DeviceRegistrationLifecycle registrationLifecycle;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final MutationTransactions mutationTransactions;
   private final CredentialCodeProperties credentialCodeProperties;
@@ -345,9 +347,13 @@ public class ProfileSharingService {
           userAccountRepository
               .findByPersonalProfileId(share.getProfileId())
               .ifPresent(
-                  visitor ->
-                      authSessionRepository.clearHouseholdContextFromAccountSessions(
-                          visitor.getId(), share.getHouseholdId(), now));
+                  visitor -> {
+                    authSessionRepository.clearHouseholdContextFromAccountSessions(
+                        visitor.getId(), share.getHouseholdId(), now);
+                    // T9: the visit carried the visitor's TVs there; they end with it.
+                    registrationLifecycle.revokeAllByAccountAndHousehold(
+                        visitor.getId(), share.getHouseholdId(), "share ended", now);
+                  });
           afterEnd.accept(share);
           return share;
         },

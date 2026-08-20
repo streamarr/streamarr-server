@@ -27,6 +27,11 @@ public record TokenContext(
     private Optional<Instant> reauthenticatedAt = Optional.empty();
   }
 
+  /** Device-bound means the session was born from a Device registration. */
+  public UUID registrationId() {
+    return session.getRegistrationId();
+  }
+
   /** The session's remembered context: membership Household unless the session switched. */
   public static TokenContext of(UserAccount account, AuthSession session) {
     return TokenContext.builder()

@@ -164,4 +164,23 @@ public sealed interface Intent {
 
   /** ServerAdmin removes management after fresh reauthentication. */
   record AdministrativelyRemoveProfileManager(UUID profileId) implements UnitIntent {}
+
+  /** Approve a pairing grant, binding the TV to the chosen Household (ADR 0024 §Devices). */
+  record LinkDevice(UUID grantId) implements UnitIntent {}
+
+  record RevokeDeviceRegistration(UUID registrationId) implements UnitIntent {}
+
+  /** Refuse an ESN in one Household. */
+  record BlockEsn(UUID householdId) implements UnitIntent {}
+
+  /** Refuse an ESN server-wide: ServerAdmin, freshly reauthenticated, with an audited reason. */
+  record BlockEsnServerWide() implements UnitIntent {}
+
+  record UnblockEsn(UUID householdId) implements UnitIntent {}
+
+  record UnblockEsnServerWide() implements UnitIntent {}
+
+  record ViewDeviceAdministration(UUID householdId) implements UnitIntent {}
+
+  record ViewServerDeviceAdministration() implements UnitIntent {}
 }

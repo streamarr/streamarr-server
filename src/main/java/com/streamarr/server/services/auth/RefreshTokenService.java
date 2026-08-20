@@ -67,6 +67,7 @@ public class RefreshTokenService {
                 .deviceName(command.deviceName())
                 .contextHouseholdId(command.contextHouseholdId())
                 .selectedProfileId(command.selectedProfileId())
+                .registrationId(command.registrationId())
                 .build());
 
     var rawToken = generateRawToken();

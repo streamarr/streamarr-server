@@ -18,6 +18,7 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
@@ -26,6 +27,7 @@ import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -49,6 +51,8 @@ class AccountAdministrationServiceTest {
 
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
+  private final FakeDeviceRegistrationRepository registrations =
+      new FakeDeviceRegistrationRepository();
   private final FakeSecurityAuditEventRepository audit = new FakeSecurityAuditEventRepository();
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
@@ -63,6 +67,7 @@ class AccountAdministrationServiceTest {
           authorization,
           accounts,
           sessions,
+          new DeviceRegistrationLifecycle(registrations, sessions),
           audit,
           invitations,
           resetCodes,

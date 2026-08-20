@@ -10,7 +10,9 @@ import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
 import com.streamarr.server.jooq.generated.tables.DeviceAuthorization;
+import com.streamarr.server.jooq.generated.tables.DeviceRegistration;
 import com.streamarr.server.jooq.generated.tables.Episode;
+import com.streamarr.server.jooq.generated.tables.EsnBlock;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
@@ -85,9 +87,19 @@ public class Tables {
     public static final DeviceAuthorization DEVICE_AUTHORIZATION = DeviceAuthorization.DEVICE_AUTHORIZATION;
 
     /**
+     * The table <code>public.device_registration</code>.
+     */
+    public static final DeviceRegistration DEVICE_REGISTRATION = DeviceRegistration.DEVICE_REGISTRATION;
+
+    /**
      * The table <code>public.episode</code>.
      */
     public static final Episode EPISODE = Episode.EPISODE;
+
+    /**
+     * The table <code>public.esn_block</code>.
+     */
+    public static final EsnBlock ESN_BLOCK = EsnBlock.ESN_BLOCK;
 
     /**
      * The table <code>public.external_identifier</code>.
