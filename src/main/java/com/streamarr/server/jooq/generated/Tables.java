@@ -5,6 +5,7 @@ package com.streamarr.server.jooq.generated;
 
 
 import com.streamarr.server.jooq.generated.tables.AccountInvitation;
+import com.streamarr.server.jooq.generated.tables.AccountInvitationReoffer;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
@@ -56,6 +57,11 @@ public class Tables {
      * The table <code>public.account_invitation</code>.
      */
     public static final AccountInvitation ACCOUNT_INVITATION = AccountInvitation.ACCOUNT_INVITATION;
+
+    /**
+     * The table <code>public.account_invitation_reoffer</code>.
+     */
+    public static final AccountInvitationReoffer ACCOUNT_INVITATION_REOFFER = AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER;
 
     /**
      * The table <code>public.auth_session</code>.

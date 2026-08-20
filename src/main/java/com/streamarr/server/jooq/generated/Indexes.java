@@ -5,6 +5,7 @@ package com.streamarr.server.jooq.generated;
 
 
 import com.streamarr.server.jooq.generated.tables.AccountInvitation;
+import com.streamarr.server.jooq.generated.tables.AccountInvitationReoffer;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.DeviceAuthorization;
@@ -57,6 +58,7 @@ public class Indexes {
     public static final Index FILE_PROCESSING_TASK_CLAIMABLE_IDX = Internal.createIndex(DSL.name("file_processing_task_claimable_idx"), FileProcessingTask.FILE_PROCESSING_TASK, new OrderField[] { FileProcessingTask.FILE_PROCESSING_TASK.STATUS }, false);
     public static final Index FILE_PROCESSING_TASK_FILEPATH_URI_ACTIVE_IDX = Internal.createIndex(DSL.name("file_processing_task_filepath_uri_active_idx"), FileProcessingTask.FILE_PROCESSING_TASK, new OrderField[] { FileProcessingTask.FILE_PROCESSING_TASK.FILEPATH_URI }, true);
     public static final Index IDX_ACCOUNT_INVITATION_ISSUER = Internal.createIndex(DSL.name("idx_account_invitation_issuer"), AccountInvitation.ACCOUNT_INVITATION, new OrderField[] { AccountInvitation.ACCOUNT_INVITATION.ISSUER_ACCOUNT_ID }, false);
+    public static final Index IDX_ACCOUNT_INVITATION_REOFFER_INVITATION = Internal.createIndex(DSL.name("idx_account_invitation_reoffer_invitation"), AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER, new OrderField[] { AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER.INVITATION_ID }, false);
     public static final Index IDX_AUTH_SESSION_ACCOUNT_ID = Internal.createIndex(DSL.name("idx_auth_session_account_id"), AuthSession.AUTH_SESSION, new OrderField[] { AuthSession.AUTH_SESSION.ACCOUNT_ID }, false);
     public static final Index IDX_AUTH_SESSION_CONTEXT_HOUSEHOLD_ID = Internal.createIndex(DSL.name("idx_auth_session_context_household_id"), AuthSession.AUTH_SESSION, new OrderField[] { AuthSession.AUTH_SESSION.CONTEXT_HOUSEHOLD_ID }, false);
     public static final Index IDX_AUTH_SESSION_SELECTED_PROFILE_ID = Internal.createIndex(DSL.name("idx_auth_session_selected_profile_id"), AuthSession.AUTH_SESSION, new OrderField[] { AuthSession.AUTH_SESSION.SELECTED_PROFILE_ID }, false);

@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.dto;
 
 import com.streamarr.server.domain.auth.AccountInvitation;
+import com.streamarr.server.domain.auth.AccountInvitationMode;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileKind;
@@ -19,6 +20,8 @@ public record AccountInvitationDetails(
     UUID householdId,
     String householdName,
     HouseholdRole householdRole,
+    AccountInvitationMode mode,
+    UUID profileId,
     String profileName,
     ProfileKind profileKind,
     Integer maximumAllowedRatingAge,
@@ -32,6 +35,8 @@ public record AccountInvitationDetails(
         .householdId(invitation.getHouseholdId())
         .householdName(invitation.getHouseholdName())
         .householdRole(invitation.getHouseholdRole())
+        .mode(invitation.getMode())
+        .profileId(invitation.getProfileId())
         .profileName(invitation.getProfileName())
         .profileKind(invitation.getProfileKind())
         .maximumAllowedRatingAge(invitation.getMaximumAllowedRatingAge())
