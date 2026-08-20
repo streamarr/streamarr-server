@@ -44,7 +44,7 @@ class DeviceAuthUnconfiguredContractIT extends AbstractIntegrationTest {
                 .perform(
                     post("/api/auth/device/code")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"deviceName\": \"Apple TV\"}"))
+                        .content("{\"deviceName\": \"Apple TV\", \"esn\": \"esn-1\"}"))
                 .andExpect(status().isServiceUnavailable())
                 .andReturn()
                 .getResponse()

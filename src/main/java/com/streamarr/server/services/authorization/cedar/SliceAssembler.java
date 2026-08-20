@@ -1,5 +1,6 @@
 package com.streamarr.server.services.authorization.cedar;
 
+import com.cedarpolicy.value.PrimBool;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.util.Arrays;
 import java.util.EnumMap;
@@ -44,6 +45,10 @@ class SliceAssembler {
 
   EntitySlice assemble(AuthenticatedIdentity identity, AuthorizationCheck check) {
     var slice = new EntitySlice(CedarIds.account(identity.accountId()), check.resource());
+    // Stamped on every slice, not through a fact family: the device forbid must see the flag on
+    // every action, and an absent fact would read as "not device-bound" — failing open.
+    slice.principalAttribute(
+        SignedPrincipalContextContributor.DEVICE_BOUND, new PrimBool(identity.deviceBound()));
     for (var requirement : check.action().facts()) {
       contributors.get(requirement).contribute(identity, check, slice);
     }

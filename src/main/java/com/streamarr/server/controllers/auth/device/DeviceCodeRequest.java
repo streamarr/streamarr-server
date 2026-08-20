@@ -1,3 +1,3 @@
 package com.streamarr.server.controllers.auth.device;
 
-public record DeviceCodeRequest(String deviceName) {}
+public record DeviceCodeRequest(String deviceName, String esn) {}

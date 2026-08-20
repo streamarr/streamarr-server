@@ -8,6 +8,7 @@ import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.SessionRevocationReason;
+import com.streamarr.server.jooq.generated.tables.DeviceRegistration.DeviceRegistrationPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.RefreshToken.RefreshTokenPath;
@@ -126,6 +127,11 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
      */
     public final TableField<AuthSessionRecord, UUID> CONTEXT_HOUSEHOLD_ID = createField(DSL.name("context_household_id"), SQLDataType.UUID, this, "");
 
+    /**
+     * The column <code>public.auth_session.registration_id</code>.
+     */
+    public final TableField<AuthSessionRecord, UUID> REGISTRATION_ID = createField(DSL.name("registration_id"), SQLDataType.UUID, this, "");
+
     private AuthSession(Name alias, Table<AuthSessionRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -195,7 +201,7 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_AUTH_SESSION_ACCOUNT_ID, Indexes.IDX_AUTH_SESSION_CONTEXT_HOUSEHOLD_ID, Indexes.IDX_AUTH_SESSION_SELECTED_PROFILE_ID);
+        return Arrays.asList(Indexes.IDX_AUTH_SESSION_ACCOUNT_ID, Indexes.IDX_AUTH_SESSION_CONTEXT_HOUSEHOLD_ID, Indexes.IDX_AUTH_SESSION_REGISTRATION, Indexes.IDX_AUTH_SESSION_SELECTED_PROFILE_ID);
     }
 
     @Override
@@ -205,7 +211,7 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
 
     @Override
     public List<ForeignKey<AuthSessionRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.AUTH_SESSION__FK_AUTH_SESSION_ACCOUNT, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE, Keys.AUTH_SESSION__FK_AUTH_SESSION_CONTEXT_HOUSEHOLD);
+        return Arrays.asList(Keys.AUTH_SESSION__FK_AUTH_SESSION_ACCOUNT, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE, Keys.AUTH_SESSION__FK_AUTH_SESSION_CONTEXT_HOUSEHOLD, Keys.AUTH_SESSION__FK_AUTH_SESSION_REGISTRATION);
     }
 
     private transient UserAccountPath _userAccount;
@@ -242,6 +248,19 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
             _household = new HouseholdPath(this, Keys.AUTH_SESSION__FK_AUTH_SESSION_CONTEXT_HOUSEHOLD, null);
 
         return _household;
+    }
+
+    private transient DeviceRegistrationPath _deviceRegistration;
+
+    /**
+     * Get the implicit join path to the <code>public.device_registration</code>
+     * table.
+     */
+    public DeviceRegistrationPath deviceRegistration() {
+        if (_deviceRegistration == null)
+            _deviceRegistration = new DeviceRegistrationPath(this, Keys.AUTH_SESSION__FK_AUTH_SESSION_REGISTRATION, null);
+
+        return _deviceRegistration;
     }
 
     private transient RefreshTokenPath _refreshToken;

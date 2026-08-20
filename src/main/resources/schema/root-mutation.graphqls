@@ -45,6 +45,11 @@ type Mutation {
     removeProfileManager(input: RemoveProfileManagerInput!): RemoveProfileManagerPayload
     grantProfileManagerOverride(input: GrantProfileManagerOverrideInput!): GrantProfileManagerOverridePayload
     removeProfileManagerOverride(input: RemoveProfileManagerOverrideInput!): RemoveProfileManagerOverridePayload
+    revokeDeviceRegistration(input: RevokeDeviceRegistrationInput!): RevokeDeviceRegistrationPayload
+    blockEsn(input: BlockEsnInput!): BlockEsnPayload
+    blockEsnServerWide(input: BlockEsnServerWideInput!): BlockEsnServerWidePayload
+    unblockEsn(input: UnblockEsnInput!): UnblockEsnPayload
+    unblockEsnServerWide(input: UnblockEsnServerWideInput!): UnblockEsnServerWidePayload
 }
 
 enum ImageRefreshMode {

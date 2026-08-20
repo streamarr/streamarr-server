@@ -17,6 +17,7 @@ namespace Streamarr {
     liveHouseholdRole?: String,
     liveMembershipHousehold?: Household,
     eligible?: Bool,
+    deviceBound?: Bool,
   };
 
   entity Household;
@@ -51,6 +52,14 @@ namespace Streamarr {
   entity ManagerInvitation {
     recipientIsPrincipal?: Bool,
     invitedByPrincipal?: Bool,
+  };
+
+  // A pairing grant, resolved from the typed user code before Cedar ever sees the request.
+  entity Grant;
+
+  // A registered TV's Household binding relative to the principal for one decision.
+  entity Registration {
+    principalAdminOfHousehold?: Bool,
   };
 
   // The singleton root resource server-wide authority is granted on.
@@ -300,6 +309,47 @@ namespace Streamarr {
     principal: Account,
     resource: Profile,
     context: { freshReauthentication: Bool },
+  };
+  action deviceAdministration;
+  action linkDevice in deviceAdministration appliesTo {
+    principal: Account,
+    resource: Grant,
+    context: {},
+  };
+  action revokeDeviceRegistration in deviceAdministration appliesTo {
+    principal: Account,
+    resource: Registration,
+    context: {},
+  };
+  action blockEsn in deviceAdministration appliesTo {
+    principal: Account,
+    resource: Household,
+    context: {},
+  };
+  action blockEsnServerWide in deviceAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: { freshReauthentication: Bool },
+  };
+  action unblockEsn in deviceAdministration appliesTo {
+    principal: Account,
+    resource: Household,
+    context: {},
+  };
+  action unblockEsnServerWide in deviceAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action viewDeviceAdministration in deviceAdministration appliesTo {
+    principal: Account,
+    resource: Household,
+    context: {},
+  };
+  action viewServerDeviceAdministration in deviceAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
   };
   action viewProfileAdministration in profileAdministration appliesTo {
     principal: Account,

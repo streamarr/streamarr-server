@@ -6,11 +6,12 @@ import com.streamarr.server.exceptions.InvalidDecisionException;
 import com.streamarr.server.services.auth.DeviceAuthorizationService;
 import com.streamarr.server.services.auth.DeviceAuthorizationView;
 import com.streamarr.server.services.auth.DeviceDecision;
-import com.streamarr.server.services.auth.DeviceDecisionCommand;
 import com.streamarr.server.services.auth.DevicePollResult;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.identity.DevicePairingService;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,12 +31,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class DeviceAuthController {
 
   private final DeviceAuthorizationService deviceAuthorizationService;
+  private final DevicePairingService devicePairingService;
   private final AuthorizationService authorizationService;
 
   @PostMapping("/code")
   public ResponseEntity<DeviceCodeResponse> issue(
       @RequestBody(required = false) DeviceCodeRequest request) {
-    var issued = deviceAuthorizationService.issue(request == null ? null : request.deviceName());
+    var issued =
+        deviceAuthorizationService.issue(
+            request == null ? null : request.deviceName(), request == null ? null : request.esn());
 
     return ResponseEntity.ok()
         .body(
@@ -79,9 +83,9 @@ public class DeviceAuthController {
   @PostMapping("/authorizations/lookup")
   public ResponseEntity<DeviceAuthorizationResponse> lookup(
       @RequestBody DeviceLookupRequest request) {
-    var view =
-        deviceAuthorizationService.lookup(
-            request.userCode(), authorizationService.currentIdentity().accountId());
+    var lookup =
+        devicePairingService.lookup(authorizationService.currentIdentity(), request.userCode());
+    var view = lookup.authorization();
 
     return ResponseEntity.ok()
         .body(
@@ -90,17 +94,26 @@ public class DeviceAuthController {
                 .deviceName(view.deviceName())
                 .status(view.status().name())
                 .requestedAt(view.requestedAt())
+                .households(
+                    lookup.households().stream()
+                        .map(
+                            household ->
+                                new DeviceAuthorizationResponse.EligibleHousehold(
+                                    household.id().toString(), household.name()))
+                        .toList())
                 .build());
   }
 
   @PostMapping("/authorizations/decision")
   public ResponseEntity<DeviceDecisionResponse> decide(@RequestBody DeviceDecisionRequest request) {
     var view =
-        deviceAuthorizationService.decide(
-            DeviceDecisionCommand.builder()
+        devicePairingService.decide(
+            authorizationService.currentIdentity(),
+            DevicePairingService.PairingDecisionCommand.builder()
                 .userCode(request.userCode())
                 .decision(parseDecision(request.decision()))
-                .decidedByAccountId(authorizationService.currentIdentity().accountId())
+                .householdId(
+                    request.householdId() == null ? null : UUID.fromString(request.householdId()))
                 .build());
 
     return ResponseEntity.ok().body(decisionResponseOf(view));
