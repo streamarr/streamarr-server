@@ -92,7 +92,6 @@ class CredentialIssuanceServiceTest {
 
   private Household household;
   private UserAccount resident;
-  private List<UUID> noReoffers;
 
   @BeforeEach
   void setUp() {

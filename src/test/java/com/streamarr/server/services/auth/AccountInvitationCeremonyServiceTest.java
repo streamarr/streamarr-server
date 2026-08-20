@@ -329,15 +329,16 @@ class AccountInvitationCeremonyServiceTest {
     var issued = pendingConnectInvitation(orphan.getId(), home.getId(), null);
     accounts.save(AccountFixture.defaultAccountBuilder().personalProfileId(orphan.getId()).build());
 
-    var linkedCode = issued.code();
-    assertThatThrownBy(() -> service.accept(acceptCommand(linkedCode)))
+    var linkedCommand = acceptCommand(issued.code());
+    assertThatThrownBy(() -> service.accept(linkedCommand))
         .isInstanceOf(InvalidOneTimeCodeException.class);
 
     var vanished = pendingConnectInvitation(null, home.getId(), null);
     var vanishedCode = vanished.code();
     assertThatThrownBy(() -> service.lookup(vanishedCode))
         .isInstanceOf(InvalidOneTimeCodeException.class);
-    assertThatThrownBy(() -> service.accept(acceptCommand(vanishedCode)))
+    var vanishedCommand = acceptCommand(vanishedCode);
+    assertThatThrownBy(() -> service.accept(vanishedCommand))
         .isInstanceOf(InvalidOneTimeCodeException.class);
   }
 

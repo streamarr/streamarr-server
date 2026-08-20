@@ -65,55 +65,17 @@ public class CredentialIssuanceService {
       AuthenticatedIdentity identity, IssueInvitationCommand command) {
     authorizationService.requireAllowed(identity, new Intent.IssueAccountInvitation());
     var mode = command.mode() == null ? AccountInvitationMode.CREATE : command.mode();
-    if (isBlank(command.recipientEmail())) {
-      return Outcome.rejected(new InvitationRejections.EmailRequired());
-    }
-    if (mode == AccountInvitationMode.CREATE && isBlank(command.profileName())) {
-      return Outcome.rejected(new InvitationRejections.ProfileNameRequired());
+    var refusal = issueRefusal(mode, command);
+    if (refusal.isPresent()) {
+      return Outcome.rejected(refusal.get());
     }
 
-    if (userAccountRepository.findByEmailIgnoreCase(command.recipientEmail().strip()).isPresent()) {
-      // An existing email cannot be invited or reassigned; ServerAdmin transfers instead.
-      return Outcome.rejected(new InvitationRejections.EmailAlreadyUsed());
-    }
-
-    var household = householdRepository.findById(command.householdId());
-    if (household.isEmpty()) {
-      return Outcome.rejected(new InvitationRejections.HouseholdNotFound());
-    }
-    var connectRefusal = connectRefusal(mode, command);
-    if (connectRefusal.isPresent()) {
-      return Outcome.rejected(connectRefusal.get());
-    }
-
+    var household = householdRepository.findById(command.householdId()).orElseThrow();
     var profile =
         mode == AccountInvitationMode.CREATE
             ? null
             : profileRepository.findById(command.profileId()).orElseThrow();
-    var restricted =
-        profile == null
-            ? command.profileKind() == ProfileKind.KID || command.maximumAllowedRatingAge() != null
-            : profile.isRestricted();
     var emptyHousehold = userAccountRepository.findByHouseholdId(command.householdId()).isEmpty();
-    if (restricted && emptyHousehold) {
-      // The first Account becomes HouseholdAdmin, and a restricted Account holds no authority.
-      return Outcome.rejected(new InvitationRejections.RestrictedFirstAccount());
-    }
-    if (mode == AccountInvitationMode.CREATE
-        && restricted
-        && command.localManagerAccountId() == null) {
-      return Outcome.rejected(new InvitationRejections.LocalManagerRequired());
-    }
-
-    if (command.localManagerAccountId() != null
-        && !userAccountRepository.isEligibleProfileManager(
-            command.localManagerAccountId(), command.householdId(), restricted)) {
-      return Outcome.rejected(new InvitationRejections.LocalManagerNotFound());
-    }
-    var reofferRefusal = reofferRefusal(profile, command);
-    if (reofferRefusal.isPresent()) {
-      return Outcome.rejected(reofferRefusal.get());
-    }
 
     var issued = opaqueCodes.issue();
     var now = clock.instant();
@@ -128,7 +90,7 @@ public class CredentialIssuanceService {
                   AccountInvitation.builder()
                       .recipientEmail(command.recipientEmail().strip())
                       .householdId(command.householdId())
-                      .householdName(household.get().getName())
+                      .householdName(household.getName())
                       .householdRole(emptyHousehold ? HouseholdRole.ADMIN : command.householdRole())
                       .mode(mode)
                       .profileId(profile == null ? null : profile.getId())
@@ -149,6 +111,65 @@ public class CredentialIssuanceService {
           return new IssuedInvitation(invitation, issued.code());
         },
         _ -> Optional.empty());
+  }
+
+  /** Every issue-time validation, in answer order; empty means the invitation may be written. */
+  private Optional<InvitationRejections.Issue> issueRefusal(
+      AccountInvitationMode mode, IssueInvitationCommand command) {
+    if (isBlank(command.recipientEmail())) {
+      return Optional.of(new InvitationRejections.EmailRequired());
+    }
+    if (mode == AccountInvitationMode.CREATE && isBlank(command.profileName())) {
+      return Optional.of(new InvitationRejections.ProfileNameRequired());
+    }
+    if (userAccountRepository.findByEmailIgnoreCase(command.recipientEmail().strip()).isPresent()) {
+      // An existing email cannot be invited or reassigned; ServerAdmin transfers instead.
+      return Optional.of(new InvitationRejections.EmailAlreadyUsed());
+    }
+    if (householdRepository.findById(command.householdId()).isEmpty()) {
+      return Optional.of(new InvitationRejections.HouseholdNotFound());
+    }
+    var connectRefusal = connectRefusal(mode, command);
+    if (connectRefusal.isPresent()) {
+      return connectRefusal;
+    }
+    var profile =
+        mode == AccountInvitationMode.CREATE
+            ? null
+            : profileRepository.findById(command.profileId()).orElseThrow();
+    var restrictionRefusal = restrictionRefusal(mode, command, profile);
+    if (restrictionRefusal.isPresent()) {
+      return restrictionRefusal;
+    }
+    if (command.localManagerAccountId() != null
+        && !userAccountRepository.isEligibleProfileManager(
+            command.localManagerAccountId(), command.householdId(), isRestricted(command, profile))) {
+      return Optional.of(new InvitationRejections.LocalManagerNotFound());
+    }
+    return reofferRefusal(profile, command);
+  }
+
+  /** A restricted first Account is impossible, and a restricted new Profile names its anchor. */
+  private Optional<InvitationRejections.Issue> restrictionRefusal(
+      AccountInvitationMode mode, IssueInvitationCommand command, Profile profile) {
+    var restricted = isRestricted(command, profile);
+    if (!restricted) {
+      return Optional.empty();
+    }
+    if (userAccountRepository.findByHouseholdId(command.householdId()).isEmpty()) {
+      // The first Account becomes HouseholdAdmin, and a restricted Account holds no authority.
+      return Optional.of(new InvitationRejections.RestrictedFirstAccount());
+    }
+    if (mode == AccountInvitationMode.CREATE && command.localManagerAccountId() == null) {
+      return Optional.of(new InvitationRejections.LocalManagerRequired());
+    }
+    return Optional.empty();
+  }
+
+  private static boolean isRestricted(IssueInvitationCommand command, Profile profile) {
+    return profile == null
+        ? command.profileKind() == ProfileKind.KID || command.maximumAllowedRatingAge() != null
+        : profile.isRestricted();
   }
 
   /** CREATE has no Profile yet; CONNECT names an existing, unlinked one in that Household. */
