@@ -83,6 +83,14 @@ final class IntentPlanner {
               AuthorizationCheck.onProfile(Action.ADMINISTRATIVELY_RESET_PROFILE_PIN, profileId));
       case Intent.DeleteProfile(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.DELETE_PROFILE, profileId));
+      case Intent.IssueAccountInvitation _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.ISSUE_ACCOUNT_INVITATION));
+      case Intent.CancelAccountInvitation _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.CANCEL_ACCOUNT_INVITATION));
+      case Intent.ViewAccountInvitations _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.VIEW_ACCOUNT_INVITATIONS));
+      case Intent.IssuePasswordReset(var accountId) ->
+          unitPlan(AuthorizationCheck.onAccount(Action.ISSUE_PASSWORD_RESET, accountId));
     };
   }
 

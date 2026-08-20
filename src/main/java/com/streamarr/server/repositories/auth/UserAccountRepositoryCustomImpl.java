@@ -200,6 +200,11 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     return transition(accountId, USER_ACCOUNT.DISPLAY_NAME, displayName, DSL.trueCondition());
   }
 
+  @Override
+  public boolean trySetPasswordHash(UUID accountId, String passwordHash) {
+    return transition(accountId, USER_ACCOUNT.PASSWORD_HASH, passwordHash, DSL.trueCondition());
+  }
+
   private <V> boolean transition(
       UUID accountId, TableField<UserAccountRecord, V> field, V value, Condition transitionable) {
     return dsl.update(USER_ACCOUNT)

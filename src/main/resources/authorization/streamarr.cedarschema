@@ -189,6 +189,27 @@ namespace Streamarr {
     resource: Profile,
     context: { freshReauthentication: Bool },
   };
+  action invitationAdministration;
+  action issueAccountInvitation in invitationAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action cancelAccountInvitation in invitationAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action viewAccountInvitations in invitationAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action issuePasswordReset in accountAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: { freshReauthentication: Bool },
+  };
   action viewProfileAdministration in profileAdministration appliesTo {
     principal: Account,
     resource: Profile,

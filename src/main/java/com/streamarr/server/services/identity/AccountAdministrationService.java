@@ -4,7 +4,9 @@ import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
+import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -36,6 +38,8 @@ public class AccountAdministrationService {
   private final UserAccountRepository userAccountRepository;
   private final AuthSessionRepository authSessionRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
+  private final AccountInvitationRepository accountInvitationRepository;
+  private final PasswordResetCodeRepository passwordResetCodeRepository;
   private final MutationTransactions mutationTransactions;
   private final Clock clock;
 
@@ -73,6 +77,8 @@ public class AccountAdministrationService {
             .operation("revokeServerAdmin")
             .reason(reason)
             .transition(() -> userAccountRepository.tryRevokeServerAdmin(accountId))
+            .afterTransition(
+                () -> invalidateIssuedCredentials(accountId, "issuer lost ServerAdmin"))
             .notFound(AdministrationRejections.AccountNotFound::new)
             .reauthenticationRequired(AdministrationRejections.ReauthenticationRequired::new)
             .constraint(CHK_ENABLED_SERVER_ADMIN, AdministrationRejections.LastServerAdmin::new)
@@ -117,9 +123,11 @@ public class AccountAdministrationService {
             .operation("disableAccount")
             .transition(() -> userAccountRepository.tryDisable(accountId))
             .afterTransition(
-                () ->
-                    authSessionRepository.revokeAllForAccount(
-                        accountId, SessionRevocationReason.ADMIN_REVOCATION, clock.instant()))
+                () -> {
+                  authSessionRepository.revokeAllForAccount(
+                      accountId, SessionRevocationReason.ADMIN_REVOCATION, clock.instant());
+                  invalidateIssuedCredentials(accountId, "issuer disabled");
+                })
             .notFound(AdministrationRejections.AccountNotFound::new)
             .constraint(CHK_ENABLED_SERVER_ADMIN, AdministrationRejections.LastServerAdmin::new)
             .build());
@@ -216,6 +224,12 @@ public class AccountAdministrationService {
             }
           };
     };
+  }
+
+  /** A removed or compromised issuer leaves no codes behind that could take effect later. */
+  private void invalidateIssuedCredentials(UUID issuerAccountId, String reason) {
+    accountInvitationRepository.invalidateIssuedBy(issuerAccountId, reason, clock.instant());
+    passwordResetCodeRepository.invalidateIssuedBy(issuerAccountId, reason, clock.instant());
   }
 
   private boolean mayViewAccount(AuthenticatedIdentity identity, UUID accountId) {

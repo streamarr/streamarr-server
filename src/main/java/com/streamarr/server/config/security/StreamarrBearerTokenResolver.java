@@ -33,6 +33,10 @@ public final class StreamarrBearerTokenResolver implements BearerTokenResolver {
           "/api/auth/refresh/revoke",
           "/api/auth/device/code",
           "/api/auth/device/token",
+          "/api/auth/invitation/lookup",
+          "/api/auth/invitation/accept",
+          "/api/auth/invitation/decline",
+          "/api/auth/password-reset/redeem",
           "/.well-known/jwks.json");
 
   private static final String HEALTH_PATH = "/actuator/health";

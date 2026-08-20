@@ -110,6 +110,9 @@ auth:
     # cookie-mode login silently yields an unauthenticated session in local development. Honored
     # only alongside a dev or test profile; set without one, startup fails.
     allow-insecure: ${AUTH_COOKIES_ALLOW_INSECURE:false}
+  credential-codes:
+    invitation-ttl: ${AUTH_INVITATION_TTL:7d}
+    password-reset-ttl: ${AUTH_PASSWORD_RESET_TTL:1h}
   throttle:
     max-attempts: ${AUTH_THROTTLE_MAX_ATTEMPTS:5}
     window: ${AUTH_THROTTLE_WINDOW:15m}

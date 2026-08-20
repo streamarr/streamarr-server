@@ -2,6 +2,7 @@ package com.streamarr.server.services.auth;
 
 import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,15 @@ public class CredentialGuessThrottle {
     budget.reset(new CredentialKey(CredentialType.PROFILE_PIN, accountId, profileId));
   }
 
+  /** One budget per presented publicId: rotating endpoints or sources must not multiply tries. */
+  public void registerCodeGuess(String publicId) {
+    register(
+        new CredentialKey(
+            CredentialType.OPAQUE_CODE,
+            UUID.nameUUIDFromBytes(publicId.getBytes(StandardCharsets.UTF_8)),
+            null));
+  }
+
   public void registerAccountPasswordAttempt(UUID accountId) {
     register(new CredentialKey(CredentialType.ACCOUNT_PASSWORD, accountId, null));
   }
@@ -58,7 +68,8 @@ public class CredentialGuessThrottle {
 
   private enum CredentialType {
     PROFILE_PIN,
-    ACCOUNT_PASSWORD
+    ACCOUNT_PASSWORD,
+    OPAQUE_CODE
   }
 
   private record CredentialKey(CredentialType type, UUID accountId, UUID profileId) {}

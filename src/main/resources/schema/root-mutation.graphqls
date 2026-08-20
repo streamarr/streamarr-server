@@ -28,6 +28,9 @@ type Mutation {
     removeProfilePin(input: RemoveProfilePinInput!): RemoveProfilePinPayload
     administrativelyResetProfilePin(input: AdministrativelyResetProfilePinInput!): AdministrativelyResetProfilePinPayload
     deleteProfile(input: DeleteProfileInput!): DeleteProfilePayload
+    issueAccountInvitation(input: IssueAccountInvitationInput!): IssueAccountInvitationPayload
+    cancelAccountInvitation(input: CancelAccountInvitationInput!): CancelAccountInvitationPayload
+    issuePasswordReset(input: IssuePasswordResetInput!): IssuePasswordResetPayload
 }
 
 enum ImageRefreshMode {

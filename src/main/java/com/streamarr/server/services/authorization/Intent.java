@@ -104,4 +104,15 @@ public sealed interface Intent {
    * manager; requiresFreshReauthentication.
    */
   record DeleteProfile(UUID profileId) implements UnitIntent {}
+
+  /** Only ServerAdmin proposes new Accounts (ADR 0024 §Invitations); a whole-surface gate. */
+  record IssueAccountInvitation() implements UnitIntent {}
+
+  record CancelAccountInvitation() implements UnitIntent {}
+
+  /** Account invitations are visible to ServerAdmin (plus the code holder, outside Cedar). */
+  record ViewAccountInvitations() implements UnitIntent {}
+
+  /** Issue a password-reset code; requiresFreshReauthentication with a reason (ADR 0024). */
+  record IssuePasswordReset(UUID accountId) implements UnitIntent {}
 }
