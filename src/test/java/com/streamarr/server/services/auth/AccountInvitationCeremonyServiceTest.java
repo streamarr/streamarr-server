@@ -122,7 +122,8 @@ class AccountInvitationCeremonyServiceTest {
     assertThat(invitations.findAll().getFirst().getStatus())
         .isEqualTo(AccountInvitationStatus.ACCEPTED);
 
-    assertThatThrownBy(() -> service.lookup(issued.code()))
+    var consumed = issued.code();
+    assertThatThrownBy(() -> service.lookup(consumed))
         .isInstanceOf(InvalidOneTimeCodeException.class);
   }
 
@@ -152,7 +153,8 @@ class AccountInvitationCeremonyServiceTest {
 
     assertThat(invitations.findAll().getFirst().getStatus())
         .isEqualTo(AccountInvitationStatus.DECLINED);
-    assertThatThrownBy(() -> service.decline(issued.code()))
+    var consumed = issued.code();
+    assertThatThrownBy(() -> service.decline(consumed))
         .isInstanceOf(InvalidOneTimeCodeException.class);
   }
 
@@ -171,7 +173,8 @@ class AccountInvitationCeremonyServiceTest {
         .isInstanceOf(InvalidOneTimeCodeException.class);
 
     expired.setExpiresAt(NOW.minusSeconds(1));
-    assertThatThrownBy(() -> service.lookup(issued.code()))
+    var expiredCode = issued.code();
+    assertThatThrownBy(() -> service.lookup(expiredCode))
         .isInstanceOf(InvalidOneTimeCodeException.class);
   }
 
@@ -187,7 +190,8 @@ class AccountInvitationCeremonyServiceTest {
     }
 
     // The right code no longer helps: the budget is per publicId, not per outcome.
-    assertThatThrownBy(() -> service.lookup(issued.code()))
+    var throttled = issued.code();
+    assertThatThrownBy(() -> service.lookup(throttled))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
   }
 

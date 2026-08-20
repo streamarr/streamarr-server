@@ -95,7 +95,8 @@ class PasswordResetRedemptionServiceTest {
     var issued = pendingCode();
     service.redeem(issued.code(), "first passphrase");
 
-    assertThatThrownBy(() -> service.redeem(issued.code(), "second passphrase"))
+    var consumed = issued.code();
+    assertThatThrownBy(() -> service.redeem(consumed, "second passphrase"))
         .isInstanceOf(InvalidOneTimeCodeException.class);
     assertThat(accounts.findById(account.getId()).orElseThrow().getPasswordHash())
         .isEqualTo("hashed:first passphrase");
@@ -107,7 +108,8 @@ class PasswordResetRedemptionServiceTest {
     var issued = pendingCode();
     resetCodes.findAll().getFirst().setExpiresAt(NOW.minusSeconds(1));
 
-    assertThatThrownBy(() -> service.redeem(issued.code(), "new passphrase"))
+    var expiredCode = issued.code();
+    assertThatThrownBy(() -> service.redeem(expiredCode, "new passphrase"))
         .isInstanceOf(InvalidOneTimeCodeException.class);
     assertThatThrownBy(() -> service.redeem("unknown.secret", "new passphrase"))
         .isInstanceOf(InvalidOneTimeCodeException.class);

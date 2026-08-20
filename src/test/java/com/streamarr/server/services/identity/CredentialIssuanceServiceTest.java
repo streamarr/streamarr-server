@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
+import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
@@ -86,8 +87,7 @@ class CredentialIssuanceServiceTest {
 
     assertThat(first.code()).contains(".").isNotEqualTo(second.code());
     assertThat(first.invitation().getSecretDigest()).isNotEmpty();
-    var statuses =
-        invitations.findAll().stream().map(invitation -> invitation.getStatus()).toList();
+    var statuses = invitations.findAll().stream().map(AccountInvitation::getStatus).toList();
     assertThat(statuses)
         .containsExactlyInAnyOrder(
             AccountInvitationStatus.INVALIDATED, AccountInvitationStatus.PENDING);
