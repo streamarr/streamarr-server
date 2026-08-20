@@ -87,6 +87,21 @@ public interface UserAccountRepositoryCustom {
 
   boolean tryDisable(UUID accountId);
 
+  /**
+   * The row re-read from the database, not from Hibernate's first-level cache: the transfer
+   * decision JPA-loaded the row in this transaction, and after the jOOQ write the managed copy is
+   * stale (the hybrid footgun).
+   */
+  Optional<UserAccount> findRefreshedById(UUID accountId);
+
+  /**
+   * The conditional transfer write: household and role move together, and only when the row is
+   * still where the decision saw it — a partial update that can never carry a stale password hash
+   * or clobber a concurrent rename.
+   */
+  boolean tryTransfer(
+      UUID accountId, UUID expectedHouseholdId, UUID destinationHouseholdId, HouseholdRole role);
+
   boolean tryEnable(UUID accountId);
 
   /**

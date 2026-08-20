@@ -94,6 +94,13 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   }
 
   @Override
+  public boolean tryRehome(UUID profileId, UUID destinationHouseholdId) {
+    var profile = findById(profileId);
+    profile.ifPresent(found -> found.setHouseholdId(destinationHouseholdId));
+    return profile.isPresent();
+  }
+
+  @Override
   public boolean tryRename(UUID profileId, String name) {
     var profile = findById(profileId);
     profile.ifPresent(current -> current.setName(name));

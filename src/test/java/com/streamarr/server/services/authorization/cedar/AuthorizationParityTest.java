@@ -319,6 +319,11 @@ class AuthorizationParityTest {
         new Intent.UnblockEsn(id),
         new Intent.UnblockEsnServerWide(),
         new Intent.ViewDeviceAdministration(id),
-        new Intent.ViewServerDeviceAdministration());
+        new Intent.ViewServerDeviceAdministration(),
+        new Intent.TransferAccount(id),
+        new Intent.DeleteAccount(id),
+        new Intent.DeleteMyAccount(),
+        new Intent.TransferProfile(id),
+        new Intent.ForceDeleteProfile(id));
   }
 }
