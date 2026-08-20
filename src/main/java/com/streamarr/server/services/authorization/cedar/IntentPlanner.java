@@ -14,7 +14,9 @@ final class IntentPlanner {
 
   // java:S6878: SelectProfile uses accessors, not a record pattern — the pattern's synthetic
   // deconstruction branch can never be missed and would break the 100% JaCoCo branch gate.
-  @SuppressWarnings({"unchecked", "java:S6878"})
+  // java:S1479: this switch IS the one intent-to-action contract; the sealed exhaustiveness
+  // check is worth more than a smaller method, and splitting it would forfeit that check.
+  @SuppressWarnings({"unchecked", "java:S6878", "java:S1479"})
   static <T> IntentPlan<T> plan(AuthenticatedIdentity identity, Intent<T> intent) {
     var check =
         switch (intent) {

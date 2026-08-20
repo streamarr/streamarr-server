@@ -155,6 +155,83 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should list invitations for ServerAdmin and cancel only a pending one")
+  void shouldListInvitationsForServerAdminAndCancelOnlyPendingOne() throws Exception {
+    issueInvitation("invitee@example.com");
+
+    var listed =
+        graphql(
+                authTestSupport.accountBearer(serverAdmin),
+                """
+                query { accountInvitations(first: 10) { edges { node { id recipientEmail status } } } }
+                """)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(
+                jsonPath("$.data.accountInvitations.edges[0].node.recipientEmail")
+                    .value("invitee@example.com"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var invitationId =
+        objectMapper
+            .readTree(listed)
+            .path("data")
+            .path("accountInvitations")
+            .path("edges")
+            .path(0)
+            .path("node")
+            .path("id")
+            .asString();
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            mutation { cancelAccountInvitation(input: {invitationId: "%s"}) {
+              invitation { status } userErrors { __typename } } }
+            """
+                .formatted(invitationId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.cancelAccountInvitation.invitation.status").value("CANCELED"));
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            mutation { cancelAccountInvitation(input: {invitationId: "%s"}) {
+              invitation { status } userErrors { __typename } } }
+            """
+                .formatted(invitationId))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.cancelAccountInvitation.userErrors[0].__typename")
+                .value("InvitationNotPendingError"));
+  }
+
+  @Test
+  @DisplayName("Should accept in cookie mode without token bodies")
+  void shouldAcceptInCookieModeWithoutTokenBodies() throws Exception {
+    var code = issueInvitation("invitee@example.com");
+
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/invitation/accept")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {"code": "%s", "displayName": "Invitee",                         "password": "a strong passphrase", "cookieMode": true}
+                        """
+                            .formatted(code)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andExpect(jsonPath("$.refreshToken").doesNotExist())
+            .andReturn()
+            .getResponse();
+    assertThat(response.getCookie("streamarr_access")).isNotNull();
+    assertThat(response.getCookie("streamarr_refresh")).isNotNull();
+  }
+
+  @Test
   @DisplayName("Should redeem a reset while disabled, revoke refresh, and create no session")
   void shouldRedeemResetWhileDisabledRevokeRefreshAndCreateNoSession() throws Exception {
     var locked = authTestSupport.createIdentity();

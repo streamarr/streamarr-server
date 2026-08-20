@@ -4,7 +4,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Base64;
+import java.util.Objects;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
 
@@ -61,6 +63,19 @@ public class OpaqueCodes {
 
   /** The issued triple; {@code code} goes to the caller once, {@code digest} to the row. */
   public record IssuedCode(String publicId, String code, byte[] digest) {
+
+    @Override
+    public boolean equals(Object other) {
+      return other instanceof IssuedCode(var otherPublicId, var otherCode, var otherDigest)
+          && publicId.equals(otherPublicId)
+          && code.equals(otherCode)
+          && Arrays.equals(digest, otherDigest);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(publicId, code, Arrays.hashCode(digest));
+    }
 
     @Override
     public String toString() {
