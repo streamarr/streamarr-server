@@ -14,15 +14,15 @@ public record SecurityAuditEventView(
     String reason,
     String resources) {
 
-  public static SecurityAuditEventView from(SecurityAuditEventRecordView record) {
+  public static SecurityAuditEventView from(SecurityAuditEventRecordView row) {
     return SecurityAuditEventView.builder()
-        .id(record.id())
-        .occurredAt(record.occurredAt().toString())
-        .actorAccountId(record.actorAccountId())
-        .operation(record.operation())
-        .outcome(record.outcome())
-        .reason(record.reason())
-        .resources(record.resources())
+        .id(row.id())
+        .occurredAt(row.occurredAt().toString())
+        .actorAccountId(row.actorAccountId())
+        .operation(row.operation())
+        .outcome(row.outcome())
+        .reason(row.reason())
+        .resources(row.resources())
         .build();
   }
 

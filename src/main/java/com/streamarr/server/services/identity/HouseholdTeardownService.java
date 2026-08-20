@@ -47,6 +47,7 @@ import org.springframework.stereotype.Service;
 public class HouseholdTeardownService {
 
   private static final String CHK_SERVER_ADMIN_REMAINS = "chk_enabled_server_admin_remains";
+  private static final String TORN_DOWN_REASON = "Household torn down";
 
   private final AuthorizationService authorizationService;
   private final AccountRemoval accountRemoval;
@@ -96,10 +97,9 @@ public class HouseholdTeardownService {
               .ifPresent(resident -> dispose(resident, command.finalAccount(), now));
 
           // The TVs and every pending way into the Household fall before the rows do.
-          registrationLifecycle.revokeAllByHousehold(
-              command.householdId(), "Household torn down", now);
+          registrationLifecycle.revokeAllByHousehold(command.householdId(), TORN_DOWN_REASON, now);
           accountInvitationRepository.invalidatePendingForHousehold(
-              command.householdId(), "Household torn down", now);
+              command.householdId(), TORN_DOWN_REASON, now);
           endHostedVisits(command.householdId(), now);
           deleteResidentProfiles(command.householdId(), now);
           householdRepository.deleteById(command.householdId());
@@ -207,7 +207,7 @@ public class HouseholdTeardownService {
                         authSessionRepository.resetContextForAccount(
                             visitor.getId(), householdId, now);
                         registrationLifecycle.revokeAllByAccountAndHousehold(
-                            visitor.getId(), householdId, "Household torn down", now);
+                            visitor.getId(), householdId, TORN_DOWN_REASON, now);
                       });
             });
   }

@@ -2,6 +2,8 @@ package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -149,14 +151,42 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
     var moved = userAccountRepository.findById(doomed.account().getId()).orElseThrow();
     assertThat(moved.getHouseholdId()).isEqualTo(admin.household().getId());
 
-    // Only ServerAdmin reads the audit; the row is there, newest first.
+    // Only ServerAdmin reads the audit; the row is there, newest first, and the keyset cursor
+    // resumes strictly after the page already seen.
+    var firstPage =
+        graphql(
+                authTestSupport.accountBearer(admin),
+                "query { securityAuditEvents(first: 1) { edges { cursor node { operation reason"
+                    + " outcome occurredAt resources actorAccountId id } } pageInfo { hasNextPage"
+                    + " } } }")
+            .andExpect(status().isOk())
+            .andExpect(
+                jsonPath("$.data.securityAuditEvents.edges[0].node.operation")
+                    .value("tearDownHousehold"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var endCursor =
+        objectMapper
+            .readTree(firstPage)
+            .path("data")
+            .path("securityAuditEvents")
+            .path("edges")
+            .get(0)
+            .path("cursor")
+            .asString();
     graphql(
             authTestSupport.accountBearer(admin),
-            "query { securityAuditEvents(first: 10) { edges { node { operation reason } } } }")
+            """
+            query { securityAuditEvents(first: 5, after: "%s") {
+              edges { node { operation } } } }
+            """
+                .formatted(endCursor))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(
-            jsonPath("$.data.securityAuditEvents.edges[0].node.operation")
-                .value("tearDownHousehold"));
+            jsonPath("$.data.securityAuditEvents.edges[*].node.operation")
+                .value(not(hasItem("tearDownHousehold"))));
     graphql(
             authTestSupport.accountBearer(doomed),
             "query { securityAuditEvents(first: 10) { edges { node { operation } } } }")

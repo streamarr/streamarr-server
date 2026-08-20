@@ -65,8 +65,9 @@ public class TeardownResolver {
     var options = options(dfe);
     Instant beforeOccurredAt = null;
     UUID beforeId = null;
-    if (options.getCursor().isPresent()) {
-      var key = decodeCursor(options.getCursor().get());
+    var cursor = options.getCursor().orElse(null);
+    if (cursor != null) {
+      var key = decodeCursor(cursor);
       var separator = key.lastIndexOf('|');
       if (separator < 0) {
         throw new InvalidCursorException("Cursor is not valid.");
