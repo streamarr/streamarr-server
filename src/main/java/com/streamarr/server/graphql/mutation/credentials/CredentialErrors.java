@@ -7,6 +7,7 @@ import java.util.List;
 /** The exhaustive mappings from service rejection to schema error type, one per union. */
 public final class CredentialErrors {
 
+  private static final List<String> PROFILE_ID_PATH = InputPath.of("profileId");
   private static final List<String> RECIPIENT_EMAIL_PATH = InputPath.of("recipientEmail");
 
   private CredentialErrors() {}
@@ -51,12 +52,12 @@ public final class CredentialErrors {
               InputPath.of("maximumAllowedRatingAge"));
       case CredentialRejections.ConnectProfileRequired _ ->
           new ConnectProfileRequiredError(
-              "Name the Profile this invitation connects.", InputPath.of("profileId"));
+              "Name the Profile this invitation connects.", PROFILE_ID_PATH);
       case CredentialRejections.ConnectProfileNotFound _ ->
-          new ConnectProfileNotFoundError("No such Profile.", InputPath.of("profileId"));
+          new ConnectProfileNotFoundError("No such Profile.", PROFILE_ID_PATH);
       case CredentialRejections.ProfileAlreadyLinked _ ->
           new ProfileAlreadyLinkedError(
-              "That Profile already belongs to an Account.", InputPath.of("profileId"));
+              "That Profile already belongs to an Account.", PROFILE_ID_PATH);
       case CredentialRejections.ProfileNotInHousehold _ ->
           new ProfileNotInHouseholdError(
               "CONNECT joins the recipient to the Profile's own Household.",
