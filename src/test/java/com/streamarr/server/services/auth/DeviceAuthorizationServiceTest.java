@@ -786,9 +786,9 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should refuse issuing a code before setup completes")
   void shouldRefuseIssuingCodeBeforeSetupCompletes() {
-    var service = serviceWith(new FakeServerBootstrapRepository());
+    var unclaimedService = serviceWith(new FakeServerBootstrapRepository());
 
-    assertThatThrownBy(() -> service.issue("Apple TV", "esn-1"))
+    assertThatThrownBy(() -> unclaimedService.issue("Apple TV", "esn-1"))
         .isInstanceOf(SetupIncompleteException.class);
   }
 

@@ -42,13 +42,11 @@ class DeviceAuthorizationCollisionIT extends AbstractIntegrationTest {
   }
 
   @AfterEach
-  void unclaimBootstrap() {
-    authTestSupport.unclaimBootstrap();
-  }
-
-  @AfterEach
-  void deleteSeededRows() {
+  void deleteSeededRowsThenUnclaimBootstrap() {
+    // One teardown with an explicit order: authorization rows first, then the bootstrap
+    // claim and its admin account - two @AfterEach methods run in an unspecified order.
     authorizationRepository.deleteAll();
+    authTestSupport.unclaimBootstrap();
   }
 
   @Test
