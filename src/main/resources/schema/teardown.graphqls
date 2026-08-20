@@ -1,0 +1,94 @@
+# Household teardown, the security audit, and Profile activity (ADR 0024 §Teardown, §Audit).
+
+enum FinalAccountChoice {
+    "Transfer the Account and linked Profile pair to the destination Household."
+    TRANSFER
+    "Delete the Account and Profile pair."
+    DELETE
+    "Delete the Account; preserve the Profile behind a destination anchor."
+    DELETE_KEEPING_PROFILE
+}
+
+input FinalAccountInput {
+    choice: FinalAccountChoice!
+    destinationHouseholdId: ID
+    replacementManagerAccountId: ID
+}
+
+input TearDownHouseholdInput {
+    householdId: ID!
+    reason: String!
+    "Required when exactly one Account remains; absent when none do."
+    finalAccount: FinalAccountInput
+}
+
+type TearDownHouseholdPayload {
+    householdId: ID
+    userErrors: [TearDownHouseholdError!]!
+}
+
+union TearDownHouseholdError =
+    HouseholdNotFoundError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+  | AccountsRemainError
+  | FinalAccountRequiredError
+  | FinalAccountUnexpectedError
+  | DestinationRequiredError
+  | DestinationNotFoundError
+  | ReplacementManagerRequiredError
+  | ReplacementManagerNotFoundError
+  | ReplacementManagerNotEligibleError
+  | LastServerAdminError
+
+type DoomedProfileView {
+    id: ID!
+    name: String!
+}
+
+"What teardown will take with it; null for whoever may not view the Household."
+type TeardownPreflightView {
+    accountCount: Int!
+    unlinkedProfiles: [DoomedProfileView!]!
+    hostedVisitCount: Int!
+}
+
+type SecurityAuditEventView {
+    id: ID!
+    occurredAt: String!
+    actorAccountId: ID
+    operation: String!
+    outcome: String!
+    reason: String
+    "The audited resource ids as stored JSON text."
+    resources: String!
+}
+
+type SecurityAuditEventConnection {
+    edges: [SecurityAuditEventEdge!]!
+    pageInfo: PageInfo!
+}
+
+type SecurityAuditEventEdge {
+    node: SecurityAuditEventView!
+    cursor: String!
+}
+
+type ProfileActivityView {
+    id: ID!
+    mediaFileId: ID!
+    positionSeconds: Int!
+    percentComplete: Float!
+    durationSeconds: Int!
+    watchedAt: String!
+}
+
+type ProfileActivityConnection {
+    edges: [ProfileActivityEdge!]!
+    pageInfo: PageInfo!
+}
+
+type ProfileActivityEdge {
+    node: ProfileActivityView!
+    cursor: String!
+}

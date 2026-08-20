@@ -160,6 +160,10 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onProfile(Action.TRANSFER_PROFILE, profileId));
       case Intent.AdministrativelyDeleteProfile(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.ADMINISTRATIVELY_DELETE_PROFILE, profileId));
+      case Intent.TearDownHousehold(var householdId) ->
+          unitPlan(AuthorizationCheck.onHousehold(Action.TEAR_DOWN_HOUSEHOLD, householdId));
+      case Intent.ViewSecurityAudit _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.VIEW_SECURITY_AUDIT));
     };
   }
 
