@@ -1,10 +1,10 @@
 // Direct ProfileManagers (ADR 0024 §ProfileManager): durable, portable authority granted by
-// invitation and consent, or by a ServerAdmin override. Share-derived supervision may propose a
-// manager but never becomes one silently. Lifecycle (pending, expiry) is the conditional
-// transition's business, not authority's.
+// invitation and consent, or by a ServerAdmin override. Share-derived supervision cannot create a
+// portable relationship. Lifecycle (pending, expiry) is the conditional transition's business,
+// not authority's.
 
-// Any direct or derived manager proposes; the recipient must still consent.
-@id("invite-profile-manager-as-manager-or-supervisor")
+// A direct or self-derived ProfileManager proposes; the recipient must still consent.
+@id("invite-profile-manager-as-manager")
 permit (
   principal,
   action == Streamarr::Action::"inviteProfileManager",
@@ -12,8 +12,20 @@ permit (
 )
 when {
   principal has enabled && principal.enabled &&
+  resource has managedByPrincipal && resource.managedByPrincipal
+};
+
+// Pending invitations expose their named recipient, so share-derived administration is too broad.
+@id("view-manager-invitations-as-manager-or-server-admin")
+permit (
+  principal,
+  action == Streamarr::Action::"viewManagerInvitations",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
   ((resource has managedByPrincipal && resource.managedByPrincipal) ||
-   (resource has supervisedByPrincipal && resource.supervisedByPrincipal))
+   (principal has serverAdmin && principal.serverAdmin))
 };
 
 // Only the named recipient answers an invitation addressed to them.

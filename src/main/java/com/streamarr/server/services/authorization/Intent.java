@@ -45,6 +45,9 @@ public sealed interface Intent<T> {
 
   record ViewProfileAdministration(UUID profileId) implements Intent<AuthorizationUnit> {}
 
+  /** Pending direct-manager invitations: ProfileManagers and live ServerAdmin only. */
+  record ViewManagerInvitations(UUID profileId) implements Intent<AuthorizationUnit> {}
+
   /** The live playback decision for the selected Profile in the context Household (ADR 0018). */
   record Playback() implements Intent<AuthorizationUnit> {}
 

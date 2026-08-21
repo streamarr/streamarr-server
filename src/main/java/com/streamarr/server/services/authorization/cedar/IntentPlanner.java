@@ -41,6 +41,8 @@ final class IntentPlanner {
               AuthorizationCheck.onAccount(Action.VIEW_ACCOUNT_ADMINISTRATION, accountId);
           case Intent.ViewProfileAdministration(var profileId) ->
               AuthorizationCheck.onProfile(Action.VIEW_PROFILE_ADMINISTRATION, profileId);
+          case Intent.ViewManagerInvitations(var profileId) ->
+              AuthorizationCheck.onProfile(Action.VIEW_MANAGER_INVITATIONS, profileId);
           case Intent.GrantServerAdmin(var accountId) ->
               AuthorizationCheck.onAccount(Action.GRANT_SERVER_ADMIN, accountId);
           case Intent.RevokeServerAdmin(var accountId) ->

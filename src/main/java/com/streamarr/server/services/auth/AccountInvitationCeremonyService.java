@@ -21,6 +21,7 @@ import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -50,11 +51,13 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class AccountInvitationCeremonyService {
 
   private static final String EMAIL_UNIQUE_INDEX = "uq_user_account_email";
+  private static final String PROFILE_CONNECTED_REASON = "Profile connected to an Account";
 
   private final AccountInvitationRepository invitationRepository;
   private final UserAccountRepository userAccountRepository;
   private final ProfileRepository profileRepository;
   private final ProfileManagerRepository profileManagerRepository;
+  private final ProfileManagerInvitationRepository profileManagerInvitationRepository;
   private final ProfileHouseholdShareRepository shareRepository;
   private final AccountInvitationReofferRepository reofferRepository;
   private final HouseholdRepository householdRepository;
@@ -268,12 +271,12 @@ public class AccountInvitationCeremonyService {
                 .enabled(true)
                 .build());
     var now = clock.instant();
-    invitationRepository.invalidatePendingForProfile(
-        profileId, "Profile connected to an Account", now);
+    invitationRepository.invalidatePendingForProfile(profileId, PROFILE_CONNECTED_REASON, now);
+    profileManagerInvitationRepository.invalidatePendingForProfile(
+        profileId, PROFILE_CONNECTED_REASON, now);
     shareRepository.upsertStructuralHomeShare(profileId, householdId, now);
     endCurrentVisits(profileId, householdId, now);
-    shareRepository.invalidatePendingSharesForProfile(
-        profileId, "Profile connected to an Account", now);
+    shareRepository.invalidatePendingSharesForProfile(profileId, PROFILE_CONNECTED_REASON, now);
     reoffer(invitation, account, now);
     return account;
   }

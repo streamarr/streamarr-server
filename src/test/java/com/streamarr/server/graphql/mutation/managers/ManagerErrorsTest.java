@@ -38,6 +38,36 @@ class ManagerErrorsTest {
   }
 
   @Test
+  @DisplayName("Should point invitation recipient errors at recipientAccountId")
+  void shouldPointInvitationRecipientErrorsAtRecipientAccountId() {
+    assertThat(ManagerErrors.toInviteError(new ManagerRejections.RecipientNotFound()))
+        .isInstanceOfSatisfying(
+            RecipientNotFoundError.class,
+            error -> assertThat(error.inputPath()).containsExactly("recipientAccountId"));
+    assertThat(ManagerErrors.toInviteError(new ManagerRejections.RecipientNotEligible()))
+        .isInstanceOfSatisfying(
+            RecipientNotEligibleError.class,
+            error -> assertThat(error.inputPath()).containsExactly("recipientAccountId"));
+    assertThat(ManagerErrors.toInviteError(new ManagerRejections.AlreadyManager()))
+        .isInstanceOfSatisfying(
+            AlreadyManagerError.class,
+            error -> assertThat(error.inputPath()).containsExactly("recipientAccountId"));
+  }
+
+  @Test
+  @DisplayName("Should point acceptance errors at code")
+  void shouldPointAcceptanceErrorsAtCode() {
+    assertThat(ManagerErrors.toAcceptError(new ManagerRejections.RecipientNotEligible()))
+        .isInstanceOfSatisfying(
+            RecipientNotEligibleError.class,
+            error -> assertThat(error.inputPath()).containsExactly("code"));
+    assertThat(ManagerErrors.toAcceptError(new ManagerRejections.AlreadyManager()))
+        .isInstanceOfSatisfying(
+            AlreadyManagerError.class,
+            error -> assertThat(error.inputPath()).containsExactly("code"));
+  }
+
+  @Test
   @DisplayName("Should map every removal and override rejection to its schema error")
   void shouldMapEveryRemovalAndOverrideRejectionToItsSchemaError() {
     assertThat(ManagerErrors.toRelinquishError(new ManagerRejections.ProfileNotFound()))

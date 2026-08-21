@@ -52,6 +52,11 @@ enum Action {
       FactRequirement.SIGNED_PRINCIPAL_CONTEXT,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.PROFILE_MANAGEMENT),
+  VIEW_MANAGER_INVITATIONS(
+      "viewManagerInvitations",
+      ResourceKind.PROFILE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_MANAGEMENT),
   GRANT_SERVER_ADMIN(
       "grantServerAdmin",
       ResourceKind.ACCOUNT,
@@ -172,8 +177,7 @@ enum Action {
       "inviteProfileManager",
       ResourceKind.PROFILE,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.PROFILE_MANAGEMENT,
-      FactRequirement.PROFILE_SUPERVISION),
+      FactRequirement.PROFILE_MANAGEMENT),
   CANCEL_MANAGER_INVITATION(
       "cancelManagerInvitation",
       ResourceKind.MANAGER_INVITATION,

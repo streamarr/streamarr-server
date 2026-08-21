@@ -77,7 +77,7 @@ class ProfileManagerAdministrationServiceTest {
           audit,
           new OpaqueCodes(),
           new CredentialGuessThrottle(new AuthThrottleProperties(5, Duration.ofMinutes(15)), clock),
-          new CredentialCodeProperties(null, null),
+          new CredentialCodeProperties(Duration.ofDays(7), null),
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
           clock);
@@ -235,18 +235,20 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should honor an invitation whose inviter still supervises the restricted Profile")
-  void shouldHonorInvitationWhoseInviterStillSupervisesRestrictedProfile() {
+  @DisplayName("Should invalidate an invitation when its inviter only supervises the Profile")
+  void shouldInvalidateInvitationWhenInviterOnlySupervisesProfile() {
     var kid = profiles.save(ProfileFixture.kidProfileBuilder().name("Kid").build());
     shares.share(kid.getId(), inviter.getHouseholdId(), false);
     inviter.setHouseholdRole(HouseholdRole.ADMIN);
     accounts.save(inviter);
     var issued = issued(service.inviteProfileManager(identity(), kid.getId(), recipient.getId()));
-    // No direct manager row for the inviter: supervision alone keeps the proposal standing.
+    // Share-derived supervision ends with the share and cannot keep portable authority standing.
     managers.tryRemove(inviter.getId(), kid.getId());
 
-    assertThat(service.acceptManagerInvitation(recipientIdentity(), issued.code()))
-        .isInstanceOf(Outcome.Accepted.class);
+    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), issued.code())))
+        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
   }
 
   @Test
@@ -275,6 +277,13 @@ class ProfileManagerAdministrationServiceTest {
     assertThat(audit.entries())
         .extracting(entry -> entry.operation())
         .containsExactly("grantProfileManagerOverride");
+    assertThat(audit.entries())
+        .singleElement()
+        .satisfies(
+            entry ->
+                assertThat(entry.resources())
+                    .containsEntry("profileId", orphan.getId())
+                    .containsEntry("accountId", recipient.getId()));
 
     assertThat(
             rejectionOf(
@@ -308,6 +317,14 @@ class ProfileManagerAdministrationServiceTest {
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(shares.findById(offered.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileShareStatus.INVALIDATED);
+    assertThat(shares.findById(offered.getId()).orElseThrow().getLastModifiedOn()).isEqualTo(NOW);
+    assertThat(audit.entries())
+        .singleElement()
+        .satisfies(
+            entry ->
+                assertThat(entry.resources())
+                    .containsEntry("profileId", orphan.getId())
+                    .containsEntry("accountId", recipient.getId()));
 
     assertThat(
             rejectionOf(

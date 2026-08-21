@@ -255,6 +255,7 @@ class AuthorizationParityTest {
         new Intent.ViewHouseholdAdministration(id),
         new Intent.ViewAccountAdministration(id),
         new Intent.ViewProfileAdministration(id),
+        new Intent.ViewManagerInvitations(id),
         new Intent.GrantServerAdmin(id),
         new Intent.RevokeServerAdmin(id),
         new Intent.CreateHousehold(),
