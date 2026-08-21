@@ -84,9 +84,9 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should verify the Cedar engine inside every package image")
+  @DisplayName("Should wire Cedar engine verification into every package image build")
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  void shouldVerifyCedarEngineInsideEveryPackageImage() throws IOException {
+  void shouldWireCedarEngineVerificationIntoEveryPackageImageBuild() throws IOException {
     var action = yaml(".github/actions/pack-build/action.yml");
     var buildStep =
         stepNamed(listOfMaps(map(action.get("runs")).get("steps")), "Build with pack CLI");
