@@ -16,6 +16,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -138,6 +141,19 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
+  @DisplayName("Should reject password after one full-cost burn when stored hash null")
+  void shouldRejectPasswordAfterOneFullCostBurnWhenStoredHashNull() {
+    var account = enabledAccount(null);
+
+    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(equalizer.burns()).isEqualTo(1);
+    assertThat(encoder.completedComparisons()).isEqualTo(1);
+    assertThat(encoder.comparedAgainst()).doesNotContainNull();
+  }
+
+  @Test
   @DisplayName("Should throttle before any Argon2 work when the budget is exhausted")
   void shouldThrottleBeforeAnyArgon2WorkWhenBudgetIsExhausted() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
@@ -152,6 +168,60 @@ class AccountPasswordVerifierTest {
 
     assertThat(encoder.completedComparisons()).isEqualTo(comparisonsBeforeThrottle);
     assertThat(equalizer.burns()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should admit only budgeted attempts when password guesses arrive concurrently")
+  void shouldAdmitOnlyBudgetedAttemptsWhenPasswordGuessesArriveConcurrently() throws Exception {
+    var maximumAttempts = 5;
+    var concurrentEncoder = new ConcurrentRejectingPasswordEncoder();
+    var concurrentThrottle =
+        new CredentialGuessThrottle(
+            AuthThrottleProperties.builder()
+                .maxAttempts(maximumAttempts)
+                .window(Duration.ofMinutes(15))
+                .build(),
+            new MutableClock());
+    var concurrentVerifier =
+        new AccountPasswordVerifier(
+            concurrentEncoder, new PasswordTimingEqualizer(concurrentEncoder), concurrentThrottle);
+    var account = enabledAccount(concurrentEncoder.encode(CORRECT_PASSWORD));
+    var requestCount = 64;
+    var ready = new CountDownLatch(requestCount);
+    var start = new CountDownLatch(1);
+    var admittedAttempts = new AtomicInteger();
+    var throttledAttempts = new AtomicInteger();
+    var attempts = new ArrayList<Future<?>>();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (var request = 0; request < requestCount; request++) {
+        attempts.add(
+            executor.submit(
+                () -> {
+                  ready.countDown();
+                  start.await();
+                  try {
+                    concurrentVerifier.verify(account, "wrong password");
+                    throw new AssertionError("Wrong password unexpectedly accepted");
+                  } catch (InvalidCredentialsException _) {
+                    admittedAttempts.incrementAndGet();
+                  } catch (TooManyCredentialAttemptsException _) {
+                    throttledAttempts.incrementAndGet();
+                  }
+                  return null;
+                }));
+      }
+
+      ready.await();
+      start.countDown();
+      for (var attempt : attempts) {
+        attempt.get();
+      }
+    }
+
+    assertThat(admittedAttempts).hasValue(maximumAttempts);
+    assertThat(throttledAttempts).hasValue(requestCount - maximumAttempts);
+    assertThat(concurrentEncoder.completedComparisons()).isEqualTo(maximumAttempts);
   }
 
   @Test
@@ -262,6 +332,26 @@ class AccountPasswordVerifierTest {
 
     private List<String> comparedAgainst() {
       return comparedAgainst;
+    }
+  }
+
+  private static final class ConcurrentRejectingPasswordEncoder implements PasswordEncoder {
+
+    private final AtomicInteger completedComparisons = new AtomicInteger();
+
+    @Override
+    public String encode(CharSequence rawPassword) {
+      return "encoded:" + rawPassword;
+    }
+
+    @Override
+    public boolean matches(CharSequence rawPassword, String encodedPassword) {
+      completedComparisons.incrementAndGet();
+      return false;
+    }
+
+    private int completedComparisons() {
+      return completedComparisons.get();
     }
   }
 }

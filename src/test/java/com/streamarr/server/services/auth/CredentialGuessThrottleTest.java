@@ -49,6 +49,42 @@ class CredentialGuessThrottleTest {
   }
 
   @Test
+  @DisplayName("Should retain fresh attempts when older attempts expire")
+  void shouldRetainFreshAttemptsWhenOlderAttemptsExpire() {
+    var accountId = UUID.randomUUID();
+    throttle.registerAccountPasswordAttempt(accountId);
+    clock.advance(Duration.ofMinutes(10));
+    throttle.registerAccountPasswordAttempt(accountId);
+    clock.advance(Duration.ofMinutes(6));
+
+    assertThatCode(() -> throttle.registerAccountPasswordAttempt(accountId))
+        .doesNotThrowAnyException();
+    assertThatThrownBy(() -> throttle.registerAccountPasswordAttempt(accountId))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should release full budget when blocked attempts occur before window expires")
+  void shouldReleaseFullBudgetWhenBlockedAttemptsOccurBeforeWindowExpires() {
+    var accountId = UUID.randomUUID();
+    throttle.registerAccountPasswordAttempt(accountId);
+    throttle.registerAccountPasswordAttempt(accountId);
+    clock.advance(Duration.ofMinutes(14));
+    assertThatThrownBy(() -> throttle.registerAccountPasswordAttempt(accountId))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    clock.advance(Duration.ofMinutes(2));
+
+    assertThatCode(
+            () -> {
+              throttle.registerAccountPasswordAttempt(accountId);
+              throttle.registerAccountPasswordAttempt(accountId);
+            })
+        .doesNotThrowAnyException();
+    assertThatThrownBy(() -> throttle.registerAccountPasswordAttempt(accountId))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
   @DisplayName("Should evict expired budgets when swept")
   void shouldEvictExpiredBudgetsWhenSwept() {
     throttle.registerAccountPasswordAttempt(UUID.randomUUID());
