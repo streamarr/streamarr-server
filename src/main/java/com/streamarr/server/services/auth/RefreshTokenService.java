@@ -18,6 +18,7 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Optional;
 import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -77,8 +78,20 @@ public class RefreshTokenService {
   }
 
   @Transactional
-  public void logout(String rawToken) {
-    tokenRepository.findSessionIdByDigest(digestOf(rawToken)).ifPresent(this::logout);
+  public Optional<LoggedOutSession> logout(String rawToken) {
+    var sessionId = tokenRepository.findSessionIdByDigest(digestOf(rawToken));
+    if (sessionId.isEmpty()) {
+      return Optional.empty();
+    }
+
+    var loggedOut =
+        sessionRepository
+            .findById(sessionId.orElseThrow())
+            .map(
+                session ->
+                    new LoggedOutSession(session.getAccountId(), session.getRegistrationId()));
+    logout(sessionId.orElseThrow());
+    return loggedOut;
   }
 
   @Transactional
