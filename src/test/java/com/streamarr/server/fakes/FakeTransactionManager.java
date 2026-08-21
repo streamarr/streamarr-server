@@ -72,6 +72,8 @@ public final class FakeTransactionManager extends AbstractPlatformTransactionMan
     }
 
     @Override
-    public void flush() {}
+    public void flush() {
+      // This transaction fake has no buffered resource to flush.
+    }
   }
 }
