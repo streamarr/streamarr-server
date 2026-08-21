@@ -153,9 +153,6 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Prefer `Stream.toList()` over `Collectors.toList()` when an unmodifiable list is acceptable
 - Use text blocks (`"""`) for multi-line strings in tests (GraphQL queries, JSON fixtures); production code has no string SQL (jOOQ DSL) or inline GraphQL (schema-first)
 
-## Domain Language
-- Identity and viewing vocabulary (Account, Household, Profile, Personal Profile, ProfileManager, share, context Household, Device registration, fresh reauthentication) lives in `CONTEXT.md`; use those terms and their _Avoid_ lists in code, schema, tests, and docs. The rules behind them are ADR 0024 and ADR 0025 in [streamarr-adr](https://github.com/streamarr/streamarr-adr)
-
 ## Architecture Rules
 - Resolvers depend on Services; Services depend on Repositories; Domain depends on nothing
 - Domain entities must NEVER import from services, repositories, or graphql packages
