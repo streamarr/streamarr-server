@@ -6,6 +6,7 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
+import com.streamarr.server.graphql.cursor.KeysetConnections;
 import com.streamarr.server.graphql.cursor.ListConnections;
 import com.streamarr.server.graphql.dto.ProfileActivityView;
 import com.streamarr.server.graphql.dto.SecurityAuditEventView;
@@ -85,7 +86,7 @@ public class TeardownResolver {
             .stream()
             .map(SecurityAuditEventView::from)
             .toList();
-    return ListConnections.page(page, SecurityAuditEventView::cursorKey, options);
+    return KeysetConnections.page(page, SecurityAuditEventView::cursorKey, options);
   }
 
   @DgsQuery
