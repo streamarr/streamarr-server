@@ -260,6 +260,10 @@ public class ProfileSharingService {
 
   private ProfileHouseholdShare acceptInTransaction(AuthenticatedIdentity identity, UUID shareId) {
     var offer = requireShare(shareId);
+    if (!profileRepository.lockByShareId(shareId)) {
+      throw new MutationRejection(new ShareRejections.ShareNotPending());
+    }
+
     decideRefusal(identity, new Intent.AcceptProfileShare(shareId), shareId)
         .ifPresent(
             rejection -> {

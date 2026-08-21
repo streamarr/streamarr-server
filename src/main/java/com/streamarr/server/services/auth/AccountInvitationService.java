@@ -157,6 +157,7 @@ public class AccountInvitationService {
       AcceptInvitationCommand command, AccountInvitation invitation, String passwordHash) {
     invitationRepository.lockInvitationIssuanceForRecipientEmail(invitation.getRecipientEmail());
     lockLocalManager(invitation);
+    lockConnectProfile(invitation);
     consumeInvitation(invitation);
     requireTargetHousehold(invitation);
     var account =
@@ -183,6 +184,17 @@ public class AccountInvitationService {
 
     userAccountRepository.lockByIds(
         Set.of(invitation.getLocalManagerAccountId()), properties.replacementLockTimeout());
+  }
+
+  private void lockConnectProfile(AccountInvitation invitation) {
+    if (invitation.getMode() != AccountInvitationMode.CONNECT) {
+      return;
+    }
+
+    if (!profileRepository.lockById(invitation.getProfileId())) {
+      throw OpaqueCodeResolver.rejected(
+          OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
+    }
   }
 
   private void consumeInvitation(AccountInvitation invitation) {
