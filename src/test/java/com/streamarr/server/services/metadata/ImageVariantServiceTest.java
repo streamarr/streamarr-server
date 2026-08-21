@@ -18,14 +18,17 @@ import com.streamarr.server.exceptions.ImageProcessingException;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Optional;
 import javax.imageio.ImageIO;
 import lombok.Builder;
 import net.coobird.thumbnailator.Thumbnails;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+@Tag("UnitTest")
 @DisplayName("Image Variant Service Tests")
 class ImageVariantServiceTest {
 
@@ -79,13 +82,14 @@ class ImageVariantServiceTest {
         variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
     assertThat(small.ambientColors())
         .isEqualTo(
-            AmbientColors.builder()
-                .topLeft("#00a0a0")
-                .topRight("#00a0a0")
-                .bottomRight("#00a0a0")
-                .bottomLeft("#00a0a0")
-                .primary("#00a0a0")
-                .build());
+            Optional.of(
+                AmbientColors.builder()
+                    .topLeft("#00a0a0")
+                    .topRight("#00a0a0")
+                    .bottomRight("#00a0a0")
+                    .bottomLeft("#00a0a0")
+                    .primary("#00a0a0")
+                    .build()));
   }
 
   @Test
@@ -98,7 +102,7 @@ class ImageVariantServiceTest {
     assertThat(variants)
         .filteredOn(v -> v.variant() != ImageSize.SMALL)
         .hasSize(3)
-        .allSatisfy(v -> assertThat(v.ambientColors()).isNull());
+        .allSatisfy(v -> assertThat(v.ambientColors()).isEqualTo(Optional.empty()));
   }
 
   @Test
@@ -178,14 +182,8 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should consider variants equal when ambient color values match")
   void shouldConsiderVariantsEqualWhenAmbientColorValuesMatch() {
-    var a =
-        defaultVariantBuilder()
-            .ambientColors(AmbientColors.builder().primary("#00a0a0").build())
-            .build();
-    var b =
-        defaultVariantBuilder()
-            .ambientColors(AmbientColors.builder().primary("#00a0a0").build())
-            .build();
+    var a = defaultVariantBuilder().ambientColors(ambientColors("#00a0a0")).build();
+    var b = defaultVariantBuilder().ambientColors(ambientColors("#00a0a0")).build();
 
     assertThat(a).isEqualTo(b).hasSameHashCodeAs(b);
   }
@@ -254,7 +252,7 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should not consider variants equal when ambient colors differ")
   void shouldNotConsiderVariantsEqualWhenAmbientColorsDiffer() {
-    var teal = AmbientColors.builder().primary("#00a0a0").build();
+    var teal = ambientColors("#00a0a0");
     var a = defaultVariantBuilder().ambientColors(teal).build();
     var b = defaultVariantBuilder().build();
 
@@ -280,10 +278,7 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should include ambient colors when converted to string")
   void shouldIncludeAmbientColorsWhenConvertedToString() {
-    var variant =
-        defaultVariantBuilder()
-            .ambientColors(AmbientColors.builder().primary("#00a0a0").build())
-            .build();
+    var variant = defaultVariantBuilder().ambientColors(ambientColors("#00a0a0")).build();
 
     assertThat(variant.toString()).contains("ambientColors=", "primary=#00a0a0");
   }
@@ -305,6 +300,16 @@ class ImageVariantServiceTest {
         .blurHash("hash");
   }
 
+  private static AmbientColors ambientColors(String primary) {
+    return AmbientColors.builder()
+        .topLeft("#010101")
+        .topRight("#020202")
+        .bottomRight("#030303")
+        .bottomLeft("#040404")
+        .primary(primary)
+        .build();
+  }
+
   @Builder(builderClassName = "GeneratedVariantBuilder", builderMethodName = "emptyVariantBuilder")
   private static ImageVariantService.GeneratedVariant buildVariant(
       ImageSize variant,
@@ -314,7 +319,7 @@ class ImageVariantServiceTest {
       String blurHash,
       AmbientColors ambientColors) {
     return new ImageVariantService.GeneratedVariant(
-        variant, data, width, height, blurHash, ambientColors);
+        variant, data, width, height, blurHash, Optional.ofNullable(ambientColors));
   }
 
   @Test

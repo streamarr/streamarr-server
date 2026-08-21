@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import javax.imageio.ImageIO;
 import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.stereotype.Service;
@@ -46,7 +47,7 @@ public class ImageVariantService {
       int width,
       int height,
       String blurHash,
-      AmbientColors ambientColors) {
+      Optional<AmbientColors> ambientColors) {
 
     @Override
     public boolean equals(Object o) {
@@ -115,7 +116,9 @@ public class ImageVariantService {
       var resized = resize(sourceImage, targetWidth);
       var blurHash = size == ImageSize.SMALL ? computeBlurHash(resized) : null;
       var ambientColors =
-          size == ImageSize.SMALL ? AmbientColorExtractor.extract(resized).orElse(null) : null;
+          size == ImageSize.SMALL
+              ? AmbientColorExtractor.extract(resized)
+              : Optional.<AmbientColors>empty();
       var data = toJpegBytes(resized);
       variants.add(
           new GeneratedVariant(
@@ -129,7 +132,7 @@ public class ImageVariantService {
             sourceImage.getWidth(),
             sourceImage.getHeight(),
             null,
-            null));
+            Optional.empty()));
 
     return variants;
   }

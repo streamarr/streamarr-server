@@ -37,9 +37,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
   }
 
   private boolean insertIfAbsent(Image image, UUID auditUser) {
-    var ambient =
-        Optional.ofNullable(image.getAmbientColors())
-            .orElseGet(() -> AmbientColors.builder().build());
+    var ambient = Optional.ofNullable(image.getAmbientColors());
 
     return dsl.insertInto(IMAGE)
             .set(IMAGE.ID, image.getId())
@@ -50,11 +48,11 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
             .set(IMAGE.WIDTH, image.getWidth())
             .set(IMAGE.HEIGHT, image.getHeight())
             .set(IMAGE.BLUR_HASH, image.getBlurHash())
-            .set(IMAGE.AMBIENT_TOP_LEFT, ambient.topLeft())
-            .set(IMAGE.AMBIENT_TOP_RIGHT, ambient.topRight())
-            .set(IMAGE.AMBIENT_BOTTOM_RIGHT, ambient.bottomRight())
-            .set(IMAGE.AMBIENT_BOTTOM_LEFT, ambient.bottomLeft())
-            .set(IMAGE.AMBIENT_PRIMARY, ambient.primary())
+            .set(IMAGE.AMBIENT_TOP_LEFT, ambient.map(AmbientColors::topLeft).orElse(null))
+            .set(IMAGE.AMBIENT_TOP_RIGHT, ambient.map(AmbientColors::topRight).orElse(null))
+            .set(IMAGE.AMBIENT_BOTTOM_RIGHT, ambient.map(AmbientColors::bottomRight).orElse(null))
+            .set(IMAGE.AMBIENT_BOTTOM_LEFT, ambient.map(AmbientColors::bottomLeft).orElse(null))
+            .set(IMAGE.AMBIENT_PRIMARY, ambient.map(AmbientColors::primary).orElse(null))
             .set(IMAGE.PATH, image.getPath())
             .set(IMAGE.CREATED_BY, auditUser)
             .set(IMAGE.LAST_MODIFIED_BY, auditUser)

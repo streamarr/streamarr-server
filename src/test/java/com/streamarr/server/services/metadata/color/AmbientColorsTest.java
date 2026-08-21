@@ -2,6 +2,7 @@ package com.streamarr.server.services.metadata.color;
 
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
+import com.streamarr.server.domain.media.AmbientColors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;

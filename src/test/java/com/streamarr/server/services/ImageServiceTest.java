@@ -24,8 +24,10 @@ import java.nio.file.Files;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("UnitTest")
 @DisplayName("Image Service Tests")
 class ImageServiceTest {
 
