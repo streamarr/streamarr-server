@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.cedarpolicy.BasicAuthorizationEngine;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Intent;
 import java.util.ArrayList;
@@ -84,13 +85,12 @@ class AuthorizationParityTest {
   @Test
   @DisplayName("Should resolve a contributor for every fact an action requires")
   void shouldResolveContributorForEveryFactAnActionRequires() {
-    var required = new ArrayList<FactRequirement>();
-    for (var action : Action.values()) {
-      required.addAll(action.facts());
-    }
+    var contributors =
+        List.<FactContributor>of(
+            new LivePrincipalAuthorityContributor(new FakeUserAccountRepository()));
+    var provided = contributors.stream().map(FactContributor::provides).toList();
 
-    assertThat(required).containsOnlyElementsOf(List.of(FactRequirement.values()));
-    assertThat(FactRequirement.values()).allMatch(required::contains);
+    assertThat(provided).containsExactlyInAnyOrder(FactRequirement.values());
   }
 
   private static JsonNode schemaActions() throws Exception {

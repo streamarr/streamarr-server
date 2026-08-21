@@ -4,7 +4,6 @@ import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.default
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
 import static org.mockito.Mockito.mock;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -44,7 +43,6 @@ import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -374,16 +372,11 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
       executor.submit(task);
     }
 
-    await()
-        .atMost(Duration.ofSeconds(10))
-        .untilAsserted(
-            () -> {
-              assertThat(unexpectedExceptions).isEmpty();
-              assertThat(libraryRepository.findById(library.getId())).isEmpty();
-              assertThat(concurrentDeleteFailures.get())
-                  .as("One thread succeeds, the other fails with concurrent delete exception")
-                  .isEqualTo(1);
-            });
+    assertThat(unexpectedExceptions).isEmpty();
+    assertThat(libraryRepository.findById(library.getId())).isEmpty();
+    assertThat(concurrentDeleteFailures.get())
+        .as("One thread succeeds, the other fails with concurrent delete exception")
+        .isEqualTo(1);
   }
 
   @Test

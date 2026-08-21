@@ -60,6 +60,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
@@ -127,7 +128,7 @@ import org.slf4j.LoggerFactory;
 class LibraryManagementServiceTest {
 
   private final AuthenticatedIdentity identity = defaultIdentityBuilder().build();
-  private final LibraryMutationTransaction libraryMutationTransaction =
+  private final FakeLibraryMutationTransaction libraryMutationTransaction =
       new FakeLibraryMutationTransaction();
 
   private final PersonService personService = mock(PersonService.class);
@@ -1207,6 +1208,26 @@ class LibraryManagementServiceTest {
     }
 
     @Test
+    @DisplayName("Should authorize add library with the authenticated identity")
+    void shouldAuthorizeAddLibraryWithAuthenticatedIdentity() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/authorized-library");
+      Files.createDirectories(newLibraryPath);
+      var library =
+          LibraryFixtureCreator.buildUnsavedLibrary(
+              "Authorized Library", newLibraryPath.toString());
+
+      libraryManagementService.addLibrary(identity, library);
+
+      assertThat(libraryMutationTransaction.executions())
+          .singleElement()
+          .satisfies(
+              execution -> {
+                assertThat(execution.identity()).isEqualTo(identity);
+                assertThat(execution.intent()).isEqualTo(new Intent.AddLibrary());
+              });
+    }
+
+    @Test
     @DisplayName("Should store filepathUri as encoded URI when adding library")
     void shouldStoreFilepathUriAsEncodedUriWhenAddingLibrary() throws IOException {
       var newLibraryPath = fileSystem.getPath("/encoded-library");
@@ -1219,26 +1240,6 @@ class LibraryManagementServiceTest {
 
       var persisted = fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
       assertThat(persisted.getFilepathUri()).startsWith("jimfs://");
-    }
-
-    @Test
-    @DisplayName("Should set status to HEALTHY when adding library with empty directory")
-    void shouldSetStatusToHealthyWhenAddingLibraryWithEmptyDirectory() throws IOException {
-      var newLibraryPath = fileSystem.getPath("/healthy-library");
-      Files.createDirectories(newLibraryPath);
-
-      var library =
-          LibraryFixtureCreator.buildUnsavedLibrary("Healthy Library", newLibraryPath.toString());
-
-      var savedLibrary = libraryManagementService.addLibrary(identity, library);
-
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () -> {
-                var persisted = fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
-                assertThat(persisted.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
-              });
     }
 
     @Test

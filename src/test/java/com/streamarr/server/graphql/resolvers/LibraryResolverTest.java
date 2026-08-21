@@ -32,6 +32,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
@@ -94,6 +95,8 @@ class LibraryResolverTest {
   @Autowired private LibraryResolver libraryResolver;
 
   @Autowired private FakeAuthorizationDecider authorizationDecider;
+
+  @Autowired private AuthorizationService authorizationService;
 
   @MockitoBean private ProfileRepository profileRepository;
 
@@ -297,8 +300,9 @@ class LibraryResolverTest {
     }
 
     @Test
-    @DisplayName("Should return library when addLibrary called with valid input")
-    void shouldReturnLibraryWhenAddLibraryCalledWithValidInput() {
+    @DisplayName("Should map the authenticated identity and input when adding a library")
+    void shouldMapAuthenticatedIdentityAndInputWhenAddingLibrary() {
+      var expectedIdentity = authorizationService.currentIdentity();
       var library =
           Library.builder()
               .name("Movies")
@@ -328,6 +332,16 @@ class LibraryResolverTest {
               "data.addLibrary.name");
 
       assertThat(name).isEqualTo("Movies");
+      assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.addedIdentity()).isEqualTo(expectedIdentity);
+      assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.addedLibrary())
+          .satisfies(
+              input -> {
+                assertThat(input.getName()).isEqualTo("Movies");
+                assertThat(input.getFilepathUri()).isEqualTo("/mpool/media/movies");
+                assertThat(input.getType()).isEqualTo(MediaType.MOVIE);
+                assertThat(input.getBackend()).isEqualTo(LibraryBackend.LOCAL);
+                assertThat(input.getExternalAgentStrategy()).isEqualTo(ExternalAgentStrategy.TMDB);
+              });
     }
 
     @Test
@@ -782,7 +796,9 @@ class LibraryResolverTest {
 
   private static final class FakeLibraryManagementService extends LibraryManagementService {
 
+    private AuthenticatedIdentity addedIdentity;
     private Library addedLibrary;
+    private Library libraryToReturn;
     private List<LibraryMetadata> alphabetIndex = List.of();
     private RefreshRequest refreshRequest;
 
@@ -806,7 +822,9 @@ class LibraryResolverTest {
 
     @Override
     public Library addLibrary(AuthenticatedIdentity identity, Library library) {
-      return addedLibrary != null ? addedLibrary : library;
+      addedIdentity = identity;
+      addedLibrary = library;
+      return libraryToReturn != null ? libraryToReturn : library;
     }
 
     @Override
@@ -830,7 +848,15 @@ class LibraryResolverTest {
     }
 
     private void returnLibraryWhenAdded(Library library) {
-      addedLibrary = library;
+      libraryToReturn = library;
+    }
+
+    private AuthenticatedIdentity addedIdentity() {
+      return addedIdentity;
+    }
+
+    private Library addedLibrary() {
+      return addedLibrary;
     }
 
     private void returnAlphabetIndex(List<LibraryMetadata> metadata) {
@@ -842,7 +868,9 @@ class LibraryResolverTest {
     }
 
     private void reset() {
+      addedIdentity = null;
       addedLibrary = null;
+      libraryToReturn = null;
       alphabetIndex = List.of();
       refreshRequest = null;
     }

@@ -32,8 +32,8 @@ class CedarPolicyBundleTest {
       """;
 
   @Test
-  @DisplayName("Should load and validate the shipped bundle keyed by policy id")
-  void shouldLoadAndValidateShippedBundleKeyedByPolicyId() {
+  @DisplayName("Should load the shipped bundle keyed by policy id")
+  void shouldLoadShippedBundleKeyedByPolicyId() {
     var bundle = new CedarPolicyBundle(ENGINE);
 
     assertThat(bundle.policies().policies)

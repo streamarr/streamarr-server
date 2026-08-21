@@ -2,7 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.support.AuthTestSupport.bearer;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -14,11 +14,14 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.PostgresLockProbe;
+import jakarta.persistence.EntityManager;
+import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -32,8 +35,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Library administration is a whole-surface gate decided by Cedar from the Account's live
@@ -107,6 +112,12 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
   @Autowired private UserAccountRepository userAccountRepository;
 
   @Autowired private BlockingLibraryRemovalListener blockingLibraryRemovalListener;
+
+  @Autowired private EntityManager entityManager;
+
+  @Autowired private JdbcTemplate jdbcTemplate;
+
+  @Autowired private TransactionTemplate transactionTemplate;
 
   private AuthTestSupport.TestIdentity identity;
 
@@ -230,6 +241,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
     var adminToken = authTestSupport.profileBearer(identity);
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var removalGate = blockingLibraryRemovalListener.holdBeforeCommit();
+    var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       try {
@@ -242,17 +254,23 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
                         .andExpect(jsonPath("$.data.removeLibrary").value(true)));
         assertThat(removalGate.reached().await(10, TimeUnit.SECONDS)).isTrue();
 
-        var revocationAttempted = new CountDownLatch(1);
+        var revocationTransactionStarted = new CountDownLatch(1);
+        var revocationBackendPid = new AtomicInteger();
         var revocation =
             executor.submit(
                 () -> {
-                  demoteToUser(identity, revocationAttempted);
+                  demoteToUser(
+                      identity, revocationTransactionStarted, revocationBackendPid, lockProbe);
                   return null;
                 });
-        assertThat(revocationAttempted.await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(revocationTransactionStarted.await(10, TimeUnit.SECONDS)).isTrue();
 
-        assertThatThrownBy(() -> revocation.get(500, TimeUnit.MILLISECONDS))
-            .isInstanceOf(TimeoutException.class);
+        await()
+            .atMost(Duration.ofSeconds(10))
+            .untilAsserted(
+                () ->
+                    assertThat(lockProbe.isUserAccountUpdateWaiting(revocationBackendPid.get()))
+                        .isTrue());
 
         blockingLibraryRemovalListener.release();
         removal.get(10, TimeUnit.SECONDS);
@@ -263,18 +281,30 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
     }
 
     assertThat(libraryRepository.existsById(library.getId())).isFalse();
+    assertThat(userAccountRepository.findById(identity.account().getId()).orElseThrow())
+        .extracting(account -> account.getAccountRole())
+        .isEqualTo(AccountRole.USER);
   }
 
   private void demoteToUser(AuthTestSupport.TestIdentity identity) {
-    demoteToUser(identity, new CountDownLatch(0));
+    var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
+    account.setAccountRole(AccountRole.USER);
+    userAccountRepository.saveAndFlush(account);
   }
 
   private void demoteToUser(
-      AuthTestSupport.TestIdentity identity, CountDownLatch revocationAttempted) {
-    var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
-    account.setAccountRole(AccountRole.USER);
-    revocationAttempted.countDown();
-    userAccountRepository.saveAndFlush(account);
+      AuthTestSupport.TestIdentity identity,
+      CountDownLatch transactionStarted,
+      AtomicInteger backendPid,
+      PostgresLockProbe lockProbe) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
+          backendPid.set(lockProbe.currentBackendPid());
+          transactionStarted.countDown();
+          account.setAccountRole(AccountRole.USER);
+          userAccountRepository.saveAndFlush(account);
+        });
   }
 
   private void promoteToAdmin(AuthTestSupport.TestIdentity identity) {

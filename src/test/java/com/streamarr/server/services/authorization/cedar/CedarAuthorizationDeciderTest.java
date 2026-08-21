@@ -1,7 +1,13 @@
 package com.streamarr.server.services.authorization.cedar;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.ThrowableProxyUtil;
+import ch.qos.logback.core.read.ListAppender;
 import com.cedarpolicy.AuthorizationEngine;
 import com.cedarpolicy.BasicAuthorizationEngine;
 import com.cedarpolicy.model.AuthorizationRequest;
@@ -20,14 +26,18 @@ import com.cedarpolicy.model.policy.PolicySet;
 import com.cedarpolicy.value.PrimBool;
 import com.cedarpolicy.value.PrimString;
 import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.fakes.FakeAccountProfileRepository;
+import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
+import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
@@ -43,6 +53,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.LoggerFactory;
+import org.springframework.security.access.AccessDeniedException;
 
 @Tag("UnitTest")
 @DisplayName("Cedar Authorization Decider Tests")
@@ -55,6 +67,9 @@ class CedarAuthorizationDeciderTest {
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private final CedarAuthorizationDecider decider =
       decider(ENGINE, new LivePrincipalAuthorityContributor(accounts));
+  private final AuthorizationService authorizationService =
+      new SecurityContextAuthorizationService(
+          new FakeProfileRepository(), new FakeAccountProfileRepository(), decider);
 
   static Stream<Arguments> libraryAdministrationIntents() {
     var libraryId = UUID.randomUUID();
@@ -67,25 +82,28 @@ class CedarAuthorizationDeciderTest {
 
   @ParameterizedTest
   @MethodSource("libraryAdministrationIntents")
-  @DisplayName("Should allow library administration when the live row is an enabled ServerAdmin")
-  void shouldAllowLibraryAdministrationWhenLiveRowIsEnabledServerAdmin(
+  @DisplayName(
+      "Should allow library administration through the facade when the live row is an enabled ServerAdmin")
+  void shouldAllowLibraryAdministrationThroughFacadeWhenLiveRowIsEnabledServerAdmin(
       Intent<AuthorizationUnit> intent) {
     var identity = identityFor(liveAccount(AccountRole.ADMIN, true), AccountRole.USER);
 
-    assertThat(decider.decide(identity, intent))
-        .isEqualTo(new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+    assertThat(authorizationService.requireAllowed(identity, intent))
+        .isEqualTo(AuthorizationUnit.INSTANCE);
   }
 
   @ParameterizedTest
   @MethodSource("libraryAdministrationIntents")
-  @DisplayName("Should deny library administration when the live row is not a ServerAdmin")
-  void shouldDenyLibraryAdministrationWhenLiveRowIsNotServerAdmin(
+  @DisplayName(
+      "Should deny library administration through the facade when the live row is not a ServerAdmin")
+  void shouldDenyLibraryAdministrationThroughFacadeWhenLiveRowIsNotServerAdmin(
       Intent<AuthorizationUnit> intent) {
     // The token still says ADMIN: a revoked claim must never be enough.
     var identity = identityFor(liveAccount(AccountRole.USER, true), AccountRole.ADMIN);
 
-    assertThat(decider.decide(identity, intent))
-        .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
+    assertThatThrownBy(() -> authorizationService.requireAllowed(identity, intent))
+        .isInstanceOf(AccessDeniedException.class)
+        .hasMessage("Not allowed.");
   }
 
   @Test
@@ -200,6 +218,41 @@ class CedarAuthorizationDeciderTest {
                 .decide(identity, new Intent.AddLibrary()))
         .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
     assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
+  }
+
+  @Test
+  @DisplayName("Should log an error when authorization fails closed")
+  void shouldLogErrorWhenAuthorizationFailsClosed() {
+    var throwing =
+        new RewritingEngine(
+            ENGINE,
+            _ -> {
+              throw new IllegalStateException("native bridge lost");
+            });
+    var identity = identityFor(liveAccount(AccountRole.ADMIN, true), AccountRole.ADMIN);
+    var logger = (Logger) LoggerFactory.getLogger(CedarAuthorizationDecider.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+
+    try {
+      decider(throwing, new LivePrincipalAuthorityContributor(accounts))
+          .decide(identity, new Intent.AddLibrary());
+    } finally {
+      logger.detachAppender(appender);
+      appender.stop();
+    }
+
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.ERROR)
+        .singleElement()
+        .satisfies(
+            event -> {
+              assertThat(event.getFormattedMessage())
+                  .isEqualTo("Authorization failed closed for ADD_LIBRARY (ENGINE_FAILURE)");
+              assertThat(ThrowableProxyUtil.asString(event.getThrowableProxy()))
+                  .contains("native bridge lost");
+            });
   }
 
   private CedarAuthorizationDecider decider(
