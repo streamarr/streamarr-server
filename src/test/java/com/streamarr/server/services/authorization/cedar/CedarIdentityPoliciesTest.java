@@ -462,6 +462,10 @@ class CedarIdentityPoliciesTest {
       // A HouseholdAdmin is not enough — role changes are ServerAdmin work.
       assertThat(decide(atHome(), new Intent.GrantHouseholdAdmin(target.getId())))
           .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.RevokeHouseholdAdmin(target.getId())))
+          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.DisableAccount(target.getId()))).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.EnableAccount(target.getId()))).isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);

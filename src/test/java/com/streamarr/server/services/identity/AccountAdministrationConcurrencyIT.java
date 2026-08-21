@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -47,6 +48,7 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
 
   @AfterEach
   void deleteFixtures() {
+    dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     identities.reversed().forEach(authTestSupport::deleteIdentity);
   }
 
@@ -60,10 +62,15 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
     var releaseTarget = new CountDownLatch(1);
     var revocationStarted = new CountDownLatch(1);
     var revocationBackendPid = new AtomicInteger();
+    var targetLockerBackendPid = new AtomicInteger();
     var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var targetLock = executor.submit(() -> lockTarget(target, targetLocked, releaseTarget));
+      var targetLock =
+          executor.submit(
+              () ->
+                  lockTarget(
+                      target, targetLocked, releaseTarget, targetLockerBackendPid, lockProbe));
       assertThat(targetLocked.await(10, TimeUnit.SECONDS)).isTrue();
 
       var grant =
@@ -73,7 +80,10 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
                       authenticatedIdentity(actor), target.account().getId(), "new operator"));
       await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(hasWaitingUserAccountUpdate()).isTrue());
+          .untilAsserted(
+              () ->
+                  assertThat(hasWaitingUserAccountUpdates(targetLockerBackendPid.get(), 1))
+                      .isTrue());
 
       var revocation =
           executor.submit(
@@ -106,12 +116,72 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
         .isEqualTo(false);
   }
 
+  @Test
+  @DisplayName("Should audit exactly one winner when identical transitions race")
+  void shouldAuditExactlyOneWinnerWhenIdenticalTransitionsRace() throws Exception {
+    var actor = identity(authTestSupport.createAdminIdentity());
+    var target = identity(authTestSupport.createIdentity());
+    var targetLocked = new CountDownLatch(1);
+    var releaseTarget = new CountDownLatch(1);
+    var targetLockerBackendPid = new AtomicInteger();
+    var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var targetLock =
+          executor.submit(
+              () ->
+                  lockTarget(
+                      target, targetLocked, releaseTarget, targetLockerBackendPid, lockProbe));
+      assertThat(targetLocked.await(10, TimeUnit.SECONDS)).isTrue();
+
+      var first =
+          executor.submit(
+              () ->
+                  accountAdministrationService.grantServerAdmin(
+                      authenticatedIdentity(actor), target.account().getId(), "first"));
+      var second =
+          executor.submit(
+              () ->
+                  accountAdministrationService.grantServerAdmin(
+                      authenticatedIdentity(actor), target.account().getId(), "second"));
+
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(
+              () ->
+                  assertThat(hasWaitingUserAccountUpdates(targetLockerBackendPid.get(), 2))
+                      .isTrue());
+
+      releaseTarget.countDown();
+      assertThat(first.get(10, TimeUnit.SECONDS)).isInstanceOf(Outcome.Accepted.class);
+      assertThat(second.get(10, TimeUnit.SECONDS)).isInstanceOf(Outcome.Accepted.class);
+      targetLock.get(10, TimeUnit.SECONDS);
+    } finally {
+      releaseTarget.countDown();
+    }
+
+    assertThat(userAccountRepository.findById(target.account().getId()).orElseThrow())
+        .extracting(UserAccount::isServerAdmin)
+        .isEqualTo(true);
+    assertThat(dsl.selectFrom(SECURITY_AUDIT_EVENT).fetch())
+        .singleElement()
+        .satisfies(
+            audit -> {
+              assertThat(audit.getOperation()).isEqualTo("grantServerAdmin");
+              assertThat(audit.getActorAccountId()).isEqualTo(actor.account().getId());
+              assertThat(audit.getResources().data()).contains(target.account().getId().toString());
+            });
+  }
+
   private Void lockTarget(
       AuthTestSupport.TestIdentity target,
       CountDownLatch targetLocked,
-      CountDownLatch releaseTarget) {
+      CountDownLatch releaseTarget,
+      AtomicInteger targetLockerBackendPid,
+      PostgresLockProbe lockProbe) {
     transactionTemplate.executeWithoutResult(
         _ -> {
+          targetLockerBackendPid.set(lockProbe.currentBackendPid());
           dsl.select(USER_ACCOUNT.ID)
               .from(USER_ACCOUNT)
               .where(USER_ACCOUNT.ID.eq(target.account().getId()))
@@ -138,19 +208,27 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
         });
   }
 
-  private boolean hasWaitingUserAccountUpdate() {
+  private boolean hasWaitingUserAccountUpdates(int blockerBackendPid, int expectedCount) {
     var waiting =
         jdbcTemplate.queryForObject(
             """
-            SELECT EXISTS (
-              SELECT 1
-              FROM pg_stat_activity
-              WHERE wait_event_type = 'Lock'
-                AND query ILIKE '%update%user_account%'
+            WITH RECURSIVE blocked(pid) AS (
+              SELECT activity.pid
+              FROM pg_stat_activity activity
+              WHERE ? = ANY(pg_blocking_pids(activity.pid))
+              UNION
+              SELECT activity.pid
+              FROM pg_stat_activity activity
+              JOIN blocked ON blocked.pid = ANY(pg_blocking_pids(activity.pid))
             )
+            SELECT count(*)
+            FROM pg_stat_activity activity
+            JOIN blocked ON blocked.pid = activity.pid
+            WHERE activity.wait_event_type = 'Lock'
+              AND activity.query ILIKE '%update%user_account%'
             """,
-            Boolean.class);
-    return Boolean.TRUE.equals(waiting);
+            Integer.class, blockerBackendPid);
+    return waiting != null && waiting >= expectedCount;
   }
 
   private AuthTestSupport.TestIdentity identity(AuthTestSupport.TestIdentity identity) {

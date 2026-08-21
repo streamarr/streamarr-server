@@ -23,6 +23,8 @@ import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -171,44 +173,123 @@ class AccountAdministrationServiceTest {
   @Test
   @DisplayName("Should revoke every live session when the Account is disabled")
   void shouldRevokeEveryLiveSessionWhenAccountIsDisabled() {
-    var session =
+    var browser =
         sessions.save(AuthSession.builder().accountId(target.getId()).deviceName("web").build());
+    var television =
+        sessions.save(AuthSession.builder().accountId(target.getId()).deviceName("tv").build());
+    var alreadyRevokedAt = Instant.parse("2026-08-20T12:00:00Z");
+    var alreadyRevoked =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(target.getId())
+                .deviceName("old phone")
+                .revokedAt(alreadyRevokedAt)
+                .revokedReason(SessionRevocationReason.LOGOUT)
+                .build());
 
     var outcome = service.disableAccount(identity(), target.getId());
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(accounts.findById(target.getId()).orElseThrow().isEnabled()).isFalse();
-    var revoked = sessions.findById(session.getId()).orElseThrow();
-    assertThat(revoked.getRevokedAt()).isNotNull();
-    assertThat(revoked.getRevokedReason()).isEqualTo(SessionRevocationReason.ADMIN_REVOCATION);
+    assertThat(List.of(browser, television))
+        .allSatisfy(
+            session -> {
+              var revoked = sessions.findById(session.getId()).orElseThrow();
+              assertThat(revoked.getRevokedAt()).isNotNull();
+              assertThat(revoked.getRevokedReason())
+                  .isEqualTo(SessionRevocationReason.ADMIN_REVOCATION);
+            });
+    assertThat(sessions.findById(alreadyRevoked.getId()).orElseThrow())
+        .satisfies(
+            session -> {
+              assertThat(session.getRevokedAt()).isEqualTo(alreadyRevokedAt);
+              assertThat(session.getRevokedReason()).isEqualTo(SessionRevocationReason.LOGOUT);
+            });
     assertThat(audit.entries())
         .extracting(entry -> entry.operation())
         .containsExactly("disableAccount");
   }
 
   @Test
-  @DisplayName("Should promote, demote, enable, and rename through their transitions")
-  void shouldPromoteDemoteEnableAndRenameThroughTheirTransitions() {
-    service.disableAccount(identity(), target.getId());
+  @DisplayName("Should enable a disabled Account and audit the transition")
+  void shouldEnableDisabledAccountAndAuditTransition() {
+    target.setEnabled(false);
+    accounts.save(target);
+
     assertThat(service.enableAccount(identity(), target.getId()))
         .isInstanceOf(Outcome.Accepted.class);
     assertThat(accounts.findById(target.getId()).orElseThrow().isEnabled()).isTrue();
+    assertThat(audit.entries())
+        .extracting(entry -> entry.operation())
+        .containsExactly("enableAccount");
+  }
 
+  @Test
+  @DisplayName("Should grant HouseholdAdmin and audit the transition")
+  void shouldGrantHouseholdAdminAndAuditTransition() {
     target.setHouseholdRole(HouseholdRole.MEMBER);
     assertThat(service.grantHouseholdAdmin(identity(), target.getId()))
         .isInstanceOf(Outcome.Accepted.class);
     assertThat(accounts.findById(target.getId()).orElseThrow().getHouseholdRole())
         .isEqualTo(HouseholdRole.ADMIN);
+    assertThat(audit.entries())
+        .extracting(entry -> entry.operation())
+        .containsExactly("grantHouseholdAdmin");
+  }
 
+  @Test
+  @DisplayName("Should revoke HouseholdAdmin and audit the transition")
+  void shouldRevokeHouseholdAdminAndAuditTransition() {
+    target.setHouseholdRole(HouseholdRole.ADMIN);
     assertThat(service.revokeHouseholdAdmin(identity(), target.getId()))
         .isInstanceOf(Outcome.Accepted.class);
     assertThat(accounts.findById(target.getId()).orElseThrow().getHouseholdRole())
         .isEqualTo(HouseholdRole.MEMBER);
+    assertThat(audit.entries())
+        .extracting(entry -> entry.operation())
+        .containsExactly("revokeHouseholdAdmin");
+  }
 
+  @Test
+  @DisplayName("Should rename an Account without creating an authority audit")
+  void shouldRenameAccountWithoutCreatingAuthorityAudit() {
     assertThat(service.renameAccount(identity(), target.getId(), "  New Name  "))
         .isInstanceOf(Outcome.Accepted.class);
     assertThat(accounts.findById(target.getId()).orElseThrow().getDisplayName())
         .isEqualTo("New Name");
+    assertThat(audit.entries()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should revoke server admin and audit the winning transition")
+  void shouldRevokeServerAdminAndAuditWinningTransition() {
+    target.setServerAdmin(true);
+    accounts.save(target);
+
+    var outcome = service.revokeServerAdmin(identity(), target.getId(), "rotation");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(accounts.findById(target.getId()).orElseThrow().isServerAdmin()).isFalse();
+    assertThat(audit.entries())
+        .singleElement()
+        .satisfies(
+            entry -> {
+              assertThat(entry.operation()).isEqualTo("revokeServerAdmin");
+              assertThat(entry.reason()).isEqualTo("rotation");
+            });
+  }
+
+  @Test
+  @DisplayName("Should require a reason before revoking server admin")
+  void shouldRequireReasonBeforeRevokingServerAdmin() {
+    target.setServerAdmin(true);
+    accounts.save(target);
+
+    var outcome = service.revokeServerAdmin(identity(), target.getId(), "  ");
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(AdministrationRejections.ReasonRequired.class);
+    assertThat(accounts.findById(target.getId()).orElseThrow().isServerAdmin()).isTrue();
+    assertThat(audit.entries()).isEmpty();
   }
 
   @Test

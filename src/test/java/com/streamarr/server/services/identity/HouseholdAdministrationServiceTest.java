@@ -56,7 +56,8 @@ class HouseholdAdministrationServiceTest {
   void shouldRefuseCreatingHouseholdWithoutName() {
     var outcome = service.createHousehold(authorization.currentIdentity(), "  ");
 
-    assertThat(outcome).isInstanceOf(Outcome.Rejected.class);
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(AdministrationRejections.HouseholdNameRequired.class);
     assertThat(households.findAll()).isEmpty();
   }
 
@@ -84,15 +85,27 @@ class HouseholdAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should read a hidden Household as not found and a visible one as forbidden")
-  void shouldReadHiddenHouseholdAsNotFoundAndVisibleOneAsForbidden() {
+  @DisplayName("Should read a hidden Household as not found")
+  void shouldReadHiddenHouseholdAsNotFound() {
     var household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var identity = authorization.currentIdentity();
     var householdId = household.getId();
+    var originalName = household.getName();
 
     authorization.denyAll();
-    var hidden = service.renameHousehold(identity, householdId, "New Name");
-    assertThat(hidden).isInstanceOf(Outcome.Rejected.class);
+    var outcome = service.renameHousehold(identity, householdId, "New Name");
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(AdministrationRejections.HouseholdNotFound.class);
+    assertThat(households.findById(householdId).orElseThrow().getName()).isEqualTo(originalName);
+  }
+
+  @Test
+  @DisplayName("Should forbid renaming a visible Household")
+  void shouldForbidRenamingVisibleHousehold() {
+    var household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var identity = authorization.currentIdentity();
+    var householdId = household.getId();
+    var originalName = household.getName();
 
     authorization.decideWith(
         intent ->
@@ -101,6 +114,7 @@ class HouseholdAdministrationServiceTest {
                 : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
     assertThatThrownBy(() -> service.renameHousehold(identity, householdId, "New Name"))
         .isInstanceOf(AccessDeniedException.class);
+    assertThat(households.findById(householdId).orElseThrow().getName()).isEqualTo(originalName);
   }
 
   @Test
@@ -109,6 +123,7 @@ class HouseholdAdministrationServiceTest {
     var household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var identity = authorization.currentIdentity();
     var householdId = household.getId();
+    var originalName = household.getName();
     authorization.decideWith(
         intent ->
             intent instanceof Intent.RenameHousehold
@@ -117,16 +132,21 @@ class HouseholdAdministrationServiceTest {
 
     assertThatThrownBy(() -> service.renameHousehold(identity, householdId, "New Name"))
         .isInstanceOf(AuthorizationUnavailableException.class);
+    assertThat(households.findById(householdId).orElseThrow().getName()).isEqualTo(originalName);
   }
 
   @Test
   @DisplayName("Should refuse renaming without a name once authorized")
   void shouldRefuseRenamingWithoutNameOnceAuthorized() {
     var household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var originalName = household.getName();
 
     var outcome = service.renameHousehold(authorization.currentIdentity(), household.getId(), " ");
 
-    assertThat(outcome).isInstanceOf(Outcome.Rejected.class);
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(AdministrationRejections.HouseholdNameRequired.class);
+    assertThat(households.findById(household.getId()).orElseThrow().getName())
+        .isEqualTo(originalName);
   }
 
   @Test
@@ -135,6 +155,14 @@ class HouseholdAdministrationServiceTest {
     var outcome =
         service.renameHousehold(authorization.currentIdentity(), UUID.randomUUID(), "New Name");
 
-    assertThat(outcome).isInstanceOf(Outcome.Rejected.class);
+    assertThat(rejectionOf(outcome)).isInstanceOf(AdministrationRejections.HouseholdNotFound.class);
+  }
+
+  private static Object rejectionOf(Outcome<?, ?> outcome) {
+    return switch (outcome) {
+      case Outcome.Rejected<?, ?>(var rejections) -> rejections.getFirst();
+      case Outcome.Accepted<?, ?> accepted ->
+          throw new AssertionError("expected a rejection but got " + accepted);
+    };
   }
 }
