@@ -50,7 +50,7 @@ _Avoid_: Account, household profile, user
 **Personal Profile**:
 The one Profile that represents an Account (`personalProfileOf`).
 Created with the Account, always available in the Account's own Household through a structural share, and transferred with the Account.
-It is deleted with the Account unless ServerAdmin chooses the keep-Profile path, which removes the link only after the surviving Profile has a valid manager and home anchor.
+It is deleted with the Account unless ServerAdmin chooses the keep-Profile path, which atomically establishes a valid manager and home anchor, removes the link, and converts the structural share into an ordinary active Profile Share.
 _Avoid_: Owner profile, primary profile, account profile
 
 **Profile Kind**:
@@ -107,6 +107,7 @@ _Avoid_: Profile copy, Household membership, grant
 **Structural share**:
 The share of an Account's Personal Profile into the Account's own Household.
 Created with the Account, cannot be ended while the Account remains a member, and moves with an Account transfer.
+Keeping the Profile when its Account is deleted converts it into an ordinary active Profile Share, so the Profile remains available in that Household.
 _Avoid_: Default share, home share
 
 **Unshare**:
