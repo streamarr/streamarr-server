@@ -1244,17 +1244,13 @@ class CedarIdentityPoliciesTest {
     void shouldReserveTransfersForLiveServerAdmin() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
 
-      assertThat(decider.decide(atHome(), new Intent.TransferAccount(account.getId())))
-          .isEqualTo(DENIED);
-      assertThat(decider.decide(atHome(), new Intent.TransferProfile(orphan.getId())))
-          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.TransferAccount(account.getId()))).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.TransferProfile(orphan.getId()))).isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decider.decide(atHome(), new Intent.TransferAccount(account.getId())))
-          .isEqualTo(ALLOWED);
-      assertThat(decider.decide(atHome(), new Intent.TransferProfile(orphan.getId())))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.TransferAccount(account.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.TransferProfile(orphan.getId()))).isEqualTo(ALLOWED);
     }
 
     @Test
@@ -1264,16 +1260,16 @@ class CedarIdentityPoliciesTest {
       var deleteAccount = new Intent.DeleteAccount(UUID.randomUUID());
       var forceDelete = new Intent.ForceDeleteProfile(orphan.getId());
 
-      assertThat(decider.decide(withReauthenticatedAt(atHome(), Instant.now()), deleteAccount))
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deleteAccount))
           .isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decider.decide(atHome(), deleteAccount)).isEqualTo(REAUTHENTICATION_REQUIRED);
-      assertThat(decider.decide(atHome(), forceDelete)).isEqualTo(REAUTHENTICATION_REQUIRED);
-      assertThat(decider.decide(withReauthenticatedAt(atHome(), Instant.now()), deleteAccount))
+      assertThat(decide(atHome(), deleteAccount)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(atHome(), forceDelete)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deleteAccount))
           .isEqualTo(ALLOWED);
-      assertThat(decider.decide(withReauthenticatedAt(atHome(), Instant.now()), forceDelete))
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), forceDelete))
           .isEqualTo(ALLOWED);
     }
 
@@ -1282,8 +1278,8 @@ class CedarIdentityPoliciesTest {
     void shouldLetOnlyFreshEligiblePersonDeleteTheirOwnAccount() {
       var selfDeletion = new Intent.DeleteMyAccount();
 
-      assertThat(decider.decide(atHome(), selfDeletion)).isEqualTo(REAUTHENTICATION_REQUIRED);
-      assertThat(decider.decide(withReauthenticatedAt(atHome(), Instant.now()), selfDeletion))
+      assertThat(decide(atHome(), selfDeletion)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), selfDeletion))
           .isEqualTo(ALLOWED);
 
       // A restricted Personal Profile ends eligibility; the ceremony cannot help.
@@ -1291,7 +1287,7 @@ class CedarIdentityPoliciesTest {
       profiles.save(personal);
       account.setHouseholdRole(HouseholdRole.MEMBER);
       accounts.save(account);
-      assertThat(decider.decide(withReauthenticatedAt(member(), Instant.now()), selfDeletion))
+      assertThat(decide(withReauthenticatedAt(member(), Instant.now()), selfDeletion))
           .isEqualTo(DENIED);
     }
   }
