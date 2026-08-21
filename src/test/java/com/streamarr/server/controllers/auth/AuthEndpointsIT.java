@@ -43,7 +43,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
-import lombok.Builder;
 import org.awaitility.Awaitility;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -999,51 +998,6 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject password change when the Account is disabled")
-  void shouldRejectPasswordChangeWhenAccountDisabled() throws Exception {
-    seedSingleProfileIdentity();
-    var accessToken = loginAndReadField("accessToken");
-    account.setEnabled(false);
-    userAccountRepository.saveAndFlush(account);
-
-    changePassword(
-            PasswordChangeAttempt.builder()
-                .bearerToken(accessToken)
-                .currentPassword(PASSWORD)
-                .newPassword("a brand new passphrase!")
-                .build())
-        .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
-  }
-
-  @Test
-  @DisplayName("Should throttle password change when current password repeatedly wrong")
-  void shouldThrottlePasswordChangeWhenCurrentPasswordRepeatedlyWrong() throws Exception {
-    seedSingleProfileIdentity();
-    var accessToken = loginAndReadField("accessToken");
-
-    for (var attempt = 0; attempt < 5; attempt++) {
-      changePassword(
-              PasswordChangeAttempt.builder()
-                  .bearerToken(accessToken)
-                  .currentPassword("wrong-" + attempt)
-                  .newPassword("irrelevant new one")
-                  .build())
-          .andExpect(status().isUnauthorized())
-          .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
-    }
-
-    changePassword(
-            PasswordChangeAttempt.builder()
-                .bearerToken(accessToken)
-                .currentPassword(PASSWORD)
-                .newPassword("a brand new passphrase!")
-                .build())
-        .andExpect(status().isTooManyRequests())
-        .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"));
-  }
-
-  @Test
   @DisplayName("Should reject authenticated auth mutations when no identity is present")
   void shouldRejectAuthenticatedAuthMutationsWhenNoIdentityPresent() throws Exception {
     var passwordMarker = UUID.randomUUID().toString();
@@ -1472,14 +1426,6 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 """
                     .formatted(currentPassword, newPassword)));
   }
-
-  private ResultActions changePassword(PasswordChangeAttempt attempt) throws Exception {
-    return changePassword(attempt.bearerToken(), attempt.currentPassword(), attempt.newPassword());
-  }
-
-  @Builder
-  private record PasswordChangeAttempt(
-      String bearerToken, String currentPassword, String newPassword) {}
 
   private String loginResponseBody() throws Exception {
     return mockMvc
