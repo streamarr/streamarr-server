@@ -9,7 +9,7 @@ public class DirectAccountPasswordMatchFixture {
 
   private final Argon2PasswordEncoder passwordEncoder;
 
-  @SuppressWarnings("java:S1144")
+  @SuppressWarnings("java:S1144") // ArchUnit inspects this uninvoked bytecode fixture.
   private boolean verify(String password, String passwordHash) {
     return passwordEncoder.matches(password, passwordHash);
   }

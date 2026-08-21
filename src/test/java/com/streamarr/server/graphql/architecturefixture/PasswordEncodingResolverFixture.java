@@ -9,7 +9,7 @@ public class PasswordEncodingResolverFixture {
 
   private final PasswordEncoder passwordEncoder;
 
-  @SuppressWarnings("java:S1144")
+  @SuppressWarnings("java:S1144") // ArchUnit inspects this uninvoked bytecode fixture.
   private String hash(String password) {
     return passwordEncoder.encode(password);
   }
