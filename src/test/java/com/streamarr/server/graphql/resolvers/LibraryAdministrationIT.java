@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -282,7 +283,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
 
     assertThat(libraryRepository.existsById(library.getId())).isFalse();
     assertThat(userAccountRepository.findById(identity.account().getId()).orElseThrow())
-        .extracting(account -> account.getAccountRole())
+        .extracting(UserAccount::getAccountRole)
         .isEqualTo(AccountRole.USER);
   }
 

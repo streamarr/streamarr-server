@@ -7,6 +7,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -108,7 +109,7 @@ class TransactionalLibraryMutationIT extends AbstractIntegrationTest {
 
     assertThat(libraryRepository.findById(libraryId.get())).isPresent();
     assertThat(userAccountRepository.findById(testIdentity.account().getId()).orElseThrow())
-        .extracting(account -> account.getAccountRole())
+        .extracting(UserAccount::getAccountRole)
         .isEqualTo(AccountRole.USER);
   }
 
@@ -117,8 +118,7 @@ class TransactionalLibraryMutationIT extends AbstractIntegrationTest {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     libraryId.set(library.getId());
     mutationReached.countDown();
-    awaitLatch(
-        releaseMutation, "ServerAdmin revocation did not observe the open add transaction");
+    awaitLatch(releaseMutation, "ServerAdmin revocation did not observe the open add transaction");
     return library;
   }
 
