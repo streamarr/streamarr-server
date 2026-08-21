@@ -28,6 +28,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -401,10 +402,8 @@ class CedarIdentityPoliciesTest {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
       var fresh = withReauthenticatedAt(atHome(), Instant.now());
 
-      assertThat(decide(fresh, new Intent.GrantServerAdmin(target.getId())))
-          .isEqualTo(ALLOWED);
-      assertThat(decide(fresh, new Intent.RevokeServerAdmin(target.getId())))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(fresh, new Intent.GrantServerAdmin(target.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(fresh, new Intent.RevokeServerAdmin(target.getId()))).isEqualTo(ALLOWED);
     }
 
     @Test
@@ -440,10 +439,8 @@ class CedarIdentityPoliciesTest {
       var fresh = withReauthenticatedAt(atHome(), Instant.now());
 
       // Not a ServerAdmin: stale and fresh callers get the same ordinary policy denial.
-      assertThat(decide(atHome(), new Intent.GrantServerAdmin(target.getId())))
-          .isEqualTo(DENIED);
-      assertThat(decide(fresh, new Intent.GrantServerAdmin(target.getId())))
-          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.GrantServerAdmin(target.getId()))).isEqualTo(DENIED);
+      assertThat(decide(fresh, new Intent.GrantServerAdmin(target.getId()))).isEqualTo(DENIED);
     }
 
     @Test
@@ -454,8 +451,7 @@ class CedarIdentityPoliciesTest {
       accounts.save(account);
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
 
-      assertThat(decide(atHome(), new Intent.GrantServerAdmin(target.getId())))
-          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.GrantServerAdmin(target.getId()))).isEqualTo(DENIED);
     }
 
     @Test
@@ -473,10 +469,8 @@ class CedarIdentityPoliciesTest {
           .isEqualTo(ALLOWED);
       assertThat(decide(atHome(), new Intent.RevokeHouseholdAdmin(target.getId())))
           .isEqualTo(ALLOWED);
-      assertThat(decide(atHome(), new Intent.DisableAccount(target.getId())))
-          .isEqualTo(ALLOWED);
-      assertThat(decide(atHome(), new Intent.EnableAccount(target.getId())))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.DisableAccount(target.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.EnableAccount(target.getId()))).isEqualTo(ALLOWED);
       assertThat(decide(atHome(), new Intent.CreateHousehold())).isEqualTo(ALLOWED);
     }
 
@@ -522,15 +516,12 @@ class CedarIdentityPoliciesTest {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
 
       // Self-targeted: principal and resource are one entity in the slice.
-      assertThat(decide(member(), new Intent.RenameAccount(account.getId())))
-          .isEqualTo(ALLOWED);
-      assertThat(decide(member(), new Intent.RenameAccount(target.getId())))
-          .isEqualTo(DENIED);
+      assertThat(decide(member(), new Intent.RenameAccount(account.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(member(), new Intent.RenameAccount(target.getId()))).isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decide(member(), new Intent.RenameAccount(target.getId())))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(member(), new Intent.RenameAccount(target.getId()))).isEqualTo(ALLOWED);
     }
 
     @Test
@@ -539,8 +530,7 @@ class CedarIdentityPoliciesTest {
       account.setEnabled(false);
       accounts.save(account);
 
-      assertThat(decide(member(), new Intent.RenameAccount(account.getId())))
-          .isEqualTo(DENIED);
+      assertThat(decide(member(), new Intent.RenameAccount(account.getId()))).isEqualTo(DENIED);
     }
   }
 
@@ -554,7 +544,7 @@ class CedarIdentityPoliciesTest {
         .serverAdmin(base.serverAdmin())
         .contextHouseholdId(base.contextHouseholdId())
         .profileId(base.profileId())
-        .reauthenticatedAt(at)
+        .reauthenticatedAt(Optional.of(at))
         .build();
   }
 

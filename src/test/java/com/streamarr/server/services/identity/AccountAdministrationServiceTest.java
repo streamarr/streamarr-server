@@ -146,6 +146,21 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should fail closed when Account visibility cannot be decided")
+  void shouldFailClosedWhenAccountVisibilityCannotBeDecided() {
+    var identity = identity();
+    var accountId = target.getId();
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.GrantServerAdmin
+                ? denied()
+                : new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+
+    assertThatThrownBy(() -> service.grantServerAdmin(identity, accountId, "onboarding"))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
   @DisplayName("Should read an unknown Account as not found even for an allowed caller")
   void shouldReadUnknownAccountAsNotFoundEvenForAllowedCaller() {
     var outcome = service.grantServerAdmin(identity(), UUID.randomUUID(), "onboarding");

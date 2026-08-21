@@ -49,6 +49,7 @@ type GrantServerAdminPayload {
 
 union GrantServerAdminError =
     AccountNotFoundError
+  | InvalidIdError
   | ReauthenticationRequiredError
   | ReasonRequiredError
   | RestrictedAccountAuthorityError
@@ -65,6 +66,7 @@ type RevokeServerAdminPayload {
 
 union RevokeServerAdminError =
     AccountNotFoundError
+  | InvalidIdError
   | ReauthenticationRequiredError
   | ReasonRequiredError
   | LastServerAdminError
@@ -78,7 +80,7 @@ type GrantHouseholdAdminPayload {
     userErrors: [GrantHouseholdAdminError!]!
 }
 
-union GrantHouseholdAdminError = AccountNotFoundError | RestrictedAccountAuthorityError
+union GrantHouseholdAdminError = AccountNotFoundError | InvalidIdError | RestrictedAccountAuthorityError
 
 input RevokeHouseholdAdminInput {
     accountId: ID!
@@ -89,7 +91,7 @@ type RevokeHouseholdAdminPayload {
     userErrors: [RevokeHouseholdAdminError!]!
 }
 
-union RevokeHouseholdAdminError = AccountNotFoundError | LastHouseholdAdminError
+union RevokeHouseholdAdminError = AccountNotFoundError | InvalidIdError | LastHouseholdAdminError
 
 input DisableAccountInput {
     accountId: ID!
@@ -100,7 +102,7 @@ type DisableAccountPayload {
     userErrors: [DisableAccountError!]!
 }
 
-union DisableAccountError = AccountNotFoundError | LastServerAdminError
+union DisableAccountError = AccountNotFoundError | InvalidIdError | LastServerAdminError
 
 input EnableAccountInput {
     accountId: ID!
@@ -111,7 +113,7 @@ type EnableAccountPayload {
     userErrors: [EnableAccountError!]!
 }
 
-union EnableAccountError = AccountNotFoundError
+union EnableAccountError = AccountNotFoundError | InvalidIdError
 
 input RenameAccountInput {
     accountId: ID!
@@ -123,7 +125,7 @@ type RenameAccountPayload {
     userErrors: [RenameAccountError!]!
 }
 
-union RenameAccountError = AccountNotFoundError | DisplayNameRequiredError
+union RenameAccountError = AccountNotFoundError | DisplayNameRequiredError | InvalidIdError
 
 input CreateHouseholdInput {
     name: String!
@@ -146,4 +148,4 @@ type RenameHouseholdPayload {
     userErrors: [RenameHouseholdError!]!
 }
 
-union RenameHouseholdError = HouseholdNotFoundError | HouseholdNameRequiredError
+union RenameHouseholdError = HouseholdNotFoundError | HouseholdNameRequiredError | InvalidIdError

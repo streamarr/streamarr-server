@@ -7,4 +7,4 @@ import com.streamarr.server.graphql.mutation.MutationError;
  * by.
  */
 public sealed interface RevokeHouseholdAdminError extends MutationError
-    permits AccountNotFoundError, LastHouseholdAdminError {}
+    permits AccountNotFoundError, InvalidIdError, LastHouseholdAdminError {}

@@ -15,6 +15,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -131,6 +132,14 @@ class AccessTokenIssuerTest {
     assertThat(context.scope()).isEqualTo(TokenScope.PROFILE);
     assertThat(TokenContext.of(account, session(account)).contextHouseholdId())
         .isEqualTo(account.getHouseholdId());
+  }
+
+  @Test
+  @DisplayName("Should represent a missing reauthentication instant without returning null")
+  void shouldRepresentMissingReauthenticationInstantWithoutReturningNull() {
+    var context = TokenContext.of(account(), session(account()));
+
+    assertThat(context.reauthenticatedAt()).isEqualTo(Optional.empty());
   }
 
   @Test

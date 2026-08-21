@@ -7,4 +7,4 @@ import com.streamarr.server.graphql.mutation.MutationError;
  * by.
  */
 public sealed interface GrantHouseholdAdminError extends MutationError
-    permits AccountNotFoundError, RestrictedAccountAuthorityError {}
+    permits AccountNotFoundError, InvalidIdError, RestrictedAccountAuthorityError {}

@@ -160,6 +160,15 @@ public class AccountAdministrationService {
 
   private <R> Outcome<UserAccount, R> transition(
       AuthenticatedIdentity identity, Intent<?> intent, UUID accountId, TransitionPlan<R> plan) {
+    var transactional =
+        mutationTransactions.write(
+            () -> transitionInsideTransaction(identity, intent, accountId, plan),
+            plan::rejectionForConstraint);
+    return transactional.fold(outcome -> outcome, Outcome::rejected);
+  }
+
+  private <R> Outcome<UserAccount, R> transitionInsideTransaction(
+      AuthenticatedIdentity identity, Intent<?> intent, UUID accountId, TransitionPlan<R> plan) {
     var refusal = refusalOf(identity, intent, accountId, plan);
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
@@ -168,17 +177,14 @@ public class AccountAdministrationService {
     if (target.isEmpty()) {
       return Outcome.rejected(plan.notFound().get());
     }
-    return mutationTransactions.write(
-        () -> {
-          if (plan.transition().getAsBoolean()) {
-            plan.runAfterTransition();
-            if (plan.isAudited()) {
-              securityAuditEventRepository.append(auditEntry(identity, plan, target.get()));
-            }
-          }
-          return userAccountRepository.findById(accountId).orElseThrow();
-        },
-        plan::rejectionForConstraint);
+    if (plan.transition().getAsBoolean()) {
+      plan.runAfterTransition();
+      if (plan.isAudited()) {
+        securityAuditEventRepository.append(auditEntry(identity, plan, target.get()));
+      }
+      userAccountRepository.refresh(target.get());
+    }
+    return Outcome.accepted(target.get());
   }
 
   /**
@@ -205,8 +211,12 @@ public class AccountAdministrationService {
   }
 
   private boolean mayViewAccount(AuthenticatedIdentity identity, UUID accountId) {
-    return authorizationService.decide(identity, new Intent.ViewAccountAdministration(accountId))
-        instanceof Decision.Allowed<?>;
+    return switch (authorizationService.decide(
+        identity, new Intent.ViewAccountAdministration(accountId))) {
+      case Decision.Allowed<?> _ -> true;
+      case Decision.Denied<?> _ -> false;
+      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+    };
   }
 
   private SecurityAuditEntry auditEntry(

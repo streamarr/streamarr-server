@@ -19,13 +19,14 @@ public class ReauthenticationFreshness {
 
   public boolean isFresh(AuthenticatedIdentity identity) {
     var reauthenticatedAt = identity.reauthenticatedAt();
-    if (reauthenticatedAt == null) {
+    if (reauthenticatedAt.isEmpty()) {
       return false;
     }
     var now = clock.instant();
-    if (reauthenticatedAt.isAfter(now)) {
+    var instant = reauthenticatedAt.orElseThrow();
+    if (instant.isAfter(now)) {
       return false;
     }
-    return now.isBefore(reauthenticatedAt.plus(properties.reauthenticationWindow()));
+    return now.isBefore(instant.plus(properties.reauthenticationWindow()));
   }
 }

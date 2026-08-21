@@ -1,11 +1,20 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
+import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public interface UserAccountRepositoryCustom {
+
+  void refresh(UserAccount account);
+
+  Map<UUID, List<UserAccount>> findAdministrationPages(
+      Set<UUID> householdIds, MediaPaginationOptions options);
 
   /**
    * The Account's current enabled state and ServerAdmin authority, read as scalars so the
