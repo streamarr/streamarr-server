@@ -1625,20 +1625,14 @@ class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should propagate image refresh mode when async refresh runs")
     void shouldPropagateImageRefreshModeWhenAsyncRefreshRuns() throws Exception {
-      var capturedMode = new AtomicReference<ImageRefreshMode>();
-      doAnswer(
-              invocation -> {
-                capturedMode.set(invocation.getArgument(1));
-                return null;
-              })
-          .when(libraryRefreshService)
-          .refreshLibrary(any(Library.class), any(ImageRefreshMode.class));
+      var recordingRefreshService = new RecordingLibraryRefreshService();
+      var service = libraryManagementServiceWithRefreshService(recordingRefreshService);
 
-      libraryManagementService.triggerAsyncRefresh(
-          savedLibraryId, ImageRefreshMode.REFRESH_IF_CHANGED);
+      service.triggerAsyncRefresh(savedLibraryId, ImageRefreshMode.REFRESH_IF_CHANGED);
 
       assertThat(capturingEventPublisher.awaitRefreshEnded()).isTrue();
-      assertThat(capturedMode).hasValue(ImageRefreshMode.REFRESH_IF_CHANGED);
+      assertThat(recordingRefreshService.imageRefreshMode())
+          .isEqualTo(ImageRefreshMode.REFRESH_IF_CHANGED);
       assertThat(fakeLibraryRepository.findById(savedLibraryId).orElseThrow().getStatus())
           .isEqualTo(LibraryStatus.HEALTHY);
       assertThat(capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class))
@@ -1703,6 +1697,24 @@ class LibraryManagementServiceTest {
 
     private void release() {
       release.countDown();
+    }
+  }
+
+  private static final class RecordingLibraryRefreshService extends LibraryRefreshService {
+
+    private final AtomicReference<ImageRefreshMode> imageRefreshMode = new AtomicReference<>();
+
+    private RecordingLibraryRefreshService() {
+      super(null, null, null, null, null, null);
+    }
+
+    @Override
+    public void refreshLibrary(Library library, ImageRefreshMode requestedImageRefreshMode) {
+      imageRefreshMode.set(requestedImageRefreshMode);
+    }
+
+    private ImageRefreshMode imageRefreshMode() {
+      return imageRefreshMode.get();
     }
   }
 

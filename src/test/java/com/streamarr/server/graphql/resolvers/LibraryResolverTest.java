@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -31,6 +30,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.pagination.MediaPage;
@@ -48,6 +48,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import org.jooq.SortOrder;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
@@ -58,6 +59,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
@@ -76,6 +78,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @DisplayName("Library Resolver Tests")
 class LibraryResolverTest {
 
+  private static final FakeLibraryManagementService FAKE_LIBRARY_MANAGEMENT_SERVICE =
+      new FakeLibraryManagementService();
+
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @Autowired private LibraryResolver libraryResolver;
@@ -86,11 +91,20 @@ class LibraryResolverTest {
 
   @MockitoBean private LibraryRepository libraryRepository;
 
-  @MockitoBean private LibraryManagementService libraryManagementService;
+  @TestBean private LibraryManagementService libraryManagementService;
 
   @MockitoBean private MovieService movieService;
 
   @MockitoBean private SeriesService seriesService;
+
+  static LibraryManagementService libraryManagementService() {
+    return FAKE_LIBRARY_MANAGEMENT_SERVICE;
+  }
+
+  @BeforeEach
+  void resetLibraryManagementService() {
+    FAKE_LIBRARY_MANAGEMENT_SERVICE.reset();
+  }
 
   @Nested
   @DisplayName("Library Queries")
@@ -184,14 +198,6 @@ class LibraryResolverTest {
     @DisplayName("Should return true when refreshLibrary called with valid ID")
     void shouldReturnTrueWhenRefreshLibraryCalledWithValidId() {
       var libraryId = UUID.randomUUID();
-      var refreshRequest = new AtomicReference<ImageRefreshMode>();
-      doAnswer(
-              invocation -> {
-                refreshRequest.set(invocation.getArgument(1));
-                return null;
-              })
-          .when(libraryManagementService)
-          .triggerAsyncRefresh(libraryId, ImageRefreshMode.PRESERVE);
 
       Boolean result =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -199,7 +205,8 @@ class LibraryResolverTest {
               "data.refreshLibrary");
 
       assertThat(result).isTrue();
-      assertThat(refreshRequest).hasValue(ImageRefreshMode.PRESERVE);
+      assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.refreshRequest())
+          .isEqualTo(new RefreshRequest(libraryId, ImageRefreshMode.PRESERVE));
     }
 
     @Test
@@ -207,14 +214,6 @@ class LibraryResolverTest {
         "Should pass explicit image refresh mode when refreshLibrary mutation specifies it")
     void shouldPassExplicitImageRefreshModeWhenRefreshLibraryMutationSpecifiesIt() {
       var libraryId = UUID.randomUUID();
-      var refreshRequest = new AtomicReference<ImageRefreshMode>();
-      doAnswer(
-              invocation -> {
-                refreshRequest.set(invocation.getArgument(1));
-                return null;
-              })
-          .when(libraryManagementService)
-          .triggerAsyncRefresh(libraryId, ImageRefreshMode.REFRESH_IF_CHANGED);
 
       Boolean result =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -224,7 +223,8 @@ class LibraryResolverTest {
               "data.refreshLibrary");
 
       assertThat(result).isTrue();
-      assertThat(refreshRequest).hasValue(ImageRefreshMode.REFRESH_IF_CHANGED);
+      assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.refreshRequest())
+          .isEqualTo(new RefreshRequest(libraryId, ImageRefreshMode.REFRESH_IF_CHANGED));
     }
 
     @Test
@@ -255,7 +255,7 @@ class LibraryResolverTest {
               .build();
       library.setId(UUID.randomUUID());
 
-      when(libraryManagementService.addLibrary(any(Library.class))).thenReturn(library);
+      FAKE_LIBRARY_MANAGEMENT_SERVICE.returnLibraryWhenAdded(library);
 
       String name =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -692,8 +692,7 @@ class LibraryResolverTest {
       metadataM.setId(UUID.randomUUID());
 
       when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-      when(libraryManagementService.getAlphabetIndex(libraryId))
-          .thenReturn(List.of(metadataA, metadataM));
+      FAKE_LIBRARY_MANAGEMENT_SERVICE.returnAlphabetIndex(List.of(metadataA, metadataM));
 
       var query =
           String.format("{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId);
@@ -714,7 +713,7 @@ class LibraryResolverTest {
       var library = buildMovieLibrary(libraryId);
 
       when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-      when(libraryManagementService.getAlphabetIndex(libraryId)).thenReturn(List.of());
+      FAKE_LIBRARY_MANAGEMENT_SERVICE.returnAlphabetIndex(List.of());
 
       var query =
           String.format("{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId);
@@ -725,6 +724,71 @@ class LibraryResolverTest {
       assertThat(alphabetIndex).isEmpty();
     }
   }
+
+  private static final class FakeLibraryManagementService extends LibraryManagementService {
+
+    private Library addedLibrary;
+    private List<LibraryMetadata> alphabetIndex = List.of();
+    private RefreshRequest refreshRequest;
+
+    private FakeLibraryManagementService() {
+      super(
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          new MutexFactoryProvider(),
+          null,
+          null);
+    }
+
+    @Override
+    public Library addLibrary(Library library) {
+      return addedLibrary != null ? addedLibrary : library;
+    }
+
+    @Override
+    public void removeLibrary(UUID libraryId) {}
+
+    @Override
+    public void triggerAsyncScan(UUID libraryId) {}
+
+    @Override
+    public void triggerAsyncRefresh(UUID libraryId, ImageRefreshMode imageRefreshMode) {
+      refreshRequest = new RefreshRequest(libraryId, imageRefreshMode);
+    }
+
+    @Override
+    public List<LibraryMetadata> getAlphabetIndex(UUID libraryId) {
+      return alphabetIndex;
+    }
+
+    private void returnLibraryWhenAdded(Library library) {
+      addedLibrary = library;
+    }
+
+    private void returnAlphabetIndex(List<LibraryMetadata> metadata) {
+      alphabetIndex = metadata;
+    }
+
+    private RefreshRequest refreshRequest() {
+      return refreshRequest;
+    }
+
+    private void reset() {
+      addedLibrary = null;
+      alphabetIndex = List.of();
+      refreshRequest = null;
+    }
+  }
+
+  private record RefreshRequest(UUID libraryId, ImageRefreshMode imageRefreshMode) {}
 
   private Library buildMovieLibrary(UUID libraryId) {
     var library =
