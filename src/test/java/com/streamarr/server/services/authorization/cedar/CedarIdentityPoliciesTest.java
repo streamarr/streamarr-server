@@ -717,14 +717,14 @@ class CedarIdentityPoliciesTest {
       personal.setMaximumAllowedRatingAge(12);
       profiles.save(personal);
 
-      assertThat(decider.decide(atHome(), new Intent.RenameProfile(kid.getId()))).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.RenameProfile(kid.getId()))).isEqualTo(DENIED);
     }
 
     @Test
     @DisplayName("Should deny a policy change for a Profile that does not exist")
     void shouldDenyPolicyChangeForProfileThatDoesNotExist() {
       assertThat(
-              decider.decide(
+              decide(
                   withReauthenticatedAt(atHome(), Instant.now()),
                   new Intent.ChangeProfileKind(UUID.randomUUID(), ProfileKind.ADULT)))
           .isEqualTo(DENIED);
@@ -787,8 +787,7 @@ class CedarIdentityPoliciesTest {
         .build();
   }
 
-  private Decision<AuthorizationUnit> decide(
-      AuthenticatedIdentity identity, Intent<AuthorizationUnit> intent) {
+  private <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent) {
     return authorizationService.decide(identity, intent);
   }
 
