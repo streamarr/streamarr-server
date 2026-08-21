@@ -1384,24 +1384,24 @@ class CedarIdentityPoliciesTest {
     void shouldReserveTeardownForFreshServerAdmin() {
       var teardown = new Intent.TearDownHousehold(visitedHouseholdId);
 
-      assertThat(decider.decide(withReauthenticatedAt(atHome(), Instant.now()), teardown))
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), teardown))
           .isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decider.decide(atHome(), teardown)).isEqualTo(REAUTHENTICATION_REQUIRED);
-      assertThat(decider.decide(withReauthenticatedAt(atHome(), Instant.now()), teardown))
+      assertThat(decide(atHome(), teardown)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), teardown))
           .isEqualTo(ALLOWED);
     }
 
     @Test
     @DisplayName("Should let only ServerAdmin read the security audit")
     void shouldLetOnlyServerAdminReadSecurityAudit() {
-      assertThat(decider.decide(atHome(), new Intent.ViewSecurityAudit())).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.ViewSecurityAudit())).isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decider.decide(atHome(), new Intent.ViewSecurityAudit())).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.ViewSecurityAudit())).isEqualTo(ALLOWED);
     }
   }
 
