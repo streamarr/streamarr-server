@@ -1,8 +1,6 @@
 package com.streamarr.server.services.identity;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
-import com.streamarr.server.domain.auth.HouseholdRole;
-import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
@@ -16,7 +14,7 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.CredentialGuessThrottle;
-import com.streamarr.server.services.auth.OpaqueCodes;
+import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -58,7 +56,7 @@ public class ProfileManagerAdministrationService {
   private final UserAccountRepository userAccountRepository;
   private final ProfileHouseholdShareRepository shareRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
-  private final OpaqueCodes opaqueCodes;
+  private final OpaqueOneTimeCodes opaqueCodes;
   private final CredentialGuessThrottle throttle;
   private final CredentialCodeProperties properties;
   private final MutationTransactions mutationTransactions;
@@ -177,7 +175,12 @@ public class ProfileManagerAdministrationService {
           if (!profileManagerRepository.tryGrant(identity.accountId(), invitation.getProfileId())) {
             throw new MutationRejection(new ManagerRejections.AlreadyManager());
           }
-          audit(identity, "acceptManagerInvitation", invitation.getProfileId(), null);
+          audit(
+              identity,
+              SecurityAuditEntry.builder()
+                  .operation("acceptManagerInvitation")
+                  .resource("profileId", invitation.getProfileId())
+                  .resource("accountId", identity.accountId()));
           return invitationRepository.findById(invitation.getId()).orElseThrow();
         },
         constraint ->
@@ -286,7 +289,13 @@ public class ProfileManagerAdministrationService {
           // The consent this grant makes redundant must not linger as a second live path.
           invitationRepository.invalidatePendingForProfileAndRecipient(
               profileId, accountId, "granted by override", now);
-          audit(identity, "grantProfileManagerOverride", profileId, reason);
+          audit(
+              identity,
+              SecurityAuditEntry.builder()
+                  .operation("grantProfileManagerOverride")
+                  .reason(reason)
+                  .resource("profileId", profileId)
+                  .resource("accountId", accountId));
           return profileId;
         },
         constraint ->
@@ -320,10 +329,11 @@ public class ProfileManagerAdministrationService {
         constraint -> anchorRejection(constraint, ManagerRejections.ManagerAnchorRequired::new));
   }
 
-  /** Pending invitations for the Profile, for whoever may view its administration. */
+  /** Pending invitations for the Profile, visible only to direct managers and ServerAdmin. */
   public List<ProfileManagerInvitation> managerInvitations(
       AuthenticatedIdentity identity, UUID profileId) {
-    if (!mayViewProfile(identity, profileId)) {
+    if (!(authorizationService.decide(identity, new Intent.ViewManagerInvitations(profileId))
+        instanceof Decision.Allowed<?>)) {
       return List.of();
     }
     return unexpired(
@@ -362,7 +372,13 @@ public class ProfileManagerAdministrationService {
     invitationRepository.invalidatePendingForProfileAndRecipient(
         profileId, managerAccountId, "removal disputes the authority", now);
     invalidateLeaversProposals(profileId, managerAccountId);
-    audit(identity, operation, profileId, reason);
+    audit(
+        identity,
+        SecurityAuditEntry.builder()
+            .operation(operation)
+            .reason(reason)
+            .resource("profileId", profileId)
+            .resource("accountId", managerAccountId));
   }
 
   private void invalidateLeaversProposals(UUID profileId, UUID leaverAccountId) {
@@ -402,21 +418,10 @@ public class ProfileManagerAdministrationService {
     if (inviterId == null) {
       return false;
     }
-    if (profileManagerRepository.existsByAccountIdAndProfileId(
-        inviterId, invitation.getProfileId())) {
-      return true;
-    }
-    return supervises(inviterId, invitation.getProfileId());
-  }
-
-  private boolean supervises(UUID accountId, UUID profileId) {
-    if (profileRepository.findById(profileId).filter(Profile::isRestricted).isEmpty()) {
-      return false;
-    }
     return userAccountRepository
-        .findById(accountId)
-        .filter(account -> account.getHouseholdRole() == HouseholdRole.ADMIN)
-        .filter(account -> shareRepository.isActivelyShared(profileId, account.getHouseholdId()))
+        .findById(inviterId)
+        .filter(this::isEligible)
+        .filter(account -> alreadyManages(account, invitation.getProfileId()))
         .isPresent();
   }
 
@@ -433,14 +438,8 @@ public class ProfileManagerAdministrationService {
   }
 
   private void audit(
-      AuthenticatedIdentity identity, String operation, UUID profileId, String reason) {
-    securityAuditEventRepository.append(
-        SecurityAuditEntry.builder()
-            .operation(operation)
-            .actorAccountId(identity.accountId())
-            .reason(reason)
-            .resource("profileId", profileId)
-            .build());
+      AuthenticatedIdentity identity, SecurityAuditEntry.SecurityAuditEntryBuilder entry) {
+    securityAuditEventRepository.append(entry.actorAccountId(identity.accountId()).build());
   }
 
   private static <R> Optional<R> anchorRejection(String constraint, Supplier<R> anchor) {
@@ -449,7 +448,7 @@ public class ProfileManagerAdministrationService {
 
   private Optional<Object> refusalOf(
       AuthenticatedIdentity identity,
-      Intent<?> intent,
+      Intent.UnitIntent intent,
       BooleanSupplier mayView,
       Supplier<Object> denied,
       Supplier<Object> reauthenticationRequired) {

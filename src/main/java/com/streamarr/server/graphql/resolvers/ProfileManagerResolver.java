@@ -176,7 +176,10 @@ public class ProfileManagerResolver {
     String after = dfe.getArgument("after");
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
+    if (first == 0 && last == 0 && before != null) {
+      return paginationService.getPaginationOptions(first, after, 100, before);
+    }
     return paginationService.getPaginationOptions(
-        first == 0 && last == 0 && before == null ? 100 : first, after, last, before);
+        first == 0 && last == 0 ? 100 : first, after, last, before);
   }
 }

@@ -1014,8 +1014,8 @@ class CedarIdentityPoliciesTest {
   class Managers {
 
     @Test
-    @DisplayName("Should let a direct manager or a live supervisor invite, and nobody else")
-    void shouldLetDirectManagerOrLiveSupervisorInviteAndNobodyElse() {
+    @DisplayName("Should let a ProfileManager invite and deny share-derived supervision")
+    void shouldLetProfileManagerInviteAndDenyShareDerivedSupervision() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       assertThat(decide(atHome(), new Intent.InviteProfileManager(orphan.getId())))
           .isEqualTo(DENIED);
@@ -1027,11 +1027,26 @@ class CedarIdentityPoliciesTest {
 
       // A supervising HouseholdAdmin proposes while the restricted Profile is hosted with them.
       var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
-      assertThat(decide(atHome(), new Intent.InviteProfileManager(kid.getId())))
-          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.InviteProfileManager(kid.getId()))).isEqualTo(DENIED);
       shares.share(kid.getId(), account.getHouseholdId(), false);
-      assertThat(decide(atHome(), new Intent.InviteProfileManager(kid.getId())))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.InviteProfileManager(kid.getId()))).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should let a ProfileManager or ServerAdmin view manager invitations")
+    void shouldLetProfileManagerOrServerAdminViewManagerInvitations() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var view = new Intent.ViewManagerInvitations(orphan.getId());
+      assertThat(decide(atHome(), view)).isEqualTo(DENIED);
+
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
+      assertThat(decide(atHome(), view)).isEqualTo(ALLOWED);
+      managers.deleteAll();
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), view)).isEqualTo(ALLOWED);
     }
 
     @Test
@@ -1050,6 +1065,8 @@ class CedarIdentityPoliciesTest {
       account.setServerAdmin(true);
       accounts.save(account);
       assertThat(decide(atHome(), new Intent.AcceptManagerInvitation(someoneElse.getId())))
+          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.DeclineManagerInvitation(someoneElse.getId())))
           .isEqualTo(DENIED);
       assertThat(decide(atHome(), new Intent.AcceptManagerInvitation(UUID.randomUUID())))
           .isEqualTo(DENIED);

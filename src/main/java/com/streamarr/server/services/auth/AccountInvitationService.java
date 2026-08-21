@@ -20,6 +20,7 @@ import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -54,11 +55,13 @@ public class AccountInvitationService {
   private static final String CHK_ELIGIBLE_MANAGER = "chk_profile_home_anchor";
   private static final String CHK_RESTRICTED_AUTHORITY =
       "chk_restricted_account_holds_no_authority";
+  private static final String PROFILE_CONNECTED_REASON = "Profile linked to an Account";
 
   private final AccountInvitationRepository invitationRepository;
   private final UserAccountRepository userAccountRepository;
   private final ProfileRepository profileRepository;
   private final ProfileManagerRepository profileManagerRepository;
+  private final ProfileManagerInvitationRepository profileManagerInvitationRepository;
   private final ProfileHouseholdShareRepository shareRepository;
   private final AccountInvitationReofferRepository reofferRepository;
   private final HouseholdRepository householdRepository;
@@ -351,11 +354,12 @@ public class AccountInvitationService {
                 .enabled(true)
                 .build());
     var now = clock.instant();
-    invitationRepository.invalidatePendingByProfileId(
-        profileId, "Profile linked to an Account", now);
+    invitationRepository.invalidatePendingByProfileId(profileId, PROFILE_CONNECTED_REASON, now);
+    profileManagerInvitationRepository.invalidatePendingForProfile(
+        profileId, PROFILE_CONNECTED_REASON, now);
     shareRepository.ensureActiveMembershipShare(profileId, householdId, now);
     endCurrentVisits(profileId, householdId, now);
-    shareRepository.invalidatePendingByProfileId(profileId, "Profile linked to an Account", now);
+    shareRepository.invalidatePendingByProfileId(profileId, PROFILE_CONNECTED_REASON, now);
     var reofferAccountId =
         profile.isRestricted() ? invitation.getIssuerAccountId() : account.getId();
     reoffer(

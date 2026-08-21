@@ -22,7 +22,9 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.jooq.DSLContext;
@@ -148,6 +150,117 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.cancelManagerInvitation.userErrors[0].__typename")
                 .value("InvitationNotPendingError"));
+  }
+
+  @Test
+  @DisplayName("Should hide manager invitations from a share-derived supervisor")
+  void shouldHideManagerInvitationsFromShareDerivedSupervisor() throws Exception {
+    var namedRecipientId = transactionTemplate.execute(_ -> secondLocalManagerId());
+    var invitation =
+        transactionTemplate.execute(
+            _ -> {
+              var kid =
+                  profileRepository.saveAndFlush(
+                      ProfileFixture.kidProfileBuilder()
+                          .householdId(owner.household().getId())
+                          .name("Visiting Kid")
+                          .build());
+              profileManagerRepository.saveAndFlush(
+                  ProfileManager.builder()
+                      .accountId(owner.account().getId())
+                      .profileId(kid.getId())
+                      .build());
+              shareRepository.saveAndFlush(
+                  ProfileHouseholdShare.builder()
+                      .profileId(kid.getId())
+                      .householdId(owner.household().getId())
+                      .status(ProfileShareStatus.ACTIVE)
+                      .build());
+              shareRepository.saveAndFlush(
+                  ProfileHouseholdShare.builder()
+                      .profileId(kid.getId())
+                      .householdId(recipient.household().getId())
+                      .status(ProfileShareStatus.ACTIVE)
+                      .build());
+              return invitationRepository.saveAndFlush(
+                  ProfileManagerInvitation.builder()
+                      .profileId(kid.getId())
+                      .profileName(kid.getName())
+                      .inviterAccountId(owner.account().getId())
+                      .inviterDisplayName(owner.account().getDisplayName())
+                      .recipientAccountId(namedRecipientId)
+                      .recipientEmail("named-recipient@example.com")
+                      .expiresAt(Instant.now().plusSeconds(3600))
+                      .publicId(UUID.randomUUID().toString())
+                      .secretDigest(new byte[] {1})
+                      .build());
+            });
+
+    graphql(
+            authTestSupport.accountBearer(recipient),
+            """
+            query { managerInvitations(profileId: "%s") {
+              edges { node { id recipientEmail } } } }
+            """
+                .formatted(invitation.getProfileId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.managerInvitations.edges").isEmpty());
+  }
+
+  @Test
+  @DisplayName("Should default backward manager invitation pagination to one hundred items")
+  void shouldDefaultBackwardManagerInvitationPaginationToOneHundredItems() throws Exception {
+    var profiles = List.of(managedOrphan(), managedOrphan(), managedOrphan());
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          for (var profile : profiles) {
+            invitationRepository.saveAndFlush(
+                ProfileManagerInvitation.builder()
+                    .profileId(profile.getId())
+                    .profileName(profile.getName())
+                    .inviterAccountId(owner.account().getId())
+                    .inviterDisplayName(owner.account().getDisplayName())
+                    .recipientAccountId(recipient.account().getId())
+                    .recipientEmail(recipient.account().getEmail())
+                    .expiresAt(Instant.now().plusSeconds(3600))
+                    .publicId(UUID.randomUUID().toString())
+                    .secretDigest(UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8))
+                    .build());
+          }
+        });
+
+    var firstPage =
+        graphql(
+                authTestSupport.accountBearer(recipient),
+                """
+                query { pendingManagerInvitations(first: 100) {
+                  edges { cursor node { id } } } }
+                """)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(jsonPath("$.data.pendingManagerInvitations.edges.length()").value(3))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var edges =
+        objectMapper
+            .readTree(firstPage)
+            .path("data")
+            .path("pendingManagerInvitations")
+            .path("edges");
+    var before = edges.get(edges.size() - 1).path("cursor").asString();
+
+    graphql(
+            authTestSupport.accountBearer(recipient),
+            """
+            query { pendingManagerInvitations(before: "%s") {
+              edges { node { id } } } }
+            """
+                .formatted(before))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.pendingManagerInvitations.edges.length()").value(2));
   }
 
   @Test
