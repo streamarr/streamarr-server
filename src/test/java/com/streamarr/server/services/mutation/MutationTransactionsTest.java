@@ -11,6 +11,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.IllegalTransactionStateException;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("Mutation Transactions Tests")
@@ -70,6 +72,23 @@ class MutationTransactionsTest {
                     },
                     _ -> Optional.of("never")))
         .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a write when the caller already owns a transaction")
+  void shouldRejectWriteWhenCallerAlreadyOwnsTransaction() {
+    var outerTransaction = new TransactionTemplate(transactionManager);
+
+    assertThatThrownBy(
+            () ->
+                outerTransaction.execute(
+                    _ ->
+                        transactions.<String, String>write(
+                            () -> {
+                              throw violation("uq_thing");
+                            },
+                            _ -> Optional.of("taken"))))
+        .isInstanceOf(IllegalTransactionStateException.class);
   }
 
   private static DataIntegrityViolationException violation(String constraint) {

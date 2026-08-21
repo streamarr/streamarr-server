@@ -1,6 +1,7 @@
 package com.streamarr.server.services.mutation;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Function;
 
 /**
@@ -19,7 +20,12 @@ public sealed interface Outcome<T, R> {
     };
   }
 
-  record Accepted<T, R>(T result) implements Outcome<T, R> {}
+  record Accepted<T, R>(T result) implements Outcome<T, R> {
+
+    public Accepted {
+      Objects.requireNonNull(result, "result");
+    }
+  }
 
   record Rejected<T, R>(List<R> rejections) implements Outcome<T, R> {
 

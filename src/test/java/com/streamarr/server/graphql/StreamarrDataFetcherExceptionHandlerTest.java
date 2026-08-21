@@ -6,6 +6,7 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidIdException;
+import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
@@ -83,6 +84,17 @@ class StreamarrDataFetcherExceptionHandlerTest {
   }
 
   @Test
+  @DisplayName("Should sanitize completion exception when no cause is available")
+  void shouldSanitizeCompletionExceptionWhenNoCauseIsAvailable() {
+    var error = errorFor(new CompletionException((Throwable) null));
+
+    assertThat(error.getMessage()).isEqualTo("The request could not be completed.");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "INTERNAL")
+        .containsEntry("code", "INTERNAL");
+  }
+
+  @Test
   @DisplayName("Should sanitize and stamp the contract keys when an exception is unrecognized")
   void shouldSanitizeAndStampContractKeysWhenExceptionIsUnrecognized() {
     var error = errorFor(new IllegalStateException("jdbc: connection refused to 10.0.0.7"));
@@ -93,6 +105,17 @@ class StreamarrDataFetcherExceptionHandlerTest {
         .containsEntry("code", "INTERNAL")
         .containsOnlyKeys("errorType", "code", "requestId");
     assertThat((String) error.getExtensions().get("requestId")).startsWith("req-").hasSize(12);
+  }
+
+  @Test
+  @DisplayName("Should sanitize illegal argument when an internal value is invalid")
+  void shouldSanitizeIllegalArgumentWhenInternalValueIsInvalid() {
+    var error = errorFor(new IllegalArgumentException("Invalid filepath URI: file:///srv/media"));
+
+    assertThat(error.getMessage()).isEqualTo("The request could not be completed.");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "INTERNAL")
+        .containsEntry("code", "INTERNAL");
   }
 
   @Test
@@ -126,7 +149,7 @@ class StreamarrDataFetcherExceptionHandlerTest {
   void shouldKeepQuerySideValidationMessagesWithBadRequestClassification() {
     var invalidId = errorFor(new InvalidIdException("nope"));
     var cursor = errorFor(new InvalidCursorException("Cursor filter mismatch: startLetter"));
-    var argument = errorFor(new IllegalArgumentException("first must not be negative"));
+    var argument = errorFor(new InvalidPaginationArgumentException("first must not be negative"));
     var media = errorFor(new UnsupportedMediaTypeException("OTHER"));
 
     assertThat(invalidId.getMessage()).contains("Invalid ID format");
@@ -147,9 +170,13 @@ class StreamarrDataFetcherExceptionHandlerTest {
     assertThat(plain.getExtensions()).doesNotContainKey("retryAfterSeconds");
   }
 
-  // The cause-null arm of unwrap stays untested on purpose: a cause-less CompletionException is
-  // only constructible by hand (CompletableFuture always wraps a cause), and DGS's default
-  // handler recurses infinitely on one — the guard exists to keep our unwrap out of that state.
+  @Test
+  @DisplayName("Should round a positive retry delay up to the next whole second")
+  void shouldRoundPositiveRetryDelayUpToNextWholeSecond() {
+    var error = errorFor(new TooManyDeviceAttemptsException(Duration.ofMillis(1)));
+
+    assertThat(error.getExtensions()).containsEntry("retryAfterSeconds", 1L);
+  }
 
   private String codeFor(Throwable exception) {
     return (String) errorFor(exception).getExtensions().get("code");

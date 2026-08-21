@@ -1,6 +1,7 @@
 package com.streamarr.server.services.mutation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
@@ -12,6 +13,12 @@ import org.junit.jupiter.api.Test;
 @Tag("UnitTest")
 @DisplayName("Outcome Tests")
 class OutcomeTest {
+
+  @Test
+  @DisplayName("Should refuse an accepted outcome without a result")
+  void shouldRefuseAcceptedOutcomeWithoutResult() {
+    assertThatNullPointerException().isThrownBy(() -> Outcome.accepted(null)).withMessage("result");
+  }
 
   @Test
   @DisplayName("Should refuse a rejection with no reasons")

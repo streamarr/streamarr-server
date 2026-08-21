@@ -4,6 +4,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.SmartTransactionObject;
 
 /**
  * A transaction manager with no resource behind it: units run inline, and the fake counts commits
@@ -13,6 +14,8 @@ public final class FakeTransactionManager extends AbstractPlatformTransactionMan
 
   private final AtomicInteger commits = new AtomicInteger();
   private final AtomicInteger rollbacks = new AtomicInteger();
+  private final ThreadLocal<TransactionState> transaction =
+      ThreadLocal.withInitial(TransactionState::new);
 
   public int commits() {
     return commits.get();
@@ -24,21 +27,51 @@ public final class FakeTransactionManager extends AbstractPlatformTransactionMan
 
   @Override
   protected Object doGetTransaction() {
-    return new Object();
+    return transaction.get();
+  }
+
+  @Override
+  protected boolean isExistingTransaction(Object transaction) {
+    return ((TransactionState) transaction).active;
   }
 
   @Override
   protected void doBegin(Object transaction, TransactionDefinition definition) {
-    // nothing to begin
+    var state = (TransactionState) transaction;
+    state.active = true;
+    state.rollbackOnly = false;
   }
 
   @Override
   protected void doCommit(DefaultTransactionStatus status) {
+    ((TransactionState) status.getTransaction()).active = false;
+    transaction.remove();
     commits.incrementAndGet();
   }
 
   @Override
   protected void doRollback(DefaultTransactionStatus status) {
+    ((TransactionState) status.getTransaction()).active = false;
+    transaction.remove();
     rollbacks.incrementAndGet();
+  }
+
+  @Override
+  protected void doSetRollbackOnly(DefaultTransactionStatus status) {
+    ((TransactionState) status.getTransaction()).rollbackOnly = true;
+  }
+
+  private static final class TransactionState implements SmartTransactionObject {
+
+    private boolean active;
+    private boolean rollbackOnly;
+
+    @Override
+    public boolean isRollbackOnly() {
+      return rollbackOnly;
+    }
+
+    @Override
+    public void flush() {}
   }
 }

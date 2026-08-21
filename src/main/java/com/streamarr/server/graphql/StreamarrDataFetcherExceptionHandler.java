@@ -6,6 +6,7 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidIdException;
+import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.RetryAfterAware;
 import com.streamarr.server.exceptions.SessionNotFoundException;
@@ -54,6 +55,22 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     var requestId = newRequestId();
     var classification = classify(exception);
 
+    if (exception instanceof CompletionException) {
+      log.error(
+          "GraphQL data fetcher failed [requestId={}] path={}",
+          requestId,
+          handlerParameters.getPath(),
+          exception);
+      var error =
+          GraphqlErrorBuilder.newError(handlerParameters.getDataFetchingEnvironment())
+              .message(SANITIZED_MESSAGE)
+              .extensions(
+                  extensions(ErrorType.INTERNAL.name(), ErrorType.INTERNAL.name(), requestId))
+              .build();
+      return CompletableFuture.completedFuture(
+          DataFetcherExceptionHandlerResult.newResult().error(error).build());
+    }
+
     if (classification == null) {
       return delegate
           .handleException(handlerParameters)
@@ -62,7 +79,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
 
     var extensions = extensions(classification.errorType(), classification.code(), requestId);
     if (exception instanceof RetryAfterAware throttled) {
-      extensions.put(RETRY_AFTER_SECONDS, Math.max(0, throttled.retryAfter().toSeconds()));
+      extensions.put(RETRY_AFTER_SECONDS, retryAfterSeconds(throttled));
     }
     var error =
         GraphqlErrorBuilder.newError(handlerParameters.getDataFetchingEnvironment())
@@ -126,6 +143,17 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     return exception;
   }
 
+  private static long retryAfterSeconds(RetryAfterAware throttled) {
+    var retryAfter = throttled.retryAfter();
+    if (retryAfter.isNegative() || retryAfter.isZero()) {
+      return 0;
+    }
+    if (retryAfter.getNano() == 0 || retryAfter.getSeconds() == Long.MAX_VALUE) {
+      return retryAfter.getSeconds();
+    }
+    return retryAfter.getSeconds() + 1;
+  }
+
   private static Classification classify(Throwable exception) {
     return switch (exception) {
       case ProfileRequiredException _ ->
@@ -145,8 +173,9 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
       // Query-side argument validation keeps its safe, displayable messages (ADR 0026 leaves
       // query errors unchanged); only unrecognized exceptions are sanitized.
       case InvalidIdException _ -> new Classification(ErrorType.BAD_REQUEST, "INVALID_INPUT");
+      case InvalidPaginationArgumentException _ ->
+          new Classification(ErrorType.BAD_REQUEST, "INVALID_INPUT");
       case InvalidCursorException _ -> new Classification(ErrorType.BAD_REQUEST, "INVALID_CURSOR");
-      case IllegalArgumentException _ -> new Classification(ErrorType.BAD_REQUEST, "INVALID_INPUT");
       case UnsupportedMediaTypeException _ ->
           new Classification(ErrorType.FAILED_PRECONDITION, "UNSUPPORTED_MEDIA_TYPE");
       default -> null;

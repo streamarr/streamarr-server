@@ -1,6 +1,7 @@
 package com.streamarr.server.exceptions;
 
 import java.time.Duration;
+import java.util.Objects;
 import lombok.Getter;
 
 @Getter
@@ -10,7 +11,7 @@ public class TooManyDeviceAttemptsException extends RuntimeException implements 
 
   public TooManyDeviceAttemptsException(Duration retryAfter) {
     super("Too many attempts; try again later.");
-    this.retryAfter = retryAfter;
+    this.retryAfter = Objects.requireNonNull(retryAfter, "retryAfter");
   }
 
   @Override

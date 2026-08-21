@@ -107,7 +107,45 @@ class MutationContractTest {
     }
   }
 
+  @Test
+  @DisplayName("Should require the mutation-specific error union when payload declares user errors")
+  void shouldRequireMutationSpecificErrorUnionWhenPayloadDeclaresUserErrors() {
+    var fixture =
+        new SchemaParser()
+            .parse(
+                """
+                input WrongUnionInput {
+                  value: String
+                }
+
+                type WrongUnionPayload {
+                  result: String
+                  userErrors: [OtherMutationError!]!
+                }
+
+                union OtherMutationError = LibraryNameRequiredError
+
+                type FixtureMutation {
+                  wrongUnion(input: WrongUnionInput!): WrongUnionPayload
+                }
+                """);
+    var mutation =
+        fixture
+            .getType("FixtureMutation", ObjectTypeDefinition.class)
+            .orElseThrow()
+            .getFieldDefinitions()
+            .getFirst();
+
+    assertThat(shapeViolations(fixture, mutation))
+        .containsExactly("wrongUnion: payload must declare userErrors: [WrongUnionError!]!");
+  }
+
   private static List<String> shapeViolations(FieldDefinition mutation) {
+    return shapeViolations(SCHEMA, mutation);
+  }
+
+  private static List<String> shapeViolations(
+      TypeDefinitionRegistry schema, FieldDefinition mutation) {
     var violations = new ArrayList<String>();
     var name = mutation.getName();
     var expectedInput = capitalize(name) + "Input";
@@ -124,7 +162,7 @@ class MutationContractTest {
       violations.add(name + ": expects a nullable " + expectedPayload + " return type");
       return violations;
     }
-    var payload = SCHEMA.getType(payloadType.getName(), ObjectTypeDefinition.class);
+    var payload = schema.getType(payloadType.getName(), ObjectTypeDefinition.class);
     if (payload.isEmpty()) {
       violations.add(name + ": payload type " + expectedPayload + " is not declared");
       return violations;
@@ -133,7 +171,9 @@ class MutationContractTest {
         payload.get().getFieldDefinitions().stream()
             .filter(field -> "userErrors".equals(field.getName()))
             .findFirst();
-    if (userErrors.isEmpty() || !isNonNullListOfNonNullUnion(userErrors.get().getType())) {
+    if (userErrors.isEmpty()
+        || !isNonNullListOfNonNullUnion(
+            schema, userErrors.get().getType(), capitalize(name) + "Error")) {
       violations.add(name + ": payload must declare userErrors: [" + capitalize(name) + "Error!]!");
     }
     if (payload.get().getFieldDefinitions().size() != 2) {
@@ -148,7 +188,8 @@ class MutationContractTest {
         && named.getName().equals(typeName);
   }
 
-  private static boolean isNonNullListOfNonNullUnion(Type<?> type) {
+  private static boolean isNonNullListOfNonNullUnion(
+      TypeDefinitionRegistry schema, Type<?> type, String expectedUnion) {
     if (!(type instanceof NonNullType outer && outer.getType() instanceof ListType list)) {
       return false;
     }
@@ -156,8 +197,8 @@ class MutationContractTest {
         && inner.getType() instanceof TypeName named)) {
       return false;
     }
-    return SCHEMA.getType(named.getName(), UnionTypeDefinition.class).isPresent()
-        && named.getName().endsWith("Error");
+    return schema.getType(named.getName(), UnionTypeDefinition.class).isPresent()
+        && named.getName().equals(expectedUnion);
   }
 
   private static List<FieldDefinition> mutationFields() {
