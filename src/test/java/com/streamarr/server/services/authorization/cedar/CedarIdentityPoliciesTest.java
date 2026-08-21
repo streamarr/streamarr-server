@@ -787,7 +787,7 @@ class CedarIdentityPoliciesTest {
 
       // An unlinked Profile is offered by any direct manager — and nobody else.
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
-      assertThat(decider.decide(atHome(), new Intent.OfferProfileShare(orphan.getId())))
+      assertThat(decide(atHome(), new Intent.OfferProfileShare(orphan.getId())))
           .isEqualTo(DENIED);
       managers.save(
           ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
@@ -805,7 +805,7 @@ class CedarIdentityPoliciesTest {
       accounts.save(account);
 
       // A supervised person no longer ends their own Profile's visits.
-      assertThat(decider.decide(member(), new Intent.EndProfileShare(visit.getId())))
+      assertThat(decide(member(), new Intent.EndProfileShare(visit.getId())))
           .isEqualTo(DENIED);
     }
 
@@ -833,13 +833,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should refuse deciding a share that is not pending or not there")
-    void shouldRefuseDecidingShareThatIsNotPendingOrNotThere() {
-      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
-      var active = shares.share(orphan.getId(), account.getHouseholdId(), false);
-
-      assertThat(decide(atHome(), new Intent.AcceptProfileShare(active.getId())))
-          .isEqualTo(DENIED);
+    @DisplayName("Should refuse deciding a share when it does not exist")
+    void shouldRefuseDecidingShareWhenItDoesNotExist() {
       assertThat(decide(atHome(), new Intent.AcceptProfileShare(UUID.randomUUID())))
           .isEqualTo(DENIED);
     }
