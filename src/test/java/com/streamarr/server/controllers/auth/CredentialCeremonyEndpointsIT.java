@@ -8,12 +8,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
+import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
+import com.streamarr.server.repositories.auth.AuthSessionRepository;
+import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.auth.DeviceName;
 import com.streamarr.server.support.AuthTestSupport;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +49,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @Autowired private ObjectMapper objectMapper;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private UserAccountRepository userAccountRepository;
+  @Autowired private AuthSessionRepository authSessionRepository;
+  @Autowired private HouseholdRepository householdRepository;
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private PasswordResetCodeRepository resetCodeRepository;
   @Autowired private DSLContext dsl;
@@ -115,6 +125,174 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                     "cookieMode": false}
                     """))
         .andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("Should promote only the first accepted invitation in an empty Household")
+  void shouldPromoteOnlyFirstAcceptedInvitationInEmptyHousehold() throws Exception {
+    var household =
+        householdRepository.saveAndFlush(
+            HouseholdFixture.defaultHouseholdBuilder().name("Bootstrap Home").build());
+    try {
+      var firstCode =
+          issueInvitation("bootstrap-one@example.com", household.getId(), "Bootstrap One");
+      var secondCode =
+          issueInvitation("bootstrap-two@example.com", household.getId(), "Bootstrap Two");
+
+      acceptInvitation(firstCode, "Bootstrap One");
+      acceptInvitation(secondCode, "Bootstrap Two");
+
+      assertThat(
+              userAccountRepository
+                  .findByEmailIgnoreCase("bootstrap-one@example.com")
+                  .orElseThrow()
+                  .getHouseholdRole())
+          .isEqualTo(HouseholdRole.ADMIN);
+      assertThat(
+              userAccountRepository
+                  .findByEmailIgnoreCase("bootstrap-two@example.com")
+                  .orElseThrow()
+                  .getHouseholdRole())
+          .isEqualTo(HouseholdRole.MEMBER);
+    } finally {
+      userAccountRepository
+          .findByEmailIgnoreCase("bootstrap-one@example.com")
+          .ifPresent(account -> authTestSupport.deleteAccount(account.getId()));
+      if (householdRepository.existsById(household.getId())) {
+        householdRepository.deleteById(household.getId());
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should promote exactly one invitation accepted concurrently in an empty Household")
+  void shouldPromoteExactlyOneInvitationAcceptedConcurrentlyInEmptyHousehold() throws Exception {
+    var household =
+        householdRepository.saveAndFlush(
+            HouseholdFixture.defaultHouseholdBuilder().name("Concurrent Bootstrap Home").build());
+    try {
+      var firstCode =
+          issueInvitation("concurrent-one@example.com", household.getId(), "Concurrent One");
+      var secondCode =
+          issueInvitation("concurrent-two@example.com", household.getId(), "Concurrent Two");
+      var ready = new CountDownLatch(2);
+      var start = new CountDownLatch(1);
+
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var first =
+            executor.submit(() -> acceptWhenStarted(firstCode, "Concurrent One", ready, start));
+        var second =
+            executor.submit(() -> acceptWhenStarted(secondCode, "Concurrent Two", ready, start));
+        assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+        start.countDown();
+
+        assertThat(first.get(20, TimeUnit.SECONDS)).isEqualTo(201);
+        assertThat(second.get(20, TimeUnit.SECONDS)).isEqualTo(201);
+      }
+
+      assertThat(userAccountRepository.findByHouseholdId(household.getId()))
+          .extracting(account -> account.getHouseholdRole())
+          .containsExactlyInAnyOrder(HouseholdRole.ADMIN, HouseholdRole.MEMBER);
+    } finally {
+      userAccountRepository
+          .findByEmailIgnoreCase("concurrent-one@example.com")
+          .ifPresent(account -> authTestSupport.deleteAccount(account.getId()));
+      if (householdRepository.existsById(household.getId())) {
+        householdRepository.deleteById(household.getId());
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should sanitize the invitation User-Agent before storing the session device name")
+  void shouldSanitizeInvitationUserAgentBeforeStoringSessionDeviceName() throws Exception {
+    var code = issueInvitation("invitee@example.com");
+    var userAgent = "\u202e" + "🎬".repeat(80);
+
+    mockMvc
+        .perform(
+            post("/api/auth/invitation/accept")
+                .header(HttpHeaders.USER_AGENT, userAgent)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"code": "%s", "displayName": "Invitee", \
+                    "password": "a strong passphrase", "cookieMode": false}
+                    """
+                        .formatted(code)))
+        .andExpect(status().isCreated());
+
+    var account = userAccountRepository.findByEmailIgnoreCase("invitee@example.com").orElseThrow();
+    assertThat(authSessionRepository.findByAccountId(account.getId()))
+        .singleElement()
+        .extracting(session -> session.getDeviceName())
+        .isEqualTo(DeviceName.sanitize(userAgent));
+  }
+
+  @Test
+  @DisplayName("Should default the backward invitation page size when only before is provided")
+  void shouldDefaultBackwardInvitationPageSizeWhenOnlyBeforeIsProvided() throws Exception {
+    issueInvitation("oldest@example.com");
+    issueInvitation("middle@example.com");
+    issueInvitation("newest@example.com");
+
+    var firstPage =
+        graphql(
+                authTestSupport.accountBearer(serverAdmin),
+                """
+                query { accountInvitations(first: 2) {
+                  edges { cursor node { recipientEmail } }
+                } }
+                """)
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var before =
+        objectMapper
+            .readTree(firstPage)
+            .path("data")
+            .path("accountInvitations")
+            .path("edges")
+            .path(1)
+            .path("cursor")
+            .asString();
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            query { accountInvitations(before: "%s") {
+              edges { node { recipientEmail } }
+            } }
+            """
+                .formatted(before))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.accountInvitations.edges[0].node.recipientEmail")
+                .value("newest@example.com"));
+  }
+
+  @Test
+  @DisplayName("Should return conflict when the invitation email is claimed before acceptance")
+  void shouldReturnConflictWhenInvitationEmailIsClaimedBeforeAcceptance() throws Exception {
+    var code = issueInvitation("invitee@example.com");
+    var competingAccount =
+        authTestSupport.createAccount(builder -> builder.email("invitee@example.com"));
+    try {
+      mockMvc
+          .perform(
+              post("/api/auth/invitation/accept")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      """
+                      {"code": "%s", "displayName": "Invitee", \
+                      "password": "a strong passphrase", "cookieMode": false}
+                      """
+                          .formatted(code)))
+          .andExpect(status().isConflict());
+    } finally {
+      authTestSupport.deleteAccount(competingAccount.getId());
+    }
   }
 
   @Test
@@ -386,16 +564,21 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   private String issueInvitation(String email) throws Exception {
+    return issueInvitation(email, serverAdmin.household().getId(), "Invitee");
+  }
+
+  private String issueInvitation(String email, UUID householdId, String profileName)
+      throws Exception {
     var response =
         graphql(
                 authTestSupport.accountBearer(serverAdmin),
                 """
                 mutation { issueAccountInvitation(input: {recipientEmail: "%s",
-                  householdId: "%s", householdRole: MEMBER, profileName: "Invitee",
+                  householdId: "%s", householdRole: MEMBER, profileName: "%s",
                   profileKind: ADULT}) {
                   issued { code invitation { status } } userErrors { __typename } } }
                 """
-                    .formatted(email, serverAdmin.household().getId()))
+                    .formatted(email, householdId, profileName))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andExpect(jsonPath("$.data.issueAccountInvitation.issued.code").isNotEmpty())
@@ -409,6 +592,41 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .path("issued")
         .path("code")
         .asString();
+  }
+
+  private void acceptInvitation(String code, String displayName) throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/invitation/accept")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"code": "%s", "displayName": "%s", \
+                    "password": "a strong passphrase", "cookieMode": false}
+                    """
+                        .formatted(code, displayName)))
+        .andExpect(status().isCreated());
+  }
+
+  private int acceptWhenStarted(
+      String code, String displayName, CountDownLatch ready, CountDownLatch start) throws Exception {
+    ready.countDown();
+    if (!start.await(10, TimeUnit.SECONDS)) {
+      throw new AssertionError("concurrent invitation acceptance did not start");
+    }
+    return mockMvc
+        .perform(
+            post("/api/auth/invitation/accept")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"code": "%s", "displayName": "%s", \
+                    "password": "a strong passphrase", "cookieMode": false}
+                    """
+                        .formatted(code, displayName)))
+        .andReturn()
+        .getResponse()
+        .getStatus();
   }
 
   private String issuePasswordReset(UUID accountId) throws Exception {

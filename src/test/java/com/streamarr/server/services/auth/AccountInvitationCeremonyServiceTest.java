@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.AuthThrottleProperties;
@@ -21,6 +22,7 @@ import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.services.auth.AccountInvitationCeremonyService.AcceptInvitationCommand;
+import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -77,6 +79,7 @@ class AccountInvitationCeremonyServiceTest {
           throttle,
           new PlainEncoder(),
           new TransactionTemplate(new FakeTransactionManager()),
+          new ConstraintViolationTranslator(),
           clock);
 
   @Test
@@ -193,6 +196,20 @@ class AccountInvitationCeremonyServiceTest {
     var throttled = issued.code();
     assertThatThrownBy(() -> service.lookup(throttled))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should not throttle repeated presentations of the correct invitation code")
+  void shouldNotThrottleRepeatedPresentationsOfCorrectInvitationCode() {
+    var issued = pendingInvitation(HouseholdRole.MEMBER, null);
+
+    assertThatCode(
+            () -> {
+              for (var presentation = 0; presentation <= 5; presentation++) {
+                service.lookup(issued.code());
+              }
+            })
+        .doesNotThrowAnyException();
   }
 
   private OpaqueCodes.IssuedCode pendingInvitation(HouseholdRole role, UUID localManagerId) {

@@ -39,7 +39,7 @@ namespace Streamarr {
 
   action serverAdministration;
   action libraryAdministration in serverAdministration;
-  action householdAdministration;
+  action householdAdministration in serverAdministration;
   action accountAdministration;
   action profileAdministration;
 
@@ -189,7 +189,7 @@ namespace Streamarr {
     resource: Profile,
     context: { freshReauthentication: Bool },
   };
-  action invitationAdministration;
+  action invitationAdministration in serverAdministration;
   action issueAccountInvitation in invitationAdministration appliesTo {
     principal: Account,
     resource: Server,

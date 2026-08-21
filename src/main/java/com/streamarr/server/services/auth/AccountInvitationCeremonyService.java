@@ -11,16 +11,18 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
+import com.streamarr.server.exceptions.InvitationEmailAlreadyUsedException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -37,6 +39,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @RequiredArgsConstructor
 public class AccountInvitationCeremonyService {
 
+  private static final String EMAIL_UNIQUE_INDEX = "uq_user_account_email";
+
   private final AccountInvitationRepository invitationRepository;
   private final UserAccountRepository userAccountRepository;
   private final ProfileRepository profileRepository;
@@ -47,6 +51,7 @@ public class AccountInvitationCeremonyService {
   private final CredentialGuessThrottle throttle;
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactionTemplate;
+  private final ConstraintViolationTranslator constraintViolationTranslator;
   private final Clock clock;
 
   /** What the code holder needs to decide; never the secret, never other Households' data. */
@@ -67,26 +72,38 @@ public class AccountInvitationCeremonyService {
     var invitation = resolvePending(command.code());
     var passwordHash = passwordEncoder.encode(command.password());
 
-    return transactionTemplate.execute(
-        _ -> {
-          if (!invitationRepository.tryDecide(
-              invitation.getId(), AccountInvitationStatus.ACCEPTED, clock.instant())) {
-            throw new InvalidOneTimeCodeException();
-          }
-          var householdId = invitation.getHouseholdId();
-          if (householdId == null) {
-            // The target Household disappeared after issuance; invalidation should have caught
-            // it, and a late code must fail exactly like an unknown one.
-            throw new InvalidOneTimeCodeException();
-          }
-          var account = createAccount(command, invitation, passwordHash);
-          var issued = refreshTokenService.createSession(account, command.deviceName());
-          return AcceptedInvitation.builder()
-              .account(account)
-              .session(issued.session())
-              .rawRefreshToken(issued.rawToken())
-              .build();
-        });
+    try {
+      return transactionTemplate.execute(
+          _ -> {
+            if (!invitationRepository.tryDecide(
+                invitation.getId(), AccountInvitationStatus.ACCEPTED, clock.instant())) {
+              throw new InvalidOneTimeCodeException();
+            }
+            var householdId = invitation.getHouseholdId();
+            if (householdId == null) {
+              // The target Household disappeared after issuance; invalidation should have caught
+              // it, and a late code must fail exactly like an unknown one.
+              throw new InvalidOneTimeCodeException();
+            }
+            var account = createAccount(command, invitation, passwordHash);
+            var issued = refreshTokenService.createSession(account, command.deviceName());
+            return AcceptedInvitation.builder()
+                .account(account)
+                .session(issued.session())
+                .rawRefreshToken(issued.rawToken())
+                .build();
+          });
+    } catch (DataIntegrityViolationException exception) {
+      var duplicateEmail =
+          constraintViolationTranslator
+              .constraintName(exception)
+              .filter(EMAIL_UNIQUE_INDEX::equals)
+              .isPresent();
+      if (!duplicateEmail) {
+        throw exception;
+      }
+      throw new InvitationEmailAlreadyUsedException(exception);
+    }
   }
 
   public void decline(String rawCode) {
@@ -115,7 +132,10 @@ public class AccountInvitationCeremonyService {
                 .displayName(command.displayName())
                 .passwordHash(passwordHash)
                 .householdId(householdId)
-                .householdRole(roleFor(invitation, householdId))
+                .householdRole(
+                    userAccountRepository
+                        .roleForNewAccount(householdId, invitation.getHouseholdRole())
+                        .orElseThrow(InvalidOneTimeCodeException::new))
                 .personalProfileId(profile.getId())
                 .enabled(true)
                 .build());
@@ -136,14 +156,6 @@ public class AccountInvitationCeremonyService {
     return account;
   }
 
-  /** The first Account of an empty Household becomes HouseholdAdmin (ADR 0024 §Household). */
-  private HouseholdRole roleFor(AccountInvitation invitation, UUID householdId) {
-    if (userAccountRepository.findByHouseholdId(householdId).isEmpty()) {
-      return HouseholdRole.ADMIN;
-    }
-    return invitation.getHouseholdRole();
-  }
-
   /**
    * Resolves a presented code to its PENDING, unexpired row: throttled per publicId before any
    * lookup, constant-time digest comparison, one deliberate failure answer for every miss.
@@ -162,6 +174,7 @@ public class AccountInvitationCeremonyService {
         || !invitation.getExpiresAt().isAfter(clock.instant())) {
       throw new InvalidOneTimeCodeException();
     }
+    throttle.resetCodeGuesses(presented.publicId());
     return invitation;
   }
 

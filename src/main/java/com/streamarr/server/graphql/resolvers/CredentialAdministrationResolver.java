@@ -111,7 +111,12 @@ public class CredentialAdministrationResolver {
     String after = dfe.getArgument("after");
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
-    return paginationService.getPaginationOptions(
-        first == 0 && last == 0 && before == null ? 100 : first, after, last, before);
+    if (first != 0 || last != 0) {
+      return paginationService.getPaginationOptions(first, after, last, before);
+    }
+    if (before == null) {
+      return paginationService.getPaginationOptions(100, after, last, before);
+    }
+    return paginationService.getPaginationOptions(first, after, 100, before);
   }
 }

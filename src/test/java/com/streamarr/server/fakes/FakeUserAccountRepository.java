@@ -201,6 +201,31 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
+  public boolean lockIfEnabledServerAdmin(UUID accountId) {
+    return findById(accountId)
+        .filter(UserAccount::isEnabled)
+        .filter(UserAccount::isServerAdmin)
+        .isPresent();
+  }
+
+  @Override
+  public Optional<HouseholdRole> roleForNewAccount(
+      UUID householdId, HouseholdRole requestedRole) {
+    return Optional.of(findByHouseholdId(householdId).isEmpty() ? HouseholdRole.ADMIN : requestedRole);
+  }
+
+  @Override
+  public boolean isEligibleProfileManager(
+      UUID accountId, UUID householdId, boolean householdAdminRequired) {
+    return findById(accountId)
+        .filter(account -> householdId.equals(account.getHouseholdId()))
+        .filter(
+            account ->
+                !householdAdminRequired || account.getHouseholdRole() == HouseholdRole.ADMIN)
+        .isPresent();
+  }
+
+  @Override
   public <S extends UserAccount> S save(S entity) {
     // Mirrors uq_user_account_email on lower(email).
     var duplicateEmail =

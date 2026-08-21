@@ -30,6 +30,9 @@ import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +48,10 @@ import org.springframework.security.access.AccessDeniedException;
 @Tag("UnitTest")
 @DisplayName("Credential Issuance Service Tests")
 class CredentialIssuanceServiceTest {
+
+  private static final Instant NOW = Instant.parse("2026-08-19T12:00:00Z");
+  private static final Duration INVITATION_TTL = Duration.ofDays(7);
+  private static final Duration PASSWORD_RESET_TTL = Duration.ofHours(1);
 
   private final FakeAccountInvitationRepository invitations = new FakeAccountInvitationRepository();
   private final FakePasswordResetCodeRepository resetCodes = new FakePasswordResetCodeRepository();
@@ -63,16 +70,21 @@ class CredentialIssuanceServiceTest {
           households,
           audit,
           new OpaqueCodes(),
-          new CredentialCodeProperties(null, null),
+          new CredentialCodeProperties(INVITATION_TTL, PASSWORD_RESET_TTL),
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
-          Clock.systemUTC());
+          Clock.fixed(NOW, ZoneOffset.UTC));
 
   private Household household;
   private UserAccount resident;
 
   @BeforeEach
   void setUp() {
+    accounts.save(
+        AccountFixture.defaultAccountBuilder()
+            .id(authorization.currentIdentity().accountId())
+            .serverAdmin(true)
+            .build());
     household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     resident =
         accounts.save(
@@ -87,6 +99,7 @@ class CredentialIssuanceServiceTest {
 
     assertThat(first.code()).contains(".").isNotEqualTo(second.code());
     assertThat(first.invitation().getSecretDigest()).isNotEmpty();
+    assertThat(first.invitation().getExpiresAt()).isEqualTo(NOW.plus(INVITATION_TTL));
     var statuses = invitations.findAll().stream().map(AccountInvitation::getStatus).toList();
     assertThat(statuses)
         .containsExactlyInAnyOrder(
@@ -135,6 +148,24 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject a restricted Profile manager from another Household")
+  void shouldRejectRestrictedProfileManagerFromAnotherHousehold() {
+    var outsideManager =
+        accounts.save(
+            AccountFixture.defaultAccountBuilder().householdId(UUID.randomUUID()).build());
+
+    var outcome =
+        service.issueAccountInvitation(
+            authorization.currentIdentity(),
+            command().toBuilder()
+                .profileKind(ProfileKind.KID)
+                .localManagerAccountId(outsideManager.getId())
+                .build());
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.LocalManagerNotFound.class);
+  }
+
+  @Test
   @DisplayName("Should gate issuance as a whole surface")
   void shouldGateIssuanceAsWholeSurface() {
     var identity = authorization.currentIdentity();
@@ -165,13 +196,16 @@ class CredentialIssuanceServiceTest {
   @DisplayName("Should audit the reset issue and replace the older pending code")
   void shouldAuditResetIssueAndReplaceOlderPendingCode() {
     var first =
-        service.issuePasswordReset(authorization.currentIdentity(), resident.getId(), "locked out");
+        issuedReset(
+            service.issuePasswordReset(
+                authorization.currentIdentity(), resident.getId(), "locked out"));
     var second =
-        service.issuePasswordReset(
-            authorization.currentIdentity(), resident.getId(), "locked out again");
+        issuedReset(
+            service.issuePasswordReset(
+                authorization.currentIdentity(), resident.getId(), "locked out again"));
 
-    assertThat(first).isInstanceOf(Outcome.Accepted.class);
-    assertThat(second).isInstanceOf(Outcome.Accepted.class);
+    assertThat(first.resetCode().getExpiresAt()).isEqualTo(NOW.plus(PASSWORD_RESET_TTL));
+    assertThat(second.resetCode().getExpiresAt()).isEqualTo(NOW.plus(PASSWORD_RESET_TTL));
     assertThat(resetCodes.findAll())
         .extracting(code -> code.getStatus())
         .containsExactlyInAnyOrder(
@@ -219,6 +253,15 @@ class CredentialIssuanceServiceTest {
 
   private static CredentialIssuanceService.IssuedInvitation issued(
       Outcome<CredentialIssuanceService.IssuedInvitation, ?> outcome) {
+    return outcome.fold(
+        value -> value,
+        rejections -> {
+          throw new AssertionError("expected acceptance but got " + rejections);
+        });
+  }
+
+  private static CredentialIssuanceService.IssuedResetCode issuedReset(
+      Outcome<CredentialIssuanceService.IssuedResetCode, ?> outcome) {
     return outcome.fold(
         value -> value,
         rejections -> {
