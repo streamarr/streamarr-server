@@ -34,7 +34,7 @@ class MutationPayloadsTest {
         MutationPayloads.payload(
             Outcome.<String, String>rejected(List.of("a", "b")), TestError::new, Payload::new);
 
-    assertThat(payload.result()).isEqualTo(Optional.empty());
+    assertThat(payload.result()).isEmpty();
     assertThat(payload.userErrors()).containsExactly(new TestError("a"), new TestError("b"));
   }
 
