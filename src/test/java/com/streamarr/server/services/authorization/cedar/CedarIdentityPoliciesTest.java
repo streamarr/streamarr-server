@@ -720,13 +720,13 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should deny a policy change for a Profile that does not exist")
-    void shouldDenyPolicyChangeForProfileThatDoesNotExist() {
+    @DisplayName("Should fail closed on a policy change for a Profile that does not exist")
+    void shouldFailClosedOnPolicyChangeForProfileThatDoesNotExist() {
       assertThat(
               decide(
                   withReauthenticatedAt(atHome(), Instant.now()),
                   new Intent.ChangeProfileKind(UUID.randomUUID(), ProfileKind.ADULT)))
-          .isEqualTo(DENIED);
+          .isEqualTo(new Decision.Failed<>(Decision.FailureCause.INVALID_SLICE));
     }
 
     @Test
