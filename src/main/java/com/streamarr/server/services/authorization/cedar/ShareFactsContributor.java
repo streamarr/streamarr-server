@@ -22,6 +22,7 @@ class ShareFactsContributor implements FactContributor {
 
   static final String STRUCTURAL = "structural";
   static final String OFFERED_BY_PRINCIPAL = "offeredByPrincipal";
+  static final String PRINCIPAL_MEMBER_OF_TARGET = "principalMemberOfTarget";
   static final String PRINCIPAL_ADMIN_OF_TARGET = "principalAdminOfTarget";
   static final String DIRECTLY_MANAGED_BY_PRINCIPAL = "directlyManagedByPrincipal";
   static final String SOVEREIGN_OVER_PROFILE = "sovereignOverProfileByPrincipal";
@@ -49,6 +50,8 @@ class ShareFactsContributor implements FactContributor {
         OFFERED_BY_PRINCIPAL,
         new PrimBool(identity.accountId().equals(found.getOfferedByAccountId())));
     slice.resourceAttribute(
+        PRINCIPAL_MEMBER_OF_TARGET, new PrimBool(memberOfTarget(identity, found)));
+    slice.resourceAttribute(
         PRINCIPAL_ADMIN_OF_TARGET, new PrimBool(adminOfTarget(identity, found)));
     slice.resourceAttribute(
         DIRECTLY_MANAGED_BY_PRINCIPAL,
@@ -63,6 +66,13 @@ class ShareFactsContributor implements FactContributor {
     return userAccountRepository
         .findById(identity.accountId())
         .filter(account -> account.getHouseholdRole() == HouseholdRole.ADMIN)
+        .filter(account -> share.getHouseholdId().equals(account.getHouseholdId()))
+        .isPresent();
+  }
+
+  private boolean memberOfTarget(AuthenticatedIdentity identity, ProfileHouseholdShare share) {
+    return userAccountRepository
+        .findById(identity.accountId())
         .filter(account -> share.getHouseholdId().equals(account.getHouseholdId()))
         .isPresent();
   }

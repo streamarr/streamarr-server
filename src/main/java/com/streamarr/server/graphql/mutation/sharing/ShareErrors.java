@@ -38,20 +38,18 @@ public final class ShareErrors {
   public static RejectProfileShareError toRejectError(ShareRejections.Decide rejection) {
     return switch (rejection) {
       case ShareRejections.ShareNotFound _ -> shareNotFound();
-      case ShareRejections.ShareNotPending _,
-          ShareRejections.NoEligibleAdmin _,
-          ShareRejections.NameConflict _ ->
-          shareNotPending();
+      case ShareRejections.ShareNotPending _ -> shareNotPending();
+      case ShareRejections.NoEligibleAdmin _, ShareRejections.NameConflict _ ->
+          throw impossible("reject", rejection);
     };
   }
 
   public static CancelProfileShareError toCancelError(ShareRejections.Decide rejection) {
     return switch (rejection) {
       case ShareRejections.ShareNotFound _ -> shareNotFound();
-      case ShareRejections.ShareNotPending _,
-          ShareRejections.NoEligibleAdmin _,
-          ShareRejections.NameConflict _ ->
-          shareNotPending();
+      case ShareRejections.ShareNotPending _ -> shareNotPending();
+      case ShareRejections.NoEligibleAdmin _, ShareRejections.NameConflict _ ->
+          throw impossible("cancel", rejection);
     };
   }
 
@@ -61,7 +59,7 @@ public final class ShareErrors {
       case ShareRejections.ShareNotActive _ -> shareNotActive();
       case ShareRejections.StructuralShareCannotEnd _ -> structuralShare();
       case ShareRejections.ReauthenticationRequired _, ShareRejections.ReasonRequired _ ->
-          shareNotActive();
+          throw impossible("end", rejection);
     };
   }
 
@@ -93,5 +91,11 @@ public final class ShareErrors {
     return new StructuralShareError(
         "A Personal Profile's share into its own Household cannot end while the Account remains a"
             + " member.");
+  }
+
+  private static IllegalStateException impossible(String operation, Object rejection) {
+    return new IllegalStateException(
+        "The %s operation cannot produce %s."
+            .formatted(operation, rejection.getClass().getSimpleName()));
   }
 }

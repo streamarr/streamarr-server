@@ -84,7 +84,8 @@ class CedarIdentityPoliciesTest {
                       new ShareFactsContributor(shares, profiles, managers, accounts))),
               new IntentPlanner(new ProfilePolicyPlanner(profiles)),
               ContributorStubs.systemClockFreshness(),
-              new SimpleMeterRegistry()));
+              new SimpleMeterRegistry()),
+          accounts);
 
   private UserAccount account;
   private Profile personal;
@@ -787,12 +788,10 @@ class CedarIdentityPoliciesTest {
 
       // An unlinked Profile is offered by any direct manager — and nobody else.
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
-      assertThat(decide(atHome(), new Intent.OfferProfileShare(orphan.getId())))
-          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.OfferProfileShare(orphan.getId()))).isEqualTo(DENIED);
       managers.save(
           ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
-      assertThat(decide(atHome(), new Intent.OfferProfileShare(orphan.getId())))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.OfferProfileShare(orphan.getId()))).isEqualTo(ALLOWED);
     }
 
     @Test
@@ -805,8 +804,7 @@ class CedarIdentityPoliciesTest {
       accounts.save(account);
 
       // A supervised person no longer ends their own Profile's visits.
-      assertThat(decide(member(), new Intent.EndProfileShare(visit.getId())))
-          .isEqualTo(DENIED);
+      assertThat(decide(member(), new Intent.EndProfileShare(visit.getId()))).isEqualTo(DENIED);
     }
 
     @Test
@@ -815,21 +813,17 @@ class CedarIdentityPoliciesTest {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var offer = pendingShare(orphan.getId(), account.getHouseholdId());
 
-      assertThat(decide(atHome(), new Intent.AcceptProfileShare(offer.getId())))
-          .isEqualTo(ALLOWED);
-      assertThat(decide(atHome(), new Intent.RejectProfileShare(offer.getId())))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.AcceptProfileShare(offer.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.RejectProfileShare(offer.getId()))).isEqualTo(ALLOWED);
 
       // A live MEMBER of the target cannot; the token's ADMIN claim never decides.
       account.setHouseholdRole(HouseholdRole.MEMBER);
       accounts.save(account);
-      assertThat(decide(atHome(), new Intent.AcceptProfileShare(offer.getId())))
-          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.AcceptProfileShare(offer.getId()))).isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decide(atHome(), new Intent.AcceptProfileShare(offer.getId())))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.AcceptProfileShare(offer.getId()))).isEqualTo(ALLOWED);
     }
 
     @Test
@@ -847,10 +841,12 @@ class CedarIdentityPoliciesTest {
       offer.setOfferedByAccountId(account.getId());
       shares.save(offer);
 
-      assertThat(decide(atHome(), new Intent.CancelProfileShare(offer.getId())))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.CancelProfileShare(offer.getId()))).isEqualTo(ALLOWED);
 
       var strangersOffer = pendingShare(orphan.getId(), UUID.randomUUID());
+      var stranger = accounts.save(AccountFixture.defaultAccountBuilder().build());
+      strangersOffer.setOfferedByAccountId(stranger.getId());
+      shares.save(strangersOffer);
       assertThat(decide(atHome(), new Intent.CancelProfileShare(strangersOffer.getId())))
           .isEqualTo(DENIED);
     }
@@ -862,24 +858,21 @@ class CedarIdentityPoliciesTest {
       var hosted = shares.share(orphan.getId(), account.getHouseholdId(), false);
 
       // Target Household's live admin.
-      assertThat(decide(atHome(), new Intent.EndProfileShare(hosted.getId())))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.EndProfileShare(hosted.getId()))).isEqualTo(ALLOWED);
 
-      // A direct manager, from anywhere.
+      // A direct manager may end a local share, but not one into another Household.
       var elsewhere = shares.share(orphan.getId(), visitedHouseholdId, false);
       account.setHouseholdRole(HouseholdRole.MEMBER);
       accounts.save(account);
-      assertThat(decide(atHome(), new Intent.EndProfileShare(elsewhere.getId())))
-          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.EndProfileShare(elsewhere.getId()))).isEqualTo(DENIED);
       managers.save(
           ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
-      assertThat(decide(atHome(), new Intent.EndProfileShare(elsewhere.getId())))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.EndProfileShare(elsewhere.getId()))).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.EndProfileShare(hosted.getId()))).isEqualTo(ALLOWED);
 
       // The sovereign Account over its own Personal Profile's visits.
       var visit = shares.share(personal.getId(), visitedHouseholdId, false);
-      assertThat(decide(atHome(), new Intent.EndProfileShare(visit.getId())))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.EndProfileShare(visit.getId()))).isEqualTo(ALLOWED);
     }
 
     @Test
@@ -897,6 +890,27 @@ class CedarIdentityPoliciesTest {
       assertThat(decide(atHome(), forceEnd)).isEqualTo(REAUTHENTICATION_REQUIRED);
       assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), forceEnd))
           .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should forbid ending a structural share before the database guardrail")
+    void shouldForbidEndingStructuralShareBeforeDatabaseGuardrail() {
+      var structural =
+          shares
+              .findByProfileIdAndHouseholdIdAndStatus(
+                  personal.getId(), account.getHouseholdId(), ProfileShareStatus.ACTIVE)
+              .orElseThrow();
+
+      assertThat(decide(atHome(), new Intent.EndProfileShare(structural.getId())))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(
+              decide(
+                  withReauthenticatedAt(atHome(), Instant.now()),
+                  new Intent.ForceEndProfileShare(structural.getId())))
+          .isEqualTo(DENIED);
     }
   }
 

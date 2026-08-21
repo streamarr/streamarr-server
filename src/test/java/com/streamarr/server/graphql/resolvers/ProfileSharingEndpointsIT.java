@@ -18,7 +18,9 @@ import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import org.jooq.DSLContext;
@@ -52,6 +54,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private HouseholdRepository householdRepository;
   @Autowired private AuthSessionRepository authSessionRepository;
+  @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
 
@@ -112,6 +115,109 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.offerProfileShare.userErrors[0].__typename")
                 .value("ProfileAlreadySharedError"));
+  }
+
+  @Test
+  @DisplayName("Should replace a pending offer and cancel the older one")
+  void shouldReplacePendingOfferAndCancelOlderOne() throws Exception {
+    var orphan = managedOrphan();
+    var firstShareId = offer(orphan, host.household().getId());
+
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+              share { id status } userErrors { __typename } } }
+            """
+                .formatted(orphan.getId(), host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"));
+
+    assertThat(shareRepository.findById(UUID.fromString(firstShareId)).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.CANCELED);
+  }
+
+  @Test
+  @DisplayName("Should expire an old offer before creating its replacement")
+  void shouldExpireOldOfferBeforeCreatingReplacement() throws Exception {
+    var orphan = managedOrphan();
+    var firstShareId = UUID.fromString(offer(orphan, host.household().getId()));
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var expired = shareRepository.findById(firstShareId).orElseThrow();
+          expired.setExpiresAt(Instant.now().minusSeconds(1));
+          shareRepository.saveAndFlush(expired);
+        });
+
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+              share { id status } userErrors { __typename } } }
+            """
+                .formatted(orphan.getId(), host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"));
+
+    assertThat(shareRepository.findById(firstShareId).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.EXPIRED);
+  }
+
+  @Test
+  @DisplayName("Should invalidate a pending offer when its ServerAdmin loses authority")
+  void shouldInvalidatePendingOfferWhenItsServerAdminLosesAuthority() throws Exception {
+    var orphan = managedOrphan();
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    try {
+      var response =
+          graphql(
+                  authTestSupport.accountBearer(serverAdmin),
+                  """
+                  mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+                    share { id status } userErrors { __typename } } }
+                  """
+                      .formatted(orphan.getId(), host.household().getId()))
+              .andExpect(status().isOk())
+              .andExpect(jsonPath("$.errors").doesNotExist())
+              .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"))
+              .andReturn()
+              .getResponse()
+              .getContentAsString();
+      var shareId =
+          UUID.fromString(
+              objectMapper
+                  .readTree(response)
+                  .path("data")
+                  .path("offerProfileShare")
+                  .path("share")
+                  .path("id")
+                  .asString());
+      transactionTemplate.executeWithoutResult(
+          _ -> {
+            var revoked =
+                userAccountRepository.findById(serverAdmin.account().getId()).orElseThrow();
+            revoked.setServerAdmin(false);
+            userAccountRepository.saveAndFlush(revoked);
+          });
+
+      graphql(
+              authTestSupport.accountBearer(host),
+              """
+              mutation { acceptProfileShare(input: {shareId: "%s"}) {
+                share { status } userErrors { __typename } } }
+              """
+                  .formatted(shareId))
+          .andExpect(status().isOk())
+          .andExpect(
+              jsonPath("$.data.acceptProfileShare.userErrors[0].__typename")
+                  .value("ShareNotPendingError"));
+      assertThat(shareRepository.findById(shareId).orElseThrow().getStatus())
+          .isEqualTo(ProfileShareStatus.INVALIDATED);
+    } finally {
+      authTestSupport.deleteIdentity(serverAdmin);
+    }
   }
 
   @Test
@@ -253,7 +359,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
                 .getContextHouseholdId())
         .isNull();
 
-    // The structural share refuses to end for everyone.
+    // Cedar refuses to end the structural share before the database constraint is reached.
     var structuralShareId =
         shareRepository
             .findByProfileIdAndHouseholdIdAndStatus(
@@ -268,9 +374,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
             """
                 .formatted(structuralShareId))
         .andExpect(status().isOk())
-        .andExpect(
-            jsonPath("$.data.endProfileShare.userErrors[0].__typename")
-                .value("StructuralShareError"));
+        .andExpect(jsonPath("$.data.endProfileShare").doesNotExist())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
   }
 
   @Test
@@ -345,6 +450,64 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.sharePreflight.wouldLock").value(true))
         .andExpect(jsonPath("$.data.sharePreflight.nameConflict").value(false));
+  }
+
+  @Test
+  @DisplayName("Should return the final share when last is supplied without before")
+  void shouldReturnFinalShareWhenLastIsSuppliedWithoutBefore() throws Exception {
+    var orphan = managedOrphan();
+    offer(orphan, host.household().getId());
+
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            query { profileShares(profileId: "%s", last: 1) {
+              edges { node { id } } } }
+            """
+                .formatted(orphan.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.profileShares.edges[0].node.id").exists());
+  }
+
+  @Test
+  @DisplayName("Should apply the default page size when before is supplied without last")
+  void shouldApplyDefaultPageSizeWhenBeforeIsSuppliedWithoutLast() throws Exception {
+    var orphan = managedOrphan();
+    offer(orphan, host.household().getId());
+    var response =
+        graphql(
+                authTestSupport.accountBearer(owner),
+                """
+                query { profileShares(profileId: "%s", first: 2) {
+                  edges { cursor node { id } } } }
+                """
+                    .formatted(orphan.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var before =
+        objectMapper
+            .readTree(response)
+            .path("data")
+            .path("profileShares")
+            .path("edges")
+            .path(1)
+            .path("cursor")
+            .asString();
+
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            query { profileShares(profileId: "%s", before: "%s") {
+              edges { node { id } } } }
+            """
+                .formatted(orphan.getId(), before))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.profileShares.edges[0].node.id").exists());
   }
 
   private String offer(Profile profile, UUID householdId) throws Exception {

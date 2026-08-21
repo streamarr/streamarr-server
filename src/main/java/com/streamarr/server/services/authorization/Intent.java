@@ -132,8 +132,9 @@ public sealed interface Intent {
   record CancelProfileShare(UUID shareId) implements UnitIntent {}
 
   /**
-   * End an active share: a target HouseholdAdmin, a direct manager of the Profile, the sovereign
-   * Personal Profile Account, or ServerAdmin. Nobody ends a structural share.
+   * End an active share: a target HouseholdAdmin, a direct manager of the Profile who belongs to
+   * the target Household, the sovereign Personal Profile Account, or ServerAdmin. Nobody ends a
+   * structural share.
    */
   record EndProfileShare(UUID shareId) implements UnitIntent {}
 

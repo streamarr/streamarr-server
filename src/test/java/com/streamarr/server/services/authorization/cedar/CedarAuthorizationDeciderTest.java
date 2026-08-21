@@ -69,7 +69,7 @@ class CedarAuthorizationDeciderTest {
   private final CedarAuthorizationDecider decider =
       decider(ENGINE, new LivePrincipalAuthorityContributor(accounts));
   private final AuthorizationService authorizationService =
-      new SecurityContextAuthorizationService(decider);
+      new SecurityContextAuthorizationService(decider, accounts);
 
   static Stream<Arguments> libraryAdministrationIntents() {
     var libraryId = UUID.randomUUID();
