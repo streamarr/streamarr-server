@@ -9,6 +9,7 @@ public final class ManagerErrors {
   private static final String PROFILE_ID = "profileId";
   private static final String CODE = "code";
   private static final String ACCOUNT_ID = "accountId";
+  private static final String RECIPIENT_ACCOUNT_ID = "recipientAccountId";
   private static final String NO_SUCH_INVITATION = "No such invitation.";
 
   private ManagerErrors() {}
@@ -16,9 +17,9 @@ public final class ManagerErrors {
   public static InviteProfileManagerError toInviteError(ManagerRejections.Invite rejection) {
     return switch (rejection) {
       case ManagerRejections.ProfileNotFound _ -> profileNotFound();
-      case ManagerRejections.RecipientNotFound _ -> recipientNotFound();
-      case ManagerRejections.RecipientNotEligible _ -> recipientNotEligible();
-      case ManagerRejections.AlreadyManager _ -> alreadyManager();
+      case ManagerRejections.RecipientNotFound _ -> recipientNotFound(RECIPIENT_ACCOUNT_ID);
+      case ManagerRejections.RecipientNotEligible _ -> recipientNotEligible(RECIPIENT_ACCOUNT_ID);
+      case ManagerRejections.AlreadyManager _ -> alreadyManager(RECIPIENT_ACCOUNT_ID);
     };
   }
 
@@ -36,8 +37,8 @@ public final class ManagerErrors {
     return switch (rejection) {
       case ManagerRejections.ManagerInvitationNotFound _ ->
           new ManagerInvitationNotFoundError(NO_SUCH_INVITATION, InputPath.of(CODE));
-      case ManagerRejections.RecipientNotEligible _ -> recipientNotEligible();
-      case ManagerRejections.AlreadyManager _ -> alreadyManager();
+      case ManagerRejections.RecipientNotEligible _ -> recipientNotEligible(CODE);
+      case ManagerRejections.AlreadyManager _ -> alreadyManager(CODE);
     };
   }
 
@@ -94,18 +95,29 @@ public final class ManagerErrors {
   }
 
   private static RecipientNotFoundError recipientNotFound() {
-    return new RecipientNotFoundError("No such Account.", InputPath.of(ACCOUNT_ID));
+    return recipientNotFound(ACCOUNT_ID);
+  }
+
+  private static RecipientNotFoundError recipientNotFound(String inputPath) {
+    return new RecipientNotFoundError("No such Account.", InputPath.of(inputPath));
   }
 
   private static RecipientNotEligibleError recipientNotEligible() {
+    return recipientNotEligible(ACCOUNT_ID);
+  }
+
+  private static RecipientNotEligibleError recipientNotEligible(String inputPath) {
     return new RecipientNotEligibleError(
-        "A manager's own Personal Profile must be an unrestricted Adult.",
-        InputPath.of(ACCOUNT_ID));
+        "A manager's own Personal Profile must be an unrestricted Adult.", InputPath.of(inputPath));
   }
 
   private static AlreadyManagerError alreadyManager() {
+    return alreadyManager(ACCOUNT_ID);
+  }
+
+  private static AlreadyManagerError alreadyManager(String inputPath) {
     return new AlreadyManagerError(
-        "That Account already manages the Profile.", InputPath.of(ACCOUNT_ID));
+        "That Account already manages the Profile.", InputPath.of(inputPath));
   }
 
   private static NotAManagerError notAManager() {
