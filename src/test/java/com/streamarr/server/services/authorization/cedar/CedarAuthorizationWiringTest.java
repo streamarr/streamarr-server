@@ -40,6 +40,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @SpringBootTest(
     classes = {
       CedarAuthorizationWiringTest.ProductionCedarModule.class,
+      ReauthenticationFreshness.class,
       CedarAuthorizationWiringTest.Meters.class
     })
 @DisplayName("Cedar Authorization Wiring Tests")

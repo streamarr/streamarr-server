@@ -489,11 +489,11 @@ class CedarIdentityPoliciesTest {
     @Test
     @DisplayName("Should reserve the Household catalogue for a live ServerAdmin")
     void shouldReserveHouseholdCatalogueForLiveServerAdmin() {
-      assertThat(decider.decide(atHome(), new Intent.ViewHouseholds())).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.ViewHouseholds())).isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decider.decide(atHome(), new Intent.ViewHouseholds())).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.ViewHouseholds())).isEqualTo(ALLOWED);
     }
 
     @Test
