@@ -58,14 +58,9 @@ class CedarEngineSelfCheckTest {
         new StubEngine(
             StubEngine::passThroughValidation,
             _ ->
-                new AuthorizationResponse(
-                    AuthorizationResponse.SuccessOrFailure.Success,
-                    Optional.of(
-                        new AuthorizationSuccessResponse(
-                            AuthorizationSuccessResponse.Decision.Allow,
-                            new AuthorizationSuccessResponse.Diagnostics(Set.of(), List.of()))),
-                    Optional.empty(),
-                    new ArrayList<>()));
+                authorizationResponse()
+                    .decision(AuthorizationSuccessResponse.Decision.Allow)
+                    .build());
 
     var result = new CedarEngineSelfCheck(engine).run();
 
@@ -78,25 +73,7 @@ class CedarEngineSelfCheckTest {
   void shouldFailWhenSelfCheckPoliciesDoNotValidate() {
     var engine =
         new StubEngine(
-            _ ->
-                new ValidationResponse(
-                    ValidationResponse.SuccessOrFailure.Success,
-                    Optional.of(
-                        List.of(
-                            new ValidationResponse.ValidationError(
-                                "p",
-                                new DetailedError(
-                                    "bad",
-                                    Optional.empty(),
-                                    Optional.empty(),
-                                    Optional.empty(),
-                                    Optional.empty(),
-                                    Optional.empty(),
-                                    Optional.empty())))),
-                    Optional.of(List.of()),
-                    Optional.empty(),
-                    Optional.empty()),
-            UnaryOperator.identity());
+            _ -> validationResponse().policyError("bad").build(), UnaryOperator.identity());
 
     assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
         .isInstanceOf(CedarSelfCheckException.class)
@@ -108,25 +85,7 @@ class CedarEngineSelfCheckTest {
   void shouldFailWhenPolicyValidationReportsWarnings() {
     var engine =
         new StubEngine(
-            _ ->
-                new ValidationResponse(
-                    ValidationResponse.SuccessOrFailure.Success,
-                    Optional.of(List.of()),
-                    Optional.of(
-                        List.of(
-                            new ValidationResponse.ValidationError(
-                                "p",
-                                new DetailedError(
-                                    "warning",
-                                    Optional.empty(),
-                                    Optional.empty(),
-                                    Optional.empty(),
-                                    Optional.empty(),
-                                    Optional.empty(),
-                                    Optional.empty())))),
-                    Optional.empty(),
-                    Optional.empty()),
-            UnaryOperator.identity());
+            _ -> validationResponse().policyWarning("warning").build(), UnaryOperator.identity());
 
     assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
         .isInstanceOf(CedarSelfCheckException.class)
@@ -138,23 +97,7 @@ class CedarEngineSelfCheckTest {
   void shouldFailWhenValidationResponseReportsWarnings() {
     var engine =
         new StubEngine(
-            _ ->
-                new ValidationResponse(
-                    ValidationResponse.SuccessOrFailure.Success,
-                    Optional.of(List.of()),
-                    Optional.of(List.of()),
-                    Optional.empty(),
-                    Optional.of(
-                        List.of(
-                            new DetailedError(
-                                "warning",
-                                Optional.empty(),
-                                Optional.empty(),
-                                Optional.empty(),
-                                Optional.empty(),
-                                Optional.empty(),
-                                Optional.empty())))),
-            UnaryOperator.identity());
+            _ -> validationResponse().responseWarning("warning").build(), UnaryOperator.identity());
 
     assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
         .isInstanceOf(CedarSelfCheckException.class)
@@ -166,13 +109,7 @@ class CedarEngineSelfCheckTest {
   void shouldFailWhenEngineCannotEvaluateSelfCheckRequest() {
     var engine =
         new StubEngine(
-            StubEngine::passThroughValidation,
-            _ ->
-                new AuthorizationResponse(
-                    AuthorizationResponse.SuccessOrFailure.Failure,
-                    Optional.empty(),
-                    Optional.of(new ArrayList<>()),
-                    new ArrayList<>()));
+            StubEngine::passThroughValidation, _ -> authorizationResponse().failure().build());
 
     assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
         .isInstanceOf(CedarSelfCheckException.class)
@@ -185,27 +122,11 @@ class CedarEngineSelfCheckTest {
     var engine =
         new StubEngine(
             StubEngine::passThroughValidation,
-            response ->
-                new AuthorizationResponse(
-                    AuthorizationResponse.SuccessOrFailure.Success,
-                    Optional.of(
-                        new AuthorizationSuccessResponse(
-                            AuthorizationSuccessResponse.Decision.Allow,
-                            new AuthorizationSuccessResponse.Diagnostics(
-                                Set.of(),
-                                List.of(
-                                    new AuthorizationSuccessResponse.AuthorizationError(
-                                        "p",
-                                        new DetailedError(
-                                            "boom",
-                                            Optional.empty(),
-                                            Optional.empty(),
-                                            Optional.empty(),
-                                            Optional.empty(),
-                                            Optional.empty(),
-                                            Optional.empty())))))),
-                    Optional.empty(),
-                    new ArrayList<>()));
+            _ ->
+                authorizationResponse()
+                    .decision(AuthorizationSuccessResponse.Decision.Allow)
+                    .evaluationError("boom")
+                    .build());
 
     assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
         .isInstanceOf(CedarSelfCheckException.class)
@@ -218,12 +139,11 @@ class CedarEngineSelfCheckTest {
     var engine =
         new StubEngine(
             StubEngine::passThroughValidation,
-            response ->
-                new AuthorizationResponse(
-                    response.type,
-                    response.success,
-                    Optional.empty(),
-                    new ArrayList<>(List.of("warning"))));
+            _ ->
+                authorizationResponse()
+                    .decision(AuthorizationSuccessResponse.Decision.Allow)
+                    .warning("warning")
+                    .build());
 
     assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
         .isInstanceOf(CedarSelfCheckException.class)
@@ -244,6 +164,98 @@ class CedarEngineSelfCheckTest {
         .isInstanceOf(CedarSelfCheckException.class)
         .hasMessageContaining("could not evaluate")
         .hasCauseInstanceOf(AuthException.class);
+  }
+
+  private static ValidationResponseBuilder validationResponse() {
+    return new ValidationResponseBuilder();
+  }
+
+  private static AuthorizationResponseBuilder authorizationResponse() {
+    return new AuthorizationResponseBuilder();
+  }
+
+  private static DetailedError diagnostic(String message) {
+    return new DetailedError(
+        message,
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty());
+  }
+
+  private static final class ValidationResponseBuilder {
+
+    private final List<ValidationResponse.ValidationError> policyErrors = new ArrayList<>();
+    private final List<ValidationResponse.ValidationError> policyWarnings = new ArrayList<>();
+    private final List<DetailedError> responseWarnings = new ArrayList<>();
+
+    private ValidationResponseBuilder policyError(String message) {
+      policyErrors.add(new ValidationResponse.ValidationError("p", diagnostic(message)));
+      return this;
+    }
+
+    private ValidationResponseBuilder policyWarning(String message) {
+      policyWarnings.add(new ValidationResponse.ValidationError("p", diagnostic(message)));
+      return this;
+    }
+
+    private ValidationResponseBuilder responseWarning(String message) {
+      responseWarnings.add(diagnostic(message));
+      return this;
+    }
+
+    private ValidationResponse build() {
+      return new ValidationResponse(
+          ValidationResponse.SuccessOrFailure.Success,
+          Optional.of(policyErrors),
+          Optional.of(policyWarnings),
+          Optional.empty(),
+          responseWarnings.isEmpty() ? Optional.empty() : Optional.of(responseWarnings));
+    }
+  }
+
+  private static final class AuthorizationResponseBuilder {
+
+    private AuthorizationResponse.SuccessOrFailure type =
+        AuthorizationResponse.SuccessOrFailure.Success;
+    private AuthorizationSuccessResponse.Decision decision =
+        AuthorizationSuccessResponse.Decision.Allow;
+    private final List<AuthorizationSuccessResponse.AuthorizationError> evaluationErrors =
+        new ArrayList<>();
+    private final ArrayList<String> warnings = new ArrayList<>();
+
+    private AuthorizationResponseBuilder decision(AuthorizationSuccessResponse.Decision decision) {
+      this.decision = decision;
+      return this;
+    }
+
+    private AuthorizationResponseBuilder evaluationError(String message) {
+      evaluationErrors.add(
+          new AuthorizationSuccessResponse.AuthorizationError("p", diagnostic(message)));
+      return this;
+    }
+
+    private AuthorizationResponseBuilder failure() {
+      type = AuthorizationResponse.SuccessOrFailure.Failure;
+      return this;
+    }
+
+    private AuthorizationResponseBuilder warning(String warning) {
+      warnings.add(warning);
+      return this;
+    }
+
+    private AuthorizationResponse build() {
+      if (type == AuthorizationResponse.SuccessOrFailure.Failure) {
+        return new AuthorizationResponse(
+            type, Optional.empty(), Optional.of(new ArrayList<>()), warnings);
+      }
+      var diagnostics = new AuthorizationSuccessResponse.Diagnostics(Set.of(), evaluationErrors);
+      var success = new AuthorizationSuccessResponse(decision, diagnostics);
+      return new AuthorizationResponse(type, Optional.of(success), Optional.empty(), warnings);
+    }
   }
 
   /** Wraps the real engine so a test can replace the validation or authorization answer. */
