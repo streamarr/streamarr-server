@@ -70,8 +70,9 @@ class IdentityQueryServiceTest {
   }
 
   @Test
-  @DisplayName("Should describe the Account, its Households, and the context's picker")
-  void shouldDescribeAccountItsHouseholdsAndContextsPicker() {
+  @DisplayName(
+      "Should describe the Account, its Households, and the picker when Me view is requested")
+  void shouldDescribeAccountHouseholdsAndPickerWhenMeViewIsRequested() {
     var kid =
         profiles.save(
             ProfileFixture.kidProfileBuilder()
@@ -133,8 +134,8 @@ class IdentityQueryServiceTest {
   }
 
   @Test
-  @DisplayName("Should read an unknown Account or Household as unauthenticated")
-  void shouldReadUnknownAccountOrHouseholdAsUnauthenticated() {
+  @DisplayName("Should read as unauthenticated when the Account or Household is unknown")
+  void shouldReadAsUnauthenticatedWhenAccountOrHouseholdIsUnknown() {
     var ghost =
         AuthenticatedIdentity.builder()
             .accountId(UUID.randomUUID())

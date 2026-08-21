@@ -110,8 +110,8 @@ class ProfileSelectionServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse a Profile that is not available in the context Household")
-  void shouldRefuseProfileThatIsNotAvailableInContextHousehold() {
+  @DisplayName("Should refuse selection when the Profile is unavailable in the context Household")
+  void shouldRefuseSelectionWhenProfileIsUnavailableInContextHousehold() {
     var elsewhere = profiles.save(ProfileFixture.defaultProfileBuilder().build());
 
     var identity = identity();
@@ -136,8 +136,8 @@ class ProfileSelectionServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject a wrong PIN and throttle repeated guesses")
-  void shouldRejectWrongPinAndThrottleRepeatedGuesses() {
+  @DisplayName("Should reject and throttle when the Profile PIN is wrong")
+  void shouldRejectAndThrottleWhenProfilePinIsWrong() {
     pin(personal, "4242");
 
     for (var attempt = 0; attempt < 2; attempt++) {
@@ -155,8 +155,8 @@ class ProfileSelectionServiceTest {
   }
 
   @Test
-  @DisplayName("Should pass a verified PIN to the decision and select the Profile")
-  void shouldPassVerifiedPinToDecisionAndSelectProfile() {
+  @DisplayName("Should select the Profile when the PIN is verified")
+  void shouldSelectProfileWhenPinIsVerified() {
     pin(personal, "4242");
 
     var context = service.selectProfile(identity(), command(personal.getId(), "4242"));

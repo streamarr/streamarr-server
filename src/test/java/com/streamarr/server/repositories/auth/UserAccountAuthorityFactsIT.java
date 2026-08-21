@@ -34,8 +34,8 @@ class UserAccountAuthorityFactsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should read ServerAdmin authority from the server_admin column")
-  void shouldReadServerAdminAuthorityFromServerAdminColumn() {
+  @DisplayName("Should read ServerAdmin authority when the server_admin column is true")
+  void shouldReadServerAdminAuthorityWhenServerAdminColumnIsTrue() {
     identity = authTestSupport.createAdminIdentity();
 
     assertThat(userAccountRepository.findAuthorityFacts(identity.account().getId()))
@@ -43,8 +43,9 @@ class UserAccountAuthorityFactsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should report a disabled non-admin Account as neither enabled nor ServerAdmin")
-  void shouldReportDisabledNonAdminAccountAsNeitherEnabledNorServerAdmin() {
+  @DisplayName(
+      "Should report neither enabled nor ServerAdmin when the Account is disabled and not an admin")
+  void shouldReportNeitherEnabledNorServerAdminWhenAccountIsDisabledAndNotAdmin() {
     identity = authTestSupport.createIdentity();
     var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
     account.setEnabled(false);
@@ -81,8 +82,8 @@ class UserAccountAuthorityFactsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should report Household access for members and visitors only")
-  void shouldReportHouseholdAccessForMembersAndVisitorsOnly() {
+  @DisplayName("Should report Household access when the Account is a member or visitor")
+  void shouldReportHouseholdAccessWhenAccountIsMemberOrVisitor() {
     identity = authTestSupport.createIdentity();
     var accountId = identity.account().getId();
 

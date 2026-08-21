@@ -51,13 +51,16 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should expose the context household in every scope")
-  void shouldExposeContextHouseholdInEveryScope() {
+  @DisplayName("Should expose the context Household when any scope is authenticated")
+  void shouldExposeContextHouseholdWhenAnyScopeIsAuthenticated() {
     authenticateWith(profileScopedIdentity());
     assertThat(authorizationService.requireHousehold()).isEqualTo(visitedHouseholdId);
 
     authenticateWith(accountScopedIdentity());
     assertThat(authorizationService.requireHousehold()).isEqualTo(householdId);
+
+    authenticateWith(playbackScopedIdentity());
+    assertThat(authorizationService.requireHousehold()).isEqualTo(visitedHouseholdId);
   }
 
   @Test
@@ -212,6 +215,19 @@ class AuthorizationServiceTest {
         .householdId(householdId)
         .householdRole(HouseholdRole.MEMBER)
         .contextHouseholdId(householdId)
+        .build();
+  }
+
+  private AuthenticatedIdentity playbackScopedIdentity() {
+    return AuthenticatedIdentity.builder()
+        .accountId(accountId)
+        .authSessionId(UUID.randomUUID())
+        .scope(TokenScope.PLAYBACK)
+        .householdId(householdId)
+        .householdRole(HouseholdRole.MEMBER)
+        .contextHouseholdId(visitedHouseholdId)
+        .profileId(profileId)
+        .streamSessionId(UUID.randomUUID())
         .build();
   }
 

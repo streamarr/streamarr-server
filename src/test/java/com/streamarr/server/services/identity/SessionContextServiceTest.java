@@ -84,8 +84,8 @@ class SessionContextServiceTest {
   }
 
   @Test
-  @DisplayName("Should keep a visited Household while the Personal Profile is shared there")
-  void shouldKeepVisitedHouseholdWhilePersonalProfileIsSharedThere() {
+  @DisplayName("Should keep the visited Household when the Personal Profile share is active")
+  void shouldKeepVisitedHouseholdWhenPersonalProfileShareIsActive() {
     shares.share(personal.getId(), visitedHouseholdId, false);
     var session = session(visitedHouseholdId, personal.getId());
 
@@ -96,8 +96,8 @@ class SessionContextServiceTest {
   }
 
   @Test
-  @DisplayName("Should clear a selected Profile that is no longer available in the context")
-  void shouldClearSelectedProfileThatIsNoLongerAvailableInContext() {
+  @DisplayName("Should clear the selected Profile when it is unavailable in the context")
+  void shouldClearSelectedProfileWhenUnavailableInContext() {
     var gone = UUID.randomUUID();
     var session = session(account.getHouseholdId(), gone);
 
@@ -108,8 +108,8 @@ class SessionContextServiceTest {
   }
 
   @Test
-  @DisplayName("Should clear a selected Profile that the safety rule now locks")
-  void shouldClearSelectedProfileThatSafetyRuleNowLocks() {
+  @DisplayName("Should clear the selected Profile when the safety rule locks it")
+  void shouldClearSelectedProfileWhenSafetyRuleLocksIt() {
     var kid =
         profiles.save(
             ProfileFixture.kidProfileBuilder().householdId(account.getHouseholdId()).build());
@@ -123,8 +123,8 @@ class SessionContextServiceTest {
   }
 
   @Test
-  @DisplayName("Should switch to a usable Household and clear the selection")
-  void shouldSwitchToUsableHouseholdAndClearSelection() {
+  @DisplayName("Should clear the selection when switching to a usable Household")
+  void shouldClearSelectionWhenSwitchingToUsableHousehold() {
     shares.share(personal.getId(), visitedHouseholdId, false);
     var session = session(account.getHouseholdId(), personal.getId());
 
@@ -136,8 +136,8 @@ class SessionContextServiceTest {
   }
 
   @Test
-  @DisplayName("Should deny switching to a Household the Account may not use")
-  void shouldDenySwitchingToHouseholdAccountMayNotUse() {
+  @DisplayName("Should deny the switch when the Account may not use the Household")
+  void shouldDenySwitchWhenAccountMayNotUseHousehold() {
     var session = session(account.getHouseholdId(), null);
     var accountId = account.getId();
     var sessionId = session.getId();
@@ -168,8 +168,8 @@ class SessionContextServiceTest {
   }
 
   @Test
-  @DisplayName("Should report an unwritten session distinctly from a revoked one")
-  void shouldReportUnwrittenSessionDistinctlyFromRevokedOne() {
+  @DisplayName("Should report an unwritten session when it was never persisted")
+  void shouldReportUnwrittenSessionWhenItWasNeverPersisted() {
     var unwritten = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
 
     assertThatThrownBy(() -> service.revalidateStoredContext(account, unwritten))

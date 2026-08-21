@@ -28,8 +28,9 @@ class AuthorizationParityTest {
           new BasicAuthorizationEngine(), new PathMatchingResourcePatternResolver());
 
   @Test
-  @DisplayName("Should declare every Java action in the schema with its resource type")
-  void shouldDeclareEveryJavaActionInSchemaWithItsResourceType() throws Exception {
+  @DisplayName(
+      "Should declare every Java action with its resource type when schema parity is checked")
+  void shouldDeclareEveryJavaActionWhenSchemaParityIsChecked() throws Exception {
     var actions = schemaActions();
 
     for (var action : Action.values()) {
@@ -55,8 +56,9 @@ class AuthorizationParityTest {
   }
 
   @Test
-  @DisplayName("Should plan every concrete schema action from exactly one intent")
-  void shouldPlanEveryConcreteSchemaActionFromExactlyOneIntent() throws Exception {
+  @DisplayName(
+      "Should plan every concrete schema action from exactly one intent when intent parity is checked")
+  void shouldPlanEveryConcreteSchemaActionWhenIntentParityIsChecked() throws Exception {
     var concrete = new ArrayList<String>();
     schemaActions()
         .properties()
@@ -80,8 +82,9 @@ class AuthorizationParityTest {
   }
 
   @Test
-  @DisplayName("Should keep every library administration action under serverAdministration")
-  void shouldKeepEveryLibraryAdministrationActionUnderServerAdministration() throws Exception {
+  @DisplayName(
+      "Should keep library administration actions under serverAdministration when action parity is checked")
+  void shouldKeepLibraryAdministrationActionsGroupedWhenActionParityIsChecked() throws Exception {
     var actions = schemaActions();
 
     for (var action : Action.values()) {
@@ -98,8 +101,8 @@ class AuthorizationParityTest {
   }
 
   @Test
-  @DisplayName("Should require every declared fact from an action")
-  void shouldRequireEveryDeclaredFactFromAnAction() {
+  @DisplayName("Should require every declared fact when action coverage is checked")
+  void shouldRequireEveryDeclaredFactWhenActionCoverageIsChecked() {
     var required = new ArrayList<FactRequirement>();
     for (var action : Action.values()) {
       required.addAll(action.facts());

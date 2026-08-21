@@ -39,8 +39,8 @@ class SliceAssemblerTest {
   }
 
   @Test
-  @DisplayName("Should build the principal and resource from the identity and the check")
-  void shouldBuildPrincipalAndResourceFromIdentityAndCheck() {
+  @DisplayName("Should build the principal and resource when identity and check are provided")
+  void shouldBuildPrincipalAndResourceWhenIdentityAndCheckAreProvided() {
     var accountId = UUID.randomUUID();
     var identity =
         AuthenticatedIdentityFixture.defaultIdentityBuilder().accountId(accountId).build();

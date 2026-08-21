@@ -50,8 +50,8 @@ class LoginServiceTransactionIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should release database connection before password verification")
-  void shouldReleaseDatabaseConnectionBeforePasswordVerification() {
+  @DisplayName("Should release the database connection when password verification runs")
+  void shouldReleaseDatabaseConnectionWhenPasswordVerificationRuns() {
     account =
         authTestSupport.createAccount(
             builder -> builder.passwordHash(passwordEncoder.encode(PASSWORD)));

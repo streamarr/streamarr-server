@@ -107,8 +107,9 @@ class CredentialGuessThrottleTest {
   }
 
   @Test
-  @DisplayName("Should keep Profile PIN and Account password budgets independent")
-  void shouldKeepProfilePinAndAccountPasswordBudgetsIndependent() {
+  @DisplayName(
+      "Should keep budgets independent when credentials use a Profile PIN and Account password")
+  void shouldKeepBudgetsIndependentWhenCredentialsUseProfilePinAndAccountPassword() {
     var accountId = UUID.randomUUID();
     var profileId = UUID.randomUUID();
     throttle.registerProfilePinAttempt(accountId, profileId);
@@ -123,8 +124,8 @@ class CredentialGuessThrottleTest {
   }
 
   @Test
-  @DisplayName("Should reset only the budget that verified successfully")
-  void shouldResetOnlyBudgetThatVerifiedSuccessfully() {
+  @DisplayName("Should reset only the successful budget when a credential verifies")
+  void shouldResetOnlySuccessfulBudgetWhenCredentialVerifies() {
     var accountId = UUID.randomUUID();
     var profileId = UUID.randomUUID();
     throttle.registerProfilePinAttempt(accountId, profileId);

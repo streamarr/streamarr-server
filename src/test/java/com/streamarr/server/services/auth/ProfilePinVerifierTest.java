@@ -27,8 +27,8 @@ class ProfilePinVerifierTest {
   private final UUID accountId = UUID.randomUUID();
 
   @Test
-  @DisplayName("Should accept the right PIN and reset the budget")
-  void shouldAcceptRightPinAndResetBudget() {
+  @DisplayName("Should accept the PIN and reset the budget when the PIN is correct")
+  void shouldAcceptPinAndResetBudgetWhenPinIsCorrect() {
     var profile =
         ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash("pin:4242").build();
 
@@ -41,8 +41,8 @@ class ProfilePinVerifierTest {
   }
 
   @Test
-  @DisplayName("Should reject a missing or blank PIN")
-  void shouldRejectMissingOrBlankPin() {
+  @DisplayName("Should reject the PIN when it is missing or blank")
+  void shouldRejectPinWhenMissingOrBlank() {
     var profile =
         ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash("pin:4242").build();
 
@@ -53,8 +53,8 @@ class ProfilePinVerifierTest {
   }
 
   @Test
-  @DisplayName("Should throttle guesses per Account and Profile before hashing")
-  void shouldThrottleGuessesPerAccountAndProfileBeforeHashing() {
+  @DisplayName("Should throttle before hashing when the Account and Profile budget is exhausted")
+  void shouldThrottleBeforeHashingWhenAccountAndProfileBudgetIsExhausted() {
     var profile =
         ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash("pin:4242").build();
     for (var attempt = 0; attempt < 2; attempt++) {
@@ -70,8 +70,8 @@ class ProfilePinVerifierTest {
   }
 
   @Test
-  @DisplayName("Should treat an unreadable stored hash as a wrong PIN")
-  void shouldTreatUnreadableStoredHashAsWrongPin() {
+  @DisplayName("Should treat the stored hash as a wrong PIN when it is unreadable")
+  void shouldTreatStoredHashAsWrongPinWhenUnreadable() {
     var profile =
         ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash("unreadable").build();
 

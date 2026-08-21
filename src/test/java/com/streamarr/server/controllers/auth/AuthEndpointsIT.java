@@ -37,10 +37,12 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
+import lombok.Builder;
 import org.awaitility.Awaitility;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -476,6 +478,30 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return to the Profile picker when refresh finds the selection locked")
+  void shouldReturnToProfilePickerWhenRefreshFindsSelectionLocked() throws Exception {
+    seedSingleProfileIdentity();
+    var login = objectMapper.readTree(loginResponseBody());
+    selectProfileToken(login.get("accessToken").asString(), profile.getId());
+    seedManagedKidProfile();
+
+    var refreshed =
+        mockMvc
+            .perform(
+                post("/api/auth/refresh")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(refreshBody(login.get("refreshToken").asString())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.scope").value("account"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    var claims = decodeToken(objectMapper.readTree(refreshed).get("accessToken").asString());
+    assertThat(claims.hasClaim(TokenClaims.PROFILE_ID)).isFalse();
+  }
+
+  @Test
   @DisplayName("Should fall back to the membership Household picker when Household access is lost")
   void shouldFallBackToMembershipHouseholdPickerWhenHouseholdAccessIsLost() throws Exception {
     seedSingleProfileIdentity();
@@ -532,8 +558,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject Profile selection from a superseded Household context")
-  void shouldRejectProfileSelectionFromSupersededHouseholdContext() throws Exception {
+  @DisplayName("Should reject Profile selection when the Household context is superseded")
+  void shouldRejectProfileSelectionWhenHouseholdContextIsSuperseded() throws Exception {
     var staleMembershipToken = accountScopedTokenWithTwoProfiles();
     var managed = seedManagedProfile();
     var visited = seedVisitedHousehold();
@@ -551,8 +577,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should deny switching to a Household the Account may not use")
-  void shouldDenySwitchingToHouseholdAccountMayNotUse() throws Exception {
+  @DisplayName("Should deny switching when the Account may not use the Household")
+  void shouldDenySwitchingWhenAccountMayNotUseHousehold() throws Exception {
     seedSingleProfileIdentity();
     host = authTestSupport.createIdentity();
     var accessToken = loginAndReadField("accessToken");
@@ -717,18 +743,18 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should not advance expiry when selection repeated")
   void shouldNotAdvanceExpiryWhenSelectionRepeated() throws Exception {
-    var sourceToken = accountScopedTokenWithTwoProfiles();
+    accountScopedTokenWithTwoProfiles();
+    var sourceExpiry = Instant.now().plus(Duration.ofMinutes(1)).truncatedTo(ChronoUnit.SECONDS);
+    var sourceToken =
+        signedAccessToken(identity.session(), claims -> claims.expiresAt(sourceExpiry));
 
     var firstToken = selectProfileToken(sourceToken, profile.getId());
     var firstExpiry = decodeToken(firstToken).getExpiresAt();
 
-    // JWT timestamps carry whole seconds; cross a second boundary so an uncapped reissue would
-    // visibly advance the expiry. Selection derives authority — it must never extend it.
-    Awaitility.await().pollDelay(Duration.ofMillis(1100)).until(() -> true);
-
     var secondToken = selectProfileToken(firstToken, profile.getId());
     var secondExpiry = decodeToken(secondToken).getExpiresAt();
 
+    assertThat(firstExpiry).isEqualTo(sourceExpiry);
     assertThat(secondExpiry).isEqualTo(firstExpiry);
   }
 
@@ -1082,8 +1108,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should report setup completion state on status")
-  void shouldReportSetupCompletionStateOnStatus() throws Exception {
+  @DisplayName("Should report setup completion state when status is requested")
+  void shouldReportSetupCompletionStateWhenStatusRequested() throws Exception {
     mockMvc
         .perform(get("/api/auth/status"))
         .andExpect(status().isOk())
@@ -1646,6 +1672,24 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                   .status(ProfileShareStatus.ACTIVE)
                   .build());
           return managed;
+        });
+  }
+
+  private Profile seedManagedKidProfile() {
+    return transactionTemplate.execute(
+        _ -> {
+          var kid =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder().accountId(account.getId()).profileId(kid.getId()).build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(kid.getId())
+                  .householdId(household.getId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .build());
+          return kid;
         });
   }
 

@@ -35,8 +35,9 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName("Should require the membership household, role, and context household")
-  void shouldRequireMembershipHouseholdRoleAndContextHousehold() {
+  @DisplayName(
+      "Should require the membership Household, role, and context Household when an identity is constructed")
+  void shouldRequireMembershipRoleAndContextWhenIdentityIsConstructed() {
     var withoutHousehold = profileScopedBuilder().householdId(null);
     var withoutRole = profileScopedBuilder().householdRole(null);
     var withoutContext = profileScopedBuilder().contextHouseholdId(null);
@@ -63,8 +64,8 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName("Should read every signed fact from the token claims")
-  void shouldReadEverySignedFactFromTokenClaims() {
+  @DisplayName("Should read every signed fact when token claims are provided")
+  void shouldReadEverySignedFactWhenTokenClaimsAreProvided() {
     var accountId = UUID.randomUUID();
     var sessionId = UUID.randomUUID();
     var householdId = UUID.randomUUID();
@@ -97,8 +98,8 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName("Should read a missing ServerAdmin claim as not admin")
-  void shouldReadMissingServerAdminClaimAsNotAdmin() {
+  @DisplayName("Should read not admin when the ServerAdmin claim is missing")
+  void shouldReadNotAdminWhenServerAdminClaimIsMissing() {
     var householdId = UUID.randomUUID();
     var jwt =
         Jwt.withTokenValue("token")
@@ -119,8 +120,8 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName("Should reject building a playback authority for an account-scoped identity")
-  void shouldRejectPlaybackAuthorityForAccountScopedIdentity() {
+  @DisplayName("Should reject building playback authority when the identity is Account scoped")
+  void shouldRejectPlaybackAuthorityWhenIdentityIsAccountScoped() {
     var identity = accountScopedBuilder().build();
 
     assertThatThrownBy(identity::playbackAuthority).isInstanceOf(ProfileRequiredException.class);

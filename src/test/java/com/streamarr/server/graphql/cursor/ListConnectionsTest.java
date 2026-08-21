@@ -19,8 +19,8 @@ class ListConnectionsTest {
   private static final List<String> ITEMS = List.of("a", "b", "c", "d", "e");
 
   @Test
-  @DisplayName("Should page forward from the start and report a next page")
-  void shouldPageForwardFromStartAndReportNextPage() {
+  @DisplayName("Should page forward and report a next page when starting without a cursor")
+  void shouldPageForwardAndReportNextPageWhenStartingWithoutCursor() {
     var page = ListConnections.page(ITEMS, s -> s, options(PaginationDirection.FORWARD, null, 2));
 
     assertThat(page.getEdges()).extracting(Edge::getNode).containsExactly("a", "b");
@@ -44,8 +44,8 @@ class ListConnectionsTest {
   }
 
   @Test
-  @DisplayName("Should page backward before the cursor")
-  void shouldPageBackwardBeforeCursor() {
+  @DisplayName("Should page backward when a before cursor is given")
+  void shouldPageBackwardWhenBeforeCursorIsGiven() {
     var page =
         ListConnections.page(
             ITEMS, s -> s, options(PaginationDirection.REVERSE, ListConnections.encode("d"), 2));
@@ -66,8 +66,8 @@ class ListConnectionsTest {
   }
 
   @Test
-  @DisplayName("Should reject a cursor whose anchor disappeared instead of repeating prior items")
-  void shouldRejectCursorWhoseAnchorDisappearedInsteadOfRepeatingPriorItems() {
+  @DisplayName("Should reject a cursor when its anchor disappears instead of repeating prior items")
+  void shouldRejectCursorWhenAnchorDisappearsInsteadOfRepeatingPriorItems() {
     var first = ListConnections.page(ITEMS, s -> s, options(PaginationDirection.FORWARD, null, 2));
     var after = first.getPageInfo().getEndCursor().getValue();
     var withoutAnchor = List.of("a", "c", "d", "e");
@@ -93,8 +93,8 @@ class ListConnectionsTest {
   }
 
   @Test
-  @DisplayName("Should reject a cursor that is not valid base64")
-  void shouldRejectCursorThatIsNotValidBase64() {
+  @DisplayName("Should reject a cursor when its encoding is not valid base64")
+  void shouldRejectCursorWhenEncodingIsNotValidBase64() {
     assertThatThrownBy(
             () ->
                 ListConnections.page(ITEMS, s -> s, options(PaginationDirection.FORWARD, "%%%", 2)))

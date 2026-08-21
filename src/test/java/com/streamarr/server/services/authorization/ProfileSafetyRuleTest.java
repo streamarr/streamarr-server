@@ -39,16 +39,16 @@ class ProfileSafetyRuleTest {
   }
 
   @Test
-  @DisplayName("Should not require a PIN of a Kid merely because it is a Kid")
-  void shouldNotRequirePinOfKidMerelyBecauseItIsKid() {
+  @DisplayName("Should not require a PIN when a Kid is the only Profile")
+  void shouldNotRequirePinWhenKidIsOnlyProfile() {
     var onlyKid = kid(null, null);
 
     assertThat(ProfileSafetyRule.profilesRequiringPin(List.of(onlyKid))).isEmpty();
   }
 
   @Test
-  @DisplayName("Should require a PIN of a Kid that is less restrictive than another Kid")
-  void shouldRequirePinOfKidThatIsLessRestrictiveThanAnotherKid() {
+  @DisplayName("Should require a PIN when a Kid is less restrictive than another Kid")
+  void shouldRequirePinWhenKidIsLessRestrictiveThanAnotherKid() {
     var strict = kid(7, null);
     var looser = kid(12, null);
     var unlimited = kid(null, null);
@@ -61,8 +61,8 @@ class ProfileSafetyRuleTest {
   }
 
   @Test
-  @DisplayName("Should treat Kids with equal ceilings as equally restrictive")
-  void shouldTreatKidsWithEqualCeilingsAsEquallyRestrictive() {
+  @DisplayName("Should treat Kids as equally restrictive when ceilings match")
+  void shouldTreatKidsAsEquallyRestrictiveWhenCeilingsMatch() {
     var first = kid(10, null);
     var second = kid(10, null);
 

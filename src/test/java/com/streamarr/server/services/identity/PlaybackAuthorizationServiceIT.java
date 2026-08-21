@@ -23,8 +23,7 @@ import com.streamarr.server.support.AuthTestSupportConfig;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
@@ -82,15 +81,16 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should allow playback while session, Account, Household access, and share are live")
-  void shouldAllowPlaybackWhileSessionAccountHouseholdAccessAndShareAreLive() {
+  @DisplayName(
+      "Should allow playback when the session, Account, Household access, and share are live")
+  void shouldAllowPlaybackWhenAllLiveFactsHold() {
     assertThat(authorityGate.allows(authority)).isTrue();
   }
 
   @ParameterizedTest
   @EnumSource(SessionRevocationReason.class)
-  @DisplayName("Should deny playback for every session revocation reason")
-  void shouldDenyPlaybackForEverySessionRevocationReason(SessionRevocationReason reason) {
+  @DisplayName("Should deny playback when the session has any revocation reason")
+  void shouldDenyPlaybackWhenSessionHasAnyRevocationReason(SessionRevocationReason reason) {
     authSessionRepository.revoke(identity.session().getId(), reason, Instant.now());
 
     assertThat(authorityGate.allows(authority)).isFalse();
@@ -177,8 +177,8 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should deny playback after the live session returns to the Profile picker")
-  void shouldDenyPlaybackAfterLiveSessionReturnsToProfilePicker() {
+  @DisplayName("Should deny playback when the live session returns to the Profile picker")
+  void shouldDenyPlaybackWhenLiveSessionReturnsToProfilePicker() {
     var session = authSessionRepository.findById(identity.session().getId()).orElseThrow();
     session.setSelectedProfileId(null);
     authSessionRepository.saveAndFlush(session);
@@ -193,31 +193,43 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
     var visit = share(identity.profile().getId(), host.household().getId());
     authenticateAs(identity, host.household().getId(), identity.profile().getId());
     var visitingAuthority = currentIdentity().playbackAuthority();
-    var requestIdentity = currentIdentity();
-    var start = new CyclicBarrier(2);
+    var updateFlushed = new CountDownLatch(1);
+    var commit = new CountDownLatch(1);
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var access =
+      var unshare =
           executor.submit(
               () ->
-                  awaitThen(
-                      start,
-                      () -> {
-                        authenticate(requestIdentity);
-                        return authorityGate.allows(visitingAuthority);
+                  transactionTemplate.execute(
+                      _ -> {
+                        var ended = end(visit);
+                        updateFlushed.countDown();
+                        await(commit);
+                        return ended;
                       }));
-      var unshare = executor.submit(() -> awaitThen(start, () -> end(visit)));
 
-      assertThat(access.get(10, TimeUnit.SECONDS)).isIn(true, false);
+      assertThat(updateFlushed.await(10, TimeUnit.SECONDS)).isTrue();
+      try {
+        // PostgreSQL readers see the last committed share while its end is uncommitted; the
+        // playback request must return instead of waiting on the writer.
+        assertThat(authorityGate.allows(visitingAuthority)).isTrue();
+      } finally {
+        commit.countDown();
+      }
+
       assertThat(unshare.get(10, TimeUnit.SECONDS)).isNotNull();
     }
 
     assertThat(authorityGate.allows(visitingAuthority)).isFalse();
   }
 
-  private <T> T awaitThen(CyclicBarrier barrier, Callable<T> action) throws Exception {
-    barrier.await(10, TimeUnit.SECONDS);
-    return action.call();
+  private void await(CountDownLatch latch) {
+    try {
+      assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(interrupted);
+    }
   }
 
   private ProfileHouseholdShare share(UUID profileId, UUID householdId) {

@@ -63,8 +63,8 @@ class TransactionalLibraryMutationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should finish authorized add before concurrent ServerAdmin revocation")
-  void shouldFinishAuthorizedAddBeforeConcurrentServerAdminRevocation() throws Exception {
+  @DisplayName("Should finish authorized add when ServerAdmin revocation runs concurrently")
+  void shouldFinishAuthorizedAddWhenServerAdminRevocationRunsConcurrently() throws Exception {
     testIdentity = authTestSupport.createAdminIdentity();
     var identity = authenticatedIdentity(testIdentity);
     var mutationReached = new CountDownLatch(1);

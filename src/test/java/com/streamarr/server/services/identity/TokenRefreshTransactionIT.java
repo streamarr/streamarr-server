@@ -100,9 +100,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     @Bean
     @Primary
     GatedAccessTokenIssuer gatedAccessTokenIssuer(
-        JwtEncoder jwtEncoder,
-        AuthTokenProperties properties,
-        Clock clock) {
+        JwtEncoder jwtEncoder, AuthTokenProperties properties, Clock clock) {
       var issuer = new GatedAccessTokenIssuer(jwtEncoder, properties, clock);
       issuer.trackIssuingBackendWith(
           () -> dsl.select(DSL.function("pg_backend_pid", Integer.class)).fetchSingle().value1());
@@ -376,16 +374,11 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     assertThatThrownBy(() -> tokenRefreshService.refresh(rawToken))
         .isInstanceOf(TokenReuseDetectedException.class);
 
-    // The REQUIRES_NEW reuse writer fires after the outer transaction completes — under
-    // production lock ordering it must neither self-deadlock nor lose the revocation.
-    Awaitility.await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var session = authSessionRepository.findById(issued.session().getId()).orElseThrow();
-              assertThat(session.getRevokedAt()).isNotNull();
-              assertThat(activeTokenCount(issued.session().getId())).isZero();
-            });
+    // afterCompletion runs before the proxied refresh call returns, so the revocation is already
+    // observable without polling.
+    var session = authSessionRepository.findById(issued.session().getId()).orElseThrow();
+    assertThat(session.getRevokedAt()).isNotNull();
+    assertThat(activeTokenCount(issued.session().getId())).isZero();
   }
 
   private int activeTokenCount(UUID sessionId) {

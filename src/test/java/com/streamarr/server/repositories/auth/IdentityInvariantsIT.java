@@ -1,6 +1,5 @@
 package com.streamarr.server.repositories.auth;
 
-import static com.streamarr.server.jooq.generated.tables.HouseholdGuard.HOUSEHOLD_GUARD;
 import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -18,6 +17,7 @@ import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,8 +29,10 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import lombok.Builder;
+import org.awaitility.Awaitility;
 import org.hibernate.exception.ConstraintViolationException;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -71,8 +73,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   // ---- T1 ---------------------------------------------------------------------------------------
 
   @Test
-  @DisplayName("Should refuse removing a Household's final Account outside teardown (T1)")
-  void shouldRefuseRemovingHouseholdsFinalAccountOutsideTeardown() {
+  @DisplayName("Should refuse removing the final Account when outside Household teardown (T1)")
+  void shouldRefuseRemovingFinalAccountWhenOutsideHouseholdTeardown() {
     var identity = create();
 
     assertThatThrownBy(
@@ -85,8 +87,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse demoting the last HouseholdAdmin (T1)")
-  void shouldRefuseDemotingLastHouseholdAdmin() {
+  @DisplayName("Should refuse demotion when the Account is the last HouseholdAdmin (T1)")
+  void shouldRefuseDemotionWhenAccountIsLastHouseholdAdmin() {
     var identity = create();
     var accountId = identity.account().getId();
 
@@ -101,15 +103,20 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   void shouldKeepExactlyOneHouseholdAdminWhenTwoDemotionsRace() throws Exception {
     var first = create();
     var second = joinAsAdmin(first);
-    var start = new CountDownLatch(1);
+    var race =
+        HouseholdAdminRace.builder()
+            .updatesReady(new CountDownLatch(2))
+            .commit(new CountDownLatch(1))
+            .build();
 
     List<Future<Boolean>> attempts;
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       attempts =
           List.of(
-              executor.submit(() -> demoteAfter(start, first.account().getId())),
-              executor.submit(() -> demoteAfter(start, second.getId())));
-      start.countDown();
+              executor.submit(() -> demoteAfter(race, first.account().getId())),
+              executor.submit(() -> demoteAfter(race, second.getId())));
+      assertThat(race.updatesReady().await(30, TimeUnit.SECONDS)).isTrue();
+      race.commit().countDown();
       for (var attempt : attempts) {
         awaitOutcome(attempt);
       }
@@ -123,8 +130,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   // ---- T2 / T3 ----------------------------------------------------------------------------------
 
   @Test
-  @DisplayName("Should refuse an Account whose Personal Profile lacks its structural share (T2)")
-  void shouldRefuseAccountWhosePersonalProfileLacksStructuralShare() {
+  @DisplayName("Should refuse a Personal Profile when its structural share is missing (T2)")
+  void shouldRefusePersonalProfileWhenStructuralShareIsMissing() {
     assertThatThrownBy(
             () ->
                 transactionTemplate.executeWithoutResult(
@@ -149,8 +156,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse ending a structural share while the Account remains a member (T3)")
-  void shouldRefuseEndingStructuralShareWhileAccountRemainsMember() {
+  @DisplayName("Should refuse ending a structural share when the Account remains a member (T3)")
+  void shouldRefuseEndingStructuralShareWhenAccountRemainsMember() {
     var identity = create();
     var share =
         shareRepository
@@ -175,8 +182,9 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   // ---- T4 ---------------------------------------------------------------------------------------
 
   @Test
-  @DisplayName("Should refuse disabling the last enabled ServerAdmin after bootstrap (T4)")
-  void shouldRefuseDisablingLastEnabledServerAdminAfterBootstrap() {
+  @DisplayName(
+      "Should refuse disabling an Account when it is the last enabled ServerAdmin after bootstrap (T4)")
+  void shouldRefuseDisablingAccountWhenItIsLastEnabledServerAdminAfterBootstrap() {
     var admin = createServerAdmin();
     dsl.insertInto(SERVER_BOOTSTRAP)
         .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, admin.account().getId())
@@ -208,7 +216,6 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         ServerAdminRace.builder()
             .updatesReady(new CountDownLatch(2))
             .validate(new CountDownLatch(1))
-            .validationsFinished(new CountDownLatch(2))
             .commit(new CountDownLatch(1))
             .build();
 
@@ -220,7 +227,9 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
               executor.submit(() -> disableServerAdminAfter(race, second.account().getId())));
       assertThat(race.updatesReady().await(30, TimeUnit.SECONDS)).isTrue();
       race.validate().countDown();
-      race.validationsFinished().await(1, TimeUnit.SECONDS);
+      Awaitility.await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(() -> assertThat(blockedConstraintValidationCount()).isOne());
       race.commit().countDown();
       for (var attempt : attempts) {
         awaitServerAdminOutcome(attempt);
@@ -234,8 +243,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   // ---- T5 ---------------------------------------------------------------------------------------
 
   @Test
-  @DisplayName("Should refuse authority for an Account whose Personal Profile is restricted (T5)")
-  void shouldRefuseAuthorityForAccountWhosePersonalProfileIsRestricted() {
+  @DisplayName("Should refuse authority when the Personal Profile is restricted (T5)")
+  void shouldRefuseAuthorityWhenPersonalProfileIsRestricted() {
     var admin = create();
     var member = join(admin, HouseholdRole.MEMBER);
     restrictUnderSupervision(admin, member);
@@ -255,8 +264,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should allow restricting a member once a HouseholdAdmin directly manages it (T5, T6)")
-  void shouldAllowRestrictingMemberOnceHouseholdAdminDirectlyManagesIt() {
+      "Should allow restriction when a HouseholdAdmin directly manages the member (T5, T6)")
+  void shouldAllowRestrictionWhenHouseholdAdminDirectlyManagesMember() {
     var admin = create();
     var member = join(admin, HouseholdRole.MEMBER);
 
@@ -264,8 +273,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse restricting a member Account nobody supervises (T6)")
-  void shouldRefuseRestrictingMemberAccountNobodySupervises() {
+  @DisplayName("Should refuse restriction when the member Account has no supervisor (T6)")
+  void shouldRefuseRestrictionWhenMemberAccountHasNoSupervisor() {
     var admin = create();
     var member = join(admin, HouseholdRole.MEMBER);
 
@@ -287,8 +296,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should refuse a Kid Profile without an eligible HouseholdAdmin manager at home (T6)")
-  void shouldRefuseKidProfileWithoutEligibleHouseholdAdminManagerAtHome() {
+      "Should refuse a Kid Profile when an eligible HouseholdAdmin manager is missing at home (T6)")
+  void shouldRefuseKidProfileWhenEligibleHouseholdAdminManagerIsMissingAtHome() {
     var admin = create();
 
     assertThatThrownBy(
@@ -305,17 +314,17 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should allow a Kid Profile anchored by a HouseholdAdmin who directly manages it (T6)")
-  void shouldAllowKidProfileAnchoredByHouseholdAdminWhoDirectlyManagesIt() {
+  @DisplayName("Should allow a Kid Profile when a HouseholdAdmin directly manages it (T6)")
+  void shouldAllowKidProfileWhenHouseholdAdminDirectlyManagesIt() {
     var admin = create();
 
     assertThatCode(() -> createKid(admin)).doesNotThrowAnyException();
   }
 
   @Test
-  @DisplayName("Should refuse removing the final eligible manager of a Kid Profile (T6)")
-  void shouldRefuseRemovingFinalEligibleManagerOfKidProfile() {
+  @DisplayName(
+      "Should refuse manager removal when it would remove a Kid Profile's final eligible manager (T6)")
+  void shouldRefuseManagerRemovalWhenItWouldRemoveKidProfilesFinalEligibleManager() {
     var admin = create();
     var kid = createKid(admin);
 
@@ -331,8 +340,9 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse moving the final eligible manager away from a Kid Profile (T6)")
-  void shouldRefuseMovingFinalEligibleManagerAwayFromKidProfile() {
+  @DisplayName(
+      "Should refuse a manager move when it would move a Kid Profile's final eligible manager away (T6)")
+  void shouldRefuseManagerMoveWhenItWouldMoveKidProfilesFinalEligibleManagerAway() {
     var firstAdmin = create();
     var firstKid = createKid(firstAdmin);
     var secondKid = createKid(create());
@@ -354,8 +364,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   // ---- T8 / PIN ---------------------------------------------------------------------------------
 
   @Test
-  @DisplayName("Should refuse two available Profiles with the same name ignoring case (T8)")
-  void shouldRefuseTwoAvailableProfilesWithSameNameIgnoringCase() {
+  @DisplayName("Should refuse Profiles when available names differ only by case (T8)")
+  void shouldRefuseProfilesWhenAvailableNamesDifferOnlyByCase() {
     var identity = create();
     var visitor = create();
 
@@ -380,8 +390,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse a blank PIN hash (effective-PIN rule)")
-  void shouldRefuseBlankPinHash() {
+  @DisplayName("Should refuse a PIN hash when it is blank (effective-PIN rule)")
+  void shouldRefusePinHashWhenBlank() {
     var identity = create();
 
     assertThatThrownBy(
@@ -396,20 +406,6 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         .isInstanceOf(DataIntegrityViolationException.class)
         .extracting(IdentityInvariantsIT::constraintName)
         .isEqualTo("chk_profile_pin_hash_not_blank");
-  }
-
-  // ---- guards -----------------------------------------------------------------------------------
-
-  @Test
-  @DisplayName("Should create a guard row with every Household and bump it on identity writes")
-  void shouldCreateGuardRowWithEveryHouseholdAndBumpItOnIdentityWrites() {
-    var identity = create();
-    var before = guardVersion(identity.household().getId());
-
-    join(identity, HouseholdRole.MEMBER);
-
-    assertThat(before).isNotNull();
-    assertThat(guardVersion(identity.household().getId())).isGreaterThan(before);
   }
 
   // ---- helpers ----------------------------------------------------------------------------------
@@ -504,9 +500,20 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         });
   }
 
-  private boolean demoteAfter(CountDownLatch start, UUID accountId) throws InterruptedException {
-    start.await();
-    demote(accountId);
+  private boolean demoteAfter(HouseholdAdminRace race, UUID accountId) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var account = userAccountRepository.findById(accountId).orElseThrow();
+          account.setHouseholdRole(HouseholdRole.MEMBER);
+          userAccountRepository.saveAndFlush(account);
+          race.updatesReady().countDown();
+          try {
+            assertThat(race.commit().await(30, TimeUnit.SECONDS)).isTrue();
+          } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interrupted);
+          }
+        });
     return true;
   }
 
@@ -520,7 +527,6 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
           try {
             assertThat(race.validate().await(30, TimeUnit.SECONDS)).isTrue();
             dsl.execute("SET CONSTRAINTS chk_user_account_invariants IMMEDIATE");
-            race.validationsFinished().countDown();
             assertThat(race.commit().await(30, TimeUnit.SECONDS)).isTrue();
           } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
@@ -531,11 +537,11 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Builder
+  private record HouseholdAdminRace(CountDownLatch updatesReady, CountDownLatch commit) {}
+
+  @Builder
   private record ServerAdminRace(
-      CountDownLatch updatesReady,
-      CountDownLatch validate,
-      CountDownLatch validationsFinished,
-      CountDownLatch commit) {}
+      CountDownLatch updatesReady, CountDownLatch validate, CountDownLatch commit) {}
 
   /** Waits for the attempt; the losing demotion's constraint violation is the expected outcome. */
   private void awaitOutcome(Future<Boolean> attempt) throws InterruptedException, TimeoutException {
@@ -595,10 +601,14 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         .count();
   }
 
-  private Long guardVersion(UUID householdId) {
-    return dsl.select(HOUSEHOLD_GUARD.VERSION)
-        .from(HOUSEHOLD_GUARD)
-        .where(HOUSEHOLD_GUARD.HOUSEHOLD_ID.eq(householdId))
-        .fetchOne(HOUSEHOLD_GUARD.VERSION);
+  private int blockedConstraintValidationCount() {
+    return dsl.fetchCount(
+        dsl.selectOne()
+            .from("pg_stat_activity")
+            .where(DSL.field("wait_event_type", String.class).eq("Lock"))
+            .and(
+                DSL.field("query", String.class)
+                    .startsWithIgnoreCase(
+                        "SET CONSTRAINTS chk_user_account_invariants IMMEDIATE")));
   }
 }

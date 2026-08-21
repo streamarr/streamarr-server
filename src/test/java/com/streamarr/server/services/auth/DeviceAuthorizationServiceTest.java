@@ -290,8 +290,9 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should create an account-scoped session in the approver's Household at the picker")
-  void shouldCreateAccountScopedSessionInApproversHouseholdAtPicker() {
+  @DisplayName(
+      "Should create an Account-scoped session at the picker when a Device grant is approved")
+  void shouldCreateAccountScopedSessionAtPickerWhenDeviceGrantIsApproved() {
     var issued = service.issue("Apple TV");
     approve(issued.userCode());
 

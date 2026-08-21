@@ -236,8 +236,8 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should finish authorized removal before concurrent ServerAdmin revocation")
-  void shouldFinishAuthorizedRemovalBeforeConcurrentServerAdminRevocation() throws Exception {
+  @DisplayName("Should finish authorized removal when ServerAdmin revocation runs concurrently")
+  void shouldFinishAuthorizedRemovalWhenServerAdminRevocationRunsConcurrently() throws Exception {
     identity = authTestSupport.createAdminIdentity();
     var adminToken = authTestSupport.profileBearer(identity);
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
