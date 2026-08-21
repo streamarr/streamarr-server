@@ -49,13 +49,13 @@ class PlaybackAuthorizationServiceTest {
   @Test
   @DisplayName("Should deny playback when the request identity has no selected Profile")
   void shouldDenyPlaybackWhenRequestIdentityHasNoSelectedProfile() {
-    var accountScoped =
-        new PlaybackAuthorizationService(
-            new FakeAuthorizationService(
-                AuthenticatedIdentityFixture.accountScopedBuilder().build()));
+    var accountAuthorization =
+        new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
+    var accountScoped = new PlaybackAuthorizationService(accountAuthorization);
     var authority = authorization.currentIdentity().playbackAuthority();
 
     assertThat(accountScoped.allows(authority)).isFalse();
+    assertThat(accountAuthorization.recordedIntents()).isEmpty();
   }
 
   @Test

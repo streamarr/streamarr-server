@@ -12,7 +12,6 @@ ALTER TABLE auth_session
     DROP CONSTRAINT fk_auth_session_active_membership,
     DROP CONSTRAINT fk_auth_session_active_profile_household,
     DROP CONSTRAINT fk_auth_session_active_household;
-DROP INDEX idx_auth_session_active_household_id;
 ALTER TABLE auth_session DROP COLUMN active_household_id;
 
 DROP TABLE account_profile;

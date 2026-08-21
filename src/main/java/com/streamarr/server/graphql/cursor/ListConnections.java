@@ -32,17 +32,9 @@ public final class ListConnections {
     if (cursorKey.isPresent() && anchor < 0) {
       throw new InvalidCursorException("Cursor no longer identifies an item.");
     }
-    var limit = options.getLimit();
-
-    int from;
-    int to;
-    if (options.getPaginationDirection() == PaginationDirection.REVERSE) {
-      to = options.getCursor().isPresent() && anchor >= 0 ? anchor : ordered.size();
-      from = Math.max(0, to - limit);
-    } else {
-      from = anchor + 1;
-      to = Math.min(ordered.size(), from + limit);
-    }
+    var window = window(options, anchor, ordered.size());
+    var from = window.from();
+    var to = window.to();
 
     var edges = new ArrayList<Edge<T>>();
     for (var index = from; index < to; index++) {
@@ -59,6 +51,16 @@ public final class ListConnections {
     return new DefaultConnection<>(edges, pageInfo);
   }
 
+  private static Window window(PaginationOptions options, int anchor, int itemCount) {
+    var limit = options.getLimit();
+    if (options.getPaginationDirection() == PaginationDirection.REVERSE) {
+      var to = options.getCursor().isPresent() && anchor >= 0 ? anchor : itemCount;
+      return new Window(Math.max(0, to - limit), to);
+    }
+    var from = anchor + 1;
+    return new Window(from, Math.min(itemCount, from + limit));
+  }
+
   static String encode(String key) {
     return Base64.getUrlEncoder()
         .withoutPadding()
@@ -72,4 +74,6 @@ public final class ListConnections {
       throw new InvalidCursorException("Cursor is not valid.");
     }
   }
+
+  private record Window(int from, int to) {}
 }

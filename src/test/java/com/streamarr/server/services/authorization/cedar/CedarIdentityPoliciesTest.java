@@ -132,7 +132,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should deny selection when the safety rule locks the Profile")
+    @DisplayName(
+        "Should lock an unpinned Adult when a Kid is available while keeping the Kid selectable")
     void shouldDenySelectionWhenSafetyRuleLocksProfile() {
       var kid =
           profiles.save(
@@ -141,6 +142,7 @@ class CedarIdentityPoliciesTest {
 
       assertThat(decide(atHome(), new Intent.SelectProfile(personal.getId(), false)))
           .isEqualTo(DENIED);
+      // The Kid causes the unpinned Adult lock; the Kid itself remains safe to select.
       assertThat(decide(atHome(), new Intent.SelectProfile(kid.getId(), false))).isEqualTo(ALLOWED);
     }
 

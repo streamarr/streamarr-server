@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 /**
  * The resource Profile relative to the principal: managed by it (a direct manager row, or the
  * principal's own unrestricted Adult Personal Profile), available in the principal's membership
- * Household, and restricted.
+ * Household.
  */
 @Component
 @RequiredArgsConstructor
@@ -20,7 +20,6 @@ class ProfileManagementContributor implements FactContributor {
 
   static final String MANAGED_BY_PRINCIPAL = "managedByPrincipal";
   static final String AVAILABLE_IN_PRINCIPAL_HOUSEHOLD = "availableInPrincipalHousehold";
-  static final String RESTRICTED = "restricted";
 
   private final ProfileRepository profileRepository;
   private final ProfileManagerRepository profileManagerRepository;
@@ -53,6 +52,5 @@ class ProfileManagementContributor implements FactContributor {
     slice.resourceAttribute(
         AVAILABLE_IN_PRINCIPAL_HOUSEHOLD,
         new PrimBool(shareRepository.isActivelyShared(profileId, identity.householdId())));
-    slice.resourceAttribute(RESTRICTED, new PrimBool(restricted));
   }
 }

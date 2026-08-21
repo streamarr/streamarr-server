@@ -67,7 +67,21 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   @AfterEach
   void cleanUp() {
     dsl.deleteFrom(SERVER_BOOTSTRAP).execute();
-    identities.forEach(authTestSupport::deleteIdentity);
+    var failures = new ArrayList<RuntimeException>();
+    for (var identity : identities) {
+      try {
+        authTestSupport.deleteIdentity(identity);
+      } catch (RuntimeException failure) {
+        failures.add(failure);
+      }
+    }
+    identities.clear();
+    if (failures.isEmpty()) {
+      return;
+    }
+    var failure = failures.getFirst();
+    failures.stream().skip(1).forEach(failure::addSuppressed);
+    throw failure;
   }
 
   // ---- T1 ---------------------------------------------------------------------------------------

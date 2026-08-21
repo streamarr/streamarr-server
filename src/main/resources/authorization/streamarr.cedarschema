@@ -23,7 +23,6 @@ namespace Streamarr {
     availableInContext?: Bool,
     locked?: Bool,
     pinRequired?: Bool,
-    restricted?: Bool,
     managedByPrincipal?: Bool,
     availableInPrincipalHousehold?: Bool,
   };

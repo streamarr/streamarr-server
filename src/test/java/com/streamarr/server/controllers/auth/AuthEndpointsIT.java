@@ -485,6 +485,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     selectProfileToken(login.get("accessToken").asString(), profile.getId());
     seedManagedKidProfile();
 
+    // Adding the Kid locks the selected unpinned Adult, so refresh returns to the picker.
     var refreshed =
         mockMvc
             .perform(
