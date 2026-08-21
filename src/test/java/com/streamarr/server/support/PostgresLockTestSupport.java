@@ -9,6 +9,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.OptionalInt;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class PostgresLockTestSupport {
 
@@ -38,10 +39,16 @@ public final class PostgresLockTestSupport {
 
   public static int awaitBlockedBackendPid(
       Connection observer, int blockerPid, String expectedWaitEvent) throws SQLException {
+    var blockedPid = new AtomicInteger();
     await()
         .atMost(Duration.ofSeconds(5))
-        .until(() -> blockedBackendPid(observer, blockerPid, expectedWaitEvent).isPresent());
-    return blockedBackendPid(observer, blockerPid, expectedWaitEvent).orElseThrow();
+        .until(
+            () -> {
+              var candidate = blockedBackendPid(observer, blockerPid, expectedWaitEvent);
+              candidate.ifPresent(blockedPid::set);
+              return candidate.isPresent();
+            });
+    return blockedPid.get();
   }
 
   private static OptionalInt blockedBackendPid(

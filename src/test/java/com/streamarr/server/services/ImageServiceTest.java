@@ -289,6 +289,36 @@ class ImageServiceTest {
   }
 
   @Test
+  @DisplayName("Should delete superseded files only after commit when synchronization is active")
+  void shouldDeleteSupersededFilesOnlyAfterCommitWhenSynchronizationIsActive() throws IOException {
+    var entityId = UUID.randomUUID();
+    var existingArtwork = persistExistingArtwork(entityId);
+    var replacement =
+        imageService.processImage(
+            createSolidPngImage(600, 900, 0x00A0A0),
+            ImageType.POSTER,
+            entityId,
+            ImageEntityType.MOVIE,
+            "/new-poster.jpg");
+    TransactionSynchronizationManager.initSynchronization();
+
+    try {
+      imageService.replaceImages(replacement);
+
+      assertThat(existingArtwork.absolutePath()).exists();
+
+      TransactionSynchronizationManager.getSynchronizations()
+          .forEach(TransactionSynchronization::afterCommit);
+
+      assertThat(existingArtwork.absolutePath()).doesNotExist();
+      assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
+    } finally {
+      TransactionSynchronizationManager.clearSynchronization();
+      imageService.deleteFiles(replacement.writtenFiles());
+    }
+  }
+
+  @Test
   @DisplayName("Should preserve existing artwork when atomic replacement fails")
   void shouldPreserveExistingArtworkWhenAtomicReplacementFails() throws IOException {
     var entityId = UUID.randomUUID();

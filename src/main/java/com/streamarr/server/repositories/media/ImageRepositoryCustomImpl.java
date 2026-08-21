@@ -44,6 +44,10 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
 
   @Override
   public List<String> replaceLogicalArtwork(List<Image> images) {
+    if (images.isEmpty()) {
+      return List.of();
+    }
+
     var first = images.getFirst();
     var entityType = ImageEntityType.lookupLiteral(first.getEntityType().name());
     var imageType = ImageType.lookupLiteral(first.getImageType().name());

@@ -27,6 +27,7 @@ import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
@@ -159,17 +160,22 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
         imageService.processImage(
             imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE, sourceKey);
 
-    imageService.saveImages(processed.images());
+    try {
+      imageService.saveImages(processed.images());
 
-    var expectedContentSha256 =
-        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(imageData));
-    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
-        .hasSize(ImageSize.values().length)
-        .allSatisfy(
-            image -> {
-              assertThat(image.getKey()).isEqualTo(sourceKey);
-              assertThat(image.getContentSha256()).isEqualTo(expectedContentSha256);
-            });
+      var expectedContentSha256 =
+          HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(imageData));
+      assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+          .hasSize(ImageSize.values().length)
+          .allSatisfy(
+              image -> {
+                assertThat(image.getKey()).isEqualTo(sourceKey);
+                assertThat(image.getContentSha256()).isEqualTo(expectedContentSha256);
+              });
+    } finally {
+      imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+      imageService.deleteFiles(processed.writtenFiles());
+    }
   }
 
   @Test
@@ -187,46 +193,53 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             entityId,
             ImageEntityType.MOVIE,
             oldKey);
-    imageService.saveImages(original.images());
-    var originalImages =
-        imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    var originalIds = originalImages.stream().map(Image::getId).toList();
-    var originalSmall =
-        originalImages.stream()
-            .filter(image -> image.getVariant() == ImageSize.SMALL)
-            .findFirst()
-            .orElseThrow();
-
     var newImageData = createSolidPngImage(600, 900, 0x00A0A0);
     var replacement =
         imageService.processImage(
             newImageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE, newKey);
 
-    imageService.replaceImages(replacement);
+    try {
+      imageService.saveImages(original.images());
+      var originalImages =
+          imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+      var originalIds = originalImages.stream().map(Image::getId).toList();
+      var originalSmall =
+          originalImages.stream()
+              .filter(image -> image.getVariant() == ImageSize.SMALL)
+              .findFirst()
+              .orElseThrow();
 
-    var expectedContentSha256 =
-        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(newImageData));
-    var replacements = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(replacements)
-        .hasSize(ImageSize.values().length)
-        .allSatisfy(
-            image -> {
-              assertThat(image.getKey()).isEqualTo(newKey);
-              assertThat(image.getContentSha256()).isEqualTo(expectedContentSha256);
-            })
-        .extracting(Image::getId)
-        .doesNotContainAnyElementsOf(originalIds);
-    assertThat(replacements)
-        .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
-        .singleElement()
-        .satisfies(
-            newSmall -> {
-              assertThat(newSmall.getBlurHash()).isNotEqualTo(originalSmall.getBlurHash());
-              assertThat(newSmall.getAmbientColors())
-                  .isNotEqualTo(originalSmall.getAmbientColors());
-            });
-    assertThatThrownBy(() -> imageService.readImageFile(originalSmall))
-        .isInstanceOf(IOException.class);
+      imageService.replaceImages(replacement);
+
+      var expectedContentSha256 =
+          HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(newImageData));
+      var replacements =
+          imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+      assertThat(replacements)
+          .hasSize(ImageSize.values().length)
+          .allSatisfy(
+              image -> {
+                assertThat(image.getKey()).isEqualTo(newKey);
+                assertThat(image.getContentSha256()).isEqualTo(expectedContentSha256);
+              })
+          .extracting(Image::getId)
+          .doesNotContainAnyElementsOf(originalIds);
+      assertThat(replacements)
+          .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
+          .singleElement()
+          .satisfies(
+              newSmall -> {
+                assertThat(newSmall.getBlurHash()).isNotEqualTo(originalSmall.getBlurHash());
+                assertThat(newSmall.getAmbientColors())
+                    .isNotEqualTo(originalSmall.getAmbientColors());
+              });
+      assertThatThrownBy(() -> imageService.readImageFile(originalSmall))
+          .isInstanceOf(IOException.class);
+    } finally {
+      imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+      imageService.deleteFiles(original.writtenFiles());
+      imageService.deleteFiles(replacement.writtenFiles());
+    }
   }
 
   @Test
@@ -250,15 +263,23 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             "/rollback-new.png");
     replacement.images().getLast().setPath(null);
 
-    assertThatThrownBy(() -> imageService.replaceImages(replacement))
-        .isInstanceOf(RuntimeException.class);
+    try {
+      assertThatThrownBy(() -> imageService.replaceImages(replacement))
+          .isInstanceOf(RuntimeException.class);
 
-    var preserved = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(preserved).extracting(Image::getId).containsExactlyInAnyOrderElementsOf(originalIds);
-    assertThat(preserved)
-        .allSatisfy(image -> assertThat(image.getKey()).isEqualTo(oldKey))
-        .allSatisfy(image -> assertThat(imageService.readImageFile(image)).isNotEmpty());
-    assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+      var preserved = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+      assertThat(preserved)
+          .extracting(Image::getId)
+          .containsExactlyInAnyOrderElementsOf(originalIds);
+      assertThat(preserved)
+          .allSatisfy(image -> assertThat(image.getKey()).isEqualTo(oldKey))
+          .allSatisfy(image -> assertThat(imageService.readImageFile(image)).isNotEmpty());
+      assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+    } finally {
+      imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+      imageService.deleteFiles(original.writtenFiles());
+      imageService.deleteFiles(replacement.writtenFiles());
+    }
   }
 
   @Test
@@ -281,6 +302,22 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
           .hasMessageContaining("image_content_sha256_format_check");
     } finally {
       imageService.deleteFiles(processed.writtenFiles());
+    }
+  }
+
+  @Test
+  @DisplayName("Should leave content SHA-256 constraint unvalidated after migration")
+  void shouldLeaveContentSha256ConstraintUnvalidatedAfterMigration() throws SQLException {
+    try (var connection = dataSource.getConnection();
+        var statement =
+            connection.prepareStatement(
+                "SELECT convalidated FROM pg_constraint WHERE conname = ?")) {
+      statement.setString(1, "image_content_sha256_format_check");
+
+      try (var result = statement.executeQuery()) {
+        assertThat(result.next()).isTrue();
+        assertThat(result.getBoolean("convalidated")).isFalse();
+      }
     }
   }
 
