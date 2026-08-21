@@ -345,10 +345,9 @@ class LibraryResolverTest {
     @Test
     @DisplayName("Should return a sanitized top-level error when addLibrary fails unexpectedly")
     void shouldReturnSanitizedTopLevelErrorWhenAddLibraryFailsUnexpectedly() {
-      when(libraryManagementService.addLibrary(any(Library.class)))
-          .thenThrow(
-              new IllegalStateException(
-                  "duplicate key library_filepath_uri_idx at /srv/private/movies"));
+      FAKE_LIBRARY_MANAGEMENT_SERVICE.throwWhenAdded(
+          new IllegalStateException(
+              "duplicate key library_filepath_uri_idx at /srv/private/movies"));
 
       var result = dgsQueryExecutor.execute(ADD_LIBRARY_MUTATION);
 
@@ -902,6 +901,7 @@ class LibraryResolverTest {
   private static final class FakeLibraryManagementService extends LibraryManagementService {
 
     private AuthenticatedIdentity addedIdentity;
+    private RuntimeException addLibraryFailure;
     private Outcome<Library, AddLibraryRejection> addLibraryOutcome;
     private Library addedLibrary;
     private List<LibraryMetadata> alphabetIndex = List.of();
@@ -929,6 +929,9 @@ class LibraryResolverTest {
     @Override
     public Outcome<Library, AddLibraryRejection> addLibrary(
         AuthenticatedIdentity identity, Library library) {
+      if (addLibraryFailure != null) {
+        throw addLibraryFailure;
+      }
       addedIdentity = identity;
       addedLibrary = library;
       return addLibraryOutcome != null ? addLibraryOutcome : Outcome.accepted(library);
@@ -962,6 +965,10 @@ class LibraryResolverTest {
       addLibraryOutcome = outcome;
     }
 
+    private void throwWhenAdded(RuntimeException exception) {
+      addLibraryFailure = exception;
+    }
+
     private AuthenticatedIdentity addedIdentity() {
       return addedIdentity;
     }
@@ -980,6 +987,7 @@ class LibraryResolverTest {
 
     private void reset() {
       addedIdentity = null;
+      addLibraryFailure = null;
       addLibraryOutcome = null;
       addedLibrary = null;
       alphabetIndex = List.of();

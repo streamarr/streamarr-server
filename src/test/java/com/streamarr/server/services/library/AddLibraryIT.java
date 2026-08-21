@@ -1,6 +1,5 @@
 package com.streamarr.server.services.library;
 
-import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
@@ -10,12 +9,16 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
+import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.support.AuthTestSupport;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -48,25 +51,30 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Import(AddLibraryIT.CommittedLibraryRecorder.class)
 class AddLibraryIT extends AbstractIntegrationTest {
 
-  private static final AuthenticatedIdentity IDENTITY = defaultIdentityBuilder().build();
-
   @TempDir Path tempDir;
 
   @Autowired private LibraryManagementService libraryManagementService;
   @MockitoSpyBean private LibraryRepository libraryRepository;
   @Autowired private CommittedLibraryRecorder committed;
+  @Autowired private AuthTestSupport authTestSupport;
 
   private final List<UUID> createdLibraryIds = new ArrayList<>();
+  private AuthTestSupport.TestIdentity testIdentity;
 
   @AfterEach
   void deleteLibraries() {
     createdLibraryIds.forEach(libraryRepository::deleteById);
     committed.events.clear();
+    if (testIdentity != null) {
+      authTestSupport.deleteIdentity(testIdentity);
+    }
   }
 
   @Test
   @DisplayName("Should accept one and reject one when concurrent adds use the same path")
   void shouldAcceptOneAndRejectOneWhenConcurrentAddsUseSamePath() throws Exception {
+    testIdentity = authTestSupport.createAdminIdentity();
+    var identity = authenticatedIdentity(testIdentity);
     var bothAtInsert = new CyclicBarrier(2);
     var repositorySpy = AopTestUtils.<LibraryRepository>getUltimateTargetObject(libraryRepository);
     var repositoryAnswer =
@@ -83,9 +91,9 @@ class AddLibraryIT extends AbstractIntegrationTest {
       attempts =
           List.of(
               executor.submit(
-                  () -> libraryManagementService.addLibrary(IDENTITY, unsavedLibrary("First"))),
+                  () -> libraryManagementService.addLibrary(identity, unsavedLibrary("First"))),
               executor.submit(
-                  () -> libraryManagementService.addLibrary(IDENTITY, unsavedLibrary("Second"))));
+                  () -> libraryManagementService.addLibrary(identity, unsavedLibrary("Second"))));
       for (var attempt : attempts) {
         attempt.get(30, TimeUnit.SECONDS);
       }
@@ -123,6 +131,19 @@ class AddLibraryIT extends AbstractIntegrationTest {
         .backend(LibraryBackend.LOCAL)
         .type(MediaType.MOVIE)
         .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+        .build();
+  }
+
+  private static AuthenticatedIdentity authenticatedIdentity(
+      AuthTestSupport.TestIdentity identity) {
+    return AuthenticatedIdentity.builder()
+        .accountId(identity.account().getId())
+        .role(AccountRole.ADMIN)
+        .authSessionId(identity.session().getId())
+        .scope(TokenScope.PROFILE)
+        .householdId(identity.household().getId())
+        .householdRole(HouseholdRole.OWNER)
+        .profileId(identity.profile().getId())
         .build();
   }
 
