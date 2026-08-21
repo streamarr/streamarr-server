@@ -20,6 +20,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class MeResolver {
 
+  private static final int DEFAULT_PAGE_SIZE = 100;
+
   private final AuthorizationService authorizationService;
   private final IdentityQueryService identityQueryService;
   private final PaginationService paginationService;
@@ -66,6 +68,9 @@ public class MeResolver {
     String after = dfe.getArgument("after");
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
+    if (first == 0 && last == 0 && before != null) {
+      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
+    }
     return paginationService.getPaginationOptions(
         firstOrDefault(first, last, before), after, last, before);
   }
@@ -73,7 +78,7 @@ public class MeResolver {
   /** A picker-sized default when the client names no page size. */
   private static int firstOrDefault(int first, int last, String before) {
     if (first == 0 && last == 0 && before == null) {
-      return 100;
+      return DEFAULT_PAGE_SIZE;
     }
     return first;
   }

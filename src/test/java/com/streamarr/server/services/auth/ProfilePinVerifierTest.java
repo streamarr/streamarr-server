@@ -1,8 +1,13 @@
 package com.streamarr.server.services.auth;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.ThrowableProxyUtil;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.exceptions.InvalidProfilePinException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
@@ -13,6 +18,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Tag("UnitTest")
@@ -79,6 +85,34 @@ class ProfilePinVerifierTest {
         .isInstanceOf(InvalidProfilePinException.class);
   }
 
+  @Test
+  @DisplayName("Should not log stored PIN hash material when the hash is unreadable")
+  void shouldNotLogStoredPinHashMaterialWhenHashIsUnreadable() {
+    var storedHash = "unreadable:stored-secret-marker";
+    var profile =
+        ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash(storedHash).build();
+    var logger = (Logger) LoggerFactory.getLogger(ProfilePinVerifier.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+
+    try {
+      assertThatThrownBy(() -> verifier.verify(accountId, profile, "4242"))
+          .isInstanceOf(InvalidProfilePinException.class);
+
+      assertThat(appender.list)
+          .singleElement()
+          .satisfies(
+              event -> {
+                var throwable = ThrowableProxyUtil.asString(event.getThrowableProxy());
+                assertThat(event.getFormattedMessage()).doesNotContain(storedHash);
+                assertThat(throwable).doesNotContain(storedHash);
+              });
+    } finally {
+      logger.detachAppender(appender);
+    }
+  }
+
   private static final class TestEncoder implements PasswordEncoder {
     @Override
     public String encode(CharSequence rawPassword) {
@@ -87,8 +121,8 @@ class ProfilePinVerifierTest {
 
     @Override
     public boolean matches(CharSequence rawPassword, String encodedPassword) {
-      if ("unreadable".equals(encodedPassword)) {
-        throw new IllegalArgumentException("unreadable");
+      if (encodedPassword.startsWith("unreadable")) {
+        throw new IllegalArgumentException(encodedPassword);
       }
       return encode(rawPassword).equals(encodedPassword);
     }

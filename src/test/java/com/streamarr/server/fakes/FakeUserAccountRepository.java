@@ -62,6 +62,7 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
                   .stream()
                   .map(share -> share.getHouseholdId())
                   .filter(id -> !id.equals(account.getHouseholdId()))
+                  .distinct()
                   .sorted()
                   .forEach(ids::add);
               return List.copyOf(ids);

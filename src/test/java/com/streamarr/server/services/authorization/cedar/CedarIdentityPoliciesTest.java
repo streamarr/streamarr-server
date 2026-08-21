@@ -267,10 +267,21 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should deny activity when the Profile is unknown")
-    void shouldDenyActivityWhenProfileIsUnknown() {
+    @DisplayName("Should fail closed when the activity Profile is unknown")
+    void shouldFailClosedWhenActivityProfileIsUnknown() {
       assertThat(decide(atHome(), new Intent.ViewProfileActivity(UUID.randomUUID())))
-          .isEqualTo(DENIED);
+          .isEqualTo(new Decision.Failed<>(Decision.FailureCause.INVALID_SLICE));
+    }
+
+    @Test
+    @DisplayName("Should fail closed when the selected Profile was deleted")
+    void shouldFailClosedWhenSelectedProfileWasDeleted() {
+      var staleIdentity =
+          identityBuilder().scope(TokenScope.PROFILE).profileId(personal.getId()).build();
+      profiles.deleteById(personal.getId());
+
+      assertThat(decide(staleIdentity, new Intent.ViewProfileActivity(personal.getId())))
+          .isEqualTo(new Decision.Failed<>(Decision.FailureCause.INVALID_SLICE));
     }
 
     @Test
@@ -323,6 +334,18 @@ class CedarIdentityPoliciesTest {
 
     @Test
     @DisplayName(
+        "Should deny own Account administration when signed and live Household facts conflict")
+    void shouldDenyOwnAccountAdministrationWhenSignedAndLiveHouseholdFactsConflict() {
+      var staleIdentity = atHome();
+      account.setHouseholdId(visitedHouseholdId);
+      accounts.save(account);
+
+      assertThat(decide(staleIdentity, new Intent.ViewAccountAdministration(account.getId())))
+          .isEqualTo(new Decision.Failed<>(Decision.FailureCause.INVALID_SLICE));
+    }
+
+    @Test
+    @DisplayName(
         "Should allow Profile administration when the caller is a manager, hosting admin, or ServerAdmin")
     void shouldAllowProfileAdministrationWhenCallerIsManagerHostingAdminOrServerAdmin() {
       var visitor = profiles.save(ProfileFixture.defaultProfileBuilder().build());
@@ -343,7 +366,7 @@ class CedarIdentityPoliciesTest {
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decide(member(), new Intent.ViewProfileAdministration(UUID.randomUUID())))
+      assertThat(decide(member(), new Intent.ViewProfileAdministration(visitor.getId())))
           .isEqualTo(ALLOWED);
     }
 

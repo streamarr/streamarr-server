@@ -160,6 +160,61 @@ class MeResolverTest {
   @Test
   @DisplayName("Should page Profiles by keyset cursor when after is given")
   void shouldPageProfilesByKeysetCursorWhenAfterIsGiven() {
+    stubTwoSelectableProfiles();
+    String endCursor =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            ME_QUERY, "data.me.selectableProfiles.pageInfo.endCursor");
+
+    var nextPage =
+        "{ me { selectableProfiles(first: 5, after: \"%s\") { edges { node { name } } pageInfo { hasNextPage hasPreviousPage } } selectedProfile { name } } }"
+            .formatted(endCursor);
+    List<String> names =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            nextPage, "data.me.selectableProfiles.edges[*].node.name");
+    Boolean hasPrevious =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            nextPage, "data.me.selectableProfiles.pageInfo.hasPreviousPage");
+    String selected =
+        dgsQueryExecutor.executeAndExtractJsonPath(nextPage, "data.me.selectedProfile.name");
+
+    assertThat(names).containsExactly("Kai");
+    assertThat(hasPrevious).isTrue();
+    assertThat(selected).isEqualTo("Andrew");
+  }
+
+  @Test
+  @DisplayName("Should use the default page size when only a before Profile cursor is given")
+  void shouldUseDefaultPageSizeWhenOnlyBeforeProfileCursorIsGiven() {
+    stubTwoSelectableProfiles();
+    var cursorQuery = "{ me { selectableProfiles(first: 2) { pageInfo { endCursor } } } }";
+    String before =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            cursorQuery, "data.me.selectableProfiles.pageInfo.endCursor");
+
+    var reverseQuery =
+        "{ me { selectableProfiles(before: \"%s\") { edges { node { name } } } } }"
+            .formatted(before);
+    List<String> names =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            reverseQuery, "data.me.selectableProfiles.edges[*].node.name");
+
+    assertThat(names).containsExactly("Andrew");
+  }
+
+  @Test
+  @DisplayName("Should return profile required code when the query service demands a profile")
+  void shouldReturnProfileRequiredCodeWhenQueryServiceDemandsProfile() {
+    authenticateAtAccountScope();
+    when(identityQueryService.meView(any())).thenThrow(new ProfileRequiredException());
+
+    var result = dgsQueryExecutor.execute("{ me { email } }");
+
+    assertThat(result.getErrors()).hasSize(1);
+    assertThat(result.getErrors().getFirst().getExtensions())
+        .containsEntry("code", "PROFILE_REQUIRED");
+  }
+
+  private void stubTwoSelectableProfiles() {
     authenticateAtAccountScope();
     var account =
         AccountFixture.defaultAccountBuilder().id(accountId).householdId(householdId).build();
@@ -188,38 +243,6 @@ class MeResolverTest {
                 List.of(first, second),
                 first,
                 false));
-    String endCursor =
-        dgsQueryExecutor.executeAndExtractJsonPath(
-            ME_QUERY, "data.me.selectableProfiles.pageInfo.endCursor");
-
-    var nextPage =
-        "{ me { selectableProfiles(first: 5, after: \"%s\") { edges { node { name } } pageInfo { hasNextPage hasPreviousPage } } selectedProfile { name } } }"
-            .formatted(endCursor);
-    List<String> names =
-        dgsQueryExecutor.executeAndExtractJsonPath(
-            nextPage, "data.me.selectableProfiles.edges[*].node.name");
-    Boolean hasPrevious =
-        dgsQueryExecutor.executeAndExtractJsonPath(
-            nextPage, "data.me.selectableProfiles.pageInfo.hasPreviousPage");
-    String selected =
-        dgsQueryExecutor.executeAndExtractJsonPath(nextPage, "data.me.selectedProfile.name");
-
-    assertThat(names).containsExactly("Kai");
-    assertThat(hasPrevious).isTrue();
-    assertThat(selected).isEqualTo("Andrew");
-  }
-
-  @Test
-  @DisplayName("Should return profile required code when the query service demands a profile")
-  void shouldReturnProfileRequiredCodeWhenQueryServiceDemandsProfile() {
-    authenticateAtAccountScope();
-    when(identityQueryService.meView(any())).thenThrow(new ProfileRequiredException());
-
-    var result = dgsQueryExecutor.execute("{ me { email } }");
-
-    assertThat(result.getErrors()).hasSize(1);
-    assertThat(result.getErrors().getFirst().getExtensions())
-        .containsEntry("code", "PROFILE_REQUIRED");
   }
 
   private void authenticateAtAccountScope() {

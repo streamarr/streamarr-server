@@ -37,7 +37,7 @@ class ProfileManagementContributor implements FactContributor {
     var profileId = check.resourceId();
     var profile = profileRepository.findById(profileId);
     if (profile.isEmpty()) {
-      return;
+      throw new InvalidEntitySliceException("Profile facts are unavailable.");
     }
     var restricted = profile.get().isRestricted();
     var selfManaged =

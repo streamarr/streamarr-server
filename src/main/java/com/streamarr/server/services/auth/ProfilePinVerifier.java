@@ -37,8 +37,8 @@ public class ProfilePinVerifier {
   private boolean matches(Profile profile, String pin) {
     try {
       return passwordEncoder.matches(pin, profile.getPinHash());
-    } catch (IllegalArgumentException e) {
-      log.error("Stored PIN hash for profile {} is unreadable.", profile.getId(), e);
+    } catch (IllegalArgumentException _) {
+      log.error("Stored PIN hash for profile {} is unreadable.", profile.getId());
       return false;
     }
   }

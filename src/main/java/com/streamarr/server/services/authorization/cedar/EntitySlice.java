@@ -49,6 +49,7 @@ final class EntitySlice {
     var entities = new ArrayList<Entity>();
     var emitted = new HashSet<>(List.of(principal, resource));
     if (principal.equals(resource)) {
+      requireConsistentSharedAttributes();
       var sharedAttributes = new LinkedHashMap<>(principalAttributes);
       sharedAttributes.putAll(resourceAttributes);
       entities.add(new Entity(principal, Map.copyOf(sharedAttributes), Set.of()));
@@ -62,5 +63,15 @@ final class EntitySlice {
       }
     }
     return List.copyOf(entities);
+  }
+
+  private void requireConsistentSharedAttributes() {
+    for (var attribute : principalAttributes.entrySet()) {
+      var resourceValue = resourceAttributes.get(attribute.getKey());
+      if (resourceValue != null && !resourceValue.equals(attribute.getValue())) {
+        throw new InvalidEntitySliceException(
+            "Conflicting facts for a self-targeted Cedar entity.");
+      }
+    }
   }
 }

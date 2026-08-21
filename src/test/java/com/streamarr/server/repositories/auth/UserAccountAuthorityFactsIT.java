@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
 import java.util.UUID;
@@ -21,15 +23,23 @@ import org.springframework.transaction.support.TransactionTemplate;
 class UserAccountAuthorityFactsIT extends AbstractIntegrationTest {
 
   @Autowired private UserAccountRepository userAccountRepository;
+  @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private TransactionTemplate transactionTemplate;
 
   private AuthTestSupport.TestIdentity identity;
+  private AuthTestSupport.TestIdentity host;
 
   @AfterEach
   void deleteIdentity() {
-    if (identity != null) {
-      authTestSupport.deleteIdentity(identity);
+    try {
+      if (identity != null) {
+        authTestSupport.deleteIdentity(identity);
+      }
+    } finally {
+      if (host != null) {
+        authTestSupport.deleteIdentity(host);
+      }
     }
   }
 
@@ -85,13 +95,22 @@ class UserAccountAuthorityFactsIT extends AbstractIntegrationTest {
   @DisplayName("Should report Household access when the Account is a member or visitor")
   void shouldReportHouseholdAccessWhenAccountIsMemberOrVisitor() {
     identity = authTestSupport.createIdentity();
+    host = authTestSupport.createIdentity();
     var accountId = identity.account().getId();
+    shareRepository.saveAndFlush(
+        ProfileHouseholdShare.builder()
+            .profileId(identity.profile().getId())
+            .householdId(host.household().getId())
+            .status(ProfileShareStatus.ACTIVE)
+            .structural(false)
+            .build());
 
     assertThat(userAccountRepository.mayUseHousehold(accountId, identity.household().getId()))
         .isTrue();
+    assertThat(userAccountRepository.mayUseHousehold(accountId, host.household().getId())).isTrue();
     assertThat(userAccountRepository.mayUseHousehold(accountId, UUID.randomUUID())).isFalse();
     assertThat(userAccountRepository.findUsableHouseholdIds(accountId))
-        .containsExactly(identity.household().getId());
+        .containsExactly(identity.household().getId(), host.household().getId());
   }
 
   private void revokeServerAdminInNewTransaction(UUID accountId) {
