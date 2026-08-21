@@ -116,6 +116,92 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should revoke server admin and audit the win when a fresh ServerAdmin asks")
+  void shouldRevokeServerAdminAndAuditWinWhenFreshServerAdminAsks() throws Exception {
+    assertThat(userAccountRepository.tryGrantServerAdmin(resident.account().getId())).isTrue();
+
+    graphql(
+            authTestSupport.freshAccountBearer(serverAdmin),
+            """
+            mutation { revokeServerAdmin(input: {accountId: "%s", reason: "rotation"}) {
+              account { id serverAdmin } userErrors { __typename } } }
+            """
+                .formatted(resident.account().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.revokeServerAdmin.account.serverAdmin").value(false))
+        .andExpect(jsonPath("$.data.revokeServerAdmin.userErrors").isEmpty());
+
+    assertThat(
+            userAccountRepository
+                .findById(resident.account().getId())
+                .orElseThrow()
+                .isServerAdmin())
+        .isFalse();
+    assertThat(dsl.selectFrom(SECURITY_AUDIT_EVENT).fetch())
+        .singleElement()
+        .satisfies(
+            audit -> {
+              assertThat(audit.getOperation()).isEqualTo("revokeServerAdmin");
+              assertThat(audit.getReason()).isEqualTo("rotation");
+            });
+  }
+
+  @Test
+  @DisplayName("Should report the missing ceremony when revoking with a stale token")
+  void shouldReportMissingCeremonyWhenRevokingServerAdminWithStaleToken() throws Exception {
+    assertThat(userAccountRepository.tryGrantServerAdmin(resident.account().getId())).isTrue();
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            mutation { revokeServerAdmin(input: {accountId: "%s", reason: "rotation"}) {
+              account { id } userErrors { __typename } } }
+            """
+                .formatted(resident.account().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.revokeServerAdmin.userErrors[0].__typename")
+                .value("ReauthenticationRequiredError"));
+
+    assertThat(
+            userAccountRepository
+                .findById(resident.account().getId())
+                .orElseThrow()
+                .isServerAdmin())
+        .isTrue();
+    assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isZero();
+  }
+
+  @Test
+  @DisplayName("Should require a reason before revoking server admin")
+  void shouldRequireReasonBeforeRevokingServerAdmin() throws Exception {
+    assertThat(userAccountRepository.tryGrantServerAdmin(resident.account().getId())).isTrue();
+
+    graphql(
+            authTestSupport.freshAccountBearer(serverAdmin),
+            """
+            mutation { revokeServerAdmin(input: {accountId: "%s", reason: "  "}) {
+              account { id } userErrors { __typename } } }
+            """
+                .formatted(resident.account().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.revokeServerAdmin.userErrors[0].__typename")
+                .value("ReasonRequiredError"));
+
+    assertThat(
+            userAccountRepository
+                .findById(resident.account().getId())
+                .orElseThrow()
+                .isServerAdmin())
+        .isTrue();
+    assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isZero();
+  }
+
+  @Test
   @DisplayName("Should report the missing ceremony when the ServerAdmin token is not fresh")
   void shouldReportMissingCeremonyWhenServerAdminTokenNotFresh() throws Exception {
     graphql(
@@ -138,6 +224,7 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
                 .orElseThrow()
                 .isServerAdmin())
         .isFalse();
+    assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isZero();
   }
 
   @Test
@@ -155,23 +242,44 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
                 .formatted(resident.account().getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+
+    assertThat(
+            userAccountRepository
+                .findById(resident.account().getId())
+                .orElseThrow()
+                .isServerAdmin())
+        .isFalse();
+    assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isZero();
   }
 
   @Test
   @DisplayName("Should read a hidden Account as not found under the oracle rule")
   void shouldReadHiddenAccountAsNotFoundUnderOracleRule() throws Exception {
-    graphql(
-            authTestSupport.freshAccountBearer(resident),
-            """
-            mutation { grantServerAdmin(input: {accountId: "%s", reason: "power grab"}) {
-              account { id } userErrors { __typename } } }
-            """
-                .formatted(serverAdmin.account().getId()))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(
-            jsonPath("$.data.grantServerAdmin.userErrors[0].__typename")
-                .value("AccountNotFoundError"));
+    var hidden = authTestSupport.createIdentity();
+    try {
+      graphql(
+              authTestSupport.freshAccountBearer(resident),
+              """
+              mutation { grantServerAdmin(input: {accountId: "%s", reason: "power grab"}) {
+                account { id } userErrors { __typename } } }
+              """
+                  .formatted(hidden.account().getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.grantServerAdmin.userErrors[0].__typename")
+                  .value("AccountNotFoundError"));
+
+      assertThat(
+              userAccountRepository
+                  .findById(hidden.account().getId())
+                  .orElseThrow()
+                  .isServerAdmin())
+          .isFalse();
+      assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isZero();
+    } finally {
+      authTestSupport.deleteIdentity(hidden);
+    }
   }
 
   @Test
@@ -249,6 +357,60 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should grant HouseholdAdmin and audit the winning transition")
+  void shouldGrantHouseholdAdminAndAuditWinningTransition() throws Exception {
+    var member = joinHousehold(resident, HouseholdRole.MEMBER);
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            mutation { grantHouseholdAdmin(input: {accountId: "%s"}) {
+              account { householdRole } userErrors { __typename } } }
+            """
+                .formatted(member.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.grantHouseholdAdmin.account.householdRole").value("ADMIN"))
+        .andExpect(jsonPath("$.data.grantHouseholdAdmin.userErrors").isEmpty());
+
+    assertThat(userAccountRepository.findById(member.getId()).orElseThrow().getHouseholdRole())
+        .isEqualTo(HouseholdRole.ADMIN);
+    assertThat(dsl.selectFrom(SECURITY_AUDIT_EVENT).fetch())
+        .singleElement()
+        .extracting(audit -> audit.getOperation())
+        .isEqualTo("grantHouseholdAdmin");
+  }
+
+  @Test
+  @DisplayName("Should revoke HouseholdAdmin and audit the winning transition")
+  void shouldRevokeHouseholdAdminAndAuditWinningTransition() throws Exception {
+    var additionalAdmin = joinHousehold(resident, HouseholdRole.ADMIN);
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            mutation { revokeHouseholdAdmin(input: {accountId: "%s"}) {
+              account { householdRole } userErrors { __typename } } }
+            """
+                .formatted(additionalAdmin.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.revokeHouseholdAdmin.account.householdRole").value("MEMBER"))
+        .andExpect(jsonPath("$.data.revokeHouseholdAdmin.userErrors").isEmpty());
+
+    assertThat(
+            userAccountRepository
+                .findById(additionalAdmin.getId())
+                .orElseThrow()
+                .getHouseholdRole())
+        .isEqualTo(HouseholdRole.MEMBER);
+    assertThat(dsl.selectFrom(SECURITY_AUDIT_EVENT).fetch())
+        .singleElement()
+        .extracting(audit -> audit.getOperation())
+        .isEqualTo("revokeHouseholdAdmin");
+  }
+
+  @Test
   @DisplayName("Should translate promoting a restricted Account into a typed error")
   void shouldTranslatePromotingRestrictedAccountIntoTypedError() throws Exception {
     var member = joinHousehold(resident, HouseholdRole.MEMBER);
@@ -294,8 +456,33 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should let an Account rename itself and refuse a blank name")
-  void shouldLetAccountRenameItselfAndRefuseBlankName() throws Exception {
+  @DisplayName("Should enable an Account and audit the winning transition")
+  void shouldEnableAccountAndAuditWinningTransition() throws Exception {
+    assertThat(userAccountRepository.tryDisable(resident.account().getId())).isTrue();
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            mutation { enableAccount(input: {accountId: "%s"}) {
+              account { enabled } userErrors { __typename } } }
+            """
+                .formatted(resident.account().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.enableAccount.account.enabled").value(true))
+        .andExpect(jsonPath("$.data.enableAccount.userErrors").isEmpty());
+
+    assertThat(userAccountRepository.findById(resident.account().getId()).orElseThrow().isEnabled())
+        .isTrue();
+    assertThat(dsl.selectFrom(SECURITY_AUDIT_EVENT).fetch())
+        .singleElement()
+        .extracting(audit -> audit.getOperation())
+        .isEqualTo("enableAccount");
+  }
+
+  @Test
+  @DisplayName("Should let an Account rename itself")
+  void shouldLetAccountRenameItself() throws Exception {
     graphql(
             authTestSupport.accountBearer(resident),
             """
@@ -305,6 +492,19 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
                 .formatted(resident.account().getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.renameAccount.account.displayName").value("Fresh Name"));
+
+    assertThat(
+            userAccountRepository
+                .findById(resident.account().getId())
+                .orElseThrow()
+                .getDisplayName())
+        .isEqualTo("Fresh Name");
+  }
+
+  @Test
+  @DisplayName("Should refuse a blank Account display name without changing it")
+  void shouldRefuseBlankAccountDisplayNameWithoutChangingIt() throws Exception {
+    var originalName = resident.account().getDisplayName();
 
     graphql(
             authTestSupport.accountBearer(resident),
@@ -317,11 +517,18 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.renameAccount.userErrors[0].__typename")
                 .value("DisplayNameRequiredError"));
+
+    assertThat(
+            userAccountRepository
+                .findById(resident.account().getId())
+                .orElseThrow()
+                .getDisplayName())
+        .isEqualTo(originalName);
   }
 
   @Test
-  @DisplayName("Should let a HouseholdAdmin rename its Household and hide a foreign one")
-  void shouldLetHouseholdAdminRenameItsHouseholdAndHideForeignOne() throws Exception {
+  @DisplayName("Should let a HouseholdAdmin rename its Household")
+  void shouldLetHouseholdAdminRenameItsHousehold() throws Exception {
     graphql(
             authTestSupport.accountBearer(resident),
             """
@@ -331,6 +538,15 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
                 .formatted(resident.household().getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.renameHousehold.household.name").value("Summer House"));
+
+    assertThat(householdRepository.findById(resident.household().getId()).orElseThrow().getName())
+        .isEqualTo("Summer House");
+  }
+
+  @Test
+  @DisplayName("Should hide a foreign Household when rename is requested")
+  void shouldHideForeignHouseholdWhenRenameRequested() throws Exception {
+    var originalName = serverAdmin.household().getName();
 
     graphql(
             authTestSupport.accountBearer(resident),
@@ -344,11 +560,15 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.renameHousehold.userErrors[0].__typename")
                 .value("HouseholdNotFoundError"));
+
+    assertThat(
+            householdRepository.findById(serverAdmin.household().getId()).orElseThrow().getName())
+        .isEqualTo(originalName);
   }
 
   @Test
-  @DisplayName("Should create a Household for ServerAdmin and forbid everyone else")
-  void shouldCreateHouseholdForServerAdminAndForbidEveryoneElse() throws Exception {
+  @DisplayName("Should create a Household for ServerAdmin")
+  void shouldCreateHouseholdForServerAdmin() throws Exception {
     var response =
         graphql(
                 authTestSupport.accountBearer(serverAdmin),
@@ -370,7 +590,15 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
                 .path("household")
                 .path("id")
                 .asString());
+    assertThat(householdRepository.findById(householdId).orElseThrow().getName())
+        .isEqualTo("Guest House");
     householdRepository.deleteById(householdId);
+  }
+
+  @Test
+  @DisplayName("Should forbid Household creation for a non-ServerAdmin")
+  void shouldForbidHouseholdCreationForNonServerAdmin() throws Exception {
+    var householdCount = householdRepository.count();
 
     graphql(
             authTestSupport.accountBearer(resident),
@@ -380,6 +608,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
             """)
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+
+    assertThat(householdRepository.count()).isEqualTo(householdCount);
   }
 
   @Test

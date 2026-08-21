@@ -10,7 +10,9 @@ import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.TokenClaims;
+import com.streamarr.server.services.auth.TokenContext;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
 import java.util.UUID;
@@ -45,6 +47,7 @@ class ReauthEndpointIT extends AbstractIntegrationTest {
   @Autowired private AuthSessionRepository authSessionRepository;
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private AuthTokenProperties tokenProperties;
+  @Autowired private AccessTokenIssuer accessTokenIssuer;
 
   private AuthTestSupport.TestIdentity identity;
 
@@ -81,14 +84,27 @@ class ReauthEndpointIT extends AbstractIntegrationTest {
     assertThat(replacement.getClaimAsString(TokenClaims.SESSION_ID))
         .isEqualTo(identity.session().getId().toString());
     var windowEnd = reauthenticatedAt(replacement).plus(tokenProperties.reauthenticationWindow());
-    assertThat(replacement.getExpiresAt()).isBeforeOrEqualTo(windowEnd);
-    assertThat(replacement.getExpiresAt()).isBeforeOrEqualTo(sourceExpiry);
+    var expectedExpiry = sourceExpiry.isBefore(windowEnd) ? sourceExpiry : windowEnd;
+    assertThat(replacement.getExpiresAt()).isEqualTo(expectedExpiry);
+    assertThat(Instant.parse(body.get("accessTokenExpiresAt").asString()))
+        .isEqualTo(expectedExpiry);
   }
 
   @Test
   @DisplayName("Should preserve profile scope and selection when reauthenticating")
   void shouldPreserveProfileScopeAndSelectionWhenReauthenticating() throws Exception {
-    var source = authTestSupport.profileBearer(identity);
+    var visitedHouseholdId = UUID.randomUUID();
+    var source =
+        accessTokenIssuer
+            .issue(
+                TokenContext.builder()
+                    .account(identity.account())
+                    .session(identity.session())
+                    .contextHouseholdId(visitedHouseholdId)
+                    .profileId(identity.profile().getId())
+                    .build())
+            .value();
+    var sourceClaims = jwtDecoder.decode(source);
 
     var body =
         objectMapper.readTree(
@@ -100,9 +116,35 @@ class ReauthEndpointIT extends AbstractIntegrationTest {
                 .getContentAsString());
 
     var replacement = jwtDecoder.decode(body.get("accessToken").asString());
+    assertThat(replacement.getClaimAsString(TokenClaims.SESSION_ID))
+        .isEqualTo(sourceClaims.getClaimAsString(TokenClaims.SESSION_ID));
+    assertThat(replacement.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
+        .isEqualTo(sourceClaims.getClaimAsString(TokenClaims.HOUSEHOLD_ID));
+    assertThat(replacement.getClaimAsString(TokenClaims.CONTEXT_HOUSEHOLD_ID))
+        .isEqualTo(visitedHouseholdId.toString())
+        .isEqualTo(sourceClaims.getClaimAsString(TokenClaims.CONTEXT_HOUSEHOLD_ID));
     assertThat(replacement.getClaimAsString(TokenClaims.PROFILE_ID))
         .isEqualTo(identity.profile().getId().toString());
     assertThat(reauthenticatedAt(replacement)).isNotNull();
+  }
+
+  @Test
+  @DisplayName("Should reject reauthentication when the password is blank")
+  void shouldRejectReauthenticationWhenPasswordBlank() throws Exception {
+    reauth(authTestSupport.accountBearer(identity), "  ").andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("Should reject reauthentication when the password is missing")
+  void shouldRejectReauthenticationWhenPasswordMissing() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/reauth")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header(
+                    HttpHeaders.AUTHORIZATION, "Bearer " + authTestSupport.accountBearer(identity))
+                .content("{}"))
+        .andExpect(status().isBadRequest());
   }
 
   @Test
