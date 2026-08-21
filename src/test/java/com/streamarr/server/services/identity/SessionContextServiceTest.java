@@ -160,10 +160,9 @@ class SessionContextServiceTest {
         .isInstanceOf(AuthenticationRequiredException.class);
 
     var foreign = sessions.save(AuthSession.builder().accountId(UUID.randomUUID()).build());
+    var foreignSessionId = foreign.getId();
     assertThatThrownBy(
-            () ->
-                households.selectHousehold(
-                    account.getId(), foreign.getId(), account.getHouseholdId()))
+            () -> households.selectHousehold(accountId, foreignSessionId, membershipHouseholdId))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 

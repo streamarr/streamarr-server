@@ -71,11 +71,9 @@ class ListConnectionsTest {
     var first = ListConnections.page(ITEMS, s -> s, options(PaginationDirection.FORWARD, null, 2));
     var after = first.getPageInfo().getEndCursor().getValue();
     var withoutAnchor = List.of("a", "c", "d", "e");
+    var paginationOptions = options(PaginationDirection.FORWARD, after, 2);
 
-    assertThatThrownBy(
-            () ->
-                ListConnections.page(
-                    withoutAnchor, s -> s, options(PaginationDirection.FORWARD, after, 2)))
+    assertThatThrownBy(() -> ListConnections.page(withoutAnchor, s -> s, paginationOptions))
         .isInstanceOf(InvalidCursorException.class)
         .hasMessage("Cursor no longer identifies an item.");
   }
@@ -95,9 +93,9 @@ class ListConnectionsTest {
   @Test
   @DisplayName("Should reject a cursor when its encoding is not valid base64")
   void shouldRejectCursorWhenEncodingIsNotValidBase64() {
-    assertThatThrownBy(
-            () ->
-                ListConnections.page(ITEMS, s -> s, options(PaginationDirection.FORWARD, "%%%", 2)))
+    var paginationOptions = options(PaginationDirection.FORWARD, "%%%", 2);
+
+    assertThatThrownBy(() -> ListConnections.page(ITEMS, s -> s, paginationOptions))
         .isInstanceOf(InvalidCursorException.class);
   }
 
