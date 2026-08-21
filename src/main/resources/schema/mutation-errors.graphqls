@@ -11,6 +11,11 @@ interface InputMutationError implements MutationError {
     inputPath: [String!]!
 }
 
+type InvalidIdError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 type LibraryNameRequiredError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!

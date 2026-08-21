@@ -45,85 +45,118 @@ public class AccountAdministrationResolver {
 
   @DgsMutation
   public GrantServerAdminPayload grantServerAdmin(@InputArgument GrantServerAdminInput input) {
-    return MutationPayloads.payload(
-        accountAdministrationService
-            .grantServerAdmin(
-                authorizationService.currentIdentity(),
-                Ids.parseUuid(input.accountId()),
-                input.reason())
-            .map(AccountAdministration::from),
-        AdministrationErrors::toGrantServerAdminError,
-        GrantServerAdminPayload::new);
+    return MutationPayloads.withUuid(
+        input.accountId(),
+        accountId ->
+            MutationPayloads.payload(
+                accountAdministrationService
+                    .grantServerAdmin(
+                        authorizationService.currentIdentity(), accountId, input.reason())
+                    .map(AccountAdministration::from),
+                AdministrationErrors::toGrantServerAdminError,
+                GrantServerAdminPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                AdministrationErrors.invalidAccountId(), GrantServerAdminPayload::new));
   }
 
   @DgsMutation
   public RevokeServerAdminPayload revokeServerAdmin(@InputArgument RevokeServerAdminInput input) {
-    return MutationPayloads.payload(
-        accountAdministrationService
-            .revokeServerAdmin(
-                authorizationService.currentIdentity(),
-                Ids.parseUuid(input.accountId()),
-                input.reason())
-            .map(AccountAdministration::from),
-        AdministrationErrors::toRevokeServerAdminError,
-        RevokeServerAdminPayload::new);
+    return MutationPayloads.withUuid(
+        input.accountId(),
+        accountId ->
+            MutationPayloads.payload(
+                accountAdministrationService
+                    .revokeServerAdmin(
+                        authorizationService.currentIdentity(), accountId, input.reason())
+                    .map(AccountAdministration::from),
+                AdministrationErrors::toRevokeServerAdminError,
+                RevokeServerAdminPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                AdministrationErrors.invalidAccountId(), RevokeServerAdminPayload::new));
   }
 
   @DgsMutation
   public GrantHouseholdAdminPayload grantHouseholdAdmin(
       @InputArgument GrantHouseholdAdminInput input) {
-    return MutationPayloads.payload(
-        accountAdministrationService
-            .grantHouseholdAdmin(
-                authorizationService.currentIdentity(), Ids.parseUuid(input.accountId()))
-            .map(AccountAdministration::from),
-        AdministrationErrors::toGrantHouseholdAdminError,
-        GrantHouseholdAdminPayload::new);
+    return MutationPayloads.withUuid(
+        input.accountId(),
+        accountId ->
+            MutationPayloads.payload(
+                accountAdministrationService
+                    .grantHouseholdAdmin(authorizationService.currentIdentity(), accountId)
+                    .map(AccountAdministration::from),
+                AdministrationErrors::toGrantHouseholdAdminError,
+                GrantHouseholdAdminPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                AdministrationErrors.invalidAccountId(), GrantHouseholdAdminPayload::new));
   }
 
   @DgsMutation
   public RevokeHouseholdAdminPayload revokeHouseholdAdmin(
       @InputArgument RevokeHouseholdAdminInput input) {
-    return MutationPayloads.payload(
-        accountAdministrationService
-            .revokeHouseholdAdmin(
-                authorizationService.currentIdentity(), Ids.parseUuid(input.accountId()))
-            .map(AccountAdministration::from),
-        AdministrationErrors::toRevokeHouseholdAdminError,
-        RevokeHouseholdAdminPayload::new);
+    return MutationPayloads.withUuid(
+        input.accountId(),
+        accountId ->
+            MutationPayloads.payload(
+                accountAdministrationService
+                    .revokeHouseholdAdmin(authorizationService.currentIdentity(), accountId)
+                    .map(AccountAdministration::from),
+                AdministrationErrors::toRevokeHouseholdAdminError,
+                RevokeHouseholdAdminPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                AdministrationErrors.invalidAccountId(), RevokeHouseholdAdminPayload::new));
   }
 
   @DgsMutation
   public DisableAccountPayload disableAccount(@InputArgument DisableAccountInput input) {
-    return MutationPayloads.payload(
-        accountAdministrationService
-            .disableAccount(
-                authorizationService.currentIdentity(), Ids.parseUuid(input.accountId()))
-            .map(AccountAdministration::from),
-        AdministrationErrors::toDisableAccountError,
-        DisableAccountPayload::new);
+    return MutationPayloads.withUuid(
+        input.accountId(),
+        accountId ->
+            MutationPayloads.payload(
+                accountAdministrationService
+                    .disableAccount(authorizationService.currentIdentity(), accountId)
+                    .map(AccountAdministration::from),
+                AdministrationErrors::toDisableAccountError,
+                DisableAccountPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                AdministrationErrors.invalidAccountId(), DisableAccountPayload::new));
   }
 
   @DgsMutation
   public EnableAccountPayload enableAccount(@InputArgument EnableAccountInput input) {
-    return MutationPayloads.payload(
-        accountAdministrationService
-            .enableAccount(authorizationService.currentIdentity(), Ids.parseUuid(input.accountId()))
-            .map(AccountAdministration::from),
-        AdministrationErrors::toEnableAccountError,
-        EnableAccountPayload::new);
+    return MutationPayloads.withUuid(
+        input.accountId(),
+        accountId ->
+            MutationPayloads.payload(
+                accountAdministrationService
+                    .enableAccount(authorizationService.currentIdentity(), accountId)
+                    .map(AccountAdministration::from),
+                AdministrationErrors::toEnableAccountError,
+                EnableAccountPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                AdministrationErrors.invalidAccountId(), EnableAccountPayload::new));
   }
 
   @DgsMutation
   public RenameAccountPayload renameAccount(@InputArgument RenameAccountInput input) {
-    return MutationPayloads.payload(
-        accountAdministrationService
-            .renameAccount(
-                authorizationService.currentIdentity(),
-                Ids.parseUuid(input.accountId()),
-                input.displayName())
-            .map(AccountAdministration::from),
-        AdministrationErrors::toRenameAccountError,
-        RenameAccountPayload::new);
+    return MutationPayloads.withUuid(
+        input.accountId(),
+        accountId ->
+            MutationPayloads.payload(
+                accountAdministrationService
+                    .renameAccount(
+                        authorizationService.currentIdentity(), accountId, input.displayName())
+                    .map(AccountAdministration::from),
+                AdministrationErrors::toRenameAccountError,
+                RenameAccountPayload::new),
+        () ->
+            MutationPayloads.inputError(
+                AdministrationErrors.invalidAccountId(), RenameAccountPayload::new));
   }
 }

@@ -3,6 +3,7 @@ package com.streamarr.server.services.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
@@ -100,6 +101,22 @@ class HouseholdAdministrationServiceTest {
                 : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
     assertThatThrownBy(() -> service.renameHousehold(identity, householdId, "New Name"))
         .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when Household visibility cannot be decided")
+  void shouldFailClosedWhenHouseholdVisibilityCannotBeDecided() {
+    var household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var identity = authorization.currentIdentity();
+    var householdId = household.getId();
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.RenameHousehold
+                ? new Decision.Denied<>(Decision.DenialReason.POLICY)
+                : new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+
+    assertThatThrownBy(() -> service.renameHousehold(identity, householdId, "New Name"))
+        .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
   @Test

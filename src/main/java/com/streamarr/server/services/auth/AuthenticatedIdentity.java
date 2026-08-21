@@ -5,6 +5,7 @@ import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.NonNull;
@@ -25,9 +26,13 @@ public record AuthenticatedIdentity(
     @NonNull UUID contextHouseholdId,
     UUID profileId,
     UUID streamSessionId,
-    Instant reauthenticatedAt) {
+    Optional<Instant> reauthenticatedAt) {
 
   public AuthenticatedIdentity {
+    if (reauthenticatedAt == null) {
+      reauthenticatedAt = Optional.empty();
+    }
+
     if (scope == TokenScope.ACCOUNT && profileId != null) {
       throw new IllegalArgumentException("Account scope cannot carry a selected profile");
     }
@@ -55,7 +60,8 @@ public record AuthenticatedIdentity(
         .contextHouseholdId(UUID.fromString(jwt.getClaimAsString(TokenClaims.CONTEXT_HOUSEHOLD_ID)))
         .profileId(uuidClaim(jwt, TokenClaims.PROFILE_ID))
         .streamSessionId(uuidClaim(jwt, TokenClaims.STREAM_SESSION_ID))
-        .reauthenticatedAt(jwt.getClaimAsInstant(TokenClaims.REAUTHENTICATED_AT))
+        .reauthenticatedAt(
+            Optional.ofNullable(jwt.getClaimAsInstant(TokenClaims.REAUTHENTICATED_AT)))
         .build();
   }
 

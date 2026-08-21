@@ -81,9 +81,11 @@ public class AccessTokenIssuer {
     if (scope == TokenScope.PROFILE) {
       claims.claim(TokenClaims.PROFILE_ID, context.profileId().toString());
     }
-    if (context.reauthenticatedAt() != null) {
-      claims.claim(TokenClaims.REAUTHENTICATED_AT, context.reauthenticatedAt().getEpochSecond());
-    }
+    context
+        .reauthenticatedAt()
+        .ifPresent(
+            reauthenticatedAt ->
+                claims.claim(TokenClaims.REAUTHENTICATED_AT, reauthenticatedAt.getEpochSecond()));
 
     var jwt =
         jwtEncoder.encode(

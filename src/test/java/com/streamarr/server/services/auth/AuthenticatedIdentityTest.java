@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -117,6 +118,14 @@ class AuthenticatedIdentityTest {
 
     assertThat(identity.scope()).isEqualTo(TokenScope.ACCOUNT);
     assertThat(identity.profileId()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should represent a missing reauthentication claim without returning null")
+  void shouldRepresentMissingReauthenticationClaimWithoutReturningNull() {
+    var identity = accountScopedBuilder().build();
+
+    assertThat(identity.reauthenticatedAt()).isEqualTo(Optional.empty());
   }
 
   @Test

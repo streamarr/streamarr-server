@@ -30,17 +30,35 @@ public class HouseholdAdministrationService {
 
   public Outcome<Household, AdministrationRejections.CreateHousehold> createHousehold(
       AuthenticatedIdentity identity, String name) {
+    var transactional =
+        mutationTransactions.write(
+            () -> createHouseholdInsideTransaction(identity, name),
+            _ -> Optional.<AdministrationRejections.CreateHousehold>empty());
+    return transactional.fold(outcome -> outcome, Outcome::rejected);
+  }
+
+  public Outcome<Household, AdministrationRejections.RenameHousehold> renameHousehold(
+      AuthenticatedIdentity identity, UUID householdId, String name) {
+    var transactional =
+        mutationTransactions.write(
+            () -> renameHouseholdInsideTransaction(identity, householdId, name),
+            _ -> Optional.<AdministrationRejections.RenameHousehold>empty());
+    return transactional.fold(outcome -> outcome, Outcome::rejected);
+  }
+
+  private Outcome<Household, AdministrationRejections.CreateHousehold>
+      createHouseholdInsideTransaction(AuthenticatedIdentity identity, String name) {
     authorizationService.requireAllowed(identity, new Intent.CreateHousehold());
     if (isBlank(name)) {
       return Outcome.rejected(new AdministrationRejections.HouseholdNameRequired());
     }
     var household = Household.builder().name(name.strip()).build();
-    return mutationTransactions.write(
-        () -> householdRepository.saveAndFlush(household), _ -> Optional.empty());
+    return Outcome.accepted(householdRepository.saveAndFlush(household));
   }
 
-  public Outcome<Household, AdministrationRejections.RenameHousehold> renameHousehold(
-      AuthenticatedIdentity identity, UUID householdId, String name) {
+  private Outcome<Household, AdministrationRejections.RenameHousehold>
+      renameHouseholdInsideTransaction(
+          AuthenticatedIdentity identity, UUID householdId, String name) {
     var refusal = refusalOf(identity, householdId);
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
@@ -48,15 +66,13 @@ public class HouseholdAdministrationService {
     if (isBlank(name)) {
       return Outcome.rejected(new AdministrationRejections.HouseholdNameRequired());
     }
-    if (householdRepository.findById(householdId).isEmpty()) {
+    var household = householdRepository.findById(householdId);
+    if (household.isEmpty()) {
       return Outcome.rejected(new AdministrationRejections.HouseholdNotFound());
     }
-    return mutationTransactions.write(
-        () -> {
-          householdRepository.tryRename(householdId, name.strip());
-          return householdRepository.findById(householdId).orElseThrow();
-        },
-        _ -> Optional.empty());
+    householdRepository.tryRename(householdId, name.strip());
+    householdRepository.refresh(household.get());
+    return Outcome.accepted(household.get());
   }
 
   private Optional<AdministrationRejections.RenameHousehold> refusalOf(
@@ -74,9 +90,12 @@ public class HouseholdAdministrationService {
   }
 
   private boolean mayViewHousehold(AuthenticatedIdentity identity, UUID householdId) {
-    return authorizationService.decide(
-            identity, new Intent.ViewHouseholdAdministration(householdId))
-        instanceof Decision.Allowed<?>;
+    return switch (authorizationService.decide(
+        identity, new Intent.ViewHouseholdAdministration(householdId))) {
+      case Decision.Allowed<?> _ -> true;
+      case Decision.Denied<?> _ -> false;
+      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+    };
   }
 
   private static boolean isBlank(String value) {

@@ -3,6 +3,7 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.UserAccount;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.NonNull;
@@ -18,7 +19,13 @@ public record TokenContext(
     @NonNull AuthSession session,
     @NonNull UUID contextHouseholdId,
     UUID profileId,
-    Instant reauthenticatedAt) {
+    Optional<Instant> reauthenticatedAt) {
+
+  public TokenContext {
+    if (reauthenticatedAt == null) {
+      reauthenticatedAt = Optional.empty();
+    }
+  }
 
   /** The session's remembered context: membership Household unless the session switched. */
   public static TokenContext of(UserAccount account, AuthSession session) {
@@ -35,6 +42,10 @@ public record TokenContext(
 
   /** The same context stamped with the ceremony instant its source token carried, if any. */
   public TokenContext withReauthenticatedAt(Instant instant) {
+    return withReauthenticatedAt(Optional.ofNullable(instant));
+  }
+
+  public TokenContext withReauthenticatedAt(Optional<Instant> instant) {
     return new TokenContext(account, session, contextHouseholdId, profileId, instant);
   }
 

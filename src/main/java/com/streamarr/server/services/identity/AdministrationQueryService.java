@@ -9,9 +9,15 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
-import java.util.Comparator;
+import com.streamarr.server.services.pagination.MediaPage;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PaginationService;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,6 +34,7 @@ public class AdministrationQueryService {
   private final AuthorizationService authorizationService;
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
+  private final PaginationService paginationService;
 
   public Optional<Household> householdAdministration(
       AuthenticatedIdentity identity, UUID householdId) {
@@ -49,18 +56,38 @@ public class AdministrationQueryService {
     };
   }
 
-  /** Every Household on the server, in stable name-then-id order. */
-  public List<Household> households(AuthenticatedIdentity identity) {
+  /** A bounded page of Households on the server, in stable name-then-id order. */
+  public MediaPage<Household> households(
+      AuthenticatedIdentity identity, MediaPaginationOptions options) {
     authorizationService.requireAllowed(identity, new Intent.ViewHouseholds());
-    return householdRepository.findAll().stream()
-        .sorted(Comparator.comparing(Household::getName).thenComparing(Household::getId))
-        .toList();
+    var items =
+        householdRepository.findAdministrationPage(options).stream()
+            .map(household -> new PageItem<>(household, household.getName()))
+            .toList();
+    return paginationService.buildMediaPage(
+        items, options.getPaginationOptions(), options.getCursorId());
   }
 
-  /** The Accounts of one already-authorized Household, in stable name-then-id order. */
-  public List<UserAccount> accountsOf(UUID householdId) {
-    return userAccountRepository.findByHouseholdId(householdId).stream()
-        .sorted(Comparator.comparing(UserAccount::getDisplayName).thenComparing(UserAccount::getId))
-        .toList();
+  /** A bounded page of Accounts for one already-authorized Household. */
+  public Map<UUID, MediaPage<UserAccount>> accountPagesOf(
+      Set<UUID> householdIds, MediaPaginationOptions options) {
+    var accountsByHousehold = userAccountRepository.findAdministrationPages(householdIds, options);
+    var pages = new LinkedHashMap<UUID, MediaPage<UserAccount>>();
+    householdIds.forEach(
+        householdId ->
+            pages.put(
+                householdId,
+                accountPage(accountsByHousehold.getOrDefault(householdId, List.of()), options)));
+    return pages;
+  }
+
+  private MediaPage<UserAccount> accountPage(
+      List<UserAccount> accounts, MediaPaginationOptions options) {
+    var items =
+        accounts.stream()
+            .map(account -> new PageItem<>(account, account.getDisplayName()))
+            .toList();
+    return paginationService.buildMediaPage(
+        items, options.getPaginationOptions(), options.getCursorId());
   }
 }

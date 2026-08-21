@@ -89,6 +89,14 @@ public final class AdministrationErrors {
     };
   }
 
+  public static InvalidIdError invalidAccountId() {
+    return invalidId(ACCOUNT_ID);
+  }
+
+  public static InvalidIdError invalidHouseholdId() {
+    return invalidId("householdId");
+  }
+
   private static AccountNotFoundError accountNotFound() {
     return new AccountNotFoundError("No such Account.", InputPath.of(ACCOUNT_ID));
   }
@@ -113,5 +121,9 @@ public final class AdministrationErrors {
 
   private static HouseholdNameRequiredError householdNameRequired() {
     return new HouseholdNameRequiredError("Enter a household name.", InputPath.of(NAME));
+  }
+
+  private static InvalidIdError invalidId(String inputName) {
+    return new InvalidIdError("Enter a valid ID.", InputPath.of(inputName));
   }
 }

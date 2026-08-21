@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -47,6 +48,8 @@ class ReauthenticationFreshnessTest {
   }
 
   private static AuthenticatedIdentity identityReauthenticatedAt(Instant at) {
-    return AuthenticatedIdentityFixture.accountScopedBuilder().reauthenticatedAt(at).build();
+    return AuthenticatedIdentityFixture.accountScopedBuilder()
+        .reauthenticatedAt(Optional.ofNullable(at))
+        .build();
   }
 }
