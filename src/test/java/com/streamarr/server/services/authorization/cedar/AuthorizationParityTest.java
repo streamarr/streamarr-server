@@ -18,6 +18,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 /**
@@ -157,22 +159,59 @@ class AuthorizationParityTest {
       if (action.resourceKind() != Action.ResourceKind.SERVER) {
         continue;
       }
-      var group =
-          switch (action) {
-            case CREATE_HOUSEHOLD, VIEW_HOUSEHOLDS -> "householdAdministration";
-            case ISSUE_ACCOUNT_INVITATION, CANCEL_ACCOUNT_INVITATION, VIEW_ACCOUNT_INVITATIONS ->
-                "invitationAdministration";
-            default -> "libraryAdministration";
-          };
+      var group = administrationGroup(action);
       assertThat(actions.get(action.cedarName()).path("memberOf"))
           .as("group of %s", action)
           .extracting(member -> member.path("id").asText())
           .containsExactly(group);
     }
+  }
 
-    assertThat(actions.get("libraryAdministration").path("memberOf"))
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(
+      strings = {
+        "householdAdministration", "invitationAdministration", "libraryAdministration"
+      })
+  @DisplayName("Should keep every administration group under server administration")
+  void shouldKeepEveryAdministrationGroupUnderServerAdministration(String group) throws Exception {
+    assertThat(schemaActions().get(group).path("memberOf"))
+        .as("parent of %s", group)
         .extracting(member -> member.path("id").asText())
         .containsExactly("serverAdministration");
+  }
+
+  private static String administrationGroup(Action action) {
+    return switch (action) {
+      case CREATE_HOUSEHOLD, VIEW_HOUSEHOLDS -> "householdAdministration";
+      case ISSUE_ACCOUNT_INVITATION, CANCEL_ACCOUNT_INVITATION, VIEW_ACCOUNT_INVITATIONS ->
+          "invitationAdministration";
+      case ADD_LIBRARY, REMOVE_LIBRARY, SCAN_LIBRARY, REFRESH_LIBRARY -> "libraryAdministration";
+      case VIEW_PROFILE_PICKER,
+          SELECT_PROFILE,
+          PLAYBACK,
+          VIEW_PROFILE_ACTIVITY,
+          VIEW_HOUSEHOLD_ADMINISTRATION,
+          VIEW_ACCOUNT_ADMINISTRATION,
+          VIEW_PROFILE_ADMINISTRATION,
+          GRANT_SERVER_ADMIN,
+          REVOKE_SERVER_ADMIN,
+          RENAME_HOUSEHOLD,
+          RENAME_ACCOUNT,
+          GRANT_HOUSEHOLD_ADMIN,
+          REVOKE_HOUSEHOLD_ADMIN,
+          DISABLE_ACCOUNT,
+          ENABLE_ACCOUNT,
+          CREATE_PROFILE,
+          EDIT_PROFILE,
+          CHANGE_PROFILE_KIND,
+          LIFT_FINAL_RESTRICTION,
+          RESTRICT_SOVEREIGN_ADULT,
+          MANAGE_PROFILE_PIN,
+          OVERRIDE_PROFILE_PIN,
+          DELETE_PROFILE,
+          ISSUE_PASSWORD_RESET ->
+          throw new AssertionError("not a Server-resource action: " + action);
+    };
   }
 
   @Test

@@ -4,6 +4,7 @@ import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.AccountInvitationCeremonyService;
 import com.streamarr.server.services.auth.AccountInvitationCeremonyService.AcceptInvitationCommand;
 import com.streamarr.server.services.auth.AccountInvitationCeremonyService.InvitationPreview;
+import com.streamarr.server.services.auth.DeviceName;
 import com.streamarr.server.services.auth.TokenContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -43,7 +44,7 @@ public class InvitationController {
                 .code(request.code())
                 .displayName(request.displayName())
                 .password(request.password())
-                .deviceName(httpRequest.getHeader(HttpHeaders.USER_AGENT))
+                .deviceName(DeviceName.sanitize(httpRequest.getHeader(HttpHeaders.USER_AGENT)))
                 .build());
     var accessToken =
         accessTokenIssuer.issue(TokenContext.of(accepted.account(), accepted.session()));

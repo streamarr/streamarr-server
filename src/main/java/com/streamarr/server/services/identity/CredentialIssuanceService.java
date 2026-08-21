@@ -78,7 +78,8 @@ public class CredentialIssuanceService {
       return Outcome.rejected(new InvitationRejections.LocalManagerRequired());
     }
     if (command.localManagerAccountId() != null
-        && userAccountRepository.findById(command.localManagerAccountId()).isEmpty()) {
+        && !userAccountRepository.isEligibleProfileManager(
+            command.localManagerAccountId(), command.householdId(), restricted)) {
       return Outcome.rejected(new InvitationRejections.LocalManagerNotFound());
     }
 
@@ -86,6 +87,7 @@ public class CredentialIssuanceService {
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
+          requireIssuerStillAllowed(identity);
           invitationRepository.invalidatePendingForEmail(
               command.recipientEmail().strip(), "replaced by a newer invitation", now);
           var invitation =
@@ -94,7 +96,7 @@ public class CredentialIssuanceService {
                       .recipientEmail(command.recipientEmail().strip())
                       .householdId(command.householdId())
                       .householdName(household.get().getName())
-                      .householdRole(emptyHousehold ? HouseholdRole.ADMIN : command.householdRole())
+                      .householdRole(command.householdRole())
                       .profileName(command.profileName().strip())
                       .profileKind(
                           command.profileKind() == null ? ProfileKind.ADULT : command.profileKind())
@@ -141,6 +143,7 @@ public class CredentialIssuanceService {
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
+          requireIssuerStillAllowed(identity);
           resetCodeRepository.invalidatePendingForAccount(
               accountId, "replaced by a newer code", now);
           var code =
@@ -187,6 +190,12 @@ public class CredentialIssuanceService {
   private boolean mayViewAccount(AuthenticatedIdentity identity, UUID accountId) {
     return authorizationService.decide(identity, new Intent.ViewAccountAdministration(accountId))
         instanceof Decision.Allowed<?>;
+  }
+
+  private void requireIssuerStillAllowed(AuthenticatedIdentity identity) {
+    if (!userAccountRepository.lockIfEnabledServerAdmin(identity.accountId())) {
+      throw new AccessDeniedException("Not allowed.");
+    }
   }
 
   private static boolean isBlank(String value) {

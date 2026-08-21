@@ -42,6 +42,14 @@ public class CredentialGuessThrottle {
             null));
   }
 
+  public void resetCodeGuesses(String publicId) {
+    budget.reset(
+        new CredentialKey(
+            CredentialType.OPAQUE_CODE,
+            UUID.nameUUIDFromBytes(publicId.getBytes(StandardCharsets.UTF_8)),
+            null));
+  }
+
   public void registerAccountPasswordAttempt(UUID accountId) {
     register(new CredentialKey(CredentialType.ACCOUNT_PASSWORD, accountId, null));
   }

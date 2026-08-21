@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.exceptions.InvalidProfilePinException;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
+import com.streamarr.server.exceptions.InvitationEmailAlreadyUsedException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.ProfileLockedException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
@@ -54,6 +55,12 @@ public class AuthExceptionHandler {
   @ExceptionHandler(InvalidOneTimeCodeException.class)
   public ResponseEntity<AuthErrorResponse> handleInvalidOneTimeCode(InvalidOneTimeCodeException e) {
     return respond(HttpStatus.NOT_FOUND, "INVALID_CODE", e);
+  }
+
+  @ExceptionHandler(InvitationEmailAlreadyUsedException.class)
+  public ResponseEntity<AuthErrorResponse> handleInvitationEmailAlreadyUsed(
+      InvitationEmailAlreadyUsedException e) {
+    return respond(HttpStatus.CONFLICT, "INVITATION_EMAIL_ALREADY_USED", e);
   }
 
   @ExceptionHandler(AuthenticationRequiredException.class)
