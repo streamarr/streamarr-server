@@ -1054,6 +1054,17 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should not expose legacy logout endpoint when authenticated")
+  void shouldNotExposeLegacyLogoutEndpointWhenAuthenticated() throws Exception {
+    seedSingleProfileIdentity();
+    var accessToken = loginAndReadField("accessToken");
+
+    mockMvc
+        .perform(post("/api/auth/logout").header("Authorization", "Bearer " + accessToken))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
   @DisplayName("Should revoke only presented refresh family when logging out")
   void shouldRevokeOnlyPresentedRefreshFamilyWhenLoggingOut() throws Exception {
     seedSingleProfileIdentity();

@@ -24,6 +24,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntSupplier;
 import org.awaitility.Awaitility;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
@@ -76,6 +77,12 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   @TestConfiguration
   static class GatedIssuerConfig {
 
+    private final DSLContext dsl;
+
+    GatedIssuerConfig(DSLContext dsl) {
+      this.dsl = dsl;
+    }
+
     @Bean
     @Primary
     GatedAccessTokenIssuer gatedAccessTokenIssuer(
@@ -84,8 +91,12 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
         Clock clock,
         HouseholdMembershipRepository membershipRepository,
         AccountProfileRepository accountProfileRepository) {
-      return new GatedAccessTokenIssuer(
-          jwtEncoder, properties, clock, membershipRepository, accountProfileRepository);
+      var issuer =
+          new GatedAccessTokenIssuer(
+              jwtEncoder, properties, clock, membershipRepository, accountProfileRepository);
+      issuer.trackIssuingBackendWith(
+          () -> dsl.select(DSL.function("pg_backend_pid", Integer.class)).fetchSingle().value1());
+      return issuer;
     }
   }
 
@@ -94,6 +105,8 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     private final AtomicReference<CountDownLatch> holdGate = new AtomicReference<>();
     private final AtomicBoolean failNextIssue = new AtomicBoolean();
     private final AtomicReference<CountDownLatch> reachedIssue = new AtomicReference<>();
+    private final AtomicReference<Integer> issuingBackendPid = new AtomicReference<>();
+    private IntSupplier backendPidProbe;
 
     GatedAccessTokenIssuer(
         JwtEncoder jwtEncoder,
@@ -108,6 +121,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     public AccessToken issue(TokenContext context) {
       var arrival = reachedIssue.get();
       if (arrival != null) {
+        issuingBackendPid.set(backendPidProbe.getAsInt());
         arrival.countDown();
       }
       if (failNextIssue.getAndSet(false)) {
@@ -120,10 +134,19 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
       return super.issue(context);
     }
 
+    void trackIssuingBackendWith(IntSupplier backendPidProbe) {
+      this.backendPidProbe = backendPidProbe;
+    }
+
+    int issuingBackendPid() {
+      return issuingBackendPid.get();
+    }
+
     void reset() {
       holdGate.set(null);
       reachedIssue.set(null);
       failNextIssue.set(false);
+      issuingBackendPid.set(null);
     }
 
     void holdIssuanceAt(CountDownLatch gate, CountDownLatch arrival) {
@@ -311,11 +334,12 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
           });
 
       assertThat(logoutStarted.await(10, TimeUnit.SECONDS)).isTrue();
+      var refreshBackendPid = gatedIssuer.issuingBackendPid();
       Awaitility.await()
           .atMost(Duration.ofSeconds(5))
           .untilAsserted(
               () -> {
-                assertThat(blockedAuthSessionUpdateCount()).isOne();
+                assertThat(blockedAuthSessionUpdateCount(refreshBackendPid)).isOne();
                 assertThat(logoutDone.getCount()).isOne();
               });
 
@@ -368,11 +392,14 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
             .and(REFRESH_TOKEN.STATUS.eq(RefreshTokenStatus.ACTIVE)));
   }
 
-  private int blockedAuthSessionUpdateCount() {
+  private int blockedAuthSessionUpdateCount(int blockerPid) {
+    var blockingPids =
+        DSL.function("pg_blocking_pids", Integer[].class, DSL.field("pid", Integer.class));
     return dsl.fetchCount(
         dsl.selectOne()
             .from("pg_stat_activity")
-            .where(DSL.field("wait_event_type", String.class).eq("Lock"))
+            .where(DSL.arrayContains(blockingPids, DSL.val(blockerPid)))
+            .and(DSL.field("wait_event_type", String.class).eq("Lock"))
             .and(DSL.field("query", String.class).containsIgnoreCase("auth_session"))
             .and(DSL.field("query", String.class).startsWithIgnoreCase("update")));
   }
