@@ -48,11 +48,13 @@ class MutationContractTest {
           "markWatched",
           "markUnwatched");
 
+  private static final Set<String> INPUT_ERROR_UNIONS = Set.of("AddLibraryError");
+
   private static final TypeDefinitionRegistry SCHEMA = loadSchema();
 
   @Test
-  @DisplayName("Should keep every non-legacy mutation on the ADR 0026 shape")
-  void shouldKeepEveryNonLegacyMutationOnAdr0026Shape() {
+  @DisplayName("Should report no shape violations when non-legacy mutations conform to ADR 0026")
+  void shouldReportNoShapeViolationsWhenNonLegacyMutationsConformToAdr0026() {
     var violations = new ArrayList<String>();
     for (var mutation : mutationFields()) {
       if (LEGACY_MUTATIONS.contains(mutation.getName())) {
@@ -65,8 +67,8 @@ class MutationContractTest {
   }
 
   @Test
-  @DisplayName("Should only shrink the legacy allowlist as mutations migrate")
-  void shouldOnlyShrinkLegacyAllowlistAsMutationsMigrate() {
+  @DisplayName("Should require allowlist entry removal when a legacy mutation conforms")
+  void shouldRequireAllowlistEntryRemovalWhenLegacyMutationConforms() {
     var declared = mutationFields().stream().map(FieldDefinition::getName).toList();
 
     assertThat(declared).as("allowlisted names must still exist").containsAll(LEGACY_MUTATIONS);
@@ -82,62 +84,173 @@ class MutationContractTest {
   }
 
   @Test
-  @DisplayName("Should declare every mutation error type through the shared interfaces")
-  void shouldDeclareEveryMutationErrorTypeThroughSharedInterfaces() {
-    var mutationError =
-        SCHEMA.getType("MutationError", InterfaceTypeDefinition.class).orElseThrow();
-    var inputMutationError =
-        SCHEMA.getType("InputMutationError", InterfaceTypeDefinition.class).orElseThrow();
-
-    assertThat(fieldNames(mutationError.getFieldDefinitions())).containsExactly("message");
-    assertThat(fieldNames(inputMutationError.getFieldDefinitions()))
-        .containsExactlyInAnyOrder("message", "inputPath");
-    assertThat(interfaceNames(inputMutationError.getImplements())).containsExactly("MutationError");
-
-    for (var union : errorUnions()) {
-      for (var member : union.getMemberTypes()) {
-        var type = SCHEMA.getType(member, ObjectTypeDefinition.class).orElseThrow();
-        assertThat(interfaceNames(type.getImplements()))
-            .as("%s must implement MutationError", type.getName())
-            .contains("MutationError");
-        if (interfaceNames(type.getImplements()).contains("InputMutationError")) {
-          assertThat(fieldNames(type.getFieldDefinitions())).contains("message", "inputPath");
-        }
-      }
-    }
+  @DisplayName("Should require shared interfaces when mutation error types are declared")
+  void shouldRequireSharedInterfacesWhenMutationErrorTypesAreDeclared() {
+    assertThat(errorInterfaceViolations(SCHEMA)).isEmpty();
   }
 
   @Test
   @DisplayName("Should require the mutation-specific error union when payload declares user errors")
   void shouldRequireMutationSpecificErrorUnionWhenPayloadDeclaresUserErrors() {
     var fixture =
+        mutationFixture(
+            "example(input: ExampleInput!): ExamplePayload",
+            """
+            type ExamplePayload {
+              result: String
+              userErrors: [OtherMutationError!]!
+            }
+
+            union OtherMutationError = ExampleInputError
+            """);
+
+    assertThat(shapeViolations(fixture, fixtureMutation(fixture)))
+        .containsExactly("example: payload must declare userErrors: [ExampleError!]!");
+  }
+
+  @Test
+  @DisplayName("Should report an input violation when a mutation input is not required")
+  void shouldReportInputViolationWhenMutationInputIsNotRequired() {
+    var fixture =
+        mutationFixture(
+            "example(input: ExampleInput): ExamplePayload", conformingPayloadDefinition());
+
+    assertThat(shapeViolations(fixture, fixtureMutation(fixture)))
+        .containsExactly("example: expects exactly one argument input: ExampleInput!");
+  }
+
+  @Test
+  @DisplayName("Should report an input violation when a mutation declares an extra argument")
+  void shouldReportInputViolationWhenMutationDeclaresExtraArgument() {
+    var fixture =
+        mutationFixture(
+            "example(input: ExampleInput!, extra: String): ExamplePayload",
+            conformingPayloadDefinition());
+
+    assertThat(shapeViolations(fixture, fixtureMutation(fixture)))
+        .containsExactly("example: expects exactly one argument input: ExampleInput!");
+  }
+
+  @Test
+  @DisplayName("Should report a payload violation when a mutation payload is non-null")
+  void shouldReportPayloadViolationWhenMutationPayloadIsNonNull() {
+    var fixture =
+        mutationFixture(
+            "example(input: ExampleInput!): ExamplePayload!", conformingPayloadDefinition());
+
+    assertThat(shapeViolations(fixture, fixtureMutation(fixture)))
+        .containsExactly("example: expects a nullable ExamplePayload return type");
+  }
+
+  @Test
+  @DisplayName("Should report a payload violation when a mutation returns a bare result")
+  void shouldReportPayloadViolationWhenMutationReturnsBareResult() {
+    var fixture =
+        mutationFixture("example(input: ExampleInput!): String", conformingPayloadDefinition());
+
+    assertThat(shapeViolations(fixture, fixtureMutation(fixture)))
+        .containsExactly("example: expects a nullable ExamplePayload return type");
+  }
+
+  @Test
+  @DisplayName("Should report a missing payload violation when its type is undeclared")
+  void shouldReportMissingPayloadViolationWhenPayloadTypeIsUndeclared() {
+    var fixture = mutationFixture("example(input: ExampleInput!): ExamplePayload", "");
+
+    assertThat(shapeViolations(fixture, fixtureMutation(fixture)))
+        .containsExactly("example: payload type ExamplePayload is not declared");
+  }
+
+  @Test
+  @DisplayName("Should report a userErrors violation when its list is nullable")
+  void shouldReportUserErrorsViolationWhenItsListIsNullable() {
+    var fixture =
+        mutationFixture(
+            "example(input: ExampleInput!): ExamplePayload",
+            """
+            type ExamplePayload {
+              result: String
+              userErrors: [ExampleError!]
+            }
+            """);
+
+    assertThat(shapeViolations(fixture, fixtureMutation(fixture)))
+        .containsExactly("example: payload must declare userErrors: [ExampleError!]!");
+  }
+
+  @Test
+  @DisplayName("Should report a result violation when a payload exposes multiple result positions")
+  void shouldReportResultViolationWhenPayloadExposesMultipleResultPositions() {
+    var fixture =
+        mutationFixture(
+            "example(input: ExampleInput!): ExamplePayload",
+            """
+            type ExamplePayload {
+              firstResult: String
+              secondResult: String
+              userErrors: [ExampleError!]!
+            }
+            """);
+
+    assertThat(shapeViolations(fixture, fixtureMutation(fixture)))
+        .containsExactly(
+            "example: payload must expose exactly one result position plus userErrors");
+  }
+
+  @Test
+  @DisplayName("Should report an error violation when a union member omits MutationError")
+  void shouldReportErrorViolationWhenUnionMemberOmitsMutationError() {
+    var fixture =
         new SchemaParser()
             .parse(
                 """
-                input WrongUnionInput {
-                  value: String
+                interface MutationError {
+                  message: String!
                 }
 
-                type WrongUnionPayload {
-                  result: String
-                  userErrors: [OtherMutationError!]!
+                interface InputMutationError implements MutationError {
+                  message: String!
+                  inputPath: [String!]!
                 }
 
-                union OtherMutationError = LibraryNameRequiredError
-
-                type FixtureMutation {
-                  wrongUnion(input: WrongUnionInput!): WrongUnionPayload
+                type ExampleError {
+                  message: String!
                 }
+
+                union ExampleMutationError = ExampleError
                 """);
-    var mutation =
-        fixture
-            .getType("FixtureMutation", ObjectTypeDefinition.class)
-            .orElseThrow()
-            .getFieldDefinitions()
-            .getFirst();
 
-    assertThat(shapeViolations(fixture, mutation))
-        .containsExactly("wrongUnion: payload must declare userErrors: [WrongUnionError!]!");
+    assertThat(errorInterfaceViolations(fixture))
+        .containsExactly("ExampleError must implement MutationError");
+  }
+
+  @Test
+  @DisplayName(
+      "Should report an input error violation when an addLibrary error omits InputMutationError")
+  void shouldReportInputErrorViolationWhenAddLibraryErrorOmitsInputMutationError() {
+    var fixture =
+        new SchemaParser()
+            .parse(
+                """
+                interface MutationError {
+                  message: String!
+                }
+
+                interface InputMutationError implements MutationError {
+                  message: String!
+                  inputPath: [String!]!
+                }
+
+                type LibraryNameRequiredError implements MutationError {
+                  message: String!
+                  inputPath: [String!]!
+                }
+
+                union AddLibraryError = LibraryNameRequiredError
+                """);
+
+    assertThat(errorInterfaceViolations(fixture))
+        .containsExactly("LibraryNameRequiredError must implement InputMutationError");
   }
 
   private static List<String> shapeViolations(FieldDefinition mutation) {
@@ -208,10 +321,100 @@ class MutationContractTest {
         .getFieldDefinitions();
   }
 
-  private static List<UnionTypeDefinition> errorUnions() {
-    return SCHEMA.getTypes(UnionTypeDefinition.class).stream()
+  private static List<UnionTypeDefinition> errorUnions(TypeDefinitionRegistry schema) {
+    return schema.getTypes(UnionTypeDefinition.class).stream()
         .filter(union -> union.getName().endsWith("Error"))
         .toList();
+  }
+
+  private static List<String> errorInterfaceViolations(TypeDefinitionRegistry schema) {
+    var violations = new ArrayList<String>();
+    var mutationError = schema.getType("MutationError", InterfaceTypeDefinition.class);
+    if (mutationError.isEmpty()
+        || !fieldNames(mutationError.get().getFieldDefinitions()).equals(List.of("message"))) {
+      violations.add("MutationError must declare only message");
+    }
+
+    var inputMutationError = schema.getType("InputMutationError", InterfaceTypeDefinition.class);
+    if (inputMutationError.isEmpty()
+        || !Set.copyOf(fieldNames(inputMutationError.get().getFieldDefinitions()))
+            .equals(Set.of("message", "inputPath"))
+        || !interfaceNames(inputMutationError.get().getImplements())
+            .equals(List.of("MutationError"))) {
+      violations.add(
+          "InputMutationError must implement MutationError and declare message, inputPath");
+    }
+
+    for (var union : errorUnions(schema)) {
+      for (var member : union.getMemberTypes()) {
+        var type = schema.getType(member, ObjectTypeDefinition.class).orElseThrow();
+        var implemented = interfaceNames(type.getImplements());
+        if (!implemented.contains("MutationError")) {
+          violations.add(type.getName() + " must implement MutationError");
+        }
+        if (INPUT_ERROR_UNIONS.contains(union.getName())
+            && !implemented.contains("InputMutationError")) {
+          violations.add(type.getName() + " must implement InputMutationError");
+        }
+        if (implemented.contains("InputMutationError")
+            && !fieldNames(type.getFieldDefinitions())
+                .containsAll(List.of("message", "inputPath"))) {
+          violations.add(type.getName() + " must declare message and inputPath");
+        }
+      }
+    }
+    return violations;
+  }
+
+  private static TypeDefinitionRegistry mutationFixture(
+      String mutationField, String payloadDefinition) {
+    return new SchemaParser()
+        .parse(
+            """
+            input ExampleInput {
+              value: String
+            }
+
+            interface MutationError {
+              message: String!
+            }
+
+            interface InputMutationError implements MutationError {
+              message: String!
+              inputPath: [String!]!
+            }
+
+            type ExampleInputError implements InputMutationError & MutationError {
+              message: String!
+              inputPath: [String!]!
+            }
+
+            union ExampleError = ExampleInputError
+
+            %s
+
+            type FixtureMutation {
+              %s
+            }
+            """
+                .formatted(payloadDefinition, mutationField));
+  }
+
+  private static String conformingPayloadDefinition() {
+    return """
+        type ExamplePayload {
+          result: String
+          userErrors: [ExampleError!]!
+        }
+        """;
+  }
+
+  private static FieldDefinition fixtureMutation(TypeDefinitionRegistry fixture) {
+    return fixture
+        .getType("FixtureMutation", ObjectTypeDefinition.class)
+        .orElseThrow()
+        .getFieldDefinitions()
+        .getFirst();
   }
 
   private static List<String> fieldNames(List<FieldDefinition> fields) {

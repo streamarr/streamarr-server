@@ -33,8 +33,8 @@ class MutationTransactionsTest {
   }
 
   @Test
-  @DisplayName("Should translate a mapped constraint into a rejection only after rolling back")
-  void shouldTranslateMappedConstraintIntoRejectionOnlyAfterRollingBack() {
+  @DisplayName("Should translate a mapped constraint into a rejection when the write rolls back")
+  void shouldTranslateMappedConstraintIntoRejectionWhenWriteRollsBack() {
     var outcome =
         transactions.<String, String>write(
             () -> {
@@ -48,8 +48,8 @@ class MutationTransactionsTest {
   }
 
   @Test
-  @DisplayName("Should propagate an unmapped constraint violation as a failure")
-  void shouldPropagateUnmappedConstraintViolationAsFailure() {
+  @DisplayName("Should propagate a constraint violation when the constraint is unmapped")
+  void shouldPropagateConstraintViolationWhenConstraintIsUnmapped() {
     assertThatThrownBy(
             () ->
                 transactions.<String, String>write(
@@ -62,8 +62,8 @@ class MutationTransactionsTest {
   }
 
   @Test
-  @DisplayName("Should propagate a violation that names no constraint")
-  void shouldPropagateViolationThatNamesNoConstraint() {
+  @DisplayName("Should propagate a violation when the constraint name is missing")
+  void shouldPropagateViolationWhenConstraintNameIsMissing() {
     assertThatThrownBy(
             () ->
                 transactions.<String, String>write(

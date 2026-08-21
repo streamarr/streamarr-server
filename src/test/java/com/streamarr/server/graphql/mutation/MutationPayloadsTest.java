@@ -38,9 +38,14 @@ class MutationPayloadsTest {
   }
 
   @Test
-  @DisplayName("Should build input paths with decimal list indexes")
-  void shouldBuildInputPathsWithDecimalListIndexes() {
+  @DisplayName("Should build a scalar input path when a field name is provided")
+  void shouldBuildScalarInputPathWhenFieldNameIsProvided() {
     assertThat(InputPath.of("name")).containsExactly("name");
+  }
+
+  @Test
+  @DisplayName("Should build a decimal index path when a list element is provided")
+  void shouldBuildDecimalIndexPathWhenListElementIsProvided() {
     assertThat(InputPath.element("members", 0, "profileId"))
         .containsExactly("members", "0", "profileId");
   }

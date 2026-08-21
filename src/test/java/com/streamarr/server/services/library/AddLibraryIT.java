@@ -2,6 +2,9 @@ package com.streamarr.server.services.library;
 
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mockingDetails;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalAgentStrategy;
@@ -18,7 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -30,6 +33,8 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.util.AopTestUtils;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -48,7 +53,7 @@ class AddLibraryIT extends AbstractIntegrationTest {
   @TempDir Path tempDir;
 
   @Autowired private LibraryManagementService libraryManagementService;
-  @Autowired private LibraryRepository libraryRepository;
+  @MockitoSpyBean private LibraryRepository libraryRepository;
   @Autowired private CommittedLibraryRecorder committed;
 
   private final List<UUID> createdLibraryIds = new ArrayList<>();
@@ -60,16 +65,27 @@ class AddLibraryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should let exactly one of two concurrent adds of the same path win")
-  void shouldLetExactlyOneOfTwoConcurrentAddsOfSamePathWin() throws Exception {
-    var start = new CountDownLatch(1);
+  @DisplayName("Should accept one and reject one when concurrent adds use the same path")
+  void shouldAcceptOneAndRejectOneWhenConcurrentAddsUseSamePath() throws Exception {
+    var bothAtInsert = new CyclicBarrier(2);
+    var repositorySpy = AopTestUtils.<LibraryRepository>getUltimateTargetObject(libraryRepository);
+    var repositoryAnswer =
+        mockingDetails(repositorySpy).getMockCreationSettings().getDefaultAnswer();
+    doAnswer(
+            invocation -> {
+              bothAtInsert.await(10, TimeUnit.SECONDS);
+              return repositoryAnswer.answer(invocation);
+            })
+        .when(repositorySpy)
+        .save(any(Library.class));
     List<Future<Outcome<Library, AddLibraryRejection>>> attempts;
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       attempts =
           List.of(
-              executor.submit(() -> addAfter(start, "First")),
-              executor.submit(() -> addAfter(start, "Second")));
-      start.countDown();
+              executor.submit(
+                  () -> libraryManagementService.addLibrary(IDENTITY, unsavedLibrary("First"))),
+              executor.submit(
+                  () -> libraryManagementService.addLibrary(IDENTITY, unsavedLibrary("Second"))));
       for (var attempt : attempts) {
         attempt.get(30, TimeUnit.SECONDS);
       }
@@ -98,12 +114,6 @@ class AddLibraryIT extends AbstractIntegrationTest {
         .singleElement()
         .extracting(LibraryAddedEvent::libraryId)
         .isEqualTo(accepted.getFirst().getId());
-  }
-
-  private Outcome<Library, AddLibraryRejection> addAfter(CountDownLatch start, String name)
-      throws InterruptedException {
-    start.await();
-    return libraryManagementService.addLibrary(IDENTITY, unsavedLibrary(name));
   }
 
   private Library unsavedLibrary(String name) {

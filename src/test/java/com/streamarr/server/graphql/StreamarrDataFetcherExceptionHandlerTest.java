@@ -131,8 +131,8 @@ class StreamarrDataFetcherExceptionHandlerTest {
   }
 
   @Test
-  @DisplayName("Should classify each gate with its DGS error type")
-  void shouldClassifyEachGateWithItsDgsErrorType() {
+  @DisplayName("Should classify each gate with its DGS error type when handled")
+  void shouldClassifyEachGateWithItsDgsErrorTypeWhenHandled() {
     assertThat(errorTypeFor(new AuthenticationRequiredException())).isEqualTo("UNAUTHENTICATED");
     assertThat(errorTypeFor(new ProfileRequiredException())).isEqualTo("FAILED_PRECONDITION");
     assertThat(errorTypeFor(new HouseholdRequiredException())).isEqualTo("FAILED_PRECONDITION");
@@ -145,19 +145,47 @@ class StreamarrDataFetcherExceptionHandlerTest {
   }
 
   @Test
-  @DisplayName("Should keep query-side validation messages with a BAD_REQUEST classification")
-  void shouldKeepQuerySideValidationMessagesWithBadRequestClassification() {
-    var invalidId = errorFor(new InvalidIdException("nope"));
-    var cursor = errorFor(new InvalidCursorException("Cursor filter mismatch: startLetter"));
-    var argument = errorFor(new InvalidPaginationArgumentException("first must not be negative"));
-    var media = errorFor(new UnsupportedMediaTypeException("OTHER"));
+  @DisplayName("Should keep the safe ID message when a query ID is invalid")
+  void shouldKeepSafeIdMessageWhenQueryIdIsInvalid() {
+    var error = errorFor(new InvalidIdException("nope"));
 
-    assertThat(invalidId.getMessage()).contains("Invalid ID format");
-    assertThat(invalidId.getExtensions()).containsEntry("code", "INVALID_INPUT");
-    assertThat(cursor.getExtensions()).containsEntry("code", "INVALID_CURSOR");
-    assertThat(argument.getExtensions()).containsEntry("errorType", "BAD_REQUEST");
-    assertThat(argument.getMessage()).isEqualTo("first must not be negative");
-    assertThat(media.getExtensions()).containsEntry("code", "UNSUPPORTED_MEDIA_TYPE");
+    assertThat(error.getMessage()).isEqualTo("Invalid ID format: nope");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "BAD_REQUEST")
+        .containsEntry("code", "INVALID_INPUT");
+  }
+
+  @Test
+  @DisplayName("Should keep the safe cursor message when a query cursor is invalid")
+  void shouldKeepSafeCursorMessageWhenQueryCursorIsInvalid() {
+    var error = errorFor(new InvalidCursorException("Cursor filter mismatch: startLetter"));
+
+    assertThat(error.getMessage()).isEqualTo("Cursor filter mismatch: startLetter");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "BAD_REQUEST")
+        .containsEntry("code", "INVALID_CURSOR");
+  }
+
+  @Test
+  @DisplayName("Should keep the safe pagination message when a query page is invalid")
+  void shouldKeepSafePaginationMessageWhenQueryPageIsInvalid() {
+    var error = errorFor(new InvalidPaginationArgumentException("first must not be negative"));
+
+    assertThat(error.getMessage()).isEqualTo("first must not be negative");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "BAD_REQUEST")
+        .containsEntry("code", "INVALID_INPUT");
+  }
+
+  @Test
+  @DisplayName("Should keep the safe media message when a query media type is unsupported")
+  void shouldKeepSafeMediaMessageWhenQueryMediaTypeIsUnsupported() {
+    var error = errorFor(new UnsupportedMediaTypeException("OTHER"));
+
+    assertThat(error.getMessage()).isEqualTo("Unsupported media type: OTHER");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "FAILED_PRECONDITION")
+        .containsEntry("code", "UNSUPPORTED_MEDIA_TYPE");
   }
 
   @Test
@@ -171,8 +199,8 @@ class StreamarrDataFetcherExceptionHandlerTest {
   }
 
   @Test
-  @DisplayName("Should round a positive retry delay up to the next whole second")
-  void shouldRoundPositiveRetryDelayUpToNextWholeSecond() {
+  @DisplayName("Should round retry delay up when delay has a fractional second")
+  void shouldRoundRetryDelayUpWhenDelayHasFractionalSecond() {
     var error = errorFor(new TooManyDeviceAttemptsException(Duration.ofMillis(1)));
 
     assertThat(error.getExtensions()).containsEntry("retryAfterSeconds", 1L);

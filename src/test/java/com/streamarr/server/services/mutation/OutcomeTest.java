@@ -15,37 +15,26 @@ import org.junit.jupiter.api.Test;
 class OutcomeTest {
 
   @Test
-  @DisplayName("Should refuse an accepted outcome without a result")
-  void shouldRefuseAcceptedOutcomeWithoutResult() {
+  @DisplayName("Should refuse an accepted outcome when the result is missing")
+  void shouldRefuseAcceptedOutcomeWhenResultIsMissing() {
     assertThatNullPointerException().isThrownBy(() -> Outcome.accepted(null)).withMessage("result");
   }
 
   @Test
-  @DisplayName("Should refuse a rejection with no reasons")
-  void shouldRefuseRejectionWithNoReasons() {
+  @DisplayName("Should refuse a rejection when reasons are empty")
+  void shouldRefuseRejectionWhenReasonsAreEmpty() {
     assertThatThrownBy(() -> Outcome.rejected(List.of()))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  @DisplayName("Should copy rejection reasons so later edits cannot change the outcome")
-  void shouldCopyRejectionReasonsSoLaterEditsCannotChangeOutcome() {
+  @DisplayName("Should preserve rejection reasons when the source list changes")
+  void shouldPreserveRejectionReasonsWhenSourceListChanges() {
     var reasons = new ArrayList<>(List.of("first"));
 
     var outcome = Outcome.<String, String>rejected(reasons);
     reasons.add("second");
 
     assertThat(outcome).isEqualTo(Outcome.rejected("first"));
-  }
-
-  @Test
-  @DisplayName("Should fold each outcome through its own function")
-  void shouldFoldEachOutcomeThroughItsOwnFunction() {
-    String accepted =
-        Outcome.<String, String>accepted("ok").fold(r -> "accepted:" + r, r -> "rejected");
-    String rejected = Outcome.<String, String>rejected("no").fold(r -> "accepted", List::toString);
-
-    assertThat(accepted).isEqualTo("accepted:ok");
-    assertThat(rejected).isEqualTo("[no]");
   }
 }

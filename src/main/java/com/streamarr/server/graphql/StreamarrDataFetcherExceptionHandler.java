@@ -64,6 +64,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
       var error =
           GraphqlErrorBuilder.newError(handlerParameters.getDataFetchingEnvironment())
               .message(SANITIZED_MESSAGE)
+              .errorType(ErrorType.INTERNAL)
               .extensions(
                   extensions(ErrorType.INTERNAL.name(), ErrorType.INTERNAL.name(), requestId))
               .build();
@@ -84,6 +85,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     var error =
         GraphqlErrorBuilder.newError(handlerParameters.getDataFetchingEnvironment())
             .message(exception.getMessage())
+            .errorType(classification.type())
             .extensions(extensions)
             .build();
     log.debug(
@@ -114,6 +116,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
       builder.error(
           GraphqlErrorBuilder.newError(handlerParameters.getDataFetchingEnvironment())
               .message(internal ? SANITIZED_MESSAGE : delegatedError.getMessage())
+              .errorType(ErrorType.valueOf(errorType))
               .extensions(extensions(errorType, errorType, requestId))
               .build());
     }

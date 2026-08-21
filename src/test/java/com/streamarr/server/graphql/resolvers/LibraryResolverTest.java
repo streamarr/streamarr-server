@@ -320,9 +320,12 @@ class LibraryResolverTest {
 
       FAKE_LIBRARY_MANAGEMENT_SERVICE.returnLibraryWhenAdded(library);
 
-      Map<String, Object> payload =
-          dgsQueryExecutor.executeAndExtractJsonPath(ADD_LIBRARY_MUTATION, "data.addLibrary");
+      var result = dgsQueryExecutor.execute(ADD_LIBRARY_MUTATION);
 
+      assertThat(result.getErrors()).isEmpty();
+      Map<String, Object> data = result.getData();
+      @SuppressWarnings("unchecked")
+      var payload = (Map<String, Object>) data.get("addLibrary");
       assertThat(payload)
           .containsEntry(
               "library", Map.of("name", "Movies", "filepathUri", "file:///mpool/media/movies"))
@@ -337,6 +340,32 @@ class LibraryResolverTest {
                 assertThat(input.getBackend()).isEqualTo(LibraryBackend.LOCAL);
                 assertThat(input.getExternalAgentStrategy()).isEqualTo(ExternalAgentStrategy.TMDB);
               });
+    }
+
+    @Test
+    @DisplayName("Should return a sanitized top-level error when addLibrary fails unexpectedly")
+    void shouldReturnSanitizedTopLevelErrorWhenAddLibraryFailsUnexpectedly() {
+      when(libraryManagementService.addLibrary(any(Library.class)))
+          .thenThrow(
+              new IllegalStateException(
+                  "duplicate key library_filepath_uri_idx at /srv/private/movies"));
+
+      var result = dgsQueryExecutor.execute(ADD_LIBRARY_MUTATION);
+
+      assertThat(result.getErrors())
+          .singleElement()
+          .satisfies(
+              error -> {
+                assertThat(error.getMessage()).isEqualTo("The request could not be completed.");
+                assertThat(error.getExtensions())
+                    .containsEntry("errorType", "INTERNAL")
+                    .containsEntry("code", "INTERNAL")
+                    .containsOnlyKeys("errorType", "code", "requestId");
+                assertThat((String) error.getExtensions().get("requestId"))
+                    .startsWith("req-")
+                    .hasSize(12);
+              });
+      assertThat(result.<Map<String, Object>>getData()).containsEntry("addLibrary", null);
     }
 
     @ParameterizedTest(name = "Should return {1} at {2} when addLibrary is rejected with {0}")
