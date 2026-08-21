@@ -83,8 +83,14 @@ public final class CedarEngineSelfCheck {
         throw new CedarSelfCheckException(
             "Cedar self-check validation reported diagnostics: " + validation.warnings);
       }
-      return new Result(
-          decide(PERMITTED_ACCOUNT, schema, policies), !decide(STRANGER_ACCOUNT, schema, policies));
+      var result =
+          new Result(
+              decide(PERMITTED_ACCOUNT, schema, policies),
+              !decide(STRANGER_ACCOUNT, schema, policies));
+      if (!result.passed()) {
+        throw new CedarSelfCheckException("Cedar self-check decisions did not match expectations");
+      }
+      return result;
     } catch (AuthException e) {
       throw new CedarSelfCheckException("Cedar engine could not evaluate the self-check", e);
     }

@@ -52,8 +52,8 @@ class CedarEngineSelfCheckTest {
   }
 
   @Test
-  @DisplayName("Should report a failed check when the engine allows the stranger")
-  void shouldReportFailedCheckWhenEngineAllowsStranger() {
+  @DisplayName("Should fail when the engine allows the stranger")
+  void shouldFailWhenEngineAllowsStranger() {
     var engine =
         new StubEngine(
             StubEngine::passThroughValidation,
@@ -62,10 +62,9 @@ class CedarEngineSelfCheckTest {
                     .decision(AuthorizationSuccessResponse.Decision.Allow)
                     .build());
 
-    var result = new CedarEngineSelfCheck(engine).run();
-
-    assertThat(result).isEqualTo(new CedarEngineSelfCheck.Result(true, false));
-    assertThat(result.passed()).isFalse();
+    assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
+        .isInstanceOf(CedarSelfCheckException.class)
+        .hasMessageContaining("decisions");
   }
 
   @Test

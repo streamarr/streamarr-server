@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.regex.Pattern;
+import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -56,11 +57,24 @@ class CedarDependencyAlignmentTest {
   @Test
   @DisplayName("Should keep Cedar out of automatic dependency updates")
   void shouldKeepCedarOutOfAutomaticDependencyUpdates() throws IOException {
-    var renovate = Files.readString(Path.of("renovate.json"));
+    var renovate = new ObjectMapper().readTree(Files.readString(Path.of("renovate.json")));
+    var cedarRule =
+        StreamSupport.stream(renovate.path("packageRules").spliterator(), false)
+            .filter(
+                rule ->
+                    StreamSupport.stream(rule.path("matchPackageNames").spliterator(), false)
+                        .anyMatch(
+                            packageName ->
+                                "com.cedarpolicy:cedar-java".equals(packageName.asText())))
+            .findFirst()
+            .orElseThrow();
 
-    assertThat(renovate)
-        .contains("com.cedarpolicy:cedar-java")
-        .containsPattern("\"matchPackageNames\":\\s*\\[\\s*\"com.cedarpolicy:cedar-java\"");
+    assertThat(cedarRule.path("matchPackageNames"))
+        .extracting(packageName -> packageName.asText())
+        .containsExactly("com.cedarpolicy:cedar-java");
+    assertThat(cedarRule.path("groupName").asText()).isEqualTo("Cedar policy engine");
+    assertThat(cedarRule.path("automerge").isBoolean()).isTrue();
+    assertThat(cedarRule.path("automerge").asBoolean()).isFalse();
   }
 
   private static String jarLocation(Class<?> type) {
