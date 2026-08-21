@@ -12,7 +12,7 @@ row complete; a PR that ships a workflow adds or completes its row in the same c
 | Add a library (ADR 0026 tracer: typed payload, typed user errors, AFTER_COMMIT side effects)
 | Authorization architecture › whole-surface gate (ServerAdmin)
 | `addLibrary` ∈ `libraryAdministration` ∈ `serverAdministration`
-| #5
+| #306
 | deferred (Web PR #1 contract foundation regenerates `AddLibraryError`)
 | n/a
 |===

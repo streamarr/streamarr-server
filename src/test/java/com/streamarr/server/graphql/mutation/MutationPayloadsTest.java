@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.services.mutation.Outcome;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -12,7 +13,7 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Mutation Payloads Tests")
 class MutationPayloadsTest {
 
-  private record Payload(String result, List<TestError> userErrors) {}
+  private record Payload(Optional<String> result, List<TestError> userErrors) {}
 
   private record TestError(String message) implements MutationError {}
 
@@ -23,7 +24,7 @@ class MutationPayloadsTest {
         MutationPayloads.payload(
             Outcome.<String, String>accepted("done"), TestError::new, Payload::new);
 
-    assertThat(payload).isEqualTo(new Payload("done", List.of()));
+    assertThat(payload).isEqualTo(new Payload(Optional.of("done"), List.of()));
   }
 
   @Test
@@ -33,8 +34,8 @@ class MutationPayloadsTest {
         MutationPayloads.payload(
             Outcome.<String, String>rejected(List.of("a", "b")), TestError::new, Payload::new);
 
-    assertThat(payload)
-        .isEqualTo(new Payload(null, List.of(new TestError("a"), new TestError("b"))));
+    assertThat(payload.result()).isEqualTo(Optional.empty());
+    assertThat(payload.userErrors()).containsExactly(new TestError("a"), new TestError("b"));
   }
 
   @Test
