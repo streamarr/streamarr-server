@@ -41,8 +41,8 @@ class AccountPasswordVerifierTest {
       new AccountPasswordVerifier(encoder, equalizer, throttle);
 
   @Test
-  @DisplayName("Should accept the correct password with one real comparison")
-  void shouldAcceptCorrectPasswordWithOneRealComparison() {
+  @DisplayName("Should accept password with one real comparison when password correct")
+  void shouldAcceptPasswordWithOneRealComparisonWhenPasswordCorrect() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
 
     assertThatCode(() -> verifier.verify(account, CORRECT_PASSWORD)).doesNotThrowAnyException();
@@ -52,8 +52,8 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should reject a wrong password with one real comparison")
-  void shouldRejectWrongPasswordWithOneRealComparison() {
+  @DisplayName("Should reject password with one real comparison when password wrong")
+  void shouldRejectPasswordWithOneRealComparisonWhenPasswordWrong() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
 
     assertThatThrownBy(() -> verifier.verify(account, "wrong"))
@@ -64,8 +64,8 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should reject a disabled Account after exactly one full-cost burn")
-  void shouldRejectDisabledAccountAfterExactlyOneFullCostBurn() {
+  @DisplayName("Should reject password after one full-cost burn when Account disabled")
+  void shouldRejectPasswordAfterOneFullCostBurnWhenAccountDisabled() {
     var account =
         AccountFixture.defaultAccountBuilder()
             .id(UUID.randomUUID())
@@ -82,8 +82,8 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should reject an unreadable stored hash after exactly one full-cost burn")
-  void shouldRejectUnreadableStoredHashAfterExactlyOneFullCostBurn() {
+  @DisplayName("Should reject password after one full-cost burn when stored hash unreadable")
+  void shouldRejectPasswordAfterOneFullCostBurnWhenStoredHashUnreadable() {
     var account = enabledAccount(UNREADABLE_HASH);
 
     assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD))
@@ -95,8 +95,8 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should reject a malformed Argon2 hash after exactly one full-cost burn")
-  void shouldRejectMalformedArgon2HashAfterExactlyOneFullCostBurn() {
+  @DisplayName("Should reject password after one full-cost burn when Argon2 hash malformed")
+  void shouldRejectPasswordAfterOneFullCostBurnWhenArgon2HashMalformed() {
     var productionEncoder = productionPasswordEncoder();
     var productionEqualizer = new CountingTimingEqualizer(productionEncoder);
     var productionVerifier =
@@ -110,8 +110,8 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should reject a malformed bcrypt hash after exactly one full-cost burn")
-  void shouldRejectMalformedBcryptHashAfterExactlyOneFullCostBurn() {
+  @DisplayName("Should reject password after one full-cost burn when bcrypt hash malformed")
+  void shouldRejectPasswordAfterOneFullCostBurnWhenBcryptHashMalformed() {
     var productionEncoder = productionPasswordEncoder();
     var productionEqualizer = new CountingTimingEqualizer(productionEncoder);
     var productionVerifier =
@@ -125,8 +125,8 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should reject an empty stored hash after exactly one full-cost burn")
-  void shouldRejectEmptyStoredHashAfterExactlyOneFullCostBurn() {
+  @DisplayName("Should reject password after one full-cost burn when stored hash empty")
+  void shouldRejectPasswordAfterOneFullCostBurnWhenStoredHashEmpty() {
     var account = enabledAccount("");
 
     assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD))
@@ -155,8 +155,8 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should reset the budget after a successful verification")
-  void shouldResetBudgetAfterSuccessfulVerification() {
+  @DisplayName("Should reset budget when verification succeeds")
+  void shouldResetBudgetWhenVerificationSucceeds() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
 
     assertThatThrownBy(() -> verifier.verify(account, "wrong"))
@@ -168,8 +168,8 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should share one Account password budget across callers")
-  void shouldShareOneAccountPasswordBudgetAcrossCallers() {
+  @DisplayName("Should share Account password budget when multiple callers verify")
+  void shouldShareAccountPasswordBudgetWhenMultipleCallersVerify() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
     var otherCaller = new AccountPasswordVerifier(encoder, equalizer, throttle);
 
@@ -183,8 +183,8 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should keep a password correct at request start sufficient")
-  void shouldKeepPasswordCorrectAtRequestStartSufficient() {
+  @DisplayName("Should accept password when correct at request start despite concurrent rotation")
+  void shouldAcceptPasswordWhenCorrectAtRequestStartDespiteConcurrentRotation() {
     var originalHash = encoder.encode(CORRECT_PASSWORD);
     var account = enabledAccount(originalHash);
     // A concurrent rotation lands on the managed entity while the comparison is running.

@@ -160,8 +160,8 @@ class PasswordChangeServiceTest {
   }
 
   @Test
-  @DisplayName("Should throttle password changes after repeated wrong current passwords")
-  void shouldThrottlePasswordChangesAfterRepeatedWrongCurrentPasswords() {
+  @DisplayName("Should throttle password changes when current password repeatedly wrong")
+  void shouldThrottlePasswordChangesWhenCurrentPasswordRepeatedlyWrong() {
     var currentPassword = UUID.randomUUID().toString();
     var account =
         accountRepository.save(

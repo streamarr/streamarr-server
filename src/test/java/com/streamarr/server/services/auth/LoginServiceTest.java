@@ -124,8 +124,8 @@ class LoginServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject login with an empty stored hash after one full-cost burn")
-  void shouldRejectLoginWithEmptyStoredHashAfterOneFullCostBurn() {
+  @DisplayName("Should reject login after one full-cost burn when stored hash empty")
+  void shouldRejectLoginAfterOneFullCostBurnWhenStoredHashEmpty() {
     var account = seedAccount("");
     var attempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
 
