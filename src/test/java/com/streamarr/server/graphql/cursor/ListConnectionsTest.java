@@ -66,17 +66,18 @@ class ListConnectionsTest {
   }
 
   @Test
-  @DisplayName("Should start over when the cursor no longer exists in the list")
-  void shouldStartOverWhenCursorNoLongerExistsInList() {
-    var forward =
-        ListConnections.page(
-            ITEMS, s -> s, options(PaginationDirection.FORWARD, ListConnections.encode("zz"), 2));
-    var backward =
-        ListConnections.page(
-            ITEMS, s -> s, options(PaginationDirection.REVERSE, ListConnections.encode("zz"), 2));
+  @DisplayName("Should reject a cursor whose anchor disappeared instead of repeating prior items")
+  void shouldRejectCursorWhoseAnchorDisappearedInsteadOfRepeatingPriorItems() {
+    var first = ListConnections.page(ITEMS, s -> s, options(PaginationDirection.FORWARD, null, 2));
+    var after = first.getPageInfo().getEndCursor().getValue();
+    var withoutAnchor = List.of("a", "c", "d", "e");
 
-    assertThat(forward.getEdges()).extracting(Edge::getNode).containsExactly("a", "b");
-    assertThat(backward.getEdges()).extracting(Edge::getNode).containsExactly("d", "e");
+    assertThatThrownBy(
+            () ->
+                ListConnections.page(
+                    withoutAnchor, s -> s, options(PaginationDirection.FORWARD, after, 2)))
+        .isInstanceOf(InvalidCursorException.class)
+        .hasMessage("Cursor no longer identifies an item.");
   }
 
   @Test

@@ -17,8 +17,8 @@ import java.util.function.Function;
 /**
  * Relay keyset paging over an already-ordered, bounded list (a Profile picker, the Households an
  * Account may use). The cursor is the opaque key of an element; paging seeks past it — never an
- * offset — so a client that keeps paging while {@code hasNextPage} is true sees every element
- * exactly once even when the list changes under it.
+ * offset. The anchor must remain in the list because the key alone does not carry the list's sort
+ * values; a disappeared anchor is rejected instead of silently restarting and repeating items.
  */
 public final class ListConnections {
 
@@ -27,7 +27,11 @@ public final class ListConnections {
   public static <T> Connection<T> page(
       List<T> ordered, Function<T, String> keyOf, PaginationOptions options) {
     var keys = ordered.stream().map(keyOf).toList();
-    var anchor = options.getCursor().map(ListConnections::decode).map(keys::indexOf).orElse(-1);
+    var cursorKey = options.getCursor().map(ListConnections::decode);
+    var anchor = cursorKey.map(keys::indexOf).orElse(-1);
+    if (cursorKey.isPresent() && anchor < 0) {
+      throw new InvalidCursorException("Cursor no longer identifies an item.");
+    }
     var limit = options.getLimit();
 
     int from;

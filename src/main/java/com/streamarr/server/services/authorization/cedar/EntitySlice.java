@@ -48,8 +48,14 @@ final class EntitySlice {
   List<Entity> entities() {
     var entities = new ArrayList<Entity>();
     var emitted = new HashSet<>(List.of(principal, resource));
-    entities.add(new Entity(principal, Map.copyOf(principalAttributes), Set.of()));
-    entities.add(new Entity(resource, Map.copyOf(resourceAttributes), Set.of()));
+    if (principal.equals(resource)) {
+      var sharedAttributes = new LinkedHashMap<>(principalAttributes);
+      sharedAttributes.putAll(resourceAttributes);
+      entities.add(new Entity(principal, Map.copyOf(sharedAttributes), Set.of()));
+    } else {
+      entities.add(new Entity(principal, Map.copyOf(principalAttributes), Set.of()));
+      entities.add(new Entity(resource, Map.copyOf(resourceAttributes), Set.of()));
+    }
     for (var uid : referenced) {
       if (emitted.add(uid)) {
         entities.add(new Entity(uid));

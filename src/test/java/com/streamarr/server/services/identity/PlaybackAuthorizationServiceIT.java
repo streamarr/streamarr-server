@@ -177,6 +177,16 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should deny playback after the live session returns to the Profile picker")
+  void shouldDenyPlaybackAfterLiveSessionReturnsToProfilePicker() {
+    var session = authSessionRepository.findById(identity.session().getId()).orElseThrow();
+    session.setSelectedProfileId(null);
+    authSessionRepository.saveAndFlush(session);
+
+    assertThat(authorityGate.allows(authority)).isFalse();
+  }
+
+  @Test
   @DisplayName("Should not deadlock when a share ends concurrently with a playback request")
   void shouldNotDeadlockWhenShareEndsConcurrentlyWithPlaybackRequest() throws Exception {
     host = authTestSupport.createIdentity();
@@ -236,6 +246,10 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
       AuthTestSupport.TestIdentity source, UUID contextHouseholdId, UUID profileId) {
     var base =
         AuthenticatedIdentity.fromJwt(jwtDecoder.decode(authTestSupport.profileBearer(source)));
+    var session = authSessionRepository.findById(base.authSessionId()).orElseThrow();
+    session.setContextHouseholdId(contextHouseholdId);
+    session.setSelectedProfileId(profileId);
+    authSessionRepository.saveAndFlush(session);
     authenticate(
         AuthenticatedIdentity.builder()
             .accountId(base.accountId())

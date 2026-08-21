@@ -97,6 +97,19 @@ class ProfileSelectionServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject selection when the live session moved to another Household")
+  void shouldRejectSelectionWhenLiveSessionMovedToAnotherHousehold() {
+    var staleIdentity = identity();
+    session.setContextHouseholdId(UUID.randomUUID());
+    sessions.save(session);
+    var command = command(personal.getId(), null);
+
+    assertThatThrownBy(() -> service.selectProfile(staleIdentity, command))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+    assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
+  }
+
+  @Test
   @DisplayName("Should refuse a Profile that is not available in the context Household")
   void shouldRefuseProfileThatIsNotAvailableInContextHousehold() {
     var elsewhere = profiles.save(ProfileFixture.defaultProfileBuilder().build());

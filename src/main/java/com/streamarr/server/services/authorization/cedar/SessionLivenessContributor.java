@@ -6,7 +6,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-/** Whether the token's session still exists, belongs to the Account, and is unrevoked. */
+/** Whether the token's session still carries this live playback authority. */
 @Component
 @RequiredArgsConstructor
 class SessionLivenessContributor implements FactContributor {
@@ -24,7 +24,6 @@ class SessionLivenessContributor implements FactContributor {
   public void contribute(
       AuthenticatedIdentity identity, AuthorizationCheck check, EntitySlice slice) {
     slice.principalAttribute(
-        SESSION_LIVE,
-        new PrimBool(authSessionRepository.isLive(identity.authSessionId(), identity.accountId())));
+        SESSION_LIVE, new PrimBool(authSessionRepository.isLive(identity.playbackAuthority())));
   }
 }

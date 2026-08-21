@@ -81,7 +81,13 @@ class CedarIdentityPoliciesTest {
                 .householdId(account.getHouseholdId())
                 .build());
     shares.share(personal.getId(), account.getHouseholdId(), true);
-    session = sessions.save(AuthSession.builder().accountId(account.getId()).build());
+    session =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(account.getId())
+                .contextHouseholdId(account.getHouseholdId())
+                .selectedProfileId(personal.getId())
+                .build());
     visitedHouseholdId = UUID.randomUUID();
   }
 
@@ -168,6 +174,16 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName("Should deny playback when the live session no longer selects the Profile")
+    void shouldDenyPlaybackWhenLiveSessionNoLongerSelectsProfile() {
+      var identity = watching(personal.getId());
+      session.setSelectedProfileId(null);
+      sessions.save(session);
+
+      assertThat(decider.decide(identity, new Intent.Playback())).isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should deny playback when the Account is disabled")
     void shouldDenyPlaybackWhenAccountIsDisabled() {
       account.setEnabled(false);
@@ -183,6 +199,8 @@ class CedarIdentityPoliciesTest {
       var managed =
           profiles.save(
               ProfileFixture.defaultProfileBuilder().householdId(account.getHouseholdId()).build());
+      session.setSelectedProfileId(managed.getId());
+      sessions.save(session);
       var identity = watching(managed.getId());
 
       assertThat(decider.decide(identity, new Intent.Playback())).isEqualTo(DENIED);
@@ -293,6 +311,13 @@ class CedarIdentityPoliciesTest {
       account.setServerAdmin(true);
       accounts.save(account);
       assertThat(decider.decide(member(), new Intent.ViewAccountAdministration(stranger.getId())))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should allow a HouseholdAdmin to administer its own Account")
+    void shouldAllowHouseholdAdminToAdministerOwnAccount() {
+      assertThat(decider.decide(atHome(), new Intent.ViewAccountAdministration(account.getId())))
           .isEqualTo(ALLOWED);
     }
 

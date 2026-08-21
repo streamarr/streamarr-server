@@ -292,7 +292,10 @@ CREATE FUNCTION assert_enabled_server_admin_remains()
 AS
 $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM server_bootstrap) THEN
+    -- T4 is server-global: serialize its cross-Household check on the singleton bootstrap row.
+    -- The following statement gets a fresh READ COMMITTED snapshot after a competing writer exits.
+    PERFORM id FROM server_bootstrap FOR UPDATE;
+    IF NOT FOUND THEN
         RETURN;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM user_account WHERE server_admin AND enabled) THEN
@@ -491,21 +494,28 @@ CREATE FUNCTION enforce_profile_manager_invariants()
 AS
 $$
 DECLARE
-    target_profile  UUID;
-    target_account  UUID;
-    home            UUID;
+    profiles UUID[] := ARRAY []::UUID[];
+    accounts UUID[] := ARRAY []::UUID[];
+    homes    UUID[];
+    pid      UUID;
+    aid      UUID;
 BEGIN
-    IF TG_OP = 'DELETE' THEN
-        target_profile := OLD.profile_id;
-        target_account := OLD.account_id;
-    ELSE
-        target_profile := NEW.profile_id;
-        target_account := NEW.account_id;
+    IF TG_OP IN ('UPDATE', 'DELETE') THEN
+        profiles := array_append(profiles, OLD.profile_id);
+        accounts := array_append(accounts, OLD.account_id);
     END IF;
-    SELECT household_id INTO home FROM profile WHERE id = target_profile;
-    PERFORM bump_household_guards(ARRAY [home]);
-    PERFORM assert_profile_home_anchor(target_profile);
-    PERFORM assert_restricted_account_holds_no_authority(target_account);
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+        profiles := array_append(profiles, NEW.profile_id);
+        accounts := array_append(accounts, NEW.account_id);
+    END IF;
+    SELECT array_agg(DISTINCT household_id) INTO homes FROM profile WHERE id = ANY (profiles);
+    PERFORM bump_household_guards(homes);
+    FOREACH pid IN ARRAY profiles LOOP
+        PERFORM assert_profile_home_anchor(pid);
+    END LOOP;
+    FOREACH aid IN ARRAY accounts LOOP
+        PERFORM assert_restricted_account_holds_no_authority(aid);
+    END LOOP;
     RETURN NULL;
 END;
 $$;

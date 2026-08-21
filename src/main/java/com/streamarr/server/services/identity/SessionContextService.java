@@ -3,10 +3,12 @@ package com.streamarr.server.services.identity;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.UnwrittenAuthSessionException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenContext;
 import com.streamarr.server.services.authorization.ProfileSafetyRule;
 import java.time.Clock;
@@ -34,9 +36,12 @@ public class SessionContextService {
 
   /** Records an authorized selection on the live session (the caller has already decided). */
   @Transactional
-  public TokenContext recordProfileSelection(UUID accountId, UUID sessionId, UUID profileId) {
-    var account = liveSessions.loadAccount(accountId);
-    var session = liveSessions.lockLiveSession(accountId, sessionId);
+  public TokenContext recordProfileSelection(AuthenticatedIdentity identity, UUID profileId) {
+    var account = liveSessions.loadAccount(identity.accountId());
+    var session = liveSessions.lockLiveSession(identity.accountId(), identity.authSessionId());
+    if (!identity.contextHouseholdId().equals(session.getContextHouseholdId())) {
+      throw new ProfileAccessDeniedException();
+    }
     session.setSelectedProfileId(profileId);
     persistSelection(session);
     return TokenContext.of(account, session);

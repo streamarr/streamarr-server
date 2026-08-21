@@ -532,6 +532,25 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject Profile selection from a superseded Household context")
+  void shouldRejectProfileSelectionFromSupersededHouseholdContext() throws Exception {
+    var staleMembershipToken = accountScopedTokenWithTwoProfiles();
+    var managed = seedManagedProfile();
+    var visited = seedVisitedHousehold();
+    selectHouseholdToken(staleMembershipToken, visited.household().getId());
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + staleMembershipToken)
+                .content(
+                    "{\"profileId\": \"%s\", \"cookieMode\": false}".formatted(managed.getId())))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("PROFILE_ACCESS_DENIED"));
+  }
+
+  @Test
   @DisplayName("Should deny switching to a Household the Account may not use")
   void shouldDenySwitchingToHouseholdAccountMayNotUse() throws Exception {
     seedSingleProfileIdentity();

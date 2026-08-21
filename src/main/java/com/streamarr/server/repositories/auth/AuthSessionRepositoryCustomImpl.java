@@ -4,6 +4,7 @@ import static com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSIO
 
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
@@ -24,12 +25,14 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   private final EntityManager entityManager;
 
   @Override
-  public boolean isLive(UUID sessionId, UUID accountId) {
+  public boolean isLive(PlaybackAuthority authority) {
     return dsl.fetchExists(
         dsl.selectOne()
             .from(AUTH_SESSION)
-            .where(AUTH_SESSION.ID.eq(sessionId))
-            .and(AUTH_SESSION.ACCOUNT_ID.eq(accountId))
+            .where(AUTH_SESSION.ID.eq(authority.authSessionId()))
+            .and(AUTH_SESSION.ACCOUNT_ID.eq(authority.accountId()))
+            .and(AUTH_SESSION.CONTEXT_HOUSEHOLD_ID.eq(authority.householdId()))
+            .and(AUTH_SESSION.SELECTED_PROFILE_ID.eq(authority.profileId()))
             .and(AUTH_SESSION.REVOKED_AT.isNull()));
   }
 

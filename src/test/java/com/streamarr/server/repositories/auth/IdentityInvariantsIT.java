@@ -28,6 +28,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import lombok.Builder;
 import org.hibernate.exception.ConstraintViolationException;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -195,6 +196,41 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         .isEqualTo("chk_enabled_server_admin_remains");
   }
 
+  @Test
+  @DisplayName("Should keep one enabled ServerAdmin when cross-Household demotions race (T4)")
+  void shouldKeepOneEnabledServerAdminWhenCrossHouseholdDemotionsRace() throws Exception {
+    var first = createServerAdmin();
+    var second = createServerAdmin();
+    dsl.insertInto(SERVER_BOOTSTRAP)
+        .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, first.account().getId())
+        .execute();
+    var race =
+        ServerAdminRace.builder()
+            .updatesReady(new CountDownLatch(2))
+            .validate(new CountDownLatch(1))
+            .validationsFinished(new CountDownLatch(2))
+            .commit(new CountDownLatch(1))
+            .build();
+
+    List<Future<Boolean>> attempts;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      attempts =
+          List.of(
+              executor.submit(() -> disableServerAdminAfter(race, first.account().getId())),
+              executor.submit(() -> disableServerAdminAfter(race, second.account().getId())));
+      assertThat(race.updatesReady().await(30, TimeUnit.SECONDS)).isTrue();
+      race.validate().countDown();
+      race.validationsFinished().await(1, TimeUnit.SECONDS);
+      race.commit().countDown();
+      for (var attempt : attempts) {
+        awaitServerAdminOutcome(attempt);
+      }
+    }
+
+    assertThat(attempts.stream().filter(this::completed).count()).isEqualTo(1);
+    assertThat(enabledServerAdminCount()).isEqualTo(1);
+  }
+
   // ---- T5 ---------------------------------------------------------------------------------------
 
   @Test
@@ -289,6 +325,27 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                     _ ->
                         profileManagerRepository.deleteAll(
                             profileManagerRepository.findByProfileId(kid.getId()))))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .extracting(IdentityInvariantsIT::constraintName)
+        .isEqualTo("chk_profile_home_anchor");
+  }
+
+  @Test
+  @DisplayName("Should refuse moving the final eligible manager away from a Kid Profile (T6)")
+  void shouldRefuseMovingFinalEligibleManagerAwayFromKidProfile() {
+    var firstAdmin = create();
+    var firstKid = createKid(firstAdmin);
+    var secondKid = createKid(create());
+
+    assertThatThrownBy(
+            () ->
+                transactionTemplate.executeWithoutResult(
+                    _ -> {
+                      var moving =
+                          profileManagerRepository.findByProfileId(firstKid.getId()).getFirst();
+                      moving.setProfileId(secondKid.getId());
+                      profileManagerRepository.saveAndFlush(moving);
+                    }))
         .isInstanceOf(DataIntegrityViolationException.class)
         .extracting(IdentityInvariantsIT::constraintName)
         .isEqualTo("chk_profile_home_anchor");
@@ -453,12 +510,48 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     return true;
   }
 
+  private boolean disableServerAdminAfter(ServerAdminRace race, UUID accountId) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var account = userAccountRepository.findById(accountId).orElseThrow();
+          account.setServerAdmin(false);
+          userAccountRepository.saveAndFlush(account);
+          race.updatesReady().countDown();
+          try {
+            assertThat(race.validate().await(30, TimeUnit.SECONDS)).isTrue();
+            dsl.execute("SET CONSTRAINTS chk_user_account_invariants IMMEDIATE");
+            race.validationsFinished().countDown();
+            assertThat(race.commit().await(30, TimeUnit.SECONDS)).isTrue();
+          } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interrupted);
+          }
+        });
+    return true;
+  }
+
+  @Builder
+  private record ServerAdminRace(
+      CountDownLatch updatesReady,
+      CountDownLatch validate,
+      CountDownLatch validationsFinished,
+      CountDownLatch commit) {}
+
   /** Waits for the attempt; the losing demotion's constraint violation is the expected outcome. */
   private void awaitOutcome(Future<Boolean> attempt) throws InterruptedException, TimeoutException {
     try {
       attempt.get(30, TimeUnit.SECONDS);
     } catch (ExecutionException expectedForLoser) {
       assertThat(constraintName(expectedForLoser)).isEqualTo("chk_household_retains_admin");
+    }
+  }
+
+  private void awaitServerAdminOutcome(Future<Boolean> attempt)
+      throws InterruptedException, TimeoutException {
+    try {
+      attempt.get(30, TimeUnit.SECONDS);
+    } catch (ExecutionException expectedForLoser) {
+      assertThat(constraintName(expectedForLoser)).isEqualTo("chk_enabled_server_admin_remains");
     }
   }
 
@@ -492,6 +585,13 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     return userAccountRepository.findAll().stream()
         .filter(account -> householdId.equals(account.getHouseholdId()))
         .filter(account -> account.getHouseholdRole() == HouseholdRole.ADMIN)
+        .count();
+  }
+
+  private long enabledServerAdminCount() {
+    return userAccountRepository.findAll().stream()
+        .filter(UserAccount::isEnabled)
+        .filter(UserAccount::isServerAdmin)
         .count();
   }
 

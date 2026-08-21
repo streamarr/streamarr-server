@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import java.time.Instant;
 import java.util.List;
@@ -12,9 +13,11 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
     implements AuthSessionRepository {
 
   @Override
-  public boolean isLive(UUID sessionId, UUID accountId) {
-    return findById(sessionId)
-        .filter(session -> session.getAccountId().equals(accountId))
+  public boolean isLive(PlaybackAuthority authority) {
+    return findById(authority.authSessionId())
+        .filter(session -> session.getAccountId().equals(authority.accountId()))
+        .filter(session -> authority.householdId().equals(session.getContextHouseholdId()))
+        .filter(session -> authority.profileId().equals(session.getSelectedProfileId()))
         .filter(session -> session.getRevokedAt() == null)
         .isPresent();
   }
