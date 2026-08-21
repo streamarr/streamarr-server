@@ -83,6 +83,10 @@ enum Action {
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.LIVE_PRINCIPAL_HOUSEHOLD,
       FactRequirement.PRINCIPAL_ELIGIBILITY),
+  CREATE_PROFILE_WITH_LOCAL_MANAGER(
+      "createProfileWithLocalManager",
+      ResourceKind.HOUSEHOLD,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   EDIT_PROFILE(
       "editProfile",
       ResourceKind.PROFILE,

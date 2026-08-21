@@ -17,6 +17,19 @@ when {
    (principal has serverAdmin && principal.serverAdmin))
 };
 
+// Only ServerAdmin may establish a portable manager relationship during creation. An ordinary
+// HouseholdAdmin becomes manager by creating the Profile but cannot name another Account.
+@id("create-profile-with-local-manager-as-server-admin")
+permit (
+  principal,
+  action == Streamarr::Action::"createProfileWithLocalManager",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  principal has serverAdmin && principal.serverAdmin
+};
+
 // Ordinary edits (name, picture, ceiling while restricted) and PIN management: managers,
 // supervising admins while the restricted Profile is shared in, ServerAdmin.
 @id("edit-profile-as-manager-supervisor-or-server-admin")

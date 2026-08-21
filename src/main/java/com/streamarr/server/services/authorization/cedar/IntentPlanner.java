@@ -58,6 +58,8 @@ final class IntentPlanner {
               AuthorizationCheck.onAccount(Action.ENABLE_ACCOUNT, accountId);
           case Intent.CreateProfile(var householdId) ->
               AuthorizationCheck.onHousehold(Action.CREATE_PROFILE, householdId);
+          case Intent.CreateProfileWithLocalManager(var householdId) ->
+              AuthorizationCheck.onHousehold(Action.CREATE_PROFILE_WITH_LOCAL_MANAGER, householdId);
           case Intent.RenameProfile(var profileId) ->
               AuthorizationCheck.onProfile(Action.EDIT_PROFILE, profileId);
           case Intent.SetProfilePicture(var profileId) ->

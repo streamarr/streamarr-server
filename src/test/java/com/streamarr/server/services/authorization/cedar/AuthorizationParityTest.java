@@ -62,7 +62,7 @@ class AuthorizationParityTest {
 
   @Test
   @DisplayName(
-      "Should plan every concrete schema action from exactly one intent when intent parity is checked")
+      "Should plan every concrete schema action from at least one intent when intent parity is checked")
   void shouldPlanEveryConcreteSchemaActionWhenIntentParityIsChecked() throws Exception {
     var concrete = new ArrayList<String>();
     schemaActions()
@@ -112,23 +112,39 @@ class AuthorizationParityTest {
     profiles.linkTo(sovereign.getId(), UUID.randomUUID());
 
     return List.of(
-            // KID gaining a ceiling: still restricted, same kind — an ordinary edit.
+        // KID gaining a ceiling: still restricted, same kind — an ordinary edit.
+        actionName(
             planner.plan(new Intent.SetProfileContentCeiling(kid.getId(), 12)),
-            // Ceilinged KID losing only the ceiling: still a KID — an ordinary edit.
+            Action.EDIT_PROFILE),
+        // Ceilinged KID losing only the ceiling: still a KID — an ordinary edit.
+        actionName(
             planner.plan(new Intent.ClearProfileContentCeiling(ceilingedKid.getId())),
-            // An UNLINKED unrestricted Adult gaining a ceiling: its managers may restrict it.
+            Action.EDIT_PROFILE),
+        // An UNLINKED unrestricted Adult gaining a ceiling: its managers may restrict it.
+        actionName(
             planner.plan(new Intent.SetProfileContentCeiling(unrestrictedAdult.getId(), 12)),
-            // Clearing a ceiling that is not set: unrestricted stays unrestricted.
+            Action.EDIT_PROFILE),
+        // Clearing a ceiling that is not set: unrestricted stays unrestricted.
+        actionName(
             planner.plan(new Intent.ClearProfileContentCeiling(unrestrictedAdult.getId())),
-            // Ceilinged KID becoming a ceilinged ADULT: a kind change, still restricted.
+            Action.EDIT_PROFILE),
+        // Ceilinged KID becoming a ceilinged ADULT: a kind change, still restricted.
+        actionName(
             planner.plan(new Intent.ChangeProfileKind(ceilingedKid.getId(), ProfileKind.ADULT)),
-            // KID becoming an unrestricted ADULT: the final restriction lifts.
+            Action.CHANGE_PROFILE_KIND),
+        // KID becoming an unrestricted ADULT: the final restriction lifts.
+        actionName(
             planner.plan(new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT)),
-            // A linked unrestricted Adult gaining a ceiling: restricting a sovereign Adult.
-            planner.plan(new Intent.SetProfileContentCeiling(sovereign.getId(), 12)))
-        .stream()
-        .map(plan -> plan.check().action().cedarName())
-        .toList();
+            Action.LIFT_FINAL_RESTRICTION),
+        // A linked unrestricted Adult gaining a ceiling: restricting a sovereign Adult.
+        actionName(
+            planner.plan(new Intent.SetProfileContentCeiling(sovereign.getId(), 12)),
+            Action.RESTRICT_SOVEREIGN_ADULT));
+  }
+
+  private static String actionName(IntentPlan<?> plan, Action expected) {
+    assertThat(plan.check().action()).isEqualTo(expected);
+    return plan.check().action().cedarName();
   }
 
   @Test
@@ -197,6 +213,7 @@ class AuthorizationParityTest {
         new Intent.EnableAccount(id),
         new Intent.ViewHouseholds(),
         new Intent.CreateProfile(id),
+        new Intent.CreateProfileWithLocalManager(id),
         new Intent.RenameProfile(id),
         new Intent.SetProfilePicture(id),
         new Intent.ManageProfilePin(id),

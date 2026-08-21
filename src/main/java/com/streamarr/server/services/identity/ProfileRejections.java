@@ -18,7 +18,8 @@ public final class ProfileRejections {
           ProfileNameTaken,
           HomeAnchorRequired,
           ManagerNotEligible,
-          LocalManagerNotFound {}
+          LocalManagerNotFound,
+          MaximumAllowedRatingAgeInvalid {}
 
   public sealed interface RenameProfile
       permits ProfileNotFound, ProfileNameRequired, ProfileNameTaken {}
@@ -26,7 +27,11 @@ public final class ProfileRejections {
   public sealed interface SetProfilePicture permits ProfileNotFound {}
 
   public sealed interface ChangeProfilePolicy
-      permits ProfileNotFound, ReauthenticationRequired, HomeAnchorRequired {}
+      permits ProfileNotFound,
+          ReauthenticationRequired,
+          HomeAnchorRequired,
+          RestrictedAccountAuthority,
+          MaximumAllowedRatingAgeInvalid {}
 
   public sealed interface SetProfilePin permits ProfileNotFound, PinMalformed {}
 
@@ -59,6 +64,11 @@ public final class ProfileRejections {
 
   /** T5: an Account whose Personal Profile is restricted cannot hold manager authority. */
   public record ManagerNotEligible() implements CreateProfile {}
+
+  /** T5: restricting a Personal Profile cannot leave its Account holding authority. */
+  public record RestrictedAccountAuthority() implements ChangeProfilePolicy {}
+
+  public record MaximumAllowedRatingAgeInvalid() implements CreateProfile, ChangeProfilePolicy {}
 
   public record LocalManagerNotFound() implements CreateProfile {}
 

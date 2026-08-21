@@ -60,18 +60,25 @@ public class ProfileAdministrationService {
 
   public Outcome<Profile, ProfileRejections.CreateProfile> createProfile(
       AuthenticatedIdentity identity, CreateProfileCommand command) {
+    var creationIntent =
+        command.localManagerAccountId() == null
+            ? new Intent.CreateProfile(command.householdId())
+            : new Intent.CreateProfileWithLocalManager(command.householdId());
     var refusal =
         refusalOf(
             identity,
-            new Intent.CreateProfile(command.householdId()),
+            creationIntent,
             () -> mayViewHousehold(identity, command.householdId()),
             ProfileRejections.HouseholdNotFound::new,
-            null);
+            Optional.empty());
     if (refusal.isPresent()) {
       return Outcome.rejected((ProfileRejections.CreateProfile) refusal.get());
     }
     if (isBlank(command.name())) {
       return Outcome.rejected(new ProfileRejections.ProfileNameRequired());
+    }
+    if (isNegative(command.maximumAllowedRatingAge())) {
+      return Outcome.rejected(new ProfileRejections.MaximumAllowedRatingAgeInvalid());
     }
     if (householdRepository.findById(command.householdId()).isEmpty()) {
       return Outcome.rejected(new ProfileRejections.HouseholdNotFound());
@@ -169,6 +176,9 @@ public class ProfileAdministrationService {
 
   public Outcome<Profile, ProfileRejections.ChangeProfilePolicy> setProfileContentCeiling(
       AuthenticatedIdentity identity, UUID profileId, int maximumAllowedRatingAge) {
+    if (maximumAllowedRatingAge < 0) {
+      return Outcome.rejected(new ProfileRejections.MaximumAllowedRatingAgeInvalid());
+    }
     return applyPolicyChange(
         identity,
         new Intent.SetProfileContentCeiling(profileId, maximumAllowedRatingAge),
@@ -215,7 +225,7 @@ public class ProfileAdministrationService {
           if (!profileRepository.trySetPinHash(profileId, null)) {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
-          return profileRepository.findById(profileId).orElseThrow();
+          return profileRepository.findRefreshedById(profileId).orElseThrow();
         },
         _ -> Optional.empty());
   }
@@ -231,7 +241,7 @@ public class ProfileAdministrationService {
             new Intent.OverrideProfilePin(profileId),
             () -> mayViewProfile(identity, profileId),
             ProfileRejections.ProfileNotFound::new,
-            ProfileRejections.ReauthenticationRequired::new);
+            Optional.of(ProfileRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
       return Outcome.rejected((ProfileRejections.OverrideProfilePin) refusal.get());
     }
@@ -258,20 +268,21 @@ public class ProfileAdministrationService {
 
   public Outcome<UUID, ProfileRejections.DeleteProfile> deleteProfile(
       AuthenticatedIdentity identity, UUID profileId) {
-    var refusal =
-        refusalOf(
-            identity,
-            new Intent.DeleteProfile(profileId),
-            () -> false,
-            () -> deletionRejection(identity, profileId),
-            ProfileRejections.ReauthenticationRequired::new);
-    if (refusal.isPresent()) {
-      return Outcome.rejected((ProfileRejections.DeleteProfile) refusal.get());
-    }
     return mutationTransactions.write(
         () -> {
-          if (profileRepository.findById(profileId).isEmpty()) {
+          if (!profileRepository.lockById(profileId)) {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
+          }
+          var refusal =
+              refusalOf(
+                  identity,
+                  new Intent.DeleteProfile(profileId),
+                  // Deletion denial always uses the typed oracle below, never FORBIDDEN.
+                  () -> false,
+                  () -> deletionRejection(identity, profileId),
+                  Optional.of(ProfileRejections.ReauthenticationRequired::new));
+          if (refusal.isPresent()) {
+            throw new MutationRejection(refusal.get());
           }
           profileRepository.deleteById(profileId);
           profileRepository.flush();
@@ -303,9 +314,12 @@ public class ProfileAdministrationService {
           return profileRepository.findRefreshedById(profileId).orElseThrow();
         },
         constraint ->
-            CHK_HOME_ANCHOR.equals(constraint)
-                ? Optional.of(new ProfileRejections.HomeAnchorRequired())
-                : Optional.empty());
+            switch (constraint) {
+              case CHK_HOME_ANCHOR -> Optional.of(new ProfileRejections.HomeAnchorRequired());
+              case CHK_RESTRICTED_AUTHORITY ->
+                  Optional.of(new ProfileRejections.RestrictedAccountAuthority());
+              default -> Optional.empty();
+            });
   }
 
   private ProfilePolicyTransition decideTransition(
@@ -336,7 +350,7 @@ public class ProfileAdministrationService {
         intent,
         () -> mayViewProfile(identity, profileId),
         ProfileRejections.ProfileNotFound::new,
-        null);
+        Optional.empty());
   }
 
   private Optional<Object> refusalOf(
@@ -344,13 +358,17 @@ public class ProfileAdministrationService {
       Intent<?> intent,
       BooleanSupplier mayView,
       Supplier<Object> denied,
-      Supplier<Object> reauthenticationRequired) {
+      Optional<Supplier<Object>> reauthenticationRequired) {
     return switch (authorizationService.decide(identity, intent)) {
       case Decision.Allowed<?> _ -> Optional.empty();
       case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
       case Decision.Denied<?>(var reason) ->
           switch (reason) {
-            case REAUTHENTICATION_REQUIRED -> Optional.of(reauthenticationRequired.get());
+            case REAUTHENTICATION_REQUIRED ->
+                Optional.of(
+                    reauthenticationRequired
+                        .orElseThrow(AuthorizationUnavailableException::new)
+                        .get());
             case POLICY -> {
               if (mayView.getAsBoolean()) {
                 throw new AccessDeniedException("Not allowed.");
@@ -406,6 +424,10 @@ public class ProfileAdministrationService {
 
   private static boolean isBlank(String value) {
     return value == null || value.isBlank();
+  }
+
+  private static boolean isNegative(Integer value) {
+    return value != null && value < 0;
   }
 
   /** What createProfile needs; the builder keeps call sites named (no positional soup). */

@@ -553,8 +553,10 @@ class CedarIdentityPoliciesTest {
     void shouldLetEligibleLocalAdminOrServerAdminCreateProfile() {
       assertThat(decide(atHome(), new Intent.CreateProfile(account.getHouseholdId())))
           .isEqualTo(ALLOWED);
-      assertThat(decide(atHome(), new Intent.CreateProfile(visitedHouseholdId)))
+      assertThat(
+              decide(atHome(), new Intent.CreateProfileWithLocalManager(account.getHouseholdId())))
           .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.CreateProfile(visitedHouseholdId))).isEqualTo(DENIED);
 
       // The live row decides the role, not the token claim.
       account.setHouseholdRole(HouseholdRole.MEMBER);
@@ -564,7 +566,8 @@ class CedarIdentityPoliciesTest {
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decide(atHome(), new Intent.CreateProfile(visitedHouseholdId)))
+      assertThat(decide(atHome(), new Intent.CreateProfile(visitedHouseholdId))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.CreateProfileWithLocalManager(visitedHouseholdId)))
           .isEqualTo(ALLOWED);
     }
 
@@ -585,13 +588,9 @@ class CedarIdentityPoliciesTest {
       shares.share(kid.getId(), account.getHouseholdId(), false);
 
       // Supervising HouseholdAdmin (restricted Profile shared into their Household).
-      assertThat(decide(atHome(), new Intent.RenameProfile(kid.getId())))
-          .isEqualTo(ALLOWED);
-      assertThat(decide(atHome(), new Intent.ManageProfilePin(kid.getId())))
-          .isEqualTo(ALLOWED);
-      assertThat(
-              decide(
-                  atHome(), new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT)))
+      assertThat(decide(atHome(), new Intent.RenameProfile(kid.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.ManageProfilePin(kid.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT)))
           .isEqualTo(DENIED);
 
       // A live MEMBER of the hosting Household supervises nothing.
@@ -604,10 +603,11 @@ class CedarIdentityPoliciesTest {
       profiles.save(kid);
       managers.save(
           ProfileManager.builder().accountId(account.getId()).profileId(kid.getId()).build());
-      assertThat(
-              decide(
-                  member(), new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT)))
-          .isInstanceOf(Decision.Allowed.class);
+      assertThat(decide(member(), new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT)))
+          .isEqualTo(
+              new Decision.Allowed<>(
+                  new ProfilePolicyTransition(
+                      ProfileKind.ADULT, 12, ProfilePolicyTransition.Classification.KIND_CHANGE)));
     }
 
     @Test

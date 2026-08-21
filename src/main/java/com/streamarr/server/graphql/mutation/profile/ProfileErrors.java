@@ -25,6 +25,7 @@ public final class ProfileErrors {
               InputPath.of("localManagerAccountId"));
       case ProfileRejections.LocalManagerNotFound _ ->
           new LocalManagerNotFoundError("No such Account.", InputPath.of("localManagerAccountId"));
+      case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
 
@@ -49,6 +50,8 @@ public final class ProfileErrors {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
       case ProfileRejections.HomeAnchorRequired _ -> homeAnchorRequired();
+      case ProfileRejections.RestrictedAccountAuthority _ -> restrictedAccountAuthority();
+      case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
 
@@ -58,6 +61,8 @@ public final class ProfileErrors {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
       case ProfileRejections.HomeAnchorRequired _ -> homeAnchorRequired();
+      case ProfileRejections.RestrictedAccountAuthority _ -> restrictedAccountAuthority();
+      case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
 
@@ -67,6 +72,8 @@ public final class ProfileErrors {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
       case ProfileRejections.HomeAnchorRequired _ -> homeAnchorRequired();
+      case ProfileRejections.RestrictedAccountAuthority _ -> restrictedAccountAuthority();
+      case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
 
@@ -130,6 +137,17 @@ public final class ProfileErrors {
     return new HomeAnchorRequiredError(
         "The Profile needs an eligible manager in its Household — a HouseholdAdmin for a"
             + " restricted Profile.");
+  }
+
+  private static RestrictedAccountAuthorityError restrictedAccountAuthority() {
+    return new RestrictedAccountAuthorityError(
+        "A restricted Personal Profile's Account cannot hold authority.",
+        InputPath.of("maximumAllowedRatingAge"));
+  }
+
+  private static MaximumAllowedRatingAgeInvalidError maximumAllowedRatingAgeInvalid() {
+    return new MaximumAllowedRatingAgeInvalidError(
+        "Maximum allowed rating age cannot be negative.", InputPath.of("maximumAllowedRatingAge"));
   }
 
   private static PinMalformedError pinMalformed() {

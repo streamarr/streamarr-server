@@ -149,6 +149,11 @@ namespace Streamarr {
     resource: Household,
     context: {},
   };
+  action createProfileWithLocalManager in profileAdministration appliesTo {
+    principal: Account,
+    resource: Household,
+    context: {},
+  };
   action editProfile in profileAdministration appliesTo {
     principal: Account,
     resource: Profile,

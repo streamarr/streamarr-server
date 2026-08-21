@@ -7,4 +7,8 @@ import com.streamarr.server.graphql.mutation.MutationError;
  * resolves by.
  */
 public sealed interface SetProfileContentCeilingError extends MutationError
-    permits ProfileNotFoundError, ReauthenticationRequiredError, HomeAnchorRequiredError {}
+    permits ProfileNotFoundError,
+        ReauthenticationRequiredError,
+        HomeAnchorRequiredError,
+        RestrictedAccountAuthorityError,
+        MaximumAllowedRatingAgeInvalidError {}

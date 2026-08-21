@@ -33,6 +33,7 @@ union CreateProfileError =
   | HomeAnchorRequiredError
   | ManagerNotEligibleError
   | LocalManagerNotFoundError
+  | MaximumAllowedRatingAgeInvalidError
 
 input RenameProfileInput {
     profileId: ID!
@@ -75,6 +76,8 @@ union ChangeProfileKindError =
     ProfileNotFoundError
   | ReauthenticationRequiredError
   | HomeAnchorRequiredError
+  | RestrictedAccountAuthorityError
+  | MaximumAllowedRatingAgeInvalidError
 
 input SetProfileContentCeilingInput {
     profileId: ID!
@@ -90,6 +93,8 @@ union SetProfileContentCeilingError =
     ProfileNotFoundError
   | ReauthenticationRequiredError
   | HomeAnchorRequiredError
+  | RestrictedAccountAuthorityError
+  | MaximumAllowedRatingAgeInvalidError
 
 input ClearProfileContentCeilingInput {
     profileId: ID!
@@ -104,6 +109,8 @@ union ClearProfileContentCeilingError =
     ProfileNotFoundError
   | ReauthenticationRequiredError
   | HomeAnchorRequiredError
+  | RestrictedAccountAuthorityError
+  | MaximumAllowedRatingAgeInvalidError
 
 input SetProfilePinInput {
     profileId: ID!

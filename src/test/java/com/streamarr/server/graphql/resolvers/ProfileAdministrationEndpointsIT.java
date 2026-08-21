@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -7,17 +8,27 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import java.time.Duration;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import org.awaitility.Awaitility;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +38,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -48,8 +60,10 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
+  @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private AuthTestSupport.TestIdentity admin;
   private AuthTestSupport.TestIdentity serverAdmin;
@@ -86,6 +100,26 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject a negative Content Ceiling during creation as a typed input error")
+  void shouldRejectNegativeContentCeilingDuringCreationAsTypedInputError() throws Exception {
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { createProfile(input: {householdId: "%s", name: "Kai", kind: KID,
+              maximumAllowedRatingAge: -1}) {
+              profile { id } userErrors { __typename }
+            } }
+            """
+                .formatted(admin.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.createProfile.profile").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.createProfile.userErrors[0].__typename")
+                .value("MaximumAllowedRatingAgeInvalidError"));
+  }
+
+  @Test
   @DisplayName("Should refuse a remote ServerAdmin Kid creation without a local anchor")
   void shouldRefuseRemoteServerAdminKidCreationWithoutLocalAnchor() throws Exception {
     graphql(
@@ -111,6 +145,27 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
                 .formatted(admin.household().getId(), admin.account().getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.createProfile.userErrors").isEmpty());
+  }
+
+  @Test
+  @DisplayName("Should not grant the named manager when a HouseholdAdmin creates")
+  void shouldNotGrantNamedManagerWhenHouseholdAdminCreates() throws Exception {
+    var outsider = authTestSupport.createIdentity();
+    try {
+      graphql(
+              authTestSupport.accountBearer(admin),
+              """
+              mutation { createProfile(input: {householdId: "%s", name: "Kai", kind: ADULT,
+                localManagerAccountId: "%s"}) {
+                profile { id } userErrors { __typename } } }
+              """
+                  .formatted(admin.household().getId(), outsider.account().getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"))
+          .andExpect(jsonPath("$.data.createProfile").doesNotExist());
+    } finally {
+      authTestSupport.deleteIdentity(outsider);
+    }
   }
 
   @Test
@@ -161,6 +216,22 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should fail closed when a ServerAdmin changes a missing Profile policy")
+  void shouldFailClosedWhenServerAdminChangesMissingProfilePolicy() throws Exception {
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            mutation { changeProfileKind(input: {profileId: "%s", kind: ADULT}) {
+              profile { id } userErrors { __typename } } }
+            """
+                .formatted(UUID.randomUUID()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("AUTHORIZATION_UNAVAILABLE"))
+        .andExpect(jsonPath("$.data.changeProfileKind.profile").doesNotExist())
+        .andExpect(jsonPath("$.data.changeProfileKind.userErrors").doesNotExist());
+  }
+
+  @Test
   @DisplayName("Should apply an ordinary ceiling edit without a ceremony")
   void shouldApplyOrdinaryCeilingEditWithoutCeremony() throws Exception {
     var kid = kidProfile();
@@ -176,6 +247,56 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(
             jsonPath("$.data.setProfileContentCeiling.profile.maximumAllowedRatingAge").value(12));
+  }
+
+  @Test
+  @DisplayName("Should reject a negative Content Ceiling as a typed input error")
+  void shouldRejectNegativeContentCeilingAsTypedInputError() throws Exception {
+    var kid = kidProfile();
+
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { setProfileContentCeiling(input: {profileId: "%s", maximumAllowedRatingAge: -1}) {
+              profile { id }
+              userErrors { __typename ... on InputMutationError { inputPath } }
+            } }
+            """
+                .formatted(kid.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.setProfileContentCeiling.profile").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.setProfileContentCeiling.userErrors[0].__typename")
+                .value("MaximumAllowedRatingAgeInvalidError"))
+        .andExpect(
+            jsonPath("$.data.setProfileContentCeiling.userErrors[0].inputPath[0]")
+                .value("maximumAllowedRatingAge"));
+  }
+
+  @Test
+  @DisplayName("Should return a typed rejection when restricting an Account that holds authority")
+  void shouldReturnTypedRejectionWhenRestrictingAccountThatHoldsAuthority() throws Exception {
+    var replacementAnchor = joinHouseholdAsAdmin();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            profileManagerRepository.saveAndFlush(
+                ProfileManager.builder()
+                    .accountId(replacementAnchor.getId())
+                    .profileId(admin.profile().getId())
+                    .build()));
+
+    graphql(
+            authTestSupport.freshAccountBearer(serverAdmin),
+            """
+            mutation { setProfileContentCeiling(input: {profileId: "%s", maximumAllowedRatingAge: 12}) {
+              profile { id } userErrors { __typename } } }
+            """
+                .formatted(admin.profile().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.setProfileContentCeiling.profile").doesNotExist())
+        .andExpect(jsonPath("$.data.setProfileContentCeiling.userErrors").isNotEmpty());
   }
 
   @Test
@@ -270,6 +391,32 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return the cleared PIN state after a successful clear")
+  void shouldReturnClearedPinStateAfterSuccessfulClear() throws Exception {
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { setProfilePin(input: {profileId: "%s", pin: "4242"}) {
+              profile { pinConfigured } userErrors { __typename } } }
+            """
+                .formatted(admin.profile().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.setProfilePin.profile.pinConfigured").value(true));
+
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { clearProfilePin(input: {profileId: "%s"}) {
+              profile { pinConfigured } userErrors { __typename } } }
+            """
+                .formatted(admin.profile().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.clearProfilePin.userErrors").isEmpty())
+        .andExpect(jsonPath("$.data.clearProfilePin.profile.pinConfigured").value(false));
+  }
+
+  @Test
   @DisplayName("Should refuse a malformed PIN with its input path")
   void shouldRefuseMalformedPinWithItsInputPath() throws Exception {
     graphql(
@@ -337,7 +484,77 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
             jsonPath("$.data.deleteProfile.deletedProfileId").value(orphan.getId().toString()));
 
     assertThat(profileRepository.findById(orphan.getId())).isEmpty();
-    assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isEqualTo(1);
+    assertThat(
+            dsl.fetchCount(
+                SECURITY_AUDIT_EVENT, SECURITY_AUDIT_EVENT.OPERATION.eq("deleteProfile")))
+        .isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should reject deletion when a concurrent share commits first")
+  void shouldRejectDeletionWhenConcurrentShareCommitsFirst() throws Exception {
+    var orphan = unsharedManagedProfile();
+    var sharePrepared = new CountDownLatch(1);
+    var commitShare = new CountDownLatch(1);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var sharing =
+          executor.submit(
+              () ->
+                  transactionTemplate.executeWithoutResult(
+                      _ -> {
+                        dsl.selectOne()
+                            .from(PROFILE)
+                            .where(PROFILE.ID.eq(orphan.getId()))
+                            .forUpdate()
+                            .fetchSingle();
+                        shareRepository.saveAndFlush(
+                            ProfileHouseholdShare.builder()
+                                .profileId(orphan.getId())
+                                .householdId(serverAdmin.household().getId())
+                                .status(ProfileShareStatus.ACTIVE)
+                                .build());
+                        sharePrepared.countDown();
+                        await(commitShare);
+                      }));
+      assertThat(sharePrepared.await(30, TimeUnit.SECONDS)).isTrue();
+
+      var deleting =
+          executor.submit(
+              () ->
+                  graphql(
+                          authTestSupport.freshAccountBearer(admin),
+                          """
+                          mutation { deleteProfile(input: {profileId: "%s"}) {
+                            deletedProfileId userErrors { __typename } } }
+                          """
+                              .formatted(orphan.getId()))
+                      .andReturn());
+      try {
+        Awaitility.await()
+            .atMost(Duration.ofSeconds(30))
+            .until(this::isProfileDeleteWaitingForLock);
+      } finally {
+        commitShare.countDown();
+      }
+      sharing.get(30, TimeUnit.SECONDS);
+      var result = deleting.get(30, TimeUnit.SECONDS);
+      var response = objectMapper.readTree(result.getResponse().getContentAsString());
+
+      assertThat(response.path("errors").isMissingNode()).isTrue();
+      assertThat(response.path("data").path("deleteProfile").path("deletedProfileId").isNull())
+          .isTrue();
+      assertThat(
+              response
+                  .path("data")
+                  .path("deleteProfile")
+                  .path("userErrors")
+                  .get(0)
+                  .path("__typename")
+                  .asText())
+          .isEqualTo("ProfileNotDeletableError");
+      assertThat(profileRepository.findById(orphan.getId())).isPresent();
+    }
   }
 
   @Test
@@ -438,5 +655,59 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
                   .build());
           return orphan;
         });
+  }
+
+  /** Another eligible HouseholdAdmin in the admin's Household, available as a home anchor. */
+  private UserAccount joinHouseholdAsAdmin() {
+    return transactionTemplate.execute(
+        _ -> {
+          var profile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder()
+                      .householdId(admin.household().getId())
+                      .build());
+          var account =
+              userAccountRepository.saveAndFlush(
+                  AccountFixture.defaultAccountBuilder()
+                      .householdId(admin.household().getId())
+                      .householdRole(HouseholdRole.ADMIN)
+                      .personalProfileId(profile.getId())
+                      .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(admin.household().getId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .structural(true)
+                  .build());
+          return account;
+        });
+  }
+
+  private boolean isProfileDeleteWaitingForLock() {
+    var waiting =
+        jdbcTemplate.queryForObject(
+            """
+            SELECT EXISTS (
+              SELECT 1
+              FROM pg_stat_activity
+              WHERE wait_event_type = 'Lock'
+                AND query ILIKE '%profile%'
+                AND (query ILIKE '%delete%' OR query ILIKE '%for update%')
+            )
+            """,
+            Boolean.class);
+    return Boolean.TRUE.equals(waiting);
+  }
+
+  private static void await(CountDownLatch latch) {
+    try {
+      if (!latch.await(30, TimeUnit.SECONDS)) {
+        throw new AssertionError("Timed out waiting for the concurrent operation");
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new AssertionError("Interrupted while waiting for the concurrent operation", e);
+    }
   }
 }

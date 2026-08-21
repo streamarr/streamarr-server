@@ -53,25 +53,22 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
               : IntentPlanner.plan(identity, intent);
       var check = plan.check();
       authorizationContext = check.action().toString();
-      var slice = sliceAssembler.assemble(identity, check);
-      var entities = slice.entities();
-      var sliceViolation = sliceViolation(entities);
-      if (sliceViolation.isPresent()) {
-        return failClosed(FailureCause.INVALID_SLICE, check, sliceViolation.get());
-      }
+      try {
+        var slice = sliceAssembler.assemble(identity, check);
+        var entities = slice.entities();
+        var sliceViolation = sliceViolation(entities);
+        if (sliceViolation.isPresent()) {
+          return failClosed(FailureCause.INVALID_SLICE, check, sliceViolation.get());
+        }
 
-      if (!check.action().requiresFreshReauthentication()) {
-        return evaluate(check, slice, entities, plan.value());
-      }
+        if (!check.action().requiresFreshReauthentication()) {
+          return evaluate(check, slice, entities, plan.value());
+        }
 
-      return decideWithFreshness(identity, check, slice, entities, plan.value());
-    } catch (InvalidEntitySliceException e) {
-      log.error(
-          "Authorization failed closed for {} ({}): {}",
-          authorizationContext,
-          FailureCause.INVALID_SLICE,
-          e.getMessage());
-      return countFailClosed(FailureCause.INVALID_SLICE);
+        return decideWithFreshness(identity, check, slice, entities, plan.value());
+      } catch (InvalidEntitySliceException e) {
+        return failClosed(FailureCause.INVALID_SLICE, check, e.getMessage());
+      }
     } catch (Exception e) {
       log.error("Authorization failed closed for {} (ENGINE_FAILURE)", authorizationContext, e);
       return countFailClosed(FailureCause.ENGINE_FAILURE);

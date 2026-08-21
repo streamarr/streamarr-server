@@ -19,6 +19,9 @@ public interface ProfileRepositoryCustom {
    */
   Optional<ProfilePolicySnapshot> lockPolicyById(UUID profileId);
 
+  /** Locks the Profile row so relationship writes and permanent deletion have one winner. */
+  boolean lockById(UUID profileId);
+
   /**
    * Writes the authorized transition. The caller holds the row lock {@link #lockPolicyById} took in
    * this transaction, so the state the decision classified cannot have moved; false only when the
