@@ -102,7 +102,7 @@ class ImageVariantServiceTest {
     assertThat(variants)
         .filteredOn(v -> v.variant() != ImageSize.SMALL)
         .hasSize(3)
-        .allSatisfy(v -> assertThat(v.ambientColors()).isEqualTo(Optional.empty()));
+        .allSatisfy(v -> assertThat(v.ambientColors()).isEmpty());
   }
 
   @Test

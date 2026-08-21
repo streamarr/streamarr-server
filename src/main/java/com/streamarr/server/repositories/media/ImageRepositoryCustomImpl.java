@@ -8,7 +8,6 @@ import com.streamarr.server.jooq.generated.enums.ImageEntityType;
 import com.streamarr.server.jooq.generated.enums.ImageSize;
 import com.streamarr.server.jooq.generated.enums.ImageType;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -37,7 +36,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
   }
 
   private boolean insertIfAbsent(Image image, UUID auditUser) {
-    var ambient = Optional.ofNullable(image.getAmbientColors());
+    var ambient = image.getAmbientColors();
 
     return dsl.insertInto(IMAGE)
             .set(IMAGE.ID, image.getId())

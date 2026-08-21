@@ -58,7 +58,8 @@ class ImageServiceTest {
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     var small =
         images.stream().filter(i -> i.getVariant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.getAmbientColors().primary()).isEqualTo("#00a0a0");
+    assertThat(small.getAmbientColors())
+        .hasValueSatisfying(colors -> assertThat(colors.primary()).isEqualTo("#00a0a0"));
   }
 
   @Test
@@ -74,8 +75,7 @@ class ImageServiceTest {
     assertThat(result.images())
         .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
         .singleElement()
-        .extracting(Image::getAmbientColors)
-        .isNull();
+        .satisfies(image -> assertThat(image.getAmbientColors()).isEmpty());
   }
 
   @Test

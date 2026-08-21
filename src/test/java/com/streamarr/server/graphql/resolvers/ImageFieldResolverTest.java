@@ -96,7 +96,7 @@ class ImageFieldResolverTest {
               .primary("#00a0a0")
               .build();
       var image = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER);
-      image.setAmbientColors(ambientColors);
+      image.setAmbientColors(Optional.of(ambientColors));
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
           .thenReturn(List.of(image));
 

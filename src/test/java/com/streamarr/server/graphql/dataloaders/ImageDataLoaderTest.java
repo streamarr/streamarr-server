@@ -9,6 +9,7 @@ import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.fakes.FakeImageRepository;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -130,7 +131,7 @@ class ImageDataLoaderTest {
             .variant(ImageSize.SMALL)
             .width(185)
             .height(278)
-            .ambientColors(ambient));
+            .ambientColors(Optional.of(ambient)));
     saveImage(
         defaultImageBuilder(entityId, ImageEntityType.MOVIE, ImageType.POSTER)
             .variant(ImageSize.LARGE)

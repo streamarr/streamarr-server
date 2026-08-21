@@ -68,7 +68,7 @@ public class ImageDataLoader implements MappedBatchLoader<ImageLoaderKey, List<I
               var blurHash = smallVariant.map(Image::getBlurHash).orElse(null);
               var aspectRatio =
                   smallVariant.map(v -> (float) v.getWidth() / v.getHeight()).orElse(0f);
-              var ambientColors = smallVariant.map(Image::getAmbientColors).orElse(null);
+              var ambientColors = smallVariant.flatMap(Image::getAmbientColors).orElse(null);
 
               var variantDtos =
                   variants.stream()

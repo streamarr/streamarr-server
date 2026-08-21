@@ -62,7 +62,7 @@ public class ImageService {
                 .width(variant.width())
                 .height(variant.height())
                 .blurHash(variant.blurHash())
-                .ambientColors(variant.ambientColors().orElse(null))
+                .ambientColors(variant.ambientColors())
                 .path(relativePath)
                 .build());
       }

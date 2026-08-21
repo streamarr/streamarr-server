@@ -94,7 +94,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
                   .satisfies(
                       small ->
                           assertThat(small.getAmbientColors())
-                              .isEqualTo(
+                              .hasValue(
                                   AmbientColors.builder()
                                       .topLeft("#202020")
                                       .topRight("#404040")
@@ -128,8 +128,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
               assertThat(images)
                   .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
                   .singleElement()
-                  .extracting(Image::getAmbientColors)
-                  .isNull();
+                  .satisfies(image -> assertThat(image.getAmbientColors()).isEmpty());
             });
   }
 
