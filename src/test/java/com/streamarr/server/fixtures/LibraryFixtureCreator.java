@@ -34,12 +34,13 @@ public final class LibraryFixtureCreator {
   }
 
   public static Library buildUnsavedLibrary(String name, String filepath) {
+    return unsavedLibraryBuilder().name(name).filepathUri(filepath).build();
+  }
+
+  public static Library.LibraryBuilder<?, ?> unsavedLibraryBuilder() {
     return Library.builder()
-        .name(name)
         .backend(LibraryBackend.LOCAL)
-        .filepathUri(filepath)
         .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-        .type(MediaType.MOVIE)
-        .build();
+        .type(MediaType.MOVIE);
   }
 }

@@ -1,16 +1,16 @@
 package com.streamarr.server.services.library;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatNoException;
-import static org.awaitility.Awaitility.await;
-import static org.junit.jupiter.api.Assertions.assertTimeout;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
@@ -20,13 +20,15 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("DirectoryWatchingService Tests")
@@ -143,49 +145,86 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
-  @DisplayName("Should not block calling thread when library is added")
-  void shouldNotBlockCallingThreadWhenLibraryAdded() {
-    var slowService = buildSlowSetupService();
-    var event = new LibraryAddedEvent(UUID.randomUUID(), FilepathCodec.encode(tempDir));
+  @DisplayName("Should return immediately when asynchronous watching is triggered")
+  void shouldReturnImmediatelyWhenAsyncWatchingIsTriggered() throws InterruptedException {
+    var setupStarted = new CountDownLatch(1);
+    var releaseSetup = new CountDownLatch(1);
+    var blockingService = buildBlockingSetupService(setupStarted, releaseSetup);
+    var filepathUri = FilepathCodec.encode(tempDir);
+    var caller = Thread.ofPlatform().start(() -> blockingService.triggerAsyncWatch(filepathUri));
 
-    assertTimeout(Duration.ofMillis(500), () -> slowService.onLibraryAdded(event));
+    try {
+      assertThat(setupStarted.await(1, TimeUnit.SECONDS)).isTrue();
+      assertThat(caller.join(Duration.ofSeconds(1))).isTrue();
+    } finally {
+      releaseSetup.countDown();
+    }
   }
 
   @Test
   @DisplayName("Should not block calling thread when initializing with existing libraries")
-  void shouldNotBlockCallingThreadWhenInitializingWithExistingLibraries() {
+  void shouldNotBlockCallingThreadWhenInitializingWithExistingLibraries()
+      throws InterruptedException {
     fakeLibraryRepository.save(
         LibraryFixtureCreator.buildFakeLibrary().toBuilder()
             .filepathUri(FilepathCodec.encode(tempDir))
             .build());
-    var slowService = buildSlowSetupService();
+    var setupStarted = new CountDownLatch(1);
+    var releaseSetup = new CountDownLatch(1);
+    var blockingService = buildBlockingSetupService(setupStarted, releaseSetup);
+    var caller = Thread.ofPlatform().start(blockingService::afterPropertiesSet);
 
-    assertTimeout(Duration.ofMillis(500), slowService::afterPropertiesSet);
+    try {
+      assertThat(setupStarted.await(1, TimeUnit.SECONDS)).isTrue();
+      assertThat(caller.join(Duration.ofSeconds(1))).isTrue();
+    } finally {
+      releaseSetup.countDown();
+    }
   }
 
   @Test
-  @DisplayName("Should not propagate exception when watcher setup fails on library added")
-  void shouldNotPropagateExceptionWhenSetupFailsOnLibraryAdded() {
+  @DisplayName("Should not propagate an exception when asynchronous watcher setup fails")
+  void shouldNotPropagateExceptionWhenAsyncWatcherSetupFails() throws InterruptedException {
+    var logRecorded = new CountDownLatch(1);
+    var logCapture = startLogCapture(logRecorded);
     var failingService = buildFailingSetupService();
-    var event = new LibraryAddedEvent(UUID.randomUUID(), FilepathCodec.encode(tempDir));
+    var filepathUri = FilepathCodec.encode(tempDir);
 
-    assertThatNoException().isThrownBy(() -> failingService.onLibraryAdded(event));
+    try {
+      failingService.triggerAsyncWatch(filepathUri);
 
-    await().pollDelay(Duration.ofMillis(50)).until(() -> true);
+      assertThat(logRecorded.await(1, TimeUnit.SECONDS)).isTrue();
+      assertThat(logCapture.appender().list)
+          .singleElement()
+          .extracting(ILoggingEvent::getFormattedMessage)
+          .isEqualTo("Failed to start watching directory for library: " + filepathUri);
+    } finally {
+      logCapture.close();
+    }
   }
 
   @Test
   @DisplayName("Should not propagate exception when watcher setup fails on initialization")
-  void shouldNotPropagateExceptionWhenSetupFailsOnInitialization() {
+  void shouldNotPropagateExceptionWhenSetupFailsOnInitialization() throws InterruptedException {
     fakeLibraryRepository.save(
         LibraryFixtureCreator.buildFakeLibrary().toBuilder()
             .filepathUri(FilepathCodec.encode(tempDir))
             .build());
+    var logRecorded = new CountDownLatch(1);
+    var logCapture = startLogCapture(logRecorded);
     var failingService = buildFailingSetupService();
 
-    assertThatNoException().isThrownBy(failingService::afterPropertiesSet);
+    try {
+      failingService.afterPropertiesSet();
 
-    await().pollDelay(Duration.ofMillis(50)).until(() -> true);
+      assertThat(logRecorded.await(1, TimeUnit.SECONDS)).isTrue();
+      assertThat(logCapture.appender().list)
+          .singleElement()
+          .extracting(ILoggingEvent::getFormattedMessage)
+          .isEqualTo("Failed to start library watcher");
+    } finally {
+      logCapture.close();
+    }
   }
 
   private DirectoryWatchingService buildFailingSetupService() {
@@ -202,7 +241,8 @@ class DirectoryWatchingServiceTest {
     };
   }
 
-  private DirectoryWatchingService buildSlowSetupService() {
+  private DirectoryWatchingService buildBlockingSetupService(
+      CountDownLatch setupStarted, CountDownLatch releaseSetup) {
     return new DirectoryWatchingService(
         fakeLibraryRepository,
         path -> true,
@@ -211,8 +251,39 @@ class DirectoryWatchingServiceTest {
         null) {
       @Override
       public void setup(List<Library> libraries) throws IOException {
-        await().pollDelay(Duration.ofMillis(5_000)).until(() -> true);
+        setupStarted.countDown();
+        try {
+          releaseSetup.await();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw new IOException("interrupted while blocking setup", e);
+        }
       }
     };
+  }
+
+  private LogCapture startLogCapture(CountDownLatch logRecorded) {
+    var logger = (Logger) LoggerFactory.getLogger(DirectoryWatchingService.class);
+    var appender =
+        new ListAppender<ILoggingEvent>() {
+          @Override
+          protected void append(ILoggingEvent eventObject) {
+            super.append(eventObject);
+            logRecorded.countDown();
+          }
+        };
+    appender.start();
+    logger.addAppender(appender);
+    return new LogCapture(logger, appender);
+  }
+
+  private record LogCapture(Logger logger, ListAppender<ILoggingEvent> appender)
+      implements AutoCloseable {
+
+    @Override
+    public void close() {
+      logger.detachAppender(appender);
+      appender.stop();
+    }
   }
 }

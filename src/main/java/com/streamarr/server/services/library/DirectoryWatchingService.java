@@ -2,7 +2,6 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
@@ -26,7 +25,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Slf4j
 @Service
 @DependsOn("libraryRepository")
-public class DirectoryWatchingService implements InitializingBean {
+public class DirectoryWatchingService implements InitializingBean, LibraryWatchTrigger {
 
   private final LibraryRepository libraryRepository;
   private final FileEventProcessor fileEventProcessor;
@@ -130,14 +129,14 @@ public class DirectoryWatchingService implements InitializingBean {
   // Watcher may detect files before the initial async scan processes them.
   // FileProcessingTaskCoordinator deduplicates, so concurrent discovery is safe. Watching starts
   // only after the library row commits; a rolled-back addLibrary must leave no watcher behind.
-  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-  public void onLibraryAdded(LibraryAddedEvent event) {
+  @Override
+  public void triggerAsyncWatch(String filepathUri) {
     Thread.startVirtualThread(
         () -> {
           try {
-            addDirectory(FilepathCodec.decode(event.filepathUri()));
+            addDirectory(FilepathCodec.decode(filepathUri));
           } catch (IOException e) {
-            log.error("Failed to start watching directory for library: {}", event.filepathUri(), e);
+            log.error("Failed to start watching directory for library: {}", filepathUri, e);
           }
         });
   }
