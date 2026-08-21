@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.support.AuthTestSupport.bearer;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -11,8 +12,14 @@ import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.support.AuthTestSupport;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -20,6 +27,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -32,7 +43,60 @@ import org.springframework.test.web.servlet.ResultActions;
  */
 @Tag("IntegrationTest")
 @DisplayName("Library Administration Integration Tests")
+@Import(LibraryAdministrationIT.BlockingLibraryRemovalConfig.class)
 class LibraryAdministrationIT extends AbstractIntegrationTest {
+
+  @TestConfiguration(proxyBeanMethods = false)
+  static class BlockingLibraryRemovalConfig {
+
+    @Bean
+    BlockingLibraryRemovalListener blockingLibraryRemovalListener() {
+      return new BlockingLibraryRemovalListener();
+    }
+  }
+
+  static class BlockingLibraryRemovalListener {
+
+    private final AtomicReference<RemovalGate> gate = new AtomicReference<>();
+
+    RemovalGate holdBeforeCommit() {
+      var next = new RemovalGate(new CountDownLatch(1), new CountDownLatch(1));
+      if (!gate.compareAndSet(null, next)) {
+        throw new IllegalStateException("Library removal is already held.");
+      }
+      return next;
+    }
+
+    void release() {
+      var current = gate.getAndSet(null);
+      if (current != null) {
+        current.release().countDown();
+      }
+    }
+
+    @EventListener
+    void onLibraryRemoved(LibraryRemovedEvent event) {
+      var current = gate.get();
+      if (current == null) {
+        return;
+      }
+      current.reached().countDown();
+      await(current.release());
+    }
+
+    private static void await(CountDownLatch latch) {
+      try {
+        if (!latch.await(10, TimeUnit.SECONDS)) {
+          throw new IllegalStateException("Library removal gate was never released.");
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException("Interrupted while holding library removal.", e);
+      }
+    }
+  }
+
+  record RemovalGate(CountDownLatch reached, CountDownLatch release) {}
 
   @Autowired private MockMvc mockMvc;
 
@@ -42,10 +106,13 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
 
   @Autowired private UserAccountRepository userAccountRepository;
 
+  @Autowired private BlockingLibraryRemovalListener blockingLibraryRemovalListener;
+
   private AuthTestSupport.TestIdentity identity;
 
   @AfterEach
   void deleteIdentity() {
+    blockingLibraryRemovalListener.release();
     if (identity != null) {
       authTestSupport.deleteIdentity(identity);
     }
@@ -156,9 +223,57 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName("Should finish authorized removal before concurrent ServerAdmin revocation")
+  void shouldFinishAuthorizedRemovalBeforeConcurrentServerAdminRevocation() throws Exception {
+    identity = authTestSupport.createAdminIdentity();
+    var adminToken = authTestSupport.profileBearer(identity);
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var removalGate = blockingLibraryRemovalListener.holdBeforeCommit();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try {
+        var removal =
+            executor.submit(
+                () ->
+                    postGraphQl(removeLibraryMutation(library.getId()), adminToken)
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.errors").doesNotExist())
+                        .andExpect(jsonPath("$.data.removeLibrary").value(true)));
+        assertThat(removalGate.reached().await(10, TimeUnit.SECONDS)).isTrue();
+
+        var revocationAttempted = new CountDownLatch(1);
+        var revocation =
+            executor.submit(
+                () -> {
+                  demoteToUser(identity, revocationAttempted);
+                  return null;
+                });
+        assertThat(revocationAttempted.await(10, TimeUnit.SECONDS)).isTrue();
+
+        assertThatThrownBy(() -> revocation.get(500, TimeUnit.MILLISECONDS))
+            .isInstanceOf(TimeoutException.class);
+
+        blockingLibraryRemovalListener.release();
+        removal.get(10, TimeUnit.SECONDS);
+        revocation.get(10, TimeUnit.SECONDS);
+      } finally {
+        blockingLibraryRemovalListener.release();
+      }
+    }
+
+    assertThat(libraryRepository.existsById(library.getId())).isFalse();
+  }
+
   private void demoteToUser(AuthTestSupport.TestIdentity identity) {
+    demoteToUser(identity, new CountDownLatch(0));
+  }
+
+  private void demoteToUser(
+      AuthTestSupport.TestIdentity identity, CountDownLatch revocationAttempted) {
     var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
     account.setAccountRole(AccountRole.USER);
+    revocationAttempted.countDown();
     userAccountRepository.saveAndFlush(account);
   }
 

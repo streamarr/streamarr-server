@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -38,6 +39,7 @@ import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
+import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
@@ -57,6 +59,7 @@ import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
@@ -123,6 +126,10 @@ import org.slf4j.LoggerFactory;
 @DisplayName("Library Management Service Tests")
 class LibraryManagementServiceTest {
 
+  private final AuthenticatedIdentity identity = defaultIdentityBuilder().build();
+  private final LibraryMutationTransaction libraryMutationTransaction =
+      new FakeLibraryMutationTransaction();
+
   private final PersonService personService = mock(PersonService.class);
   private final GenreService genreService = mock(GenreService.class);
   private final CompanyService companyService = mock(CompanyService.class);
@@ -178,7 +185,8 @@ class LibraryManagementServiceTest {
           capturingEventPublisher,
           new MutexFactoryProvider(),
           libraryRefreshService,
-          fileSystem);
+          fileSystem,
+          libraryMutationTransaction);
 
   private UUID savedLibraryId;
 
@@ -434,7 +442,8 @@ class LibraryManagementServiceTest {
             capturingEventPublisher,
             new MutexFactoryProvider(),
             libraryRefreshService,
-            throwingFileSystem);
+            throwingFileSystem,
+            libraryMutationTransaction);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
@@ -469,7 +478,8 @@ class LibraryManagementServiceTest {
             capturingEventPublisher,
             new MutexFactoryProvider(),
             libraryRefreshService,
-            throwingFileSystem);
+            throwingFileSystem,
+            libraryMutationTransaction);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
@@ -565,7 +575,8 @@ class LibraryManagementServiceTest {
             capturingEventPublisher,
             new MutexFactoryProvider(),
             libraryRefreshService,
-            throwingFileSystem);
+            throwingFileSystem,
+            libraryMutationTransaction);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
@@ -1124,7 +1135,8 @@ class LibraryManagementServiceTest {
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", null);
 
       assertThrows(
-          InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
+          InvalidLibraryPathException.class,
+          () -> libraryManagementService.addLibrary(identity, library));
     }
 
     @Test
@@ -1133,7 +1145,8 @@ class LibraryManagementServiceTest {
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "   ");
 
       assertThrows(
-          InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
+          InvalidLibraryPathException.class,
+          () -> libraryManagementService.addLibrary(identity, library));
     }
 
     @Test
@@ -1144,14 +1157,14 @@ class LibraryManagementServiceTest {
 
       var firstLibrary =
           LibraryFixtureCreator.buildUnsavedLibrary("First Library", libraryPath.toString());
-      libraryManagementService.addLibrary(firstLibrary);
+      libraryManagementService.addLibrary(identity, firstLibrary);
 
       var duplicateLibrary =
           LibraryFixtureCreator.buildUnsavedLibrary("Duplicate Library", libraryPath.toString());
 
       assertThrows(
           LibraryAlreadyExistsException.class,
-          () -> libraryManagementService.addLibrary(duplicateLibrary));
+          () -> libraryManagementService.addLibrary(identity, duplicateLibrary));
     }
 
     @Test
@@ -1160,7 +1173,8 @@ class LibraryManagementServiceTest {
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/nonexistent/path");
 
       assertThrows(
-          InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
+          InvalidLibraryPathException.class,
+          () -> libraryManagementService.addLibrary(identity, library));
     }
 
     @Test
@@ -1173,7 +1187,8 @@ class LibraryManagementServiceTest {
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", filePath.toString());
 
       assertThrows(
-          InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
+          InvalidLibraryPathException.class,
+          () -> libraryManagementService.addLibrary(identity, library));
     }
 
     @Test
@@ -1185,7 +1200,7 @@ class LibraryManagementServiceTest {
       var library =
           LibraryFixtureCreator.buildUnsavedLibrary("New Library", newLibraryPath.toString());
 
-      var savedLibrary = libraryManagementService.addLibrary(library);
+      var savedLibrary = libraryManagementService.addLibrary(identity, library);
 
       assertThat(savedLibrary.getId()).isNotNull();
       assertThat(fakeLibraryRepository.findById(savedLibrary.getId())).isPresent();
@@ -1200,7 +1215,7 @@ class LibraryManagementServiceTest {
       var library =
           LibraryFixtureCreator.buildUnsavedLibrary("Encoded Library", newLibraryPath.toString());
 
-      var savedLibrary = libraryManagementService.addLibrary(library);
+      var savedLibrary = libraryManagementService.addLibrary(identity, library);
 
       var persisted = fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
       assertThat(persisted.getFilepathUri()).startsWith("jimfs://");
@@ -1215,7 +1230,7 @@ class LibraryManagementServiceTest {
       var library =
           LibraryFixtureCreator.buildUnsavedLibrary("Healthy Library", newLibraryPath.toString());
 
-      var savedLibrary = libraryManagementService.addLibrary(library);
+      var savedLibrary = libraryManagementService.addLibrary(identity, library);
 
       await()
           .atMost(Duration.ofSeconds(5))
@@ -1236,7 +1251,7 @@ class LibraryManagementServiceTest {
       var library =
           LibraryFixtureCreator.buildUnsavedLibrary("Event Library", newLibraryPath.toString());
 
-      var savedLibrary = libraryManagementService.addLibrary(library);
+      var savedLibrary = libraryManagementService.addLibrary(identity, library);
 
       var events = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class);
       assertThat(events).hasSize(1);
@@ -1256,7 +1271,7 @@ class LibraryManagementServiceTest {
 
       assertThat(library.getId()).as("Input library should not have an ID").isNull();
 
-      var savedLibrary = libraryManagementService.addLibrary(library);
+      var savedLibrary = libraryManagementService.addLibrary(identity, library);
 
       var events = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class);
       assertThat(events.getFirst().libraryId())
@@ -1285,14 +1300,15 @@ class LibraryManagementServiceTest {
               capturingEventPublisher,
               new MutexFactoryProvider(),
               libraryRefreshService,
-              securityExceptionFs);
+              securityExceptionFs,
+              libraryMutationTransaction);
 
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/secure-path");
 
       var exception =
           assertThrows(
               LibraryPathPermissionDeniedException.class,
-              () -> serviceWithSecurityFs.addLibrary(library));
+              () -> serviceWithSecurityFs.addLibrary(identity, library));
 
       assertThat(exception.getMessage()).contains("/secure-path");
     }
@@ -1306,7 +1322,7 @@ class LibraryManagementServiceTest {
       var library =
           LibraryFixtureCreator.buildUnsavedLibrary("Test Library", newLibraryPath.toString());
 
-      libraryManagementService.addLibrary(library);
+      libraryManagementService.addLibrary(identity, library);
 
       assertThat(library.getStatus()).as("Input library should not be mutated").isNull();
     }
@@ -1321,7 +1337,7 @@ class LibraryManagementServiceTest {
           LibraryFixtureCreator.buildUnsavedLibrary(
               "Async Scan Library", newLibraryPath.toString());
 
-      var savedLibrary = libraryManagementService.addLibrary(library);
+      var savedLibrary = libraryManagementService.addLibrary(identity, library);
 
       await()
           .atMost(Duration.ofSeconds(5))
@@ -1359,7 +1375,7 @@ class LibraryManagementServiceTest {
                   .status(MediaFileStatus.MATCHED)
                   .build());
 
-      libraryManagementService.removeLibrary(savedLibraryId);
+      libraryManagementService.removeLibrary(identity, savedLibraryId);
 
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).hasSize(1);
@@ -1371,7 +1387,7 @@ class LibraryManagementServiceTest {
     @DisplayName(
         "Should publish LibraryRemovedEvent with empty media file IDs when library has no media files")
     void shouldPublishLibraryRemovedEventWithEmptyMediaFileIdsWhenNoMediaFiles() {
-      libraryManagementService.removeLibrary(savedLibraryId);
+      libraryManagementService.removeLibrary(identity, savedLibraryId);
 
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).hasSize(1);
@@ -1385,7 +1401,7 @@ class LibraryManagementServiceTest {
 
       assertThrows(
           LibraryNotFoundException.class,
-          () -> libraryManagementService.removeLibrary(nonExistentId));
+          () -> libraryManagementService.removeLibrary(identity, nonExistentId));
 
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).isEmpty();
@@ -1400,7 +1416,7 @@ class LibraryManagementServiceTest {
 
       assertThrows(
           LibraryScanInProgressException.class,
-          () -> libraryManagementService.removeLibrary(savedLibraryId));
+          () -> libraryManagementService.removeLibrary(identity, savedLibraryId));
 
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).isEmpty();
@@ -1415,7 +1431,7 @@ class LibraryManagementServiceTest {
 
       assertThrows(
           LibraryRefreshInProgressException.class,
-          () -> libraryManagementService.removeLibrary(savedLibraryId));
+          () -> libraryManagementService.removeLibrary(identity, savedLibraryId));
 
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).isEmpty();
@@ -1767,7 +1783,8 @@ class LibraryManagementServiceTest {
         capturingEventPublisher,
         new MutexFactoryProvider(),
         libraryRefreshService,
-        fileSystem);
+        fileSystem,
+        libraryMutationTransaction);
   }
 
   private LibraryManagementService libraryManagementServiceWithRefreshService(
@@ -1785,7 +1802,8 @@ class LibraryManagementServiceTest {
         capturingEventPublisher,
         new MutexFactoryProvider(),
         refreshService,
-        fileSystem);
+        fileSystem,
+        libraryMutationTransaction);
   }
 
   private Path pathWithDisplayName(String filepathUri, String displayName) throws IOException {

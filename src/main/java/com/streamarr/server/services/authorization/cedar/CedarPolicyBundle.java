@@ -82,6 +82,9 @@ class CedarPolicyBundle {
         rekeyed.add(new Policy(policy.getSource(), id));
       }
     }
+    if (rekeyed.isEmpty()) {
+      throw new CedarBundleException("Cedar bundle must contain at least one policy");
+    }
     return rekeyed;
   }
 

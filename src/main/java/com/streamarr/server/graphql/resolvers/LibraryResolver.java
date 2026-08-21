@@ -53,8 +53,8 @@ public class LibraryResolver {
 
   @DgsMutation
   public Library addLibrary(@InputArgument AddLibraryInput input) {
-    authorizationService.requireAllowed(
-        authorizationService.currentIdentity(), new Intent.AddLibrary());
+    var identity = authorizationService.currentIdentity();
+    authorizationService.requireAllowed(identity, new Intent.AddLibrary());
     var library =
         Library.builder()
             .name(input.name())
@@ -67,15 +67,15 @@ public class LibraryResolver {
                     : ExternalAgentStrategy.TMDB)
             .build();
 
-    return libraryManagementService.addLibrary(library);
+    return libraryManagementService.addLibrary(identity, library);
   }
 
   @DgsMutation
   public boolean removeLibrary(String id) {
     var libraryId = parseUuid(id);
-    authorizationService.requireAllowed(
-        authorizationService.currentIdentity(), new Intent.RemoveLibrary(libraryId));
-    libraryManagementService.removeLibrary(libraryId);
+    var identity = authorizationService.currentIdentity();
+    authorizationService.requireAllowed(identity, new Intent.RemoveLibrary(libraryId));
+    libraryManagementService.removeLibrary(identity, libraryId);
     return true;
   }
 

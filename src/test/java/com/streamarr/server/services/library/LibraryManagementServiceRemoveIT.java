@@ -1,9 +1,11 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
+import static org.mockito.Mockito.mock;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.LibraryStatus;
@@ -32,6 +34,8 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.services.streaming.SegmentStore;
@@ -62,6 +66,8 @@ import org.springframework.test.context.bean.override.convention.TestBean;
 @DisplayName("Library Removal Integration Tests")
 class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
+  private static final AuthenticatedIdentity IDENTITY = defaultIdentityBuilder().build();
+
   @Autowired private LibraryManagementService libraryManagementService;
 
   @Autowired private LibraryRepository libraryRepository;
@@ -86,6 +92,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   @TestBean FfprobeService ffprobeService;
   @TestBean SegmentStore segmentStore;
   @TestBean PlaybackAuthorityGate authorityGate;
+  @TestBean AuthorizationService authorizationService;
 
   private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
   private static final FakeFfprobeService FAKE_FFPROBE = new FakeFfprobeService();
@@ -107,6 +114,10 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     return _ -> true;
   }
 
+  static AuthorizationService authorizationService() {
+    return mock(AuthorizationService.class);
+  }
+
   @BeforeEach
   void cleanupDatabase() {
     mediaFileRepository.deleteAll();
@@ -123,7 +134,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   void shouldRemoveLibraryWhenLibraryExistsWithNoContent() {
     var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
 
-    libraryManagementService.removeLibrary(library.getId());
+    libraryManagementService.removeLibrary(IDENTITY, library.getId());
 
     assertThat(libraryRepository.findById(library.getId())).isEmpty();
   }
@@ -138,7 +149,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
     assertThat(movieRepository.findAll()).hasSize(2);
 
-    libraryManagementService.removeLibrary(library.getId());
+    libraryManagementService.removeLibrary(IDENTITY, library.getId());
 
     assertThat(movieRepository.findAll()).isEmpty();
     assertThat(libraryRepository.findById(library.getId())).isEmpty();
@@ -163,7 +174,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
     assertThat(mediaFileRepository.findById(mediaFile.getId())).isPresent();
 
-    libraryManagementService.removeLibrary(library.getId());
+    libraryManagementService.removeLibrary(IDENTITY, library.getId());
 
     assertThat(mediaFileRepository.findById(mediaFile.getId())).isEmpty();
   }
@@ -184,7 +195,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
     assertThat(mediaFileRepository.findById(orphanedMediaFile.getId())).isPresent();
 
-    libraryManagementService.removeLibrary(library.getId());
+    libraryManagementService.removeLibrary(IDENTITY, library.getId());
 
     assertThat(mediaFileRepository.findById(orphanedMediaFile.getId())).isEmpty();
   }
@@ -221,7 +232,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
                 .status(MediaFileStatus.MATCHED)
                 .build());
 
-    libraryManagementService.removeLibrary(libraryToRemove.getId());
+    libraryManagementService.removeLibrary(IDENTITY, libraryToRemove.getId());
 
     assertThat(libraryRepository.findById(libraryToRemove.getId())).isEmpty();
     assertThat(libraryRepository.findById(libraryToKeep.getId())).isPresent();
@@ -259,7 +270,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
     assertThat(streamingService.getActiveSessionCount()).isEqualTo(1);
 
-    libraryManagementService.removeLibrary(library.getId());
+    libraryManagementService.removeLibrary(IDENTITY, library.getId());
 
     assertThat(streamingService.getActiveSessionCount())
         .as("Streaming session should be terminated when library is removed")
@@ -289,7 +300,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     savedMovie.getGenres().add(genre);
     movieRepository.saveAndFlush(savedMovie);
 
-    libraryManagementService.removeLibrary(library.getId());
+    libraryManagementService.removeLibrary(IDENTITY, library.getId());
 
     assertThat(personRepository.findById(personId)).isPresent();
     assertThat(genreRepository.findById(genreId)).isPresent();
@@ -300,7 +311,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   void shouldThrowLibraryNotFoundExceptionWhenLibraryDoesNotExist() {
     var nonExistentId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> libraryManagementService.removeLibrary(nonExistentId))
+    assertThatThrownBy(() -> libraryManagementService.removeLibrary(IDENTITY, nonExistentId))
         .isInstanceOf(LibraryNotFoundException.class)
         .hasMessageContaining(nonExistentId.toString());
   }
@@ -314,7 +325,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
     var libraryId = library.getId();
 
-    assertThatThrownBy(() -> libraryManagementService.removeLibrary(libraryId))
+    assertThatThrownBy(() -> libraryManagementService.removeLibrary(IDENTITY, libraryId))
         .isInstanceOf(LibraryScanInProgressException.class)
         .hasMessageContaining(libraryId.toString());
   }
@@ -328,7 +339,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
     var libraryId = library.getId();
 
-    assertThatThrownBy(() -> libraryManagementService.removeLibrary(libraryId))
+    assertThatThrownBy(() -> libraryManagementService.removeLibrary(IDENTITY, libraryId))
         .isInstanceOf(LibraryRefreshInProgressException.class)
         .hasMessageContaining(libraryId.toString());
 
@@ -350,7 +361,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
         () -> {
           try {
             barrier.await();
-            libraryManagementService.removeLibrary(library.getId());
+            libraryManagementService.removeLibrary(IDENTITY, library.getId());
           } catch (LibraryNotFoundException | ObjectOptimisticLockingFailureException _) {
             concurrentDeleteFailures.incrementAndGet();
           } catch (Exception e) {
@@ -415,7 +426,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     assertThat(episodeRepository.findAll()).hasSize(1);
     assertThat(mediaFileRepository.findAll()).hasSize(1);
 
-    libraryManagementService.removeLibrary(library.getId());
+    libraryManagementService.removeLibrary(IDENTITY, library.getId());
 
     assertThat(libraryRepository.findById(library.getId())).isEmpty();
     assertThat(seriesRepository.findAll()).isEmpty();
@@ -455,7 +466,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     assertThat(Files.exists(movieFile)).isTrue();
     assertThat(Files.exists(subtitleFile)).isTrue();
 
-    libraryManagementService.removeLibrary(library.getId());
+    libraryManagementService.removeLibrary(IDENTITY, library.getId());
 
     assertThat(libraryRepository.findById(library.getId())).isEmpty();
     assertThat(movieRepository.findById(movie.getId())).isEmpty();

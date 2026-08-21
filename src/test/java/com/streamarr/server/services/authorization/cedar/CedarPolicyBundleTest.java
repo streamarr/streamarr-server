@@ -45,6 +45,14 @@ class CedarPolicyBundleTest {
   }
 
   @Test
+  @DisplayName("Should fail startup when the bundle contains no policies")
+  void shouldFailStartupWhenBundleContainsNoPolicies() {
+    assertThatThrownBy(() -> new CedarPolicyBundle(ENGINE, SCHEMA, List.of()))
+        .isInstanceOf(CedarBundleException.class)
+        .hasMessageContaining("at least one policy");
+  }
+
+  @Test
   @DisplayName("Should reject a policy without an id annotation")
   void shouldRejectPolicyWithoutIdAnnotation() {
     var sources = List.of("permit (principal, action, resource);");

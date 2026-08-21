@@ -19,6 +19,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     return dsl.select(USER_ACCOUNT.ENABLED, USER_ACCOUNT.ACCOUNT_ROLE)
         .from(USER_ACCOUNT)
         .where(USER_ACCOUNT.ID.eq(accountId))
+        .forShare()
         .fetchOptional(
             row -> new AccountAuthorityFacts(row.value1(), row.value2() == AccountRole.ADMIN));
   }

@@ -8,6 +8,7 @@ import static com.tngtech.archunit.core.domain.properties.HasParameterTypes.Pred
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.PasswordEncoderConfig;
@@ -21,6 +22,8 @@ import com.streamarr.server.services.auth.AccountPasswordVerifier;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordTimingEqualizer;
 import com.streamarr.server.services.authorization.AuthorizationDecider;
+import com.streamarr.server.services.authorization.DirectAuthorizationDeciderFixture;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -195,16 +198,23 @@ class ArchitectureTest {
           .resideInAnyPackage("com.cedarpolicy..", "com.fizzed.jne..")
           .as("Only services.authorization.cedar may import Cedar or JNE");
 
-  // The facade is the single decision point; the decider interface exists for it alone.
+  // The facade is the single decision point; only it and the engine implementation know the
+  // decider interface.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @ArchTest
   static final ArchRule onlyTheFacadeMayKnowTheDecider =
       noClasses()
           .that()
-          .resideOutsideOfPackage("..services.authorization..")
+          .doNotBelongToAnyOf(SecurityContextAuthorizationService.class)
+          .and()
+          .doNotHaveFullyQualifiedName(
+              "com.streamarr.server.services.authorization.cedar.CedarAuthorizationDecider")
           .should()
           .dependOnClassesThat()
           .areAssignableTo(AuthorizationDecider.class)
-          .as("Only SecurityContextAuthorizationService knows AuthorizationDecider");
+          .as(
+              "Only SecurityContextAuthorizationService and CedarAuthorizationDecider know"
+                  + " AuthorizationDecider");
 
   // Actions, checks, slices, and contributors stay inside the engine package so no caller can
   // name a Cedar action or supply its own authority facts.
@@ -258,6 +268,21 @@ class ArchitectureTest {
     assertThatThrownBy(() -> serviceDomainRule.check(cyclicServiceDomains))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("Cycle detected");
+  }
+
+  @Test
+  @DisplayName("Should reject authorization-module classes that bypass the facade")
+  void shouldRejectAuthorizationModuleClassesThatBypassTheFacade() {
+    var directDeciderDependency =
+        new ClassFileImporter()
+            .importClasses(DirectAuthorizationDeciderFixture.class, AuthorizationDecider.class);
+
+    assertThat(
+            onlyTheFacadeMayKnowTheDecider
+                .allowEmptyShould(true)
+                .evaluate(directDeciderDependency)
+                .hasViolation())
+        .isTrue();
   }
 
   @Test

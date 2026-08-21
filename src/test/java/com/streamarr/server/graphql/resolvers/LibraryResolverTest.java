@@ -31,6 +31,7 @@ import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
@@ -799,16 +800,17 @@ class LibraryResolverTest {
           null,
           new MutexFactoryProvider(),
           null,
+          null,
           null);
     }
 
     @Override
-    public Library addLibrary(Library library) {
+    public Library addLibrary(AuthenticatedIdentity identity, Library library) {
       return addedLibrary != null ? addedLibrary : library;
     }
 
     @Override
-    public void removeLibrary(UUID libraryId) {
+    public void removeLibrary(AuthenticatedIdentity identity, UUID libraryId) {
       assertThat(libraryId).isNotNull();
     }
 

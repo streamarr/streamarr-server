@@ -15,6 +15,7 @@ import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeFileProcessingTaskRepository;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
+import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -141,7 +142,8 @@ class FileEventProcessorTest {
             event -> {},
             new MutexFactoryProvider(),
             mock(LibraryRefreshService.class),
-            fileSystem);
+            fileSystem,
+            new FakeLibraryMutationTransaction());
 
     var taskRepository = new FakeFileProcessingTaskRepository();
     var clock = Clock.fixed(Instant.now(), ZoneId.of("UTC"));
