@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.mutation.managers;
 
 import java.util.List;
+import java.util.Optional;
 
 public record RelinquishProfileManagementPayload(
-    String profileId, List<RelinquishProfileManagementError> userErrors) {}
+    Optional<String> profileId, List<RelinquishProfileManagementError> userErrors) {}
