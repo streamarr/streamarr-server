@@ -59,10 +59,11 @@ public class AuthController {
                 setupService.isSetupComplete(), deviceAuthorizationService.isPairingEnabled()));
   }
 
-  @PostMapping("/logout")
-  public ResponseEntity<Void> logout() {
-    var identity = authorizationService.currentIdentity();
-    refreshTokenService.logout(identity.authSessionId());
+  @PostMapping("/refresh/revoke")
+  public ResponseEntity<Void> logout(
+      @RequestBody(required = false) RefreshRequest request, HttpServletRequest httpRequest) {
+    var carrier = resolveRefreshCarrier(request, httpRequest);
+    refreshTokenService.logout(carrier.refreshToken());
 
     return ResponseEntity.noContent()
         .header(HttpHeaders.SET_COOKIE, cookieWriter.expiredAccessCookie().toString())

@@ -208,6 +208,42 @@ class RefreshTokenServiceTest {
   }
 
   @Test
+  @DisplayName("Should revoke only family named by refresh token when logging out")
+  void shouldRevokeOnlyFamilyNamedByRefreshTokenWhenLoggingOut() {
+    var loggedOut = issueSession();
+    var otherDevice = issueSession();
+
+    service.logout(loggedOut.rawToken());
+
+    assertThat(sessionRepository.findById(loggedOut.session().getId()).orElseThrow().getRevokedAt())
+        .isEqualTo(currentTime.get());
+    assertThat(
+            sessionRepository.findById(otherDevice.session().getId()).orElseThrow().getRevokedAt())
+        .isNull();
+    assertThat(tokenRepository.findAll())
+        .filteredOn(token -> token.getSessionId().equals(loggedOut.session().getId()))
+        .allSatisfy(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.REVOKED));
+    assertThat(tokenRepository.findAll())
+        .filteredOn(token -> token.getSessionId().equals(otherDevice.session().getId()))
+        .allSatisfy(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.ACTIVE));
+  }
+
+  @Test
+  @DisplayName("Should keep existing refresh family live when logout refresh token unknown")
+  void shouldKeepExistingRefreshFamilyLiveWhenLogoutRefreshTokenUnknown() {
+    var existing = issueSession();
+
+    service.logout("never-issued-token");
+
+    assertThat(sessionRepository.findById(existing.session().getId()).orElseThrow().getRevokedAt())
+        .isNull();
+    assertThat(tokenRepository.findAll())
+        .filteredOn(token -> token.getSessionId().equals(existing.session().getId()))
+        .singleElement()
+        .satisfies(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.ACTIVE));
+  }
+
+  @Test
   @DisplayName("Should reject redemption without revocation when active token expired")
   void shouldRejectRedemptionWithoutRevocationWhenActiveTokenExpired() {
     var issued = issueSession();

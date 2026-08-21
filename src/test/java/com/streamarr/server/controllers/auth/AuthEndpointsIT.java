@@ -1054,33 +1054,235 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should revoke session and clear cookies when logging out")
-  void shouldRevokeSessionAndClearCookiesWhenLoggingOut() throws Exception {
+  @DisplayName("Should not expose legacy logout endpoint when authenticated")
+  void shouldNotExposeLegacyLogoutEndpointWhenAuthenticated() throws Exception {
     seedSingleProfileIdentity();
-    var login = objectMapper.readTree(loginResponseBody());
-    var accessToken = login.get("accessToken").asString();
+    var accessToken = loginAndReadField("accessToken");
 
-    var logoutResponse =
-        mockMvc
-            .perform(post("/api/auth/logout").header("Authorization", "Bearer " + accessToken))
-            .andExpect(status().isNoContent())
-            .andReturn()
-            .getResponse();
-    assertThat(logoutResponse.getCookie("streamarr_access").getMaxAge()).isZero();
-    assertThat(logoutResponse.getCookie("streamarr_refresh").getMaxAge()).isZero();
+    mockMvc
+        .perform(post("/api/auth/logout").header("Authorization", "Bearer " + accessToken))
+        .andExpect(status().isNotFound());
+  }
 
-    // Logout revokes refresh and playback authority immediately. The short-lived API token keeps
-    // its bounded TTL.
+  @Test
+  @DisplayName("Should revoke only presented refresh family when logging out")
+  void shouldRevokeOnlyPresentedRefreshFamilyWhenLoggingOut() throws Exception {
+    seedSingleProfileIdentity();
+    var loggedOutDevice = objectMapper.readTree(loginResponseBody());
+    var otherDevice = objectMapper.readTree(loginResponseBody());
+
     mockMvc
         .perform(
-            get("/api/images/{id}", UUID.randomUUID())
-                .header("Authorization", "Bearer " + accessToken))
-        .andExpect(status().isNotFound());
+            post("/api/auth/refresh/revoke")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(loggedOutDevice.get("refreshToken").asString())))
+        .andExpect(status().isNoContent());
     mockMvc
         .perform(
             post("/api/auth/refresh")
                 .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(loggedOutDevice.get("refreshToken").asString())))
+        .andExpect(status().isUnauthorized());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(otherDevice.get("refreshToken").asString())))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("Should keep existing access token usable when logging out")
+  void shouldKeepExistingAccessTokenUsableWhenLoggingOut() throws Exception {
+    seedSingleProfileIdentity();
+    var login = objectMapper.readTree(loginResponseBody());
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .contentType(MediaType.APPLICATION_JSON)
                 .content(refreshBody(login.get("refreshToken").asString())))
+        .andExpect(status().isNoContent());
+
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .header("Authorization", "Bearer " + login.get("accessToken").asString()))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("Should revoke refresh family when browser csrf token present")
+  void shouldRevokeRefreshFamilyWhenBrowserCsrfTokenPresent() throws Exception {
+    seedSingleProfileIdentity();
+    var loginResponse = cookieModeLogin();
+    var refreshCookie = loginResponse.getCookie(AuthCookies.REFRESH_COOKIE);
+    var csrfCookie = loginResponse.getCookie(AuthCookies.CSRF_COOKIE);
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .cookie(refreshCookie, csrfCookie)
+                .header(AuthCookies.CSRF_HEADER, csrfCookie.getValue()))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(refreshCookie.getValue())))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  @DisplayName("Should clear auth cookies when browser logout succeeds")
+  void shouldClearAuthCookiesWhenBrowserLogoutSucceeds() throws Exception {
+    seedSingleProfileIdentity();
+    var loginResponse = cookieModeLogin();
+    var refreshCookie = loginResponse.getCookie(AuthCookies.REFRESH_COOKIE);
+    var csrfCookie = loginResponse.getCookie(AuthCookies.CSRF_COOKIE);
+
+    var logoutResponse =
+        mockMvc
+            .perform(
+                post("/api/auth/refresh/revoke")
+                    .cookie(refreshCookie, csrfCookie)
+                    .header(AuthCookies.CSRF_HEADER, csrfCookie.getValue()))
+            .andExpect(status().isNoContent())
+            .andReturn()
+            .getResponse();
+
+    assertThat(logoutResponse.getCookie(AuthCookies.ACCESS_COOKIE).getMaxAge()).isZero();
+    assertThat(logoutResponse.getCookie(AuthCookies.REFRESH_COOKIE).getMaxAge()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should reject browser logout and keep refresh family live when csrf token missing")
+  void shouldRejectBrowserLogoutAndKeepRefreshFamilyLiveWhenCsrfTokenMissing() throws Exception {
+    seedSingleProfileIdentity();
+    var refreshCookie = cookieModeLogin().getCookie(AuthCookies.REFRESH_COOKIE);
+
+    mockMvc
+        .perform(post("/api/auth/refresh/revoke").cookie(refreshCookie))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("CSRF_TOKEN_REQUIRED"));
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(refreshCookie.getValue())))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject browser logout and keep refresh family live when csrf token mismatched")
+  void shouldRejectBrowserLogoutAndKeepRefreshFamilyLiveWhenCsrfTokenMismatched() throws Exception {
+    seedSingleProfileIdentity();
+    var loginResponse = cookieModeLogin();
+    var refreshCookie = loginResponse.getCookie(AuthCookies.REFRESH_COOKIE);
+    var csrfCookie = loginResponse.getCookie(AuthCookies.CSRF_COOKIE);
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .cookie(refreshCookie, csrfCookie)
+                .header(AuthCookies.CSRF_HEADER, "mismatched-token"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("CSRF_TOKEN_REQUIRED"));
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(refreshCookie.getValue())))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("Should keep other refresh family live when logout repeated")
+  void shouldKeepOtherRefreshFamilyLiveWhenLogoutRepeated() throws Exception {
+    seedSingleProfileIdentity();
+    var refreshToken = loginAndReturnRefreshToken();
+    var otherRefreshToken = loginAndReturnRefreshToken();
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(refreshToken)))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(refreshToken)))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(otherRefreshToken)))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("Should keep existing refresh family live when logout token unknown")
+  void shouldKeepExistingRefreshFamilyLiveWhenLogoutTokenUnknown() throws Exception {
+    seedSingleProfileIdentity();
+    var existingRefreshToken = loginAndReturnRefreshToken();
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody("never-issued-token")))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(existingRefreshToken)))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("Should reject logout when refresh credential missing")
+  void shouldRejectLogoutWhenRefreshCredentialMissing() throws Exception {
+    mockMvc
+        .perform(post("/api/auth/refresh/revoke"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
+  }
+
+  @Test
+  @DisplayName("Should reject logout when refresh credential blank")
+  void shouldRejectLogoutWhenRefreshCredentialBlank() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody("")))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
+  }
+
+  @Test
+  @DisplayName("Should revoke family when rotated predecessor presented")
+  void shouldRevokeFamilyWhenRotatedPredecessorPresented() throws Exception {
+    seedSingleProfileIdentity();
+    var predecessor = loginAndReturnRefreshToken();
+    var successor = redeemAndReturnRefreshToken(predecessor);
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(predecessor)))
+        .andExpect(status().isNoContent());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(successor)))
         .andExpect(status().isUnauthorized());
   }
 
