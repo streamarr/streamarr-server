@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.mutation.lifecycle;
 
 import java.util.List;
+import java.util.Optional;
 
 public record ForceDeleteProfilePayload(
-    String profileId, List<ForceDeleteProfileError> userErrors) {}
+    Optional<String> profileId, List<ForceDeleteProfileError> userErrors) {}
