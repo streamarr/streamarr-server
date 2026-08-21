@@ -31,6 +31,16 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   }
 
   @Override
+  public boolean lockById(UUID profileId) {
+    return existsById(profileId);
+  }
+
+  @Override
+  public boolean lockByShareId(UUID shareId) {
+    return shares.findById(shareId).map(share -> existsById(share.getProfileId())).orElse(false);
+  }
+
+  @Override
   public Optional<ProfilePolicySnapshot> lockPolicyById(UUID profileId) {
     return findById(profileId)
         .map(

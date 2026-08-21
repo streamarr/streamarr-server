@@ -91,7 +91,7 @@ public class CredentialIssuanceService {
                       .recipientEmail(command.recipientEmail().strip())
                       .householdId(command.householdId())
                       .householdName(household.getName())
-                      .householdRole(emptyHousehold ? HouseholdRole.ADMIN : command.householdRole())
+                      .householdRole(invitedRole(profile, command.householdRole(), emptyHousehold))
                       .mode(mode)
                       .profileId(profile == null ? null : profile.getId())
                       .profileName(
@@ -111,6 +111,17 @@ public class CredentialIssuanceService {
           return new IssuedInvitation(invitation, issued.code());
         },
         _ -> Optional.empty());
+  }
+
+  private static HouseholdRole invitedRole(
+      Profile profile, HouseholdRole requestedRole, boolean emptyHousehold) {
+    if (emptyHousehold) {
+      return HouseholdRole.ADMIN;
+    }
+    if (profile != null && profile.isRestricted()) {
+      return HouseholdRole.MEMBER;
+    }
+    return requestedRole;
   }
 
   /** Every issue-time validation, in answer order; empty means the invitation may be written. */
@@ -227,7 +238,10 @@ public class CredentialIssuanceService {
   }
 
   private static List<UUID> reofferHouseholdIds(IssueInvitationCommand command) {
-    return command.reofferHouseholdIds() == null ? List.of() : command.reofferHouseholdIds();
+    if (command.mode() != AccountInvitationMode.CONNECT || command.reofferHouseholdIds() == null) {
+      return List.of();
+    }
+    return command.reofferHouseholdIds().stream().distinct().toList();
   }
 
   private static ProfileKind kindFor(IssueInvitationCommand command) {

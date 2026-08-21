@@ -132,6 +132,10 @@ public class AccountInvitationCeremonyService {
     try {
       return transactionTemplate.execute(
           _ -> {
+            if (invitation.getMode() == AccountInvitationMode.CONNECT
+                && !profileRepository.lockById(invitation.getProfileId())) {
+              throw new InvalidOneTimeCodeException();
+            }
             if (!invitationRepository.tryDecide(
                 invitation.getId(), AccountInvitationStatus.ACCEPTED, clock.instant())) {
               throw new InvalidOneTimeCodeException();
