@@ -104,6 +104,64 @@ class CedarEngineSelfCheckTest {
   }
 
   @Test
+  @DisplayName("Should fail when policy validation reports warnings")
+  void shouldFailWhenPolicyValidationReportsWarnings() {
+    var engine =
+        new StubEngine(
+            _ ->
+                new ValidationResponse(
+                    ValidationResponse.SuccessOrFailure.Success,
+                    Optional.of(List.of()),
+                    Optional.of(
+                        List.of(
+                            new ValidationResponse.ValidationError(
+                                "p",
+                                new DetailedError(
+                                    "warning",
+                                    Optional.empty(),
+                                    Optional.empty(),
+                                    Optional.empty(),
+                                    Optional.empty(),
+                                    Optional.empty(),
+                                    Optional.empty())))),
+                    Optional.empty(),
+                    Optional.empty()),
+            UnaryOperator.identity());
+
+    assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
+        .isInstanceOf(CedarSelfCheckException.class)
+        .hasMessageContaining("diagnostics");
+  }
+
+  @Test
+  @DisplayName("Should fail when the validation response reports warnings")
+  void shouldFailWhenValidationResponseReportsWarnings() {
+    var engine =
+        new StubEngine(
+            _ ->
+                new ValidationResponse(
+                    ValidationResponse.SuccessOrFailure.Success,
+                    Optional.of(List.of()),
+                    Optional.of(List.of()),
+                    Optional.empty(),
+                    Optional.of(
+                        List.of(
+                            new DetailedError(
+                                "warning",
+                                Optional.empty(),
+                                Optional.empty(),
+                                Optional.empty(),
+                                Optional.empty(),
+                                Optional.empty(),
+                                Optional.empty())))),
+            UnaryOperator.identity());
+
+    assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
+        .isInstanceOf(CedarSelfCheckException.class)
+        .hasMessageContaining("diagnostics");
+  }
+
+  @Test
   @DisplayName("Should fail when the engine cannot evaluate the self-check request")
   void shouldFailWhenEngineCannotEvaluateSelfCheckRequest() {
     var engine =
@@ -148,6 +206,24 @@ class CedarEngineSelfCheckTest {
                                             Optional.empty())))))),
                     Optional.empty(),
                     new ArrayList<>()));
+
+    assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
+        .isInstanceOf(CedarSelfCheckException.class)
+        .hasMessageContaining("diagnostics");
+  }
+
+  @Test
+  @DisplayName("Should fail when the authorization response reports warnings")
+  void shouldFailWhenAuthorizationResponseReportsWarnings() {
+    var engine =
+        new StubEngine(
+            StubEngine::passThroughValidation,
+            response ->
+                new AuthorizationResponse(
+                    response.type,
+                    response.success,
+                    Optional.empty(),
+                    new ArrayList<>(List.of("warning"))));
 
     assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
         .isInstanceOf(CedarSelfCheckException.class)

@@ -73,6 +73,16 @@ public final class CedarEngineSelfCheck {
       if (!validation.validationPassed()) {
         throw new CedarSelfCheckException("Cedar self-check policies failed validation");
       }
+      var validationSuccess = validation.success.orElseThrow();
+      if (!validationSuccess.validationWarnings.isEmpty()) {
+        throw new CedarSelfCheckException(
+            "Cedar self-check policy validation reported diagnostics: "
+                + validationSuccess.validationWarnings);
+      }
+      if (!validation.warnings.isEmpty()) {
+        throw new CedarSelfCheckException(
+            "Cedar self-check validation reported diagnostics: " + validation.warnings);
+      }
       return new Result(
           decide(PERMITTED_ACCOUNT, schema, policies), !decide(STRANGER_ACCOUNT, schema, policies));
     } catch (AuthException e) {
@@ -89,6 +99,10 @@ public final class CedarEngineSelfCheck {
         new AuthorizationRequest(
             principal, SELF_CHECK_ACTION, SERVER, new Context(), Optional.of(schema), true);
     var response = engine.isAuthorized(request, policies, entities);
+    if (!response.warnings.isEmpty()) {
+      throw new CedarSelfCheckException(
+          "Cedar self-check evaluation reported diagnostics: " + response.warnings);
+    }
     var success =
         response.success.orElseThrow(
             () -> new CedarSelfCheckException("Cedar self-check evaluation failed: " + response));
