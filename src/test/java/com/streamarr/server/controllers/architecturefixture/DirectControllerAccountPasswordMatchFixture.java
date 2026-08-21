@@ -9,6 +9,7 @@ public class DirectControllerAccountPasswordMatchFixture {
 
   private final PasswordEncoder passwordEncoder;
 
+  @SuppressWarnings("java:S1144")
   private boolean verify(String password, String passwordHash) {
     return passwordEncoder.matches(password, passwordHash);
   }

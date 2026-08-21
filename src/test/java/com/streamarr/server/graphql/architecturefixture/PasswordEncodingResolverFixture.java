@@ -9,6 +9,7 @@ public class PasswordEncodingResolverFixture {
 
   private final PasswordEncoder passwordEncoder;
 
+  @SuppressWarnings("java:S1144")
   private String hash(String password) {
     return passwordEncoder.encode(password);
   }

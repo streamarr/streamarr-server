@@ -9,6 +9,7 @@ public class DirectAccountPasswordMatchFixture {
 
   private final Argon2PasswordEncoder passwordEncoder;
 
+  @SuppressWarnings("java:S1144")
   private boolean verify(String password, String passwordHash) {
     return passwordEncoder.matches(password, passwordHash);
   }
