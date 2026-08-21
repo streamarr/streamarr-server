@@ -58,6 +58,9 @@ public class PasswordEncoderConfig {
 
     @Override
     public boolean matches(CharSequence rawPassword, String encodedPassword) {
+      if (encodedPassword.isEmpty()) {
+        throw new IllegalArgumentException("Encoded password payload is empty");
+      }
       delegate.upgradeEncoding(encodedPassword);
       return delegate.matches(rawPassword, encodedPassword);
     }

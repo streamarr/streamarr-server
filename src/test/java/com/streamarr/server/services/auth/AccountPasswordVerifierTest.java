@@ -23,6 +23,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Tag("UnitTest")
@@ -120,6 +122,22 @@ class AccountPasswordVerifierTest {
     var productionVerifier =
         new AccountPasswordVerifier(productionEncoder, productionEqualizer, throttle);
     var account = enabledAccount(MALFORMED_BCRYPT_HASH);
+
+    assertThatThrownBy(() -> productionVerifier.verify(account, CORRECT_PASSWORD))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(productionEqualizer.burns()).isEqualTo(1);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"{argon2id}", "{bcrypt}"})
+  @DisplayName("Should reject password after one full-cost burn when recognized hash payload empty")
+  void shouldRejectPasswordAfterOneFullCostBurnWhenRecognizedHashPayloadEmpty(String passwordHash) {
+    var productionEncoder = productionPasswordEncoder();
+    var productionEqualizer = new CountingTimingEqualizer(productionEncoder);
+    var productionVerifier =
+        new AccountPasswordVerifier(productionEncoder, productionEqualizer, throttle);
+    var account = enabledAccount(passwordHash);
 
     assertThatThrownBy(() -> productionVerifier.verify(account, CORRECT_PASSWORD))
         .isInstanceOf(InvalidCredentialsException.class);
