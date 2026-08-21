@@ -24,6 +24,7 @@ import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -225,7 +226,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
                   .isNotEqualTo(originalSmall.getAmbientColors());
             });
     assertThatThrownBy(() -> imageService.readImageFile(originalSmall))
-        .isInstanceOf(java.io.IOException.class);
+        .isInstanceOf(IOException.class);
   }
 
   @Test
