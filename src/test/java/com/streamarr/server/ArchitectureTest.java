@@ -10,6 +10,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.controllers.architecturefixture.DirectControllerAccountPasswordMatchFixture;
 import com.streamarr.server.graphql.architecturefixture.PasswordEncodingResolverFixture;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
@@ -271,7 +272,10 @@ class ArchitectureTest {
         .resideInAPackage("com.streamarr.server..")
         .and()
         .doNotBelongToAnyOf(
-            AccountPasswordVerifier.class, LoginService.class, PasswordTimingEqualizer.class)
+            AccountPasswordVerifier.class,
+            LoginService.class,
+            PasswordEncoderConfig.class,
+            PasswordTimingEqualizer.class)
         .should()
         .callMethodWhere(
             target(owner(assignableTo(PasswordEncoder.class)))
@@ -279,8 +283,8 @@ class ArchitectureTest {
                 .and(target(rawParameterTypes(CharSequence.class, String.class))))
         .as(
             "Authenticated Account password checks must go through AccountPasswordVerifier; only"
-                + " login (distinct email+source throttle) and the timing equalizer compare"
-                + " directly");
+                + " login (distinct email+source throttle), password-encoder composition, and the"
+                + " timing equalizer compare directly");
   }
 
   private static ArchRule graphqlMustNotOwnPasswordPolicy() {

@@ -30,40 +30,41 @@ public class PasswordEncoderConfig {
             properties.memoryKib(),
             properties.iterations());
     var encoders =
-        Map.<String, PasswordEncoder>of(ARGON2_ID, argon2, "bcrypt", new BCryptPasswordEncoder());
+        Map.of(
+            ARGON2_ID,
+            strictMatching(argon2),
+            "bcrypt",
+            strictMatching(new BCryptPasswordEncoder()));
 
-    return new StrictDelegatingPasswordEncoder(ARGON2_ID, encoders);
+    return new DelegatingPasswordEncoder(ARGON2_ID, encoders);
   }
 
-  private static final class StrictDelegatingPasswordEncoder extends DelegatingPasswordEncoder {
+  private static PasswordEncoder strictMatching(PasswordEncoder encoder) {
+    return new StrictMatchingPasswordEncoder(encoder);
+  }
 
-    private static final String ID_PREFIX = "{";
-    private static final String ID_SUFFIX = "}";
+  private static final class StrictMatchingPasswordEncoder implements PasswordEncoder {
 
-    private final Map<String, PasswordEncoder> encoders;
+    private final PasswordEncoder delegate;
 
-    private StrictDelegatingPasswordEncoder(
-        String idForEncode, Map<String, PasswordEncoder> encoders) {
-      super(idForEncode, encoders);
-      this.encoders = Map.copyOf(encoders);
+    private StrictMatchingPasswordEncoder(PasswordEncoder delegate) {
+      this.delegate = delegate;
     }
 
     @Override
-    protected boolean matchesNonNull(String rawPassword, String encodedPassword) {
-      validateRecognizedEncoding(encodedPassword);
-      return super.matchesNonNull(rawPassword, encodedPassword);
+    public String encode(CharSequence rawPassword) {
+      return delegate.encode(rawPassword);
     }
 
-    private void validateRecognizedEncoding(String encodedPassword) {
-      var suffixIndex = encodedPassword.indexOf(ID_SUFFIX);
-      if (!encodedPassword.startsWith(ID_PREFIX) || suffixIndex < 0) {
-        return;
-      }
-      var encoder = encoders.get(encodedPassword.substring(ID_PREFIX.length(), suffixIndex));
-      if (encoder == null) {
-        return;
-      }
-      encoder.upgradeEncoding(encodedPassword.substring(suffixIndex + ID_SUFFIX.length()));
+    @Override
+    public boolean matches(CharSequence rawPassword, String encodedPassword) {
+      delegate.upgradeEncoding(encodedPassword);
+      return delegate.matches(rawPassword, encodedPassword);
+    }
+
+    @Override
+    public boolean upgradeEncoding(String encodedPassword) {
+      return delegate.upgradeEncoding(encodedPassword);
     }
   }
 }
