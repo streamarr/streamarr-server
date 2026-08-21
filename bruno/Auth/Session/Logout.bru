@@ -9,9 +9,27 @@ meta {
 }
 
 post {
-  url: {{BASE_URL}}/api/auth/logout
-  body: none
-  auth: inherit
+  url: {{BASE_URL}}/api/auth/refresh/revoke
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+  {
+    "refreshToken": "{{REFRESH_TOKEN}}"
+  }
+}
+
+script:pre-request {
+  const csrfToken =
+    bru.cookies.get("__Host-XSRF-TOKEN") || bru.cookies.get("XSRF-TOKEN");
+  if (csrfToken) {
+    req.setHeader("X-XSRF-TOKEN", csrfToken);
+  }
 }
 
 script:post-response {
