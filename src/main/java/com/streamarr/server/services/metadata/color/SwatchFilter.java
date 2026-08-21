@@ -28,9 +28,8 @@ interface SwatchFilter {
   float SKIN_HUE_MAX = 37f;
   float SKIN_MAX_SATURATION = 0.82f;
 
-  SwatchFilter ALLOW_ALL = (rgb, hsl) -> true;
-  SwatchFilter DEFAULT =
-      (rgb, hsl) -> !isNearWhite(hsl) && !isNearBlack(hsl) && !isNearSkinTone(hsl);
+  SwatchFilter ALLOW_ALL = (_, _) -> true;
+  SwatchFilter DEFAULT = (_, hsl) -> !isNearWhite(hsl) && !isNearBlack(hsl) && !isNearSkinTone(hsl);
 
   boolean isAllowed(int rgb, float[] hsl);
 

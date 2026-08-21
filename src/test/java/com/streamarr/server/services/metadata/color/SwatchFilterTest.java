@@ -2,11 +2,12 @@ package com.streamarr.server.services.metadata.color;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -46,15 +47,15 @@ class SwatchFilterTest {
     assertThat(SwatchFilter.DEFAULT.isAllowed(0, new float[] {hue, 0.5f, 0.5f})).isFalse();
   }
 
-  @Test
+  @ParameterizedTest
+  @MethodSource("huesOutsideSkinToneRange")
   @DisplayName("Should allow skin tone when hue is outside inclusive range")
-  void shouldAllowSkinToneWhenHueIsOutsideInclusiveRange() {
-    assertThat(List.of(Math.nextDown(10f), Math.nextUp(37f)))
-        .hasSize(2)
-        .allSatisfy(
-            hue ->
-                assertThat(SwatchFilter.DEFAULT.isAllowed(0, new float[] {hue, 0.5f, 0.5f}))
-                    .isTrue());
+  void shouldAllowSkinToneWhenHueIsOutsideInclusiveRange(float hue) {
+    assertThat(SwatchFilter.DEFAULT.isAllowed(0, new float[] {hue, 0.5f, 0.5f})).isTrue();
+  }
+
+  private static Stream<Float> huesOutsideSkinToneRange() {
+    return Stream.of(Math.nextDown(10f), Math.nextUp(37f));
   }
 
   @Test
