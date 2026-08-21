@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Function;
 
 /**
@@ -75,6 +76,14 @@ public final class ListConnections {
       return new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
     } catch (IllegalArgumentException _) {
       throw new InvalidCursorException("Cursor is not valid.");
+    }
+  }
+
+  public static UUID decodeUuid(String cursor) {
+    try {
+      return UUID.fromString(decode(cursor));
+    } catch (IllegalArgumentException _) {
+      throw new InvalidCursorException("Cursor does not identify a UUID.");
     }
   }
 

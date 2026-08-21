@@ -19,6 +19,7 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.graphql.dataloaders.ImageDataLoader;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -55,6 +56,7 @@ class ImageFieldResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
+  @MockitoBean private UserAccountRepository userAccountRepository;
   @MockitoBean private ImageRepository imageRepository;
   @MockitoBean private MovieService movieService;
   @MockitoBean private SeriesService seriesService;

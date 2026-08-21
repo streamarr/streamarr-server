@@ -26,6 +26,7 @@ import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -98,6 +99,8 @@ class LibraryResolverTest {
   @Autowired private FakeAuthorizationDecider authorizationDecider;
 
   @Autowired private AuthorizationService authorizationService;
+
+  @MockitoBean private UserAccountRepository userAccountRepository;
 
   @MockitoBean private LibraryRepository libraryRepository;
 

@@ -9,6 +9,8 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
+import com.streamarr.server.fakes.FakeUserAccountRepository;
+import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import java.time.Instant;
@@ -29,8 +31,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 class AuthorizationServiceTest {
 
   private final FakeAuthorizationDecider decider = new FakeAuthorizationDecider();
+  private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
   private final AuthorizationService authorizationService =
-      new SecurityContextAuthorizationService(decider);
+      new SecurityContextAuthorizationService(decider, accounts);
 
   private final UUID accountId = UUID.randomUUID();
   private final UUID householdId = UUID.randomUUID();
@@ -90,6 +93,32 @@ class AuthorizationServiceTest {
 
     assertThat(decision).isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
     assertThat(decider.recordedIntents()).containsExactly(new Intent.AddLibrary());
+  }
+
+  @Test
+  @DisplayName("Should decide a stored proposal from its Account's current relationships")
+  void shouldDecideStoredProposalFromAccountsCurrentRelationships() {
+    var account = accounts.save(AccountFixture.defaultAccountBuilder().build());
+
+    var decision =
+        authorizationService.decideForAccount(
+            account.getId(), new Intent.OfferProfileShare(UUID.randomUUID()));
+
+    assertThat(decision).isEqualTo(new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+    assertThat(decider.recordedIntents())
+        .singleElement()
+        .isInstanceOf(Intent.OfferProfileShare.class);
+  }
+
+  @Test
+  @DisplayName("Should deny a stored proposal when its Account no longer exists")
+  void shouldDenyStoredProposalWhenItsAccountNoLongerExists() {
+    var decision =
+        authorizationService.decideForAccount(
+            UUID.randomUUID(), new Intent.OfferProfileShare(UUID.randomUUID()));
+
+    assertThat(decision).isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
+    assertThat(decider.recordedIntents()).isEmpty();
   }
 
   @Test

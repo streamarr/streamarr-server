@@ -39,6 +39,7 @@ namespace Streamarr {
   entity Share {
     structural?: Bool,
     offeredByPrincipal?: Bool,
+    principalMemberOfTarget?: Bool,
     principalAdminOfTarget?: Bool,
     directlyManagedByPrincipal?: Bool,
     sovereignOverProfileByPrincipal?: Bool,

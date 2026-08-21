@@ -45,8 +45,8 @@ when {
    (principal has serverAdmin && principal.serverAdmin))
 };
 
-// An active share ends by target HouseholdAdmin, a direct manager, the sovereign Account, or
-// ServerAdmin; the structural-share rule is the database's T3, which no policy can override.
+// An active non-structural share ends by target HouseholdAdmin, a direct manager who belongs to
+// that Household, the sovereign Account, or ServerAdmin. Cedar and T3 both protect structural rows.
 @id("end-active-share-as-target-admin-manager-sovereign-or-server-admin")
 permit (
   principal,
@@ -55,8 +55,10 @@ permit (
 )
 when {
   principal has enabled && principal.enabled &&
+  resource has structural && !resource.structural &&
   ((resource has principalAdminOfTarget && resource.principalAdminOfTarget) ||
-   (resource has directlyManagedByPrincipal && resource.directlyManagedByPrincipal) ||
+   (resource has directlyManagedByPrincipal && resource.directlyManagedByPrincipal &&
+    resource has principalMemberOfTarget && resource.principalMemberOfTarget) ||
    (resource has sovereignOverProfileByPrincipal && resource.sovereignOverProfileByPrincipal) ||
    (principal has serverAdmin && principal.serverAdmin))
 };
@@ -70,6 +72,7 @@ permit (
 )
 when {
   principal has enabled && principal.enabled &&
+  resource has structural && !resource.structural &&
   principal has serverAdmin && principal.serverAdmin &&
   context.freshReauthentication
 };

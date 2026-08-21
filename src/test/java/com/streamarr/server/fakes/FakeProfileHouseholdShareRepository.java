@@ -3,7 +3,11 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepositoryCustom;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.PaginationDirection;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -51,6 +55,25 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
+  public List<ProfileHouseholdShare> findHouseholdPage(
+      UUID householdId, ProfileShareStatus status, KeysetPaginationOptions options) {
+    return page(
+        database.values().stream()
+            .filter(share -> share.getHouseholdId().equals(householdId))
+            .filter(share -> share.getStatus() == status)
+            .toList(),
+        options);
+  }
+
+  @Override
+  public List<ProfileHouseholdShare> findProfilePage(
+      UUID profileId, KeysetPaginationOptions options) {
+    return page(
+        database.values().stream().filter(share -> share.getProfileId().equals(profileId)).toList(),
+        options);
+  }
+
+  @Override
   public boolean tryActivate(UUID shareId, Instant now) {
     var share =
         findById(shareId)
@@ -65,7 +88,44 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public boolean tryDecline(UUID shareId, ProfileShareStatus target, Instant now) {
+  public int retirePendingForPair(UUID profileId, UUID householdId, Instant now) {
+    var pending =
+        database.values().stream()
+            .filter(share -> share.getProfileId().equals(profileId))
+            .filter(share -> share.getHouseholdId().equals(householdId))
+            .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+            .toList();
+    pending.forEach(
+        share -> {
+          var expired = share.getExpiresAt() != null && !share.getExpiresAt().isAfter(now);
+          share.setStatus(expired ? ProfileShareStatus.EXPIRED : ProfileShareStatus.CANCELED);
+          share.setDecidedAt(now);
+        });
+    return pending.size();
+  }
+
+  @Override
+  public boolean tryInvalidate(UUID shareId, String reason, Instant now) {
+    var pending =
+        findById(shareId).filter(share -> share.getStatus() == ProfileShareStatus.PENDING);
+    pending.ifPresent(
+        share -> {
+          share.setStatus(ProfileShareStatus.INVALIDATED);
+          share.setInvalidationReason(reason);
+          share.setDecidedAt(now);
+        });
+    return pending.isPresent();
+  }
+
+  @Override
+  public Optional<ProfileHouseholdShare> findFreshById(UUID shareId) {
+    return findById(shareId);
+  }
+
+  @Override
+  public boolean tryDecline(UUID shareId, ProfileShareStatus target, Instant now)
+      throws IllegalArgumentException {
+    ProfileHouseholdShareRepositoryCustom.requireDeclineTarget(target);
     var share = findById(shareId).filter(offer -> offer.getStatus() == ProfileShareStatus.PENDING);
     share.ifPresent(
         offer -> {
@@ -107,5 +167,29 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   public boolean isActivelyShared(UUID profileId, UUID householdId) {
     return findByProfileIdAndHouseholdIdAndStatus(profileId, householdId, ProfileShareStatus.ACTIVE)
         .isPresent();
+  }
+
+  private static List<ProfileHouseholdShare> page(
+      List<ProfileHouseholdShare> matches, KeysetPaginationOptions options) {
+    var ordered =
+        matches.stream().sorted(Comparator.comparing(ProfileHouseholdShare::getId)).toList();
+    var cursorIndex =
+        options
+            .getCursorId()
+            .map(
+                cursorId ->
+                    ordered.stream().map(ProfileHouseholdShare::getId).toList().indexOf(cursorId))
+            .orElse(-1);
+    if (options.getCursorId().isPresent() && cursorIndex < 0) {
+      return List.of();
+    }
+    var pagination = options.getPaginationOptions();
+    var rowLimit = pagination.getLimit() + (options.getCursorId().isPresent() ? 2 : 1);
+    if (pagination.getPaginationDirection() == PaginationDirection.REVERSE) {
+      var to = options.getCursorId().isPresent() ? cursorIndex + 1 : ordered.size();
+      return List.copyOf(ordered.subList(Math.max(0, to - rowLimit), to));
+    }
+    var from = options.getCursorId().isPresent() ? cursorIndex : 0;
+    return List.copyOf(ordered.subList(from, Math.min(ordered.size(), from + rowLimit)));
   }
 }
