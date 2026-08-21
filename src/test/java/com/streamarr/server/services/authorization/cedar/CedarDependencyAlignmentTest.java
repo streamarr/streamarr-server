@@ -3,6 +3,7 @@ package com.streamarr.server.services.authorization.cedar;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.cedarpolicy.BasicAuthorizationEngine;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fizzed.jne.JNE;
 import com.google.common.base.Preconditions;
@@ -70,7 +71,7 @@ class CedarDependencyAlignmentTest {
             .orElseThrow();
 
     assertThat(cedarRule.path("matchPackageNames"))
-        .extracting(packageName -> packageName.asText())
+        .extracting(JsonNode::asText)
         .containsExactly("com.cedarpolicy:cedar-java");
     assertThat(cedarRule.path("groupName").asText()).isEqualTo("Cedar policy engine");
     assertThat(cedarRule.path("automerge").isBoolean()).isTrue();

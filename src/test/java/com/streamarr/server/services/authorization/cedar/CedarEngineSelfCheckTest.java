@@ -61,8 +61,9 @@ class CedarEngineSelfCheckTest {
                 authorizationResponse()
                     .decision(AuthorizationSuccessResponse.Decision.Allow)
                     .build());
+    var selfCheck = new CedarEngineSelfCheck(engine);
 
-    assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
+    assertThatThrownBy(selfCheck::run)
         .isInstanceOf(CedarSelfCheckException.class)
         .hasMessageContaining("decisions");
   }
@@ -73,8 +74,9 @@ class CedarEngineSelfCheckTest {
     var engine =
         new StubEngine(
             _ -> validationResponse().policyError("bad").build(), UnaryOperator.identity());
+    var selfCheck = new CedarEngineSelfCheck(engine);
 
-    assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
+    assertThatThrownBy(selfCheck::run)
         .isInstanceOf(CedarSelfCheckException.class)
         .hasMessageContaining("validation");
   }
@@ -85,8 +87,9 @@ class CedarEngineSelfCheckTest {
     var engine =
         new StubEngine(
             _ -> validationResponse().policyWarning("warning").build(), UnaryOperator.identity());
+    var selfCheck = new CedarEngineSelfCheck(engine);
 
-    assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
+    assertThatThrownBy(selfCheck::run)
         .isInstanceOf(CedarSelfCheckException.class)
         .hasMessageContaining("diagnostics");
   }
@@ -97,8 +100,9 @@ class CedarEngineSelfCheckTest {
     var engine =
         new StubEngine(
             _ -> validationResponse().responseWarning("warning").build(), UnaryOperator.identity());
+    var selfCheck = new CedarEngineSelfCheck(engine);
 
-    assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
+    assertThatThrownBy(selfCheck::run)
         .isInstanceOf(CedarSelfCheckException.class)
         .hasMessageContaining("diagnostics");
   }
@@ -109,8 +113,9 @@ class CedarEngineSelfCheckTest {
     var engine =
         new StubEngine(
             StubEngine::passThroughValidation, _ -> authorizationResponse().failure().build());
+    var selfCheck = new CedarEngineSelfCheck(engine);
 
-    assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
+    assertThatThrownBy(selfCheck::run)
         .isInstanceOf(CedarSelfCheckException.class)
         .hasMessageContaining("evaluation failed");
   }
@@ -126,8 +131,9 @@ class CedarEngineSelfCheckTest {
                     .decision(AuthorizationSuccessResponse.Decision.Allow)
                     .evaluationError("boom")
                     .build());
+    var selfCheck = new CedarEngineSelfCheck(engine);
 
-    assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
+    assertThatThrownBy(selfCheck::run)
         .isInstanceOf(CedarSelfCheckException.class)
         .hasMessageContaining("diagnostics");
   }
@@ -143,8 +149,9 @@ class CedarEngineSelfCheckTest {
                     .decision(AuthorizationSuccessResponse.Decision.Allow)
                     .warning("warning")
                     .build());
+    var selfCheck = new CedarEngineSelfCheck(engine);
 
-    assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
+    assertThatThrownBy(selfCheck::run)
         .isInstanceOf(CedarSelfCheckException.class)
         .hasMessageContaining("diagnostics");
   }
@@ -158,8 +165,9 @@ class CedarEngineSelfCheckTest {
               throw new AuthException("native bridge lost");
             },
             UnaryOperator.identity());
+    var selfCheck = new CedarEngineSelfCheck(engine);
 
-    assertThatThrownBy(() -> new CedarEngineSelfCheck(engine).run())
+    assertThatThrownBy(selfCheck::run)
         .isInstanceOf(CedarSelfCheckException.class)
         .hasMessageContaining("could not evaluate")
         .hasCauseInstanceOf(AuthException.class);
