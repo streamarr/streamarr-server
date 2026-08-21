@@ -29,8 +29,41 @@ public class PasswordEncoderConfig {
             properties.parallelism(),
             properties.memoryKib(),
             properties.iterations());
+    var encoders =
+        Map.<String, PasswordEncoder>of(ARGON2_ID, argon2, "bcrypt", new BCryptPasswordEncoder());
 
-    return new DelegatingPasswordEncoder(
-        ARGON2_ID, Map.of(ARGON2_ID, argon2, "bcrypt", new BCryptPasswordEncoder()));
+    return new StrictDelegatingPasswordEncoder(ARGON2_ID, encoders);
+  }
+
+  private static final class StrictDelegatingPasswordEncoder extends DelegatingPasswordEncoder {
+
+    private static final String ID_PREFIX = "{";
+    private static final String ID_SUFFIX = "}";
+
+    private final Map<String, PasswordEncoder> encoders;
+
+    private StrictDelegatingPasswordEncoder(
+        String idForEncode, Map<String, PasswordEncoder> encoders) {
+      super(idForEncode, encoders);
+      this.encoders = Map.copyOf(encoders);
+    }
+
+    @Override
+    protected boolean matchesNonNull(String rawPassword, String encodedPassword) {
+      validateRecognizedEncoding(encodedPassword);
+      return super.matchesNonNull(rawPassword, encodedPassword);
+    }
+
+    private void validateRecognizedEncoding(String encodedPassword) {
+      var suffixIndex = encodedPassword.indexOf(ID_SUFFIX);
+      if (!encodedPassword.startsWith(ID_PREFIX) || suffixIndex < 0) {
+        return;
+      }
+      var encoder = encoders.get(encodedPassword.substring(ID_PREFIX.length(), suffixIndex));
+      if (encoder == null) {
+        return;
+      }
+      encoder.upgradeEncoding(encodedPassword.substring(suffixIndex + ID_SUFFIX.length()));
+    }
   }
 }

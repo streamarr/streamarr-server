@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.config.security.Argon2Properties;
 import com.streamarr.server.config.security.AuthThrottleProperties;
+import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
@@ -25,6 +27,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 class AccountPasswordVerifierTest {
 
   private static final String CORRECT_PASSWORD = "correct horse battery staple";
+  private static final String MALFORMED_ARGON2_HASH = "{argon2id}not-an-argon-hash";
+  private static final String MALFORMED_BCRYPT_HASH = "{bcrypt}not-a-bcrypt-hash";
   private static final String UNREADABLE_HASH = "unreadable";
 
   private final RecordingPasswordEncoder encoder = new RecordingPasswordEncoder();
@@ -88,6 +92,36 @@ class AccountPasswordVerifierTest {
     // The unreadable hash fails its parse cheaply; the burn is the one full-cost operation.
     assertThat(equalizer.burns()).isEqualTo(1);
     assertThat(encoder.completedComparisons()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should reject a malformed Argon2 hash after exactly one full-cost burn")
+  void shouldRejectMalformedArgon2HashAfterExactlyOneFullCostBurn() {
+    var productionEncoder = productionPasswordEncoder();
+    var productionEqualizer = new CountingTimingEqualizer(productionEncoder);
+    var productionVerifier =
+        new AccountPasswordVerifier(productionEncoder, productionEqualizer, throttle);
+    var account = enabledAccount(MALFORMED_ARGON2_HASH);
+
+    assertThatThrownBy(() -> productionVerifier.verify(account, CORRECT_PASSWORD))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(productionEqualizer.burns()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should reject a malformed bcrypt hash after exactly one full-cost burn")
+  void shouldRejectMalformedBcryptHashAfterExactlyOneFullCostBurn() {
+    var productionEncoder = productionPasswordEncoder();
+    var productionEqualizer = new CountingTimingEqualizer(productionEncoder);
+    var productionVerifier =
+        new AccountPasswordVerifier(productionEncoder, productionEqualizer, throttle);
+    var account = enabledAccount(MALFORMED_BCRYPT_HASH);
+
+    assertThatThrownBy(() -> productionVerifier.verify(account, CORRECT_PASSWORD))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(productionEqualizer.burns()).isEqualTo(1);
   }
 
   @Test
@@ -166,6 +200,12 @@ class AccountPasswordVerifierTest {
         .id(UUID.randomUUID())
         .passwordHash(passwordHash)
         .build();
+  }
+
+  private static PasswordEncoder productionPasswordEncoder() {
+    return new PasswordEncoderConfig()
+        .passwordEncoder(
+            Argon2Properties.builder().memoryKib(4096).iterations(1).parallelism(1).build());
   }
 
   private static final class CountingTimingEqualizer extends PasswordTimingEqualizer {
