@@ -162,8 +162,7 @@ class CredentialIssuanceServiceTest {
         households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
     shares.share(orphan.getId(), previous.getId(), false);
 
-    var issued =
-        issueConnect(orphan.getId(), List.of(previous.getId())).fold(value -> value, _ -> null);
+    var issued = issued(issueConnect(orphan.getId(), List.of(previous.getId())));
 
     var invitation = issued.invitation();
     assertThat(invitation.getMode()).isEqualTo(AccountInvitationMode.CONNECT);
@@ -172,6 +171,53 @@ class CredentialIssuanceServiceTest {
     var rows = reoffers.findByInvitationId(invitation.getId());
     assertThat(rows).hasSize(1);
     assertThat(rows.getFirst().getHouseholdName()).isEqualTo("Cabin");
+  }
+
+  @Test
+  @DisplayName("Should ignore reoffer Households when issuing a CREATE invitation")
+  void shouldIgnoreReofferHouseholdsWhenIssuingCreateInvitation() {
+    var previous =
+        households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
+
+    var issued =
+        issued(
+            service.issueAccountInvitation(
+                identity(),
+                command().toBuilder().reofferHouseholdIds(List.of(previous.getId())).build()));
+
+    assertThat(reoffers.findByInvitationId(issued.invitation().getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should snapshot each reoffer Household once")
+  void shouldSnapshotEachReofferHouseholdOnce() {
+    var orphan =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var previous =
+        households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
+    shares.share(orphan.getId(), previous.getId(), false);
+
+    var issued = issueConnect(orphan.getId(), List.of(previous.getId(), previous.getId()));
+
+    assertThat(reoffers.findByInvitationId(issued(issued).invitation().getId())).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should snapshot MEMBER for a restricted CONNECT invitation")
+  void shouldSnapshotMemberForRestrictedConnectInvitation() {
+    var kid =
+        profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
+
+    var issued =
+        issued(
+            service.issueAccountInvitation(
+                identity(),
+                connectCommand(kid.getId(), List.of()).toBuilder()
+                    .householdRole(HouseholdRole.ADMIN)
+                    .build()));
+
+    assertThat(issued.invitation().getHouseholdRole()).isEqualTo(HouseholdRole.MEMBER);
   }
 
   @Test

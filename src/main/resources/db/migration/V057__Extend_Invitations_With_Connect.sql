@@ -10,9 +10,9 @@ ALTER TABLE account_invitation
     ADD COLUMN mode account_invitation_mode NOT NULL DEFAULT 'CREATE',
     ADD COLUMN profile_id UUID,
     ADD CONSTRAINT fk_account_invitation_profile FOREIGN KEY (profile_id)
-        REFERENCES profile (id) ON DELETE SET NULL,
+        REFERENCES profile (id) ON DELETE SET NULL NOT VALID,
     ADD CONSTRAINT chk_account_invitation_connect_names_profile
-        CHECK (mode <> 'CONNECT' OR profile_id IS NOT NULL OR status <> 'PENDING');
+        CHECK (mode <> 'CONNECT' OR profile_id IS NOT NULL OR status <> 'PENDING') NOT VALID;
 
 CREATE TABLE account_invitation_reoffer
 (
@@ -25,11 +25,9 @@ CREATE TABLE account_invitation_reoffer
     household_id     UUID,
     household_name   TEXT                     NOT NULL,
     CONSTRAINT account_invitation_reoffer_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_account_invitation_reoffer_household UNIQUE (invitation_id, household_id),
     CONSTRAINT fk_account_invitation_reoffer_invitation FOREIGN KEY (invitation_id)
         REFERENCES account_invitation (id) ON DELETE CASCADE,
     CONSTRAINT fk_account_invitation_reoffer_household FOREIGN KEY (household_id)
         REFERENCES household (id) ON DELETE SET NULL
 );
-
-CREATE INDEX idx_account_invitation_reoffer_invitation
-    ON account_invitation_reoffer (invitation_id);

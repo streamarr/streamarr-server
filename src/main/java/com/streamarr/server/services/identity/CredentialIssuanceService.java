@@ -154,7 +154,9 @@ public class CredentialIssuanceService {
       return Optional.of(new CredentialRejections.RestrictedFirstAccount());
     }
 
-    if (restricted && command.householdRole() == HouseholdRole.ADMIN) {
+    if (mode == AccountInvitationMode.CREATE
+        && restricted
+        && command.householdRole() == HouseholdRole.ADMIN) {
       // Otherwise acceptance would fail at commit (chk_restricted_account_holds_no_authority).
       return Optional.of(new CredentialRejections.RestrictedHouseholdAdmin());
     }
@@ -209,7 +211,7 @@ public class CredentialIssuanceService {
                       .recipientEmail(recipientEmail)
                       .householdId(command.householdId())
                       .householdName(household.getName())
-                      .householdRole(emptyHousehold ? HouseholdRole.ADMIN : command.householdRole())
+                      .householdRole(invitedRole(profile, command.householdRole(), emptyHousehold))
                       .mode(mode)
                       .profileId(profile == null ? null : profile.getId())
                       .profileName(profileName)
@@ -228,6 +230,17 @@ public class CredentialIssuanceService {
           return new IssuedInvitation(invitation, issued.code());
         },
         _ -> Optional.empty());
+  }
+
+  private static HouseholdRole invitedRole(
+      Profile profile, HouseholdRole requestedRole, boolean emptyHousehold) {
+    if (emptyHousehold) {
+      return HouseholdRole.ADMIN;
+    }
+    if (profile != null && profile.isRestricted()) {
+      return HouseholdRole.MEMBER;
+    }
+    return requestedRole;
   }
 
   /** CREATE has no Profile yet; CONNECT names an existing, unlinked one in that Household. */
@@ -285,7 +298,10 @@ public class CredentialIssuanceService {
   }
 
   private static List<UUID> reofferHouseholdIds(IssueInvitationCommand command) {
-    return command.reofferHouseholdIds() == null ? List.of() : command.reofferHouseholdIds();
+    if (command.mode() != AccountInvitationMode.CONNECT || command.reofferHouseholdIds() == null) {
+      return List.of();
+    }
+    return command.reofferHouseholdIds().stream().distinct().toList();
   }
 
   private static AccountInvitationMode modeFor(IssueInvitationCommand command) {
