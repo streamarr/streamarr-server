@@ -23,6 +23,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
@@ -32,11 +34,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @Tag("UnitTest")
 @SpringBootTest(
     classes = {
-      CedarEngineConfiguration.class,
-      CedarPolicyBundle.class,
-      SliceAssembler.class,
-      LivePrincipalAuthorityContributor.class,
-      CedarAuthorizationDecider.class,
+      CedarAuthorizationWiringTest.ProductionCedarModule.class,
       CedarAuthorizationWiringTest.Meters.class
     })
 @DisplayName("Cedar Authorization Wiring Tests")
@@ -45,6 +43,10 @@ class CedarAuthorizationWiringTest {
   @Autowired private AuthorizationDecider decider;
 
   @MockitoBean private UserAccountRepository userAccountRepository;
+
+  @Configuration(proxyBeanMethods = false)
+  @ComponentScan(basePackageClasses = CedarEngineConfiguration.class)
+  static class ProductionCedarModule {}
 
   @TestConfiguration(proxyBeanMethods = false)
   static class Meters {
