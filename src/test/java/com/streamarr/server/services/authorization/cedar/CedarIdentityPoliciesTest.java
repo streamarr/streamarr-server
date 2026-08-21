@@ -1188,19 +1188,14 @@ class CedarIdentityPoliciesTest {
 
       // Otherwise-allowed seats: the forbid alone flips each one.
       assertThat(decide(device, new Intent.AddLibrary())).isEqualTo(DENIED);
-      assertThat(
-              decide(
-                  device, new Intent.ViewHouseholdAdministration(account.getHouseholdId())))
+      assertThat(decide(device, new Intent.ViewHouseholdAdministration(account.getHouseholdId())))
           .isEqualTo(DENIED);
-      assertThat(decide(device, new Intent.RenameProfile(personal.getId())))
-          .isEqualTo(DENIED);
+      assertThat(decide(device, new Intent.RenameProfile(personal.getId()))).isEqualTo(DENIED);
       assertThat(decide(device, new Intent.IssueAccountInvitation())).isEqualTo(DENIED);
-      assertThat(decide(device, new Intent.OfferProfileShare(personal.getId())))
-          .isEqualTo(DENIED);
+      assertThat(decide(device, new Intent.OfferProfileShare(personal.getId()))).isEqualTo(DENIED);
       assertThat(decide(device, new Intent.InviteProfileManager(personal.getId())))
           .isEqualTo(DENIED);
-      assertThat(decide(device, new Intent.LinkDevice(UUID.randomUUID())))
-          .isEqualTo(DENIED);
+      assertThat(decide(device, new Intent.LinkDevice(UUID.randomUUID()))).isEqualTo(DENIED);
 
       // Watching is what a TV is for: picker and selection stay open.
       assertThat(decide(device, new Intent.ViewProfilePicker())).isEqualTo(ALLOWED);
@@ -1213,13 +1208,11 @@ class CedarIdentityPoliciesTest {
     void shouldLetAnyEnabledAccountApproveItsPairingGrant() {
       account.setHouseholdRole(HouseholdRole.MEMBER);
       accounts.save(account);
-      assertThat(decide(member(), new Intent.LinkDevice(UUID.randomUUID())))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(member(), new Intent.LinkDevice(UUID.randomUUID()))).isEqualTo(ALLOWED);
 
       account.setEnabled(false);
       accounts.save(account);
-      assertThat(decide(member(), new Intent.LinkDevice(UUID.randomUUID())))
-          .isEqualTo(DENIED);
+      assertThat(decide(member(), new Intent.LinkDevice(UUID.randomUUID()))).isEqualTo(DENIED);
     }
 
     @Test
@@ -1234,20 +1227,17 @@ class CedarIdentityPoliciesTest {
                   .authorizingAccountId(UUID.randomUUID())
                   .build());
 
-      assertThat(
-              decide(atHome(), new Intent.RevokeDeviceRegistration(registration.getId())))
+      assertThat(decide(atHome(), new Intent.RevokeDeviceRegistration(registration.getId())))
           .isEqualTo(ALLOWED);
 
       account.setHouseholdRole(HouseholdRole.MEMBER);
       accounts.save(account);
-      assertThat(
-              decide(atHome(), new Intent.RevokeDeviceRegistration(registration.getId())))
+      assertThat(decide(atHome(), new Intent.RevokeDeviceRegistration(registration.getId())))
           .isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(
-              decide(atHome(), new Intent.RevokeDeviceRegistration(registration.getId())))
+      assertThat(decide(atHome(), new Intent.RevokeDeviceRegistration(registration.getId())))
           .isEqualTo(ALLOWED);
       assertThat(decide(atHome(), new Intent.RevokeDeviceRegistration(UUID.randomUUID())))
           .isEqualTo(ALLOWED);
@@ -1274,18 +1264,14 @@ class CedarIdentityPoliciesTest {
           .isEqualTo(ALLOWED);
       assertThat(decide(atHome(), new Intent.UnblockEsn(account.getHouseholdId())))
           .isEqualTo(ALLOWED);
-      assertThat(
-              decide(
-                  atHome(), new Intent.ViewDeviceAdministration(account.getHouseholdId())))
+      assertThat(decide(atHome(), new Intent.ViewDeviceAdministration(account.getHouseholdId())))
           .isEqualTo(ALLOWED);
-      assertThat(decide(atHome(), new Intent.BlockEsn(visitedHouseholdId)))
-          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.BlockEsn(visitedHouseholdId))).isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       account.setHouseholdRole(HouseholdRole.MEMBER);
       accounts.save(account);
-      assertThat(decide(atHome(), new Intent.BlockEsn(visitedHouseholdId)))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.BlockEsn(visitedHouseholdId))).isEqualTo(ALLOWED);
     }
 
     @Test
@@ -1293,18 +1279,15 @@ class CedarIdentityPoliciesTest {
     void shouldReserveServerWideBlockForFreshServerAdmin() {
       var block = new Intent.BlockEsnServerWide();
 
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), block))
-          .isEqualTo(DENIED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), block)).isEqualTo(DENIED);
       assertThat(decide(atHome(), new Intent.UnblockEsnServerWide())).isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
       assertThat(decide(atHome(), block)).isEqualTo(REAUTHENTICATION_REQUIRED);
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), block))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), block)).isEqualTo(ALLOWED);
       assertThat(decide(atHome(), new Intent.UnblockEsnServerWide())).isEqualTo(ALLOWED);
-      assertThat(decide(atHome(), new Intent.ViewServerDeviceAdministration()))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.ViewServerDeviceAdministration())).isEqualTo(ALLOWED);
     }
   }
 

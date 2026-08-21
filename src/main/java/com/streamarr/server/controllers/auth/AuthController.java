@@ -8,6 +8,8 @@ import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.ChangePasswordCommand;
 import com.streamarr.server.services.auth.DeviceAuthorizationService;
+import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.LoggedOutSession;
 import com.streamarr.server.services.auth.LoginCommand;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordChangeService;
@@ -25,6 +27,7 @@ import com.streamarr.server.services.identity.TokenRefreshService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.time.Clock;
 import java.util.Arrays;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -44,6 +47,8 @@ public class AuthController {
   private final SetupService setupService;
   private final LoginService loginService;
   private final RefreshTokenService refreshTokenService;
+  private final DeviceRegistrationLifecycle deviceRegistrationLifecycle;
+  private final Clock clock;
   private final TokenRefreshService tokenRefreshService;
   private final SessionContextService sessionContextService;
   private final HouseholdContextService householdContextService;
@@ -72,7 +77,16 @@ public class AuthController {
   public ResponseEntity<Void> logout(
       @RequestBody(required = false) RefreshRequest request, HttpServletRequest httpRequest) {
     var carrier = resolveRefreshCarrier(request, httpRequest);
-    refreshTokenService.logout(carrier.refreshToken());
+    refreshTokenService
+        .logout(carrier.refreshToken())
+        .filter(LoggedOutSession::deviceBound)
+        .ifPresent(
+            session ->
+                deviceRegistrationLifecycle.revoke(
+                    session.registrationId(),
+                    session.accountId(),
+                    "device signed out",
+                    clock.instant()));
 
     return ResponseEntity.noContent()
         .header(HttpHeaders.SET_COOKIE, cookieWriter.expiredAccessCookie().toString())

@@ -171,6 +171,27 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should revoke the device registration when its refresh credential is logged out")
+  void shouldRevokeDeviceRegistrationWhenRefreshCredentialLoggedOut() throws Exception {
+    var issued = issueCode("Kitchen TV", "esn-logout");
+    approve(issued.get("userCode").asString(), approver.household().getId());
+    var tokens = pollSuccessfully(issued.get("deviceCode").asString());
+    var registration = registrationRepository.findAll().getFirst();
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh/revoke")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"refreshToken\": \"%s\", \"cookieMode\": false}"
+                        .formatted(tokens.get("refreshToken").asString())))
+        .andExpect(status().isNoContent());
+
+    assertThat(registrationRepository.findById(registration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.REVOKED);
+  }
+
+  @Test
   @DisplayName("Should leave nothing behind when an ESN is blocked, and refuse its next pairing")
   void shouldLeaveNothingBehindWhenEsnBlockedAndRefuseItsNextPairing() throws Exception {
     var issued = issueCode("Hall TV", "esn-block");
