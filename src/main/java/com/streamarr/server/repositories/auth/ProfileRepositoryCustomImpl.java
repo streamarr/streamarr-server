@@ -48,6 +48,16 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
   }
 
   @Override
+  public boolean lockById(UUID profileId) {
+    return dsl.select(PROFILE.ID)
+        .from(PROFILE)
+        .where(PROFILE.ID.eq(profileId))
+        .forUpdate()
+        .fetchOptional()
+        .isPresent();
+  }
+
+  @Override
   public boolean tryApplyPolicy(UUID profileId, ProfilePolicyTarget target) {
     return dsl.update(PROFILE)
             .set(PROFILE.KIND, jooqKind(target.kind()))

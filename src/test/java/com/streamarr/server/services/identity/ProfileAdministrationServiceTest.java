@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
@@ -241,7 +242,7 @@ class ProfileAdministrationServiceTest {
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     var stored = profiles.findById(profile.getId()).orElseThrow().getPinHash();
-    assertThat(stored).isNotBlank().isNotEqualTo("4242");
+    assertThat(stored).isNotBlank().isNotEqualTo("4242").doesNotContain("4242");
   }
 
   @Test
@@ -368,6 +369,22 @@ class ProfileAdministrationServiceTest {
         .isInstanceOf(ProfileRejections.ProfileNotFound.class);
   }
 
+  @Test
+  @DisplayName("Should fail closed when an ordinary edit unexpectedly requires reauthentication")
+  void shouldFailClosedWhenOrdinaryEditUnexpectedlyRequiresReauthentication() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.RenameProfile
+                ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
+                : allowed());
+
+    assertThatThrownBy(() -> service.renameProfile(identity(), profile.getId(), "Kai"))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
   private AuthenticatedIdentity identity() {
     return authorization.currentIdentity();
   }
@@ -395,7 +412,7 @@ class ProfileAdministrationServiceTest {
   private static final class PlainEncoder implements PasswordEncoder {
     @Override
     public String encode(CharSequence rawPassword) {
-      return "hashed:" + rawPassword;
+      return "encoded-pin";
     }
 
     @Override

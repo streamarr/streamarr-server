@@ -25,6 +25,8 @@ import com.cedarpolicy.model.exception.AuthException;
 import com.cedarpolicy.model.policy.PolicySet;
 import com.cedarpolicy.value.PrimBool;
 import com.cedarpolicy.value.PrimString;
+import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
@@ -38,6 +40,7 @@ import com.streamarr.server.services.authorization.SecurityContextAuthorizationS
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -222,6 +225,34 @@ class CedarAuthorizationDeciderTest {
     var identity = identityFor(liveAccount(true, true));
 
     assertThat(failing.decide(identity, new Intent.AddLibrary()))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+    assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when policy-change planning throws")
+  void shouldFailClosedWhenPolicyChangePlanningThrows() {
+    var unavailableProfiles =
+        new FakeProfileRepository() {
+          @Override
+          public Optional<ProfilePolicySnapshot> lockPolicyById(UUID profileId) {
+            throw new IllegalStateException("database unavailable");
+          }
+        };
+    var failing =
+        new CedarAuthorizationDecider(
+            ENGINE,
+            BUNDLE,
+            new SliceAssembler(
+                ContributorStubs.allWith(new LivePrincipalAuthorityContributor(accounts))),
+            new ProfilePolicyPlanner(unavailableProfiles),
+            ContributorStubs.systemClockFreshness(),
+            meters);
+    var identity = identityFor(liveAccount(true, true), true);
+
+    assertThat(
+            failing.decide(
+                identity, new Intent.ChangeProfileKind(UUID.randomUUID(), ProfileKind.ADULT)))
         .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
     assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
   }

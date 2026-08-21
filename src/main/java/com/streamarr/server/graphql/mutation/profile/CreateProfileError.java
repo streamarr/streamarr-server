@@ -9,4 +9,5 @@ public sealed interface CreateProfileError extends MutationError
         ProfileNameTakenError,
         HomeAnchorRequiredError,
         ManagerNotEligibleError,
-        LocalManagerNotFoundError {}
+        LocalManagerNotFoundError,
+        MaximumAllowedRatingAgeInvalidError {}

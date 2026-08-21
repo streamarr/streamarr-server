@@ -68,6 +68,9 @@ public sealed interface Intent<T> {
   /** Create a Profile in a Household — its HouseholdAdmin (live, eligible) or ServerAdmin. */
   record CreateProfile(UUID householdId) implements Intent<AuthorizationUnit> {}
 
+  /** Create a Profile and grant its named local manager — live ServerAdmin work. */
+  record CreateProfileWithLocalManager(UUID householdId) implements Intent<AuthorizationUnit> {}
+
   /** Ordinary Profile edits: managers, supervising admins while shared in, ServerAdmin. */
   record RenameProfile(UUID profileId) implements Intent<AuthorizationUnit> {}
 

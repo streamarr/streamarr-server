@@ -41,6 +41,11 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
                     linkedAccountsByProfile.get(profileId)));
   }
 
+  @Override
+  public boolean lockById(UUID profileId) {
+    return findById(profileId).isPresent();
+  }
+
   /** Marks the Profile as some Account's Personal Profile for policy snapshots. */
   public void linkTo(UUID profileId, UUID accountId) {
     linkedAccountsByProfile.put(profileId, accountId);

@@ -72,6 +72,11 @@ type RestrictedAccountAuthorityError implements InputMutationError & MutationErr
     inputPath: [String!]!
 }
 
+type MaximumAllowedRatingAgeInvalidError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 "At least one enabled ServerAdmin must remain after bootstrap."
 type LastServerAdminError implements MutationError {
     message: String!
