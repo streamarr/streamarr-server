@@ -16,8 +16,9 @@ class FakeSecurityAuditEventRepositoryTest {
       new FakeSecurityAuditEventRepository();
 
   @Test
-  @DisplayName("Should return the most recently appended audit event first")
-  void shouldReturnMostRecentlyAppendedAuditEventFirst() {
+  @DisplayName(
+      "Should return the most recently appended audit event first when reading the newest page")
+  void shouldReturnMostRecentlyAppendedAuditEventFirstWhenReadingNewestPage() {
     repository.append(entry("first"));
     repository.append(entry("second"));
 
@@ -27,8 +28,8 @@ class FakeSecurityAuditEventRepositoryTest {
   }
 
   @Test
-  @DisplayName("Should use the audit identifier to seek within an equal timestamp")
-  void shouldUseAuditIdentifierToSeekWithinEqualTimestamp() {
+  @DisplayName("Should include an equal-timestamp row when the cursor identifier sorts after it")
+  void shouldIncludeEqualTimestampRowWhenCursorIdentifierSortsAfterIt() {
     repository.append(entry("same timestamp"));
     var record = repository.pageNewestFirst(null, null, 1).getFirst();
     var cursorAfterRecord = UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff");

@@ -95,42 +95,10 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should tear the Household down leaving nothing stranded")
-  void shouldTearHouseholdDownLeavingNothingStranded() throws Exception {
-    // A resident orphan Profile, a hosted visit, and a registered TV all fall with it.
-    var state =
-        transactionTemplate.execute(
-            _ -> {
-              var orphan =
-                  profileRepository.saveAndFlush(
-                      ProfileFixture.defaultProfileBuilder()
-                          .householdId(doomed.household().getId())
-                          .name("Orphan")
-                          .build());
-              profileManagerRepository.saveAndFlush(
-                  ProfileManager.builder()
-                      .accountId(doomed.account().getId())
-                      .profileId(orphan.getId())
-                      .build());
-              var visit =
-                  shareRepository.saveAndFlush(
-                      ProfileHouseholdShare.builder()
-                          .profileId(admin.account().getPersonalProfileId())
-                          .householdId(doomed.household().getId())
-                          .status(ProfileShareStatus.ACTIVE)
-                          .build());
-              var registration =
-                  registrationRepository.saveAndFlush(
-                      DeviceRegistration.builder()
-                          .esn("esn-doomed")
-                          .displayName("TV")
-                          .householdId(doomed.household().getId())
-                          .authorizingAccountId(admin.account().getId())
-                          .build());
-              return new Object[] {orphan.getId(), visit.getId(), registration.getId()};
-            });
+  @DisplayName("Should report teardown preflight when the caller may view the Household")
+  void shouldReportTeardownPreflightWhenCallerMayViewHousehold() throws Exception {
+    seedTeardownArtifacts();
 
-    // The preflight names what teardown will take with it.
     graphql(
             authTestSupport.accountBearer(admin),
             """
@@ -141,8 +109,11 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.teardownPreflight.accountCount").value(1))
         .andExpect(jsonPath("$.data.teardownPreflight.unlinkedProfiles[0].name").value("Orphan"));
+  }
 
-    // A stale ceremony earns the typed answer; the fresh one with a disposition tears down.
+  @Test
+  @DisplayName("Should require reauthentication when teardown uses a stale ceremony")
+  void shouldRequireReauthenticationWhenTeardownUsesStaleCeremony() throws Exception {
     graphql(
             authTestSupport.accountBearer(admin),
             tearDownMutation(doomed.household().getId(), admin.household().getId()))
@@ -150,25 +121,33 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.tearDownHousehold.userErrors[0].__typename")
                 .value("ReauthenticationRequiredError"));
-    graphql(
-            authTestSupport.freshAccountBearer(admin),
-            tearDownMutation(doomed.household().getId(), admin.household().getId()))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.tearDownHousehold.userErrors").isEmpty());
+  }
+
+  @Test
+  @DisplayName("Should delete Household artifacts when a transfer teardown succeeds")
+  void shouldDeleteHouseholdArtifactsWhenTransferTeardownSucceeds() throws Exception {
+    var artifacts = seedTeardownArtifacts();
+
+    performSuccessfulTransferTeardown();
 
     assertThat(householdRepository.findById(doomed.household().getId())).isEmpty();
-    assertThat(profileRepository.findById((UUID) state[0])).isEmpty();
-    // The visit ended in the transaction, then fell with the Household row itself.
-    assertThat(shareRepository.findById((UUID) state[1])).isEmpty();
-    assertThat(registrationRepository.findById((UUID) state[2]).orElseThrow().getStatus())
+    assertThat(profileRepository.findById(artifacts.orphanProfileId())).isEmpty();
+    assertThat(shareRepository.findById(artifacts.hostedVisitId())).isEmpty();
+    assertThat(
+            registrationRepository
+                .findById(artifacts.householdRegistrationId())
+                .orElseThrow()
+                .getStatus())
         .isEqualTo(DeviceRegistrationStatus.REVOKED);
-    // The final Account arrived in the destination with its Personal Profile.
     var moved = userAccountRepository.findById(doomed.account().getId()).orElseThrow();
     assertThat(moved.getHouseholdId()).isEqualTo(admin.household().getId());
+  }
 
-    // Only ServerAdmin reads the audit; the row is there, newest first, and the keyset cursor
-    // resumes strictly after the page already seen.
+  @Test
+  @DisplayName("Should return the teardown audit row when ServerAdmin reads the security audit")
+  void shouldReturnTeardownAuditRowWhenServerAdminReadsSecurityAudit() throws Exception {
+    performSuccessfulTransferTeardown();
+
     var firstPage =
         graphql(
                 authTestSupport.accountBearer(admin),
@@ -203,13 +182,21 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.securityAuditEvents.edges[*].node.operation")
                 .value(not(hasItem("tearDownHousehold"))));
+  }
+
+  @Test
+  @DisplayName("Should forbid the security audit when the caller is not ServerAdmin")
+  void shouldForbidSecurityAuditWhenCallerIsNotServerAdmin() throws Exception {
     graphql(
             authTestSupport.accountBearer(doomed),
             "query { securityAuditEvents(first: 10) { edges { node { operation } } } }")
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+  }
 
-    // Activity reads scope by visibility: the hidden Profile reads as empty.
+  @Test
+  @DisplayName("Should return empty Profile activity when the Profile is hidden")
+  void shouldReturnEmptyProfileActivityWhenProfileIsHidden() throws Exception {
     graphql(
             authTestSupport.accountBearer(admin),
             """
@@ -227,8 +214,8 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
         "not-an-instant|00000000-0000-0000-0000-000000000001",
         "2026-08-01T00:00:00Z|not-a-uuid"
       })
-  @DisplayName("Should classify malformed audit cursor fields as invalid cursors")
-  void shouldClassifyMalformedAuditCursorFieldsAsInvalidCursors(String key) throws Exception {
+  @DisplayName("Should return an invalid cursor when an audit cursor contains a malformed field")
+  void shouldReturnInvalidCursorWhenAuditCursorContainsMalformedField(String key) throws Exception {
     var cursor =
         Base64.getUrlEncoder()
             .withoutPadding()
@@ -243,8 +230,9 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return the rows immediately before an audit cursor newest first")
-  void shouldReturnRowsImmediatelyBeforeAuditCursorNewestFirst() throws Exception {
+  @DisplayName(
+      "Should return newest-first rows before a cursor when paging backward through the audit")
+  void shouldReturnNewestFirstRowsBeforeCursorWhenPagingBackwardThroughAudit() throws Exception {
     dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     var base = Instant.parse("2026-08-01T00:00:00Z");
     var ids =
@@ -324,8 +312,9 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should accept only one concurrent final-Account disposition")
-  void shouldAcceptOnlyOneConcurrentFinalAccountDisposition() throws Exception {
+  @DisplayName(
+      "Should accept one disposition and reject the other when final-Account requests race")
+  void shouldAcceptOneDispositionAndRejectOtherWhenFinalAccountRequestsRace() throws Exception {
     var bearer = authTestSupport.freshAccountBearer(admin);
     var householdId = doomed.household().getId();
     var start = new CyclicBarrier(2);
@@ -374,6 +363,48 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
         .hasSize(1);
   }
 
+  private TeardownArtifacts seedTeardownArtifacts() {
+    return transactionTemplate.execute(
+        _ -> {
+          var orphan =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder()
+                      .householdId(doomed.household().getId())
+                      .name("Orphan")
+                      .build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(doomed.account().getId())
+                  .profileId(orphan.getId())
+                  .build());
+          var visit =
+              shareRepository.saveAndFlush(
+                  ProfileHouseholdShare.builder()
+                      .profileId(admin.account().getPersonalProfileId())
+                      .householdId(doomed.household().getId())
+                      .status(ProfileShareStatus.ACTIVE)
+                      .build());
+          var registration =
+              registrationRepository.saveAndFlush(
+                  DeviceRegistration.builder()
+                      .esn("esn-doomed")
+                      .displayName("TV")
+                      .householdId(doomed.household().getId())
+                      .authorizingAccountId(admin.account().getId())
+                      .build());
+          return new TeardownArtifacts(orphan.getId(), visit.getId(), registration.getId());
+        });
+  }
+
+  private void performSuccessfulTransferTeardown() throws Exception {
+    graphql(
+            authTestSupport.freshAccountBearer(admin),
+            tearDownMutation(doomed.household().getId(), admin.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.tearDownHousehold.userErrors").isEmpty());
+  }
+
   private String tearDownMutation(UUID householdId, UUID destination) {
     return """
            mutation { tearDownHousehold(input: {householdId: "%s", reason: "closing shop",
@@ -396,4 +427,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
     start.await(5, TimeUnit.SECONDS);
     return graphql(bearer, query).andReturn().getResponse().getContentAsString();
   }
+
+  private record TeardownArtifacts(
+      UUID orphanProfileId, UUID hostedVisitId, UUID householdRegistrationId) {}
 }
