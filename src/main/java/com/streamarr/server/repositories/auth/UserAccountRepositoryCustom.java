@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import java.util.List;
@@ -37,6 +38,23 @@ public interface UserAccountRepositoryCustom {
    */
   boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash);
 
+  /** Locks and revalidates the live authority required to issue one-time credentials. */
+  boolean lockIfEnabledServerAdmin(UUID accountId);
+
+  /**
+   * Locks the Household's coordination row and chooses the role for a newly accepted Account. The
+   * first Account becomes HouseholdAdmin; later Accounts keep the invitation's requested role.
+   * Empty means the Household no longer exists.
+   */
+  Optional<HouseholdRole> roleForNewAccount(UUID householdId, HouseholdRole requestedRole);
+
+  /**
+   * Whether the Account is an eligible direct ProfileManager in the Profile's home Household.
+   * Restricted Profiles additionally require a HouseholdAdmin manager.
+   */
+  boolean isEligibleProfileManager(
+      UUID accountId, UUID householdId, boolean householdAdminRequired);
+
   // Authority transitions are single-column conditional updates: they touch nothing else on the
   // row (no lost concurrent update), and true means this statement made the change — the audit
   // and side effects of a transition belong to exactly one winner. False on a row already in the
@@ -56,4 +74,7 @@ public interface UserAccountRepositoryCustom {
 
   /** Unconditional rename; true while the Account exists. */
   boolean tryRename(UUID accountId, String displayName);
+
+  /** Writes only the password hash; a reset must not overwrite unrelated concurrent changes. */
+  boolean trySetPasswordHash(UUID accountId, String passwordHash);
 }

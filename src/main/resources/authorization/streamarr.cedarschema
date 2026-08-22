@@ -39,7 +39,7 @@ namespace Streamarr {
 
   action serverAdministration;
   action libraryAdministration in serverAdministration;
-  action householdAdministration;
+  action householdAdministration in serverAdministration;
   action accountAdministration;
   action profileAdministration;
 
@@ -187,6 +187,27 @@ namespace Streamarr {
   action deleteProfile in profileAdministration appliesTo {
     principal: Account,
     resource: Profile,
+    context: { freshReauthentication: Bool },
+  };
+  action invitationAdministration in serverAdministration;
+  action issueAccountInvitation in invitationAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action cancelAccountInvitation in invitationAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action viewAccountInvitations in invitationAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action issuePasswordReset in accountAdministration appliesTo {
+    principal: Account,
+    resource: Account,
     context: { freshReauthentication: Bool },
   };
   action viewProfileAdministration in profileAdministration appliesTo {

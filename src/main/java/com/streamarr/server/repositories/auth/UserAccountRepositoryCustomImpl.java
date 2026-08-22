@@ -1,5 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.jooq.generated.tables.HouseholdGuard.HOUSEHOLD_GUARD;
+import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 import static org.jooq.impl.DSL.lower;
@@ -38,6 +40,9 @@ import org.jooq.TableField;
 import org.jooq.impl.DSL;
 import org.springframework.data.domain.AuditorAware;
 
+// checkstyle:fullyQualifiedName suppressed for the class: the domain and generated jOOQ role
+// enums share a simple name, an unavoidable collision.
+@SuppressWarnings("checkstyle:fullyQualifiedName")
 @RequiredArgsConstructor
 public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCustom {
 
@@ -200,6 +205,11 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     return transition(accountId, USER_ACCOUNT.DISPLAY_NAME, displayName, DSL.trueCondition());
   }
 
+  @Override
+  public boolean trySetPasswordHash(UUID accountId, String passwordHash) {
+    return transition(accountId, USER_ACCOUNT.PASSWORD_HASH, passwordHash, DSL.trueCondition());
+  }
+
   private <V> boolean transition(
       UUID accountId, TableField<UserAccountRecord, V> field, V value, Condition transitionable) {
     return dsl.update(USER_ACCOUNT)
@@ -222,5 +232,59 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
         .forUpdate()
         .fetchOptional()
         .isPresent();
+  }
+
+  @Override
+  public boolean lockIfEnabledServerAdmin(UUID accountId) {
+    return dsl.select(USER_ACCOUNT.ID)
+        .from(USER_ACCOUNT)
+        .where(USER_ACCOUNT.ID.eq(accountId))
+        .and(USER_ACCOUNT.ENABLED.isTrue())
+        .and(USER_ACCOUNT.SERVER_ADMIN.isTrue())
+        .forUpdate()
+        .fetchOptional()
+        .isPresent();
+  }
+
+  @Override
+  public Optional<com.streamarr.server.domain.auth.HouseholdRole> roleForNewAccount(
+      UUID householdId, com.streamarr.server.domain.auth.HouseholdRole requestedRole) {
+    var locked =
+        dsl.select(HOUSEHOLD_GUARD.HOUSEHOLD_ID)
+            .from(HOUSEHOLD_GUARD)
+            .where(HOUSEHOLD_GUARD.HOUSEHOLD_ID.eq(householdId))
+            .forUpdate()
+            .fetchOptional()
+            .isPresent();
+    if (!locked) {
+      return Optional.empty();
+    }
+
+    var householdHasAccount =
+        dsl.fetchExists(
+            dsl.selectOne().from(USER_ACCOUNT).where(USER_ACCOUNT.HOUSEHOLD_ID.eq(householdId)));
+    return Optional.of(
+        householdHasAccount ? requestedRole : com.streamarr.server.domain.auth.HouseholdRole.ADMIN);
+  }
+
+  @Override
+  public boolean isEligibleProfileManager(
+      UUID accountId, UUID householdId, boolean householdAdminRequired) {
+    var eligibility =
+        USER_ACCOUNT
+            .ID
+            .eq(accountId)
+            .and(USER_ACCOUNT.HOUSEHOLD_ID.eq(householdId))
+            .and(PROFILE.RESTRICTED.isFalse());
+    if (householdAdminRequired) {
+      eligibility = eligibility.and(USER_ACCOUNT.HOUSEHOLD_ROLE.eq(HouseholdRole.ADMIN));
+    }
+
+    return dsl.fetchExists(
+        dsl.selectOne()
+            .from(USER_ACCOUNT)
+            .join(PROFILE)
+            .on(PROFILE.ID.eq(USER_ACCOUNT.PERSONAL_PROFILE_ID))
+            .where(eligibility));
   }
 }

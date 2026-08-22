@@ -5,8 +5,10 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.exceptions.InvalidProfilePinException;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
+import com.streamarr.server.exceptions.InvitationEmailAlreadyUsedException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.ProfileLockedException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
@@ -18,7 +20,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@RestControllerAdvice(assignableTypes = AuthController.class)
+@RestControllerAdvice(
+    assignableTypes = {
+      AuthController.class,
+      InvitationController.class,
+      PasswordResetController.class
+    })
 public class AuthExceptionHandler {
 
   // Do not reveal whether a rejected refresh token was ever valid.
@@ -43,6 +50,17 @@ public class AuthExceptionHandler {
   @ExceptionHandler({InvalidRefreshTokenException.class, TokenReuseDetectedException.class})
   public ResponseEntity<AuthErrorResponse> handleInvalidRefresh() {
     return respond(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", REFRESH_TOKEN_REJECTED);
+  }
+
+  @ExceptionHandler(InvalidOneTimeCodeException.class)
+  public ResponseEntity<AuthErrorResponse> handleInvalidOneTimeCode(InvalidOneTimeCodeException e) {
+    return respond(HttpStatus.NOT_FOUND, "INVALID_CODE", e);
+  }
+
+  @ExceptionHandler(InvitationEmailAlreadyUsedException.class)
+  public ResponseEntity<AuthErrorResponse> handleInvitationEmailAlreadyUsed(
+      InvitationEmailAlreadyUsedException e) {
+    return respond(HttpStatus.CONFLICT, "INVITATION_EMAIL_ALREADY_USED", e);
   }
 
   @ExceptionHandler(AuthenticationRequiredException.class)

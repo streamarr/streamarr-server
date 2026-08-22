@@ -24,8 +24,19 @@ public final class PostgresLockTestSupport {
         while (rows.next()) {
           lockedRows++;
         }
+
         assertThat(lockedRows).isEqualTo(ImageSize.values().length);
       }
+    }
+  }
+
+  public static void lockNormalizedKey(Connection connection, String namespace, String value)
+      throws SQLException {
+    try (var statement =
+        connection.prepareStatement(
+            "SELECT pg_advisory_xact_lock(hashtextextended(lower(?), 0))")) {
+      statement.setString(1, namespace + ":" + value.strip());
+      statement.execute();
     }
   }
 
