@@ -88,8 +88,8 @@ class AuthorizationParityTest {
   }
 
   @Test
-  @DisplayName("Should refuse to plan a policy change without its transition")
-  void shouldRefuseToPlanPolicyChangeWithoutItsTransition() {
+  @DisplayName("Should refuse to plan a policy change when its transition is absent")
+  void shouldRefuseToPlanPolicyChangeWhenTransitionIsAbsent() {
     var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
     var change = new Intent.ChangeProfileKind(UUID.randomUUID(), ProfileKind.ADULT);
 

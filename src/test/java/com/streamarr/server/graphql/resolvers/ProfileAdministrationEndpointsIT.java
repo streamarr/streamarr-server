@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.jooq.generated.enums.ProfileKind.ADULT;
 import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +29,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.awaitility.Awaitility;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -82,26 +84,36 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should create a Kid Profile anchored by its creating HouseholdAdmin")
-  void shouldCreateKidProfileAnchoredByCreatingHouseholdAdmin() throws Exception {
-    graphql(
-            authTestSupport.accountBearer(admin),
-            """
+  @DisplayName("Should create a Kid Profile with its relationships when a HouseholdAdmin creates")
+  void shouldCreateKidProfileWithItsRelationshipsWhenHouseholdAdminCreates() throws Exception {
+    var result =
+        graphql(
+                authTestSupport.accountBearer(admin),
+                """
             mutation { createProfile(input: {householdId: "%s", name: "Kai", kind: KID}) {
-              profile { name kind restricted pinConfigured linked } userErrors { __typename } } }
+              profile { id name kind restricted pinConfigured linked } userErrors { __typename } } }
             """
-                .formatted(admin.household().getId()))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.createProfile.profile.kind").value("KID"))
-        .andExpect(jsonPath("$.data.createProfile.profile.restricted").value(true))
-        .andExpect(jsonPath("$.data.createProfile.profile.linked").value(false))
-        .andExpect(jsonPath("$.data.createProfile.userErrors").isEmpty());
+                    .formatted(admin.household().getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(jsonPath("$.data.createProfile.profile.kind").value("KID"))
+            .andExpect(jsonPath("$.data.createProfile.profile.restricted").value(true))
+            .andExpect(jsonPath("$.data.createProfile.profile.linked").value(false))
+            .andExpect(jsonPath("$.data.createProfile.userErrors").isEmpty())
+            .andReturn();
+
+    var response = objectMapper.readTree(result.getResponse().getContentAsString());
+    var profileId = UUID.fromString(response.at("/data/createProfile/profile/id").asText());
+    assertThat(
+            profileManagerRepository.existsByAccountIdAndProfileId(
+                admin.account().getId(), profileId))
+        .isTrue();
+    assertThat(shareRepository.isActivelyShared(profileId, admin.household().getId())).isTrue();
   }
 
   @Test
-  @DisplayName("Should reject a negative Content Ceiling during creation as a typed input error")
-  void shouldRejectNegativeContentCeilingDuringCreationAsTypedInputError() throws Exception {
+  @DisplayName("Should reject a negative Content Ceiling as a typed input error when creating")
+  void shouldRejectNegativeContentCeilingAsTypedInputErrorWhenCreating() throws Exception {
     graphql(
             authTestSupport.accountBearer(admin),
             """
@@ -120,8 +132,12 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse a remote ServerAdmin Kid creation without a local anchor")
-  void shouldRefuseRemoteServerAdminKidCreationWithoutLocalAnchor() throws Exception {
+  @DisplayName("Should refuse a remote ServerAdmin Kid creation when a local anchor is omitted")
+  void shouldRefuseRemoteServerAdminKidCreationWhenLocalAnchorIsOmitted() throws Exception {
+    var profilesBefore = profileRepository.count();
+    var managersBefore = profileManagerRepository.count();
+    var sharesBefore = shareRepository.count();
+
     graphql(
             authTestSupport.accountBearer(serverAdmin),
             """
@@ -135,6 +151,10 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
             jsonPath("$.data.createProfile.userErrors[0].__typename")
                 .value("HomeAnchorRequiredError"));
 
+    assertThat(profileRepository.count()).isEqualTo(profilesBefore);
+    assertThat(profileManagerRepository.count()).isEqualTo(managersBefore);
+    assertThat(shareRepository.count()).isEqualTo(sharesBefore);
+
     graphql(
             authTestSupport.accountBearer(serverAdmin),
             """
@@ -145,6 +165,34 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
                 .formatted(admin.household().getId(), admin.account().getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.createProfile.userErrors").isEmpty());
+  }
+
+  @Test
+  @DisplayName("Should reject and roll back creation when the named local manager is ineligible")
+  void shouldRejectAndRollBackCreationWhenNamedLocalManagerIsIneligible() throws Exception {
+    var ineligibleManager = joinHouseholdAsRestrictedMember();
+    var profilesBefore = profileRepository.count();
+    var managersBefore = profileManagerRepository.count();
+    var sharesBefore = shareRepository.count();
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            mutation { createProfile(input: {householdId: "%s", name: "Kai", kind: KID,
+              localManagerAccountId: "%s"}) {
+              profile { id } userErrors { __typename } } }
+            """
+                .formatted(admin.household().getId(), ineligibleManager.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.createProfile.profile").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.createProfile.userErrors[0].__typename")
+                .value("ManagerNotEligibleError"));
+
+    assertThat(profileRepository.count()).isEqualTo(profilesBefore);
+    assertThat(profileManagerRepository.count()).isEqualTo(managersBefore);
+    assertThat(shareRepository.count()).isEqualTo(sharesBefore);
   }
 
   @Test
@@ -169,8 +217,12 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse a duplicate available name through the deferred invariant")
-  void shouldRefuseDuplicateAvailableNameThroughDeferredInvariant() throws Exception {
+  @DisplayName("Should refuse and roll back creation when an available name is duplicated")
+  void shouldRefuseAndRollBackCreationWhenAvailableNameIsDuplicated() throws Exception {
+    var profilesBefore = profileRepository.count();
+    var managersBefore = profileManagerRepository.count();
+    var sharesBefore = shareRepository.count();
+
     graphql(
             authTestSupport.accountBearer(admin),
             """
@@ -183,11 +235,15 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.createProfile.userErrors[0].__typename")
                 .value("ProfileNameTakenError"));
+
+    assertThat(profileRepository.count()).isEqualTo(profilesBefore);
+    assertThat(profileManagerRepository.count()).isEqualTo(managersBefore);
+    assertThat(shareRepository.count()).isEqualTo(sharesBefore);
   }
 
   @Test
-  @DisplayName("Should require fresh reauthentication to lift the final restriction")
-  void shouldRequireFreshReauthenticationToLiftFinalRestriction() throws Exception {
+  @DisplayName("Should require fresh reauthentication when lifting the final restriction")
+  void shouldRequireFreshReauthenticationWhenLiftingFinalRestriction() throws Exception {
     var kid = kidProfile();
 
     graphql(
@@ -216,6 +272,75 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should classify the committed policy when a concurrent transition holds the lock")
+  void shouldClassifyCommittedPolicyWhenConcurrentTransitionHoldsLock() throws Exception {
+    var kid = kidProfile();
+    var transitionPrepared = new CountDownLatch(1);
+    var commitTransition = new CountDownLatch(1);
+    var transitionBackendPid = new AtomicInteger();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var transitioning =
+          executor.submit(
+              () ->
+                  transactionTemplate.executeWithoutResult(
+                      _ -> {
+                        dsl.selectOne()
+                            .from(PROFILE)
+                            .where(PROFILE.ID.eq(kid.getId()))
+                            .forUpdate()
+                            .fetchSingle();
+                        transitionBackendPid.set(
+                            jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                        dsl.update(PROFILE)
+                            .set(PROFILE.KIND, ADULT)
+                            .setNull(PROFILE.MAXIMUM_ALLOWED_RATING_AGE)
+                            .where(PROFILE.ID.eq(kid.getId()))
+                            .execute();
+                        transitionPrepared.countDown();
+                        await(commitTransition);
+                      }));
+      assertThat(transitionPrepared.await(30, TimeUnit.SECONDS)).isTrue();
+
+      var changing =
+          executor.submit(
+              () ->
+                  graphql(
+                          authTestSupport.accountBearer(admin),
+                          """
+                          mutation { changeProfileKind(input: {profileId: "%s", kind: ADULT}) {
+                            profile { kind restricted } userErrors { __typename } } }
+                          """
+                              .formatted(kid.getId()))
+                      .andReturn());
+      try {
+        Awaitility.await()
+            .atMost(Duration.ofSeconds(30))
+            .until(() -> isWaitingForBackend(transitionBackendPid.get()));
+      } finally {
+        commitTransition.countDown();
+      }
+      transitioning.get(30, TimeUnit.SECONDS);
+      var result = changing.get(30, TimeUnit.SECONDS);
+      var response = objectMapper.readTree(result.getResponse().getContentAsString());
+
+      assertThat(response.path("errors").isMissingNode()).isTrue();
+      assertThat(response.path("data").path("changeProfileKind").path("userErrors")).isEmpty();
+      assertThat(
+              response.path("data").path("changeProfileKind").path("profile").path("kind").asText())
+          .isEqualTo("ADULT");
+      assertThat(
+              response
+                  .path("data")
+                  .path("changeProfileKind")
+                  .path("profile")
+                  .path("restricted")
+                  .asBoolean())
+          .isFalse();
+    }
+  }
+
+  @Test
   @DisplayName("Should fail closed when a ServerAdmin changes a missing Profile policy")
   void shouldFailClosedWhenServerAdminChangesMissingProfilePolicy() throws Exception {
     graphql(
@@ -232,8 +357,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should apply an ordinary ceiling edit without a ceremony")
-  void shouldApplyOrdinaryCeilingEditWithoutCeremony() throws Exception {
+  @DisplayName("Should apply an ordinary ceiling edit when a ceremony is absent")
+  void shouldApplyOrdinaryCeilingEditWhenCeremonyIsAbsent() throws Exception {
     var kid = kidProfile();
 
     graphql(
@@ -250,8 +375,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject a negative Content Ceiling as a typed input error")
-  void shouldRejectNegativeContentCeilingAsTypedInputError() throws Exception {
+  @DisplayName("Should reject a negative Content Ceiling as a typed input error when setting it")
+  void shouldRejectNegativeContentCeilingAsTypedInputErrorWhenSettingIt() throws Exception {
     var kid = kidProfile();
 
     graphql(
@@ -275,16 +400,10 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return a typed rejection when restricting an Account that holds authority")
-  void shouldReturnTypedRejectionWhenRestrictingAccountThatHoldsAuthority() throws Exception {
-    var replacementAnchor = joinHouseholdAsAdmin();
-    transactionTemplate.executeWithoutResult(
-        _ ->
-            profileManagerRepository.saveAndFlush(
-                ProfileManager.builder()
-                    .accountId(replacementAnchor.getId())
-                    .profileId(admin.profile().getId())
-                    .build()));
+  @DisplayName(
+      "Should return the authority rejection when restricting an Account that holds authority")
+  void shouldReturnAuthorityRejectionWhenRestrictingAccountThatHoldsAuthority() throws Exception {
+    establishReplacementAnchorForAdminProfile();
 
     graphql(
             authTestSupport.freshAccountBearer(serverAdmin),
@@ -296,12 +415,41 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.setProfileContentCeiling.profile").doesNotExist())
-        .andExpect(jsonPath("$.data.setProfileContentCeiling.userErrors").isNotEmpty());
+        .andExpect(
+            jsonPath("$.data.setProfileContentCeiling.userErrors[0].__typename")
+                .value("RestrictedAccountAuthorityError"));
   }
 
   @Test
-  @DisplayName("Should rename, repicture, and clear the ceiling through ordinary edits")
-  void shouldRenameRepictureAndClearCeilingThroughOrdinaryEdits() throws Exception {
+  @DisplayName(
+      "Should restrict the sovereign Adult when authority is removed and a replacement manager exists")
+  void shouldRestrictSovereignAdultWhenAuthorityIsRemovedAndReplacementManagerExists()
+      throws Exception {
+    establishReplacementAnchorForAdminProfile();
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var account = userAccountRepository.findById(admin.account().getId()).orElseThrow();
+          account.setHouseholdRole(HouseholdRole.MEMBER);
+          userAccountRepository.saveAndFlush(account);
+        });
+
+    graphql(
+            authTestSupport.freshAccountBearer(serverAdmin),
+            """
+            mutation { setProfileContentCeiling(input: {profileId: "%s", maximumAllowedRatingAge: 12}) {
+              profile { maximumAllowedRatingAge } userErrors { __typename } } }
+            """
+                .formatted(admin.profile().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.setProfileContentCeiling.userErrors").isEmpty())
+        .andExpect(
+            jsonPath("$.data.setProfileContentCeiling.profile.maximumAllowedRatingAge").value(12));
+  }
+
+  @Test
+  @DisplayName("Should rename a Profile when its manager supplies an available name")
+  void shouldRenameProfileWhenManagerSuppliesAvailableName() throws Exception {
     var kid = kidProfile();
 
     graphql(
@@ -313,6 +461,12 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
                 .formatted(kid.getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.renameProfile.profile.name").value("Kai Renamed"));
+  }
+
+  @Test
+  @DisplayName("Should reject a rename when an available Profile already uses the name")
+  void shouldRejectRenameWhenAvailableProfileAlreadyUsesName() throws Exception {
+    var kid = kidProfile();
 
     graphql(
             authTestSupport.accountBearer(admin),
@@ -325,6 +479,12 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.renameProfile.userErrors[0].__typename")
                 .value("ProfileNameTakenError"));
+  }
+
+  @Test
+  @DisplayName("Should set a Profile picture when its manager performs an ordinary edit")
+  void shouldSetProfilePictureWhenManagerPerformsOrdinaryEdit() throws Exception {
+    var kid = kidProfile();
 
     graphql(
             authTestSupport.accountBearer(admin),
@@ -335,6 +495,12 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
                 .formatted(kid.getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.setProfilePicture.profile.picture").value("kai.png"));
+  }
+
+  @Test
+  @DisplayName("Should clear a Content Ceiling when its manager performs an ordinary edit")
+  void shouldClearContentCeilingWhenManagerPerformsOrdinaryEdit() throws Exception {
+    var kid = kidProfile();
 
     graphql(
             authTestSupport.accountBearer(admin),
@@ -360,8 +526,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse clearing a PIN that a Household's safety policy requires")
-  void shouldRefuseClearingPinHouseholdSafetyPolicyRequires() throws Exception {
+  @DisplayName("Should refuse clearing a PIN when a Household's safety policy requires it")
+  void shouldRefuseClearingPinWhenHouseholdSafetyPolicyRequiresIt() throws Exception {
     kidProfile();
     graphql(
             authTestSupport.accountBearer(admin),
@@ -391,8 +557,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return the cleared PIN state after a successful clear")
-  void shouldReturnClearedPinStateAfterSuccessfulClear() throws Exception {
+  @DisplayName("Should return the cleared PIN state when the clear succeeds")
+  void shouldReturnClearedPinStateWhenClearSucceeds() throws Exception {
     graphql(
             authTestSupport.accountBearer(admin),
             """
@@ -417,8 +583,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse a malformed PIN with its input path")
-  void shouldRefuseMalformedPinWithItsInputPath() throws Exception {
+  @DisplayName("Should refuse the PIN with its input path when the PIN is malformed")
+  void shouldRefusePinWithInputPathWhenPinIsMalformed() throws Exception {
     graphql(
             authTestSupport.accountBearer(admin),
             """
@@ -433,8 +599,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should audit the ServerAdmin PIN override once")
-  void shouldAuditServerAdminPinOverrideOnce() throws Exception {
+  @DisplayName("Should audit the PIN override once when a fresh ServerAdmin overrides it")
+  void shouldAuditPinOverrideOnceWhenFreshServerAdminOverridesIt() throws Exception {
     graphql(
             authTestSupport.freshAccountBearer(serverAdmin),
             """
@@ -455,8 +621,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should delete an unlinked unshared Profile only for its fresh sole manager")
-  void shouldDeleteUnlinkedUnsharedProfileOnlyForFreshSoleManager() throws Exception {
+  @DisplayName("Should delete an unlinked unshared Profile when its fresh sole manager requests it")
+  void shouldDeleteUnlinkedUnsharedProfileWhenFreshSoleManagerRequestsIt() throws Exception {
     var orphan = unsharedManagedProfile();
 
     graphql(
@@ -491,11 +657,46 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject deletion when the Profile has a pending Household share")
+  void shouldRejectDeletionWhenProfileHasPendingHouseholdShare() throws Exception {
+    var orphan = unsharedManagedProfile();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            shareRepository.saveAndFlush(
+                ProfileHouseholdShare.builder()
+                    .profileId(orphan.getId())
+                    .householdId(serverAdmin.household().getId())
+                    .status(ProfileShareStatus.PENDING)
+                    .build()));
+
+    graphql(
+            authTestSupport.freshAccountBearer(admin),
+            """
+            mutation { deleteProfile(input: {profileId: "%s"}) {
+              deletedProfileId userErrors { __typename } } }
+            """
+                .formatted(orphan.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.deleteProfile.deletedProfileId").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.deleteProfile.userErrors[0].__typename")
+                .value("ProfileNotDeletableError"));
+
+    assertThat(profileRepository.findById(orphan.getId())).isPresent();
+    assertThat(
+            dsl.fetchCount(
+                SECURITY_AUDIT_EVENT, SECURITY_AUDIT_EVENT.OPERATION.eq("deleteProfile")))
+        .isZero();
+  }
+
+  @Test
   @DisplayName("Should reject deletion when a concurrent share commits first")
   void shouldRejectDeletionWhenConcurrentShareCommitsFirst() throws Exception {
     var orphan = unsharedManagedProfile();
     var sharePrepared = new CountDownLatch(1);
     var commitShare = new CountDownLatch(1);
+    var sharingBackendPid = new AtomicInteger();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var sharing =
@@ -508,6 +709,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
                             .where(PROFILE.ID.eq(orphan.getId()))
                             .forUpdate()
                             .fetchSingle();
+                        sharingBackendPid.set(
+                            jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class));
                         shareRepository.saveAndFlush(
                             ProfileHouseholdShare.builder()
                                 .profileId(orphan.getId())
@@ -533,7 +736,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
       try {
         Awaitility.await()
             .atMost(Duration.ofSeconds(30))
-            .until(this::isProfileDeleteWaitingForLock);
+            .until(() -> isWaitingForBackend(sharingBackendPid.get()));
       } finally {
         commitShare.countDown();
       }
@@ -554,12 +757,16 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
                   .asText())
           .isEqualTo("ProfileNotDeletableError");
       assertThat(profileRepository.findById(orphan.getId())).isPresent();
+      assertThat(
+              dsl.fetchCount(
+                  SECURITY_AUDIT_EVENT, SECURITY_AUDIT_EVENT.OPERATION.eq("deleteProfile")))
+          .isZero();
     }
   }
 
   @Test
-  @DisplayName("Should explain an undeletable Profile only to a caller who may view it")
-  void shouldExplainUndeletableProfileOnlyToCallerWhoMayViewIt() throws Exception {
+  @DisplayName("Should explain an undeletable Profile when the caller may view it")
+  void shouldExplainUndeletableProfileWhenCallerMayViewIt() throws Exception {
     var shared = kidProfile();
 
     graphql(
@@ -576,8 +783,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should show Profile administration to a manager and hide it from a stranger")
-  void shouldShowProfileAdministrationToManagerAndHideItFromStranger() throws Exception {
+  @DisplayName("Should show or hide Profile administration when caller authority changes")
+  void shouldShowOrHideProfileAdministrationWhenCallerAuthorityChanges() throws Exception {
     var kid = kidProfile();
 
     graphql(
@@ -684,19 +891,61 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
         });
   }
 
-  private boolean isProfileDeleteWaitingForLock() {
+  private UserAccount joinHouseholdAsRestrictedMember() {
+    return transactionTemplate.execute(
+        _ -> {
+          var profile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder()
+                      .householdId(admin.household().getId())
+                      .maximumAllowedRatingAge(12)
+                      .build());
+          var account =
+              userAccountRepository.saveAndFlush(
+                  AccountFixture.defaultAccountBuilder()
+                      .householdId(admin.household().getId())
+                      .householdRole(HouseholdRole.MEMBER)
+                      .personalProfileId(profile.getId())
+                      .build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(admin.account().getId())
+                  .profileId(profile.getId())
+                  .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(admin.household().getId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .structural(true)
+                  .build());
+          return account;
+        });
+  }
+
+  private void establishReplacementAnchorForAdminProfile() {
+    var replacementAnchor = joinHouseholdAsAdmin();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            profileManagerRepository.saveAndFlush(
+                ProfileManager.builder()
+                    .accountId(replacementAnchor.getId())
+                    .profileId(admin.profile().getId())
+                    .build()));
+  }
+
+  private boolean isWaitingForBackend(int blockingBackendPid) {
     var waiting =
         jdbcTemplate.queryForObject(
             """
             SELECT EXISTS (
               SELECT 1
               FROM pg_stat_activity
-              WHERE wait_event_type = 'Lock'
-                AND query ILIKE '%profile%'
-                AND (query ILIKE '%delete%' OR query ILIKE '%for update%')
+              WHERE ? = ANY(pg_blocking_pids(pid))
             )
             """,
-            Boolean.class);
+            Boolean.class,
+            blockingBackendPid);
     return Boolean.TRUE.equals(waiting);
   }
 

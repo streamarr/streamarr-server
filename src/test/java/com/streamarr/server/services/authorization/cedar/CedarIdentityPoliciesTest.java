@@ -548,8 +548,9 @@ class CedarIdentityPoliciesTest {
   class ProfileManagement {
 
     @Test
-    @DisplayName("Should let an eligible local admin or ServerAdmin create a Profile")
-    void shouldLetEligibleLocalAdminOrServerAdminCreateProfile() {
+    @DisplayName(
+        "Should allow Profile creation when the caller is an eligible local admin or ServerAdmin")
+    void shouldAllowProfileCreationWhenCallerIsEligibleLocalAdminOrServerAdmin() {
       assertThat(decide(atHome(), new Intent.CreateProfile(account.getHouseholdId())))
           .isEqualTo(ALLOWED);
       assertThat(
@@ -571,8 +572,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should refuse Profile creation to an admin whose own Profile is restricted")
-    void shouldRefuseProfileCreationToAdminWhoseOwnProfileIsRestricted() {
+    @DisplayName("Should refuse Profile creation when the admin's own Profile is restricted")
+    void shouldRefuseProfileCreationWhenAdminOwnProfileIsRestricted() {
       personal.setMaximumAllowedRatingAge(12);
       profiles.save(personal);
 
@@ -581,8 +582,9 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let managers and supervisors edit but only managers change kind")
-    void shouldLetManagersAndSupervisorsEditButOnlyManagersChangeKind() {
+    @DisplayName(
+        "Should distinguish ordinary edits from kind changes when authority is supervisory")
+    void shouldDistinguishOrdinaryEditsFromKindChangesWhenAuthorityIsSupervisory() {
       var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
       shares.share(kid.getId(), account.getHouseholdId(), false);
 
@@ -610,8 +612,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should require fresh reauthentication to lift the final restriction")
-    void shouldRequireFreshReauthenticationToLiftFinalRestriction() {
+    @DisplayName("Should require fresh reauthentication when lifting the final restriction")
+    void shouldRequireFreshReauthenticationWhenLiftingFinalRestriction() {
       var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
       managers.save(
           ProfileManager.builder().accountId(account.getId()).profileId(kid.getId()).build());
@@ -629,8 +631,9 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should reserve restricting a sovereign Adult for a fresh ServerAdmin")
-    void shouldReserveRestrictingSovereignAdultForFreshServerAdmin() {
+    @DisplayName(
+        "Should allow restricting a sovereign Adult when the caller is a fresh ServerAdmin")
+    void shouldAllowRestrictingSovereignAdultWhenCallerIsFreshServerAdmin() {
       var sovereign = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       profiles.linkTo(sovereign.getId(), UUID.randomUUID());
       managers.save(
@@ -655,8 +658,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should return the normalized transition as the allowed value")
-    void shouldReturnNormalizedTransitionAsAllowedValue() {
+    @DisplayName("Should return the normalized transition when the policy change is allowed")
+    void shouldReturnNormalizedTransitionWhenPolicyChangeIsAllowed() {
       var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
       managers.save(
           ProfileManager.builder().accountId(account.getId()).profileId(kid.getId()).build());
@@ -671,8 +674,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should reserve the PIN override for a fresh ServerAdmin")
-    void shouldReservePinOverrideForFreshServerAdmin() {
+    @DisplayName("Should allow the PIN override when the caller is a fresh ServerAdmin")
+    void shouldAllowPinOverrideWhenCallerIsFreshServerAdmin() {
       var override = new Intent.OverrideProfilePin(personal.getId());
 
       assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), override))
@@ -686,8 +689,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should allow ordinary deletion only to the fresh sole manager")
-    void shouldAllowOrdinaryDeletionOnlyToFreshSoleManager() {
+    @DisplayName("Should allow ordinary deletion when the caller is the fresh sole manager")
+    void shouldAllowOrdinaryDeletionWhenCallerIsFreshSoleManager() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       managers.save(
           ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
@@ -709,8 +712,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should refuse supervision to an admin whose own Profile is restricted")
-    void shouldRefuseSupervisionToAdminWhoseOwnProfileIsRestricted() {
+    @DisplayName("Should refuse supervision when the admin's own Profile is restricted")
+    void shouldRefuseSupervisionWhenAdminOwnProfileIsRestricted() {
       var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
       shares.share(kid.getId(), account.getHouseholdId(), false);
       personal.setMaximumAllowedRatingAge(12);
@@ -720,8 +723,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should fail closed on a policy change for a Profile that does not exist")
-    void shouldFailClosedOnPolicyChangeForProfileThatDoesNotExist() {
+    @DisplayName("Should fail closed when a policy change targets a Profile that does not exist")
+    void shouldFailClosedWhenPolicyChangeTargetsMissingProfile() {
       assertThat(
               decide(
                   withReauthenticatedAt(atHome(), Instant.now()),
@@ -730,8 +733,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should refuse deleting a linked Personal Profile standalone")
-    void shouldRefuseDeletingLinkedPersonalProfileStandalone() {
+    @DisplayName("Should refuse deletion when a linked Personal Profile is targeted standalone")
+    void shouldRefuseDeletionWhenLinkedPersonalProfileIsTargetedStandalone() {
       managers.save(
           ProfileManager.builder().accountId(account.getId()).profileId(personal.getId()).build());
       // The personal Profile is linked (some Account's personalProfileId points at it).

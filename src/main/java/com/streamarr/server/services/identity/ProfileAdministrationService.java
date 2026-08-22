@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
@@ -7,6 +8,7 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -83,9 +85,14 @@ public class ProfileAdministrationService {
     if (householdRepository.findById(command.householdId()).isEmpty()) {
       return Outcome.rejected(new ProfileRejections.HouseholdNotFound());
     }
-    if (command.localManagerAccountId() != null
-        && userAccountRepository.findById(command.localManagerAccountId()).isEmpty()) {
-      return Outcome.rejected(new ProfileRejections.LocalManagerNotFound());
+    if (command.localManagerAccountId() != null) {
+      var localManager = userAccountRepository.findById(command.localManagerAccountId());
+      if (localManager.isEmpty()) {
+        return Outcome.rejected(new ProfileRejections.LocalManagerNotFound());
+      }
+      if (!isEligibleLocalManager(localManager.get(), command.householdId())) {
+        return Outcome.rejected(new ProfileRejections.ManagerNotEligible());
+      }
     }
 
     return mutationTransactions.write(
@@ -420,6 +427,18 @@ public class ProfileAdministrationService {
     return authorizationService.decide(
             identity, new Intent.ViewHouseholdAdministration(householdId))
         instanceof Decision.Allowed<?>;
+  }
+
+  private boolean isEligibleLocalManager(UserAccount account, UUID householdId) {
+    if (!account.getHouseholdId().equals(householdId)
+        || account.getHouseholdRole() != HouseholdRole.ADMIN) {
+      return false;
+    }
+    return profileRepository
+        .findById(account.getPersonalProfileId())
+        .filter(profile -> profile.getKind() == ProfileKind.ADULT)
+        .filter(profile -> !profile.isRestricted())
+        .isPresent();
   }
 
   private static boolean isBlank(String value) {

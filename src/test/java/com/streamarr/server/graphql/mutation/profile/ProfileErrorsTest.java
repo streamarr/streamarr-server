@@ -17,8 +17,8 @@ import org.junit.jupiter.api.Test;
 class ProfileErrorsTest {
 
   @Test
-  @DisplayName("Should map every creation rejection to its schema error")
-  void shouldMapEveryCreationRejectionToItsSchemaError() {
+  @DisplayName("Should map every creation rejection when the service refuses creation")
+  void shouldMapEveryCreationRejectionWhenServiceRefusesCreation() {
     assertInputError(
         ProfileErrors.toCreateProfileError(new ProfileRejections.HouseholdNotFound()),
         HouseholdNotFoundError.class,
@@ -49,23 +49,38 @@ class ProfileErrorsTest {
   }
 
   @Test
-  @DisplayName("Should map the edit rejections to their schema errors")
-  void shouldMapEditRejectionsToTheirSchemaErrors() {
-    assertThat(ProfileErrors.toRenameProfileError(new ProfileRejections.ProfileNotFound()))
-        .isInstanceOf(ProfileNotFoundError.class);
-    assertThat(ProfileErrors.toRenameProfileError(new ProfileRejections.ProfileNameRequired()))
-        .isInstanceOf(ProfileNameRequiredError.class);
-    assertThat(ProfileErrors.toRenameProfileError(new ProfileRejections.ProfileNameTaken()))
-        .isInstanceOf(ProfileNameTakenError.class);
-    assertThat(ProfileErrors.toSetProfilePictureError(new ProfileRejections.ProfileNotFound()))
-        .isInstanceOf(ProfileNotFoundError.class);
+  @DisplayName("Should map every rename rejection when the service refuses a rename")
+  void shouldMapEveryRenameRejectionWhenServiceRefusesRename() {
+    assertInputError(
+        ProfileErrors.toRenameProfileError(new ProfileRejections.ProfileNotFound()),
+        ProfileNotFoundError.class,
+        "profileId");
+    assertInputError(
+        ProfileErrors.toRenameProfileError(new ProfileRejections.ProfileNameRequired()),
+        ProfileNameRequiredError.class,
+        "name");
+    assertInputError(
+        ProfileErrors.toRenameProfileError(new ProfileRejections.ProfileNameTaken()),
+        ProfileNameTakenError.class,
+        "name");
   }
 
   @Test
-  @DisplayName("Should map the policy rejections across all three transition mutations")
-  void shouldMapPolicyRejectionsAcrossAllThreeTransitionMutations() {
-    assertThat(ProfileErrors.toChangeProfileKindError(new ProfileRejections.ProfileNotFound()))
-        .isInstanceOf(ProfileNotFoundError.class);
+  @DisplayName("Should map not found when the service refuses a picture change")
+  void shouldMapNotFoundWhenServiceRefusesPictureChange() {
+    assertInputError(
+        ProfileErrors.toSetProfilePictureError(new ProfileRejections.ProfileNotFound()),
+        ProfileNotFoundError.class,
+        "profileId");
+  }
+
+  @Test
+  @DisplayName("Should map every policy rejection when the service refuses a kind change")
+  void shouldMapEveryPolicyRejectionWhenServiceRefusesKindChange() {
+    assertInputError(
+        ProfileErrors.toChangeProfileKindError(new ProfileRejections.ProfileNotFound()),
+        ProfileNotFoundError.class,
+        "profileId");
     assertThat(
             ProfileErrors.toChangeProfileKindError(
                 new ProfileRejections.ReauthenticationRequired()))
@@ -75,15 +90,21 @@ class ProfileErrorsTest {
     assertInputError(
         ProfileErrors.toChangeProfileKindError(new ProfileRejections.RestrictedAccountAuthority()),
         RestrictedAccountAuthorityError.class,
-        "maximumAllowedRatingAge");
+        "kind");
     assertInputError(
         ProfileErrors.toChangeProfileKindError(
             new ProfileRejections.MaximumAllowedRatingAgeInvalid()),
         MaximumAllowedRatingAgeInvalidError.class,
         "maximumAllowedRatingAge");
-    assertThat(
-            ProfileErrors.toSetProfileContentCeilingError(new ProfileRejections.ProfileNotFound()))
-        .isInstanceOf(ProfileNotFoundError.class);
+  }
+
+  @Test
+  @DisplayName("Should map every policy rejection when the service refuses a ceiling change")
+  void shouldMapEveryPolicyRejectionWhenServiceRefusesCeilingChange() {
+    assertInputError(
+        ProfileErrors.toSetProfileContentCeilingError(new ProfileRejections.ProfileNotFound()),
+        ProfileNotFoundError.class,
+        "profileId");
     assertThat(
             ProfileErrors.toSetProfileContentCeilingError(
                 new ProfileRejections.ReauthenticationRequired()))
@@ -102,10 +123,15 @@ class ProfileErrorsTest {
             new ProfileRejections.MaximumAllowedRatingAgeInvalid()),
         MaximumAllowedRatingAgeInvalidError.class,
         "maximumAllowedRatingAge");
-    assertThat(
-            ProfileErrors.toClearProfileContentCeilingError(
-                new ProfileRejections.ProfileNotFound()))
-        .isInstanceOf(ProfileNotFoundError.class);
+  }
+
+  @Test
+  @DisplayName("Should map every policy rejection when the service refuses a ceiling clear")
+  void shouldMapEveryPolicyRejectionWhenServiceRefusesCeilingClear() {
+    assertInputError(
+        ProfileErrors.toClearProfileContentCeilingError(new ProfileRejections.ProfileNotFound()),
+        ProfileNotFoundError.class,
+        "profileId");
     assertThat(
             ProfileErrors.toClearProfileContentCeilingError(
                 new ProfileRejections.ReauthenticationRequired()))
@@ -127,8 +153,8 @@ class ProfileErrorsTest {
   }
 
   @Test
-  @DisplayName("Should name the Household in the lock error only when it may be seen")
-  void shouldNameHouseholdInLockErrorOnlyWhenItMayBeSeen() {
+  @DisplayName("Should name the Household in the lock error when it may be seen")
+  void shouldNameHouseholdInLockErrorWhenItMayBeSeen() {
     var householdId = UUID.randomUUID();
     var named =
         ProfileErrors.toClearProfilePinError(
@@ -143,29 +169,58 @@ class ProfileErrorsTest {
             error -> assertThat(((WouldLockProfileError) error).message()).contains("Beach House"));
     assertThat(((WouldLockProfileError) unnamed).message()).doesNotContain("Beach House");
     assertThat(((WouldLockProfileError) unnamed).householdId()).isEqualTo(householdId);
-    assertThat(ProfileErrors.toClearProfilePinError(new ProfileRejections.ProfileNotFound()))
-        .isInstanceOf(ProfileNotFoundError.class);
   }
 
   @Test
-  @DisplayName("Should map the PIN and deletion rejections to their schema errors")
-  void shouldMapPinAndDeletionRejectionsToTheirSchemaErrors() {
-    assertThat(ProfileErrors.toSetProfilePinError(new ProfileRejections.ProfileNotFound()))
-        .isInstanceOf(ProfileNotFoundError.class);
-    assertThat(ProfileErrors.toSetProfilePinError(new ProfileRejections.PinMalformed()))
-        .isInstanceOf(PinMalformedError.class);
-    assertThat(ProfileErrors.toOverrideProfilePinError(new ProfileRejections.ProfileNotFound()))
-        .isInstanceOf(ProfileNotFoundError.class);
-    assertThat(ProfileErrors.toOverrideProfilePinError(new ProfileRejections.PinMalformed()))
-        .isInstanceOf(PinMalformedError.class);
-    assertThat(ProfileErrors.toOverrideProfilePinError(new ProfileRejections.ReasonRequired()))
-        .isInstanceOf(ReasonRequiredError.class);
+  @DisplayName("Should map every set-PIN rejection when the service refuses the mutation")
+  void shouldMapEverySetPinRejectionWhenServiceRefusesMutation() {
+    assertInputError(
+        ProfileErrors.toSetProfilePinError(new ProfileRejections.ProfileNotFound()),
+        ProfileNotFoundError.class,
+        "profileId");
+    assertInputError(
+        ProfileErrors.toSetProfilePinError(new ProfileRejections.PinMalformed()),
+        PinMalformedError.class,
+        "pin");
+  }
+
+  @Test
+  @DisplayName("Should map every clear-PIN rejection when the service refuses the mutation")
+  void shouldMapEveryClearPinRejectionWhenServiceRefusesMutation() {
+    assertInputError(
+        ProfileErrors.toClearProfilePinError(new ProfileRejections.ProfileNotFound()),
+        ProfileNotFoundError.class,
+        "profileId");
+  }
+
+  @Test
+  @DisplayName("Should map every override-PIN rejection when the service refuses the mutation")
+  void shouldMapEveryOverridePinRejectionWhenServiceRefusesMutation() {
+    assertInputError(
+        ProfileErrors.toOverrideProfilePinError(new ProfileRejections.ProfileNotFound()),
+        ProfileNotFoundError.class,
+        "profileId");
+    assertInputError(
+        ProfileErrors.toOverrideProfilePinError(new ProfileRejections.PinMalformed()),
+        PinMalformedError.class,
+        "pin");
+    assertInputError(
+        ProfileErrors.toOverrideProfilePinError(new ProfileRejections.ReasonRequired()),
+        ReasonRequiredError.class,
+        "reason");
     assertThat(
             ProfileErrors.toOverrideProfilePinError(
                 new ProfileRejections.ReauthenticationRequired()))
         .isInstanceOf(ReauthenticationRequiredError.class);
-    assertThat(ProfileErrors.toDeleteProfileError(new ProfileRejections.ProfileNotFound()))
-        .isInstanceOf(ProfileNotFoundError.class);
+  }
+
+  @Test
+  @DisplayName("Should map every deletion rejection when the service refuses deletion")
+  void shouldMapEveryDeletionRejectionWhenServiceRefusesDeletion() {
+    assertInputError(
+        ProfileErrors.toDeleteProfileError(new ProfileRejections.ProfileNotFound()),
+        ProfileNotFoundError.class,
+        "profileId");
     assertThat(ProfileErrors.toDeleteProfileError(new ProfileRejections.ProfileNotDeletable()))
         .isInstanceOf(ProfileNotDeletableError.class);
     assertThat(ProfileErrors.toDeleteProfileError(new ProfileRejections.ReauthenticationRequired()))
