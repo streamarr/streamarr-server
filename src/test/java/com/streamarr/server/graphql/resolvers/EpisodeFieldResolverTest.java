@@ -7,6 +7,7 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Season;
+import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.SeriesService;
@@ -30,7 +31,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       EpisodeFieldResolver.class,
       SeriesFieldResolver.class,
       SeriesResolver.class,
-      SecurityContextAuthorizationService.class
+      SecurityContextAuthorizationService.class,
+      FakeAuthorizationDecider.class
     })
 @DisplayName("Episode Field Resolver Tests")
 class EpisodeFieldResolverTest {

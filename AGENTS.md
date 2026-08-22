@@ -58,6 +58,8 @@ All PRs must pass these conditions on new code:
 - No nested conditionals — extract to well-named private methods or use early exits
 - Prefer switch expressions over if/else-if chains
 - One level of indentation inside methods is ideal; two is acceptable; three means refactor
+- Leave a blank line after a completed control-flow block when another statement follows; do not
+  add one before `else`, `catch`, `finally`, a `do`/`while` tail, or the enclosing closing brace
 
 ### Concurrency Coordination
 
@@ -159,6 +161,14 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Services must NEVER import from the graphql package
 - Services never import jOOQ — `DSLContext` stays in the repository layer
 - External API types (TMDB DTOs) must NEVER leak into the service/domain layer
+- Resolvers and controllers resolve the authenticated identity and translate protocol inputs and
+  outputs, then pass the identity explicitly to an application service. Authorization guarding a
+  use case is enforced in the service layer.
+- Authorization: every point decision goes through `AuthorizationService.decide(identity, intent)` (resource operation whose denial is a typed payload error) or `requireAllowed(identity, intent)` (whole-surface gate → top-level FORBIDDEN) with a typed `Intent`; callers never name a Cedar action, assemble entities, or pass their own reading of authority. Only `services.authorization.cedar` imports Cedar/JNE, only the facade knows `AuthorizationDecider`, and the engine's actions/checks/contributors are package-private. Live ServerAdmin authority is a PostgreSQL fact contributed for the actions that need it — the token's admin claim is routing/display only. `Failed` decisions surface as `AUTHORIZATION_UNAVAILABLE`; diagnostics are logged and metered (`streamarr.authorization.fail_closed`), never returned. The module is held at 100% line/branch coverage by a JaCoCo check (ADR 0025)
+- Authorization fact requirements and contributors name the semantic fact family without a
+  redundant `Fact` or `Facts` suffix — for example, `PROFILE_MANAGEMENT` and
+  `ProfileManagementContributor`. Reserve the `Facts` suffix for data carriers containing multiple
+  fact values, such as `AccountAuthorityFacts`.
 - These rules are enforced by ArchUnit tests (`ArchitectureTest`)
 
 ## Settled Decisions (do not revisit without an ADR)
@@ -231,7 +241,7 @@ We follow these factors from the Twelve-Factor App methodology:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **streamarr-server** (9554 symbols, 27152 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **streamarr-server** (12285 symbols, 35314 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

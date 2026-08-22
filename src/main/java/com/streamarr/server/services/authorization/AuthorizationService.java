@@ -6,7 +6,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * The one place request identity is read for authorization decisions (ADR 0015); auditing reads the
+ * The one authorization entry point (ADR 0015, ADR 0025): request identity is read here, and every
+ * point decision is made here by submitting a typed {@link Intent}. Auditing reads the
  * SecurityContext separately for audit columns. Resolvers and controllers resolve identity through
  * this facade on the request thread and pass explicit ids down — services and batch loaders never
  * touch the SecurityContext.
@@ -36,9 +37,20 @@ public interface AuthorizationService {
 
   UUID requireProfile();
 
-  boolean isServerAdmin();
+  /**
+   * Decides a resource operation whose expected denial belongs in the mutation's payload user
+   * errors. Callers map {@code Denied} to a typed domain rejection and {@code Failed} to a
+   * sanitized {@code AUTHORIZATION_UNAVAILABLE} error.
+   */
+  <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent);
 
-  void requireServerAdmin();
+  /**
+   * Gates a whole surface: returns the intent's value when allowed, throws {@link
+   * org.springframework.security.access.AccessDeniedException} (top-level FORBIDDEN) when denied,
+   * and {@link com.streamarr.server.exceptions.AuthorizationUnavailableException} when no decision
+   * could be made.
+   */
+  <T> T requireAllowed(AuthenticatedIdentity identity, Intent<T> intent);
 
   void requireHouseholdRole(HouseholdRole minimum);
 

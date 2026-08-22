@@ -17,6 +17,8 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.events.library.ItemProcessedEvent;
@@ -51,7 +53,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
@@ -69,6 +70,7 @@ public class LibraryManagementService implements ActiveScanChecker {
   private final ApplicationEventPublisher eventPublisher;
   private final LibraryRefreshService libraryRefreshService;
   private final FileSystem fileSystem;
+  private final LibraryMutationTransaction libraryMutationTransaction;
   private final MutexFactory<String> mutexFactory;
   private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
   private final Set<UUID> activeRefreshes = ConcurrentHashMap.newKeySet();
@@ -86,7 +88,8 @@ public class LibraryManagementService implements ActiveScanChecker {
       ApplicationEventPublisher eventPublisher,
       MutexFactoryProvider mutexFactoryProvider,
       LibraryRefreshService libraryRefreshService,
-      FileSystem fileSystem) {
+      FileSystem fileSystem,
+      LibraryMutationTransaction libraryMutationTransaction) {
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
     this.movieFileProcessor = movieFileProcessor;
@@ -99,6 +102,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     this.eventPublisher = eventPublisher;
     this.libraryRefreshService = libraryRefreshService;
     this.fileSystem = fileSystem;
+    this.libraryMutationTransaction = libraryMutationTransaction;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
@@ -112,7 +116,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     return libraryMetadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
   }
 
-  public Library addLibrary(Library library) {
+  public Library addLibrary(AuthenticatedIdentity identity, Library library) {
     var rawFilepath = library.getFilepathUri();
     validateFilepath(rawFilepath);
     validatePathExistsAndIsDirectory(rawFilepath);
@@ -122,7 +126,9 @@ public class LibraryManagementService implements ActiveScanChecker {
 
     var libraryToSave =
         library.toBuilder().filepathUri(encodedUri).status(LibraryStatus.HEALTHY).build();
-    var savedLibrary = libraryRepository.save(libraryToSave);
+    var savedLibrary =
+        libraryMutationTransaction.execute(
+            identity, new Intent.AddLibrary(), () -> libraryRepository.save(libraryToSave));
 
     eventPublisher.publishEvent(
         new LibraryAddedEvent(savedLibrary.getId(), savedLibrary.getFilepathUri()));
@@ -189,26 +195,30 @@ public class LibraryManagementService implements ActiveScanChecker {
         });
   }
 
-  @Transactional
-  public void removeLibrary(UUID libraryId) {
+  public void removeLibrary(AuthenticatedIdentity identity, UUID libraryId) {
     var libraryMutex = mutexFactory.getMutex(libraryId.toString());
     libraryMutex.lock();
 
     try {
-      var library = findLibraryOrThrow(libraryId);
-      rejectIfScanning(library);
-      rejectIfRefreshing(library);
-
-      var mediaFiles = mediaFileRepository.findByLibraryId(libraryId);
-      var mediaFileIds = extractMediaFileIds(mediaFiles);
-
-      deleteLibraryContent(libraryId, mediaFiles);
-      libraryRepository.delete(library);
-
-      eventPublisher.publishEvent(new LibraryRemovedEvent(library.getFilepathUri(), mediaFileIds));
+      libraryMutationTransaction.execute(
+          identity, new Intent.RemoveLibrary(libraryId), () -> removeLibrary(libraryId));
     } finally {
       libraryMutex.unlock();
     }
+  }
+
+  private void removeLibrary(UUID libraryId) {
+    var library = findLibraryOrThrow(libraryId);
+    rejectIfScanning(library);
+    rejectIfRefreshing(library);
+
+    var mediaFiles = mediaFileRepository.findByLibraryId(libraryId);
+    var mediaFileIds = extractMediaFileIds(mediaFiles);
+
+    deleteLibraryContent(libraryId, mediaFiles);
+    libraryRepository.delete(library);
+
+    eventPublisher.publishEvent(new LibraryRemovedEvent(library.getFilepathUri(), mediaFileIds));
   }
 
   private Library findLibraryOrThrow(UUID libraryId) {

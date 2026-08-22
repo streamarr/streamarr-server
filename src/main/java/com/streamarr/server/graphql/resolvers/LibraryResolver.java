@@ -24,6 +24,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.library.LibraryAdministrationService;
 import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.pagination.MediaFilter;
@@ -42,6 +43,7 @@ public class LibraryResolver {
 
   private final LibraryRepository libraryRepository;
   private final AuthorizationService authorizationService;
+  private final LibraryAdministrationService libraryAdministrationService;
   private final LibraryManagementService libraryManagementService;
   private final MovieService movieService;
   private final SeriesService seriesService;
@@ -52,7 +54,7 @@ public class LibraryResolver {
 
   @DgsMutation
   public Library addLibrary(@InputArgument AddLibraryInput input) {
-    authorizationService.requireServerAdmin();
+    var identity = authorizationService.currentIdentity();
     var library =
         Library.builder()
             .name(input.name())
@@ -65,27 +67,29 @@ public class LibraryResolver {
                     : ExternalAgentStrategy.TMDB)
             .build();
 
-    return libraryManagementService.addLibrary(library);
+    return libraryAdministrationService.addLibrary(identity, library);
   }
 
   @DgsMutation
   public boolean removeLibrary(String id) {
-    authorizationService.requireServerAdmin();
-    libraryManagementService.removeLibrary(parseUuid(id));
+    var libraryId = parseUuid(id);
+    var identity = authorizationService.currentIdentity();
+    libraryAdministrationService.removeLibrary(identity, libraryId);
     return true;
   }
 
   @DgsMutation
   public boolean scanLibrary(String id) {
-    authorizationService.requireServerAdmin();
-    libraryManagementService.triggerAsyncScan(parseUuid(id));
+    var libraryId = parseUuid(id);
+    libraryAdministrationService.scanLibrary(authorizationService.currentIdentity(), libraryId);
     return true;
   }
 
   @DgsMutation
   public boolean refreshLibrary(String id, @InputArgument ImageRefreshMode imageRefreshMode) {
-    authorizationService.requireServerAdmin();
-    libraryManagementService.triggerAsyncRefresh(parseUuid(id), imageRefreshMode);
+    var libraryId = parseUuid(id);
+    libraryAdministrationService.refreshLibrary(
+        authorizationService.currentIdentity(), libraryId, imageRefreshMode);
     return true;
   }
 

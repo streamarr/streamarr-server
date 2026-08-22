@@ -17,6 +17,7 @@ import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.graphql.dataloaders.ImageDataLoader;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -49,6 +50,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       SeriesFieldResolver.class,
       SeasonFieldResolver.class,
       SecurityContextAuthorizationService.class,
+      FakeAuthorizationDecider.class,
     })
 @DisplayName("Image Field Resolver Tests")
 class ImageFieldResolverTest {

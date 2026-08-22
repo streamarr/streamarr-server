@@ -10,6 +10,7 @@ import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.SeriesService;
@@ -29,7 +30,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @Tag("UnitTest")
 @EnableDgsTest
 @WithProfileContext
-@SpringBootTest(classes = {SeriesResolver.class, SecurityContextAuthorizationService.class})
+@SpringBootTest(
+    classes = {
+      SeriesResolver.class,
+      SecurityContextAuthorizationService.class,
+      FakeAuthorizationDecider.class
+    })
 @DisplayName("Series Resolver Tests")
 class SeriesResolverTest {
 

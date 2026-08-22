@@ -20,6 +20,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeAccountProfileRepository;
+import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -62,7 +63,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
     classes = {
       StreamingResolver.class,
       StreamingResolverTest.TestConfig.class,
-      SecurityContextAuthorizationService.class
+      SecurityContextAuthorizationService.class,
+      FakeAuthorizationDecider.class
     })
 @DisplayName("Streaming Resolver Tests")
 class StreamingResolverTest {

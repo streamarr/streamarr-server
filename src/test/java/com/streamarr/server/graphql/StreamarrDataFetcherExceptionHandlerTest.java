@@ -3,6 +3,7 @@ package com.streamarr.server.graphql;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
@@ -49,6 +50,13 @@ class StreamarrDataFetcherExceptionHandlerTest {
   @DisplayName("Should map access denied to forbidden when authorization fails")
   void shouldMapAccessDeniedToForbiddenWhenAuthorizationFails() {
     assertThat(codeFor(new AccessDeniedException("denied"))).isEqualTo("FORBIDDEN");
+  }
+
+  @Test
+  @DisplayName("Should map authorization unavailable when no decision could be made")
+  void shouldMapAuthorizationUnavailableWhenNoDecisionCouldBeMade() {
+    assertThat(codeFor(new AuthorizationUnavailableException()))
+        .isEqualTo("AUTHORIZATION_UNAVAILABLE");
   }
 
   @Test

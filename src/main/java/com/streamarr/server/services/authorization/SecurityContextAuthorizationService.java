@@ -4,6 +4,7 @@ import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
@@ -23,6 +24,7 @@ public class SecurityContextAuthorizationService implements AuthorizationService
 
   private final ProfileRepository profileRepository;
   private final AccountProfileRepository accountProfileRepository;
+  private final AuthorizationDecider decider;
 
   @Override
   public AuthenticatedIdentity currentIdentity() {
@@ -78,15 +80,17 @@ public class SecurityContextAuthorizationService implements AuthorizationService
   }
 
   @Override
-  public boolean isServerAdmin() {
-    return currentIdentity().role() == AccountRole.ADMIN;
+  public <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent) {
+    return decider.decide(identity, intent);
   }
 
   @Override
-  public void requireServerAdmin() {
-    if (!isServerAdmin()) {
-      throw new AccessDeniedException("Server administrator role is required.");
-    }
+  public <T> T requireAllowed(AuthenticatedIdentity identity, Intent<T> intent) {
+    return switch (decide(identity, intent)) {
+      case Decision.Allowed<T>(var value) -> value;
+      case Decision.Denied<T> _ -> throw new AccessDeniedException("Not allowed.");
+      case Decision.Failed<T> _ -> throw new AuthorizationUnavailableException();
+    };
   }
 
   @Override
@@ -123,9 +127,9 @@ public class SecurityContextAuthorizationService implements AuthorizationService
     return profileGrantedTo(identity, profileId);
   }
 
+  // A scoped identity always carries a role with its household (AuthenticatedIdentity invariant).
   private static boolean managesHouseholdProfiles(AuthenticatedIdentity identity) {
-    return identity.householdRole() != null
-        && rank(identity.householdRole()) >= rank(HouseholdRole.PARENT);
+    return rank(identity.householdRole()) >= rank(HouseholdRole.PARENT);
   }
 
   private boolean profileInHousehold(UUID profileId, UUID householdId) {
