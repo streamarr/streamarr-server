@@ -584,7 +584,6 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
         .scope(TokenScope.ACCOUNT)
         .householdId(identity.household().getId())
         .householdRole(identity.account().getHouseholdRole())
-        .serverAdmin(identity.account().isServerAdmin())
         .contextHouseholdId(identity.household().getId())
         .reauthenticatedAt(Optional.of(Instant.now().minusSeconds(1)))
         .build();
