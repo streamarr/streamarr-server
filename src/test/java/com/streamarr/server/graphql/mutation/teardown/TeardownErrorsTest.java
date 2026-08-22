@@ -3,48 +3,30 @@ package com.streamarr.server.graphql.mutation.teardown;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.services.identity.TeardownRejections;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /** Every service rejection maps to exactly its schema error type. */
 @Tag("UnitTest")
 @DisplayName("Teardown Errors Tests")
 class TeardownErrorsTest {
 
-  @Test
-  @DisplayName("Should map every teardown rejection to its schema error")
-  void shouldMapEveryTeardownRejectionToItsSchemaError() {
-    assertThat(TeardownErrors.toTearDownError(new TeardownRejections.HouseholdNotFound()))
-        .isInstanceOf(HouseholdNotFoundError.class);
-    assertThat(TeardownErrors.toTearDownError(new TeardownRejections.ReasonRequired()))
-        .isInstanceOf(ReasonRequiredError.class);
-    assertThat(TeardownErrors.toTearDownError(new TeardownRejections.ReauthenticationRequired()))
-        .isInstanceOf(ReauthenticationRequiredError.class);
-    assertThat(TeardownErrors.toTearDownError(new TeardownRejections.AccountsRemain()))
-        .isInstanceOf(AccountsRemainError.class);
-    assertThat(TeardownErrors.toTearDownError(new TeardownRejections.FinalAccountRequired()))
-        .isInstanceOf(FinalAccountRequiredError.class);
-    assertThat(TeardownErrors.toTearDownError(new TeardownRejections.FinalAccountUnexpected()))
-        .isInstanceOf(FinalAccountUnexpectedError.class);
-    assertThat(TeardownErrors.toTearDownError(new TeardownRejections.DestinationRequired()))
-        .isInstanceOf(DestinationRequiredError.class);
-    assertThat(TeardownErrors.toTearDownError(new TeardownRejections.DestinationNotFound()))
-        .isInstanceOf(DestinationNotFoundError.class);
-    assertThat(TeardownErrors.toTearDownError(new TeardownRejections.ReplacementManagerRequired()))
-        .isInstanceOf(ReplacementManagerRequiredError.class);
-    assertThat(TeardownErrors.toTearDownError(new TeardownRejections.ReplacementManagerNotFound()))
-        .isInstanceOf(ReplacementManagerNotFoundError.class);
-    assertThat(
-            TeardownErrors.toTearDownError(new TeardownRejections.ReplacementManagerNotEligible()))
-        .isInstanceOf(ReplacementManagerNotEligibleError.class);
-    assertThat(TeardownErrors.toTearDownError(new TeardownRejections.LastServerAdmin()))
-        .isInstanceOf(LastServerAdminError.class);
+  @ParameterizedTest(name = "{1}")
+  @MethodSource("rejectionMappings")
+  @DisplayName("Should map to the matching schema error when teardown is rejected")
+  void shouldMapToMatchingSchemaErrorWhenTeardownIsRejected(
+      TeardownRejections.TearDown rejection, Class<?> schemaErrorType) {
+    assertThat(TeardownErrors.toTearDownError(rejection)).isInstanceOf(schemaErrorType);
   }
 
   @Test
-  @DisplayName("Should map nested teardown input paths as separate schema segments")
-  void shouldMapNestedTeardownInputPathsAsSeparateSchemaSegments() {
+  @DisplayName("Should map nested input paths as separate segments when teardown is rejected")
+  void shouldMapNestedInputPathsAsSeparateSegmentsWhenTeardownIsRejected() {
     var destination =
         (DestinationRequiredError)
             TeardownErrors.toTearDownError(new TeardownRejections.DestinationRequired());
@@ -55,5 +37,30 @@ class TeardownErrorsTest {
     assertThat(destination.inputPath()).containsExactly("finalAccount", "destinationHouseholdId");
     assertThat(replacement.inputPath())
         .containsExactly("finalAccount", "replacementManagerAccountId");
+  }
+
+  private static Stream<Arguments> rejectionMappings() {
+    return Stream.of(
+        Arguments.of(new TeardownRejections.HouseholdNotFound(), HouseholdNotFoundError.class),
+        Arguments.of(new TeardownRejections.ReasonRequired(), ReasonRequiredError.class),
+        Arguments.of(
+            new TeardownRejections.ReauthenticationRequired(), ReauthenticationRequiredError.class),
+        Arguments.of(new TeardownRejections.AccountsRemain(), AccountsRemainError.class),
+        Arguments.of(
+            new TeardownRejections.FinalAccountRequired(), FinalAccountRequiredError.class),
+        Arguments.of(
+            new TeardownRejections.FinalAccountUnexpected(), FinalAccountUnexpectedError.class),
+        Arguments.of(new TeardownRejections.DestinationRequired(), DestinationRequiredError.class),
+        Arguments.of(new TeardownRejections.DestinationNotFound(), DestinationNotFoundError.class),
+        Arguments.of(
+            new TeardownRejections.ReplacementManagerRequired(),
+            ReplacementManagerRequiredError.class),
+        Arguments.of(
+            new TeardownRejections.ReplacementManagerNotFound(),
+            ReplacementManagerNotFoundError.class),
+        Arguments.of(
+            new TeardownRejections.ReplacementManagerNotEligible(),
+            ReplacementManagerNotEligibleError.class),
+        Arguments.of(new TeardownRejections.LastServerAdmin(), LastServerAdminError.class));
   }
 }

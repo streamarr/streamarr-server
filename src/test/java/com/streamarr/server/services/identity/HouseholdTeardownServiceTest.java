@@ -2,7 +2,6 @@ package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
@@ -105,12 +104,16 @@ class HouseholdTeardownServiceTest {
   }
 
   @Test
-  @DisplayName("Should require the reason and classify the missing ceremony first")
-  void shouldRequireReasonAndClassifyMissingCeremonyFirst() {
+  @DisplayName("Should reject without authorizing when the teardown reason is blank")
+  void shouldRejectWithoutAuthorizingWhenTeardownReasonIsBlank() {
     assertThat(rejectionOf(service.tearDownHousehold(identity(), command(" ", null))))
         .isInstanceOf(TeardownRejections.ReasonRequired.class);
     assertThat(authorization.recordedIntents()).isEmpty();
+  }
 
+  @Test
+  @DisplayName("Should require reauthentication when teardown authorization requests a fresh ceremony")
+  void shouldRequireReauthenticationWhenTeardownAuthorizationRequestsFreshCeremony() {
     authorization.decideWith(
         intent ->
             intent instanceof Intent.TearDownHousehold
@@ -121,13 +124,17 @@ class HouseholdTeardownServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse until every other Account is gone and the disposition matches")
-  void shouldRefuseUntilEveryOtherAccountGoneAndDispositionMatches() {
+  @DisplayName("Should reject teardown when multiple Accounts remain in the Household")
+  void shouldRejectTeardownWhenMultipleAccountsRemainInHousehold() {
     residentOf(doomed, HouseholdRole.ADMIN);
     residentOf(doomed, HouseholdRole.MEMBER);
     assertThat(rejectionOf(service.tearDownHousehold(identity(), command("closing", null))))
         .isInstanceOf(TeardownRejections.AccountsRemain.class);
+  }
 
+  @Test
+  @DisplayName("Should require a final-Account disposition when exactly one Account remains")
+  void shouldRequireFinalAccountDispositionWhenExactlyOneAccountRemains() {
     var single = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     residentOf(single, HouseholdRole.ADMIN);
     assertThat(
@@ -140,13 +147,17 @@ class HouseholdTeardownServiceTest {
                         .build())))
         .isInstanceOf(TeardownRejections.FinalAccountRequired.class);
 
-    var empty = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+  }
+
+  @Test
+  @DisplayName("Should reject a final-Account disposition when the Household is empty")
+  void shouldRejectFinalAccountDispositionWhenHouseholdIsEmpty() {
     assertThat(
             rejectionOf(
                 service.tearDownHousehold(
                     identity(),
                     TearDownHouseholdCommand.builder()
-                        .householdId(empty.getId())
+                        .householdId(doomed.getId())
                         .reason("closing")
                         .finalAccount(
                             FinalAccountDisposition.builder()
@@ -203,8 +214,9 @@ class HouseholdTeardownServiceTest {
   }
 
   @Test
-  @DisplayName("Should dispose of the final Account by transfer before the Household falls")
-  void shouldDisposeOfFinalAccountByTransferBeforeHouseholdFalls() {
+  @DisplayName(
+      "Should transfer the final Account with its Personal Profile when transfer disposition is chosen")
+  void shouldTransferFinalAccountWithPersonalProfileWhenTransferDispositionIsChosen() {
     var lastResident = residentOf(doomed, HouseholdRole.ADMIN);
 
     var outcome =
@@ -226,8 +238,8 @@ class HouseholdTeardownServiceTest {
   }
 
   @Test
-  @DisplayName("Should keep the final person's Profile only behind a destination anchor")
-  void shouldKeepFinalPersonsProfileOnlyBehindDestinationAnchor() {
+  @DisplayName("Should require a replacement manager when the final Account's Profile is kept")
+  void shouldRequireReplacementManagerWhenFinalAccountProfileIsKept() {
     var lastResident = residentOf(doomed, HouseholdRole.ADMIN);
 
     assertThat(
@@ -241,7 +253,13 @@ class HouseholdTeardownServiceTest {
                             .destinationHouseholdId(refuge.getId())
                             .build()))))
         .isInstanceOf(TeardownRejections.ReplacementManagerRequired.class);
+  }
 
+  @Test
+  @DisplayName(
+      "Should preserve the final Account's Profile behind the destination anchor when keep disposition is chosen")
+  void shouldPreserveFinalAccountProfileBehindDestinationAnchorWhenKeepDispositionIsChosen() {
+    var lastResident = residentOf(doomed, HouseholdRole.ADMIN);
     var outcome =
         service.tearDownHousehold(
             identity(),
@@ -263,8 +281,8 @@ class HouseholdTeardownServiceTest {
   }
 
   @Test
-  @DisplayName("Should preview what teardown will take with it")
-  void shouldPreviewWhatTeardownWillTakeWithIt() {
+  @DisplayName("Should report teardown impact when the caller may view the Household")
+  void shouldReportTeardownImpactWhenCallerMayViewHousehold() {
     residentOf(doomed, HouseholdRole.ADMIN);
     profiles.save(
         ProfileFixture.defaultProfileBuilder().householdId(doomed.getId()).name("Kept?").build());
@@ -275,14 +293,18 @@ class HouseholdTeardownServiceTest {
     assertThat(preflight.accountCount()).isEqualTo(1);
     assertThat(preflight.unlinkedProfiles()).hasSize(1);
     assertThat(preflight.hostedVisitCount()).isEqualTo(1);
+  }
 
+  @Test
+  @DisplayName("Should hide teardown preflight when the caller may not view the Household")
+  void shouldHideTeardownPreflightWhenCallerMayNotViewHousehold() {
     authorization.denyAll();
     assertThat(service.teardownPreflight(identity(), doomed.getId())).isEmpty();
   }
 
   @Test
-  @DisplayName("Should gate the audit as a whole surface and scope activity by visibility")
-  void shouldGateAuditAsWholeSurfaceAndScopeActivityByVisibility() {
+  @DisplayName("Should return audit entries when the caller may view the security audit")
+  void shouldReturnAuditEntriesWhenCallerMayViewSecurityAudit() {
     audit.append(
         SecurityAuditEntry.builder()
             .operation("somethingAudited")
@@ -296,7 +318,11 @@ class HouseholdTeardownServiceTest {
                     .limit(10)
                     .build()))
         .hasSize(1);
+  }
 
+  @Test
+  @DisplayName("Should return Profile activity when the caller may view the Profile")
+  void shouldReturnProfileActivityWhenCallerMayViewProfile() {
     var profileId = UUID.randomUUID();
     progress.save(
         SessionProgress.builder()
@@ -308,9 +334,29 @@ class HouseholdTeardownServiceTest {
             .durationSeconds(600)
             .build());
     assertThat(service.profileActivity(identity(), profileId)).hasSize(1);
+  }
 
+  @Test
+  @DisplayName("Should hide Profile activity when the caller may not view the Profile")
+  void shouldHideProfileActivityWhenCallerMayNotViewProfile() {
+    var profileId = UUID.randomUUID();
+    progress.save(
+        SessionProgress.builder()
+            .sessionId(UUID.randomUUID())
+            .profileId(profileId)
+            .mediaFileId(UUID.randomUUID())
+            .positionSeconds(60)
+            .percentComplete(10.0)
+            .durationSeconds(600)
+            .build());
     authorization.denyAll();
     assertThat(service.profileActivity(identity(), profileId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should forbid the security audit when the caller may not view it")
+  void shouldForbidSecurityAuditWhenCallerMayNotViewIt() {
+    authorization.denyAll();
     var identity = identity();
     assertThatThrownBy(
             () ->
@@ -324,33 +370,39 @@ class HouseholdTeardownServiceTest {
   }
 
   @Test
-  @DisplayName("Should surface unavailable authorization from every point decision")
-  void shouldSurfaceUnavailableAuthorizationFromEveryPointDecision() {
-    assertAll(
-        () -> {
-          authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
-          assertThatThrownBy(() -> service.teardownPreflight(identity(), doomed.getId()))
-              .isInstanceOf(AuthorizationUnavailableException.class);
-        },
-        () -> {
-          authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
-          assertThatThrownBy(() -> service.profileActivity(identity(), UUID.randomUUID()))
-              .isInstanceOf(AuthorizationUnavailableException.class);
-        },
-        () -> {
-          authorization.decideWith(
-              intent ->
-                  intent instanceof Intent.TearDownHousehold
-                      ? new Decision.Denied<>(Decision.DenialReason.POLICY)
-                      : new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
-          assertThatThrownBy(() -> service.tearDownHousehold(identity(), command("closing", null)))
-              .isInstanceOf(AuthorizationUnavailableException.class);
-        });
+  @DisplayName("Should fail closed when teardown preflight authorization is unavailable")
+  void shouldFailClosedWhenTeardownPreflightAuthorizationIsUnavailable() {
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+
+    assertThatThrownBy(() -> service.teardownPreflight(identity(), doomed.getId()))
+        .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
   @Test
-  @DisplayName("Should allow only one concurrent final-Account disposition")
-  void shouldAllowOnlyOneConcurrentFinalAccountDisposition() throws Exception {
+  @DisplayName("Should fail closed when Profile activity authorization is unavailable")
+  void shouldFailClosedWhenProfileActivityAuthorizationIsUnavailable() {
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+
+    assertThatThrownBy(() -> service.profileActivity(identity(), UUID.randomUUID()))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when teardown visibility authorization is unavailable")
+  void shouldFailClosedWhenTeardownVisibilityAuthorizationIsUnavailable() {
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.TearDownHousehold
+                ? new Decision.Denied<>(Decision.DenialReason.POLICY)
+                : new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+
+    assertThatThrownBy(() -> service.tearDownHousehold(identity(), command("closing", null)))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("Should allow only one disposition when final-Account requests race")
+  void shouldAllowOnlyOneDispositionWhenFinalAccountRequestsRace() throws Exception {
     residentOf(doomed, HouseholdRole.ADMIN);
     var start = new CyclicBarrier(2);
     var transfer =
