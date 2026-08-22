@@ -12,6 +12,13 @@ import java.util.stream.Collectors;
 
 public class FakeSecurityAuditEventRepository implements SecurityAuditEventRepository {
 
+  private static final Comparator<SecurityAuditEventRecordView> NEWEST_FIRST =
+      Comparator.comparing(SecurityAuditEventRecordView::occurredAt)
+          .thenComparing(record -> record.id().toString())
+          .reversed();
+  private static final Comparator<SecurityAuditEventRecordView> OLDEST_FIRST =
+      NEWEST_FIRST.reversed();
+
   private final List<SecurityAuditEntry> entries = new ArrayList<>();
   private final List<SecurityAuditEventRecordView> records = new ArrayList<>();
 
@@ -21,7 +28,7 @@ public class FakeSecurityAuditEventRepository implements SecurityAuditEventRepos
     records.add(
         new SecurityAuditEventRecordView(
             UUID.randomUUID(),
-            Instant.now().minusSeconds(records.size()),
+            Instant.EPOCH.plusSeconds(records.size()),
             entry.actorAccountId(),
             entry.operation(),
             "SUCCESS",
@@ -35,8 +42,28 @@ public class FakeSecurityAuditEventRepository implements SecurityAuditEventRepos
   public List<SecurityAuditEventRecordView> pageNewestFirst(
       Instant beforeOccurredAt, UUID beforeId, int limit) {
     return records.stream()
-        .sorted(Comparator.comparing(SecurityAuditEventRecordView::occurredAt).reversed())
-        .filter(row -> beforeOccurredAt == null || row.occurredAt().isBefore(beforeOccurredAt))
+        .sorted(NEWEST_FIRST)
+        .filter(
+            row ->
+                beforeOccurredAt == null
+                    || row.occurredAt().isBefore(beforeOccurredAt)
+                    || row.occurredAt().equals(beforeOccurredAt)
+                        && row.id().toString().compareTo(beforeId.toString()) < 0)
+        .limit(limit)
+        .toList();
+  }
+
+  @Override
+  public List<SecurityAuditEventRecordView> pageOldestFirst(
+      Instant afterOccurredAt, UUID afterId, int limit) {
+    return records.stream()
+        .sorted(OLDEST_FIRST)
+        .filter(
+            row ->
+                afterOccurredAt == null
+                    || row.occurredAt().isAfter(afterOccurredAt)
+                    || row.occurredAt().equals(afterOccurredAt)
+                        && row.id().toString().compareTo(afterId.toString()) > 0)
         .limit(limit)
         .toList();
   }

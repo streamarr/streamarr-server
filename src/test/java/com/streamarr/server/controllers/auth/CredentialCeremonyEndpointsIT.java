@@ -733,6 +733,72 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should invalidate an issuer's outstanding reset codes when the issuer is deleted")
+  void shouldInvalidateIssuersOutstandingResetCodesWhenIssuerIsDeleted() throws Exception {
+    var target = authTestSupport.createIdentity();
+    var survivingAdmin = authTestSupport.createAdminIdentity();
+    try {
+      var code = issuePasswordReset(target.account().getId());
+
+      graphql(
+              authTestSupport.freshAccountBearer(survivingAdmin),
+              """
+              mutation { tearDownHousehold(input: {householdId: "%s", reason: "closing",
+                finalAccount: {choice: DELETE}}) {
+                householdId userErrors { __typename } } }
+              """
+                  .formatted(serverAdmin.household().getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.tearDownHousehold.userErrors").isEmpty());
+
+      mockMvc
+          .perform(
+              post("/api/auth/password-reset/redeem")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      """
+                      {"code": "%s", "newPassword": "a brand new passphrase"}
+                      """
+                          .formatted(code)))
+          .andExpect(status().isNotFound());
+    } finally {
+      authTestSupport.deleteIdentity(target);
+      authTestSupport.deleteIdentity(survivingAdmin);
+    }
+  }
+
+  @Test
+  @DisplayName("Should return every issuance refusal as a typed user error")
+  void shouldReturnEveryIssuanceRefusalAsTypedUserError() throws Exception {
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            mutation { issueAccountInvitation(input: {recipientEmail: "%s",
+              householdId: "%s", householdRole: MEMBER, profileName: "Twin", profileKind: ADULT}) {
+              issued { code } userErrors { __typename } } }
+            """
+                .formatted(serverAdmin.account().getEmail(), serverAdmin.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.issueAccountInvitation.userErrors[0].__typename")
+                .value("EmailAlreadyUsedError"));
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            mutation { issueAccountInvitation(input: {recipientEmail: "kid@example.com",
+              householdId: "%s", householdRole: MEMBER, profileName: "Kid", profileKind: KID}) {
+              issued { code } userErrors { __typename } } }
+            """
+                .formatted(serverAdmin.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.issueAccountInvitation.userErrors[0].__typename")
+                .value("EligibleProfileManagerRequiredError"));
+  }
+
+  @Test
   @DisplayName("Should create a supervised Profile when a Kid invitation is accepted")
   void shouldCreateSupervisedProfileWhenKidInvitationIsAccepted() throws Exception {
     var code =
