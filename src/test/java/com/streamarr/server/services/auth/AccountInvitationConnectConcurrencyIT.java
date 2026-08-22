@@ -89,8 +89,10 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject one rival CONNECT acceptance as an invalid code")
-  void shouldRejectOneRivalConnectAcceptanceAsInvalidCode() throws Exception {
+  @DisplayName(
+      "Should reject one rival CONNECT acceptance as an invalid code when both are accepted concurrently")
+  void shouldRejectOneRivalConnectAcceptanceAsInvalidCodeWhenBothAcceptedConcurrently()
+      throws Exception {
     var orphan = orphanAtHome();
     var firstCode = pendingConnectInvitation(orphan, FIRST_RIVAL_EMAIL);
     var secondCode = pendingConnectInvitation(orphan, SECOND_RIVAL_EMAIL);
@@ -120,8 +122,8 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should end a share that activates concurrently with CONNECT acceptance")
-  void shouldEndShareThatActivatesConcurrentlyWithConnectAcceptance() throws Exception {
+  @DisplayName("Should end a share when it activates concurrently with CONNECT acceptance")
+  void shouldEndShareWhenItActivatesConcurrentlyWithConnectAcceptance() throws Exception {
     targetAdmin = authTestSupport.createIdentity();
     var orphan = orphanAtHome();
     var pending = pendingShare(orphan, targetAdmin.household().getId());
