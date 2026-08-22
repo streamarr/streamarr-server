@@ -162,6 +162,30 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
+  public Optional<UserAccount> findRefreshedById(UUID accountId) {
+    return findById(accountId);
+  }
+
+  @Override
+  public boolean tryTransfer(
+      UUID accountId, UUID expectedHouseholdId, UUID destinationHouseholdId, HouseholdRole role) {
+    return transition(
+        accountId,
+        account -> expectedHouseholdId.equals(account.getHouseholdId()),
+        account -> {
+          account.setHouseholdId(destinationHouseholdId);
+          account.setHouseholdRole(role);
+        });
+  }
+
+  @Override
+  public boolean tryDelete(UUID accountId, UUID expectedHouseholdId) {
+    var account = findById(accountId).filter(a -> expectedHouseholdId.equals(a.getHouseholdId()));
+    account.ifPresent(a -> deleteById(a.getId()));
+    return account.isPresent();
+  }
+
+  @Override
   public boolean mayUseHousehold(UUID accountId, UUID householdId) {
     return findById(accountId)
         .map(

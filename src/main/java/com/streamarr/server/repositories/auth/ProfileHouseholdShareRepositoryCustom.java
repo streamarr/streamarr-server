@@ -57,7 +57,16 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /** Invalidates every PENDING offer of the Profile (connected, transferred, or deleted). */
   int invalidatePendingSharesForProfile(UUID profileId, String reason, Instant now);
 
+  /**
+   * KEEP_AS_VISITOR and KEEP-deletion turn the old structural availability into an ordinary visitor
+   * share instead of ending it.
+   */
+  boolean tryDemoteStructural(UUID profileId, UUID householdId, Instant now);
+
   /** Invalidates the leaving manager's own PENDING offers of the Profile. */
   int invalidatePendingSharesOfferedBy(
       UUID profileId, UUID offererAccountId, String reason, Instant now);
+
+  /** Invalidates every PENDING offer a deleted Account made, across all Profiles. */
+  int invalidatePendingSharesOfferedByAccount(UUID offererAccountId, String reason, Instant now);
 }

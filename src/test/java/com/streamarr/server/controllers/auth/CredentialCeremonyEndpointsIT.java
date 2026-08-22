@@ -16,6 +16,8 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
@@ -560,8 +562,45 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should require reauthentication and audit when a reset is issued")
-  void shouldRequireReauthenticationAndAuditWhenResetIsIssued() throws Exception {
+  @DisplayName("Should invalidate an issuer's reset codes when the issuer is deleted")
+  void shouldInvalidateIssuersResetCodesWhenIssuerIsDeleted() throws Exception {
+    var otherAdmin = authTestSupport.createAdminIdentity();
+    var target = authTestSupport.createIdentity();
+    var backupAdmin = residentOf(serverAdmin.household().getId());
+    try {
+      var code = issuePasswordReset(target.account().getId());
+
+      graphql(
+              authTestSupport.freshAccountBearer(otherAdmin),
+              """
+              mutation { deleteAccount(input: {accountId: "%s", profileDisposition: ERASE,
+                reason: "issuer left"}) { accountId userErrors { __typename } } }
+              """
+                  .formatted(serverAdmin.account().getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.deleteAccount.userErrors").isEmpty());
+
+      mockMvc
+          .perform(
+              post("/api/auth/password-reset/redeem")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      """
+                      {"code": "%s", "newPassword": "a brand new passphrase"}
+                      """
+                          .formatted(code)))
+          .andExpect(status().isNotFound());
+    } finally {
+      authTestSupport.deleteIdentity(target);
+      authTestSupport.deleteIdentity(otherAdmin);
+      authTestSupport.deleteAccount(backupAdmin.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should require the ceremony to issue a reset and audit the winner")
+  void shouldRequireCeremonyToIssueResetAndAuditWinner() throws Exception {
     var target = authTestSupport.createIdentity();
     try {
       graphql(
@@ -786,6 +825,30 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                   .status(ProfileShareStatus.ACTIVE)
                   .build());
           return profile;
+        });
+  }
+
+  private UserAccount residentOf(UUID householdId) {
+    return transactionTemplate.execute(
+        _ -> {
+          var profile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder().householdId(householdId).build());
+          var account =
+              userAccountRepository.saveAndFlush(
+                  AccountFixture.defaultAccountBuilder()
+                      .householdId(householdId)
+                      .householdRole(HouseholdRole.ADMIN)
+                      .personalProfileId(profile.getId())
+                      .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(householdId)
+                  .status(ProfileShareStatus.ACTIVE)
+                  .structural(true)
+                  .build());
+          return account;
         });
   }
 
