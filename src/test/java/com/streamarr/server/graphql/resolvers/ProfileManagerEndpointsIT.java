@@ -79,8 +79,8 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should run the invitation loop from proposal through consent to management")
-  void shouldRunInvitationLoopFromProposalThroughConsentToManagement() throws Exception {
+  @DisplayName("Should grant management when the named recipient accepts an invitation")
+  void shouldGrantManagementWhenNamedRecipientAcceptsInvitation() throws Exception {
     var orphan = managedOrphan();
 
     var response =
@@ -153,8 +153,8 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should hide manager invitations from a share-derived supervisor")
-  void shouldHideManagerInvitationsFromShareDerivedSupervisor() throws Exception {
+  @DisplayName("Should hide manager invitations when the caller only supervises by share")
+  void shouldHideManagerInvitationsWhenCallerOnlySupervisesByShare() throws Exception {
     var namedRecipientId = transactionTemplate.execute(_ -> secondLocalManagerId());
     var invitation =
         transactionTemplate.execute(
@@ -209,8 +209,10 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should default backward manager invitation pagination to one hundred items")
-  void shouldDefaultBackwardManagerInvitationPaginationToOneHundredItems() throws Exception {
+  @DisplayName(
+      "Should default backward pagination to one hundred when only a before cursor is provided")
+  void shouldDefaultBackwardPaginationToOneHundredWhenOnlyBeforeCursorIsProvided()
+      throws Exception {
     var profiles = List.of(managedOrphan(), managedOrphan(), managedOrphan());
     transactionTemplate.executeWithoutResult(
         _ -> {
@@ -264,8 +266,8 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should decline once and let the sovereign remove a direct manager")
-  void shouldDeclineOnceAndLetSovereignRemoveDirectManager() throws Exception {
+  @DisplayName("Should decline an invitation and remove a manager when authorized actors act")
+  void shouldDeclineInvitationAndRemoveManagerWhenAuthorizedActorsAct() throws Exception {
     var orphan = managedOrphan();
     var declining =
         graphql(
@@ -363,8 +365,10 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reserve overrides for a fresh ServerAdmin and kill restorable proposals")
-  void shouldReserveOverridesForFreshServerAdminAndKillRestorableProposals() throws Exception {
+  @DisplayName(
+      "Should require a fresh ServerAdmin and invalidate restorable proposals when an override removes a manager")
+  void shouldRequireFreshServerAdminAndInvalidateRestorableProposalsWhenOverrideRemovesManager()
+      throws Exception {
     var orphan = managedOrphan();
 
     graphql(

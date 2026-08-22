@@ -95,8 +95,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should invite once and replace the older pending invitation for the same pair")
-  void shouldInviteOnceAndReplaceOlderPendingInvitationForSamePair() {
+  @DisplayName("Should replace the older pending invitation when the same pair is invited again")
+  void shouldReplaceOlderPendingInvitationWhenSamePairIsInvitedAgain() {
     var first = issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
     assertThat(first.code()).isNotBlank();
     assertThat(first.invitation().getProfileName()).isEqualTo("Joe");
@@ -111,8 +111,9 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should validate the recipient before inviting")
-  void shouldValidateRecipientBeforeInviting() {
+  @DisplayName(
+      "Should reject an invitation when the recipient is missing, ineligible, or already a manager")
+  void shouldRejectInvitationWhenRecipientIsMissingIneligibleOrAlreadyManager() {
     assertThat(
             rejectionOf(
                 service.inviteProfileManager(identity(), orphan.getId(), UUID.randomUUID())))
@@ -131,8 +132,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should read hidden Profiles as not found under the oracle rule")
-  void shouldReadHiddenProfilesAsNotFoundUnderOracleRule() {
+  @DisplayName("Should return Profile not found when the caller cannot view the Profile")
+  void shouldReturnProfileNotFoundWhenCallerCannotViewProfile() {
     authorization.denyAll();
     assertThat(
             rejectionOf(
@@ -141,8 +142,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should let exactly one decision win a pending invitation")
-  void shouldLetExactlyOneDecisionWinPendingInvitation() {
+  @DisplayName("Should allow only one decision when a pending invitation is presented again")
+  void shouldAllowOnlyOneDecisionWhenPendingInvitationIsPresentedAgain() {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
 
@@ -161,8 +162,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should answer every acceptance miss the same way and throttle guesses")
-  void shouldAnswerEveryAcceptanceMissTheSameWayAndThrottleGuesses() {
+  @DisplayName("Should return a uniform miss and throttle when acceptance codes are invalid")
+  void shouldReturnUniformMissAndThrottleWhenAcceptanceCodesAreInvalid() {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
 
@@ -184,8 +185,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse acceptance after the inviting manager loses management")
-  void shouldRefuseAcceptanceAfterInvitingManagerLosesManagement() {
+  @DisplayName("Should invalidate the invitation when the inviting manager loses management")
+  void shouldInvalidateInvitationWhenInvitingManagerLosesManagement() {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
     managers.tryRemove(inviter.getId(), orphan.getId());
@@ -211,8 +212,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should let only the named recipient decline, once")
-  void shouldLetOnlyNamedRecipientDeclineOnce() {
+  @DisplayName("Should allow a single decline when the caller is the named recipient")
+  void shouldAllowSingleDeclineWhenCallerIsNamedRecipient() {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
 
@@ -252,8 +253,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse granting an override to an unknown Account")
-  void shouldRefuseGrantingOverrideToUnknownAccount() {
+  @DisplayName("Should reject an override grant when the Account does not exist")
+  void shouldRejectOverrideGrantWhenAccountDoesNotExist() {
     assertThat(
             rejectionOf(
                 service.grantProfileManagerOverride(
@@ -262,8 +263,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should grant by override once, invalidating the redundant invitation")
-  void shouldGrantByOverrideOnceInvalidatingRedundantInvitation() {
+  @DisplayName("Should invalidate the redundant invitation when an override grant succeeds once")
+  void shouldInvalidateRedundantInvitationWhenOverrideGrantSucceedsOnce() {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
 
@@ -293,8 +294,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should remove by override once, killing every restorable proposal")
-  void shouldRemoveByOverrideOnceKillingEveryRestorableProposal() {
+  @DisplayName("Should invalidate restorable proposals when an override removal succeeds once")
+  void shouldInvalidateRestorableProposalsWhenOverrideRemovalSucceedsOnce() {
     managers.tryGrant(recipient.getId(), orphan.getId());
     var restorable =
         invitations.save(pendingInvitation(orphan.getId(), recipient.getId(), inviter.getId()));
@@ -334,8 +335,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should relinquish once and invalidate the leaver's own proposals")
-  void shouldRelinquishOnceAndInvalidateLeaversOwnProposals() {
+  @DisplayName("Should invalidate the leaver's proposals when a manager relinquishes once")
+  void shouldInvalidateLeaversProposalsWhenManagerRelinquishesOnce() {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
 
@@ -350,8 +351,9 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should remove a manager as the sovereign Account over its Personal Profile")
-  void shouldRemoveManagerAsSovereignAccountOverItsPersonalProfile() {
+  @DisplayName(
+      "Should remove a direct manager when the sovereign Account acts on its Personal Profile")
+  void shouldRemoveDirectManagerWhenSovereignAccountActsOnPersonalProfile() {
     var personal =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().id(inviter.getPersonalProfileId()).build());
@@ -369,8 +371,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should require the reason first and report a missing ceremony for overrides")
-  void shouldRequireReasonFirstAndReportMissingCeremonyForOverrides() {
+  @DisplayName("Should validate the reason before the ceremony when an override is requested")
+  void shouldValidateReasonBeforeCeremonyWhenOverrideIsRequested() {
     assertThat(
             rejectionOf(
                 service.grantProfileManagerOverride(
@@ -391,8 +393,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should scope the invitation queries by visibility and expiry")
-  void shouldScopeInvitationQueriesByVisibilityAndExpiry() {
+  @DisplayName("Should filter by visibility and expiry when invitation queries run")
+  void shouldFilterByVisibilityAndExpiryWhenInvitationQueriesRun() {
     invitations.save(pendingInvitation(orphan.getId(), recipient.getId(), inviter.getId()));
     var expired = pendingInvitation(orphan.getId(), UUID.randomUUID(), inviter.getId());
     expired.setExpiresAt(NOW.minusSeconds(1));

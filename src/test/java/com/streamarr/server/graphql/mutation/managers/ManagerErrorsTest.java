@@ -13,8 +13,8 @@ import org.junit.jupiter.api.Test;
 class ManagerErrorsTest {
 
   @Test
-  @DisplayName("Should map every invitation rejection to its schema error")
-  void shouldMapEveryInvitationRejectionToItsSchemaError() {
+  @DisplayName("Should map invitation rejections when converting to schema errors")
+  void shouldMapInvitationRejectionsWhenConvertingToSchemaErrors() {
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.ProfileNotFound()))
         .isInstanceOf(ProfileNotFoundError.class);
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.RecipientNotFound()))
@@ -38,8 +38,8 @@ class ManagerErrorsTest {
   }
 
   @Test
-  @DisplayName("Should point invitation recipient errors at recipientAccountId")
-  void shouldPointInvitationRecipientErrorsAtRecipientAccountId() {
+  @DisplayName("Should point at recipientAccountId when an invitation recipient is invalid")
+  void shouldPointAtRecipientAccountIdWhenInvitationRecipientIsInvalid() {
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.RecipientNotFound()))
         .isInstanceOfSatisfying(
             RecipientNotFoundError.class,
@@ -55,8 +55,8 @@ class ManagerErrorsTest {
   }
 
   @Test
-  @DisplayName("Should point acceptance errors at code")
-  void shouldPointAcceptanceErrorsAtCode() {
+  @DisplayName("Should point at code when acceptance is rejected")
+  void shouldPointAtCodeWhenAcceptanceIsRejected() {
     assertThat(ManagerErrors.toAcceptError(new ManagerRejections.RecipientNotEligible()))
         .isInstanceOfSatisfying(
             RecipientNotEligibleError.class,
@@ -68,8 +68,8 @@ class ManagerErrorsTest {
   }
 
   @Test
-  @DisplayName("Should map every removal and override rejection to its schema error")
-  void shouldMapEveryRemovalAndOverrideRejectionToItsSchemaError() {
+  @DisplayName("Should map removal and override rejections when converting to schema errors")
+  void shouldMapRemovalAndOverrideRejectionsWhenConvertingToSchemaErrors() {
     assertThat(ManagerErrors.toRelinquishError(new ManagerRejections.ProfileNotFound()))
         .isInstanceOf(ProfileNotFoundError.class);
     assertThat(ManagerErrors.toRelinquishError(new ManagerRejections.ManagementAlreadyRemoved()))
