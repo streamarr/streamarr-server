@@ -237,6 +237,19 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
+  @DisplayName("Should preserve the requested role when issuing into an empty Household")
+  void shouldPreserveRequestedRoleWhenIssuingIntoEmptyHousehold() {
+    var empty = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+
+    var issued =
+        issued(
+            service.issueAccountInvitation(
+                identity(), command().toBuilder().householdId(empty.getId()).build()));
+
+    assertThat(issued.invitation().getHouseholdRole()).isEqualTo(HouseholdRole.MEMBER);
+  }
+
+  @Test
   @DisplayName("Should snapshot MEMBER when issuing a restricted CONNECT invitation")
   void shouldSnapshotMemberWhenIssuingRestrictedConnectInvitation() {
     var kid =
