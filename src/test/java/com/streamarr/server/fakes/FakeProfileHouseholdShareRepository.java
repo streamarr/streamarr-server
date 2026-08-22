@@ -192,6 +192,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
       live.get().setDecidedAt(now);
       return;
     }
+
     save(
         ProfileHouseholdShare.builder()
             .profileId(profileId)

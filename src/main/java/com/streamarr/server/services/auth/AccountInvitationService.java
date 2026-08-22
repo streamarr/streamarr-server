@@ -93,6 +93,7 @@ public class AccountInvitationService {
     if (invitation.getMode() != AccountInvitationMode.CONNECT) {
       return List.of();
     }
+
     return profileManagerRepository.findByProfileId(invitation.getProfileId()).stream()
         .map(manager -> userAccountRepository.findById(manager.getAccountId()))
         .flatMap(Optional::stream)
@@ -106,6 +107,7 @@ public class AccountInvitationService {
     if (invitation.getMode() != AccountInvitationMode.CONNECT) {
       return List.of();
     }
+
     return shareRepository
         .findByProfileIdAndStatus(invitation.getProfileId(), ProfileShareStatus.ACTIVE)
         .stream()
@@ -121,6 +123,7 @@ public class AccountInvitationService {
     if (invitation.getMode() != AccountInvitationMode.CONNECT) {
       return List.of();
     }
+
     return reofferRepository.findByInvitationId(invitation.getId()).stream()
         .map(AccountInvitationReoffer::getHouseholdName)
         .sorted()
@@ -310,6 +313,7 @@ public class AccountInvitationService {
       throw OpaqueCodeResolver.rejected(
           OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
     }
+
     var role =
         userAccountRepository
             .roleForNewAccount(householdId, invitation.getHouseholdRole())
@@ -322,6 +326,7 @@ public class AccountInvitationService {
       throw OpaqueCodeResolver.rejected(
           OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
     }
+
     var account =
         userAccountRepository.saveAndFlush(
             UserAccount.builder()
@@ -379,6 +384,7 @@ public class AccountInvitationService {
       throw OpaqueCodeResolver.rejected(
           OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
     }
+
     return invitation;
   }
 

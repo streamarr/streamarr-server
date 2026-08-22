@@ -235,6 +235,7 @@ public class CredentialIssuanceService {
     if (profile != null && profile.isRestricted()) {
       return HouseholdRole.MEMBER;
     }
+
     return requestedRole;
   }
 
@@ -244,19 +245,24 @@ public class CredentialIssuanceService {
     if (mode == AccountInvitationMode.CREATE) {
       return Optional.empty();
     }
+
     if (command.profileId() == null) {
       return Optional.of(new CredentialRejections.ConnectProfileRequired());
     }
+
     var profile = profileRepository.findById(command.profileId());
     if (profile.isEmpty()) {
       return Optional.of(new CredentialRejections.ConnectProfileNotFound());
     }
+
     if (userAccountRepository.findByPersonalProfileId(command.profileId()).isPresent()) {
       return Optional.of(new CredentialRejections.ProfileAlreadyLinked());
     }
+
     if (!profile.get().getHouseholdId().equals(command.householdId())) {
       return Optional.of(new CredentialRejections.ProfileNotInHousehold());
     }
+
     return Optional.empty();
   }
 
@@ -267,6 +273,7 @@ public class CredentialIssuanceService {
       if (householdRepository.findById(householdId).isEmpty()) {
         return Optional.of(new CredentialRejections.ReofferHouseholdNotFound());
       }
+
       var visiting =
           !householdId.equals(command.householdId())
               && shareRepository
@@ -277,6 +284,7 @@ public class CredentialIssuanceService {
         return Optional.of(new CredentialRejections.ReofferHouseholdNotShared());
       }
     }
+
     return Optional.empty();
   }
 
@@ -296,6 +304,7 @@ public class CredentialIssuanceService {
     if (command.mode() != AccountInvitationMode.CONNECT || command.reofferHouseholdIds() == null) {
       return List.of();
     }
+
     return command.reofferHouseholdIds().stream().distinct().toList();
   }
 
