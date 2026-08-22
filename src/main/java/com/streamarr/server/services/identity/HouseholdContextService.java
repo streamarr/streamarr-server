@@ -24,18 +24,15 @@ public class HouseholdContextService {
   private final UserAccountRepository userAccountRepository;
   private final SessionContextService sessionContextService;
 
+  @Transactional
   public TokenContext selectHousehold(AuthenticatedIdentity identity, UUID householdId) {
     if (identity.deviceBound()) {
       throw new DeviceBoundSessionException();
     }
 
-    return selectHousehold(identity.accountId(), identity.authSessionId(), householdId);
-  }
-
-  @Transactional
-  public TokenContext selectHousehold(UUID accountId, UUID sessionId, UUID householdId) {
+    var accountId = identity.accountId();
     var account = liveSessions.loadAccount(accountId);
-    var session = liveSessions.lockLiveSession(accountId, sessionId);
+    var session = liveSessions.lockLiveSession(accountId, identity.authSessionId());
 
     if (!userAccountRepository.mayUseHousehold(accountId, householdId)) {
       throw new HouseholdAccessDeniedException();

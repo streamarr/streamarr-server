@@ -28,13 +28,9 @@ public class PasswordChangeService {
       throw new DeviceBoundSessionException();
     }
 
-    return changePassword(command);
-  }
-
-  public PasswordChangeResult changePassword(ChangePasswordCommand command) {
     var account =
         userAccountRepository
-            .findById(command.accountId())
+            .findById(identity.accountId())
             .orElseThrow(AuthenticationRequiredException::new);
     passwordVerifier.verify(account, command.currentPassword());
     var newPasswordHash = passwordEncoder.encode(command.newPassword());
@@ -42,7 +38,7 @@ public class PasswordChangeService {
     return completionService.complete(
         PasswordChangeCompletionCommand.builder()
             .accountId(account.getId())
-            .sessionId(command.sessionId())
+            .sessionId(identity.authSessionId())
             .expectedPasswordHash(account.getPasswordHash())
             .newPasswordHash(newPasswordHash)
             .build());

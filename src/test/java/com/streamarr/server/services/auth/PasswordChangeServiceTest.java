@@ -68,9 +68,10 @@ class PasswordChangeServiceTest {
   @DisplayName("Should reject a password change when the identity is device-bound")
   void shouldRejectPasswordChangeWhenIdentityIsDeviceBound() {
     var identity =
-        AuthenticatedIdentityFixture.accountScopedBuilder().registrationId(UUID.randomUUID()).build();
-    var command =
-        commandBuilder().accountId(identity.accountId()).sessionId(identity.authSessionId()).build();
+        AuthenticatedIdentityFixture.accountScopedBuilder()
+            .registrationId(UUID.randomUUID())
+            .build();
+    var command = commandBuilder().build();
 
     assertThatThrownBy(() -> service.changePassword(identity, command))
         .isInstanceOf(DeviceBoundSessionException.class);
@@ -79,10 +80,10 @@ class PasswordChangeServiceTest {
   @Test
   @DisplayName("Should fail closed without issuing a token when account is missing")
   void shouldFailClosedWithoutIssuingTokenWhenAccountMissing() {
-    var command =
-        commandBuilder().accountId(UUID.randomUUID()).sessionId(UUID.randomUUID()).build();
+    var identity = identity(UUID.randomUUID(), UUID.randomUUID());
+    var command = commandBuilder().build();
 
-    assertThatThrownBy(() -> service.changePassword(command))
+    assertThatThrownBy(() -> service.changePassword(identity, command))
         .isInstanceOf(AuthenticationRequiredException.class);
     assertThat(tokenRepository.findAll()).isEmpty();
   }
@@ -104,14 +105,10 @@ class PasswordChangeServiceTest {
                 .revokedAt(clock.instant())
                 .revokedReason(SessionRevocationReason.LOGOUT)
                 .build());
-    var command =
-        commandBuilder()
-            .accountId(account.getId())
-            .sessionId(caller.getId())
-            .currentPassword(currentPassword)
-            .build();
+    var identity = identity(account.getId(), caller.getId());
+    var command = commandBuilder().currentPassword(currentPassword).build();
 
-    assertThatThrownBy(() -> service.changePassword(command))
+    assertThatThrownBy(() -> service.changePassword(identity, command))
         .isInstanceOf(AuthenticationRequiredException.class);
     assertThat(tokenRepository.findAll()).isEmpty();
   }
@@ -131,14 +128,10 @@ class PasswordChangeServiceTest {
                 .accountId(otherAccount.getId())
                 .deviceName("another-account")
                 .build());
-    var command =
-        commandBuilder()
-            .accountId(account.getId())
-            .sessionId(otherAccountSession.getId())
-            .currentPassword(currentPassword)
-            .build();
+    var identity = identity(account.getId(), otherAccountSession.getId());
+    var command = commandBuilder().currentPassword(currentPassword).build();
 
-    assertThatThrownBy(() -> service.changePassword(command))
+    assertThatThrownBy(() -> service.changePassword(identity, command))
         .isInstanceOf(AuthenticationRequiredException.class);
     assertThat(accountRepository.findById(account.getId()).orElseThrow().getPasswordHash())
         .isEqualTo(originalPasswordHash);
@@ -159,14 +152,10 @@ class PasswordChangeServiceTest {
     var caller =
         sessionRepository.save(
             AuthSession.builder().accountId(account.getId()).deviceName("caller").build());
-    var command =
-        commandBuilder()
-            .accountId(account.getId())
-            .sessionId(caller.getId())
-            .currentPassword(currentPassword)
-            .build();
+    var identity = identity(account.getId(), caller.getId());
+    var command = commandBuilder().currentPassword(currentPassword).build();
 
-    assertThatThrownBy(() -> service.changePassword(command))
+    assertThatThrownBy(() -> service.changePassword(identity, command))
         .isInstanceOf(InvalidCredentialsException.class);
     assertThat(accountRepository.findById(account.getId()).orElseThrow().getPasswordHash())
         .isEqualTo(originalPasswordHash);
@@ -185,20 +174,15 @@ class PasswordChangeServiceTest {
     var caller =
         sessionRepository.save(
             AuthSession.builder().accountId(account.getId()).deviceName("caller").build());
-    var wrongCommand =
-        commandBuilder().accountId(account.getId()).sessionId(caller.getId()).build();
+    var identity = identity(account.getId(), caller.getId());
+    var wrongCommand = commandBuilder().build();
     for (var attempt = 0; attempt < 2; attempt++) {
-      assertThatThrownBy(() -> service.changePassword(wrongCommand))
+      assertThatThrownBy(() -> service.changePassword(identity, wrongCommand))
           .isInstanceOf(InvalidCredentialsException.class);
     }
-    var correctCommand =
-        commandBuilder()
-            .accountId(account.getId())
-            .sessionId(caller.getId())
-            .currentPassword(currentPassword)
-            .build();
+    var correctCommand = commandBuilder().currentPassword(currentPassword).build();
 
-    assertThatThrownBy(() -> service.changePassword(correctCommand))
+    assertThatThrownBy(() -> service.changePassword(identity, correctCommand))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
     assertThat(tokenRepository.findAll()).isEmpty();
   }
@@ -207,6 +191,13 @@ class PasswordChangeServiceTest {
     return ChangePasswordCommand.builder()
         .currentPassword(UUID.randomUUID().toString())
         .newPassword(UUID.randomUUID().toString());
+  }
+
+  private AuthenticatedIdentity identity(UUID accountId, UUID sessionId) {
+    return AuthenticatedIdentityFixture.accountScopedBuilder()
+        .accountId(accountId)
+        .authSessionId(sessionId)
+        .build();
   }
 
   private static final class TestPasswordEncoder implements PasswordEncoder {
