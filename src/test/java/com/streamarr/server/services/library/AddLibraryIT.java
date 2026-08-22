@@ -107,6 +107,7 @@ class AddLibraryIT extends AbstractIntegrationTest {
           accepted.add(library);
           createdLibraryIds.add(library.getId());
         }
+
         case Outcome.Rejected<Library, AddLibraryRejection>(var reasons) ->
             rejections.addAll(reasons);
       }
