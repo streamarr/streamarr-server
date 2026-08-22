@@ -2,12 +2,15 @@ package com.streamarr.server.graphql.mutation.teardown;
 
 import com.streamarr.server.graphql.mutation.InputPath;
 import com.streamarr.server.services.identity.TeardownRejections;
+import java.util.List;
 
 /** The exhaustive mapping from service rejection to schema error type. */
 public final class TeardownErrors {
 
-  private static final String DESTINATION = "finalAccount.destinationHouseholdId";
-  private static final String REPLACEMENT = "finalAccount.replacementManagerAccountId";
+  private static final List<String> DESTINATION =
+      InputPath.of("finalAccount", "destinationHouseholdId");
+  private static final List<String> REPLACEMENT =
+      InputPath.of("finalAccount", "replacementManagerAccountId");
 
   private TeardownErrors() {}
 
@@ -28,21 +31,20 @@ public final class TeardownErrors {
           new FinalAccountUnexpectedError(
               "The Household has no Accounts; there is nothing to dispose of.");
       case TeardownRejections.DestinationRequired _ ->
-          new DestinationRequiredError(
-              "Name the destination Household.", InputPath.of(DESTINATION));
+          new DestinationRequiredError("Name the destination Household.", DESTINATION);
       case TeardownRejections.DestinationNotFound _ ->
-          new DestinationNotFoundError("No such Household.", InputPath.of(DESTINATION));
+          new DestinationNotFoundError("No such Household.", DESTINATION);
       case TeardownRejections.ReplacementManagerRequired _ ->
           new ReplacementManagerRequiredError(
               "KEEP preserves the Profile only with a replacement manager named up front.",
-              InputPath.of(REPLACEMENT));
+              REPLACEMENT);
       case TeardownRejections.ReplacementManagerNotFound _ ->
-          new ReplacementManagerNotFoundError("No such Account.", InputPath.of(REPLACEMENT));
+          new ReplacementManagerNotFoundError("No such Account.", REPLACEMENT);
       case TeardownRejections.ReplacementManagerNotEligible _ ->
           new ReplacementManagerNotEligibleError(
               "The anchor lives in the destination Household and is themselves an unrestricted"
                   + " Adult.",
-              InputPath.of(REPLACEMENT));
+              REPLACEMENT);
       case TeardownRejections.LastServerAdmin _ ->
           new LastServerAdminError("At least one enabled ServerAdmin remains.");
     };
