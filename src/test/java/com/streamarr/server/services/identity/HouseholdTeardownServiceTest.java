@@ -3,15 +3,20 @@ package com.streamarr.server.services.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
+import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
+import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
@@ -74,7 +79,7 @@ class HouseholdTeardownServiceTest {
       new FakeProfileHouseholdShareRepository();
   private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
-  private final FakeHouseholdRepository households = new FakeHouseholdRepository();
+  private final PausingHouseholdRepository households = new PausingHouseholdRepository();
   private final FakeProfileManagerRepository managers = new FakeProfileManagerRepository();
   private final FakeProfileManagerInvitationRepository managerInvitations =
       new FakeProfileManagerInvitationRepository();
@@ -112,7 +117,8 @@ class HouseholdTeardownServiceTest {
   }
 
   @Test
-  @DisplayName("Should require reauthentication when teardown authorization requests a fresh ceremony")
+  @DisplayName(
+      "Should require reauthentication when teardown authorization requests a fresh ceremony")
   void shouldRequireReauthenticationWhenTeardownAuthorizationRequestsFreshCeremony() {
     authorization.decideWith(
         intent ->
@@ -146,7 +152,6 @@ class HouseholdTeardownServiceTest {
                         .reason("closing")
                         .build())))
         .isInstanceOf(TeardownRejections.FinalAccountRequired.class);
-
   }
 
   @Test
@@ -165,6 +170,92 @@ class HouseholdTeardownServiceTest {
                                 .build())
                         .build())))
         .isInstanceOf(TeardownRejections.FinalAccountUnexpected.class);
+  }
+
+  @Test
+  @DisplayName("Should report Household not found when the authorized Household does not exist")
+  void shouldReportHouseholdNotFoundWhenAuthorizedHouseholdDoesNotExist() {
+    var missing = UUID.randomUUID();
+
+    var outcome =
+        service.tearDownHousehold(
+            identity(),
+            TearDownHouseholdCommand.builder().householdId(missing).reason("closing").build());
+
+    assertThat(rejectionOf(outcome)).isEqualTo(new TeardownRejections.HouseholdNotFound());
+  }
+
+  @Test
+  @DisplayName("Should throw access denied when policy denies a visible Household teardown")
+  void shouldThrowAccessDeniedWhenPolicyDeniesVisibleHouseholdTeardown() {
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.ViewHouseholdAdministration
+                ? new Decision.Allowed<>(AuthorizationUnit.INSTANCE)
+                : new Decision.Denied<>(Decision.DenialReason.POLICY));
+
+    assertThatThrownBy(() -> service.tearDownHousehold(identity(), command("closing", null)))
+        .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should hide Household existence when policy denies an invisible Household teardown")
+  void shouldHideHouseholdExistenceWhenPolicyDeniesInvisibleHouseholdTeardown() {
+    authorization.denyAll();
+
+    assertThat(rejectionOf(service.tearDownHousehold(identity(), command("closing", null))))
+        .isEqualTo(new TeardownRejections.HouseholdNotFound());
+  }
+
+  @Test
+  @DisplayName("Should require a destination when transfer disposition omits it")
+  void shouldRequireDestinationWhenTransferDispositionOmitsIt() {
+    residentOf(doomed, HouseholdRole.ADMIN);
+
+    var outcome =
+        service.tearDownHousehold(
+            identity(),
+            command(
+                "closing",
+                FinalAccountDisposition.builder().choice(FinalAccountChoice.TRANSFER).build()));
+
+    assertThat(rejectionOf(outcome)).isEqualTo(new TeardownRejections.DestinationRequired());
+  }
+
+  @Test
+  @DisplayName("Should reject the source Household when transfer names it as the destination")
+  void shouldRejectSourceHouseholdWhenTransferNamesItAsDestination() {
+    residentOf(doomed, HouseholdRole.ADMIN);
+
+    var outcome =
+        service.tearDownHousehold(
+            identity(),
+            command(
+                "closing",
+                FinalAccountDisposition.builder()
+                    .choice(FinalAccountChoice.TRANSFER)
+                    .destinationHouseholdId(doomed.getId())
+                    .build()));
+
+    assertThat(rejectionOf(outcome)).isEqualTo(new TeardownRejections.DestinationNotFound());
+  }
+
+  @Test
+  @DisplayName("Should reject a missing Household when transfer names it as the destination")
+  void shouldRejectMissingHouseholdWhenTransferNamesItAsDestination() {
+    residentOf(doomed, HouseholdRole.ADMIN);
+
+    var outcome =
+        service.tearDownHousehold(
+            identity(),
+            command(
+                "closing",
+                FinalAccountDisposition.builder()
+                    .choice(FinalAccountChoice.TRANSFER)
+                    .destinationHouseholdId(UUID.randomUUID())
+                    .build()));
+
+    assertThat(rejectionOf(outcome)).isEqualTo(new TeardownRejections.DestinationNotFound());
   }
 
   @Test
@@ -209,8 +300,134 @@ class HouseholdTeardownServiceTest {
     assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
         .isEqualTo(DeviceRegistrationStatus.REVOKED);
     assertThat(audit.entries())
-        .extracting(entry -> entry.operation())
-        .containsExactly("tearDownHousehold");
+        .containsExactly(
+            SecurityAuditEntry.builder()
+                .operation("tearDownHousehold")
+                .actorAccountId(identity().accountId())
+                .reason("closing shop")
+                .resource("householdId", doomed.getId())
+                .build());
+  }
+
+  @Test
+  @DisplayName(
+      "Should revoke remote registrations and their sessions when the authorizing Account is deleted")
+  void shouldRevokeRemoteRegistrationsAndSessionsWhenAuthorizingAccountIsDeleted() {
+    var finalAccount = residentOf(doomed, HouseholdRole.ADMIN);
+    var remoteRegistration =
+        registrations.save(
+            DeviceRegistration.builder()
+                .esn("remote-esn")
+                .displayName("Remote TV")
+                .householdId(refuge.getId())
+                .authorizingAccountId(finalAccount.getId())
+                .build());
+    var deviceSession =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(refugeAnchor.getId())
+                .deviceName("Remote TV")
+                .registrationId(remoteRegistration.getId())
+                .contextHouseholdId(refuge.getId())
+                .build());
+
+    var outcome =
+        service.tearDownHousehold(
+            identity(),
+            command(
+                "closing",
+                FinalAccountDisposition.builder().choice(FinalAccountChoice.DELETE).build()));
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(registrations.findById(remoteRegistration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(sessions.findById(deviceSession.getId()).orElseThrow().getRevokedReason())
+        .isEqualTo(SessionRevocationReason.ADMIN_REVOCATION);
+  }
+
+  @Test
+  @DisplayName(
+      "Should reset visitor context and revoke visited-Household devices when the Household is torn down")
+  void shouldResetVisitorContextAndRevokeVisitedHouseholdDevicesWhenHouseholdIsTornDown() {
+    shares.share(refugeAnchor.getPersonalProfileId(), doomed.getId(), false);
+    var browserSession =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(refugeAnchor.getId())
+                .deviceName("Browser")
+                .contextHouseholdId(doomed.getId())
+                .selectedProfileId(refugeAnchor.getPersonalProfileId())
+                .build());
+    var visitedRegistration =
+        registrations.save(
+            DeviceRegistration.builder()
+                .esn("visited-esn")
+                .displayName("Visited TV")
+                .householdId(doomed.getId())
+                .authorizingAccountId(refugeAnchor.getId())
+                .build());
+    var deviceSession =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(refugeAnchor.getId())
+                .deviceName("Visited TV")
+                .registrationId(visitedRegistration.getId())
+                .contextHouseholdId(doomed.getId())
+                .build());
+
+    var outcome = service.tearDownHousehold(identity(), command("closing", null));
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var reset = sessions.findById(browserSession.getId()).orElseThrow();
+    assertThat(reset.getContextHouseholdId()).isNull();
+    assertThat(reset.getSelectedProfileId()).isNull();
+    assertThat(registrations.findById(visitedRegistration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(sessions.findById(deviceSession.getId()).orElseThrow().getRevokedReason())
+        .isEqualTo(SessionRevocationReason.ADMIN_REVOCATION);
+  }
+
+  @Test
+  @DisplayName("Should invalidate pending Profile artifacts when their Profile is deleted")
+  void shouldInvalidatePendingProfileArtifactsWhenProfileIsDeleted() {
+    var orphan =
+        profiles.save(ProfileFixture.defaultProfileBuilder().householdId(doomed.getId()).build());
+    var accountInvitation =
+        accountInvitations.save(
+            AccountInvitation.builder()
+                .recipientEmail("pending@example.com")
+                .householdId(refuge.getId())
+                .householdName("Refuge")
+                .householdRole(HouseholdRole.MEMBER)
+                .profileId(orphan.getId())
+                .profileName(orphan.getName())
+                .profileKind(ProfileKind.ADULT)
+                .issuerAccountId(refugeAnchor.getId())
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .publicId("pending-account")
+                .secretDigest(new byte[] {1})
+                .build());
+    var managerInvitation =
+        managerInvitations.save(
+            ProfileManagerInvitation.builder()
+                .profileId(orphan.getId())
+                .profileName(orphan.getName())
+                .inviterAccountId(refugeAnchor.getId())
+                .inviterDisplayName("Inviter")
+                .recipientAccountId(UUID.randomUUID())
+                .recipientEmail("manager@example.com")
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .publicId("pending-manager")
+                .secretDigest(new byte[] {2})
+                .build());
+
+    var outcome = service.tearDownHousehold(identity(), command("closing", null));
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(accountInvitations.findById(accountInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(managerInvitations.findById(managerInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
   }
 
   @Test
@@ -256,6 +473,71 @@ class HouseholdTeardownServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject a missing replacement manager when the final Profile is kept")
+  void shouldRejectMissingReplacementManagerWhenFinalProfileIsKept() {
+    residentOf(doomed, HouseholdRole.ADMIN);
+
+    var outcome =
+        service.tearDownHousehold(
+            identity(),
+            command(
+                "closing",
+                FinalAccountDisposition.builder()
+                    .choice(FinalAccountChoice.DELETE_KEEPING_PROFILE)
+                    .destinationHouseholdId(refuge.getId())
+                    .replacementManagerAccountId(UUID.randomUUID())
+                    .build()));
+
+    assertThat(rejectionOf(outcome)).isEqualTo(new TeardownRejections.ReplacementManagerNotFound());
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a replacement manager when the Account lives outside the destination Household")
+  void shouldRejectReplacementManagerWhenAccountLivesOutsideDestinationHousehold() {
+    residentOf(doomed, HouseholdRole.ADMIN);
+    var elsewhere = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var outsideManager = residentOf(elsewhere, HouseholdRole.ADMIN);
+
+    var outcome =
+        service.tearDownHousehold(
+            identity(),
+            command(
+                "closing",
+                FinalAccountDisposition.builder()
+                    .choice(FinalAccountChoice.DELETE_KEEPING_PROFILE)
+                    .destinationHouseholdId(refuge.getId())
+                    .replacementManagerAccountId(outsideManager.getId())
+                    .build()));
+
+    assertThat(rejectionOf(outcome))
+        .isEqualTo(new TeardownRejections.ReplacementManagerNotEligible());
+  }
+
+  @Test
+  @DisplayName("Should reject a replacement manager when its Personal Profile is restricted")
+  void shouldRejectReplacementManagerWhenPersonalProfileIsRestricted() {
+    residentOf(doomed, HouseholdRole.ADMIN);
+    var restricted = profiles.findById(refugeAnchor.getPersonalProfileId()).orElseThrow();
+    restricted.setMaximumAllowedRatingAge(12);
+    profiles.save(restricted);
+
+    var outcome =
+        service.tearDownHousehold(
+            identity(),
+            command(
+                "closing",
+                FinalAccountDisposition.builder()
+                    .choice(FinalAccountChoice.DELETE_KEEPING_PROFILE)
+                    .destinationHouseholdId(refuge.getId())
+                    .replacementManagerAccountId(refugeAnchor.getId())
+                    .build()));
+
+    assertThat(rejectionOf(outcome))
+        .isEqualTo(new TeardownRejections.ReplacementManagerNotEligible());
+  }
+
+  @Test
   @DisplayName(
       "Should preserve the final Account's Profile behind the destination anchor when keep disposition is chosen")
   void shouldPreserveFinalAccountProfileBehindDestinationAnchorWhenKeepDispositionIsChosen() {
@@ -284,14 +566,20 @@ class HouseholdTeardownServiceTest {
   @DisplayName("Should report teardown impact when the caller may view the Household")
   void shouldReportTeardownImpactWhenCallerMayViewHousehold() {
     residentOf(doomed, HouseholdRole.ADMIN);
-    profiles.save(
-        ProfileFixture.defaultProfileBuilder().householdId(doomed.getId()).name("Kept?").build());
+    var unlinked =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder()
+                .householdId(doomed.getId())
+                .name("Unlinked")
+                .build());
     shares.share(refugeAnchor.getPersonalProfileId(), doomed.getId(), false);
 
     var preflight = service.teardownPreflight(identity(), doomed.getId()).orElseThrow();
 
     assertThat(preflight.accountCount()).isEqualTo(1);
-    assertThat(preflight.unlinkedProfiles()).hasSize(1);
+    assertThat(preflight.unlinkedProfiles())
+        .containsExactly(
+            new HouseholdTeardownService.DoomedProfileView(unlinked.getId(), "Unlinked"));
     assertThat(preflight.hostedVisitCount()).isEqualTo(1);
   }
 
@@ -305,10 +593,13 @@ class HouseholdTeardownServiceTest {
   @Test
   @DisplayName("Should return audit entries when the caller may view the security audit")
   void shouldReturnAuditEntriesWhenCallerMayViewSecurityAudit() {
+    var actorId = identity().accountId();
     audit.append(
         SecurityAuditEntry.builder()
             .operation("somethingAudited")
-            .actorAccountId(identity().accountId())
+            .actorAccountId(actorId)
+            .reason("because")
+            .resource("householdId", doomed.getId())
             .build());
     assertThat(
             service.securityAuditEvents(
@@ -317,23 +608,30 @@ class HouseholdTeardownServiceTest {
                     .direction(PaginationDirection.FORWARD)
                     .limit(10)
                     .build()))
-        .hasSize(1);
+        .singleElement()
+        .satisfies(
+            event -> {
+              assertThat(event.operation()).isEqualTo("somethingAudited");
+              assertThat(event.actorAccountId()).isEqualTo(actorId);
+              assertThat(event.reason()).isEqualTo("because");
+              assertThat(event.outcome()).isEqualTo("SUCCESS");
+              assertThat(event.resources()).contains(doomed.getId().toString());
+              assertThat(event.occurredAt()).isNotNull();
+            });
   }
 
   @Test
   @DisplayName("Should return Profile activity when the caller may view the Profile")
   void shouldReturnProfileActivityWhenCallerMayViewProfile() {
     var profileId = UUID.randomUUID();
-    progress.save(
-        SessionProgress.builder()
-            .sessionId(UUID.randomUUID())
-            .profileId(profileId)
-            .mediaFileId(UUID.randomUUID())
-            .positionSeconds(60)
-            .percentComplete(10.0)
-            .durationSeconds(600)
-            .build());
-    assertThat(service.profileActivity(identity(), profileId)).hasSize(1);
+    var older = progress.save(progressFor(profileId));
+    var newer = progress.save(progressFor(profileId));
+    AuditFieldSetter.setLastModifiedOn(older, Instant.parse("2026-08-01T00:00:00Z"));
+    AuditFieldSetter.setLastModifiedOn(newer, Instant.parse("2026-08-02T00:00:00Z"));
+
+    assertThat(service.profileActivity(identity(), profileId))
+        .extracting(SessionProgress::getId)
+        .containsExactly(newer.getId(), older.getId());
   }
 
   @Test
@@ -401,10 +699,26 @@ class HouseholdTeardownServiceTest {
   }
 
   @Test
+  @DisplayName("Should fail closed when security-audit authorization is unavailable")
+  void shouldFailClosedWhenSecurityAuditAuthorizationIsUnavailable() {
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+
+    assertThatThrownBy(
+            () ->
+                service.securityAuditEvents(
+                    identity(),
+                    HouseholdTeardownService.SecurityAuditPageRequest.builder()
+                        .direction(PaginationDirection.FORWARD)
+                        .limit(10)
+                        .build()))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
   @DisplayName("Should allow only one disposition when final-Account requests race")
   void shouldAllowOnlyOneDispositionWhenFinalAccountRequestsRace() throws Exception {
     residentOf(doomed, HouseholdRole.ADMIN);
-    var start = new CyclicBarrier(2);
+    households.pauseNextTwoLocks();
     var transfer =
         command(
             "transfer",
@@ -420,18 +734,20 @@ class HouseholdTeardownServiceTest {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       List<Callable<Outcome<UUID, TeardownRejections.TearDown>>> calls =
           List.of(
-              () -> {
-                start.await(5, TimeUnit.SECONDS);
-                return service.tearDownHousehold(identity(), transfer);
-              },
-              () -> {
-                start.await(5, TimeUnit.SECONDS);
-                return service.tearDownHousehold(identity(), delete);
-              });
+              () -> service.tearDownHousehold(identity(), transfer),
+              () -> service.tearDownHousehold(identity(), delete));
       outcomes = executor.invokeAll(calls).stream().map(this::completedOutcome).toList();
     }
 
     assertThat(outcomes).filteredOn(Outcome.Accepted.class::isInstance).hasSize(1);
+    assertThat(outcomes)
+        .filteredOn(Outcome.Rejected.class::isInstance)
+        .singleElement()
+        .satisfies(
+            outcome ->
+                assertThat(rejectionOf(outcome))
+                    .isEqualTo(new TeardownRejections.HouseholdNotFound()));
+    assertThat(audit.entries()).hasSize(1);
   }
 
   private TearDownHouseholdCommand command(String reason, FinalAccountDisposition disposition) {
@@ -457,6 +773,17 @@ class HouseholdTeardownServiceTest {
             .build());
     shares.share(account.getPersonalProfileId(), household.getId(), true);
     return account;
+  }
+
+  private SessionProgress progressFor(UUID profileId) {
+    return SessionProgress.builder()
+        .sessionId(UUID.randomUUID())
+        .profileId(profileId)
+        .mediaFileId(UUID.randomUUID())
+        .positionSeconds(60)
+        .percentComplete(10.0)
+        .durationSeconds(600)
+        .build();
   }
 
   private HouseholdTeardownService serviceUsing(FakeUserAccountRepository accountRepository) {
@@ -508,5 +835,27 @@ class HouseholdTeardownServiceTest {
       case Outcome.Accepted<?, ?> accepted ->
           throw new AssertionError("expected a rejection but got " + accepted);
     };
+  }
+
+  private static final class PausingHouseholdRepository extends FakeHouseholdRepository {
+
+    private volatile CyclicBarrier lockBarrier;
+
+    void pauseNextTwoLocks() {
+      lockBarrier = new CyclicBarrier(2);
+    }
+
+    @Override
+    public boolean lockById(UUID householdId) {
+      var barrier = lockBarrier;
+      if (barrier != null) {
+        try {
+          barrier.await(5, TimeUnit.SECONDS);
+        } catch (Exception exception) {
+          throw new AssertionError("teardown did not reach the Household lock", exception);
+        }
+      }
+      return super.lockById(householdId);
+    }
   }
 }

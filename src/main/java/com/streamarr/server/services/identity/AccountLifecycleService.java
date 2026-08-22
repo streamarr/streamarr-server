@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
