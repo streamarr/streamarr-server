@@ -19,6 +19,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import java.time.Instant;
 import java.util.UUID;
@@ -147,7 +148,8 @@ class SessionContextServiceTest {
     shares.share(personal.getId(), visitedHouseholdId, false);
     var session = session(account.getHouseholdId(), personal.getId());
 
-    var context = households.selectHousehold(account.getId(), session.getId(), visitedHouseholdId);
+    var context =
+        households.selectHousehold(identity(account.getId(), session.getId()), visitedHouseholdId);
 
     assertThat(context.contextHouseholdId()).isEqualTo(visitedHouseholdId);
     assertThat(context.profileId()).isNull();
@@ -161,7 +163,8 @@ class SessionContextServiceTest {
     var accountId = account.getId();
     var sessionId = session.getId();
 
-    assertThatThrownBy(() -> households.selectHousehold(accountId, sessionId, visitedHouseholdId))
+    assertThatThrownBy(
+            () -> households.selectHousehold(identity(accountId, sessionId), visitedHouseholdId))
         .isInstanceOf(HouseholdAccessDeniedException.class);
   }
 
@@ -175,13 +178,15 @@ class SessionContextServiceTest {
     var membershipHouseholdId = account.getHouseholdId();
 
     assertThatThrownBy(
-            () -> households.selectHousehold(accountId, sessionId, membershipHouseholdId))
+            () -> households.selectHousehold(identity(accountId, sessionId), membershipHouseholdId))
         .isInstanceOf(AuthenticationRequiredException.class);
 
     var foreign = sessions.save(AuthSession.builder().accountId(UUID.randomUUID()).build());
     var foreignSessionId = foreign.getId();
     assertThatThrownBy(
-            () -> households.selectHousehold(accountId, foreignSessionId, membershipHouseholdId))
+            () ->
+                households.selectHousehold(
+                    identity(accountId, foreignSessionId), membershipHouseholdId))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 
@@ -201,5 +206,14 @@ class SessionContextServiceTest {
             .contextHouseholdId(contextHouseholdId)
             .selectedProfileId(selectedProfileId)
             .build());
+  }
+
+  private AuthenticatedIdentity identity(UUID accountId, UUID sessionId) {
+    return AuthenticatedIdentityFixture.accountScopedBuilder()
+        .accountId(accountId)
+        .authSessionId(sessionId)
+        .householdId(account.getHouseholdId())
+        .contextHouseholdId(account.getHouseholdId())
+        .build();
   }
 }

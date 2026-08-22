@@ -159,8 +159,6 @@ class SensitiveAuthValueRedactionTest {
             PasswordChangeResult.builder().rawRefreshToken(SECRET_MARKER),
             AuthTokensResponse.builder().accessToken(SECRET_MARKER).refreshToken(SECRET_MARKER),
             ChangePasswordCommand.builder()
-                .accountId(UUID.randomUUID())
-                .sessionId(UUID.randomUUID())
                 .currentPassword(SECRET_MARKER)
                 .newPassword(SECRET_MARKER)
                 .build(),
@@ -191,8 +189,6 @@ class SensitiveAuthValueRedactionTest {
         new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER),
         new ReauthRequest(SECRET_MARKER),
         ChangePasswordCommand.builder()
-            .accountId(UUID.randomUUID())
-            .sessionId(UUID.randomUUID())
             .currentPassword(SECRET_MARKER)
             .newPassword(SECRET_MARKER)
             .build(),

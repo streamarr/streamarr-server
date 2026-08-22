@@ -1,11 +1,9 @@
 package com.streamarr.server.services.auth;
 
-import java.util.UUID;
 import lombok.Builder;
 
 @Builder
-public record ChangePasswordCommand(
-    UUID accountId, UUID sessionId, String currentPassword, String newPassword) {
+public record ChangePasswordCommand(String currentPassword, String newPassword) {
 
   public static class ChangePasswordCommandBuilder {
 
@@ -17,6 +15,6 @@ public record ChangePasswordCommand(
 
   @Override
   public String toString() {
-    return "ChangePasswordCommand[accountId=%s, sessionId=%s]".formatted(accountId, sessionId);
+    return "ChangePasswordCommand[REDACTED]";
   }
 }

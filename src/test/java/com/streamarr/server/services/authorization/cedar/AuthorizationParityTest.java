@@ -174,9 +174,7 @@ class AuthorizationParityTest {
 
   @ParameterizedTest(name = "{0}")
   @ValueSource(
-      strings = {
-        "householdAdministration", "invitationAdministration", "libraryAdministration"
-      })
+      strings = {"householdAdministration", "invitationAdministration", "libraryAdministration"})
   @DisplayName(
       "Should keep every administration group under server administration when schema parity is checked")
   void shouldKeepEveryAdministrationGroupUnderServerAdministrationWhenSchemaParityIsChecked(
@@ -193,9 +191,7 @@ class AuthorizationParityTest {
       case ISSUE_ACCOUNT_INVITATION, CANCEL_ACCOUNT_INVITATION, VIEW_ACCOUNT_INVITATIONS ->
           "invitationAdministration";
       case ADD_LIBRARY, REMOVE_LIBRARY, SCAN_LIBRARY, REFRESH_LIBRARY -> "libraryAdministration";
-      case BLOCK_ESN_SERVER_WIDE,
-          UNBLOCK_ESN_SERVER_WIDE,
-          VIEW_SERVER_DEVICE_ADMINISTRATION ->
+      case BLOCK_ESN_SERVER_WIDE, UNBLOCK_ESN_SERVER_WIDE, VIEW_SERVER_DEVICE_ADMINISTRATION ->
           "deviceAdministration";
       case VIEW_PROFILE_PICKER,
           SELECT_PROFILE,

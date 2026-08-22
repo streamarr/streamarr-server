@@ -89,8 +89,6 @@ public class AuthController {
         passwordChangeService.changePassword(
             identity,
             ChangePasswordCommand.builder()
-                .accountId(identity.accountId())
-                .sessionId(identity.authSessionId())
                 .currentPassword(request.currentPassword())
                 .newPassword(request.newPassword())
                 .build());
@@ -109,8 +107,7 @@ public class AuthController {
   public ResponseEntity<AuthTokensResponse> selectHousehold(
       @Valid @RequestBody SelectHouseholdRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
-    var context =
-        householdContextService.selectHousehold(identity, request.householdId());
+    var context = householdContextService.selectHousehold(identity, request.householdId());
     return respondAccessOnly(
         accessTokenIssuer.issueDerived(
             context.withReauthenticatedAt(identity.reauthenticatedAt()),
