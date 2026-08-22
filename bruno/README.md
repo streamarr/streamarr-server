@@ -2,7 +2,9 @@
 
 Use the `local` environment, then set `AUTH_EMAIL`, `AUTH_PASSWORD`, and `TMDB_TOKEN`
 as secrets in Bruno. `AUTH_NEW_PASSWORD` is only needed for the manual password-change
-request. Replace the non-secret resource IDs and local library path as needed.
+request; `NEW_PROFILE_PIN` is only needed for the manual `GraphQL/Set Profile PIN` request.
+Configure both through Bruno's local secret store. Replace the non-secret resource IDs and local
+library path as needed.
 
 For a configured server, run `Auth/Public/Login` before protected requests. On a fresh
 server, run `Auth/Public/Setup (one time)` instead. Both requests keep the returned access and refresh

@@ -43,8 +43,10 @@ script:post-response {
     const me = res.body.data.me;
     bru.setVar("HOUSEHOLD_ID", me.contextHousehold.id);
     const edges = me.selectableProfiles?.edges ?? [];
-    if (edges.length) {
-      bru.setVar("PROFILE_ID", edges[0].node.id);
+    const profile =
+      edges.find((edge) => edge.node.selected) ?? edges.find((edge) => !edge.node.locked);
+    if (profile) {
+      bru.setVar("PROFILE_ID", profile.node.id);
     }
   }
 }
@@ -55,5 +57,14 @@ tests {
     expect(res.body).to.not.have.property("errors");
     expect(res.body.data.me.accountId).to.be.a("string");
     expect(res.body.data.me.contextHousehold.id).to.be.a("string");
+  });
+
+  test("Should chain the selected or first unlocked Profile", function() {
+    const edges = res.body.data.me.selectableProfiles?.edges ?? [];
+    const expectedProfile =
+      edges.find((edge) => edge.node.selected) ?? edges.find((edge) => !edge.node.locked);
+    if (expectedProfile) {
+      expect(bru.getVar("PROFILE_ID")).to.equal(expectedProfile.node.id);
+    }
   });
 }

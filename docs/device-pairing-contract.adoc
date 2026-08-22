@@ -84,13 +84,23 @@ Request `{"deviceName": "Apple TV"}`. Success `200`:
 `verificationUri` is always absolute, joined beneath the configured base URL.
 The server never invents a process-local or container address.
 
-Errors: `503 DEVICE_PAIRING_NOT_CONFIGURED` when no canonical base URL is configured · `429 TOO_MANY_ATTEMPTS` with `Retry-After` when outstanding-code capacity is exhausted.
+Errors: `503 DEVICE_PAIRING_NOT_CONFIGURED` when no canonical base URL is configured · `409 SETUP_INCOMPLETE` while the server bootstrap remains unclaimed · `429 TOO_MANY_ATTEMPTS` with `Retry-After` when outstanding-code capacity is exhausted.
+The configuration check runs first, so an unconfigured and unclaimed server returns `DEVICE_PAIRING_NOT_CONFIGURED`.
+On `SETUP_INCOMPLETE`, clients return to the status bootstrap and wait for `setupComplete` before requesting another code.
 
 [source,json]
 ----
 {
   "code": "DEVICE_PAIRING_NOT_CONFIGURED",
   "message": "Device pairing requires a configured canonical base URL."
+}
+----
+
+[source,json]
+----
+{
+  "code": "SETUP_INCOMPLETE",
+  "message": "The server has not completed initial setup."
 }
 ----
 
