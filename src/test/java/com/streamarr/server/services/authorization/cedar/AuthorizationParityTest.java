@@ -83,17 +83,21 @@ class AuthorizationParityTest {
 
   @Test
   @DisplayName(
-      "Should keep library administration actions under serverAdministration when action parity is checked")
-  void shouldKeepLibraryAdministrationActionsGroupedWhenActionParityIsChecked() throws Exception {
+      "Should keep every Server-resource action in its administration group when action parity is checked")
+  void shouldKeepEveryServerResourceActionGroupedWhenActionParityIsChecked() throws Exception {
     var actions = schemaActions();
 
     for (var action : Action.values()) {
       if (action.resourceKind() != Action.ResourceKind.SERVER) {
         continue;
       }
+
+      var householdGroup = action == Action.CREATE_HOUSEHOLD || action == Action.VIEW_HOUSEHOLDS;
+      var group = householdGroup ? "householdAdministration" : "libraryAdministration";
       assertThat(actions.get(action.cedarName()).path("memberOf"))
+          .as("group of %s", action)
           .extracting(member -> member.path("id").asText())
-          .containsExactly("libraryAdministration");
+          .containsExactly(group);
     }
 
     assertThat(actions.get("libraryAdministration").path("memberOf"))
@@ -131,6 +135,16 @@ class AuthorizationParityTest {
         new Intent.ViewProfileActivity(id),
         new Intent.ViewHouseholdAdministration(id),
         new Intent.ViewAccountAdministration(id),
-        new Intent.ViewProfileAdministration(id));
+        new Intent.ViewProfileAdministration(id),
+        new Intent.GrantServerAdmin(id),
+        new Intent.RevokeServerAdmin(id),
+        new Intent.CreateHousehold(),
+        new Intent.RenameHousehold(id),
+        new Intent.RenameAccount(id),
+        new Intent.GrantHouseholdAdmin(id),
+        new Intent.RevokeHouseholdAdmin(id),
+        new Intent.DisableAccount(id),
+        new Intent.EnableAccount(id),
+        new Intent.ViewHouseholds());
   }
 }

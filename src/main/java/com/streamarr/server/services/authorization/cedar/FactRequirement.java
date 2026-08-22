@@ -17,5 +17,7 @@ enum FactRequirement {
   /** The resource Profile's management and hosting facts relative to the principal. */
   PROFILE_MANAGEMENT,
   /** The resource Account's membership Household. */
-  ACCOUNT_HOUSEHOLD
+  ACCOUNT_HOUSEHOLD,
+  /** The principal's live Household role and membership Household from PostgreSQL. */
+  LIVE_PRINCIPAL_HOUSEHOLD
 }

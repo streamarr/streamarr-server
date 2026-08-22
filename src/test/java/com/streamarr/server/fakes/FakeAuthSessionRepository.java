@@ -49,6 +49,21 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
   }
 
   @Override
+  public int revokeAllForAccount(UUID accountId, SessionRevocationReason reason, Instant now) {
+    var live =
+        database.values().stream()
+            .filter(session -> accountId.equals(session.getAccountId()))
+            .filter(session -> session.getRevokedAt() == null)
+            .toList();
+    live.forEach(
+        session -> {
+          session.setRevokedAt(now);
+          session.setRevokedReason(reason);
+        });
+    return live.size();
+  }
+
+  @Override
   public boolean hasRow(UUID sessionId) {
     return findById(sessionId).isPresent();
   }

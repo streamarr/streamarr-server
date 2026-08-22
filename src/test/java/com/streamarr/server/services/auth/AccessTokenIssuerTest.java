@@ -15,6 +15,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -131,6 +132,43 @@ class AccessTokenIssuerTest {
     assertThat(context.scope()).isEqualTo(TokenScope.PROFILE);
     assertThat(TokenContext.of(account, session(account)).contextHouseholdId())
         .isEqualTo(account.getHouseholdId());
+  }
+
+  @Test
+  @DisplayName("Should represent a missing reauthentication instant without returning null")
+  void shouldRepresentMissingReauthenticationInstantWithoutReturningNull() {
+    var context = TokenContext.of(account(), session(account()));
+
+    assertThat(context.reauthenticatedAt()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should expire a reauthenticated token at the ceremony window end")
+  void shouldExpireReauthenticatedTokenAtCeremonyWindowEnd() {
+    var now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+    var fixedIssuer = issuerAt(Clock.fixed(now, ZoneOffset.UTC));
+
+    var token =
+        fixedIssuer.issueReauthenticated(
+            accountContext(account()), now.plus(Duration.ofMinutes(30)));
+
+    assertThat(token.expiresAt()).isEqualTo(now.plus(properties.reauthenticationWindow()));
+    var decoded = buildDecoder().decode(token.value());
+    assertThat(decoded.getExpiresAt()).isEqualTo(token.expiresAt());
+    assertThat(decoded.getClaimAsInstant(TokenClaims.REAUTHENTICATED_AT)).isEqualTo(now);
+  }
+
+  @Test
+  @DisplayName("Should cap a reauthenticated token when its source expires sooner")
+  void shouldCapReauthenticatedTokenWhenSourceExpiresSooner() {
+    var now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+    var fixedIssuer = issuerAt(Clock.fixed(now, ZoneOffset.UTC));
+    var sourceExpiry = now.plus(Duration.ofMinutes(3));
+
+    var token = fixedIssuer.issueReauthenticated(accountContext(account()), sourceExpiry);
+
+    assertThat(token.expiresAt()).isEqualTo(sourceExpiry);
+    assertThat(buildDecoder().decode(token.value()).getExpiresAt()).isEqualTo(sourceExpiry);
   }
 
   @Test

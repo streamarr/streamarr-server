@@ -9,6 +9,7 @@ import com.cedarpolicy.model.entity.Entity;
 import com.cedarpolicy.model.exception.AuthException;
 import com.cedarpolicy.model.exception.BadRequestException;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.ReauthenticationFreshness;
 import com.streamarr.server.services.authorization.AuthorizationDecider;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Decision.FailureCause;
@@ -37,6 +38,7 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
   private final AuthorizationEngine engine;
   private final CedarPolicyBundle bundle;
   private final SliceAssembler sliceAssembler;
+  private final ReauthenticationFreshness reauthenticationFreshness;
   private final MeterRegistry meterRegistry;
 
   @Override
@@ -52,17 +54,12 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
       if (sliceViolation.isPresent()) {
         return failClosed(FailureCause.INVALID_SLICE, check, sliceViolation.get());
       }
-      var request =
-          new AuthorizationRequest(
-              slice.principal(),
-              check.action().uid(),
-              check.resource(),
-              check.context(),
-              Optional.of(bundle.schema()),
-              true);
-      var response =
-          engine.isAuthorized(request, bundle.policies(), new Entities(new HashSet<>(entities)));
-      return interpret(response, check, plan.value());
+
+      if (!check.action().requiresFreshReauthentication()) {
+        return evaluate(check, slice, entities, plan.value());
+      }
+
+      return decideWithFreshness(identity, check, slice, entities, plan.value());
     } catch (InvalidEntitySliceException e) {
       log.error(
           "Authorization failed closed for {} ({}): {}",
@@ -84,6 +81,49 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
     } catch (BadRequestException e) {
       return Optional.of(e.getErrors().toString());
     }
+  }
+
+  /**
+   * ADR 0024 §Fresh reauthentication: evaluate with the trusted freshness flag; when a stale caller
+   * is denied, repeat the same evaluation with only the flag set to true — an allow there means the
+   * ceremony is all that is missing (REAUTHENTICATION_REQUIRED), anything else keeps the ordinary
+   * policy denial so a hidden resource stays hidden.
+   */
+  private <T> Decision<T> decideWithFreshness(
+      AuthenticatedIdentity identity,
+      AuthorizationCheck check,
+      EntitySlice slice,
+      List<Entity> entities,
+      T value)
+      throws AuthException {
+    var fresh = reauthenticationFreshness.isFresh(identity);
+    var decision = evaluate(check.withFreshReauthentication(fresh), slice, entities, value);
+    if (fresh || !(decision instanceof Decision.Denied<T>)) {
+      return decision;
+    }
+
+    var stepUp = evaluate(check.withFreshReauthentication(true), slice, entities, value);
+    if (stepUp instanceof Decision.Allowed<T>) {
+      return new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED);
+    }
+
+    return decision;
+  }
+
+  private <T> Decision<T> evaluate(
+      AuthorizationCheck check, EntitySlice slice, List<Entity> entities, T value)
+      throws AuthException {
+    var request =
+        new AuthorizationRequest(
+            slice.principal(),
+            check.action().uid(),
+            check.resource(),
+            check.cedarContext(),
+            Optional.of(bundle.schema()),
+            true);
+    var response =
+        engine.isAuthorized(request, bundle.policies(), new Entities(new HashSet<>(entities)));
+    return interpret(response, check, value);
   }
 
   private <T> Decision<T> interpret(
