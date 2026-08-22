@@ -120,6 +120,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
     if (householdRepository.findById(doomed.household().getId()).isPresent()) {
       authTestSupport.deleteIdentity(doomed);
     }
+
     authTestSupport.deleteIdentity(admin);
     mediaFileRepository.deleteAll();
     libraryRepository.deleteAll();
@@ -578,6 +579,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
           .set(SECURITY_AUDIT_EVENT.OUTCOME, "SUCCESS")
           .execute();
     }
+
     var beforeKey = base.minusSeconds(3) + "|" + ids.get(3);
     var before =
         Base64.getUrlEncoder()
@@ -618,6 +620,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
           .set(SECURITY_AUDIT_EVENT.OUTCOME, "SUCCESS")
           .execute();
     }
+
     var afterKey = occurredAt + "|" + ids.get(2);
     var after =
         Base64.getUrlEncoder()
@@ -724,6 +727,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
       } finally {
         releaseLock.countDown();
       }
+
       blocker.get(5, TimeUnit.SECONDS);
       responses =
           List.of(transferRequest.get(5, TimeUnit.SECONDS), deleteRequest.get(5, TimeUnit.SECONDS));

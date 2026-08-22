@@ -855,6 +855,7 @@ class HouseholdTeardownServiceTest {
           throw new AssertionError("teardown did not reach the Household lock", exception);
         }
       }
+
       return super.lockById(householdId);
     }
   }
