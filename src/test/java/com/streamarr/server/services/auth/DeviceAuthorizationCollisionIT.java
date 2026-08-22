@@ -120,6 +120,7 @@ class DeviceAuthorizationCollisionIT extends AbstractIntegrationTest {
       if (prepared.length != bytes.length) {
         throw new IllegalArgumentException("Prepared random value has the wrong length.");
       }
+
       System.arraycopy(prepared, 0, bytes, 0, bytes.length);
     }
   }

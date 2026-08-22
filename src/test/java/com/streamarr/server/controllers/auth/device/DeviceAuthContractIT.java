@@ -544,6 +544,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     if (content == null) {
       return request;
     }
+
     return request.content(content);
   }
 

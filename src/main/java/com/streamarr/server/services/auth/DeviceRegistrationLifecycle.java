@@ -27,6 +27,7 @@ public class DeviceRegistrationLifecycle {
     if (revoked) {
       dropSessions(List.of(registrationId), now);
     }
+
     return revoked;
   }
 

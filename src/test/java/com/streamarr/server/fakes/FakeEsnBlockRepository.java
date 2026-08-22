@@ -30,6 +30,7 @@ public class FakeEsnBlockRepository extends FakeJpaRepository<EsnBlock>
           new ConstraintViolationException(
               message, new SQLException(message, "23505"), constraint));
     }
+
     return super.save(entity);
   }
 

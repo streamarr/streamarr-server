@@ -60,12 +60,14 @@ public class DeviceAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((DeviceRejections.Revoke) refusal.get());
     }
+
     return mutationTransactions.write(
         () -> {
           if (!registrationLifecycle.revoke(
               registrationId, identity.accountId(), "revoked by administrator", clock.instant())) {
             throw new MutationRejection(new DeviceRejections.RegistrationNotActive());
           }
+
           audit(identity, "revokeDeviceRegistration", "registrationId", registrationId, null);
           return registrationId;
         },
@@ -77,9 +79,11 @@ public class DeviceAdministrationService {
     if (isBlank(esn)) {
       return Outcome.rejected(new DeviceRejections.EsnRequired());
     }
+
     if (isBlank(reason)) {
       return Outcome.rejected(new DeviceRejections.ReasonRequired());
     }
+
     var refusal =
         refusalOf(
             identity,
@@ -90,9 +94,11 @@ public class DeviceAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((DeviceRejections.Block) refusal.get());
     }
+
     if (householdRepository.findById(householdId).isEmpty()) {
       return Outcome.rejected(new DeviceRejections.HouseholdNotFound());
     }
+
     return writeBlock(identity, householdId, esn.strip(), reason, "blockEsn");
   }
 
@@ -101,9 +107,11 @@ public class DeviceAdministrationService {
     if (isBlank(esn)) {
       return Outcome.rejected(new DeviceRejections.EsnRequired());
     }
+
     if (isBlank(reason)) {
       return Outcome.rejected(new DeviceRejections.ReasonRequired());
     }
+
     var refusal =
         refusalOf(
             identity,
@@ -116,6 +124,7 @@ public class DeviceAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((DeviceRejections.BlockServerWide) refusal.get());
     }
+
     return writeBlock(identity, null, esn.strip(), reason, "blockEsnServerWide");
   }
 
@@ -124,6 +133,7 @@ public class DeviceAdministrationService {
     if (isBlank(esn)) {
       return Outcome.rejected(new DeviceRejections.EsnRequired());
     }
+
     var refusal =
         refusalOf(
             identity,
@@ -134,6 +144,7 @@ public class DeviceAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((DeviceRejections.Unblock) refusal.get());
     }
+
     return removeBlock(
         identity,
         esn.strip(),
@@ -146,6 +157,7 @@ public class DeviceAdministrationService {
     if (isBlank(esn)) {
       return Outcome.rejected(new DeviceRejections.EsnRequired());
     }
+
     authorizationService.requireAllowed(identity, new Intent.UnblockEsnServerWide());
     return removeBlock(
         identity,
@@ -160,6 +172,7 @@ public class DeviceAdministrationService {
     if (!mayReadDevices(identity, new Intent.ViewDeviceAdministration(householdId))) {
       return List.of();
     }
+
     return registrationRepository.findByHouseholdIdAndStatus(
         householdId, DeviceRegistrationStatus.ACTIVE);
   }
@@ -168,6 +181,7 @@ public class DeviceAdministrationService {
     if (!mayReadDevices(identity, new Intent.ViewDeviceAdministration(householdId))) {
       return List.of();
     }
+
     return esnBlockRepository.findByHouseholdId(householdId);
   }
 
@@ -175,6 +189,7 @@ public class DeviceAdministrationService {
     if (!mayReadDevices(identity, new Intent.ViewServerDeviceAdministration())) {
       return List.of();
     }
+
     return esnBlockRepository.findByHouseholdIdIsNull();
   }
 
@@ -218,6 +233,7 @@ public class DeviceAdministrationService {
           if (found.isEmpty()) {
             throw new MutationRejection(new DeviceRejections.BlockNotFound());
           }
+
           esnBlockRepository.delete(found.get());
           esnBlockRepository.flush();
           audit(identity, operation, "esn", null, null);
@@ -263,6 +279,7 @@ public class DeviceAdministrationService {
     if (resourceId != null) {
       entry.resource(resourceName, resourceId);
     }
+
     securityAuditEventRepository.append(entry.build());
   }
 
@@ -286,6 +303,7 @@ public class DeviceAdministrationService {
               if (mayView.getAsBoolean()) {
                 throw new AccessDeniedException("Not allowed.");
               }
+
               yield Optional.of(denied.get());
             }
           };

@@ -136,9 +136,11 @@ public class DeviceAdministrationResolver {
     if (first != 0 || last != 0) {
       return paginationService.getPaginationOptions(first, after, last, before);
     }
+
     if (before == null || before.isBlank()) {
       return paginationService.getPaginationOptions(100, after, 0, before);
     }
+
     return paginationService.getPaginationOptions(0, after, 100, before);
   }
 }
