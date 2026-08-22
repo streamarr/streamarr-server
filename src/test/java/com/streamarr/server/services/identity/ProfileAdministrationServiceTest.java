@@ -637,8 +637,9 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should invalidate a restricted person's pending manager invitations")
-  void shouldInvalidateRestrictedPersonsPendingManagerInvitations() {
+  @DisplayName(
+      "Should invalidate pending manager invitations when the recipient becomes restricted")
+  void shouldInvalidatePendingManagerInvitationsWhenRecipientBecomesRestricted() {
     var member = accounts.save(AccountFixture.defaultAccountBuilder().build());
     var personal =
         profiles.save(
