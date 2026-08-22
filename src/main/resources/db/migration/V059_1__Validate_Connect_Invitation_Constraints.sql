@@ -1,4 +1,4 @@
--- Validate after V057 commits so PostgreSQL does not retain the initial ALTER TABLE's
+-- Validate after V059 commits so PostgreSQL does not retain the initial ALTER TABLE's
 -- ACCESS EXCLUSIVE lock while scanning existing invitation rows.
 ALTER TABLE account_invitation
     VALIDATE CONSTRAINT fk_account_invitation_profile,
