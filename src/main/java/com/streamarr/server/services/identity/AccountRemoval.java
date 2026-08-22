@@ -62,6 +62,7 @@ class AccountRemoval {
     }
     if (sourceAccess == SourceAccess.KEEP_AS_VISITOR) {
       shareRepository.tryDemoteStructural(profileId, sourceHouseholdId, now);
+      authSessionRepository.clearSelections(profileId, sourceHouseholdId, now);
     } else {
       endSourceAccess(accountId, profileId, sourceHouseholdId, now);
     }

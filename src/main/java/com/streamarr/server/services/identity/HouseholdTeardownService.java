@@ -192,7 +192,9 @@ public class HouseholdTeardownService {
         // The preserved Profile cannot stay in a Household about to vanish: it moves behind
         // its named anchor.
         profileRepository.tryRehome(
-            resident.getPersonalProfileId(), disposition.destinationHouseholdId());
+            resident.getPersonalProfileId(),
+            resident.getHouseholdId(),
+            disposition.destinationHouseholdId());
         shareRepository
             .findByProfileIdAndHouseholdIdAndStatus(
                 resident.getPersonalProfileId(),
