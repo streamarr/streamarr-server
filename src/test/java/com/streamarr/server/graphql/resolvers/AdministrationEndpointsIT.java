@@ -24,6 +24,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import jakarta.persistence.EntityManagerFactory;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -615,24 +616,19 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should list every Household with its Accounts for ServerAdmin only")
   void shouldListEveryHouseholdWithItsAccountsForServerAdminOnly() throws Exception {
-    var firstPage = householdPage(null);
-    var after =
-        firstPage.path("data").path("households").path("pageInfo").path("endCursor").asString();
-    var secondPage = householdPage(after);
+    var page = householdPage(50, null);
+    var nodesById = new HashMap<String, JsonNode>();
+    for (var edge : page.path("data").path("households").path("edges")) {
+      var node = edge.path("node");
+      nodesById.put(node.path("id").asString(), node);
+    }
 
-    var firstNode = firstPage.path("data").path("households").path("edges").get(0).path("node");
-    var secondNode = secondPage.path("data").path("households").path("edges").get(0).path("node");
-    assertThat(List.of(firstNode.path("id").asString(), secondNode.path("id").asString()))
-        .containsExactlyInAnyOrder(
-            serverAdmin.household().getId().toString(), resident.household().getId().toString());
-    assertThat(
-            firstNode.path("accounts").path("edges").get(0).path("node").path("email").asString())
-        .isIn(serverAdmin.account().getEmail(), resident.account().getEmail());
-    assertThat(
-            secondNode.path("accounts").path("edges").get(0).path("node").path("email").asString())
-        .isIn(serverAdmin.account().getEmail(), resident.account().getEmail())
-        .isNotEqualTo(
-            firstNode.path("accounts").path("edges").get(0).path("node").path("email").asString());
+    for (var identity : List.of(serverAdmin, resident)) {
+      var node = nodesById.get(identity.household().getId().toString());
+      assertThat(node).isNotNull();
+      assertThat(node.path("accounts").path("edges").get(0).path("node").path("email").asString())
+          .isEqualTo(identity.account().getEmail());
+    }
 
     graphql(
             authTestSupport.accountBearer(resident),
@@ -646,17 +642,22 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should continue Household pagination when the cursor Household is renamed")
   void shouldContinueHouseholdPaginationWhenCursorHouseholdIsRenamed() throws Exception {
-    var firstPage = householdPage(null);
+    assertThat(householdRepository.tryRename(serverAdmin.household().getId(), "! cursor household"))
+        .isTrue();
+    assertThat(householdRepository.tryRename(resident.household().getId(), "! cursor successor"))
+        .isTrue();
+
+    var firstPage = householdPage(1, null);
     var firstNode = firstPage.path("data").path("households").path("edges").get(0).path("node");
+    assertThat(firstNode.path("id").asString())
+        .isEqualTo(serverAdmin.household().getId().toString());
     var after =
         firstPage.path("data").path("households").path("pageInfo").path("endCursor").asString();
 
     householdRepository.tryRename(UUID.fromString(firstNode.path("id").asString()), "zzzzzzzzzz");
 
-    var secondPage = householdPage(after);
-    var ids =
-        List.of(
-            firstNode.path("id").asString(),
+    var secondPage = householdPage(1, after);
+    assertThat(
             secondPage
                 .path("data")
                 .path("households")
@@ -664,10 +665,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
                 .get(0)
                 .path("node")
                 .path("id")
-                .asString());
-    assertThat(ids)
-        .containsExactlyInAnyOrder(
-            serverAdmin.household().getId().toString(), resident.household().getId().toString());
+                .asString())
+        .isEqualTo(resident.household().getId().toString());
   }
 
   @Test
@@ -757,17 +756,17 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
             .content(objectMapper.writeValueAsString(Map.of("query", query))));
   }
 
-  private JsonNode householdPage(String after) throws Exception {
+  private JsonNode householdPage(int first, String after) throws Exception {
     var afterArgument = after == null ? "" : ", after: \"" + after + "\"";
     var response =
         graphql(
                 authTestSupport.accountBearer(serverAdmin),
                 """
-                query { households(first: 1%s) { pageInfo { endCursor hasNextPage }
+                query { households(first: %d%s) { pageInfo { endCursor hasNextPage }
                   edges { node { id name accounts(first: 10) {
                     edges { node { id email householdRole } } } } } } }
                 """
-                    .formatted(afterArgument))
+                    .formatted(first, afterArgument))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andReturn()
