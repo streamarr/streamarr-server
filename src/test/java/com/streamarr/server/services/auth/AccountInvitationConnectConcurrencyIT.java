@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountInvitation;
@@ -24,6 +25,7 @@ import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.support.AuthTestSupport;
+import java.sql.Connection;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -33,8 +35,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.LockSupport;
-import java.util.function.BooleanSupplier;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -103,12 +103,13 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
         var statement = connection.createStatement();
         var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       connection.setAutoCommit(false);
+      var blockerPid = backendPid(connection);
       statement.execute("LOCK TABLE user_account IN SHARE MODE");
       var first = executor.submit(() -> invitationService.accept(acceptCommand(firstCode)));
       var second = executor.submit(() -> invitationService.accept(acceptCommand(secondCode)));
 
       try {
-        awaitAtMost(() -> waitingTableLockCount("user_account") >= 2);
+        await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) >= 2);
       } finally {
         connection.rollback();
       }
@@ -136,6 +137,7 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
                 "SELECT household_id FROM household_guard WHERE household_id = ? FOR UPDATE");
         var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       connection.setAutoCommit(false);
+      var blockerPid = backendPid(connection);
       statement.setObject(1, targetAdmin.household().getId());
       statement.executeQuery().close();
 
@@ -144,9 +146,9 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
               () -> profileSharingService.acceptProfileShare(targetIdentity, pending.getId()));
       Future<AcceptedInvitation> connectAcceptance;
       try {
-        awaitAtMost(() -> waitingShareOperationCount() >= 1);
+        await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) >= 1);
         connectAcceptance = executor.submit(() -> invitationService.accept(acceptCommand(code)));
-        awaitAtMost(() -> waitingShareOperationCount() >= 2);
+        await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) >= 2);
       } finally {
         connection.rollback();
       }
@@ -304,35 +306,32 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
         .ifPresent(account -> authTestSupport.deleteAccount(account.getId()));
   }
 
-  private void awaitAtMost(BooleanSupplier condition) {
-    var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-    while (!condition.getAsBoolean() && System.nanoTime() < deadline) {
-      LockSupport.parkNanos(Duration.ofMillis(10).toNanos());
-    }
-  }
-
-  private int waitingTableLockCount(String relationName) {
+  private int blockedConnectionCount(int blockerPid) {
     return queryCount(
         """
-        SELECT count(*)
-        FROM pg_locks AS lock
-        JOIN pg_class AS relation ON relation.oid = lock.relation
-        WHERE relation.relname = ?
-          AND lock.mode = 'RowExclusiveLock'
-          AND NOT lock.granted
+        WITH RECURSIVE blocked(pid) AS (
+            SELECT activity.pid
+            FROM pg_stat_activity AS activity
+            WHERE ? = ANY(pg_blocking_pids(activity.pid))
+          UNION
+            SELECT activity.pid
+            FROM pg_stat_activity AS activity
+            JOIN blocked AS blocker
+              ON blocker.pid = ANY(pg_blocking_pids(activity.pid))
+        )
+        SELECT count(*) FROM blocked
         """,
-        relationName);
+        blockerPid);
   }
 
-  private int waitingShareOperationCount() {
-    return queryCount(
-        """
-        SELECT count(*)
-        FROM pg_stat_activity
-        WHERE pid <> pg_backend_pid()
-          AND wait_event_type = 'Lock'
-          AND query ILIKE '%profile_household_share%'
-        """);
+  private int backendPid(Connection connection) {
+    try (var statement = connection.createStatement();
+        var result = statement.executeQuery("SELECT pg_backend_pid()")) {
+      result.next();
+      return result.getInt(1);
+    } catch (Exception exception) {
+      throw new AssertionError("could not identify PostgreSQL connection", exception);
+    }
   }
 
   private int queryCount(String sql, Object... parameters) {
