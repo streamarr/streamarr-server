@@ -32,6 +32,7 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
@@ -39,6 +40,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -54,13 +56,96 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
   @Autowired private AccountLifecycleService accountLifecycleService;
   @Autowired private ProfileLifecycleService profileLifecycleService;
   @Autowired private AuthTestSupport authTestSupport;
-  @Autowired private UserAccountRepository accountRepository;
+  @MockitoSpyBean private UserAccountRepository accountRepository;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @MockitoSpyBean private ProfileManagerRepository managerRepository;
   @MockitoSpyBean private AccountInvitationRepository invitationRepository;
   @MockitoSpyBean private DeviceRegistrationLifecycle registrationLifecycle;
   @Autowired private TransactionTemplate transactionTemplate;
+
+  @Test
+  @DisplayName("Should preserve a password change committed while an Account transfer is paused")
+  void shouldPreservePasswordChangeCommittedWhileAccountTransferIsPaused() throws Exception {
+    var actor = authTestSupport.createAdminIdentity();
+    var source = authTestSupport.createIdentity();
+    var destination = authTestSupport.createIdentity();
+    var mover = residentOf(source.household().getId(), HouseholdRole.MEMBER);
+    try {
+      var transferReached = new CountDownLatch(1);
+      var releaseTransfer = new CountDownLatch(1);
+      gateTransferWrite(
+          TransferGate.builder()
+              .mover(mover)
+              .sourceHouseholdId(source.household().getId())
+              .transferReached(transferReached)
+              .releaseTransfer(releaseTransfer)
+              .build());
+
+      Outcome<?, ?> transfer;
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var pendingTransfer =
+            executor.submit(
+                () ->
+                    accountLifecycleService.transferAccount(
+                        authenticated(actor), transferTo(mover, destination)));
+        assertThat(transferReached.await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(accountRepository.trySetPasswordHash(mover.getId(), "concurrent-password"))
+            .isTrue();
+        releaseTransfer.countDown();
+        transfer = pendingTransfer.get(20, TimeUnit.SECONDS);
+      }
+
+      assertThat(transfer).isInstanceOf(Outcome.Accepted.class);
+      assertThat(accountRepository.findById(mover.getId()).orElseThrow().getPasswordHash())
+          .isEqualTo("concurrent-password");
+    } finally {
+      authTestSupport.deleteIdentity(destination);
+      authTestSupport.deleteIdentity(source);
+      authTestSupport.deleteIdentity(actor);
+    }
+  }
+
+  @Test
+  @DisplayName("Should preserve a rename committed while an Account transfer is paused")
+  void shouldPreserveRenameCommittedWhileAccountTransferIsPaused() throws Exception {
+    var actor = authTestSupport.createAdminIdentity();
+    var source = authTestSupport.createIdentity();
+    var destination = authTestSupport.createIdentity();
+    var mover = residentOf(source.household().getId(), HouseholdRole.MEMBER);
+    try {
+      var transferReached = new CountDownLatch(1);
+      var releaseTransfer = new CountDownLatch(1);
+      gateTransferWrite(
+          TransferGate.builder()
+              .mover(mover)
+              .sourceHouseholdId(source.household().getId())
+              .transferReached(transferReached)
+              .releaseTransfer(releaseTransfer)
+              .build());
+
+      Outcome<?, ?> transfer;
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var pendingTransfer =
+            executor.submit(
+                () ->
+                    accountLifecycleService.transferAccount(
+                        authenticated(actor), transferTo(mover, destination)));
+        assertThat(transferReached.await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(accountRepository.tryRename(mover.getId(), "Concurrent rename")).isTrue();
+        releaseTransfer.countDown();
+        transfer = pendingTransfer.get(20, TimeUnit.SECONDS);
+      }
+
+      assertThat(transfer).isInstanceOf(Outcome.Accepted.class);
+      assertThat(accountRepository.findById(mover.getId()).orElseThrow().getDisplayName())
+          .isEqualTo("Concurrent rename");
+    } finally {
+      authTestSupport.deleteIdentity(destination);
+      authTestSupport.deleteIdentity(source);
+      authTestSupport.deleteIdentity(actor);
+    }
+  }
 
   @Test
   @DisplayName("Should reject deletion when a concurrent transfer changes the Account Household")
@@ -97,7 +182,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
         var pendingDeletion =
             executor.submit(
                 () ->
-                    capture(
+                    outcomeOf(
                         () ->
                             accountLifecycleService.deleteAccount(
                                 authenticated(actor),
@@ -174,36 +259,76 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
         var pendingFirst =
             executor.submit(
                 () ->
-                    capture(
+                    outcomeOf(
                         () ->
                             profileLifecycleService.transferProfile(
                                 authenticated(actor),
-                                transferProfile(
-                                    orphan,
-                                    firstDestination.household().getId(),
-                                    firstDestination.account().getId()))));
+                                transferProfileBuilder(orphan)
+                                    .destinationHouseholdId(firstDestination.household().getId())
+                                    .localManagerAccountId(firstDestination.account().getId())
+                                    .build())));
         assertThat(firstGrantReached.await(10, TimeUnit.SECONDS)).isTrue();
         secondAttempt =
-            capture(
+            outcomeOf(
                 () ->
                     profileLifecycleService.transferProfile(
                         authenticated(actor),
-                        transferProfile(
-                            orphan,
-                            secondDestination.household().getId(),
-                            secondDestination.account().getId())));
+                        transferProfileBuilder(orphan)
+                            .destinationHouseholdId(secondDestination.household().getId())
+                            .localManagerAccountId(secondDestination.account().getId())
+                            .build()));
         releaseFirstGrant.countDown();
         firstAttempt = pendingFirst.get(20, TimeUnit.SECONDS);
       }
 
-      assertThat(List.of(firstAttempt, secondAttempt))
+      var attempts = List.of(firstAttempt, secondAttempt);
+      assertThat(attempts)
+          .as("both contenders must return protocol-independent outcomes")
+          .allMatch(result -> result instanceof Outcome<?, ?>);
+      assertThat(attempts)
           .filteredOn(result -> result instanceof Outcome.Accepted<?, ?>)
           .as("the home transition must have a single winner")
           .hasSize(1);
+      var rejected =
+          (Outcome.Rejected<?, ?>)
+              attempts.stream()
+                  .filter(result -> result instanceof Outcome.Rejected<?, ?>)
+                  .findFirst()
+                  .orElseThrow();
+      assertThat(rejected.rejections())
+          .singleElement()
+          .isInstanceOf(TransferRejections.ProfileNotFound.class);
+      var accepted =
+          (Outcome.Accepted<?, ?>)
+              attempts.stream()
+                  .filter(result -> result instanceof Outcome.Accepted<?, ?>)
+                  .findFirst()
+                  .orElseThrow();
+      var returnedProfile = (Profile) accepted.result();
+      var storedProfile = profileRepository.findById(orphan.getId()).orElseThrow();
+      assertThat(returnedProfile.getHouseholdId()).isEqualTo(storedProfile.getHouseholdId());
+      var winner =
+          storedProfile.getHouseholdId().equals(firstDestination.household().getId())
+              ? firstDestination
+              : secondDestination;
+      var loser = winner == firstDestination ? secondDestination : firstDestination;
       assertThat(
-              shareRepository.findByProfileIdAndStatus(orphan.getId(), ProfileShareStatus.ACTIVE))
-          .as("only the winning home share may remain active")
-          .hasSize(1);
+              managerRepository.existsByAccountIdAndProfileId(
+                  winner.account().getId(), orphan.getId()))
+          .isTrue();
+      assertThat(
+              managerRepository.existsByAccountIdAndProfileId(
+                  loser.account().getId(), orphan.getId()))
+          .isFalse();
+      var activeShares =
+          shareRepository.findByProfileIdAndStatus(orphan.getId(), ProfileShareStatus.ACTIVE);
+      assertThat(activeShares).as("only the winning home share may remain active").hasSize(1);
+      assertThat(activeShares.getFirst().getHouseholdId())
+          .isEqualTo(storedProfile.getHouseholdId());
+      assertThat(shareRepository.findByProfileIdAndStatus(orphan.getId(), ProfileShareStatus.ENDED))
+          .singleElement()
+          .extracting(ProfileHouseholdShare::getHouseholdId)
+          .isEqualTo(source.household().getId());
     } finally {
       authTestSupport.deleteIdentity(firstDestination);
       authTestSupport.deleteIdentity(secondDestination);
@@ -241,7 +366,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
         var pendingDeletion =
             executor.submit(
                 () ->
-                    capture(
+                    outcomeOf(
                         () ->
                             profileLifecycleService.forceDeleteProfile(
                                 authenticated(actor), orphan.getId(), "cleanup")));
@@ -291,14 +416,14 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
         var first =
             executor.submit(
                 () ->
-                    capture(
+                    outcomeOf(
                         () ->
                             accountLifecycleService.deleteAccount(
                                 authenticated(actor), erase(household.account().getId()))));
         var other =
             executor.submit(
                 () ->
-                    capture(
+                    outcomeOf(
                         () ->
                             accountLifecycleService.deleteAccount(
                                 authenticated(actor), erase(second.getId()))));
@@ -354,6 +479,44 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
         });
   }
 
+  private void gateTransferWrite(TransferGate gate) {
+    var repositorySpy =
+        AopTestUtils.<UserAccountRepository>getUltimateTargetObject(accountRepository);
+    var repositoryAnswer =
+        mockingDetails(repositorySpy).getMockCreationSettings().getDefaultAnswer();
+    doAnswer(
+            invocation -> {
+              gate.transferReached().countDown();
+              if (!gate.releaseTransfer().await(10, TimeUnit.SECONDS)) {
+                throw new AssertionError("Timed out releasing Account transfer");
+              }
+              return repositoryAnswer.answer(invocation);
+            })
+        .when(repositorySpy)
+        .tryTransfer(
+            eq(gate.mover().getId()),
+            eq(gate.sourceHouseholdId()),
+            any(UUID.class),
+            any(HouseholdRole.class));
+  }
+
+  @Builder
+  private record TransferGate(
+      UserAccount mover,
+      UUID sourceHouseholdId,
+      CountDownLatch transferReached,
+      CountDownLatch releaseTransfer) {}
+
+  private static TransferAccountCommand transferTo(
+      UserAccount mover, AuthTestSupport.TestIdentity destination) {
+    return TransferAccountCommand.builder()
+        .accountId(mover.getId())
+        .destinationHouseholdId(destination.household().getId())
+        .sourceAccess(SourceAccess.END)
+        .reason("relocated")
+        .build();
+  }
+
   private Profile orphanOf(AuthTestSupport.TestIdentity manager) {
     return transactionTemplate.execute(
         _ -> {
@@ -396,14 +559,9 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
         });
   }
 
-  private static TransferProfileCommand transferProfile(
-      Profile profile, UUID destinationHouseholdId, UUID managerAccountId) {
-    return TransferProfileCommand.builder()
-        .profileId(profile.getId())
-        .destinationHouseholdId(destinationHouseholdId)
-        .localManagerAccountId(managerAccountId)
-        .reason("recovery")
-        .build();
+  private static TransferProfileCommand.TransferProfileCommandBuilder transferProfileBuilder(
+      Profile profile) {
+    return TransferProfileCommand.builder().profileId(profile.getId()).reason("recovery");
   }
 
   private static DeleteAccountCommand erase(UUID accountId) {
@@ -423,15 +581,11 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
         .householdRole(identity.account().getHouseholdRole())
         .serverAdmin(identity.account().isServerAdmin())
         .contextHouseholdId(identity.household().getId())
-        .reauthenticatedAt(Instant.now().minusSeconds(1))
+        .reauthenticatedAt(Optional.of(Instant.now().minusSeconds(1)))
         .build();
   }
 
-  private static Object capture(Supplier<?> attempt) {
-    try {
-      return attempt.get();
-    } catch (Throwable failure) {
-      return failure;
-    }
+  private static Outcome<?, ?> outcomeOf(Supplier<? extends Outcome<?, ?>> attempt) {
+    return attempt.get();
   }
 }

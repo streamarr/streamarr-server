@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
+import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -22,6 +23,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import java.util.Map;
 import java.util.UUID;
+import lombok.Builder;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,6 +68,7 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
 
   @AfterEach
   void tearDown() {
+    dsl.deleteFrom(SERVER_BOOTSTRAP).execute();
     dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     authTestSupport.deleteIdentity(host);
     authTestSupport.deleteIdentity(admin);
@@ -74,7 +77,13 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should move the Account with its Profile while credentials survive untouched")
   void shouldMoveAccountWithItsProfileWhileCredentialsSurviveUntouched() throws Exception {
-    var mover = residentOf(admin.household().getId(), "Mover", HouseholdRole.MEMBER);
+    var mover =
+        residentOf(
+            ResidentSpec.builder()
+                .householdId(admin.household().getId())
+                .displayName("Mover")
+                .role(HouseholdRole.MEMBER)
+                .build());
 
     graphql(
             authTestSupport.accountBearer(admin),
@@ -113,10 +122,42 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should answer the commit-time judgments as typed rejections")
-  void shouldAnswerCommitTimeJudgmentsAsTypedRejections() throws Exception {
-    // T1: the source cannot lose its only HouseholdAdmin.
-    residentOf(admin.household().getId(), "Stays", HouseholdRole.MEMBER);
+  @DisplayName("Should default omitted source access to ending the old Household visit")
+  void shouldDefaultOmittedSourceAccessToEndingOldHouseholdVisit() throws Exception {
+    var mover =
+        residentOf(
+            ResidentSpec.builder()
+                .householdId(admin.household().getId())
+                .displayName("Mover")
+                .role(HouseholdRole.MEMBER)
+                .build());
+
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { transferAccount(input: {accountId: "%s",
+              destinationHouseholdId: "%s"}) {
+              account { id } userErrors { __typename } } }
+            """
+                .formatted(mover.getId(), host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.transferAccount.userErrors").isEmpty());
+
+    assertThat(
+            shareRepository.findByProfileIdAndHouseholdIdAndStatus(
+                mover.getPersonalProfileId(), admin.household().getId(), ProfileShareStatus.ACTIVE))
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should translate the retained HouseholdAdmin judgment to a typed rejection")
+  void shouldTranslateRetainedHouseholdAdminJudgmentToTypedRejection() throws Exception {
+    residentOf(
+        ResidentSpec.builder()
+            .householdId(admin.household().getId())
+            .displayName("Stays")
+            .role(HouseholdRole.MEMBER)
+            .build());
     graphql(
             authTestSupport.accountBearer(admin),
             transferMutation(admin.account().getId(), host.household().getId()))
@@ -124,9 +165,18 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.transferAccount.userErrors[0].__typename")
                 .value("LastHouseholdAdminError"));
+  }
 
-    // T8: the destination already shows that name.
-    var mover = residentOf(admin.household().getId(), "Mover", HouseholdRole.MEMBER);
+  @Test
+  @DisplayName("Should translate the unique Profile name judgment to a typed rejection")
+  void shouldTranslateUniqueProfileNameJudgmentToTypedRejection() throws Exception {
+    var mover =
+        residentOf(
+            ResidentSpec.builder()
+                .householdId(admin.household().getId())
+                .displayName("Mover")
+                .role(HouseholdRole.MEMBER)
+                .build());
     var twinName = profileRepository.findById(mover.getPersonalProfileId()).orElseThrow().getName();
     transactionTemplate.executeWithoutResult(
         _ -> {
@@ -158,9 +208,41 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should translate the retained ServerAdmin judgment to a typed rejection")
+  void shouldTranslateRetainedServerAdminJudgmentToTypedRejection() throws Exception {
+    residentOf(
+        ResidentSpec.builder()
+            .householdId(admin.household().getId())
+            .displayName("Stays")
+            .role(HouseholdRole.ADMIN)
+            .build());
+    dsl.insertInto(SERVER_BOOTSTRAP)
+        .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, admin.account().getId())
+        .execute();
+
+    graphql(
+            authTestSupport.freshAccountBearer(admin),
+            """
+            mutation { deleteAccount(input: {accountId: "%s", profileDisposition: ERASE,
+              reason: "retired"}) { accountId userErrors { __typename } } }
+            """
+                .formatted(admin.account().getId()))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.deleteAccount.userErrors[0].__typename")
+                .value("LastServerAdminError"));
+  }
+
+  @Test
   @DisplayName("Should erase an Account and keep one only behind a replacement anchor")
   void shouldEraseAccountAndKeepOneOnlyBehindReplacementAnchor() throws Exception {
-    var doomed = residentOf(admin.household().getId(), "Doomed", HouseholdRole.MEMBER);
+    var doomed =
+        residentOf(
+            ResidentSpec.builder()
+                .householdId(admin.household().getId())
+                .displayName("Doomed")
+                .role(HouseholdRole.MEMBER)
+                .build());
 
     graphql(
             authTestSupport.freshAccountBearer(admin),
@@ -198,7 +280,14 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should let a fresh person delete their own Account after typing DELETE")
   void shouldLetFreshPersonDeleteTheirOwnAccountAfterTypingDelete() throws Exception {
-    var buddyId = residentOf(host.household().getId(), "Buddy", HouseholdRole.ADMIN).getId();
+    var buddyId =
+        residentOf(
+                ResidentSpec.builder()
+                    .householdId(host.household().getId())
+                    .displayName("Buddy")
+                    .role(HouseholdRole.ADMIN)
+                    .build())
+            .getId();
     assertThat(buddyId).isNotNull();
 
     graphql(
@@ -237,8 +326,8 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should move an unlinked Profile behind its new anchor and force-delete freshly")
-  void shouldMoveUnlinkedProfileBehindNewAnchorAndForceDeleteFreshly() throws Exception {
+  @DisplayName("Should move an unlinked Profile behind its new anchor")
+  void shouldMoveUnlinkedProfileBehindNewAnchor() throws Exception {
     var orphan = managedOrphan();
 
     graphql(
@@ -264,7 +353,70 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
             shareRepository.findByProfileIdAndHouseholdIdAndStatus(
                 orphan.getId(), admin.household().getId(), ProfileShareStatus.ACTIVE))
         .isEmpty();
+  }
 
+  @Test
+  @DisplayName("Should map an omitted local manager to the required input error")
+  void shouldMapOmittedLocalManagerToRequiredInputError() throws Exception {
+    var orphan = managedOrphan();
+
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { transferProfile(input: {profileId: "%s",
+              destinationHouseholdId: "%s"}) {
+              profile { id } userErrors { __typename } } }
+            """
+                .formatted(orphan.getId(), host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.transferProfile.userErrors[0].__typename")
+                .value("LocalManagerRequiredError"));
+  }
+
+  @Test
+  @DisplayName("Should translate a Profile transfer name collision to a typed rejection")
+  void shouldTranslateProfileTransferNameCollisionToTypedRejection() throws Exception {
+    var orphan = managedOrphan();
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var twin =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder()
+                      .householdId(host.household().getId())
+                      .name(orphan.getName())
+                      .build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(host.account().getId())
+                  .profileId(twin.getId())
+                  .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(twin.getId())
+                  .householdId(host.household().getId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .build());
+        });
+
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { transferProfile(input: {profileId: "%s",
+              destinationHouseholdId: "%s", localManagerAccountId: "%s"}) {
+              profile { id } userErrors { __typename } } }
+            """
+                .formatted(orphan.getId(), host.household().getId(), host.account().getId()))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.transferProfile.userErrors[0].__typename")
+                .value("ProfileNameTakenError"));
+  }
+
+  @Test
+  @DisplayName("Should force-delete an unlinked Profile after fresh reauthentication")
+  void shouldForceDeleteUnlinkedProfileAfterFreshReauthentication() throws Exception {
+    var orphan = managedOrphan();
     graphql(
             authTestSupport.freshAccountBearer(admin),
             """
@@ -288,33 +440,36 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   /** A complete resident of the Household: Account, anchored Personal Profile, structural share. */
-  private UserAccount residentOf(UUID householdId, String displayName, HouseholdRole role) {
+  private UserAccount residentOf(ResidentSpec resident) {
     return transactionTemplate.execute(
         _ -> {
           var personal =
               profileRepository.saveAndFlush(
                   ProfileFixture.defaultProfileBuilder()
-                      .householdId(householdId)
-                      .name(displayName)
+                      .householdId(resident.householdId())
+                      .name(resident.displayName())
                       .build());
           var account =
               userAccountRepository.saveAndFlush(
                   AccountFixture.defaultAccountBuilder()
-                      .householdId(householdId)
-                      .householdRole(role)
-                      .displayName(displayName)
+                      .householdId(resident.householdId())
+                      .householdRole(resident.role())
+                      .displayName(resident.displayName())
                       .personalProfileId(personal.getId())
                       .build());
           shareRepository.saveAndFlush(
               ProfileHouseholdShare.builder()
                   .profileId(personal.getId())
-                  .householdId(householdId)
+                  .householdId(resident.householdId())
                   .status(ProfileShareStatus.ACTIVE)
                   .structural(true)
                   .build());
           return account;
         });
   }
+
+  @Builder
+  private record ResidentSpec(UUID householdId, String displayName, HouseholdRole role) {}
 
   private Profile managedOrphan() {
     return transactionTemplate.execute(

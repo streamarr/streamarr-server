@@ -2,11 +2,15 @@ package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.auth.AccountInvitation;
+import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.PasswordResetCode;
+import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
@@ -45,6 +49,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.Builder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -150,6 +155,7 @@ class AccountLifecycleServiceTest {
     assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
         .isEqualTo(DeviceRegistrationStatus.REVOKED);
     assertThat(sessions.findById(watching.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    assertThat(sessions.findById(watching.getId()).orElseThrow().getContextHouseholdId()).isNull();
     assertThat(audit.entries())
         .extracting(entry -> entry.operation())
         .containsExactly("transferAccount");
@@ -175,7 +181,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should keep the old Household as an ordinary visit when asked")
+  @DisplayName(
+      "Should keep the old Household context while clearing its obsolete Profile selection")
   void shouldKeepOldHouseholdAsOrdinaryVisitWhenAsked() {
     var registration =
         registrations.save(
@@ -214,11 +221,13 @@ class AccountLifecycleServiceTest {
     assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
         .isEqualTo(DeviceRegistrationStatus.ACTIVE);
     assertThat(sessions.findById(watching.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    assertThat(sessions.findById(watching.getId()).orElseThrow().getContextHouseholdId())
+        .isEqualTo(source.getId());
   }
 
   @Test
-  @DisplayName("Should refuse the moves the model reserves for other operations")
-  void shouldRefuseMovesModelReservesForOtherOperations() {
+  @DisplayName("Should reject an Account transfer to its current Household")
+  void shouldRejectAccountTransferToItsCurrentHousehold() {
     assertThat(
             rejectionOf(
                 service.transferAccount(
@@ -229,6 +238,11 @@ class AccountLifecycleServiceTest {
                         .sourceAccess(SourceAccess.END)
                         .build())))
         .isInstanceOf(TransferRejections.SameHousehold.class);
+  }
+
+  @Test
+  @DisplayName("Should reject an Account transfer to an unknown Household")
+  void shouldRejectAccountTransferToUnknownHousehold() {
     assertThat(
             rejectionOf(
                 service.transferAccount(
@@ -239,7 +253,11 @@ class AccountLifecycleServiceTest {
                         .sourceAccess(SourceAccess.END)
                         .build())))
         .isInstanceOf(TransferRejections.HouseholdNotFound.class);
+  }
 
+  @Test
+  @DisplayName("Should reserve the final Account for Household teardown")
+  void shouldReserveFinalAccountForHouseholdTeardown() {
     var loner =
         residentOf(
             households.save(HouseholdFixture.defaultHouseholdBuilder().build()),
@@ -254,7 +272,11 @@ class AccountLifecycleServiceTest {
                         .sourceAccess(SourceAccess.END)
                         .build())))
         .isInstanceOf(TransferRejections.FinalAccount.class);
+  }
 
+  @Test
+  @DisplayName("Should hide an unauthorized Account behind the oracle rule")
+  void shouldHideUnauthorizedAccountBehindOracleRule() {
     authorization.denyAll();
     assertThat(
             rejectionOf(
@@ -262,6 +284,21 @@ class AccountLifecycleServiceTest {
                     identity(),
                     TransferAccountCommand.builder()
                         .accountId(mover.getId())
+                        .destinationHouseholdId(destination.getId())
+                        .sourceAccess(SourceAccess.END)
+                        .build())))
+        .isInstanceOf(TransferRejections.AccountNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should reject an authorized transfer when the Account does not exist")
+  void shouldRejectAuthorizedTransferWhenAccountDoesNotExist() {
+    assertThat(
+            rejectionOf(
+                service.transferAccount(
+                    identity(),
+                    TransferAccountCommand.builder()
+                        .accountId(UUID.randomUUID())
                         .destinationHouseholdId(destination.getId())
                         .sourceAccess(SourceAccess.END)
                         .build())))
@@ -283,10 +320,20 @@ class AccountLifecycleServiceTest {
         sessions.save(AuthSession.builder().accountId(mover.getId()).deviceName("web").build());
     var restorable =
         managerInvitations.save(
-            pendingManagerInvitation(UUID.randomUUID(), mover.getId(), UUID.randomUUID()));
+            pendingManagerInvitation(
+                ManagerInvitationSpec.builder()
+                    .profileId(UUID.randomUUID())
+                    .recipientId(mover.getId())
+                    .inviterId(UUID.randomUUID())
+                    .build()));
     var proposal =
         managerInvitations.save(
-            pendingManagerInvitation(UUID.randomUUID(), UUID.randomUUID(), mover.getId()));
+            pendingManagerInvitation(
+                ManagerInvitationSpec.builder()
+                    .profileId(UUID.randomUUID())
+                    .recipientId(UUID.randomUUID())
+                    .inviterId(mover.getId())
+                    .build()));
     var offered =
         shares.save(
             ProfileHouseholdShare.builder()
@@ -294,6 +341,59 @@ class AccountLifecycleServiceTest {
                 .householdId(UUID.randomUUID())
                 .status(ProfileShareStatus.PENDING)
                 .offeredByAccountId(mover.getId())
+                .build());
+    var issuedInvitation =
+        accountInvitations.save(
+            AccountInvitation.builder()
+                .recipientEmail("issued@example.com")
+                .issuerAccountId(mover.getId())
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .publicId(UUID.randomUUID().toString())
+                .secretDigest(new byte[] {1})
+                .build());
+    var profileInvitation =
+        accountInvitations.save(
+            AccountInvitation.builder()
+                .recipientEmail("profile@example.com")
+                .profileId(mover.getPersonalProfileId())
+                .issuerAccountId(UUID.randomUUID())
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .publicId(UUID.randomUUID().toString())
+                .secretDigest(new byte[] {2})
+                .build());
+    var profileManagerInvitation =
+        managerInvitations.save(
+            pendingManagerInvitation(
+                ManagerInvitationSpec.builder()
+                    .profileId(mover.getPersonalProfileId())
+                    .recipientId(UUID.randomUUID())
+                    .inviterId(UUID.randomUUID())
+                    .build()));
+    var issuedReset =
+        resetCodes.save(
+            PasswordResetCode.builder()
+                .accountId(UUID.randomUUID())
+                .issuerAccountId(mover.getId())
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .publicId(UUID.randomUUID().toString())
+                .secretDigest(new byte[] {3})
+                .build());
+    shares.share(mover.getPersonalProfileId(), destination.getId(), false);
+    var sourceViewer =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(UUID.randomUUID())
+                .contextHouseholdId(source.getId())
+                .selectedProfileId(mover.getPersonalProfileId())
+                .deviceName("source viewer")
+                .build());
+    var destinationViewer =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(UUID.randomUUID())
+                .contextHouseholdId(destination.getId())
+                .selectedProfileId(mover.getPersonalProfileId())
+                .deviceName("destination viewer")
                 .build());
 
     var deleted =
@@ -317,6 +417,19 @@ class AccountLifecycleServiceTest {
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(shares.findById(offered.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileShareStatus.INVALIDATED);
+    assertThat(accountInvitations.findById(issuedInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(accountInvitations.findById(profileInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(
+            managerInvitations.findById(profileManagerInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(resetCodes.findById(issuedReset.getId()).orElseThrow().getStatus())
+        .isEqualTo(PasswordResetCodeStatus.INVALIDATED);
+    assertThat(sessions.findById(sourceViewer.getId()).orElseThrow().getSelectedProfileId())
+        .isNull();
+    assertThat(sessions.findById(destinationViewer.getId()).orElseThrow().getSelectedProfileId())
+        .isNull();
     assertThat(audit.entries())
         .extracting(entry -> entry.operation())
         .containsExactly("deleteAccount");
@@ -400,16 +513,48 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should delete the caller's own Account except when it is the final one")
-  void shouldDeleteCallersOwnAccountExceptWhenFinal() {
+  @DisplayName("Should erase the caller's Account and every Profile-bound artifact")
+  void shouldEraseCallersAccountAndEveryProfileBoundArtifact() {
     var self = AuthenticatedIdentityFixture.accountScopedBuilder().accountId(mover.getId()).build();
+    var session =
+        sessions.save(AuthSession.builder().accountId(mover.getId()).deviceName("web").build());
+    var registration =
+        registrations.save(
+            DeviceRegistration.builder()
+                .esn("self-delete")
+                .displayName("TV")
+                .householdId(source.getId())
+                .authorizingAccountId(mover.getId())
+                .build());
+    var invitation =
+        accountInvitations.save(pendingAccountInvitation(mover.getPersonalProfileId()));
+    var managerInvitation =
+        managerInvitations.save(
+            pendingManagerInvitation(
+                ManagerInvitationSpec.builder()
+                    .profileId(mover.getPersonalProfileId())
+                    .recipientId(UUID.randomUUID())
+                    .inviterId(UUID.randomUUID())
+                    .build()));
 
     assertThat(service.deleteMyAccount(self, "DELETE")).isInstanceOf(Outcome.Accepted.class);
     assertThat(accounts.findById(mover.getId())).isEmpty();
+    assertThat(profiles.findById(mover.getPersonalProfileId())).isEmpty();
+    assertThat(sessions.findById(session.getId()).orElseThrow().getRevokedAt()).isNotNull();
+    assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(accountInvitations.findById(invitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(managerInvitations.findById(managerInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(audit.entries())
         .extracting(entry -> entry.operation())
         .containsExactly("deleteMyAccount");
+  }
 
+  @Test
+  @DisplayName("Should reserve the final Account from self-deletion")
+  void shouldReserveFinalAccountFromSelfDeletion() {
     var lonerHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var loner = residentOf(lonerHousehold, HouseholdRole.ADMIN);
     var lonerIdentity =
@@ -463,20 +608,33 @@ class AccountLifecycleServiceTest {
         .filter(ProfileHouseholdShare::isStructural);
   }
 
-  private ProfileManagerInvitation pendingManagerInvitation(
-      UUID profileId, UUID recipientId, UUID inviterId) {
+  private ProfileManagerInvitation pendingManagerInvitation(ManagerInvitationSpec invitation) {
     return ProfileManagerInvitation.builder()
-        .profileId(profileId)
+        .profileId(invitation.profileId())
         .profileName("Joe")
-        .inviterAccountId(inviterId)
+        .inviterAccountId(invitation.inviterId())
         .inviterDisplayName("Inviter")
-        .recipientAccountId(recipientId)
+        .recipientAccountId(invitation.recipientId())
         .recipientEmail("recipient@example.com")
         .expiresAt(Instant.now().plusSeconds(3600))
         .publicId(UUID.randomUUID().toString())
         .secretDigest(new byte[] {1})
         .build();
   }
+
+  private AccountInvitation pendingAccountInvitation(UUID profileId) {
+    return AccountInvitation.builder()
+        .recipientEmail("profile@example.com")
+        .profileId(profileId)
+        .issuerAccountId(UUID.randomUUID())
+        .expiresAt(Instant.now().plusSeconds(3600))
+        .publicId(UUID.randomUUID().toString())
+        .secretDigest(new byte[] {1})
+        .build();
+  }
+
+  @Builder
+  private record ManagerInvitationSpec(UUID profileId, UUID recipientId, UUID inviterId) {}
 
   private AuthenticatedIdentity identity() {
     return authorization.currentIdentity();
