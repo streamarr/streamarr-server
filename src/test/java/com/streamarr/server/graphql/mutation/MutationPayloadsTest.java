@@ -39,6 +39,19 @@ class MutationPayloadsTest {
   }
 
   @Test
+  @DisplayName("Should build an input error payload when a mutation UUID is malformed")
+  void shouldBuildInputErrorPayloadWhenMutationUuidIsMalformed() {
+    var payload =
+        MutationPayloads.withUuid(
+            "not-a-uuid",
+            _ -> new Payload(Optional.of("accepted"), List.of()),
+            () -> new Payload(Optional.empty(), List.of(new TestError("invalid ID"))));
+
+    assertThat(payload)
+        .isEqualTo(new Payload(Optional.empty(), List.of(new TestError("invalid ID"))));
+  }
+
+  @Test
   @DisplayName("Should build a scalar input path when a field name is provided")
   void shouldBuildScalarInputPathWhenFieldNameIsProvided() {
     assertThat(InputPath.of("name")).containsExactly("name");

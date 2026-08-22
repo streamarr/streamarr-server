@@ -1,0 +1,93 @@
+package com.streamarr.server.services.identity;
+
+import com.streamarr.server.domain.auth.Household;
+import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.repositories.auth.HouseholdRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.authorization.Decision;
+import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.pagination.MediaPage;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PaginationService;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+/**
+ * Administration reads (ADR 0024 §Read authorization): reads are as specific as writes. A denied
+ * per-resource read is indistinguishable from a missing resource; the catalogue is a whole-surface
+ * ServerAdmin gate. Accounts of a Household ride the Household decision that fetched it.
+ */
+@Service
+@RequiredArgsConstructor
+public class AdministrationQueryService {
+
+  private final AuthorizationService authorizationService;
+  private final HouseholdRepository householdRepository;
+  private final UserAccountRepository userAccountRepository;
+  private final PaginationService paginationService;
+
+  public Optional<Household> householdAdministration(
+      AuthenticatedIdentity identity, UUID householdId) {
+    return switch (authorizationService.decide(
+        identity, new Intent.ViewHouseholdAdministration(householdId))) {
+      case Decision.Allowed<?> _ -> householdRepository.findById(householdId);
+      case Decision.Denied<?> _ -> Optional.empty();
+      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+    };
+  }
+
+  public Optional<UserAccount> accountAdministration(
+      AuthenticatedIdentity identity, UUID accountId) {
+    return switch (authorizationService.decide(
+        identity, new Intent.ViewAccountAdministration(accountId))) {
+      case Decision.Allowed<?> _ -> userAccountRepository.findById(accountId);
+      case Decision.Denied<?> _ -> Optional.empty();
+      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+    };
+  }
+
+  /** A bounded page of Households on the server, in stable name-then-id order. */
+  public MediaPage<Household> households(
+      AuthenticatedIdentity identity, MediaPaginationOptions options) {
+    authorizationService.requireAllowed(identity, new Intent.ViewHouseholds());
+    var items =
+        householdRepository.findAdministrationPage(options).stream()
+            .map(household -> new PageItem<>(household, household.getName()))
+            .toList();
+    return paginationService.buildMediaPage(
+        items, options.getPaginationOptions(), options.getCursorId());
+  }
+
+  /** A bounded page of Accounts for one already-authorized Household. */
+  public Map<UUID, MediaPage<UserAccount>> accountPagesOf(
+      Set<UUID> householdIds, MediaPaginationOptions options) {
+    var accountsByHousehold = userAccountRepository.findAdministrationPages(householdIds, options);
+    var pages = new LinkedHashMap<UUID, MediaPage<UserAccount>>();
+    householdIds.forEach(
+        householdId ->
+            pages.put(
+                householdId,
+                accountPage(accountsByHousehold.getOrDefault(householdId, List.of()), options)));
+    return pages;
+  }
+
+  private MediaPage<UserAccount> accountPage(
+      List<UserAccount> accounts, MediaPaginationOptions options) {
+    var items =
+        accounts.stream()
+            .map(account -> new PageItem<>(account, account.getDisplayName()))
+            .toList();
+    return paginationService.buildMediaPage(
+        items, options.getPaginationOptions(), options.getCursorId());
+  }
+}

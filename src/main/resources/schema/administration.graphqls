@@ -1,0 +1,151 @@
+# Household and Account administration (ADR 0024 §ServerAdmin, §Household; ADR 0026 shapes).
+
+type AccountAdministration {
+    id: ID!
+    email: String!
+    displayName: String!
+    enabled: Boolean!
+    serverAdmin: Boolean!
+    householdRole: HouseholdRole!
+    householdId: ID!
+    personalProfileId: ID!
+}
+
+type HouseholdAdministration {
+    id: ID!
+    name: String!
+    accounts(first: Int, after: String, last: Int, before: String): AccountAdministrationConnection!
+}
+
+type HouseholdAdministrationConnection {
+    edges: [HouseholdAdministrationEdge!]!
+    pageInfo: PageInfo!
+}
+
+type HouseholdAdministrationEdge {
+    node: HouseholdAdministration!
+    cursor: String!
+}
+
+type AccountAdministrationConnection {
+    edges: [AccountAdministrationEdge!]!
+    pageInfo: PageInfo!
+}
+
+type AccountAdministrationEdge {
+    node: AccountAdministration!
+    cursor: String!
+}
+
+input GrantServerAdminInput {
+    accountId: ID!
+    reason: String!
+}
+
+type GrantServerAdminPayload {
+    account: AccountAdministration
+    userErrors: [GrantServerAdminError!]!
+}
+
+union GrantServerAdminError =
+    AccountNotFoundError
+  | InvalidIdError
+  | ReauthenticationRequiredError
+  | ReasonRequiredError
+  | RestrictedAccountAuthorityError
+
+input RevokeServerAdminInput {
+    accountId: ID!
+    reason: String!
+}
+
+type RevokeServerAdminPayload {
+    account: AccountAdministration
+    userErrors: [RevokeServerAdminError!]!
+}
+
+union RevokeServerAdminError =
+    AccountNotFoundError
+  | InvalidIdError
+  | ReauthenticationRequiredError
+  | ReasonRequiredError
+  | LastServerAdminError
+
+input GrantHouseholdAdminInput {
+    accountId: ID!
+}
+
+type GrantHouseholdAdminPayload {
+    account: AccountAdministration
+    userErrors: [GrantHouseholdAdminError!]!
+}
+
+union GrantHouseholdAdminError = AccountNotFoundError | InvalidIdError | RestrictedAccountAuthorityError
+
+input RevokeHouseholdAdminInput {
+    accountId: ID!
+}
+
+type RevokeHouseholdAdminPayload {
+    account: AccountAdministration
+    userErrors: [RevokeHouseholdAdminError!]!
+}
+
+union RevokeHouseholdAdminError = AccountNotFoundError | InvalidIdError | LastHouseholdAdminError
+
+input DisableAccountInput {
+    accountId: ID!
+}
+
+type DisableAccountPayload {
+    account: AccountAdministration
+    userErrors: [DisableAccountError!]!
+}
+
+union DisableAccountError = AccountNotFoundError | InvalidIdError | LastServerAdminError
+
+input EnableAccountInput {
+    accountId: ID!
+}
+
+type EnableAccountPayload {
+    account: AccountAdministration
+    userErrors: [EnableAccountError!]!
+}
+
+union EnableAccountError = AccountNotFoundError | InvalidIdError
+
+input RenameAccountInput {
+    accountId: ID!
+    displayName: String!
+}
+
+type RenameAccountPayload {
+    account: AccountAdministration
+    userErrors: [RenameAccountError!]!
+}
+
+union RenameAccountError = AccountNotFoundError | DisplayNameRequiredError | InvalidIdError
+
+input CreateHouseholdInput {
+    name: String!
+}
+
+type CreateHouseholdPayload {
+    household: HouseholdAdministration
+    userErrors: [CreateHouseholdError!]!
+}
+
+union CreateHouseholdError = HouseholdNameRequiredError
+
+input RenameHouseholdInput {
+    householdId: ID!
+    name: String!
+}
+
+type RenameHouseholdPayload {
+    household: HouseholdAdministration
+    userErrors: [RenameHouseholdError!]!
+}
+
+union RenameHouseholdError = HouseholdNotFoundError | HouseholdNameRequiredError | InvalidIdError

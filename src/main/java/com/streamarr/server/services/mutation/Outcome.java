@@ -20,6 +20,14 @@ public sealed interface Outcome<T, R> {
     };
   }
 
+  /** The accepted value re-shaped (entity → DTO); rejections pass through untouched. */
+  default <V> Outcome<V, R> map(Function<T, V> mapper) {
+    return switch (this) {
+      case Accepted<T, R>(var result) -> new Accepted<>(mapper.apply(result));
+      case Rejected<T, R>(var rejections) -> new Rejected<>(rejections);
+    };
+  }
+
   record Accepted<T, R>(@NonNull T result) implements Outcome<T, R> {}
 
   record Rejected<T, R>(List<R> rejections) implements Outcome<T, R> {

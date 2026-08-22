@@ -181,6 +181,15 @@ public class AuthTestSupport {
     return accessTokenIssuer.issue(contextBuilder(identity).profileId(null).build()).value();
   }
 
+  /** An Account-scoped token that just passed the reauthentication ceremony. */
+  public String freshAccountBearer(TestIdentity identity) {
+    return accessTokenIssuer
+        .issueReauthenticated(
+            contextBuilder(identity).profileId(null).build(),
+            Instant.now().plus(Duration.ofMinutes(10)))
+        .value();
+  }
+
   public String profileBearer(TestIdentity identity) {
     return accessTokenIssuer.issue(contextBuilder(identity).build()).value();
   }

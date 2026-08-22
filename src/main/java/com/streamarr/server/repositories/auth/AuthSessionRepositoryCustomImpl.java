@@ -57,6 +57,25 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   @Override
+  @Transactional
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  public int revokeAllForAccount(UUID accountId, SessionRevocationReason reason, Instant now) {
+    var nowOffset = now.atOffset(ZoneOffset.UTC);
+
+    return dsl.update(AUTH_SESSION)
+        .set(AUTH_SESSION.REVOKED_AT, nowOffset)
+        .set(
+            AUTH_SESSION.REVOKED_REASON,
+            com.streamarr.server.jooq.generated.enums.SessionRevocationReason.valueOf(
+                reason.name()))
+        .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
+        .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+        .where(AUTH_SESSION.ACCOUNT_ID.eq(accountId))
+        .and(AUTH_SESSION.REVOKED_AT.isNull())
+        .execute();
+  }
+
+  @Override
   public boolean updateSelectionIfLive(AuthSession session, Instant now) {
     var nowOffset = now.atOffset(ZoneOffset.UTC);
 

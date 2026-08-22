@@ -18,6 +18,14 @@ public final class TokenClaims {
   public static final String CONTEXT_HOUSEHOLD_ID = "ch";
 
   public static final String PROFILE_ID = "pf";
+
+  /**
+   * When this token's bearer last passed the reauthentication ceremony (ADR 0024 §Fresh
+   * reauthentication). Present only on a token issued by POST /api/auth/reauth or derived from one;
+   * refresh removes it.
+   */
+  public static final String REAUTHENTICATED_AT = "reauthenticated_at";
+
   public static final String STREAM_SESSION_ID = "stream_session_id";
 
   private TokenClaims() {}

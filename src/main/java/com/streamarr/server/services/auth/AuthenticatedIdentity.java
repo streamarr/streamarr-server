@@ -3,7 +3,9 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import java.time.Instant;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.NonNull;
@@ -25,18 +27,26 @@ public record AuthenticatedIdentity(
     boolean serverAdmin,
     @NonNull UUID contextHouseholdId,
     UUID profileId,
-    UUID streamSessionId) {
+    UUID streamSessionId,
+    Optional<Instant> reauthenticatedAt) {
 
   public AuthenticatedIdentity {
+    if (reauthenticatedAt == null) {
+      reauthenticatedAt = Optional.empty();
+    }
+
     if (scope == TokenScope.ACCOUNT && profileId != null) {
       throw new IllegalArgumentException("Account scope cannot carry a selected profile");
     }
+
     if (scope != TokenScope.ACCOUNT && profileId == null) {
       throw new IllegalArgumentException("Profile and playback scope require a selected profile");
     }
+
     if (scope == TokenScope.PLAYBACK && streamSessionId == null) {
       throw new IllegalArgumentException("Playback scope requires a stream session");
     }
+
     if (scope != TokenScope.PLAYBACK && streamSessionId != null) {
       throw new IllegalArgumentException("Only playback scope can carry a stream session");
     }
@@ -53,6 +63,8 @@ public record AuthenticatedIdentity(
         .contextHouseholdId(UUID.fromString(jwt.getClaimAsString(TokenClaims.CONTEXT_HOUSEHOLD_ID)))
         .profileId(uuidClaim(jwt, TokenClaims.PROFILE_ID))
         .streamSessionId(uuidClaim(jwt, TokenClaims.STREAM_SESSION_ID))
+        .reauthenticatedAt(
+            Optional.ofNullable(jwt.getClaimAsInstant(TokenClaims.REAUTHENTICATED_AT)))
         .build();
   }
 
@@ -61,6 +73,7 @@ public record AuthenticatedIdentity(
     if (profileId == null) {
       throw new ProfileRequiredException();
     }
+
     return PlaybackAuthority.builder()
         .authSessionId(authSessionId)
         .accountId(accountId)
@@ -74,6 +87,7 @@ public record AuthenticatedIdentity(
     if (value == null) {
       return null;
     }
+
     return UUID.fromString(value);
   }
 }

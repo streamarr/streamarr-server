@@ -1,6 +1,10 @@
 package com.streamarr.server.services.authorization.cedar;
 
+import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.ReauthenticationFreshness;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,6 +23,13 @@ final class ContributorStubs {
     }
 
     return contributors;
+  }
+
+  /** Real freshness over the system clock; identities without the claim are simply not fresh. */
+  static ReauthenticationFreshness systemClockFreshness() {
+    return new ReauthenticationFreshness(
+        AuthTokenProperties.builder().reauthenticationWindow(Duration.ofMinutes(5)).build(),
+        Clock.systemUTC());
   }
 
   static FactContributor noop(FactRequirement requirement) {
