@@ -33,6 +33,7 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -86,6 +87,7 @@ class ProfileSharingServiceTest {
             new MutationTransactions(
                 new FakeTransactionManager(), new ConstraintViolationTranslator()),
             new CredentialCodeProperties(INVITATION_TTL, null),
+            new PaginationService(),
             CLOCK);
     household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     profile = profiles.save(ProfileFixture.defaultProfileBuilder().build());
@@ -356,7 +358,7 @@ class ProfileSharingServiceTest {
 
     var page = service.pendingShareOffers(identity(), household.getId(), paginationOptions());
 
-    assertThat(page).isEmpty();
+    assertThat(page.items()).isEmpty();
   }
 
   @Test
@@ -367,7 +369,7 @@ class ProfileSharingServiceTest {
 
     var page = service.profileShares(identity(), profile.getId(), paginationOptions());
 
-    assertThat(page).isEmpty();
+    assertThat(page.items()).isEmpty();
   }
 
   @Test

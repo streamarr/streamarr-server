@@ -114,7 +114,6 @@ public class SecurityContextAuthorizationService implements AuthorizationService
         .scope(TokenScope.ACCOUNT)
         .householdId(account.getHouseholdId())
         .householdRole(account.getHouseholdRole())
-        .serverAdmin(account.isServerAdmin())
         .contextHouseholdId(account.getHouseholdId())
         .build();
   }

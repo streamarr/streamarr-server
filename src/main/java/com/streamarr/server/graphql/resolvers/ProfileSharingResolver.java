@@ -4,8 +4,10 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.graphql.Ids;
-import com.streamarr.server.graphql.cursor.ListConnections;
+import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.ProfileShareView;
 import com.streamarr.server.graphql.dto.SharePreflightView;
 import com.streamarr.server.graphql.inputs.AcceptProfileShareInput;
@@ -24,7 +26,8 @@ import com.streamarr.server.graphql.mutation.sharing.RejectProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.ShareErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.MediaPage;
+import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
@@ -34,9 +37,13 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class ProfileSharingResolver {
 
+  private static final int DEFAULT_PAGE_SIZE = 100;
+
   private final AuthorizationService authorizationService;
   private final ProfileSharingService profileSharingService;
   private final PaginationService paginationService;
+  private final CursorUtil cursorUtil;
+  private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsQuery
   public SharePreflightView sharePreflight(
@@ -54,30 +61,24 @@ public class ProfileSharingResolver {
   public Connection<ProfileShareView> pendingShareOffers(
       @InputArgument String householdId, DataFetchingEnvironment dfe) {
     var options = options(dfe);
-    var offers =
-        profileSharingService
-            .pendingShareOffers(
-                authorizationService.currentIdentity(), Ids.parseUuid(householdId), options)
-            .stream()
-            .map(ProfileShareView::from)
-            .toList();
-    return ListConnections.page(
-        offers, share -> share.id().toString(), options.getPaginationOptions());
+    var page =
+        profileSharingService.pendingShareOffers(
+            authorizationService.currentIdentity(),
+            Ids.parseUuid(householdId),
+            cursorUtil.decodeKeysetCursor(options));
+    return toConnection(page);
   }
 
   @DgsQuery
   public Connection<ProfileShareView> profileShares(
       @InputArgument String profileId, DataFetchingEnvironment dfe) {
     var options = options(dfe);
-    var sharesOfProfile =
-        profileSharingService
-            .profileShares(
-                authorizationService.currentIdentity(), Ids.parseUuid(profileId), options)
-            .stream()
-            .map(ProfileShareView::from)
-            .toList();
-    return ListConnections.page(
-        sharesOfProfile, share -> share.id().toString(), options.getPaginationOptions());
+    var page =
+        profileSharingService.profileShares(
+            authorizationService.currentIdentity(),
+            Ids.parseUuid(profileId),
+            cursorUtil.decodeKeysetCursor(options));
+    return toConnection(page);
   }
 
   @DgsMutation
@@ -153,20 +154,31 @@ public class ProfileSharingResolver {
         ForceEndProfileSharePayload::new);
   }
 
-  private KeysetPaginationOptions options(DataFetchingEnvironment dfe) {
+  private Connection<ProfileShareView> toConnection(MediaPage<ProfileHouseholdShare> page) {
+    return relayConnectionAdapter.toConnection(
+        page,
+        item -> ProfileShareView.from(item.item()),
+        item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
+  }
+
+  private PaginationOptions options(DataFetchingEnvironment dfe) {
     int first = dfe.getArgumentOrDefault("first", 0);
     String after = dfe.getArgument("after");
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
-    var pagination =
-        paginationService.getPaginationOptions(
-            first == 0 && last == 0 && before == null ? 100 : first,
-            after,
-            first == 0 && last == 0 && before != null ? 100 : last,
-            before);
-    return KeysetPaginationOptions.builder()
-        .paginationOptions(pagination)
-        .cursorId(pagination.getCursor().map(ListConnections::decodeUuid).orElse(null))
-        .build();
+    if (first == 0 && last == 0 && before != null) {
+      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
+    }
+
+    return paginationService.getPaginationOptions(
+        firstOrDefault(first, last, before), after, last, before);
+  }
+
+  private static int firstOrDefault(int first, int last, String before) {
+    if (first == 0 && last == 0 && before == null) {
+      return DEFAULT_PAGE_SIZE;
+    }
+
+    return first;
   }
 }

@@ -103,7 +103,6 @@ class AuthorizationServiceTest {
             AccountFixture.defaultAccountBuilder()
                 .householdId(householdId)
                 .householdRole(HouseholdRole.MEMBER)
-                .serverAdmin(true)
                 .build());
     var currentRelationships = new CurrentRelationshipDecider(householdId);
     var liveAuthorizationService =
@@ -114,7 +113,7 @@ class AuthorizationServiceTest {
 
     assertThat(currentDecision).isEqualTo(new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
 
-    account.setServerAdmin(false);
+    account.setHouseholdRole(HouseholdRole.ADMIN);
     accounts.save(account);
 
     var changedDecision = liveAuthorizationService.decideForAccount(account.getId(), intent);
@@ -299,11 +298,11 @@ class AuthorizationServiceTest {
     public <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent) {
       var hasCurrentRelationships =
           expectedHouseholdId.equals(identity.householdId())
-              && identity.householdRole() == HouseholdRole.MEMBER
-              && identity.serverAdmin();
+              && identity.householdRole() == HouseholdRole.MEMBER;
       if (hasCurrentRelationships) {
         return (Decision<T>) new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
       }
+
       return new Decision.Denied<>(Decision.DenialReason.POLICY);
     }
   }
