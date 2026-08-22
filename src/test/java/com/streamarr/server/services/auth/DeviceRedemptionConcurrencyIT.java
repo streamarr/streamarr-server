@@ -12,6 +12,7 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
@@ -56,6 +57,8 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   @Autowired private DeviceAuthorizationRepository authorizationRepository;
 
+  @Autowired private DeviceRegistrationRepository registrationRepository;
+
   @Autowired private UserAccountRepository userAccountRepository;
 
   @Autowired private AuthSessionRepository sessionRepository;
@@ -71,6 +74,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     gatedIssuer.reset();
     gatedClock.reset();
     authorizationRepository.deleteAll();
+    registrationRepository.deleteAll();
     for (var accountId : accountIds) {
       // FK cascades sweep auth_session and refresh_token rows.
       authTestSupport.deleteAccount(accountId);

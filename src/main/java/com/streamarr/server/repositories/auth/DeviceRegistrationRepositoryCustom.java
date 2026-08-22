@@ -11,8 +11,8 @@ public interface DeviceRegistrationRepositoryCustom {
 
   /**
    * Revokes every ACTIVE registration in the scope — an ESN (optionally Household-scoped), one
-   * authorizing Account's Household, or a whole Household — returning the revoked ids so the caller
-   * can drop their sessions in the same transaction.
+   * authorizing Account in one Household, or every registration of one authorizing Account —
+   * returning the revoked ids so the caller can drop their sessions in the same transaction.
    */
   List<UUID> revokeAllByEsn(
       String esn, UUID householdId, UUID actorAccountId, String reason, Instant now);

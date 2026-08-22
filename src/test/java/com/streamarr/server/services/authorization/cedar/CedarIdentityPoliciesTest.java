@@ -1172,6 +1172,7 @@ class CedarIdentityPoliciesTest {
 
       // Otherwise-allowed seats: the forbid alone flips each one.
       assertThat(decide(device, new Intent.AddLibrary())).isEqualTo(DENIED);
+      assertThat(decide(device, new Intent.RenameAccount(account.getId()))).isEqualTo(DENIED);
       assertThat(decide(device, new Intent.ViewHouseholdAdministration(account.getHouseholdId())))
           .isEqualTo(DENIED);
       assertThat(decide(device, new Intent.RenameProfile(personal.getId()))).isEqualTo(DENIED);
