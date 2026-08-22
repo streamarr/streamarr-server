@@ -99,6 +99,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
       // FK cascades sweep auth_session and refresh_token rows.
       authTestSupport.deleteAccount(accountId);
     }
+
     accountIds.clear();
   }
 
@@ -179,6 +180,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
         reachedHold.get().countDown();
         awaitRelease();
       }
+
       return delegate.instant();
     }
 
@@ -207,6 +209,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
       if (failNextIssue.getAndSet(false)) {
         throw new IllegalStateException("Injected issuance failure");
       }
+
       return super.issue(context);
     }
 
@@ -330,6 +333,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
       } finally {
         gatedClock.releaseApproval();
       }
+
       approval.get(20, TimeUnit.SECONDS);
     }
 
@@ -486,6 +490,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
       statement.setInt(1, REGISTRATION_INSERT_GATE_KEY);
       statement.execute();
     }
+
     return connection;
   }
 
@@ -496,6 +501,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
       statement.setInt(2, esn.hashCode());
       statement.execute();
     }
+
     return connection;
   }
 

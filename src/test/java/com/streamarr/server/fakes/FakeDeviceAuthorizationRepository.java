@@ -112,8 +112,10 @@ public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceA
       if (isUserCodeCollision(e)) {
         throw new UserCodeCollisionException(e);
       }
+
       throw e;
     }
+
     return new DeviceAuthorizationInsertResult(true, outstanding + 1);
   }
 

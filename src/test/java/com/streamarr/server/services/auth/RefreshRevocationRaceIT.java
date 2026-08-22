@@ -234,6 +234,7 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
       statement.setInt(1, REFRESH_ROTATION_GATE_KEY);
       statement.execute();
     }
+
     return connection;
   }
 

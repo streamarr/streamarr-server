@@ -34,6 +34,7 @@ class RegistrationFactsContributor implements FactContributor {
     if (registration.isEmpty() || registration.get().getHouseholdId() == null) {
       return;
     }
+
     var householdId = registration.get().getHouseholdId();
     var adminOfHousehold =
         userAccountRepository

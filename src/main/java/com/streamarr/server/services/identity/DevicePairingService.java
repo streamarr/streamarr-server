@@ -51,6 +51,7 @@ public class DevicePairingService {
     if (command.decision() == DeviceDecision.APPROVE) {
       validateBinding(identity, command.householdId(), grant.esn());
     }
+
     return deviceAuthorizationService.decide(
         DeviceDecisionCommand.builder()
             .userCode(command.userCode())
@@ -65,9 +66,11 @@ public class DevicePairingService {
     if (householdId == null) {
       throw new HouseholdRequiredException();
     }
+
     if (!userAccountRepository.mayUseHousehold(identity.accountId(), householdId)) {
       throw new HouseholdAccessDeniedException();
     }
+
     if (esn != null
         && (esnBlockRepository.existsByEsnAndHouseholdIdIsNull(esn)
             || esnBlockRepository.existsByEsnAndHouseholdId(esn, householdId))) {

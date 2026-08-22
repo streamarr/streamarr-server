@@ -22,6 +22,7 @@ public class ReauthenticationService {
       // A TV never steps up: fresh-reauthentication work is for people at their own keyboard.
       throw new DeviceBoundSessionException();
     }
+
     var session =
         authSessionRepository
             .findById(identity.authSessionId())
