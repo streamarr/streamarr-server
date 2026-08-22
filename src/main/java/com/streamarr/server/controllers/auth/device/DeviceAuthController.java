@@ -11,7 +11,6 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.DevicePairingService;
 import java.util.Arrays;
 import java.util.Locale;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -112,8 +111,7 @@ public class DeviceAuthController {
             DevicePairingService.PairingDecisionCommand.builder()
                 .userCode(request.userCode())
                 .decision(parseDecision(request.decision()))
-                .householdId(
-                    request.householdId() == null ? null : UUID.fromString(request.householdId()))
+                .householdId(request.householdId())
                 .build());
 
     return ResponseEntity.ok().body(decisionResponseOf(view));

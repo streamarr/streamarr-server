@@ -1,11 +1,13 @@
 package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
 import com.streamarr.server.domain.auth.EsnBlock;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
@@ -106,6 +108,13 @@ class DeviceAdministrationServiceTest {
   @DisplayName("Should block an ESN only after revoking everything it still matches")
   void shouldBlockEsnOnlyAfterRevokingEverythingItStillMatches() {
     var registration = activeRegistration("esn-1");
+    var session =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(UUID.randomUUID())
+                .registrationId(registration.getId())
+                .deviceName("tv")
+                .build());
 
     assertThat(rejectionOf(service.blockEsn(identity(), householdId, " ", "stolen")))
         .isInstanceOf(DeviceRejections.EsnRequired.class);
@@ -119,6 +128,7 @@ class DeviceAdministrationServiceTest {
     assertThat(blocked).isInstanceOf(Outcome.Accepted.class);
     assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
         .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(sessions.findById(session.getId()).orElseThrow().getRevokedAt()).isNotNull();
     assertThat(blocks.existsByEsnAndHouseholdId("esn-1", householdId)).isTrue();
     assertThat(audit.entries()).extracting(entry -> entry.operation()).containsExactly("blockEsn");
   }
@@ -135,8 +145,19 @@ class DeviceAdministrationServiceTest {
         .isInstanceOf(DeviceRejections.ReauthenticationRequired.class);
 
     authorization.allowAll();
+    var registration = activeRegistration("esn-1");
+    var session =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(UUID.randomUUID())
+                .registrationId(registration.getId())
+                .deviceName("tv")
+                .build());
     var blocked = service.blockEsnServerWide(identity(), "esn-1", "stolen");
     assertThat(blocked).isInstanceOf(Outcome.Accepted.class);
+    assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(sessions.findById(session.getId()).orElseThrow().getRevokedAt()).isNotNull();
     assertThat(blocks.existsByEsnAndHouseholdIdIsNull("esn-1")).isTrue();
   }
 
@@ -174,6 +195,19 @@ class DeviceAdministrationServiceTest {
     assertThat(service.householdDevices(identity(), householdId)).isEmpty();
     assertThat(service.esnBlocks(identity(), householdId)).isEmpty();
     assertThat(service.serverEsnBlocks(identity())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should fail closed when authorization cannot decide a device read")
+  void shouldFailClosedWhenAuthorizationCannotDecideDeviceRead() {
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+
+    assertThatThrownBy(() -> service.householdDevices(identity(), householdId))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+    assertThatThrownBy(() -> service.esnBlocks(identity(), householdId))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+    assertThatThrownBy(() -> service.serverEsnBlocks(identity()))
+        .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
   private DeviceRegistration activeRegistration(String esn) {
