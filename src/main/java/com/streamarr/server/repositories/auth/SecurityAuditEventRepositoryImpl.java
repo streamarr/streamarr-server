@@ -64,6 +64,36 @@ public class SecurityAuditEventRepositoryImpl implements SecurityAuditEventRepos
                     row.getResources().data()));
   }
 
+  @Override
+  public List<SecurityAuditEventRecordView> pageOldestFirst(
+      Instant afterOccurredAt, UUID afterId, int limit) {
+    var query = dsl.selectFrom(SECURITY_AUDIT_EVENT);
+    var page =
+        afterOccurredAt == null
+            ? query
+            : query.where(
+                SECURITY_AUDIT_EVENT
+                    .OCCURRED_AT
+                    .gt(afterOccurredAt.atOffset(ZoneOffset.UTC))
+                    .or(
+                        SECURITY_AUDIT_EVENT
+                            .OCCURRED_AT
+                            .eq(afterOccurredAt.atOffset(ZoneOffset.UTC))
+                            .and(SECURITY_AUDIT_EVENT.ID.gt(afterId))));
+    return page.orderBy(SECURITY_AUDIT_EVENT.OCCURRED_AT.asc(), SECURITY_AUDIT_EVENT.ID.asc())
+        .limit(limit)
+        .fetch(
+            row ->
+                new SecurityAuditEventRecordView(
+                    row.getId(),
+                    row.getOccurredAt().toInstant(),
+                    row.getActorAccountId(),
+                    row.getOperation(),
+                    row.getOutcome(),
+                    row.getReason(),
+                    row.getResources().data()));
+  }
+
   /** Keys are code-owned identifiers and values are UUIDs, so the JSON needs no escaping. */
   private static JSONB resourcesJson(Map<String, UUID> resources) {
     return JSONB.jsonb(
