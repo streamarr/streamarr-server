@@ -35,16 +35,17 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName(
-      "Should require the membership Household, role, and context Household when assigned")
+  @DisplayName("Should require the membership Household, role, and context Household when assigned")
   void shouldRequireMembershipRoleAndContextWhenAssigned() {
-    assertThatThrownBy(() -> profileScopedBuilder().householdId(null))
+    var identityBuilder = profileScopedBuilder();
+
+    assertThatThrownBy(() -> identityBuilder.householdId(null))
         .isInstanceOf(NullPointerException.class)
         .hasMessageContaining("householdId");
-    assertThatThrownBy(() -> profileScopedBuilder().householdRole(null))
+    assertThatThrownBy(() -> identityBuilder.householdRole(null))
         .isInstanceOf(NullPointerException.class)
         .hasMessageContaining("householdRole");
-    assertThatThrownBy(() -> profileScopedBuilder().contextHouseholdId(null))
+    assertThatThrownBy(() -> identityBuilder.contextHouseholdId(null))
         .isInstanceOf(NullPointerException.class)
         .hasMessageContaining("contextHouseholdId");
   }
