@@ -29,6 +29,16 @@ public final class PostgresLockTestSupport {
     }
   }
 
+  public static void lockNormalizedKey(Connection connection, String namespace, String value)
+      throws SQLException {
+    try (var statement =
+        connection.prepareStatement(
+            "SELECT pg_advisory_xact_lock(hashtextextended(lower(?), 0))")) {
+      statement.setString(1, namespace + ":" + value.strip());
+      statement.execute();
+    }
+  }
+
   public static int backendPid(Connection connection) throws SQLException {
     try (var statement = connection.createStatement();
         var result = statement.executeQuery("SELECT pg_backend_pid()")) {

@@ -16,10 +16,11 @@ public class PasswordResetCodeRepositoryCustomImpl implements PasswordResetCodeR
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
+  private final PostgresTransactionLocks transactionLocks;
 
   @Override
   public void lockAccountForReplacement(UUID accountId) {
-    PostgresTransactionLocks.lockNormalizedKey(dsl, "password-reset", accountId.toString());
+    transactionLocks.lockNormalizedKey("password-reset", accountId.toString());
   }
 
   @Override

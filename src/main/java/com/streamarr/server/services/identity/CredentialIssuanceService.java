@@ -87,8 +87,8 @@ public class CredentialIssuanceService {
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
-          requireIssuerStillAllowed(identity);
           invitationRepository.lockRecipientForReplacement(command.recipientEmail());
+          requireIssuerStillAllowed(identity);
           invitationRepository.invalidatePendingForEmail(
               command.recipientEmail().strip(), "replaced by a newer invitation", now);
           var invitation =
@@ -144,8 +144,8 @@ public class CredentialIssuanceService {
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
-          requireIssuerStillAllowed(identity);
           resetCodeRepository.lockAccountForReplacement(accountId);
+          requireIssuerStillAllowed(identity);
           resetCodeRepository.invalidatePendingForAccount(
               accountId, "replaced by a newer code", now);
           var code =

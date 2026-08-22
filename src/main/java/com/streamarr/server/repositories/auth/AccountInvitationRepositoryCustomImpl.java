@@ -19,10 +19,11 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
+  private final PostgresTransactionLocks transactionLocks;
 
   @Override
   public void lockRecipientForReplacement(String recipientEmail) {
-    PostgresTransactionLocks.lockNormalizedKey(dsl, "account-invitation", recipientEmail);
+    transactionLocks.lockNormalizedKey("account-invitation", recipientEmail);
   }
 
   @Override

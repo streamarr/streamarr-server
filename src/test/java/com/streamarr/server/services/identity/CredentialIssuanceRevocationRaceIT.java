@@ -1,6 +1,7 @@
 package com.streamarr.server.services.identity;
 
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockNormalizedKey;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
@@ -26,6 +27,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
@@ -36,6 +38,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 @Tag("IntegrationTest")
@@ -181,6 +184,48 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName("Should let issuer disable complete while invitation waits for its recipient lock")
+  void shouldLetIssuerDisableCompleteWhileInvitationWaitsForRecipientLock() throws Exception {
+    issuer = authTestSupport.createAdminIdentity();
+    revoker = authTestSupport.createAdminIdentity();
+    var recipientEmail = "issuance-lock-order@example.com";
+
+    try (var lockConnection = dataSource.getConnection();
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      lockConnection.setAutoCommit(false);
+      lockNormalizedKey(lockConnection, "account-invitation", recipientEmail);
+
+      var issuance =
+          executor.submit(
+              () ->
+                  credentialIssuanceService.issueAccountInvitation(
+                      identityOf(issuer), invitationCommand(recipientEmail)));
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(() -> assertThat(hasWaitingCredentialLock()).isTrue());
+
+      try {
+        var disable =
+            executor.submit(
+                () ->
+                    accountAdministrationService.disableAccount(
+                        identityOf(revoker), issuer.account().getId()));
+
+        assertThat(disable.get(2, TimeUnit.SECONDS)).isInstanceOf(Outcome.Accepted.class);
+        assertThat(issuance.isDone()).isFalse();
+      } finally {
+        lockConnection.rollback();
+      }
+
+      assertThatThrownBy(() -> issuance.get(10, TimeUnit.SECONDS))
+          .isInstanceOf(ExecutionException.class)
+          .hasCauseInstanceOf(AccessDeniedException.class);
+    }
+
+    assertThat(invitationRepository.findAll()).isEmpty();
+  }
+
   private AccountInvitation saveBlockingInvitation(String recipientEmail) {
     return invitationRepository.saveAndFlush(
         AccountInvitation.builder()
@@ -264,6 +309,21 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
     } catch (Exception exception) {
       throw new AssertionError("could not coordinate the reset-code row lock", exception);
     }
+  }
+
+  private boolean hasWaitingCredentialLock() {
+    var waiting =
+        jdbcTemplate.queryForObject(
+            """
+            SELECT EXISTS (
+              SELECT 1
+              FROM pg_stat_activity
+              WHERE wait_event_type = 'Lock'
+                AND query ILIKE '%pg_advisory_xact_lock%'
+            )
+            """,
+            Boolean.class);
+    return Boolean.TRUE.equals(waiting);
   }
 
   private boolean hasWaitingInvitationUpdate() {
