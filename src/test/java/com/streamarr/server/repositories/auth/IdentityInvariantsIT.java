@@ -432,7 +432,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
 
     assertThat(window)
         .hasSize(2)
-        .isSortedAccordingTo((left, right) -> left.getId().compareTo(right.getId()));
+        .isSortedAccordingTo(
+            (left, right) -> left.getId().toString().compareTo(right.getId().toString()));
   }
 
   // ---- T8 / PIN ---------------------------------------------------------------------------------
