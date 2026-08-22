@@ -39,10 +39,13 @@ public class HlsStreamingService implements StreamingService {
 
   @Override
   public StreamSession createSession(CreateStreamSessionCommand command) {
-    if (!authorityGate.allows(command.authority())) {
+    var identity = command.identity();
+    if (identity.profileId() == null
+        || !authorityGate.allows(identity, identity.playbackAuthority())) {
       throw new AuthenticationRequiredException();
     }
 
+    var authority = identity.playbackAuthority();
     var mediaFileId = command.mediaFileId();
     var options = command.options();
     var mediaFile =
@@ -62,7 +65,7 @@ public class HlsStreamingService implements StreamingService {
         StreamSession.builder()
             .sessionId(sessionId)
             .mediaFileId(mediaFileId)
-            .authority(command.authority())
+            .authority(authority)
             .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
             .mediaProbe(probe)
             .transcodeDecision(decision)
@@ -106,10 +109,17 @@ public class HlsStreamingService implements StreamingService {
   @Override
   public Optional<StreamSession> accessSession(PlaybackRequest request) {
     var session = runtimeRegistry.findById(request.streamSessionId());
-    if (session.isEmpty() || !request.authority().equals(session.get().getAuthority())) {
+    if (session.isEmpty()) {
       return Optional.empty();
     }
-    if (!authorityGate.allows(request.authority())) {
+
+    var identity = request.identity();
+    var authority = session.get().getAuthority();
+    if (identity.profileId() == null || !identity.playbackAuthority().equals(authority)) {
+      return Optional.empty();
+    }
+
+    if (!authorityGate.allows(identity, authority)) {
       return Optional.empty();
     }
 

@@ -25,7 +25,7 @@ class CreateAuthSessionCommandTest {
   void shouldAllowAbsentSelectionWhenConstructed() {
     var command = new CreateAuthSessionCommand(UUID.randomUUID(), "device", null, null);
 
-    assertThat(command.activeHouseholdId()).isNull();
-    assertThat(command.activeProfileId()).isNull();
+    assertThat(command.contextHouseholdId()).isNull();
+    assertThat(command.selectedProfileId()).isNull();
   }
 }

@@ -3,8 +3,7 @@ package com.streamarr.server.config.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.security.StreamarrAuthenticationToken;
-import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.services.auth.TokenScope;
 import java.util.List;
 import java.util.UUID;
@@ -30,13 +29,7 @@ class SecurityAuditorAwareTest {
   @DisplayName("Should return account id when authenticated")
   void shouldReturnAccountIdWhenAuthenticated() {
     var accountId = UUID.randomUUID();
-    var identity =
-        AuthenticatedIdentity.builder()
-            .accountId(accountId)
-            .role(AccountRole.USER)
-            .authSessionId(UUID.randomUUID())
-            .scope(TokenScope.ACCOUNT)
-            .build();
+    var identity = AuthenticatedIdentityFixture.accountScopedBuilder().accountId(accountId).build();
     SecurityContextHolder.getContext()
         .setAuthentication(
             new StreamarrAuthenticationToken(

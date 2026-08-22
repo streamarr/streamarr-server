@@ -2,11 +2,11 @@ package com.streamarr.server.services.auth;
 
 import java.util.Locale;
 
+/** ADR 0024 token scopes: Account (picker), Profile (watching as), Playback (stream paths only). */
 public enum TokenScope {
   ACCOUNT,
-  HOUSEHOLD,
   PROFILE,
-  /** Authorizes only stream paths; deliberately outside the scope hierarchy. */
+  /** Authorizes only stream paths; never an API scope. */
   PLAYBACK;
 
   public String claimValue() {

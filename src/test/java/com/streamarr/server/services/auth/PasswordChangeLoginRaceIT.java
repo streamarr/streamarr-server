@@ -9,9 +9,10 @@ import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
-import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.AuthTestSupportConfig;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,10 +40,12 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 @Tag("IntegrationTest")
 @DisplayName("Password Change Login Race Integration Tests")
-@Import(PasswordChangeLoginRaceIT.PasswordEncoderTestConfig.class)
+@Import({PasswordChangeLoginRaceIT.PasswordEncoderTestConfig.class, AuthTestSupportConfig.class})
 class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
 
   @Autowired private LoginService loginService;
+
+  @Autowired private AuthTestSupport authTestSupport;
   @Autowired private PasswordChangeService passwordChangeService;
   @Autowired private RefreshTokenService refreshTokenService;
   @Autowired private UserAccountRepository userAccountRepository;
@@ -56,7 +59,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
   void deleteAccountAndCascades() {
     passwordEncoder.reset();
     if (account != null) {
-      userAccountRepository.deleteById(account.getId());
+      authTestSupport.deleteAccount(account.getId());
     }
   }
 
@@ -65,10 +68,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
   void shouldVerifyAndHashPasswordsWhenNoTransactionBoundConnectionIsHeld() {
     var oldPassword = UUID.randomUUID().toString();
     account =
-        userAccountRepository.save(
-            AccountFixture.defaultAccountBuilder()
-                .passwordHash(passwordEncoder.encode(oldPassword))
-                .build());
+        authTestSupport.createAccount(
+            builder -> builder.passwordHash(passwordEncoder.encode(oldPassword)));
     var caller = refreshTokenService.createSession(account, "password-change-device").session();
     passwordEncoder.observeNextPasswordChange();
 
@@ -89,10 +90,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
   void shouldProduceExactlyOneReplacementWhenPasswordChangesRace() throws Exception {
     var oldPassword = UUID.randomUUID().toString();
     account =
-        userAccountRepository.save(
-            AccountFixture.defaultAccountBuilder()
-                .passwordHash(passwordEncoder.encode(oldPassword))
-                .build());
+        authTestSupport.createAccount(
+            builder -> builder.passwordHash(passwordEncoder.encode(oldPassword)));
     var firstCaller = refreshTokenService.createSession(account, "first-device").session();
     var secondCaller = refreshTokenService.createSession(account, "second-device").session();
     passwordEncoder.pauseNextTwoEncodes();
@@ -132,10 +131,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
     var oldPassword = UUID.randomUUID().toString();
     var newPassword = UUID.randomUUID().toString();
     account =
-        userAccountRepository.save(
-            AccountFixture.defaultAccountBuilder()
-                .passwordHash(passwordEncoder.encode(oldPassword))
-                .build());
+        authTestSupport.createAccount(
+            builder -> builder.passwordHash(passwordEncoder.encode(oldPassword)));
     var caller = refreshTokenService.createSession(account, "password-change-device").session();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -181,10 +178,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
     var oldPassword = UUID.randomUUID().toString();
     var newPassword = UUID.randomUUID().toString();
     account =
-        userAccountRepository.save(
-            AccountFixture.defaultAccountBuilder()
-                .passwordHash(passwordEncoder.encode(oldPassword))
-                .build());
+        authTestSupport.createAccount(
+            builder -> builder.passwordHash(passwordEncoder.encode(oldPassword)));
     var caller = refreshTokenService.createSession(account, "password-change-device").session();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -229,10 +224,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
     var oldPassword = UUID.randomUUID().toString();
     var newPassword = UUID.randomUUID().toString();
     account =
-        userAccountRepository.save(
-            AccountFixture.defaultAccountBuilder()
-                .passwordHash(passwordEncoder.encode(oldPassword))
-                .build());
+        authTestSupport.createAccount(
+            builder -> builder.passwordHash(passwordEncoder.encode(oldPassword)));
     var caller = refreshTokenService.createSession(account, "password-change-device").session();
     var tableLocked = new CountDownLatch(1);
     var releaseTable = new CountDownLatch(1);

@@ -43,7 +43,7 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
   public <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent) {
     var authorizationContext = "unplanned intent";
     try {
-      var plan = IntentPlanner.plan(intent);
+      var plan = IntentPlanner.plan(identity, intent);
       var check = plan.check();
       authorizationContext = check.action().toString();
       var slice = sliceAssembler.assemble(identity, check);
@@ -63,6 +63,13 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
       var response =
           engine.isAuthorized(request, bundle.policies(), new Entities(new HashSet<>(entities)));
       return interpret(response, check, plan.value());
+    } catch (InvalidEntitySliceException e) {
+      log.error(
+          "Authorization failed closed for {} ({}): {}",
+          authorizationContext,
+          FailureCause.INVALID_SLICE,
+          e.getMessage());
+      return countFailClosed(FailureCause.INVALID_SLICE);
     } catch (Exception e) {
       log.error("Authorization failed closed for {} (ENGINE_FAILURE)", authorizationContext, e);
       return countFailClosed(FailureCause.ENGINE_FAILURE);

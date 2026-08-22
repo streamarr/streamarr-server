@@ -5,14 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.Argon2Properties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
-import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
-import com.streamarr.server.fakes.FakeAccountProfileRepository;
-import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
+import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeServerBootstrapRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
@@ -37,13 +35,13 @@ class SetupServiceTest {
   private static final UUID PLACEHOLDER_PROFILE_ID =
       UUID.fromString("00000000-0000-0000-0000-000000000001");
 
-  private final FakeUserAccountRepository userAccountRepository = new FakeUserAccountRepository();
+  private final FakeProfileHouseholdShareRepository shareRepository =
+      new FakeProfileHouseholdShareRepository();
+  private final FakeUserAccountRepository userAccountRepository =
+      new FakeUserAccountRepository(shareRepository);
   private final FakeHouseholdRepository householdRepository = new FakeHouseholdRepository();
-  private final FakeHouseholdMembershipRepository membershipRepository =
-      new FakeHouseholdMembershipRepository();
-  private final FakeProfileRepository profileRepository = new FakeProfileRepository();
-  private final FakeAccountProfileRepository accountProfileRepository =
-      new FakeAccountProfileRepository();
+  private final FakeProfileRepository profileRepository =
+      new FakeProfileRepository(shareRepository);
   private final FakeServerBootstrapRepository bootstrapRepository =
       new FakeServerBootstrapRepository();
   private final FakeSessionProgressRepository sessionProgressRepository =
@@ -60,9 +58,8 @@ class SetupServiceTest {
       new SetupService(
           userAccountRepository,
           householdRepository,
-          membershipRepository,
           profileRepository,
-          accountProfileRepository,
+          shareRepository,
           bootstrapRepository,
           sessionProgressRepository,
           watchHistoryRepository,
@@ -86,7 +83,8 @@ class SetupServiceTest {
     var result = setupService.setup(defaultCommandBuilder().build());
 
     var admin = userAccountRepository.findById(result.admin().getId()).orElseThrow();
-    assertThat(admin.getAccountRole()).isEqualTo(AccountRole.ADMIN);
+    assertThat(admin.isServerAdmin()).isTrue();
+    assertThat(admin.getHouseholdRole()).isEqualTo(HouseholdRole.ADMIN);
     assertThat(admin.isEnabled()).isTrue();
     assertThat(admin.getEmail()).isEqualTo("admin@example.com");
     assertThat(admin.getPasswordHash()).startsWith("{argon2id}");
@@ -95,23 +93,24 @@ class SetupServiceTest {
     assertThat(household.getName()).isEqualTo("Home");
     assertThat(household.getDefaultRatingRegion()).isEqualTo("US");
 
-    var membership = membershipRepository.findAll().getFirst();
-    assertThat(membership.getAccountId()).isEqualTo(admin.getId());
-    assertThat(membership.getHouseholdId()).isEqualTo(household.getId());
-    assertThat(membership.getHouseholdRole()).isEqualTo(HouseholdRole.OWNER);
+    assertThat(admin.getHouseholdId()).isEqualTo(household.getId());
 
     var profile = profileRepository.findById(result.profile().getId()).orElseThrow();
     assertThat(profile.getHouseholdId()).isEqualTo(household.getId());
     assertThat(profile.getName()).isEqualTo("Andrew");
+    assertThat(profile.isRestricted()).isFalse();
+    assertThat(admin.getPersonalProfileId()).isEqualTo(profile.getId());
 
-    assertThat(accountProfileRepository.findAll())
+    // The structural share: the Personal Profile is available in the Account's own Household.
+    assertThat(shareRepository.findAll())
         .singleElement()
         .satisfies(
-            link -> {
-              assertThat(link.getAccountId()).isEqualTo(admin.getId());
-              assertThat(link.getHouseholdId()).isEqualTo(household.getId());
-              assertThat(link.getProfileId()).isEqualTo(profile.getId());
+            share -> {
+              assertThat(share.getProfileId()).isEqualTo(profile.getId());
+              assertThat(share.getHouseholdId()).isEqualTo(household.getId());
+              assertThat(share.isStructural()).isTrue();
             });
+    assertThat(userAccountRepository.mayUseHousehold(admin.getId(), household.getId())).isTrue();
 
     assertThat(sessionProgressRepository.findAll())
         .allSatisfy(progress -> assertThat(progress.getProfileId()).isEqualTo(profile.getId()));
@@ -162,7 +161,9 @@ class SetupServiceTest {
             .email("admin@example.com")
             .displayName("Competing Setup Winner")
             .passwordHash("{argon2id}competing")
-            .accountRole(AccountRole.ADMIN)
+            .serverAdmin(true)
+            .householdId(UUID.randomUUID())
+            .personalProfileId(UUID.randomUUID())
             .enabled(true)
             .build());
     var command = defaultCommandBuilder().build();
@@ -191,9 +192,8 @@ class SetupServiceTest {
         new SetupService(
             throwingRepository,
             householdRepository,
-            membershipRepository,
             profileRepository,
-            accountProfileRepository,
+            shareRepository,
             bootstrapRepository,
             sessionProgressRepository,
             watchHistoryRepository,

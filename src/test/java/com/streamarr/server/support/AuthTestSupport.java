@@ -2,21 +2,19 @@ package com.streamarr.server.support;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
-import com.streamarr.server.domain.auth.AccountProfile;
-import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.Household;
-import com.streamarr.server.domain.auth.HouseholdMembership;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
-import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
@@ -30,17 +28,20 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Seeds real identities through production repositories and mints real tokens through the
- * production issuer. Never calls setup — the bootstrap claim belongs exclusively to the dedicated
- * setup tests. Unique emails per invocation: the shared container is never truncated.
+ * Creates a complete ADR 0024 identity for integration tests — Household, unrestricted Adult
+ * Personal Profile, HouseholdAdmin Account, structural share, and a session — and mints tokens for
+ * it. The identity is created in one transaction because the deferred invariant triggers check the
+ * whole shape at commit.
  */
 @RequiredArgsConstructor
 public class AuthTestSupport {
@@ -49,77 +50,134 @@ public class AuthTestSupport {
 
   private final UserAccountRepository userAccountRepository;
   private final HouseholdRepository householdRepository;
-  private final HouseholdMembershipRepository membershipRepository;
   private final ProfileRepository profileRepository;
-  private final AccountProfileRepository accountProfileRepository;
+  private final ProfileHouseholdShareRepository shareRepository;
   private final RefreshTokenService refreshTokenService;
   private final AccessTokenIssuer accessTokenIssuer;
   private final AccessTokenIssuer expiredTokenIssuer;
   private final JwtDecoder jwtDecoder;
   private final PlaybackTokenIssuer playbackTokenIssuer;
   private final PasswordEncoder passwordEncoder;
+  private final TransactionTemplate transactionTemplate;
 
   public TestIdentity createIdentity() {
-    return createIdentity(AccountRole.USER);
+    return createIdentity(false);
   }
 
+  /** A ServerAdmin (live row) who is also a HouseholdAdmin of its own Household. */
   public TestIdentity createAdminIdentity() {
-    return createIdentity(AccountRole.ADMIN);
+    return createIdentity(true);
   }
 
   public String password() {
     return password;
   }
 
-  private TestIdentity createIdentity(AccountRole role) {
-    var account =
-        userAccountRepository.save(
-            AccountFixture.defaultAccountBuilder()
-                .accountRole(role)
-                .passwordHash(passwordEncoder.encode(password))
-                .build());
-    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    membershipRepository.grantMembership(
-        HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(household.getId())
-            .householdRole(HouseholdRole.OWNER)
-            .build());
-    var profile =
-        profileRepository.saveAndFlush(
-            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    accountProfileRepository.linkProfile(
-        AccountProfile.builder()
-            .accountId(account.getId())
-            .householdId(household.getId())
-            .profileId(profile.getId())
-            .build());
-
-    var issued =
-        refreshTokenService.createSession(
-            CreateAuthSessionCommand.builder()
-                .accountId(account.getId())
-                .deviceName("auth-test-support")
-                .activeHouseholdId(household.getId())
-                .activeProfileId(profile.getId())
-                .build());
-
-    return TestIdentity.builder()
-        .account(account)
-        .household(household)
-        .profile(profile)
-        .session(issued.session())
-        .rawRefreshToken(issued.rawToken())
-        .build();
+  /**
+   * A complete Account (Household, unrestricted Adult Personal Profile, structural share) with no
+   * session, customized by the caller. Deleting it again goes through {@link #deleteAccount}.
+   */
+  public UserAccount createAccount(UnaryOperator<UserAccount.UserAccountBuilder<?, ?>> customize) {
+    return transactionTemplate.execute(
+        _ -> {
+          var household =
+              householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+          var profile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+          var account =
+              userAccountRepository.saveAndFlush(
+                  customize
+                      .apply(
+                          AccountFixture.defaultAccountBuilder()
+                              .householdId(household.getId())
+                              .householdRole(HouseholdRole.ADMIN)
+                              .personalProfileId(profile.getId())
+                              .passwordHash(passwordEncoder.encode(password)))
+                      .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(household.getId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .structural(true)
+                  .build());
+          return account;
+        });
   }
 
+  public UserAccount createAccount() {
+    return createAccount(UnaryOperator.identity());
+  }
+
+  /**
+   * Deletes an Account's whole Household in one transaction — T1 forbids a Household losing its
+   * final Account except inside teardown, so every Account and Profile of the Household goes with
+   * it (a teardown in miniature). Manager rows, shares, and guard rows cascade.
+   */
+  public void deleteAccount(UUID accountId) {
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            userAccountRepository
+                .findById(accountId)
+                .ifPresent(
+                    account -> {
+                      var householdId = account.getHouseholdId();
+                      userAccountRepository.deleteAll(
+                          userAccountRepository.findByHouseholdId(householdId));
+                      userAccountRepository.flush();
+                      profileRepository.deleteAll(profileRepository.findByHouseholdId(householdId));
+                      profileRepository.flush();
+                      householdRepository.deleteById(householdId);
+                    }));
+  }
+
+  private TestIdentity createIdentity(boolean serverAdmin) {
+    return transactionTemplate.execute(
+        _ -> {
+          var household =
+              householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+          var profile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+          var account =
+              userAccountRepository.saveAndFlush(
+                  AccountFixture.defaultAccountBuilder()
+                      .serverAdmin(serverAdmin)
+                      .householdId(household.getId())
+                      .householdRole(HouseholdRole.ADMIN)
+                      .personalProfileId(profile.getId())
+                      .passwordHash(passwordEncoder.encode(password))
+                      .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(household.getId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .structural(true)
+                  .build());
+
+          var issued =
+              refreshTokenService.createSession(
+                  CreateAuthSessionCommand.builder()
+                      .accountId(account.getId())
+                      .deviceName("auth-test-support")
+                      .contextHouseholdId(household.getId())
+                      .selectedProfileId(profile.getId())
+                      .build());
+
+          return TestIdentity.builder()
+              .account(account)
+              .household(household)
+              .profile(profile)
+              .session(issued.session())
+              .rawRefreshToken(issued.rawToken())
+              .build();
+        });
+  }
+
+  /** An Account-scoped token: at the Profile picker of the membership Household. */
   public String accountBearer(TestIdentity identity) {
-    return accessTokenIssuer
-        .issue(contextBuilder(identity).householdId(null).profileId(null).build())
-        .value();
-  }
-
-  public String householdBearer(TestIdentity identity) {
     return accessTokenIssuer.issue(contextBuilder(identity).profileId(null).build()).value();
   }
 
@@ -145,10 +203,12 @@ public class AuthTestSupport {
     return expiredTokenIssuer.issue(contextBuilder(identity).build()).value();
   }
 
-  /** Deletes everything createIdentity made; FK cascades sweep memberships, links, sessions. */
+  /**
+   * Deletes everything createIdentity made. The Account goes first (its FK to the Profile and the
+   * deferred T1/T2 triggers are satisfied once the Household is gone in the same transaction).
+   */
   public void deleteIdentity(TestIdentity identity) {
-    householdRepository.deleteById(identity.household().getId());
-    userAccountRepository.deleteById(identity.account().getId());
+    deleteAccount(identity.account().getId());
   }
 
   public static RequestPostProcessor bearer(String token) {
@@ -158,10 +218,7 @@ public class AuthTestSupport {
     };
   }
 
-  static AccessTokenIssuer expiredIssuer(
-      AuthTokenProperties properties,
-      HouseholdMembershipRepository membershipRepository,
-      AccountProfileRepository accountProfileRepository) {
+  static AccessTokenIssuer expiredIssuer(AuthTokenProperties properties) {
     var cryptoConfig = new TokenCryptoConfig();
     // Rewind past the configured TTL so the minted token is expired even when
     // AUTH_ACCESS_TOKEN_TTL is raised in the environment running the tests.
@@ -170,18 +227,14 @@ public class AuthTestSupport {
             Instant.now().minus(properties.accessTokenTtl()).minus(Duration.ofMinutes(5)),
             ZoneOffset.UTC);
     return new AccessTokenIssuer(
-        cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(properties)),
-        properties,
-        pastClock,
-        membershipRepository,
-        accountProfileRepository);
+        cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(properties)), properties, pastClock);
   }
 
   private TokenContext.TokenContextBuilder contextBuilder(TestIdentity identity) {
     return TokenContext.builder()
         .account(identity.account())
         .session(identity.session())
-        .householdId(identity.household().getId())
+        .contextHouseholdId(identity.household().getId())
         .profileId(identity.profile().getId());
   }
 

@@ -4,7 +4,7 @@
 package com.streamarr.server.jooq.generated.tables.records;
 
 
-import com.streamarr.server.jooq.generated.enums.AccountRole;
+import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 
 import java.time.OffsetDateTime;
@@ -135,31 +135,73 @@ public class UserAccountRecord extends UpdatableRecordImpl<UserAccountRecord> {
     }
 
     /**
-     * Setter for <code>public.user_account.account_role</code>.
-     */
-    public void setAccountRole(AccountRole value) {
-        set(8, value);
-    }
-
-    /**
-     * Getter for <code>public.user_account.account_role</code>.
-     */
-    public AccountRole getAccountRole() {
-        return (AccountRole) get(8);
-    }
-
-    /**
      * Setter for <code>public.user_account.enabled</code>.
      */
     public void setEnabled(Boolean value) {
-        set(9, value);
+        set(8, value);
     }
 
     /**
      * Getter for <code>public.user_account.enabled</code>.
      */
     public Boolean getEnabled() {
+        return (Boolean) get(8);
+    }
+
+    /**
+     * Setter for <code>public.user_account.server_admin</code>.
+     */
+    public void setServerAdmin(Boolean value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>public.user_account.server_admin</code>.
+     */
+    public Boolean getServerAdmin() {
         return (Boolean) get(9);
+    }
+
+    /**
+     * Setter for <code>public.user_account.household_id</code>.
+     */
+    public void setHouseholdId(UUID value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>public.user_account.household_id</code>.
+     */
+    public UUID getHouseholdId() {
+        return (UUID) get(10);
+    }
+
+    /**
+     * Setter for <code>public.user_account.household_role</code>.
+     */
+    public void setHouseholdRole(HouseholdRole value) {
+        set(11, value);
+    }
+
+    /**
+     * Getter for <code>public.user_account.household_role</code>.
+     */
+    public HouseholdRole getHouseholdRole() {
+        return (HouseholdRole) get(11);
+    }
+
+    /**
+     * Setter for <code>public.user_account.personal_profile_id</code>.
+     */
+    public void setPersonalProfileId(UUID value) {
+        set(12, value);
+    }
+
+    /**
+     * Getter for <code>public.user_account.personal_profile_id</code>.
+     */
+    public UUID getPersonalProfileId() {
+        return (UUID) get(12);
     }
 
     // -------------------------------------------------------------------------
@@ -185,7 +227,7 @@ public class UserAccountRecord extends UpdatableRecordImpl<UserAccountRecord> {
     /**
      * Create a detached, initialised UserAccountRecord
      */
-    public UserAccountRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String email, String displayName, String passwordHash, AccountRole accountRole, Boolean enabled) {
+    public UserAccountRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String email, String displayName, String passwordHash, Boolean enabled, Boolean serverAdmin, UUID householdId, HouseholdRole householdRole, UUID personalProfileId) {
         super(UserAccount.USER_ACCOUNT);
 
         setId(id);
@@ -196,8 +238,11 @@ public class UserAccountRecord extends UpdatableRecordImpl<UserAccountRecord> {
         setEmail(email);
         setDisplayName(displayName);
         setPasswordHash(passwordHash);
-        setAccountRole(accountRole);
         setEnabled(enabled);
+        setServerAdmin(serverAdmin);
+        setHouseholdId(householdId);
+        setHouseholdRole(householdRole);
+        setPersonalProfileId(personalProfileId);
         resetTouchedOnNotNull();
     }
 }

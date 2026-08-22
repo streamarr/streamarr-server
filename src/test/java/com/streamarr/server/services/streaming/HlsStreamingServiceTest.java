@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -129,10 +130,11 @@ class HlsStreamingServiceTest {
   }
 
   private Optional<StreamSession> accessMissingSession(UUID streamSessionId) {
+    var authority = defaultPlaybackAuthorityBuilder().build();
     return service.accessSession(
         PlaybackRequest.builder()
             .streamSessionId(streamSessionId)
-            .authority(defaultPlaybackAuthorityBuilder().build())
+            .identity(identityFor(authority))
             .build());
   }
 
@@ -263,10 +265,11 @@ class HlsStreamingServiceTest {
     var file = seedMediaFile();
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     var lastAccessedAt = session.getLastAccessedAt();
+    var otherAuthority = defaultPlaybackAuthorityBuilder().build();
     var request =
         PlaybackRequest.builder()
             .streamSessionId(session.getSessionId())
-            .authority(defaultPlaybackAuthorityBuilder().build())
+            .identity(identityFor(otherAuthority))
             .build();
 
     var result = service.accessSession(request);

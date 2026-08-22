@@ -9,12 +9,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
-import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.TokenContext;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.AuthTestSupportConfig;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,6 +30,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -42,11 +43,12 @@ import tools.jackson.databind.ObjectMapper;
 /** Pins {@code /api/auth/device/**} and the status extension as an executable client contract. */
 @Tag("IntegrationTest")
 @DisplayName("Device Auth Contract Integration Tests")
+@Import(AuthTestSupportConfig.class)
 class DeviceAuthContractIT extends AbstractIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
 
-  @Autowired private UserAccountRepository userAccountRepository;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private DeviceAuthorizationRepository authorizationRepository;
 
@@ -61,7 +63,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   @AfterEach
   void deleteSeededRows() {
     authorizationRepository.deleteAll();
-    accountIds.forEach(userAccountRepository::deleteById);
+    accountIds.forEach(authTestSupport::deleteAccount);
     accountIds.clear();
   }
 
@@ -533,13 +535,12 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   private MockHttpServletRequestBuilder authenticated(
       UserAccount account, MockHttpServletRequestBuilder request) {
     var session = refreshTokenService.createSession(account, "web").session();
-    var accessToken =
-        accessTokenIssuer.issue(TokenContext.builder().account(account).session(session).build());
+    var accessToken = accessTokenIssuer.issue(TokenContext.of(account, session));
     return request.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken.value());
   }
 
   private UserAccount seedAccount() {
-    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var account = authTestSupport.createAccount();
     accountIds.add(account.getId());
     return account;
   }

@@ -197,7 +197,7 @@ public class StreamController {
     return streamingService.accessSession(
         PlaybackRequest.builder()
             .streamSessionId(sessionId)
-            .authority(authorizationService.currentIdentity().playbackAuthority())
+            .identity(authorizationService.currentIdentity())
             .build());
   }
 
