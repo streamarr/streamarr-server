@@ -69,33 +69,41 @@ public class HouseholdTeardownService {
     if (command.reason() == null || command.reason().isBlank()) {
       return Outcome.rejected(new TeardownRejections.ReasonRequired());
     }
+
     var refusal = teardownRefusal(identity, command.householdId());
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
+
     if (householdRepository.findById(command.householdId()).isEmpty()) {
       return Outcome.rejected(new TeardownRejections.HouseholdNotFound());
     }
+
     var dispositionRefusal = dispositionRefusal(command);
     if (dispositionRefusal.isPresent()) {
       return Outcome.rejected(dispositionRefusal.get());
     }
+
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
           if (!householdRepository.lockById(command.householdId())) {
             throw new MutationRejection(new TeardownRejections.HouseholdNotFound());
           }
+
           var residents = userAccountRepository.findByHouseholdId(command.householdId());
           if (residents.size() > 1) {
             throw new MutationRejection(new TeardownRejections.AccountsRemain());
           }
+
           if (residents.size() == 1 && command.finalAccount() == null) {
             throw new MutationRejection(new TeardownRejections.FinalAccountRequired());
           }
+
           if (residents.isEmpty() && command.finalAccount() != null) {
             throw new MutationRejection(new TeardownRejections.FinalAccountUnexpected());
           }
+
           residents.stream()
               .findFirst()
               .ifPresent(resident -> dispose(resident, command.finalAccount(), now));
@@ -130,6 +138,7 @@ public class HouseholdTeardownService {
         || householdRepository.findById(householdId).isEmpty()) {
       return Optional.empty();
     }
+
     var residents = userAccountRepository.findByHouseholdId(householdId);
     var linkedProfileIds = residents.stream().map(UserAccount::getPersonalProfileId).toList();
     var doomedProfiles =
@@ -185,6 +194,7 @@ public class HouseholdTeardownService {
             SourceAccess.END,
             now);
       }
+
       case DELETE -> accountRemoval.erase(resident, ProfileDisposition.ERASE, null, now);
       case DELETE_KEEPING_PROFILE -> {
         accountRemoval.erase(
@@ -240,18 +250,22 @@ public class HouseholdTeardownService {
     if (disposition == null) {
       return Optional.empty();
     }
+
     if (disposition.choice() != FinalAccountChoice.DELETE) {
       if (disposition.destinationHouseholdId() == null) {
         return Optional.of(new TeardownRejections.DestinationRequired());
       }
+
       if (disposition.destinationHouseholdId().equals(command.householdId())
           || householdRepository.findById(disposition.destinationHouseholdId()).isEmpty()) {
         return Optional.of(new TeardownRejections.DestinationNotFound());
       }
     }
+
     if (disposition.choice() == FinalAccountChoice.DELETE_KEEPING_PROFILE) {
       return replacementRefusal(disposition);
     }
+
     return Optional.empty();
   }
 
@@ -260,10 +274,12 @@ public class HouseholdTeardownService {
     if (disposition.replacementManagerAccountId() == null) {
       return Optional.of(new TeardownRejections.ReplacementManagerRequired());
     }
+
     var replacement = userAccountRepository.findById(disposition.replacementManagerAccountId());
     if (replacement.isEmpty()) {
       return Optional.of(new TeardownRejections.ReplacementManagerNotFound());
     }
+
     // T6: the anchor lives in the destination Household and is themselves unrestricted.
     var anchored =
         replacement
@@ -273,6 +289,7 @@ public class HouseholdTeardownService {
     if (!anchored) {
       return Optional.of(new TeardownRejections.ReplacementManagerNotEligible());
     }
+
     return Optional.empty();
   }
 
@@ -297,6 +314,7 @@ public class HouseholdTeardownService {
               if (mayViewHousehold(identity, householdId)) {
                 throw new AccessDeniedException("Not allowed.");
               }
+
               yield Optional.of(new TeardownRejections.HouseholdNotFound());
             }
           };

@@ -75,6 +75,7 @@ public class TeardownResolver {
       if (separator < 0) {
         throw new InvalidCursorException("Cursor is not valid.");
       }
+
       try {
         beforeOccurredAt = Instant.parse(key.substring(0, separator));
         beforeId = UUID.fromString(key.substring(separator + 1));
@@ -82,6 +83,7 @@ public class TeardownResolver {
         throw new InvalidCursorException("Cursor is not valid.");
       }
     }
+
     var page =
         householdTeardownService
             .securityAuditEvents(
@@ -114,6 +116,7 @@ public class TeardownResolver {
     if (input.finalAccount() == null) {
       return null;
     }
+
     return FinalAccountDisposition.builder()
         .choice(input.finalAccount().choice())
         .destinationHouseholdId(

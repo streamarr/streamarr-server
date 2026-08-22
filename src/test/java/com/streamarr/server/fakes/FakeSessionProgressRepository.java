@@ -65,6 +65,7 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
       sp.setDurationSeconds(progress.durationSeconds());
       return true;
     }
+
     save(
         SessionProgress.builder()
             .sessionId(progress.sessionId())

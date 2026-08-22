@@ -57,9 +57,11 @@ class AccountRemoval {
         destinationEmpty ? HouseholdRole.ADMIN : HouseholdRole.MEMBER)) {
       return false;
     }
+
     if (!profileRepository.tryRehome(profileId, sourceHouseholdId, destinationHouseholdId)) {
       return false;
     }
+
     if (sourceHouseholdAccess == SourceHouseholdAccess.KEEP_AS_VISITOR) {
       shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId, now);
       authSessionRepository.clearProfileSelectionFromLiveSessions(
@@ -100,6 +102,7 @@ class AccountRemoval {
       deleteAccountRow(account);
       return;
     }
+
     deleteAccountRow(account);
     deleteProfile(profileId, now);
   }
