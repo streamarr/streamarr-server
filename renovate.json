@@ -63,6 +63,12 @@
       "matchDepNames": ["BtbN/FFmpeg-Builds"],
       "groupName": "FFmpeg runtime",
       "automerge": false
+    },
+    {
+      "description": "Cedar bundles a native engine: every upgrade is a deliberate PR that re-runs the multi-arch image self-check and CedarDependencyAlignmentTest, never an automerge",
+      "matchPackageNames": ["com.cedarpolicy:cedar-java"],
+      "groupName": "Cedar policy engine",
+      "automerge": false
     }
   ],
   "prConcurrentLimit": 10

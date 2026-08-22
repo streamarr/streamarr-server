@@ -75,18 +75,52 @@ class PackagedConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should ship separate server and transcode worker process types when packaged")
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  void shouldShipSeparateServerAndTranscodeWorkerProcessTypesWhenPackaged() throws IOException {
-    var processes = Set.copyOf(Files.readAllLines(Path.of("Procfile")));
+  @DisplayName("Should launch Procfile process types through the procfile buildpack when packaged")
+  void shouldLaunchProcfileProcessTypesThroughProcfileBuildpackWhenPackaged() throws IOException {
     var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
 
-    assertThat(processes)
+    assertThat(buildAction)
+        .contains("--buildpack paketo-buildpacks/procfile", "BP_INCLUDE_FILES=Procfile");
+  }
+
+  @Test
+  @DisplayName("Should wire Cedar engine verification into every package image build")
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  void shouldWireCedarEngineVerificationIntoEveryPackageImageBuild() throws IOException {
+    var action = yaml(".github/actions/pack-build/action.yml");
+    var buildStep =
+        stepNamed(listOfMaps(map(action.get("runs")).get("steps")), "Build with pack CLI");
+    var buildCommand = (String) buildStep.get("run");
+    var verifyScript =
+        Files.readString(Path.of(".github/actions/pack-build/verify-cedar-image.sh"));
+
+    assertThat(buildCommand)
+        .contains(".github/actions/pack-build/verify-cedar-image.sh \"${build_image}\"");
+    assertThat(verifyScript)
         .contains(
-            "web: java org.springframework.boot.loader.launch.JarLauncher",
-            "worker: java -Dloader.main=com.streamarr.transcode.worker.TranscodeWorkerApplication "
-                + "org.springframework.boot.loader.launch.PropertiesLauncher");
-    assertThat(buildAction).contains("--buildpack paketo-buildpacks/procfile");
+            "--enable-native-access=ALL-UNNAMED",
+            "-Dloader.main=com.streamarr.server.services.authorization.cedar"
+                + ".CedarEngineSelfCheckLauncher",
+            "Cedar self-check passed: permittedAllowed=true strangerDenied=true");
+    assertThat(Path.of(".github/actions/pack-build/verify-cedar-image.sh")).isExecutable();
+  }
+
+  @Test
+  @DisplayName("Should rebuild package images when Maven or wrapper inputs change")
+  void shouldRebuildPackageImagesWhenMavenOrWrapperInputsChange() throws IOException {
+    var workflow = yaml(".github/workflows/ci.yml");
+    var changes = map(map(workflow.get("jobs")).get("changes"));
+    var filterStep = stepNamed(listOfMaps(changes.get("steps")), "Filter changed paths");
+    var filters = (String) map(filterStep.get("with")).get("filters");
+
+    assertThat(filters)
+        .contains(
+            "- 'pom.xml'",
+            "- 'mvnw'",
+            "- 'mvnw.cmd'",
+            "- '.mvn/**'",
+            "- 'Procfile'",
+            "- 'src/main/java/com/streamarr/server/services/authorization/cedar/**'");
   }
 
   @Test
