@@ -3,6 +3,7 @@ package com.streamarr.server.services;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.Comparator;
@@ -24,6 +25,21 @@ public class PersonService {
   @Transactional
   public List<Person> getOrCreatePersons(
       List<Person> persons, Map<String, List<ImageSource>> imageSourcesBySourceId) {
+    return getOrCreatePersonsInternal(persons, imageSourcesBySourceId, ImageRefreshMode.PRESERVE);
+  }
+
+  @Transactional
+  public List<Person> getOrCreatePersons(
+      List<Person> persons,
+      Map<String, List<ImageSource>> imageSourcesBySourceId,
+      ImageRefreshMode imageRefreshMode) {
+    return getOrCreatePersonsInternal(persons, imageSourcesBySourceId, imageRefreshMode);
+  }
+
+  private List<Person> getOrCreatePersonsInternal(
+      List<Person> persons,
+      Map<String, List<ImageSource>> imageSourcesBySourceId,
+      ImageRefreshMode imageRefreshMode) {
     if (persons == null) {
       return List.of();
     }
@@ -36,13 +52,16 @@ public class PersonService {
         .forEach(
             person ->
                 savedBySourceId.put(
-                    person.getSourceId(), findOrCreatePerson(person, imageSourcesBySourceId)));
+                    person.getSourceId(),
+                    findOrCreatePerson(person, imageSourcesBySourceId, imageRefreshMode)));
 
     return persons.stream().map(person -> savedBySourceId.get(person.getSourceId())).toList();
   }
 
   private Person findOrCreatePerson(
-      Person person, Map<String, List<ImageSource>> imageSourcesBySourceId) {
+      Person person,
+      Map<String, List<ImageSource>> imageSourcesBySourceId,
+      ImageRefreshMode imageRefreshMode) {
     var imageSources = imageSourcesBySourceId.getOrDefault(person.getSourceId(), List.of());
 
     personRepository.insertIfAbsent(person.getSourceId(), person.getName());
@@ -56,7 +75,7 @@ public class PersonService {
 
     saved.setName(person.getName());
 
-    publishImageEvent(saved, imageSources);
+    publishImageEvent(saved, imageSources, imageRefreshMode);
     return saved;
   }
 
@@ -70,12 +89,14 @@ public class PersonService {
     }
   }
 
-  private void publishImageEvent(Person person, List<ImageSource> imageSources) {
+  private void publishImageEvent(
+      Person person, List<ImageSource> imageSources, ImageRefreshMode imageRefreshMode) {
     if (imageSources.isEmpty()) {
       return;
     }
 
     eventPublisher.publishEvent(
-        new MetadataEnrichedEvent(person.getId(), ImageEntityType.PERSON, imageSources));
+        new MetadataEnrichedEvent(
+            person.getId(), ImageEntityType.PERSON, imageSources, imageRefreshMode));
   }
 }

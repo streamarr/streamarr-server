@@ -4,6 +4,7 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.services.ImageService.ProcessedImage;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
@@ -22,6 +23,10 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Slf4j
 @Component
 public class ImageEnrichmentListener {
+
+  private record PendingImageSource(ImageSource source, boolean replacement) {}
+
+  private record ProcessedImageResult(ProcessedImage processedImage, boolean replacement) {}
 
   private final TmdbImageDownloader tmdbImageDownloader;
   private final ImageService imageService;
@@ -49,12 +54,15 @@ public class ImageEnrichmentListener {
 
       try {
         var existingImages = imageService.findByEntity(event.entityId(), event.entityType());
-        var completedTypes =
-            existingImages.stream().map(Image::getImageType).collect(Collectors.toSet());
-        var pendingSources =
-            event.imageSources().stream()
-                .filter(source -> !completedTypes.contains(source.imageType()))
-                .toList();
+        var existingImagesByType =
+            existingImages.stream().collect(Collectors.groupingBy(Image::getImageType));
+        var pendingSources = new ArrayList<PendingImageSource>();
+        for (var source : event.imageSources()) {
+          var existingForType = existingImagesByType.getOrDefault(source.imageType(), List.of());
+          if (requiresDownload(source, existingForType, event.imageRefreshMode())) {
+            pendingSources.add(new PendingImageSource(source, !existingForType.isEmpty()));
+          }
+        }
 
         if (pendingSources.isEmpty()) {
           log.debug(
@@ -74,43 +82,67 @@ public class ImageEnrichmentListener {
     }
   }
 
-  private void downloadAllImages(MetadataEnrichedEvent event, List<ImageSource> imageSources) {
-    var futures = new ArrayList<Future<ProcessedImage>>();
+  private boolean requiresDownload(
+      ImageSource source, List<Image> existingImages, ImageRefreshMode refreshMode) {
+    if (existingImages.isEmpty()) {
+      return true;
+    }
+
+    return switch (refreshMode) {
+      case PRESERVE -> false;
+      case REFRESH_IF_CHANGED ->
+          existingImages.stream().anyMatch(image -> !Objects.equals(image.getKey(), source.key()));
+      case FORCE_REFRESH -> true;
+    };
+  }
+
+  private void downloadAllImages(
+      MetadataEnrichedEvent event, List<PendingImageSource> imageSources) {
+    var futures = new ArrayList<Future<ProcessedImageResult>>();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (var source : imageSources) {
-        futures.add(executor.submit(() -> downloadAndProcessImage(source, event)));
+      for (var pendingSource : imageSources) {
+        futures.add(executor.submit(() -> downloadAndProcessImage(pendingSource, event)));
       }
     }
 
     var processedResults =
         futures.stream().map(Future::resultNow).filter(Objects::nonNull).toList();
 
-    if (processedResults.isEmpty()) {
-      return;
+    for (var result : processedResults) {
+      saveProcessedImage(event, result);
     }
+  }
 
-    var allWrittenFiles =
-        processedResults.stream().flatMap(r -> r.writtenFiles().stream()).toList();
-
+  private void saveProcessedImage(MetadataEnrichedEvent event, ProcessedImageResult result) {
     try {
-      imageService.saveImages(processedResults.stream().flatMap(r -> r.images().stream()).toList());
+      if (result.replacement()) {
+        imageService.replaceImages(result.processedImage());
+        return;
+      }
+
+      imageService.saveImages(result.processedImage().images());
     } catch (Exception e) {
-      imageService.deleteFiles(allWrittenFiles);
+      imageService.deleteFiles(result.processedImage().writtenFiles());
       log.error(
           "Failed to save images for entity {} ({})", event.entityId(), event.entityType(), e);
     }
   }
 
-  private ProcessedImage downloadAndProcessImage(ImageSource source, MetadataEnrichedEvent event) {
+  private ProcessedImageResult downloadAndProcessImage(
+      PendingImageSource pendingSource, MetadataEnrichedEvent event) {
+    var source = pendingSource.source();
+
     try {
       var imageData =
           switch (source) {
-            case TmdbImageSource tmdb -> tmdbImageDownloader.downloadImage(tmdb.pathFragment());
+            case TmdbImageSource tmdb -> tmdbImageDownloader.downloadImage(tmdb.key());
           };
 
-      return imageService.processImage(
-          imageData, source.imageType(), event.entityId(), event.entityType());
+      var processedImage =
+          imageService.processImage(
+              imageData, source.imageType(), event.entityId(), event.entityType(), source.key());
+      return new ProcessedImageResult(processedImage, pendingSource.replacement());
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
       log.warn(

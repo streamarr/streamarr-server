@@ -11,6 +11,7 @@ import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
@@ -140,7 +141,25 @@ class PersonServiceTest {
               assertThat(event.entityId()).isEqualTo(existing.getId());
               assertThat(event.entityType()).isEqualTo(ImageEntityType.PERSON);
               assertThat(event.imageSources()).containsExactly(expectedImageSource);
+              assertThat(event.imageRefreshMode()).isEqualTo(ImageRefreshMode.PRESERVE);
             });
+  }
+
+  @Test
+  @DisplayName("Should propagate image refresh mode when publishing person image event")
+  void shouldPropagateImageRefreshModeWhenPublishingPersonImageEvent() {
+    var person = Person.builder().name("Tom Hanks").sourceId("actor-1").build();
+    var imageSources =
+        Map.<String, List<ImageSource>>of(
+            "actor-1", List.of(new TmdbImageSource(ImageType.PROFILE, "/tom.jpg")));
+
+    personService.getOrCreatePersons(
+        List.of(person), imageSources, ImageRefreshMode.REFRESH_IF_CHANGED);
+
+    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
+        .singleElement()
+        .extracting(MetadataEnrichedEvent::imageRefreshMode)
+        .isEqualTo(ImageRefreshMode.REFRESH_IF_CHANGED);
   }
 
   @Test

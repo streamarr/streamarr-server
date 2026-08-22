@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 
 public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
@@ -25,6 +26,7 @@ public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
   private String interruptOnPath;
   private boolean failAll;
   private long delayMillis;
+  private final AtomicInteger downloadCount = new AtomicInteger();
 
   // --- Movie search: year (null key = no year) → results ---
   private final Map<String, TmdbSearchResults> movieSearchResponses = new HashMap<>();
@@ -67,6 +69,10 @@ public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
     this.delayMillis = delayMillis;
   }
 
+  public int getDownloadCount() {
+    return downloadCount.get();
+  }
+
   // --- Search setters ---
 
   public void setMovieSearchResponse(String year, TmdbSearchResults results) {
@@ -95,6 +101,7 @@ public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
 
   @Override
   public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
+    downloadCount.incrementAndGet();
     if (delayMillis > 0) {
       LockSupport.parkNanos(delayMillis * 1_000_000);
     }

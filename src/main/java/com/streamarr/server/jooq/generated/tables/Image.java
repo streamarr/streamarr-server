@@ -18,6 +18,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.Index;
@@ -149,6 +150,16 @@ public class Image extends TableImpl<ImageRecord> {
      */
     public final TableField<ImageRecord, String> AMBIENT_PRIMARY = createField(DSL.name("ambient_primary"), SQLDataType.CLOB, this, "");
 
+    /**
+     * The column <code>public.image.key</code>.
+     */
+    public final TableField<ImageRecord, String> KEY = createField(DSL.name("key"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.image.content_sha256</code>.
+     */
+    public final TableField<ImageRecord, String> CONTENT_SHA256 = createField(DSL.name("content_sha256"), SQLDataType.CLOB, this, "");
+
     private Image(Name alias, Table<ImageRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -191,6 +202,13 @@ public class Image extends TableImpl<ImageRecord> {
     @Override
     public UniqueKey<ImageRecord> getPrimaryKey() {
         return Keys.IMAGE_PKEY;
+    }
+
+    @Override
+    public List<Check<ImageRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("image_content_sha256_format_check"), "(((content_sha256 IS NULL) OR (content_sha256 ~ '^[0-9a-f]{64}$'::text)))", true)
+        );
     }
 
     @Override

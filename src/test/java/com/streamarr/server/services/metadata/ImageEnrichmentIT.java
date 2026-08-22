@@ -4,9 +4,14 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.streamarr.server.fakes.TestImages.createDistinctColorPngImage;
+import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitBlockedBackendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockArtworkRows;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
@@ -16,11 +21,20 @@ import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.repositories.media.ImageRepository;
+import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.sql.SQLException;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -28,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
@@ -38,6 +53,8 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
   @Autowired private ApplicationEventPublisher eventPublisher;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private ImageRepository imageRepository;
+  @Autowired private ImageService imageService;
+  @Autowired private DataSource dataSource;
 
   @BeforeEach
   void resetStubs() {
@@ -130,6 +147,260 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
                   .singleElement()
                   .satisfies(image -> assertThat(image.getAmbientColors()).isEmpty());
             });
+  }
+
+  @Test
+  @DisplayName("Should persist source key and content SHA-256 when enrichment completes")
+  void shouldPersistSourceKeyAndContentSha256WhenEnrichmentCompletes()
+      throws NoSuchAlgorithmException {
+    var entityId = UUID.randomUUID();
+    var imageData = createTestImage(600, 900);
+    var sourceKey = "/poster.jpg";
+    var processed =
+        imageService.processImage(
+            imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE, sourceKey);
+
+    try {
+      imageService.saveImages(processed.images());
+
+      var expectedContentSha256 =
+          HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(imageData));
+      assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+          .hasSize(ImageSize.values().length)
+          .allSatisfy(
+              image -> {
+                assertThat(image.getKey()).isEqualTo(sourceKey);
+                assertThat(image.getContentSha256()).isEqualTo(expectedContentSha256);
+              });
+    } finally {
+      imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+      imageService.deleteFiles(processed.writtenFiles());
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should replace changed artwork and recompute derived metadata when replacement commits atomically")
+  void shouldReplaceChangedArtworkAndRecomputeDerivedMetadataWhenReplacementCommitsAtomically()
+      throws NoSuchAlgorithmException {
+    var entityId = UUID.randomUUID();
+    var oldKey = "/old-poster.jpg";
+    var newKey = "/new-poster.png";
+    var original =
+        imageService.processImage(
+            createSolidPngImage(600, 900, 0x0000FF),
+            ImageType.POSTER,
+            entityId,
+            ImageEntityType.MOVIE,
+            oldKey);
+    var newImageData = createSolidPngImage(600, 900, 0x00A0A0);
+    var replacement =
+        imageService.processImage(
+            newImageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE, newKey);
+
+    try {
+      imageService.saveImages(original.images());
+      var originalImages =
+          imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+      var originalIds = originalImages.stream().map(Image::getId).toList();
+      var originalSmall =
+          originalImages.stream()
+              .filter(image -> image.getVariant() == ImageSize.SMALL)
+              .findFirst()
+              .orElseThrow();
+
+      imageService.replaceImages(replacement);
+
+      var expectedContentSha256 =
+          HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(newImageData));
+      var replacements =
+          imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+      assertThat(replacements)
+          .hasSize(ImageSize.values().length)
+          .allSatisfy(
+              image -> {
+                assertThat(image.getKey()).isEqualTo(newKey);
+                assertThat(image.getContentSha256()).isEqualTo(expectedContentSha256);
+              })
+          .extracting(Image::getId)
+          .doesNotContainAnyElementsOf(originalIds);
+      assertThat(replacements)
+          .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
+          .singleElement()
+          .satisfies(
+              newSmall -> {
+                assertThat(newSmall.getBlurHash()).isNotEqualTo(originalSmall.getBlurHash());
+                assertThat(newSmall.getAmbientColors())
+                    .isNotEqualTo(originalSmall.getAmbientColors());
+              });
+      assertThatThrownBy(() -> imageService.readImageFile(originalSmall))
+          .isInstanceOf(IOException.class);
+    } finally {
+      imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+      imageService.deleteFiles(original.writtenFiles());
+      imageService.deleteFiles(replacement.writtenFiles());
+    }
+  }
+
+  @Test
+  @DisplayName("Should roll back database replacement and preserve files when insert fails")
+  void shouldRollBackDatabaseReplacementAndPreserveFilesWhenInsertFails() {
+    var entityId = UUID.randomUUID();
+    var oldKey = "/rollback-old.jpg";
+    var original =
+        imageService.processImage(
+            createTestImage(600, 900), ImageType.POSTER, entityId, ImageEntityType.MOVIE, oldKey);
+    imageService.saveImages(original.images());
+    var originalImages =
+        imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+    var originalIds = originalImages.stream().map(Image::getId).toList();
+    var replacement =
+        imageService.processImage(
+            createSolidPngImage(600, 900, 0x00A0A0),
+            ImageType.POSTER,
+            entityId,
+            ImageEntityType.MOVIE,
+            "/rollback-new.png");
+    replacement.images().getLast().setPath(null);
+
+    try {
+      assertThatThrownBy(() -> imageService.replaceImages(replacement))
+          .isInstanceOf(RuntimeException.class);
+
+      var preserved = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+      assertThat(preserved)
+          .extracting(Image::getId)
+          .containsExactlyInAnyOrderElementsOf(originalIds);
+      assertThat(preserved)
+          .allSatisfy(image -> assertThat(image.getKey()).isEqualTo(oldKey))
+          .allSatisfy(image -> assertThat(imageService.readImageFile(image)).isNotEmpty());
+      assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+    } finally {
+      imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+      imageService.deleteFiles(original.writtenFiles());
+      imageService.deleteFiles(replacement.writtenFiles());
+    }
+  }
+
+  @Test
+  @DisplayName("Should reject malformed content SHA-256 when persisted at database boundary")
+  void shouldRejectMalformedContentSha256WhenPersistedAtDatabaseBoundary() {
+    var processed =
+        imageService.processImage(
+            createTestImage(600, 900),
+            ImageType.POSTER,
+            UUID.randomUUID(),
+            ImageEntityType.MOVIE,
+            "/poster.jpg");
+    var invalidImage = processed.images().getFirst();
+    invalidImage.setContentSha256("not-a-sha256");
+    var invalidImages = List.of(invalidImage);
+
+    try {
+      assertThatThrownBy(() -> imageRepository.insertAllIfAbsent(invalidImages))
+          .isInstanceOf(DataIntegrityViolationException.class)
+          .hasMessageContaining("image_content_sha256_format_check");
+    } finally {
+      imageService.deleteFiles(processed.writtenFiles());
+    }
+  }
+
+  @Test
+  @DisplayName("Should leave content SHA-256 constraint unvalidated after migration")
+  void shouldLeaveContentSha256ConstraintUnvalidatedAfterMigration() throws SQLException {
+    try (var connection = dataSource.getConnection();
+        var statement =
+            connection.prepareStatement(
+                "SELECT convalidated FROM pg_constraint WHERE conname = ?")) {
+      statement.setString(1, "image_content_sha256_format_check");
+
+      try (var result = statement.executeQuery()) {
+        assertThat(result.next()).isTrue();
+        assertThat(result.getBoolean("convalidated")).isFalse();
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should preserve coherent artwork files when replacements run concurrently")
+  void shouldPreserveCoherentArtworkFilesWhenReplacementsRunConcurrently() throws Exception {
+    var entityId = UUID.randomUUID();
+    var original =
+        imageService.processImage(
+            createSolidPngImage(600, 900, 0x0000FF),
+            ImageType.POSTER,
+            entityId,
+            ImageEntityType.MOVIE,
+            "/original.jpg");
+    var cyanReplacement =
+        imageService.processImage(
+            createSolidPngImage(600, 900, 0x00FFFF),
+            ImageType.POSTER,
+            entityId,
+            ImageEntityType.MOVIE,
+            "/cyan.jpg");
+    var magentaReplacement =
+        imageService.processImage(
+            createSolidPngImage(600, 900, 0xFF00FF),
+            ImageType.POSTER,
+            entityId,
+            ImageEntityType.MOVIE,
+            "/magenta.jpg");
+    imageService.saveImages(original.images());
+
+    try {
+      try (var rowLockConnection = dataSource.getConnection()) {
+        rowLockConnection.setAutoCommit(false);
+        lockArtworkRows(rowLockConnection, entityId);
+        var rowLockerPid = backendPid(rowLockConnection);
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          try {
+            var cyan =
+                executor.submit(
+                    () -> {
+                      imageService.replaceImages(cyanReplacement);
+                      return null;
+                    });
+            var cyanPid = awaitBlockedBackendPid(rowLockConnection, rowLockerPid, null);
+            assertThat(cyan.isDone()).isFalse();
+
+            var magenta =
+                executor.submit(
+                    () -> {
+                      imageService.replaceImages(magentaReplacement);
+                      return null;
+                    });
+            var magentaPid = awaitBlockedBackendPid(rowLockConnection, cyanPid, "advisory");
+            assertThat(magentaPid).isNotEqualTo(cyanPid);
+            assertThat(magenta.isDone()).isFalse();
+
+            rowLockConnection.commit();
+            cyan.get(5, TimeUnit.SECONDS);
+            magenta.get(5, TimeUnit.SECONDS);
+          } finally {
+            rowLockConnection.rollback();
+          }
+        }
+      }
+
+      var persisted = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+      assertThat(persisted)
+          .hasSize(ImageSize.values().length)
+          .extracting(Image::getKey)
+          .containsOnly("/magenta.jpg");
+      assertThat(persisted)
+          .allSatisfy(image -> assertThat(imageService.readImageFile(image)).isNotEmpty());
+      assertThat(magentaReplacement.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
+      assertThat(cyanReplacement.writtenFiles())
+          .allSatisfy(path -> assertThat(path).doesNotExist());
+      assertThat(original.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
+    } finally {
+      imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+      imageService.deleteFiles(original.writtenFiles());
+      imageService.deleteFiles(cyanReplacement.writtenFiles());
+      imageService.deleteFiles(magentaReplacement.writtenFiles());
+    }
   }
 
   private void stubImageDownload(String path) {

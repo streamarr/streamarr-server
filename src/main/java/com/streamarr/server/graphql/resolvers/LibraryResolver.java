@@ -25,6 +25,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.library.LibraryManagementService;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.PaginationService;
@@ -82,9 +83,9 @@ public class LibraryResolver {
   }
 
   @DgsMutation
-  public boolean refreshLibrary(String id) {
+  public boolean refreshLibrary(String id, @InputArgument ImageRefreshMode imageRefreshMode) {
     authorizationService.requireServerAdmin();
-    libraryManagementService.triggerAsyncRefresh(parseUuid(id));
+    libraryManagementService.triggerAsyncRefresh(parseUuid(id), imageRefreshMode);
     return true;
   }
 

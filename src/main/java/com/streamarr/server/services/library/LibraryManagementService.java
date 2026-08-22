@@ -26,6 +26,7 @@ import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -44,6 +45,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
@@ -169,10 +171,18 @@ public class LibraryManagementService implements ActiveScanChecker {
   }
 
   public void triggerAsyncRefresh(UUID libraryId) {
+    startAsyncRefresh(libraryId, () -> refreshLibrary(libraryId));
+  }
+
+  public void triggerAsyncRefresh(UUID libraryId, ImageRefreshMode imageRefreshMode) {
+    startAsyncRefresh(libraryId, () -> refreshLibrary(libraryId, imageRefreshMode));
+  }
+
+  private void startAsyncRefresh(UUID libraryId, Runnable refresh) {
     Thread.startVirtualThread(
         () -> {
           try {
-            refreshLibrary(libraryId);
+            refresh.run();
           } catch (Exception e) {
             log.error("Async library refresh failed for library: {}", libraryId, e);
           }
@@ -230,6 +240,15 @@ public class LibraryManagementService implements ActiveScanChecker {
   }
 
   public void refreshLibrary(UUID libraryId) {
+    refreshLibrary(libraryId, libraryRefreshService::refreshLibrary);
+  }
+
+  public void refreshLibrary(UUID libraryId, ImageRefreshMode imageRefreshMode) {
+    refreshLibrary(
+        libraryId, library -> libraryRefreshService.refreshLibrary(library, imageRefreshMode));
+  }
+
+  private void refreshLibrary(UUID libraryId, Consumer<Library> refresh) {
     if (!activeRefreshes.add(libraryId)) {
       throw new LibraryRefreshInProgressException(libraryId);
     }
@@ -239,7 +258,7 @@ public class LibraryManagementService implements ActiveScanChecker {
       var startTime = Instant.now();
 
       try {
-        libraryRefreshService.refreshLibrary(library);
+        refresh.accept(library);
         completeRefreshSuccessfully(library, startTime);
       } catch (Exception ex) {
         log.error("Refresh failed for library '{}'", library.getName(), ex);

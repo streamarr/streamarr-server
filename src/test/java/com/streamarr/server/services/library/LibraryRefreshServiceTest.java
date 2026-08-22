@@ -17,25 +17,35 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeCompanyRepository;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
+import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
+import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
@@ -62,6 +72,7 @@ class LibraryRefreshServiceTest {
   private SeriesMetadataProviderResolver seriesProviderResolver;
   private MovieMetadataProviderResolver movieProviderResolver;
   private LibraryRefreshService refreshService;
+  private CapturingEventPublisher eventPublisher;
 
   @BeforeEach
   void setUp() {
@@ -69,13 +80,13 @@ class LibraryRefreshServiceTest {
     movieRepository = new FakeMovieRepository();
     seasonRepository = new FakeSeasonRepository();
     episodeRepository = new FakeEpisodeRepository();
-    var eventPublisher = new CapturingEventPublisher();
+    eventPublisher = new CapturingEventPublisher();
     seriesProviderResolver = mock(SeriesMetadataProviderResolver.class);
     movieProviderResolver = mock(MovieMetadataProviderResolver.class);
 
-    var personService = mock(PersonService.class);
+    var personService = new PersonService(new FakePersonRepository(), eventPublisher);
     var genreService = mock(GenreService.class);
-    var companyService = mock(CompanyService.class);
+    var companyService = new CompanyService(new FakeCompanyRepository(), eventPublisher);
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
         new ImageService(
@@ -261,6 +272,50 @@ class LibraryRefreshServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should propagate image refresh mode when refreshing series season and episode artwork")
+  void shouldPropagateImageRefreshModeWhenRefreshingSeriesSeasonAndEpisodeArtwork() {
+    var library = buildSeriesLibrary();
+    saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+    var freshSeries = Series.builder().title("Breaking Bad").titleSort("breaking bad").build();
+    when(seriesProviderResolver.getMetadata(argThatHasExternalId("1396"), eq(library)))
+        .thenReturn(
+            Optional.of(
+                MetadataFixture.<Series>metadataResultBuilder()
+                    .entity(freshSeries)
+                    .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/series.jpg")))
+                    .build()));
+    when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396")).thenReturn(List.of(1));
+    when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
+        .thenReturn(
+            Optional.of(
+                SeasonDetails.builder()
+                    .name("Season 1")
+                    .seasonNumber(1)
+                    .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/season.jpg")))
+                    .episodes(
+                        List.of(
+                            SeasonDetails.EpisodeDetails.builder()
+                                .episodeNumber(1)
+                                .name("Pilot")
+                                .imageSources(
+                                    List.of(new TmdbImageSource(ImageType.STILL, "/episode.jpg")))
+                                .build()))
+                    .build()));
+
+    refreshService.refreshLibrary(library, ImageRefreshMode.REFRESH_IF_CHANGED);
+
+    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
+        .hasSize(3)
+        .allSatisfy(
+            event ->
+                assertThat(event.imageRefreshMode()).isEqualTo(ImageRefreshMode.REFRESH_IF_CHANGED))
+        .extracting(MetadataEnrichedEvent::entityType)
+        .containsExactlyInAnyOrder(
+            ImageEntityType.SERIES, ImageEntityType.SEASON, ImageEntityType.EPISODE);
+  }
+
+  @Test
   @DisplayName("Should refresh all movies with fresh TMDB metadata when refreshing library")
   void shouldRefreshAllMoviesWithFreshTmdbMetadataWhenRefreshingLibrary() {
     var library = buildMovieLibrary();
@@ -275,6 +330,48 @@ class LibraryRefreshServiceTest {
 
     assertThat(movieRepository.findById(movie.getId()).orElseThrow().getTitle())
         .isEqualTo("Inception (Updated)");
+  }
+
+  @Test
+  @DisplayName(
+      "Should propagate image refresh mode when refreshing movie person and company artwork")
+  void shouldPropagateImageRefreshModeWhenRefreshingMoviePersonAndCompanyArtwork() {
+    var library = buildMovieLibrary();
+    saveMovieWithTmdbId("Inception", "27205", library);
+    var person = Person.builder().name("Leonardo DiCaprio").sourceId("actor-1").build();
+    var company = Company.builder().name("Warner Bros.").sourceId("studio-1").build();
+    var freshMovie =
+        Movie.builder()
+            .title("Inception")
+            .titleSort("inception")
+            .cast(List.of(person))
+            .studios(Set.of(company))
+            .build();
+    when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
+        .thenReturn(
+            Optional.of(
+                MetadataFixture.<Movie>metadataResultBuilder()
+                    .entity(freshMovie)
+                    .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))
+                    .personImageSources(
+                        Map.of(
+                            "actor-1",
+                            List.of(new TmdbImageSource(ImageType.PROFILE, "/actor.jpg"))))
+                    .companyImageSources(
+                        Map.of(
+                            "studio-1",
+                            List.of(new TmdbImageSource(ImageType.LOGO, "/studio.jpg"))))
+                    .build()));
+
+    refreshService.refreshLibrary(library, ImageRefreshMode.FORCE_REFRESH);
+
+    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class))
+        .hasSize(3)
+        .allSatisfy(
+            event -> assertThat(event.imageRefreshMode()).isEqualTo(ImageRefreshMode.FORCE_REFRESH))
+        .extracting(MetadataEnrichedEvent::entityType)
+        .containsExactlyInAnyOrder(
+            ImageEntityType.MOVIE, ImageEntityType.PERSON, ImageEntityType.COMPANY);
   }
 
   @Test

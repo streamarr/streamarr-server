@@ -8,4 +8,6 @@ import java.util.UUID;
 public interface ImageRepositoryCustom {
 
   Set<UUID> insertAllIfAbsent(List<Image> images);
+
+  List<String> replaceLogicalArtwork(List<Image> images);
 }

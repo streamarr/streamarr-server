@@ -3,6 +3,7 @@ package com.streamarr.server.services;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.repositories.CompanyRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.List;
@@ -26,17 +27,35 @@ public class CompanyService {
   @Transactional
   public Set<Company> getOrCreateCompanies(
       Set<Company> companies, Map<String, List<ImageSource>> imageSourcesBySourceId) {
+    return getOrCreateCompaniesInternal(
+        companies, imageSourcesBySourceId, ImageRefreshMode.PRESERVE);
+  }
+
+  @Transactional
+  public Set<Company> getOrCreateCompanies(
+      Set<Company> companies,
+      Map<String, List<ImageSource>> imageSourcesBySourceId,
+      ImageRefreshMode imageRefreshMode) {
+    return getOrCreateCompaniesInternal(companies, imageSourcesBySourceId, imageRefreshMode);
+  }
+
+  private Set<Company> getOrCreateCompaniesInternal(
+      Set<Company> companies,
+      Map<String, List<ImageSource>> imageSourcesBySourceId,
+      ImageRefreshMode imageRefreshMode) {
     if (companies == null) {
       return Set.of();
     }
 
     return companies.stream()
-        .map(c -> findOrCreateCompany(c, imageSourcesBySourceId))
+        .map(c -> findOrCreateCompany(c, imageSourcesBySourceId, imageRefreshMode))
         .collect(Collectors.toSet());
   }
 
   private Company findOrCreateCompany(
-      Company company, Map<String, List<ImageSource>> imageSourcesBySourceId) {
+      Company company,
+      Map<String, List<ImageSource>> imageSourcesBySourceId,
+      ImageRefreshMode imageRefreshMode) {
     if (company.getSourceId() == null) {
       throw new IllegalArgumentException("Company sourceId must not be null");
     }
@@ -54,16 +73,18 @@ public class CompanyService {
 
     saved.setName(company.getName());
 
-    publishImageEvent(saved, imageSources);
+    publishImageEvent(saved, imageSources, imageRefreshMode);
     return saved;
   }
 
-  private void publishImageEvent(Company company, List<ImageSource> imageSources) {
+  private void publishImageEvent(
+      Company company, List<ImageSource> imageSources, ImageRefreshMode imageRefreshMode) {
     if (imageSources.isEmpty()) {
       return;
     }
 
     eventPublisher.publishEvent(
-        new MetadataEnrichedEvent(company.getId(), ImageEntityType.COMPANY, imageSources));
+        new MetadataEnrichedEvent(
+            company.getId(), ImageEntityType.COMPANY, imageSources, imageRefreshMode));
   }
 }

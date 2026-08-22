@@ -77,6 +77,11 @@ Choose the simplest mechanism that fits the operation:
   See `MovieFileProcessor.enrichMovieMetadata()`.
 - **Database locks** (`SELECT FOR UPDATE … skipLocked`): coordinate across multiple application
   instances. Pair with lease-based heartbeats for crash recovery (see `FileProcessingTaskCoordinator`).
+- **Transaction-scoped advisory locks**: serialize a short, multi-statement database mutation
+  when the logical resource has no stable row to lock. Acquire the advisory lock before row locks,
+  bound the wait with a transaction-local `lock_timeout`, and keep external calls, file I/O, and
+  retry/backoff outside the transaction. Every writer for that logical resource must follow the
+  same cooperative lock protocol. See [ADR 0022](docs/adr/0022-transaction-scoped-artwork-replacement-locking.adoc).
 - **Outbound HTTP throttling/retry**: use the client's native interceptors (Methanol `RetryInterceptor` + `RateLimitingInterceptor`) — never a hand-rolled `Semaphore` + sleep loop. Never hold a permit, lock, or DB connection across a retry backoff sleep; that pattern caused cascading Hikari pool exhaustion (four fix PRs in ten days).
 - **Virtual threads are the async model**: `Executors.newVirtualThreadPerTaskExecutor()` in try-with-resources, plus `spring.threads.virtual.enabled: true`. No `@Async`, no reactive/actor frameworks.
 - **Async boundary policy**: library-mutating GraphQL mutations (scan/refresh) are async and return immediately. Apply this uniformly — don't flip individual mutations between sync and async.

@@ -16,6 +16,7 @@ import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
@@ -140,13 +141,33 @@ public class SeriesService {
 
   private void publishImageEvent(
       UUID entityId, ImageEntityType entityType, List<ImageSource> sources) {
+    publishImageEvent(entityId, entityType, sources, ImageRefreshMode.PRESERVE);
+  }
+
+  private void publishImageEvent(
+      UUID entityId,
+      ImageEntityType entityType,
+      List<ImageSource> sources,
+      ImageRefreshMode imageRefreshMode) {
     if (!sources.isEmpty()) {
-      eventPublisher.publishEvent(new MetadataEnrichedEvent(entityId, entityType, sources));
+      eventPublisher.publishEvent(
+          new MetadataEnrichedEvent(entityId, entityType, sources, imageRefreshMode));
     }
   }
 
   @Transactional
   public Series refreshSeriesMetadata(Series existing, MetadataResult<Series> metadataResult) {
+    return refreshSeriesMetadataInternal(existing, metadataResult, ImageRefreshMode.PRESERVE);
+  }
+
+  @Transactional
+  public Series refreshSeriesMetadata(
+      Series existing, MetadataResult<Series> metadataResult, ImageRefreshMode imageRefreshMode) {
+    return refreshSeriesMetadataInternal(existing, metadataResult, imageRefreshMode);
+  }
+
+  private Series refreshSeriesMetadataInternal(
+      Series existing, MetadataResult<Series> metadataResult, ImageRefreshMode imageRefreshMode) {
     var fresh = metadataResult.entity();
 
     existing.setTitle(fresh.getTitle());
@@ -159,22 +180,35 @@ public class SeriesService {
     existing.setFirstAirDate(fresh.getFirstAirDate());
 
     existing.setCast(
-        personService.getOrCreatePersons(fresh.getCast(), metadataResult.personImageSources()));
+        personService.getOrCreatePersons(
+            fresh.getCast(), metadataResult.personImageSources(), imageRefreshMode));
     existing.setDirectors(
         personService.getOrCreatePersons(
-            fresh.getDirectors(), metadataResult.personImageSources()));
+            fresh.getDirectors(), metadataResult.personImageSources(), imageRefreshMode));
     existing.setGenres(genreService.getOrCreateGenres(fresh.getGenres()));
     existing.setStudios(
         companyService.getOrCreateCompanies(
-            fresh.getStudios(), metadataResult.companyImageSources()));
+            fresh.getStudios(), metadataResult.companyImageSources(), imageRefreshMode));
 
     var saved = seriesRepository.saveAndFlush(existing);
-    publishImageEvent(saved.getId(), ImageEntityType.SERIES, metadataResult.imageSources());
+    publishImageEvent(
+        saved.getId(), ImageEntityType.SERIES, metadataResult.imageSources(), imageRefreshMode);
     return saved;
   }
 
   @Transactional
   public Season refreshSeasonWithEpisodes(Series series, SeasonDetails details, Library library) {
+    return refreshSeasonWithEpisodesInternal(series, details, library, ImageRefreshMode.PRESERVE);
+  }
+
+  @Transactional
+  public Season refreshSeasonWithEpisodes(
+      Series series, SeasonDetails details, Library library, ImageRefreshMode imageRefreshMode) {
+    return refreshSeasonWithEpisodesInternal(series, details, library, imageRefreshMode);
+  }
+
+  private Season refreshSeasonWithEpisodesInternal(
+      Series series, SeasonDetails details, Library library, ImageRefreshMode imageRefreshMode) {
     var season =
         seasonRepository
             .findBySeriesIdAndSeasonNumber(series.getId(), details.seasonNumber())
@@ -186,7 +220,8 @@ public class SeriesService {
     season.setAirDate(details.airDate());
 
     var savedSeason = seasonRepository.saveAndFlush(season);
-    publishImageEvent(savedSeason.getId(), ImageEntityType.SEASON, details.imageSources());
+    publishImageEvent(
+        savedSeason.getId(), ImageEntityType.SEASON, details.imageSources(), imageRefreshMode);
 
     var episodes =
         details.episodes().stream()
@@ -216,7 +251,12 @@ public class SeriesService {
           .filter(ed -> ed.episodeNumber() == episode.getEpisodeNumber())
           .findFirst()
           .ifPresent(
-              ed -> publishImageEvent(episode.getId(), ImageEntityType.EPISODE, ed.imageSources()));
+              ed ->
+                  publishImageEvent(
+                      episode.getId(),
+                      ImageEntityType.EPISODE,
+                      ed.imageSources(),
+                      imageRefreshMode));
     }
 
     return savedSeason;
