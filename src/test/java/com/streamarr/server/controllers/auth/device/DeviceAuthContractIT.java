@@ -349,6 +349,31 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject a malformed Household identifier as an invalid request")
+  void shouldRejectMalformedHouseholdIdentifierAsInvalidRequest() throws Exception {
+    var approver = seedAccount();
+
+    var body =
+        readJson(
+            mockMvc
+                .perform(
+                    authenticated(approver, post("/api/auth/device/authorizations/decision"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                            """
+                            {
+                              "userCode": "BCDF-GHJK",
+                              "decision": "APPROVE",
+                              "householdId": "not-a-uuid"
+                            }
+                            """))
+                .andExpect(status().isBadRequest())
+                .andExpect(uncacheable()));
+
+    assertErrorBody(body, "INVALID_REQUEST", "The request body is missing or malformed.");
+  }
+
+  @Test
   @DisplayName("Should reject with the pinned body when the lookup user code is malformed")
   void shouldRejectWithPinnedBodyWhenLookupUserCodeMalformed() throws Exception {
     var approver = seedAccount();

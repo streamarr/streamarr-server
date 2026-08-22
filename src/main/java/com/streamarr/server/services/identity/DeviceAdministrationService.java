@@ -157,7 +157,7 @@ public class DeviceAdministrationService {
   /** ACTIVE registrations of the Household, for whoever may view its device administration. */
   public List<DeviceRegistration> householdDevices(
       AuthenticatedIdentity identity, UUID householdId) {
-    if (!mayViewDevices(identity, householdId)) {
+    if (!mayReadDevices(identity, new Intent.ViewDeviceAdministration(householdId))) {
       return List.of();
     }
     return registrationRepository.findByHouseholdIdAndStatus(
@@ -165,15 +165,14 @@ public class DeviceAdministrationService {
   }
 
   public List<EsnBlock> esnBlocks(AuthenticatedIdentity identity, UUID householdId) {
-    if (!mayViewDevices(identity, householdId)) {
+    if (!mayReadDevices(identity, new Intent.ViewDeviceAdministration(householdId))) {
       return List.of();
     }
     return esnBlockRepository.findByHouseholdId(householdId);
   }
 
   public List<EsnBlock> serverEsnBlocks(AuthenticatedIdentity identity) {
-    if (!(authorizationService.decide(identity, new Intent.ViewServerDeviceAdministration())
-        instanceof Decision.Allowed<?>)) {
+    if (!mayReadDevices(identity, new Intent.ViewServerDeviceAdministration())) {
       return List.of();
     }
     return esnBlockRepository.findByHouseholdIdIsNull();
@@ -230,6 +229,14 @@ public class DeviceAdministrationService {
   private boolean mayViewDevices(AuthenticatedIdentity identity, UUID householdId) {
     return authorizationService.decide(identity, new Intent.ViewDeviceAdministration(householdId))
         instanceof Decision.Allowed<?>;
+  }
+
+  private boolean mayReadDevices(AuthenticatedIdentity identity, Intent<?> intent) {
+    return switch (authorizationService.decide(identity, intent)) {
+      case Decision.Allowed<?> _ -> true;
+      case Decision.Denied<?> _ -> false;
+      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+    };
   }
 
   private boolean mayViewRegistration(AuthenticatedIdentity identity, UUID registrationId) {
