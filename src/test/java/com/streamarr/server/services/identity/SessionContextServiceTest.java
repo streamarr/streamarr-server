@@ -8,6 +8,7 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.DeviceBoundSessionException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.UnwrittenAuthSessionException;
@@ -124,6 +125,23 @@ class SessionContextServiceTest {
 
     assertThat(context.profileId()).isEmpty();
     assertThat(context.scope()).isEqualTo(TokenScope.ACCOUNT);
+  }
+
+  @Test
+  @DisplayName("Should reject a Household switch when the identity is device-bound")
+  void shouldRejectHouseholdSwitchWhenIdentityIsDeviceBound() {
+    var session = session(account.getHouseholdId(), null);
+    var identity =
+        AuthenticatedIdentityFixture.accountScopedBuilder()
+            .accountId(account.getId())
+            .authSessionId(session.getId())
+            .householdId(account.getHouseholdId())
+            .contextHouseholdId(account.getHouseholdId())
+            .registrationId(UUID.randomUUID())
+            .build();
+
+    assertThatThrownBy(() -> households.selectHousehold(identity, visitedHouseholdId))
+        .isInstanceOf(DeviceBoundSessionException.class);
   }
 
   @Test
