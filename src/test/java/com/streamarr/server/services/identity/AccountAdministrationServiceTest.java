@@ -192,6 +192,7 @@ class AccountAdministrationServiceTest {
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(accounts.findById(target.getId()).orElseThrow().isEnabled()).isFalse();
     assertThat(List.of(browser, television))
+        .isNotEmpty()
         .allSatisfy(
             session -> {
               var revoked = sessions.findById(session.getId()).orElseThrow();
