@@ -1196,6 +1196,27 @@ class LibraryManagementServiceTest {
     }
 
     @Test
+    @DisplayName("Should reject with PathAlreadyRegistered when paths are lexically equivalent")
+    void shouldRejectWithPathAlreadyRegisteredWhenPathsAreLexicallyEquivalent() throws IOException {
+      var libraryPath = fileSystem.getPath("/equivalent-library");
+      Files.createDirectories(libraryPath);
+      var firstLibrary =
+          LibraryFixtureCreator.unsavedLibraryBuilder()
+              .name("First Library")
+              .filepathUri(libraryPath.toString())
+              .build();
+      var duplicateLibrary =
+          LibraryFixtureCreator.unsavedLibraryBuilder()
+              .name("Duplicate Library")
+              .filepathUri(libraryPath.resolve(".").toString())
+              .build();
+      accepted(libraryManagementService.addLibrary(identity, firstLibrary));
+
+      assertThat(libraryManagementService.addLibrary(identity, duplicateLibrary))
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathAlreadyRegistered()));
+    }
+
+    @Test
     @DisplayName("Should reject with PathNotFound when path does not exist on disk")
     void shouldRejectWithPathNotFoundWhenPathDoesNotExist() {
       var library =

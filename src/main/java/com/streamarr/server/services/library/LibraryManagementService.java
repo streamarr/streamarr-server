@@ -172,7 +172,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     }
 
     try {
-      var path = fileSystem.getPath(rawFilepath);
+      var path = fileSystem.getPath(rawFilepath).toAbsolutePath().normalize();
       pathRejection(path).ifPresent(rejections::add);
       return Optional.of(path);
     } catch (InvalidPathException _) {
