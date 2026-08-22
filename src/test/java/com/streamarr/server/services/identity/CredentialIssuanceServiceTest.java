@@ -92,8 +92,8 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should issue a code once and replace the older pending invitation")
-  void shouldIssueCodeOnceAndReplaceOlderPendingInvitation() {
+  @DisplayName("Should replace the older pending invitation when a new code is issued")
+  void shouldReplaceOlderPendingInvitationWhenNewCodeIsIssued() {
     var first = issued(service.issueAccountInvitation(authorization.currentIdentity(), command()));
     var second = issued(service.issueAccountInvitation(authorization.currentIdentity(), command()));
 
@@ -107,8 +107,8 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should validate the invitation before any write")
-  void shouldValidateInvitationBeforeAnyWrite() {
+  @DisplayName("Should leave storage unchanged when an invitation command is invalid")
+  void shouldLeaveStorageUnchangedWhenInvitationCommandIsInvalid() {
     assertThat(
             rejectionOf(
                 service.issueAccountInvitation(
@@ -148,8 +148,8 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject a restricted Profile manager from another Household")
-  void shouldRejectRestrictedProfileManagerFromAnotherHousehold() {
+  @DisplayName("Should reject a restricted Profile manager when they belong to another Household")
+  void shouldRejectRestrictedProfileManagerWhenTheyBelongToAnotherHousehold() {
     var outsideManager =
         accounts.save(
             AccountFixture.defaultAccountBuilder().householdId(UUID.randomUUID()).build());
@@ -166,8 +166,8 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should gate issuance as a whole surface")
-  void shouldGateIssuanceAsWholeSurface() {
+  @DisplayName("Should gate the whole issuance surface when the caller is forbidden")
+  void shouldGateWholeIssuanceSurfaceWhenCallerIsForbidden() {
     var identity = authorization.currentIdentity();
     var invite = command();
     authorization.denyAll();
@@ -177,8 +177,8 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should cancel only a pending invitation")
-  void shouldCancelOnlyPendingInvitation() {
+  @DisplayName("Should cancel only a pending invitation when cancellation is requested")
+  void shouldCancelOnlyPendingInvitationWhenCancellationIsRequested() {
     var invitation =
         issued(service.issueAccountInvitation(authorization.currentIdentity(), command()))
             .invitation();
@@ -193,8 +193,8 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should audit the reset issue and replace the older pending code")
-  void shouldAuditResetIssueAndReplaceOlderPendingCode() {
+  @DisplayName("Should audit and replace the older pending code when a reset is issued")
+  void shouldAuditAndReplaceOlderPendingCodeWhenResetIsIssued() {
     var first =
         issuedReset(
             service.issuePasswordReset(
@@ -215,8 +215,8 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should classify the reset issue's refusals under the oracle rule")
-  void shouldClassifyResetIssueRefusalsUnderOracleRule() {
+  @DisplayName("Should classify refusals under the oracle rule when reset issuance is denied")
+  void shouldClassifyRefusalsUnderOracleRuleWhenResetIssuanceIsDenied() {
     assertThat(
             rejectionOf(
                 service.issuePasswordReset(authorization.currentIdentity(), resident.getId(), " ")))

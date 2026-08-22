@@ -13,8 +13,8 @@ import org.junit.jupiter.api.Test;
 class CredentialErrorsTest {
 
   @Test
-  @DisplayName("Should map every issuance rejection to its schema error")
-  void shouldMapEveryIssuanceRejectionToItsSchemaError() {
+  @DisplayName("Should map every issuance rejection when it is converted to a schema error")
+  void shouldMapEveryIssuanceRejectionWhenConvertedToSchemaError() {
     assertThat(CredentialErrors.toIssueError(new InvitationRejections.EmailRequired()))
         .isInstanceOf(EmailRequiredError.class);
     assertThat(CredentialErrors.toIssueError(new InvitationRejections.EmailAlreadyUsed()))
@@ -32,8 +32,8 @@ class CredentialErrorsTest {
   }
 
   @Test
-  @DisplayName("Should map the cancel and reset rejections to their schema errors")
-  void shouldMapCancelAndResetRejectionsToTheirSchemaErrors() {
+  @DisplayName("Should map cancel and reset rejections when they are converted to schema errors")
+  void shouldMapCancelAndResetRejectionsWhenConvertedToSchemaErrors() {
     assertThat(CredentialErrors.toCancelError(new InvitationRejections.InvitationNotPending()))
         .isInstanceOf(InvitationNotPendingError.class);
     assertThat(CredentialErrors.toIssueResetError(new InvitationRejections.AccountNotFound()))
