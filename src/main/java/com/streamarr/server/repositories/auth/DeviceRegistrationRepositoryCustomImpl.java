@@ -17,6 +17,8 @@ import org.springframework.data.domain.AuditorAware;
 @RequiredArgsConstructor
 public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistrationRepositoryCustom {
 
+  private static final int ESN_LOCK_NAMESPACE = 0x5354524D;
+
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
 
@@ -29,6 +31,10 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
   @Override
   public List<UUID> revokeAllByEsn(
       String esn, UUID householdId, UUID actorAccountId, String reason, Instant now) {
+    // The caller's transaction holds this cross-instance lock through its subsequent insert or
+    // block write. Without it, two pairings can both observe no active registration and race the
+    // partial unique index after this revoke returns.
+    dsl.execute("SELECT pg_advisory_xact_lock(?, ?)", ESN_LOCK_NAMESPACE, esn.hashCode());
     var scope = DEVICE_REGISTRATION.ESN.eq(esn);
     if (householdId != null) {
       scope = scope.and(DEVICE_REGISTRATION.HOUSEHOLD_ID.eq(householdId));

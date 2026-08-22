@@ -133,7 +133,12 @@ public class DeviceAdministrationResolver {
     String after = dfe.getArgument("after");
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
-    return paginationService.getPaginationOptions(
-        first == 0 && last == 0 && before == null ? 100 : first, after, last, before);
+    if (first != 0 || last != 0) {
+      return paginationService.getPaginationOptions(first, after, last, before);
+    }
+    if (before == null || before.isBlank()) {
+      return paginationService.getPaginationOptions(100, after, 0, before);
+    }
+    return paginationService.getPaginationOptions(0, after, 100, before);
   }
 }

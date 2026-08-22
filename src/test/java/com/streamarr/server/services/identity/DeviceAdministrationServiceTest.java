@@ -134,6 +134,54 @@ class DeviceAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should require an ESN when creating a server-wide block")
+  void shouldRequireEsnWhenCreatingServerWideBlock() {
+    assertThat(rejectionOf(service.blockEsnServerWide(identity(), " ", "stolen")))
+        .isInstanceOf(DeviceRejections.EsnRequired.class);
+  }
+
+  @Test
+  @DisplayName("Should require a reason when creating a server-wide block")
+  void shouldRequireReasonWhenCreatingServerWideBlock() {
+    assertThat(rejectionOf(service.blockEsnServerWide(identity(), "esn-1", " ")))
+        .isInstanceOf(DeviceRejections.ReasonRequired.class);
+  }
+
+  @Test
+  @DisplayName("Should require an ESN when removing a Household block")
+  void shouldRequireEsnWhenRemovingHouseholdBlock() {
+    assertThat(rejectionOf(service.unblockEsn(identity(), householdId, " ")))
+        .isInstanceOf(DeviceRejections.EsnRequired.class);
+  }
+
+  @Test
+  @DisplayName("Should require an ESN when removing a server-wide block")
+  void shouldRequireEsnWhenRemovingServerWideBlock() {
+    assertThat(rejectionOf(service.unblockEsnServerWide(identity(), " ")))
+        .isInstanceOf(DeviceRejections.EsnRequired.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a duplicate Household ESN block as already blocked")
+  void shouldRejectDuplicateHouseholdEsnBlockAsAlreadyBlocked() {
+    assertThat(service.blockEsn(identity(), householdId, "esn-1", "first"))
+        .isInstanceOf(Outcome.Accepted.class);
+
+    assertThat(rejectionOf(service.blockEsn(identity(), householdId, "esn-1", "second")))
+        .isInstanceOf(DeviceRejections.AlreadyBlocked.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a duplicate server-wide ESN block as already blocked")
+  void shouldRejectDuplicateServerWideEsnBlockAsAlreadyBlocked() {
+    assertThat(service.blockEsnServerWide(identity(), "esn-1", "first"))
+        .isInstanceOf(Outcome.Accepted.class);
+
+    assertThat(rejectionOf(service.blockEsnServerWide(identity(), "esn-1", "second")))
+        .isInstanceOf(DeviceRejections.AlreadyBlocked.class);
+  }
+
+  @Test
   @DisplayName("Should allow the server-wide block when the fresh ceremony is complete")
   void shouldAllowServerWideBlockWhenFreshCeremonyComplete() {
     authorization.decideWith(
@@ -207,6 +255,26 @@ class DeviceAdministrationServiceTest {
     assertThatThrownBy(() -> service.esnBlocks(identity(), householdId))
         .isInstanceOf(AuthorizationUnavailableException.class);
     assertThatThrownBy(() -> service.serverEsnBlocks(identity()))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when authorization cannot decide a device mutation")
+  void shouldFailClosedWhenAuthorizationCannotDecideDeviceMutation() {
+    var registration = activeRegistration("esn-1");
+    blocks.save(EsnBlock.builder().esn("esn-2").householdId(householdId).reason("x").build());
+    blocks.save(EsnBlock.builder().esn("esn-3").reason("x").build());
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+
+    assertThatThrownBy(() -> service.revokeDeviceRegistration(identity(), registration.getId()))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+    assertThatThrownBy(() -> service.blockEsn(identity(), householdId, "esn-4", "x"))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+    assertThatThrownBy(() -> service.blockEsnServerWide(identity(), "esn-4", "x"))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+    assertThatThrownBy(() -> service.unblockEsn(identity(), householdId, "esn-2"))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+    assertThatThrownBy(() -> service.unblockEsnServerWide(identity(), "esn-3"))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
