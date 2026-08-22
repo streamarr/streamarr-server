@@ -137,6 +137,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     if (library.getName() == null || library.getName().isBlank()) {
       rejections.add(new AddLibraryRejection.NameRequired());
     }
+
     var path = validatedPath(library.getFilepathUri(), rejections);
     if (!rejections.isEmpty()) {
       return Outcome.rejected(rejections);
@@ -169,6 +170,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
       rejections.add(new AddLibraryRejection.PathRequired());
       return Optional.empty();
     }
+
     try {
       var path = fileSystem.getPath(rawFilepath);
       pathRejection(path).ifPresent(rejections::add);
@@ -178,6 +180,7 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     } catch (SecurityException _) {
       rejections.add(new AddLibraryRejection.PathNotReadable());
     }
+
     return Optional.empty();
   }
 
@@ -185,12 +188,15 @@ public class LibraryManagementService implements ActiveScanChecker, LibraryScanT
     if (!Files.exists(path)) {
       return Optional.of(new AddLibraryRejection.PathNotFound());
     }
+
     if (!Files.isDirectory(path)) {
       return Optional.of(new AddLibraryRejection.PathNotDirectory());
     }
+
     if (!Files.isReadable(path)) {
       return Optional.of(new AddLibraryRejection.PathNotReadable());
     }
+
     return Optional.empty();
   }
 

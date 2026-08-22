@@ -27,6 +27,7 @@ public class FakeLibraryRepository extends FakeJpaRepository<Library> implements
           new ConstraintViolationException(
               message, new SQLException(message, "23505"), "library_filepath_uri_idx"));
     }
+
     return super.save(entity);
   }
 

@@ -116,6 +116,7 @@ class LibraryAdministrationServiceTest {
           new MutexFactoryProvider(),
           null,
           null,
+          null,
           null);
     }
 

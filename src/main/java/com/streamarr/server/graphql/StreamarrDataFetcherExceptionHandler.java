@@ -82,6 +82,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     if (exception instanceof RetryAfterAware throttled) {
       extensions.put(RETRY_AFTER_SECONDS, retryAfterSeconds(throttled));
     }
+
     var error =
         GraphqlErrorBuilder.newError(handlerParameters.getDataFetchingEnvironment())
             .message(exception.getMessage())
@@ -113,6 +114,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
             handlerParameters.getPath(),
             exception);
       }
+
       builder.error(
           GraphqlErrorBuilder.newError(handlerParameters.getDataFetchingEnvironment())
               .message(internal ? SANITIZED_MESSAGE : delegatedError.getMessage())
@@ -120,6 +122,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
               .extensions(extensions(errorType, errorType, requestId))
               .build());
     }
+
     return builder.build();
   }
 
@@ -128,6 +131,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     if (extensions != null && extensions.get(ERROR_TYPE) != null) {
       return extensions.get(ERROR_TYPE).toString();
     }
+
     return ErrorType.INTERNAL.name();
   }
 
@@ -143,6 +147,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     if (exception instanceof CompletionException completion && completion.getCause() != null) {
       return completion.getCause();
     }
+
     return exception;
   }
 
@@ -151,9 +156,11 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     if (retryAfter.isNegative() || retryAfter.isZero()) {
       return 0;
     }
+
     if (retryAfter.getNano() == 0 || retryAfter.getSeconds() == Long.MAX_VALUE) {
       return retryAfter.getSeconds();
     }
+
     return retryAfter.getSeconds() + 1;
   }
 

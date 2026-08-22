@@ -21,8 +21,10 @@ public class ConstraintViolationTranslator {
           && violation.getConstraintName() != null) {
         return Optional.of(violation.getConstraintName());
       }
+
       cause = cause.getCause();
     }
+
     return Optional.empty();
   }
 }

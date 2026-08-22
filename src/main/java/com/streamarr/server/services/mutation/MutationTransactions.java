@@ -41,6 +41,7 @@ public class MutationTransactions {
       throw new IllegalTransactionStateException(
           "MutationTransactions.write must own its transaction");
     }
+
     try {
       return Outcome.accepted(transactionTemplate.execute(_ -> write.get()));
     } catch (DataIntegrityViolationException e) {
@@ -48,6 +49,7 @@ public class MutationTransactions {
       if (rejection.isEmpty()) {
         throw e;
       }
+
       return Outcome.rejected(rejection.get());
     }
   }

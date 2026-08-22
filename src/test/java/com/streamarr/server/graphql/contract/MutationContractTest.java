@@ -60,6 +60,7 @@ class MutationContractTest {
       if (LEGACY_MUTATIONS.contains(mutation.getName())) {
         continue;
       }
+
       violations.addAll(shapeViolations(mutation));
     }
 
@@ -270,16 +271,19 @@ class MutationContractTest {
         || !isRequiredNamed(arguments.getFirst(), expectedInput)) {
       violations.add(name + ": expects exactly one argument input: " + expectedInput + "!");
     }
+
     if (!(mutation.getType() instanceof TypeName payloadType)
         || !payloadType.getName().equals(expectedPayload)) {
       violations.add(name + ": expects a nullable " + expectedPayload + " return type");
       return violations;
     }
+
     var payload = schema.getType(payloadType.getName(), ObjectTypeDefinition.class);
     if (payload.isEmpty()) {
       violations.add(name + ": payload type " + expectedPayload + " is not declared");
       return violations;
     }
+
     var userErrors =
         payload.get().getFieldDefinitions().stream()
             .filter(field -> "userErrors".equals(field.getName()))
@@ -289,9 +293,11 @@ class MutationContractTest {
             schema, userErrors.get().getType(), capitalize(name) + "Error")) {
       violations.add(name + ": payload must declare userErrors: [" + capitalize(name) + "Error!]!");
     }
+
     if (payload.get().getFieldDefinitions().size() != 2) {
       violations.add(name + ": payload must expose exactly one result position plus userErrors");
     }
+
     return violations;
   }
 
@@ -306,10 +312,12 @@ class MutationContractTest {
     if (!(type instanceof NonNullType outer && outer.getType() instanceof ListType list)) {
       return false;
     }
+
     if (!(list.getType() instanceof NonNullType inner
         && inner.getType() instanceof TypeName named)) {
       return false;
     }
+
     return schema.getType(named.getName(), UnionTypeDefinition.class).isPresent()
         && named.getName().equals(expectedUnion);
   }
@@ -352,10 +360,12 @@ class MutationContractTest {
         if (!implemented.contains("MutationError")) {
           violations.add(type.getName() + " must implement MutationError");
         }
+
         if (INPUT_ERROR_UNIONS.contains(union.getName())
             && !implemented.contains("InputMutationError")) {
           violations.add(type.getName() + " must implement InputMutationError");
         }
+
         if (implemented.contains("InputMutationError")
             && !fieldNames(type.getFieldDefinitions())
                 .containsAll(List.of("message", "inputPath"))) {
@@ -363,6 +373,7 @@ class MutationContractTest {
         }
       }
     }
+
     return violations;
   }
 
@@ -440,6 +451,7 @@ class MutationContractTest {
     } catch (IOException e) {
       throw new IllegalStateException("schema directory is unreadable", e);
     }
+
     return registry;
   }
 

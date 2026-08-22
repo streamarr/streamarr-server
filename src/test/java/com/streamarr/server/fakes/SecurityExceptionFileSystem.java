@@ -272,9 +272,11 @@ public class SecurityExceptionFileSystem extends FileSystem {
         delegate.checkAccess(unwrap(path), modes);
         return;
       }
+
       if (fileSystem.reportUnreadable) {
         throw new AccessDeniedException(path.toString());
       }
+
       throw new SecurityException("Simulated security manager denial for path: " + path);
     }
 

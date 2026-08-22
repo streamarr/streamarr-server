@@ -33,6 +33,7 @@ public sealed interface Outcome<T, R> {
       if (rejections.isEmpty()) {
         throw new IllegalArgumentException("A rejection needs at least one reason");
       }
+
       rejections = List.copyOf(rejections);
     }
   }

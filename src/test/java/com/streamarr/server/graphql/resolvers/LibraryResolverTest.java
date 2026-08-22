@@ -400,8 +400,7 @@ class LibraryResolverTest {
       FAKE_LIBRARY_MANAGEMENT_SERVICE.returnOutcomeWhenAdded(
           Outcome.rejected(
               List.of(
-                  new AddLibraryRejection.NameRequired(),
-                  new AddLibraryRejection.PathRequired())));
+                  new AddLibraryRejection.NameRequired(), new AddLibraryRejection.PathRequired())));
 
       List<String> typenames =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -932,6 +931,7 @@ class LibraryResolverTest {
       if (addLibraryFailure != null) {
         throw addLibraryFailure;
       }
+
       addedIdentity = identity;
       addedLibrary = library;
       return addLibraryOutcome != null ? addLibraryOutcome : Outcome.accepted(library);
