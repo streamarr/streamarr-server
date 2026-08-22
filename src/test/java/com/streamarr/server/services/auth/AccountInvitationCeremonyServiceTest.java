@@ -366,8 +366,8 @@ class AccountInvitationCeremonyServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse a CONNECT acceptance when the Profile is gone or already linked")
-  void shouldRefuseConnectAcceptanceWhenProfileGoneOrAlreadyLinked() {
+  @DisplayName("Should reject a CONNECT acceptance when the Profile is already linked")
+  void shouldRejectConnectAcceptanceWhenProfileAlreadyLinked() {
     var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var orphan =
         profiles.save(ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
@@ -383,13 +383,28 @@ class AccountInvitationCeremonyServiceTest {
     var linkedCommand = acceptCommand(issued.code());
     assertThatThrownBy(() -> service.accept(linkedCommand))
         .isInstanceOf(InvalidOneTimeCodeException.class);
+  }
 
+  @Test
+  @DisplayName("Should reject a lookup when the CONNECT Profile no longer exists")
+  void shouldRejectLookupWhenConnectProfileNoLongerExists() {
+    var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var vanished =
         pendingConnectInvitation(
             ConnectInvitationFixture.builder().householdId(home.getId()).build());
     var vanishedCode = vanished.code();
     assertThatThrownBy(() -> service.lookup(vanishedCode))
         .isInstanceOf(InvalidOneTimeCodeException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject an acceptance when the CONNECT Profile no longer exists")
+  void shouldRejectAcceptanceWhenConnectProfileNoLongerExists() {
+    var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var vanished =
+        pendingConnectInvitation(
+            ConnectInvitationFixture.builder().householdId(home.getId()).build());
+    var vanishedCode = vanished.code();
     var vanishedCommand = acceptCommand(vanishedCode);
     assertThatThrownBy(() -> service.accept(vanishedCommand))
         .isInstanceOf(InvalidOneTimeCodeException.class);
