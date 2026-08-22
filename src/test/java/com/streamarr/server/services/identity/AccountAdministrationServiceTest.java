@@ -3,13 +3,20 @@ package com.streamarr.server.services.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.auth.AccountInvitation;
+import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.PasswordResetCode;
+import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
@@ -23,6 +30,7 @@ import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -47,12 +55,17 @@ class AccountAdministrationServiceTest {
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
 
+  private final FakeAccountInvitationRepository invitations = new FakeAccountInvitationRepository();
+  private final FakePasswordResetCodeRepository resetCodes = new FakePasswordResetCodeRepository();
+
   private final AccountAdministrationService service =
       new AccountAdministrationService(
           authorization,
           accounts,
           sessions,
           audit,
+          invitations,
+          resetCodes,
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
           Clock.systemUTC());
@@ -212,6 +225,41 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should invalidate outstanding credentials when the issuer is disabled")
+  void shouldInvalidateOutstandingCredentialsWhenIssuerIsDisabled() {
+    savePendingCredentialsIssuedBy(target.getId());
+
+    service.disableAccount(identity(), target.getId());
+
+    assertThat(invitations.findAll())
+        .singleElement()
+        .extracting(AccountInvitation::getStatus)
+        .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(resetCodes.findAll())
+        .singleElement()
+        .extracting(PasswordResetCode::getStatus)
+        .isEqualTo(PasswordResetCodeStatus.INVALIDATED);
+  }
+
+  @Test
+  @DisplayName("Should invalidate outstanding credentials when the issuer loses ServerAdmin")
+  void shouldInvalidateOutstandingCredentialsWhenIssuerLosesServerAdmin() {
+    target.setServerAdmin(true);
+    savePendingCredentialsIssuedBy(target.getId());
+
+    service.revokeServerAdmin(identity(), target.getId(), "rotation");
+
+    assertThat(invitations.findAll())
+        .singleElement()
+        .extracting(AccountInvitation::getStatus)
+        .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(resetCodes.findAll())
+        .singleElement()
+        .extracting(PasswordResetCode::getStatus)
+        .isEqualTo(PasswordResetCodeStatus.INVALIDATED);
+  }
+
+  @Test
   @DisplayName("Should enable a disabled Account and audit the transition")
   void shouldEnableDisabledAccountAndAuditTransition() {
     target.setEnabled(false);
@@ -304,6 +352,30 @@ class AccountAdministrationServiceTest {
 
   private AuthenticatedIdentity identity() {
     return authorization.currentIdentity();
+  }
+
+  private void savePendingCredentialsIssuedBy(UUID issuerAccountId) {
+    var expiresAt = Instant.now().plus(Duration.ofHours(1));
+    invitations.save(
+        AccountInvitation.builder()
+            .recipientEmail("invitee@example.com")
+            .householdName("Home")
+            .householdRole(HouseholdRole.MEMBER)
+            .profileName("Invitee")
+            .profileKind(ProfileKind.ADULT)
+            .issuerAccountId(issuerAccountId)
+            .expiresAt(expiresAt)
+            .publicId(UUID.randomUUID().toString())
+            .secretDigest(new byte[] {1})
+            .build());
+    resetCodes.save(
+        PasswordResetCode.builder()
+            .accountId(target.getId())
+            .issuerAccountId(issuerAccountId)
+            .expiresAt(expiresAt)
+            .publicId(UUID.randomUUID().toString())
+            .secretDigest(new byte[] {1})
+            .build());
   }
 
   private static Object rejectionOf(Outcome<?, ?> outcome) {

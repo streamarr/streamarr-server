@@ -149,6 +149,11 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     return transition(accountId, _ -> true, account -> account.setDisplayName(displayName));
   }
 
+  @Override
+  public boolean trySetPasswordHash(UUID accountId, String passwordHash) {
+    return transition(accountId, _ -> true, account -> account.setPasswordHash(passwordHash));
+  }
+
   private boolean transition(
       UUID accountId, Predicate<UserAccount> transitionable, Consumer<UserAccount> change) {
     var account = findById(accountId).filter(transitionable);
@@ -192,6 +197,30 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     return findById(accountId)
         .filter(UserAccount::isEnabled)
         .filter(account -> account.getPasswordHash().equals(expectedPasswordHash))
+        .isPresent();
+  }
+
+  @Override
+  public boolean lockIfEnabledServerAdmin(UUID accountId) {
+    return findById(accountId)
+        .filter(UserAccount::isEnabled)
+        .filter(UserAccount::isServerAdmin)
+        .isPresent();
+  }
+
+  @Override
+  public Optional<HouseholdRole> roleForNewAccount(UUID householdId, HouseholdRole requestedRole) {
+    return Optional.of(
+        findByHouseholdId(householdId).isEmpty() ? HouseholdRole.ADMIN : requestedRole);
+  }
+
+  @Override
+  public boolean isEligibleProfileManager(
+      UUID accountId, UUID householdId, boolean householdAdminRequired) {
+    return findById(accountId)
+        .filter(account -> householdId.equals(account.getHouseholdId()))
+        .filter(
+            account -> !householdAdminRequired || account.getHouseholdRole() == HouseholdRole.ADMIN)
         .isPresent();
   }
 

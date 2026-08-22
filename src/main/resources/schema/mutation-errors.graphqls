@@ -144,3 +144,30 @@ type WouldLockProfileError implements MutationError {
 type ProfileNotDeletableError implements MutationError {
     message: String!
 }
+
+type EmailRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"An existing email cannot be invited or reassigned; transfer the Account instead."
+type EmailAlreadyUsedError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The first Account of an empty Household becomes HouseholdAdmin; it cannot be restricted."
+type RestrictedFirstAccountError implements MutationError {
+    message: String!
+}
+
+"A restricted Profile needs an eligible local HouseholdAdmin manager named up front."
+type LocalManagerRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type InvitationNotPendingError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
