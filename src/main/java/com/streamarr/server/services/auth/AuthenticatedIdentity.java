@@ -6,29 +6,24 @@ import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 /** The token's identity claims, parsed once at authentication time. */
 @Builder
 public record AuthenticatedIdentity(
-    UUID accountId,
-    AccountRole role,
-    UUID authSessionId,
-    TokenScope scope,
+    @NonNull UUID accountId,
+    @NonNull AccountRole role,
+    @NonNull UUID authSessionId,
+    @NonNull TokenScope scope,
     UUID householdId,
     HouseholdRole householdRole,
     UUID profileId,
     UUID streamSessionId) {
 
   public AuthenticatedIdentity {
-    Objects.requireNonNull(accountId, "accountId is required");
-    Objects.requireNonNull(role, "role is required");
-    Objects.requireNonNull(authSessionId, "authSessionId is required");
-    Objects.requireNonNull(scope, "scope is required");
-
     if (scope == TokenScope.ACCOUNT
         && (householdId != null || householdRole != null || profileId != null)) {
       throw new IllegalArgumentException(

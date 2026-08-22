@@ -15,6 +15,6 @@ class TooManyDeviceAttemptsExceptionTest {
   void shouldRejectMissingRetryDelayWhenCreatingException() {
     assertThatNullPointerException()
         .isThrownBy(() -> new TooManyDeviceAttemptsException(null))
-        .withMessage("retryAfter");
+        .withMessageContaining("retryAfter");
   }
 }

@@ -14,8 +14,8 @@ class AmbientColorsTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"topLeft", "topRight", "bottomRight", "bottomLeft", "primary"})
-  @DisplayName("Should reject missing component when built")
-  void shouldRejectMissingComponentWhenBuilt(String component) {
+  @DisplayName("Should reject a missing component when assigned")
+  void shouldRejectMissingComponentWhenAssigned(String component) {
     var builder =
         AmbientColors.builder()
             .topLeft("#010101")
@@ -24,16 +24,18 @@ class AmbientColorsTest {
             .bottomLeft("#040404")
             .primary("#050505");
 
-    var incompleteBuilder =
-        switch (component) {
-          case "topLeft" -> builder.topLeft(null);
-          case "topRight" -> builder.topRight(null);
-          case "bottomRight" -> builder.bottomRight(null);
-          case "bottomLeft" -> builder.bottomLeft(null);
-          case "primary" -> builder.primary(null);
-          default -> throw new IllegalArgumentException(component);
-        };
-
-    assertThatNullPointerException().isThrownBy(incompleteBuilder::build).withMessage(component);
+    assertThatNullPointerException()
+        .isThrownBy(
+            () -> {
+              switch (component) {
+                case "topLeft" -> builder.topLeft(null);
+                case "topRight" -> builder.topRight(null);
+                case "bottomRight" -> builder.bottomRight(null);
+                case "bottomLeft" -> builder.bottomLeft(null);
+                case "primary" -> builder.primary(null);
+                default -> throw new IllegalArgumentException(component);
+              }
+            })
+        .withMessageContaining(component);
   }
 }

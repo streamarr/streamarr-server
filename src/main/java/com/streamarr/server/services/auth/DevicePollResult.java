@@ -1,6 +1,6 @@
 package com.streamarr.server.services.auth;
 
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * The outcome of one poll. Only {@link Success} is an HTTP success; the rest are grant states, not
@@ -9,12 +9,8 @@ import java.util.Objects;
  */
 public sealed interface DevicePollResult {
 
-  record Success(AccessToken accessToken, String rawRefreshToken) implements DevicePollResult {
-
-    public Success {
-      Objects.requireNonNull(accessToken, "accessToken");
-      Objects.requireNonNull(rawRefreshToken, "rawRefreshToken");
-    }
+  record Success(@NonNull AccessToken accessToken, @NonNull String rawRefreshToken)
+      implements DevicePollResult {
 
     @Override
     public String toString() {

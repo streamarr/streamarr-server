@@ -1,8 +1,8 @@
 package com.streamarr.server.domain.streaming;
 
-import java.util.Objects;
 import java.util.OptionalLong;
 import java.util.UUID;
+import lombok.NonNull;
 
 /**
  * One producer run for a variant. The {@code attemptId} identifies the run the handle was minted
@@ -11,13 +11,10 @@ import java.util.UUID;
  * process; a remote dispatch has none.
  */
 public record TranscodeHandle(
-    OptionalLong processId, UUID attemptId, TranscodeStatus status, int startSequenceNumber) {
-
-  public TranscodeHandle {
-    Objects.requireNonNull(processId, "processId is required");
-    Objects.requireNonNull(attemptId, "attemptId is required");
-    Objects.requireNonNull(status, "status is required");
-  }
+    @NonNull OptionalLong processId,
+    @NonNull UUID attemptId,
+    @NonNull TranscodeStatus status,
+    int startSequenceNumber) {
 
   public TranscodeHandle(
       long processId, UUID attemptId, TranscodeStatus status, int startSequenceNumber) {

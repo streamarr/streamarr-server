@@ -5,7 +5,7 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.Objects;
+import lombok.NonNull;
 
 final class PreparedSegmentFile implements AutoCloseable {
 
@@ -63,9 +63,8 @@ final class PreparedSegmentFile implements AutoCloseable {
     return create(NioFileOperations.INSTANCE, directory, data);
   }
 
-  static PreparedSegmentFile create(FileOperations files, Path directory, byte[] data)
+  static PreparedSegmentFile create(@NonNull FileOperations files, Path directory, byte[] data)
       throws IOException {
-    Objects.requireNonNull(files);
     var temporary = files.createTemporary(directory);
     try {
       files.write(temporary, data);

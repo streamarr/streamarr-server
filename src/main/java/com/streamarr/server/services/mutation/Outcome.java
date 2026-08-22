@@ -1,8 +1,8 @@
 package com.streamarr.server.services.mutation;
 
 import java.util.List;
-import java.util.Objects;
 import java.util.function.Function;
+import lombok.NonNull;
 
 /**
  * The protocol-independent result of a mutation service (ADR 0026): the work was accepted and
@@ -20,12 +20,7 @@ public sealed interface Outcome<T, R> {
     };
   }
 
-  record Accepted<T, R>(T result) implements Outcome<T, R> {
-
-    public Accepted {
-      Objects.requireNonNull(result, "result");
-    }
-  }
+  record Accepted<T, R>(@NonNull T result) implements Outcome<T, R> {}
 
   record Rejected<T, R>(List<R> rejections) implements Outcome<T, R> {
 

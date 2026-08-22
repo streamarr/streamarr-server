@@ -292,7 +292,7 @@ class AccessTokenIssuerTest {
 
     assertThatThrownBy(contextBuilder::build)
         .isInstanceOf(NullPointerException.class)
-        .hasMessage("account");
+        .hasMessageContaining("account");
   }
 
   @Test
@@ -303,7 +303,7 @@ class AccessTokenIssuerTest {
 
     assertThatThrownBy(contextBuilder::build)
         .isInstanceOf(NullPointerException.class)
-        .hasMessage("session");
+        .hasMessageContaining("session");
   }
 
   private NimbusJwtDecoder buildDecoder() {

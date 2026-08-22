@@ -17,7 +17,9 @@ class OutcomeTest {
   @Test
   @DisplayName("Should refuse an accepted outcome when the result is missing")
   void shouldRefuseAcceptedOutcomeWhenResultIsMissing() {
-    assertThatNullPointerException().isThrownBy(() -> Outcome.accepted(null)).withMessage("result");
+    assertThatNullPointerException()
+        .isThrownBy(() -> Outcome.accepted(null))
+        .withMessageContaining("result");
   }
 
   @Test

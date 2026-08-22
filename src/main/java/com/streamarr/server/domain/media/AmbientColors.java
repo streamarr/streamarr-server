@@ -1,19 +1,14 @@
 package com.streamarr.server.domain.media;
 
 import jakarta.persistence.Embeddable;
-import java.util.Objects;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Embeddable
 @Builder
 public record AmbientColors(
-    String topLeft, String topRight, String bottomRight, String bottomLeft, String primary) {
-
-  public AmbientColors {
-    Objects.requireNonNull(topLeft, "topLeft");
-    Objects.requireNonNull(topRight, "topRight");
-    Objects.requireNonNull(bottomRight, "bottomRight");
-    Objects.requireNonNull(bottomLeft, "bottomLeft");
-    Objects.requireNonNull(primary, "primary");
-  }
-}
+    @NonNull String topLeft,
+    @NonNull String topRight,
+    @NonNull String bottomRight,
+    @NonNull String bottomLeft,
+    @NonNull String primary) {}

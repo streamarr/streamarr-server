@@ -16,12 +16,12 @@ class AccessTokenTest {
   void shouldRejectAccessTokensWithMissingRequiredFields() {
     assertThatNullPointerException()
         .isThrownBy(() -> new AccessToken(null, Instant.EPOCH, TokenScope.ACCOUNT))
-        .withMessage("value");
+        .withMessageContaining("value");
     assertThatNullPointerException()
         .isThrownBy(() -> new AccessToken("token", null, TokenScope.ACCOUNT))
-        .withMessage("expiresAt");
+        .withMessageContaining("expiresAt");
     assertThatNullPointerException()
         .isThrownBy(() -> new AccessToken("token", Instant.EPOCH, null))
-        .withMessage("scope");
+        .withMessageContaining("scope");
   }
 }

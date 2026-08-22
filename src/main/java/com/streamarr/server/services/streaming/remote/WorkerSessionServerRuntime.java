@@ -2,9 +2,9 @@ package com.streamarr.server.services.streaming.remote;
 
 import io.grpc.Server;
 import java.io.IOException;
-import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import lombok.NonNull;
 import org.slf4j.Logger;
 
 final class WorkerSessionServerRuntime {
@@ -21,14 +21,12 @@ final class WorkerSessionServerRuntime {
   private Server server;
   private ExecutorService executor;
 
-  WorkerSessionServerRuntime(Logger logger) {
-    this.logger = Objects.requireNonNull(logger);
+  WorkerSessionServerRuntime(@NonNull Logger logger) {
+    this.logger = logger;
   }
 
-  synchronized void start(ExecutorService startingExecutor, ServerStarter starter)
+  synchronized void start(@NonNull ExecutorService startingExecutor, @NonNull ServerStarter starter)
       throws IOException {
-    Objects.requireNonNull(startingExecutor);
-    Objects.requireNonNull(starter);
     var executorTransferred = false;
     try {
       if (server != null) {

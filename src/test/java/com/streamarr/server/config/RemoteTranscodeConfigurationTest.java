@@ -10,7 +10,6 @@ import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
-import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -101,7 +100,8 @@ class RemoteTranscodeConfigurationTest {
   }
 
   private Path resource(String name) throws URISyntaxException {
-    var url = Objects.requireNonNull(getClass().getResource("/tls/" + name));
+    var url = getClass().getResource("/tls/" + name);
+    assertThat(url).as("TLS resource %s must exist", name).isNotNull();
     return Path.of(url.toURI());
   }
 

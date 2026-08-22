@@ -1,12 +1,12 @@
 package com.streamarr.server.services.streaming.remote;
 
 import com.streamarr.transcode.tls.PemTlsIdentity;
-import java.util.Objects;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
 public record WorkerSessionServerConfiguration(
-    int port, String trustDomain, PemTlsIdentity tlsIdentity) {
+    int port, String trustDomain, @NonNull PemTlsIdentity tlsIdentity) {
 
   public WorkerSessionServerConfiguration {
     if (port < 0 || port > 65_535) {
@@ -15,6 +15,5 @@ public record WorkerSessionServerConfiguration(
     if (trustDomain == null || trustDomain.isBlank()) {
       throw new IllegalArgumentException("Worker trust domain is required");
     }
-    Objects.requireNonNull(tlsIdentity);
   }
 }
