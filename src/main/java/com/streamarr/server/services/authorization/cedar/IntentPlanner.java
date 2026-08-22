@@ -34,10 +34,28 @@ final class IntentPlanner {
               AuthorizationCheck.onProfile(Action.VIEW_PROFILE_ACTIVITY, profileId);
           case Intent.ViewHouseholdAdministration(var householdId) ->
               AuthorizationCheck.onHousehold(Action.VIEW_HOUSEHOLD_ADMINISTRATION, householdId);
+          case Intent.ViewHouseholds _ -> AuthorizationCheck.onServer(Action.VIEW_HOUSEHOLDS);
           case Intent.ViewAccountAdministration(var accountId) ->
               AuthorizationCheck.onAccount(Action.VIEW_ACCOUNT_ADMINISTRATION, accountId);
           case Intent.ViewProfileAdministration(var profileId) ->
               AuthorizationCheck.onProfile(Action.VIEW_PROFILE_ADMINISTRATION, profileId);
+          case Intent.GrantServerAdmin(var accountId) ->
+              AuthorizationCheck.onAccount(Action.GRANT_SERVER_ADMIN, accountId);
+          case Intent.RevokeServerAdmin(var accountId) ->
+              AuthorizationCheck.onAccount(Action.REVOKE_SERVER_ADMIN, accountId);
+          case Intent.CreateHousehold _ -> AuthorizationCheck.onServer(Action.CREATE_HOUSEHOLD);
+          case Intent.RenameHousehold(var householdId) ->
+              AuthorizationCheck.onHousehold(Action.RENAME_HOUSEHOLD, householdId);
+          case Intent.RenameAccount(var accountId) ->
+              AuthorizationCheck.onAccount(Action.RENAME_ACCOUNT, accountId);
+          case Intent.GrantHouseholdAdmin(var accountId) ->
+              AuthorizationCheck.onAccount(Action.GRANT_HOUSEHOLD_ADMIN, accountId);
+          case Intent.RevokeHouseholdAdmin(var accountId) ->
+              AuthorizationCheck.onAccount(Action.REVOKE_HOUSEHOLD_ADMIN, accountId);
+          case Intent.DisableAccount(var accountId) ->
+              AuthorizationCheck.onAccount(Action.DISABLE_ACCOUNT, accountId);
+          case Intent.EnableAccount(var accountId) ->
+              AuthorizationCheck.onAccount(Action.ENABLE_ACCOUNT, accountId);
         };
     return (IntentPlan<T>) new IntentPlan<>(check, AuthorizationUnit.INSTANCE);
   }

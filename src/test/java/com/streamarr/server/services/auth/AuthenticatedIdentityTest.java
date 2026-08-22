@@ -123,6 +123,14 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
+  @DisplayName("Should represent a missing reauthentication claim without returning null")
+  void shouldRepresentMissingReauthenticationClaimWithoutReturningNull() {
+    var identity = accountScopedBuilder().build();
+
+    assertThat(identity.reauthenticatedAt()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should reject building playback authority when the identity is Account scoped")
   void shouldRejectPlaybackAuthorityWhenIdentityIsAccountScoped() {
     var identity = accountScopedBuilder().build();

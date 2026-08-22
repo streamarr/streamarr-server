@@ -100,6 +100,7 @@ auth:
     access-token-ttl: ${AUTH_ACCESS_TOKEN_TTL:10m}
     refresh-token-ttl: ${AUTH_REFRESH_TOKEN_TTL:30d}
     rotation-grace: ${AUTH_ROTATION_GRACE:30s}
+    reauthentication-window: ${AUTH_REAUTHENTICATION_WINDOW:5m}
   argon2:
     memory-kib: ${AUTH_ARGON2_MEMORY_KIB:19456}
     iterations: ${AUTH_ARGON2_ITERATIONS:2}

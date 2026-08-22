@@ -24,15 +24,25 @@ public record AuthTokenProperties(
     @NotNull @DurationMin(seconds = 0, inclusive = false) @DurationMax(minutes = 15)
         Duration accessTokenTtl,
     @NotNull @DurationMin(seconds = 0, inclusive = false) Duration refreshTokenTtl,
-    @NotNull @DurationMin Duration rotationGrace) {
+    @NotNull @DurationMin Duration rotationGrace,
+    // How long one reauthentication ceremony stays fresh; also caps the replacement token.
+    @DurationMin(seconds = 0, inclusive = false) @DurationMax(minutes = 15)
+        Duration reauthenticationWindow) {
 
   private static final String DEFAULT_ISSUER = "streamarr";
   private static final String DEFAULT_AUDIENCE = "streamarr";
+
+  private static final Duration DEFAULT_REAUTHENTICATION_WINDOW = Duration.ofMinutes(5);
 
   public AuthTokenProperties {
     if (issuer == null || issuer.isBlank()) {
       issuer = DEFAULT_ISSUER;
     }
+
+    if (reauthenticationWindow == null) {
+      reauthenticationWindow = DEFAULT_REAUTHENTICATION_WINDOW;
+    }
+
     if (audience == null || audience.isBlank()) {
       audience = DEFAULT_AUDIENCE;
     }
