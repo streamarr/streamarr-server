@@ -118,4 +118,20 @@ class LifecycleErrorsTest {
     assertThat(LifecycleErrors.toForceDeleteProfileError(new TransferRejections.ProfileLinked()))
         .isInstanceOf(ProfileLinkedError.class);
   }
+
+  @Test
+  @DisplayName("Should map replacement eligibility to each mutation's input field")
+  void shouldMapReplacementEligibilityToEachMutationsInputField() {
+    var deleteError =
+        (ReplacementManagerNotEligibleError)
+            LifecycleErrors.toDeleteAccountError(
+                new TransferRejections.ReplacementManagerNotEligible());
+    var transferError =
+        (ReplacementManagerNotEligibleError)
+            LifecycleErrors.toTransferProfileError(
+                new TransferRejections.ReplacementManagerNotEligible());
+
+    assertThat(deleteError.inputPath()).containsExactly("replacementManagerAccountId");
+    assertThat(transferError.inputPath()).containsExactly("localManagerAccountId");
+  }
 }

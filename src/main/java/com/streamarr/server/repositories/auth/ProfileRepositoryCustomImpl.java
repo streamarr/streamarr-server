@@ -166,9 +166,35 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
   }
 
   @Override
-  public boolean tryRehome(UUID profileId, UUID destinationHouseholdId) {
-    return updateColumn(
-        profileId, update -> update.set(PROFILE.HOUSEHOLD_ID, destinationHouseholdId));
+  public boolean tryRehome(UUID profileId, UUID expectedHouseholdId, UUID destinationHouseholdId) {
+    return dsl.update(PROFILE)
+            .set(PROFILE.HOUSEHOLD_ID, destinationHouseholdId)
+            .set(PROFILE.LAST_MODIFIED_ON, clock.instant().atOffset(ZoneOffset.UTC))
+            .set(PROFILE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+            .where(PROFILE.ID.eq(profileId))
+            .and(PROFILE.HOUSEHOLD_ID.eq(expectedHouseholdId))
+            .execute()
+        > 0;
+  }
+
+  @Override
+  public boolean tryDeleteUnlinked(UUID profileId) {
+    var profileExists =
+        dsl.select(PROFILE.ID)
+            .from(PROFILE)
+            .where(PROFILE.ID.eq(profileId))
+            .forUpdate()
+            .fetchOptional()
+            .isPresent();
+    if (!profileExists || hasLinkedAccount(profileId)) {
+      return false;
+    }
+    return dsl.deleteFrom(PROFILE).where(PROFILE.ID.eq(profileId)).execute() > 0;
+  }
+
+  private boolean hasLinkedAccount(UUID profileId) {
+    return dsl.fetchExists(
+        dsl.selectOne().from(USER_ACCOUNT).where(USER_ACCOUNT.PERSONAL_PROFILE_ID.eq(profileId)));
   }
 
   @Override

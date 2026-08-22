@@ -155,6 +155,14 @@ class ProfileLifecycleServiceTest {
     var stranger = residentOf(households.save(HouseholdFixture.defaultHouseholdBuilder().build()));
     assertThat(rejectionOf(transferWithAnchor(stranger.getId())))
         .isInstanceOf(TransferRejections.ReplacementManagerNotEligible.class);
+
+    var restrictedAnchor = residentOf(destination);
+    profiles
+        .findById(restrictedAnchor.getPersonalProfileId())
+        .orElseThrow()
+        .setMaximumAllowedRatingAge(13);
+    assertThat(rejectionOf(transferWithAnchor(restrictedAnchor.getId())))
+        .isInstanceOf(TransferRejections.ReplacementManagerNotEligible.class);
   }
 
   @Test

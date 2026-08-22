@@ -9,6 +9,7 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
+import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -47,6 +48,7 @@ import org.springframework.stereotype.Service;
 public class AccountLifecycleService {
 
   private static final String CHK_RETAINS_ADMIN = "chk_household_retains_admin";
+  private static final String CHK_RETAINS_ACCOUNT = "chk_household_retains_account";
   private static final String CHK_SERVER_ADMIN_REMAINS = "chk_enabled_server_admin_remains";
   private static final String CHK_HOME_ANCHOR = "chk_profile_home_anchor";
   private static final String CHK_NAMES_UNIQUE = "chk_household_profile_names_unique";
@@ -62,6 +64,7 @@ public class AccountLifecycleService {
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileManagerInvitationRepository managerInvitationRepository;
   private final AccountInvitationRepository accountInvitationRepository;
+  private final PasswordResetCodeRepository passwordResetCodeRepository;
   private final AuthSessionRepository authSessionRepository;
   private final DeviceRegistrationLifecycle registrationLifecycle;
   private final SecurityAuditEventRepository securityAuditEventRepository;
@@ -108,7 +111,10 @@ public class AccountLifecycleService {
               destinationEmpty ? HouseholdRole.ADMIN : HouseholdRole.MEMBER)) {
             throw new MutationRejection(new TransferRejections.AccountNotFound());
           }
-          profileRepository.tryRehome(profileId, command.destinationHouseholdId());
+          if (!profileRepository.tryRehome(
+              profileId, sourceHouseholdId, command.destinationHouseholdId())) {
+            throw new MutationRejection(new TransferRejections.AccountNotFound());
+          }
           moveHomeAvailability(command, sourceHouseholdId, profileId, now);
           shareRepository.ensureActiveMembershipShare(
               profileId, command.destinationHouseholdId(), now);
@@ -146,6 +152,7 @@ public class AccountLifecycleService {
     return mutationTransactions.write(
         () -> {
           erase(identity, account.get(), command);
+          audit(identity, "deleteAccount", "accountId", account.get().getId(), command.reason());
           return command.accountId();
         },
         this::deletionConstraint);
@@ -178,6 +185,7 @@ public class AccountLifecycleService {
                   .profileDisposition(ProfileDisposition.ERASE)
                   .reason("self-deletion")
                   .build());
+          audit(identity, "deleteMyAccount", "accountId", account.getId(), "self-deletion");
           return account.getId();
         },
         this::selfDeletionConstraint);
@@ -193,6 +201,7 @@ public class AccountLifecycleService {
     authSessionRepository.revokeAllForAccount(
         account.getId(), SessionRevocationReason.ADMIN_REVOCATION, now);
     accountInvitationRepository.invalidateIssuedBy(account.getId(), "issuer deleted", now);
+    passwordResetCodeRepository.invalidateIssuedBy(account.getId(), "issuer deleted", now);
     managerInvitationRepository.invalidatePendingForRecipient(
         account.getId(), "recipient deleted", now);
     managerInvitationRepository.invalidatePendingForInviter(
@@ -215,18 +224,19 @@ public class AccountLifecycleService {
       profileRepository.deleteById(profileId);
       profileRepository.flush();
     }
-    audit(identity, "deleteAccount", "accountId", account.getId(), command.reason());
   }
 
   private void deleteAccountRow(UserAccount account) {
-    userAccountRepository.deleteById(account.getId());
-    userAccountRepository.flush();
+    if (!userAccountRepository.tryDelete(account.getId(), account.getHouseholdId())) {
+      throw new MutationRejection(new TransferRejections.AccountNotFound());
+    }
   }
 
   private void moveHomeAvailability(
       TransferAccountCommand command, UUID sourceHouseholdId, UUID profileId, Instant now) {
     if (command.sourceAccess() == SourceAccess.KEEP_AS_VISITOR) {
       shareRepository.tryDemoteStructural(profileId, sourceHouseholdId, now);
+      authSessionRepository.clearSelections(profileId, sourceHouseholdId, now);
       return;
     }
     shareRepository
@@ -258,10 +268,14 @@ public class AccountLifecycleService {
     if (replacement.isEmpty()) {
       return Optional.of(new TransferRejections.ReplacementManagerNotFound());
     }
+    var restricted =
+        profileRepository.findById(account.getPersonalProfileId()).orElseThrow().isRestricted();
     // T6: the anchor lives in the Profile's own Household and is themselves unrestricted.
     var anchored =
         replacement
             .filter(anchor -> anchor.getHouseholdId().equals(account.getHouseholdId()))
+            .filter(anchor -> !anchor.getId().equals(account.getId()))
+            .filter(anchor -> !restricted || anchor.getHouseholdRole() == HouseholdRole.ADMIN)
             .filter(this::isEligible)
             .isPresent();
     if (!anchored) {
@@ -290,6 +304,7 @@ public class AccountLifecycleService {
 
   private Optional<TransferRejections.DeleteAccount> deletionConstraint(String constraint) {
     return switch (constraint) {
+      case CHK_RETAINS_ACCOUNT -> Optional.of(new TransferRejections.FinalAccount());
       case CHK_RETAINS_ADMIN -> Optional.of(new TransferRejections.LastHouseholdAdmin());
       case CHK_SERVER_ADMIN_REMAINS -> Optional.of(new TransferRejections.LastServerAdmin());
       case CHK_HOME_ANCHOR -> Optional.of(new TransferRejections.AnchorRequired());
@@ -300,6 +315,7 @@ public class AccountLifecycleService {
 
   private Optional<TransferRejections.DeleteMyAccount> selfDeletionConstraint(String constraint) {
     return switch (constraint) {
+      case CHK_RETAINS_ACCOUNT -> Optional.of(new TransferRejections.FinalAccount());
       case CHK_RETAINS_ADMIN -> Optional.of(new TransferRejections.LastHouseholdAdmin());
       case CHK_SERVER_ADMIN_REMAINS -> Optional.of(new TransferRejections.LastServerAdmin());
       case CHK_HOME_ANCHOR -> Optional.of(new TransferRejections.AnchorRequired());
