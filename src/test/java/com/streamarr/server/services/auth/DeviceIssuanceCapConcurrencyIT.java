@@ -22,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 
@@ -31,6 +32,7 @@ import org.springframework.context.annotation.Import;
  * concurrent caller read the same under-cap count and insert anyway.
  */
 @Tag("IntegrationTest")
+@ResourceLock("server-bootstrap")
 @Import(AuthTestSupportConfig.class)
 @DisplayName("Device Issuance Cap Concurrency Integration Tests")
 class DeviceIssuanceCapConcurrencyIT extends AbstractIntegrationTest {

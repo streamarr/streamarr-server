@@ -130,7 +130,7 @@ class DeviceAuthorizationServiceTest {
 
   @BeforeEach
   void createService() {
-    service = serviceWith(CanonicalBaseUrl.of(BASE_URL, false));
+    service = serviceFixture().build();
     approver = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
   }
 
@@ -784,12 +784,31 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse issuing a code before setup completes")
-  void shouldRefuseIssuingCodeBeforeSetupCompletes() {
-    var unclaimedService = serviceWith(new FakeServerBootstrapRepository());
+  @DisplayName("Should refuse issuing a code when setup is incomplete")
+  void shouldRefuseIssuingCodeWhenSetupIncomplete() {
+    var unclaimedService =
+        serviceFixture()
+            .serverBootstrapRepository(new FakeServerBootstrapRepository())
+            .build();
 
     assertThatThrownBy(() -> unclaimedService.issue("Apple TV", "esn-1"))
         .isInstanceOf(SetupIncompleteException.class);
+    assertThat(authorizationRepository.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the pairing configuration error when pairing is unconfigured and setup is incomplete")
+  void shouldReportPairingConfigurationErrorWhenPairingUnconfiguredAndSetupIncomplete() {
+    var unconfiguredAndUnclaimed =
+        serviceFixture()
+            .serverBootstrapRepository(new FakeServerBootstrapRepository())
+            .baseUrl(CanonicalBaseUrl.absent())
+            .build();
+
+    assertThatThrownBy(() -> unconfiguredAndUnclaimed.issue("Apple TV", "esn-1"))
+        .isInstanceOf(DevicePairingNotConfiguredException.class);
+    assertThat(authorizationRepository.findAll()).isEmpty();
   }
 
   private static FakeServerBootstrapRepository claimedBootstrap() {
@@ -798,52 +817,27 @@ class DeviceAuthorizationServiceTest {
     return bootstrap;
   }
 
-  private DeviceAuthorizationService serviceWith(FakeServerBootstrapRepository bootstrap) {
-    return new DeviceAuthorizationService(
-        authorizationRepository,
-        userAccountRepository,
-        registrationRepository,
-        esnBlockRepository,
-        bootstrap,
-        new DeviceRegistrationLifecycle(registrationRepository, sessionRepository),
-        refreshTokenService,
-        accessTokenIssuer,
-        new UserCodeGenerator(),
-        new DeviceCodeGenerator(),
-        new DeviceGuessThrottle(properties, clock),
-        properties,
-        CanonicalBaseUrl.of(BASE_URL, false),
-        clock);
-  }
-
   private DeviceAuthorizationService serviceWith(CanonicalBaseUrl baseUrl) {
-    return serviceWith(authorizationRepository, new UserCodeGenerator(), baseUrl);
+    return serviceFixture().baseUrl(baseUrl).build();
   }
 
   private DeviceAuthorizationService serviceWith(
       DeviceAuthorizationRepository repository, UserCodeGenerator generator) {
-    return serviceWith(repository, generator, CanonicalBaseUrl.of(BASE_URL, false));
+    return serviceFixture()
+        .authorizationRepository(repository)
+        .userCodeGenerator(generator)
+        .build();
   }
 
   private DeviceAuthorizationService serviceWith(
       DeviceAuthorizationRepository repository,
       UserCodeGenerator generator,
       CanonicalBaseUrl baseUrl) {
-    return new DeviceAuthorizationService(
-        repository,
-        userAccountRepository,
-        registrationRepository,
-        esnBlockRepository,
-        serverBootstrapRepository,
-        new DeviceRegistrationLifecycle(registrationRepository, sessionRepository),
-        refreshTokenService,
-        accessTokenIssuer,
-        generator,
-        new DeviceCodeGenerator(),
-        new DeviceGuessThrottle(properties, clock),
-        properties,
-        baseUrl,
-        clock);
+    return serviceFixture()
+        .authorizationRepository(repository)
+        .userCodeGenerator(generator)
+        .baseUrl(baseUrl)
+        .build();
   }
 
   private DeviceAuthorizationService serviceWithCapacity(int capacity) {
@@ -861,21 +855,67 @@ class DeviceAuthorizationServiceTest {
   }
 
   private DeviceAuthorizationService serviceWith(DeviceAuthProperties configuredProperties) {
-    return new DeviceAuthorizationService(
-        authorizationRepository,
-        userAccountRepository,
-        registrationRepository,
-        esnBlockRepository,
-        serverBootstrapRepository,
-        new DeviceRegistrationLifecycle(registrationRepository, sessionRepository),
-        refreshTokenService,
-        accessTokenIssuer,
-        new UserCodeGenerator(),
-        new DeviceCodeGenerator(),
-        new DeviceGuessThrottle(configuredProperties, clock),
-        configuredProperties,
-        CanonicalBaseUrl.of(BASE_URL, false),
-        clock);
+    return serviceFixture().properties(configuredProperties).build();
+  }
+
+  private DeviceAuthorizationServiceFixture serviceFixture() {
+    return new DeviceAuthorizationServiceFixture();
+  }
+
+  private final class DeviceAuthorizationServiceFixture {
+
+    private DeviceAuthorizationRepository configuredAuthorizationRepository =
+        authorizationRepository;
+    private UserCodeGenerator configuredUserCodeGenerator = new UserCodeGenerator();
+    private FakeServerBootstrapRepository configuredServerBootstrapRepository =
+        serverBootstrapRepository;
+    private DeviceAuthProperties configuredProperties = properties;
+    private CanonicalBaseUrl configuredBaseUrl = CanonicalBaseUrl.of(BASE_URL, false);
+
+    DeviceAuthorizationServiceFixture authorizationRepository(
+        DeviceAuthorizationRepository repository) {
+      configuredAuthorizationRepository = repository;
+      return this;
+    }
+
+    DeviceAuthorizationServiceFixture userCodeGenerator(UserCodeGenerator generator) {
+      configuredUserCodeGenerator = generator;
+      return this;
+    }
+
+    DeviceAuthorizationServiceFixture serverBootstrapRepository(
+        FakeServerBootstrapRepository bootstrapRepository) {
+      configuredServerBootstrapRepository = bootstrapRepository;
+      return this;
+    }
+
+    DeviceAuthorizationServiceFixture properties(DeviceAuthProperties deviceAuthProperties) {
+      configuredProperties = deviceAuthProperties;
+      return this;
+    }
+
+    DeviceAuthorizationServiceFixture baseUrl(CanonicalBaseUrl baseUrl) {
+      configuredBaseUrl = baseUrl;
+      return this;
+    }
+
+    DeviceAuthorizationService build() {
+      return new DeviceAuthorizationService(
+          configuredAuthorizationRepository,
+          userAccountRepository,
+          registrationRepository,
+          esnBlockRepository,
+          configuredServerBootstrapRepository,
+          new DeviceRegistrationLifecycle(registrationRepository, sessionRepository),
+          refreshTokenService,
+          accessTokenIssuer,
+          configuredUserCodeGenerator,
+          new DeviceCodeGenerator(),
+          new DeviceGuessThrottle(configuredProperties, clock),
+          configuredProperties,
+          configuredBaseUrl,
+          clock);
+    }
   }
 
   private static DataIntegrityViolationException constraintViolation(String constraintName) {

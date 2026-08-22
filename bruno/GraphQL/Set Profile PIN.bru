@@ -38,6 +38,9 @@ tests {
     expect(res.status).to.equal(200);
     expect(res.body).to.not.have.property("errors");
     expect(res.body.data.setProfilePin.userErrors).to.be.empty;
-    expect(res.body.data.setProfilePin.profile.pinConfigured).to.equal(true);
+    const profile = res.body.data.setProfilePin.profile;
+    expect(profile.id).to.equal(bru.getVar("NEW_PROFILE_ID"));
+    expect(profile.name).to.be.a("string");
+    expect(profile.pinConfigured).to.equal(true);
   });
 }
