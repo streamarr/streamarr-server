@@ -17,6 +17,7 @@ import com.streamarr.server.graphql.mutation.teardown.TeardownErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.HouseholdTeardownService;
 import com.streamarr.server.services.identity.HouseholdTeardownService.FinalAccountDisposition;
+import com.streamarr.server.services.identity.HouseholdTeardownService.SecurityAuditPageRequest;
 import com.streamarr.server.services.identity.HouseholdTeardownService.TearDownHouseholdCommand;
 import com.streamarr.server.services.identity.HouseholdTeardownService.TeardownPreflightView;
 import com.streamarr.server.services.pagination.PaginationOptions;
@@ -24,6 +25,7 @@ import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.nio.charset.StandardCharsets;
+import java.time.DateTimeException;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.UUID;
@@ -73,16 +75,23 @@ public class TeardownResolver {
       if (separator < 0) {
         throw new InvalidCursorException("Cursor is not valid.");
       }
-      beforeOccurredAt = Instant.parse(key.substring(0, separator));
-      beforeId = UUID.fromString(key.substring(separator + 1));
+      try {
+        beforeOccurredAt = Instant.parse(key.substring(0, separator));
+        beforeId = UUID.fromString(key.substring(separator + 1));
+      } catch (DateTimeException | IllegalArgumentException _) {
+        throw new InvalidCursorException("Cursor is not valid.");
+      }
     }
     var page =
         householdTeardownService
             .securityAuditEvents(
                 authorizationService.currentIdentity(),
-                beforeOccurredAt,
-                beforeId,
-                options.getLimit() + 1)
+                SecurityAuditPageRequest.builder()
+                    .direction(options.getPaginationDirection())
+                    .cursorOccurredAt(beforeOccurredAt)
+                    .cursorId(beforeId)
+                    .limit(options.getLimit())
+                    .build())
             .stream()
             .map(SecurityAuditEventView::from)
             .toList();

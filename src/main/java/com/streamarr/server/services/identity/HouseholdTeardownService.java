@@ -24,6 +24,7 @@ import com.streamarr.server.services.identity.AccountLifecycleService.SourceAcce
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.pagination.PaginationDirection;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -82,6 +83,9 @@ public class HouseholdTeardownService {
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
+          if (!householdRepository.lockById(command.householdId())) {
+            throw new MutationRejection(new TeardownRejections.HouseholdNotFound());
+          }
           var residents = userAccountRepository.findByHouseholdId(command.householdId());
           if (residents.size() > 1) {
             throw new MutationRejection(new TeardownRejections.AccountsRemain());
@@ -143,18 +147,28 @@ public class HouseholdTeardownService {
 
   /** The security audit, newest first; only ServerAdmin reads it (whole-surface gate). */
   public List<SecurityAuditEventRecordView> securityAuditEvents(
-      AuthenticatedIdentity identity, Instant beforeOccurredAt, UUID beforeId, int limit) {
+      AuthenticatedIdentity identity, SecurityAuditPageRequest request) {
     authorizationService.requireAllowed(identity, new Intent.ViewSecurityAudit());
-    return securityAuditEventRepository.pageNewestFirst(beforeOccurredAt, beforeId, limit);
+    var fetchLimit = request.limit() + 1;
+    return switch (request.direction()) {
+      case FORWARD ->
+          securityAuditEventRepository.pageNewestFirst(
+              request.cursorOccurredAt(), request.cursorId(), fetchLimit);
+      case REVERSE ->
+          securityAuditEventRepository.pageOldestFirst(
+              request.cursorOccurredAt(), request.cursorId(), fetchLimit);
+    };
   }
 
   /** A managed Profile's viewing activity; hidden Profiles read as empty. */
   public List<SessionProgress> profileActivity(AuthenticatedIdentity identity, UUID profileId) {
-    if (!(authorizationService.decide(identity, new Intent.ViewProfileActivity(profileId))
-        instanceof Decision.Allowed<?>)) {
-      return List.of();
-    }
-    return sessionProgressRepository.findByProfileIdOrderByLastModifiedOnDesc(profileId);
+    return switch (authorizationService.decide(
+        identity, new Intent.ViewProfileActivity(profileId))) {
+      case Decision.Allowed<?> _ ->
+          sessionProgressRepository.findByProfileIdOrderByLastModifiedOnDesc(profileId);
+      case Decision.Denied<?> _ -> List.of();
+      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+    };
   }
 
   private void dispose(UserAccount resident, FinalAccountDisposition disposition, Instant now) {
@@ -288,9 +302,12 @@ public class HouseholdTeardownService {
   }
 
   private boolean mayViewHousehold(AuthenticatedIdentity identity, UUID householdId) {
-    return authorizationService.decide(
-            identity, new Intent.ViewHouseholdAdministration(householdId))
-        instanceof Decision.Allowed<?>;
+    return switch (authorizationService.decide(
+        identity, new Intent.ViewHouseholdAdministration(householdId))) {
+      case Decision.Allowed<?> _ -> true;
+      case Decision.Denied<?> _ -> false;
+      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+    };
   }
 
   /** How the final Account leaves before its Household does. */
@@ -307,6 +324,10 @@ public class HouseholdTeardownService {
   @Builder
   public record TearDownHouseholdCommand(
       UUID householdId, String reason, FinalAccountDisposition finalAccount) {}
+
+  @Builder
+  public record SecurityAuditPageRequest(
+      PaginationDirection direction, Instant cursorOccurredAt, UUID cursorId, int limit) {}
 
   public record DoomedProfileView(UUID id, String name) {}
 

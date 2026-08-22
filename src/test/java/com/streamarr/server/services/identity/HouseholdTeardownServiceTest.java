@@ -2,6 +2,7 @@ package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
@@ -14,11 +15,13 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.streaming.SessionProgress;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
+import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
 import com.streamarr.server.fakes.FakeProfileManagerRepository;
@@ -42,9 +45,17 @@ import com.streamarr.server.services.identity.HouseholdTeardownService.TearDownH
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.pagination.PaginationDirection;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -70,6 +81,8 @@ class HouseholdTeardownServiceTest {
       new FakeProfileManagerInvitationRepository();
   private final FakeAccountInvitationRepository accountInvitations =
       new FakeAccountInvitationRepository();
+  private final FakePasswordResetCodeRepository passwordResetCodes =
+      new FakePasswordResetCodeRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
   private final FakeDeviceRegistrationRepository registrations =
       new FakeDeviceRegistrationRepository();
@@ -78,30 +91,7 @@ class HouseholdTeardownServiceTest {
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
 
-  private final HouseholdTeardownService service =
-      new HouseholdTeardownService(
-          authorization,
-          new AccountRemoval(
-              accounts,
-              profiles,
-              shares,
-              managers,
-              managerInvitations,
-              accountInvitations,
-              sessions,
-              new DeviceRegistrationLifecycle(registrations, sessions)),
-          households,
-          accounts,
-          profiles,
-          shares,
-          sessions,
-          new DeviceRegistrationLifecycle(registrations, sessions),
-          accountInvitations,
-          audit,
-          progress,
-          new MutationTransactions(
-              new FakeTransactionManager(), new ConstraintViolationTranslator()),
-          Clock.systemUTC());
+  private final HouseholdTeardownService service = serviceUsing(accounts);
 
   private Household doomed;
   private Household refuge;
@@ -298,7 +288,14 @@ class HouseholdTeardownServiceTest {
             .operation("somethingAudited")
             .actorAccountId(identity().accountId())
             .build());
-    assertThat(service.securityAuditEvents(identity(), null, null, 10)).hasSize(1);
+    assertThat(
+            service.securityAuditEvents(
+                identity(),
+                HouseholdTeardownService.SecurityAuditPageRequest.builder()
+                    .direction(PaginationDirection.FORWARD)
+                    .limit(10)
+                    .build()))
+        .hasSize(1);
 
     var profileId = UUID.randomUUID();
     progress.save(
@@ -315,8 +312,74 @@ class HouseholdTeardownServiceTest {
     authorization.denyAll();
     assertThat(service.profileActivity(identity(), profileId)).isEmpty();
     var identity = identity();
-    assertThatThrownBy(() -> service.securityAuditEvents(identity, null, null, 10))
+    assertThatThrownBy(
+            () ->
+                service.securityAuditEvents(
+                    identity,
+                    HouseholdTeardownService.SecurityAuditPageRequest.builder()
+                        .direction(PaginationDirection.FORWARD)
+                        .limit(10)
+                        .build()))
         .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should surface unavailable authorization from every point decision")
+  void shouldSurfaceUnavailableAuthorizationFromEveryPointDecision() {
+    assertAll(
+        () -> {
+          authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+          assertThatThrownBy(() -> service.teardownPreflight(identity(), doomed.getId()))
+              .isInstanceOf(AuthorizationUnavailableException.class);
+        },
+        () -> {
+          authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+          assertThatThrownBy(() -> service.profileActivity(identity(), UUID.randomUUID()))
+              .isInstanceOf(AuthorizationUnavailableException.class);
+        },
+        () -> {
+          authorization.decideWith(
+              intent ->
+                  intent instanceof Intent.TearDownHousehold
+                      ? new Decision.Denied<>(Decision.DenialReason.POLICY)
+                      : new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+          assertThatThrownBy(() -> service.tearDownHousehold(identity(), command("closing", null)))
+              .isInstanceOf(AuthorizationUnavailableException.class);
+        });
+  }
+
+  @Test
+  @DisplayName("Should allow only one concurrent final-Account disposition")
+  void shouldAllowOnlyOneConcurrentFinalAccountDisposition() throws Exception {
+    residentOf(doomed, HouseholdRole.ADMIN);
+    var start = new CyclicBarrier(2);
+    var transfer =
+        command(
+            "transfer",
+            FinalAccountDisposition.builder()
+                .choice(FinalAccountChoice.TRANSFER)
+                .destinationHouseholdId(refuge.getId())
+                .build());
+    var delete =
+        command(
+            "delete", FinalAccountDisposition.builder().choice(FinalAccountChoice.DELETE).build());
+
+    List<Outcome<UUID, TeardownRejections.TearDown>> outcomes;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Callable<Outcome<UUID, TeardownRejections.TearDown>>> calls =
+          List.of(
+              () -> {
+                start.await(5, TimeUnit.SECONDS);
+                return service.tearDownHousehold(identity(), transfer);
+              },
+              () -> {
+                start.await(5, TimeUnit.SECONDS);
+                return service.tearDownHousehold(identity(), delete);
+              });
+      outcomes = executor.invokeAll(calls).stream().map(this::completedOutcome).toList();
+    }
+
+    assertThat(outcomes).filteredOn(Outcome.Accepted.class::isInstance).hasSize(1);
   }
 
   private TearDownHouseholdCommand command(String reason, FinalAccountDisposition disposition) {
@@ -342,6 +405,45 @@ class HouseholdTeardownServiceTest {
             .build());
     shares.share(account.getPersonalProfileId(), household.getId(), true);
     return account;
+  }
+
+  private HouseholdTeardownService serviceUsing(FakeUserAccountRepository accountRepository) {
+    var registrationLifecycle = new DeviceRegistrationLifecycle(registrations, sessions);
+    return new HouseholdTeardownService(
+        authorization,
+        new AccountRemoval(
+            accountRepository,
+            profiles,
+            shares,
+            managers,
+            managerInvitations,
+            accountInvitations,
+            passwordResetCodes,
+            sessions,
+            registrationLifecycle),
+        households,
+        accountRepository,
+        profiles,
+        shares,
+        sessions,
+        registrationLifecycle,
+        accountInvitations,
+        audit,
+        progress,
+        new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator()),
+        Clock.systemUTC());
+  }
+
+  private Outcome<UUID, TeardownRejections.TearDown> completedOutcome(
+      Future<Outcome<UUID, TeardownRejections.TearDown>> future) {
+    try {
+      return future.get();
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new AssertionError("interrupted while awaiting teardown", exception);
+    } catch (ExecutionException exception) {
+      throw new AssertionError("concurrent teardown failed", exception.getCause());
+    }
   }
 
   private AuthenticatedIdentity identity() {

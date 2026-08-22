@@ -41,4 +41,19 @@ class TeardownErrorsTest {
     assertThat(TeardownErrors.toTearDownError(new TeardownRejections.LastServerAdmin()))
         .isInstanceOf(LastServerAdminError.class);
   }
+
+  @Test
+  @DisplayName("Should map nested teardown input paths as separate schema segments")
+  void shouldMapNestedTeardownInputPathsAsSeparateSchemaSegments() {
+    var destination =
+        (DestinationRequiredError)
+            TeardownErrors.toTearDownError(new TeardownRejections.DestinationRequired());
+    var replacement =
+        (ReplacementManagerRequiredError)
+            TeardownErrors.toTearDownError(new TeardownRejections.ReplacementManagerRequired());
+
+    assertThat(destination.inputPath()).containsExactly("finalAccount", "destinationHouseholdId");
+    assertThat(replacement.inputPath())
+        .containsExactly("finalAccount", "replacementManagerAccountId");
+  }
 }

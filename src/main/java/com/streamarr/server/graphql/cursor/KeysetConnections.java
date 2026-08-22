@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.cursor;
 
+import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import graphql.relay.Connection;
 import graphql.relay.DefaultConnection;
@@ -18,8 +19,13 @@ public final class KeysetConnections {
   public static <T> Connection<T> page(
       List<T> fetched, Function<T, String> keyOf, PaginationOptions options) {
     var limit = options.getLimit();
+    var reverse = options.getPaginationDirection() == PaginationDirection.REVERSE;
+    var selected = fetched.subList(0, Math.min(fetched.size(), limit));
+    if (reverse) {
+      selected = selected.reversed();
+    }
     List<Edge<T>> edges =
-        fetched.subList(0, Math.min(fetched.size(), limit)).stream()
+        selected.stream()
             .<Edge<T>>map(
                 item ->
                     new DefaultEdge<>(
@@ -30,8 +36,8 @@ public final class KeysetConnections {
         new DefaultPageInfo(
             edges.isEmpty() ? null : edges.getFirst().getCursor(),
             edges.isEmpty() ? null : edges.getLast().getCursor(),
-            options.getCursor().isPresent(),
-            fetched.size() > limit);
+            reverse ? fetched.size() > limit : options.getCursor().isPresent(),
+            reverse ? options.getCursor().isPresent() : fetched.size() > limit);
     return new DefaultConnection<>(edges, pageInfo);
   }
 }

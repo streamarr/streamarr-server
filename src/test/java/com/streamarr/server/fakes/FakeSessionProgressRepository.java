@@ -16,6 +16,7 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   public List<SessionProgress> findByProfileIdOrderByLastModifiedOnDesc(UUID profileId) {
     return database.values().stream()
         .filter(progress -> profileId.equals(progress.getProfileId()))
+        .sorted(Comparator.comparing(SessionProgress::getLastModifiedOn).reversed())
         .toList();
   }
 

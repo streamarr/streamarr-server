@@ -80,6 +80,16 @@ public class HouseholdRepositoryCustomImpl implements HouseholdRepositoryCustom 
   }
 
   @Override
+  public boolean lockById(UUID householdId) {
+    return dsl.select(HOUSEHOLD.ID)
+        .from(HOUSEHOLD)
+        .where(HOUSEHOLD.ID.eq(householdId))
+        .forUpdate()
+        .fetchOptional()
+        .isPresent();
+  }
+
+  @Override
   public boolean tryRename(UUID householdId, String name) {
     return dsl.update(HOUSEHOLD)
             .set(HOUSEHOLD.NAME, name)
