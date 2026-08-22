@@ -13,8 +13,8 @@ import org.junit.jupiter.api.Test;
 class DeviceErrorsTest {
 
   @Test
-  @DisplayName("Should map every revocation and block rejection to its schema error")
-  void shouldMapEveryRevocationAndBlockRejectionToItsSchemaError() {
+  @DisplayName("Should map to a schema error when revocation or blocking is rejected")
+  void shouldMapToSchemaErrorWhenRevocationOrBlockRejected() {
     assertThat(DeviceErrors.toRevokeError(new DeviceRejections.RegistrationNotFound()))
         .isInstanceOf(RegistrationNotFoundError.class);
     assertThat(DeviceErrors.toRevokeError(new DeviceRejections.RegistrationNotActive()))

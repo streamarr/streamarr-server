@@ -91,8 +91,8 @@ class DevicePairingServiceTest {
   }
 
   @Test
-  @DisplayName("Should show the device and every usable Household at lookup")
-  void shouldShowDeviceAndEveryUsableHouseholdAtLookup() {
+  @DisplayName("Should show the device and Households when the approver looks up the code")
+  void shouldShowDeviceAndHouseholdsWhenApproverLooksUpCode() {
     var issued = deviceAuthorizationService.issue("Living Room TV", "esn-1");
 
     var lookup = service.lookup(identity(), issued.userCode());
@@ -104,8 +104,8 @@ class DevicePairingServiceTest {
   }
 
   @Test
-  @DisplayName("Should bind the approval to a Household the approver may use")
-  void shouldBindApprovalToHouseholdApproverMayUse() {
+  @DisplayName("Should bind the approval when the Household is usable by the approver")
+  void shouldBindApprovalWhenHouseholdUsableByApprover() {
     var issued = deviceAuthorizationService.issue("TV", "esn-1");
     var code = issued.userCode();
 
@@ -125,8 +125,8 @@ class DevicePairingServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse approving a blocked ESN in either scope")
-  void shouldRefuseApprovingBlockedEsnInEitherScope() {
+  @DisplayName("Should reject approval when the ESN is blocked in either scope")
+  void shouldRejectApprovalWhenEsnBlockedInEitherScope() {
     blocks.save(
         EsnBlock.builder().esn("esn-1").householdId(visitedHouseholdId).reason("x").build());
     var scopedApproval =
@@ -144,8 +144,8 @@ class DevicePairingServiceTest {
   }
 
   @Test
-  @DisplayName("Should deny without a Household and gate the whole ceremony through Cedar")
-  void shouldDenyWithoutHouseholdAndGateWholeCeremonyThroughCedar() {
+  @DisplayName("Should deny without a Household and require Cedar when pairing is decided")
+  void shouldDenyWithoutHouseholdAndRequireCedarWhenPairingDecided() {
     var denied = deviceAuthorizationService.issue("TV", "esn-1").userCode();
     var view =
         service.decide(

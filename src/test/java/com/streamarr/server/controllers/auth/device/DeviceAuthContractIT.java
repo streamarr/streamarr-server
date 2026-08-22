@@ -100,8 +100,9 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse issuance without an ESN and fall back on the device name alone")
-  void shouldRefuseIssuanceWithoutEsnAndFallBackOnDeviceNameAlone() throws Exception {
+  @DisplayName(
+      "Should reject issuance and use a fallback name when the request omits device fields")
+  void shouldRejectIssuanceAndUseFallbackNameWhenRequestOmitsDeviceFields() throws Exception {
     // ADR 0024 §Devices: the registration the winning poll creates is keyed by hardware
     // identity, so a body-less request can no longer mint a code.
     var refused =
@@ -349,8 +350,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject a malformed Household identifier as an invalid request")
-  void shouldRejectMalformedHouseholdIdentifierAsInvalidRequest() throws Exception {
+  @DisplayName("Should reject the request when the Household identifier is malformed")
+  void shouldRejectRequestWhenHouseholdIdentifierMalformed() throws Exception {
     var approver = seedAccount();
 
     var body =

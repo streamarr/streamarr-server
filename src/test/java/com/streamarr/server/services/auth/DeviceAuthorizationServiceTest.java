@@ -304,8 +304,8 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should create an account-scoped session in the approver's Household at the picker")
-  void shouldCreateAccountScopedSessionInApproversHouseholdAtPicker() {
+  @DisplayName("Should create an account-scoped session when the grant is redeemed at the picker")
+  void shouldCreateAccountScopedSessionWhenGrantRedeemedAtPicker() {
     var issued = service.issue("Apple TV", "esn-1");
     approve(issued.userCode());
 
@@ -394,8 +394,9 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should register the TV to the chosen Household at the winning poll")
-  void shouldRegisterTvToChosenHouseholdAtWinningPoll() {
+  @DisplayName(
+      "Should register the TV to the chosen Household when the winning poll consumes the grant")
+  void shouldRegisterTvToChosenHouseholdWhenWinningPollConsumesGrant() {
     var household = UUID.randomUUID();
     shares.share(approver.getPersonalProfileId(), household, false);
     var issued = service.issue("Apple TV", "esn-1");
