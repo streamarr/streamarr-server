@@ -33,6 +33,10 @@ public final class StreamarrBearerTokenResolver implements BearerTokenResolver {
           "/api/auth/refresh/revoke",
           "/api/auth/device/code",
           "/api/auth/device/token",
+          "/api/auth/invitation/lookup",
+          "/api/auth/invitation/accept",
+          "/api/auth/invitation/decline",
+          "/api/auth/password-reset/redeem",
           "/.well-known/jwks.json");
 
   private static final String HEALTH_PATH = "/actuator/health";
@@ -83,6 +87,7 @@ public final class StreamarrBearerTokenResolver implements BearerTokenResolver {
     if (UNAUTHENTICATED_PATHS.contains(path) || isHealthPath(path)) {
       return CredentialRoute.NONE;
     }
+
     return SecurityRequestMatchers.STREAM_PATHS.matches(request)
         ? CredentialRoute.PLAYBACK_QUERY
         : CredentialRoute.HEADER_OR_COOKIE;
@@ -106,6 +111,7 @@ public final class StreamarrBearerTokenResolver implements BearerTokenResolver {
     if (cookieToken != null) {
       request.setAttribute(CARRIER_ATTRIBUTE, CredentialCarrier.COOKIE);
     }
+
     return cookieToken;
   }
 

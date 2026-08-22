@@ -4,6 +4,7 @@
 package com.streamarr.server.jooq.generated;
 
 
+import com.streamarr.server.jooq.generated.tables.AccountInvitation;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
@@ -23,6 +24,7 @@ import com.streamarr.server.jooq.generated.tables.MovieCompany;
 import com.streamarr.server.jooq.generated.tables.MovieDirector;
 import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
+import com.streamarr.server.jooq.generated.tables.PasswordResetCode;
 import com.streamarr.server.jooq.generated.tables.Person;
 import com.streamarr.server.jooq.generated.tables.Profile;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare;
@@ -64,6 +66,11 @@ public class Public extends SchemaImpl {
      * The reference instance of <code>public</code>
      */
     public static final Public PUBLIC = new Public();
+
+    /**
+     * The table <code>public.account_invitation</code>.
+     */
+    public final AccountInvitation ACCOUNT_INVITATION = AccountInvitation.ACCOUNT_INVITATION;
 
     /**
      * The table <code>public.auth_session</code>.
@@ -159,6 +166,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.movie_person</code>.
      */
     public final MoviePerson MOVIE_PERSON = MoviePerson.MOVIE_PERSON;
+
+    /**
+     * The table <code>public.password_reset_code</code>.
+     */
+    public final PasswordResetCode PASSWORD_RESET_CODE = PasswordResetCode.PASSWORD_RESET_CODE;
 
     /**
      * The table <code>public.person</code>.
@@ -271,6 +283,7 @@ public class Public extends SchemaImpl {
     @Override
     public final List<Table<?>> getTables() {
         return Arrays.asList(
+            AccountInvitation.ACCOUNT_INVITATION,
             AuthSession.AUTH_SESSION,
             BaseCollectable.BASE_COLLECTABLE,
             Company.COMPANY,
@@ -290,6 +303,7 @@ public class Public extends SchemaImpl {
             MovieDirector.MOVIE_DIRECTOR,
             MovieGenre.MOVIE_GENRE,
             MoviePerson.MOVIE_PERSON,
+            PasswordResetCode.PASSWORD_RESET_CODE,
             Person.PERSON,
             Profile.PROFILE,
             ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE,

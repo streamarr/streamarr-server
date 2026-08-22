@@ -14,7 +14,9 @@ final class IntentPlanner {
 
   // java:S6878: SelectProfile uses accessors, not a record pattern — the pattern's synthetic
   // deconstruction branch can never be missed and would break the 100% JaCoCo branch gate.
-  @SuppressWarnings({"unchecked", "java:S6878"})
+  // java:S1479: this switch IS the one intent-to-action contract; the sealed exhaustiveness
+  // check is worth more than a smaller method, and splitting it would forfeit that check.
+  @SuppressWarnings({"unchecked", "java:S6878", "java:S1479"})
   static <T> IntentPlan<T> plan(AuthenticatedIdentity identity, Intent<T> intent) {
     var check =
         switch (intent) {
@@ -70,6 +72,14 @@ final class IntentPlanner {
               AuthorizationCheck.onProfile(Action.OVERRIDE_PROFILE_PIN, profileId);
           case Intent.DeleteProfile(var profileId) ->
               AuthorizationCheck.onProfile(Action.DELETE_PROFILE, profileId);
+          case Intent.IssueAccountInvitation _ ->
+              AuthorizationCheck.onServer(Action.ISSUE_ACCOUNT_INVITATION);
+          case Intent.CancelAccountInvitation _ ->
+              AuthorizationCheck.onServer(Action.CANCEL_ACCOUNT_INVITATION);
+          case Intent.ViewAccountInvitations _ ->
+              AuthorizationCheck.onServer(Action.VIEW_ACCOUNT_INVITATIONS);
+          case Intent.IssuePasswordReset(var accountId) ->
+              AuthorizationCheck.onAccount(Action.ISSUE_PASSWORD_RESET, accountId);
           case Intent.ProfilePolicyChange change ->
               throw new IllegalStateException(
                   "Policy changes are planned with their transition: " + change.getClass());
