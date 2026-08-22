@@ -30,6 +30,27 @@ class RelayConnectionAdapterTest {
   class NonEmptyPages {
 
     @Test
+    @DisplayName("Should adapt protocol-neutral page items into GraphQL nodes and cursors")
+    void shouldAdaptProtocolNeutralPageItemsIntoGraphqlNodesAndCursors() {
+      var id = UUID.randomUUID();
+      var page =
+          new MediaPage<>(
+              List.of(new PageItem<>(new SourceItem(id, "Andrew"), "Andrew")), false, false);
+
+      var connection =
+          adapter.toConnection(
+              page,
+              item -> new GraphqlNode(item.item().name()),
+              item -> cursorUtil.encodeKeysetCursor(item.item().id()));
+
+      assertThat(connection.getEdges())
+          .extracting(edge -> edge.getNode().name())
+          .containsExactly("Andrew");
+      assertThat(connection.getEdges().getFirst().getCursor())
+          .isEqualTo(cursorUtil.encodeKeysetCursor(id));
+    }
+
+    @Test
     @DisplayName(
         "Should produce Connection with correct edges and PageInfo when given non-empty page")
     void shouldProduceConnectionWithCorrectEdgesAndPageInfoWhenGivenNonEmptyPage() {
@@ -211,4 +232,8 @@ class RelayConnectionAdapterTest {
         .mediaFilter(MediaFilter.builder().build())
         .build();
   }
+
+  private record SourceItem(UUID id, String name) {}
+
+  private record GraphqlNode(String name) {}
 }

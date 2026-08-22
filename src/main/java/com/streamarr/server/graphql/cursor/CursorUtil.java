@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.cursor;
 
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import graphql.relay.DefaultConnectionCursor;
@@ -15,6 +16,31 @@ import tools.jackson.databind.ObjectMapper;
 public class CursorUtil {
 
   private final ObjectMapper objectMapper;
+
+  public DefaultConnectionCursor encodeKeysetCursor(UUID cursorId) {
+    return new DefaultConnectionCursor(
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(cursorId.toString().getBytes(StandardCharsets.UTF_8)));
+  }
+
+  public KeysetPaginationOptions decodeKeysetCursor(PaginationOptions options) {
+    var cursorId =
+        options
+            .getCursor()
+            .map(
+                cursor -> {
+                  try {
+                    var decoded =
+                        new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+                    return UUID.fromString(decoded);
+                  } catch (IllegalArgumentException _) {
+                    throw new InvalidCursorException("Cursor is not valid.");
+                  }
+                })
+            .orElse(null);
+    return KeysetPaginationOptions.builder().cursorId(cursorId).paginationOptions(options).build();
+  }
 
   public DefaultConnectionCursor encodeMediaCursor(
       MediaPaginationOptions options, UUID cursorId, Object sortValue) {

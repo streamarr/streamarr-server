@@ -1,6 +1,5 @@
 package com.streamarr.server.services.authorization;
 
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.time.Instant;
 import java.util.UUID;
@@ -33,6 +32,7 @@ public interface AuthorizationService {
 
   UUID requireAccountId();
 
+  /** The context Household this session is using; every non-playback token carries one. */
   UUID requireHousehold();
 
   UUID requireProfile();
@@ -51,8 +51,4 @@ public interface AuthorizationService {
    * could be made.
    */
   <T> T requireAllowed(AuthenticatedIdentity identity, Intent<T> intent);
-
-  void requireHouseholdRole(HouseholdRole minimum);
-
-  boolean canViewActivityOf(UUID profileId);
 }

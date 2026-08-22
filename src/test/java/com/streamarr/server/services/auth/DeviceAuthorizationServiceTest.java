@@ -7,11 +7,8 @@ import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
-import com.streamarr.server.domain.auth.AccountProfile;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
-import com.streamarr.server.domain.auth.HouseholdMembership;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.DeviceCodeExpiredException;
 import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
@@ -19,16 +16,12 @@ import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.exceptions.DevicePairingNotConfiguredException;
 import com.streamarr.server.exceptions.InvalidUserCodeException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
-import com.streamarr.server.fakes.FakeAccountProfileRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeDeviceAuthorizationRepository;
-import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
-import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
-import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertResult;
@@ -45,7 +38,6 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
@@ -76,11 +68,6 @@ class DeviceAuthorizationServiceTest {
   private final FakeUserAccountRepository userAccountRepository = new FakeUserAccountRepository();
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
-  private final FakeHouseholdMembershipRepository membershipRepository =
-      new FakeHouseholdMembershipRepository();
-  private final FakeAccountProfileRepository accountProfileRepository =
-      new FakeAccountProfileRepository();
-  private final FakeProfileRepository profileRepository = new FakeProfileRepository();
 
   private final DeviceAuthProperties properties =
       DeviceAuthProperties.builder()
@@ -115,21 +102,11 @@ class DeviceAuthorizationServiceTest {
           new TokenReuseRevoker(
               new TokenReuseRevocationWriter(sessionRepository, tokenRepository)));
 
-  private final SessionScopeService sessionScopeService =
-      new SessionScopeService(
-          membershipRepository,
-          accountProfileRepository,
-          sessionRepository,
-          userAccountRepository,
-          clock);
-
   private final AccessTokenIssuer accessTokenIssuer =
       new AccessTokenIssuer(
           cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(tokenProperties)),
           tokenProperties,
-          clock,
-          membershipRepository,
-          accountProfileRepository);
+          clock);
 
   private DeviceAuthorizationService service;
   private UserAccount approver;
@@ -313,24 +290,9 @@ class DeviceAuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should create a profile-scoped session when the approver has one profile")
-  void shouldCreateProfileScopedSessionWhenApproverHasOneProfile() {
-    var householdId = UUID.randomUUID();
-    membershipRepository.grantMembership(
-        HouseholdMembership.builder()
-            .accountId(approver.getId())
-            .householdId(householdId)
-            .householdRole(HouseholdRole.OWNER)
-            .build());
-    var profile =
-        profileRepository.save(
-            ProfileFixture.defaultProfileBuilder().householdId(householdId).build());
-    accountProfileRepository.linkProfile(
-        AccountProfile.builder()
-            .accountId(approver.getId())
-            .householdId(householdId)
-            .profileId(profile.getId())
-            .build());
+  @DisplayName(
+      "Should create an Account-scoped session at the picker when a Device grant is approved")
+  void shouldCreateAccountScopedSessionAtPickerWhenDeviceGrantIsApproved() {
     var issued = service.issue("Apple TV");
     approve(issued.userCode());
 
@@ -339,13 +301,13 @@ class DeviceAuthorizationServiceTest {
     assertThat(result)
         .isInstanceOf(DevicePollResult.Success.class)
         .extracting(success -> ((DevicePollResult.Success) success).accessToken().scope())
-        .isEqualTo(TokenScope.PROFILE);
+        .isEqualTo(TokenScope.ACCOUNT);
     assertThat(sessionRepository.findAll())
         .singleElement()
         .satisfies(
             session -> {
-              assertThat(session.getActiveHouseholdId()).isEqualTo(householdId);
-              assertThat(session.getActiveProfileId()).isEqualTo(profile.getId());
+              assertThat(session.getContextHouseholdId()).isEqualTo(approver.getHouseholdId());
+              assertThat(session.getSelectedProfileId()).isNull();
             });
   }
 
@@ -751,7 +713,6 @@ class DeviceAuthorizationServiceTest {
         repository,
         userAccountRepository,
         refreshTokenService,
-        sessionScopeService,
         accessTokenIssuer,
         generator,
         new DeviceCodeGenerator(),
@@ -780,7 +741,6 @@ class DeviceAuthorizationServiceTest {
         authorizationRepository,
         userAccountRepository,
         refreshTokenService,
-        sessionScopeService,
         accessTokenIssuer,
         new UserCodeGenerator(),
         new DeviceCodeGenerator(),

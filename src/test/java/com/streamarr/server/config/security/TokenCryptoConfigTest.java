@@ -12,7 +12,7 @@ import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
-import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.services.auth.TokenClaims;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
 import com.streamarr.server.services.auth.TokenScope;
@@ -57,6 +57,7 @@ class TokenCryptoConfigTest {
   private final TokenCryptoConfig config = new TokenCryptoConfig();
 
   private final UUID sessionId = UUID.randomUUID();
+  private final UUID householdId = UUID.randomUUID();
   private final UUID accountId = UUID.randomUUID();
 
   @Test
@@ -220,9 +221,11 @@ class TokenCryptoConfigTest {
                 .audience("streamarr")
                 .subject(accountId.toString())
                 .issueTime(Date.from(Instant.now()))
-                .claim(TokenClaims.ROLES, List.of(AccountRole.USER.name()))
                 .claim(TokenClaims.SESSION_ID, sessionId.toString())
                 .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
+                .claim(TokenClaims.HOUSEHOLD_ID, householdId.toString())
+                .claim(TokenClaims.HOUSEHOLD_ROLE, HouseholdRole.MEMBER.name())
+                .claim(TokenClaims.CONTEXT_HOUSEHOLD_ID, householdId.toString())
                 .build());
     expiryFreeToken.sign(new ECDSASigner(keys.signingKey()));
     var token = expiryFreeToken.serialize();
@@ -389,9 +392,11 @@ class TokenCryptoConfigTest {
             .subject(accountId.toString())
             .issuedAt(now)
             .expiresAt(now.plusSeconds(600))
-            .claim(TokenClaims.ROLES, List.of(AccountRole.USER.name()))
             .claim(TokenClaims.SESSION_ID, sessionId.toString())
-            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue());
+            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
+            .claim(TokenClaims.HOUSEHOLD_ID, householdId.toString())
+            .claim(TokenClaims.HOUSEHOLD_ROLE, HouseholdRole.MEMBER.name())
+            .claim(TokenClaims.CONTEXT_HOUSEHOLD_ID, householdId.toString());
     customizer.accept(claims);
     return encoder
         .encode(

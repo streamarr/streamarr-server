@@ -88,19 +88,6 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject images when household scoped")
-  void shouldRejectImagesWhenHouseholdScoped() throws Exception {
-    identity = authTestSupport.createIdentity();
-
-    mockMvc
-        .perform(
-            get("/api/images/{id}", UUID.randomUUID())
-                .with(bearer(authTestSupport.householdBearer(identity))))
-        .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("FORBIDDEN"));
-  }
-
-  @Test
   @DisplayName("Should permit images when profile scoped")
   void shouldPermitImagesWhenProfileScoped() throws Exception {
     identity = authTestSupport.createIdentity();

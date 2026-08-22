@@ -88,7 +88,7 @@ public class ServerBootstrap extends TableImpl<ServerBootstrapRecord> {
     /**
      * The column <code>public.server_bootstrap.admin_account_id</code>.
      */
-    public final TableField<ServerBootstrapRecord, UUID> ADMIN_ACCOUNT_ID = createField(DSL.name("admin_account_id"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<ServerBootstrapRecord, UUID> ADMIN_ACCOUNT_ID = createField(DSL.name("admin_account_id"), SQLDataType.UUID, this, "");
 
     private ServerBootstrap(Name alias, Table<ServerBootstrapRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);

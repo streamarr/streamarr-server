@@ -31,7 +31,7 @@ public class SecurityConfig {
    * drift) and health stay open; non-health actuator endpoints are refused for everyone; streams
    * demand SCOPE_PLAYBACK carried in the playback-URL token (outside the hierarchy); images demand
    * SCOPE_PROFILE; everything else — GraphQL including introspection and future surfaces — demands
-   * SCOPE_ACCOUNT, which household and profile tokens satisfy through the scope hierarchy.
+   * SCOPE_ACCOUNT, which profile tokens satisfy through the scope hierarchy.
    *
    * <p>CSRF (SPA shape: readable host-bound cookie, Xor rendering, header-only submission) protects
    * unsafe requests from the Streamarr cookie-carrying browser population. Explicitly insecure

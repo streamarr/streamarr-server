@@ -1,13 +1,30 @@
 // Streamarr authorization schema (ADR 0025). Entity attributes are facts the slice builders load;
 // optional attributes are present only for actions whose builders load them, so a policy that needs
-// a live fact must test `has` before reading it — an absent fact reads as "not proven", never as
-// "true".
+// a fact must test `has` before reading it — an absent fact reads as "not proven", never as "true".
 namespace Streamarr {
-  // The authenticated Account. `enabled` and `serverAdmin` are live PostgreSQL facts contributed
-  // only for server-administration actions; the token's ServerAdmin claim is never placed here.
+  // The authenticated Account. Signed facts (membership Household, role, context Household,
+  // selected Profile) come from the token; live facts (enabled, serverAdmin, session liveness,
+  // whether the context Household may still be used) are read from PostgreSQL per action.
   entity Account {
     enabled?: Bool,
     serverAdmin?: Bool,
+    householdRole?: String,
+    membershipHousehold?: Household,
+    contextHousehold?: Household,
+    selectedProfile?: Profile,
+    contextHouseholdUsable?: Bool,
+    sessionLive?: Bool,
+  };
+
+  entity Household;
+
+  // A Profile as seen from the principal's vantage point for one decision.
+  entity Profile {
+    availableInContext?: Bool,
+    locked?: Bool,
+    pinRequired?: Bool,
+    managedByPrincipal?: Bool,
+    availableInPrincipalHousehold?: Bool,
   };
 
   // The singleton root resource server-wide authority is granted on.
@@ -15,6 +32,9 @@ namespace Streamarr {
 
   action serverAdministration;
   action libraryAdministration in serverAdministration;
+  action householdAdministration;
+  action accountAdministration;
+  action profileAdministration;
 
   action addLibrary in libraryAdministration appliesTo {
     principal: Account,
@@ -34,6 +54,42 @@ namespace Streamarr {
   action refreshLibrary in libraryAdministration appliesTo {
     principal: Account,
     resource: Server,
+    context: {},
+  };
+
+  action viewProfilePicker appliesTo {
+    principal: Account,
+    resource: Household,
+    context: {},
+  };
+  action selectProfile appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: { pinVerified: Bool },
+  };
+  action playback appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
+  action viewProfileActivity appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
+  action viewHouseholdAdministration in householdAdministration appliesTo {
+    principal: Account,
+    resource: Household,
+    context: {},
+  };
+  action viewAccountAdministration in accountAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: {},
+  };
+  action viewProfileAdministration in profileAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
     context: {},
   };
 }

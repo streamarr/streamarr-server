@@ -9,11 +9,7 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.fakes.FakeAccountProfileRepository;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
-import com.streamarr.server.fakes.FakeProfileRepository;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
-import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.services.watchprogress.ContinueWatchingService;
@@ -46,8 +42,6 @@ class ContinueWatchingResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
   @MockitoBean private ContinueWatchingService continueWatchingService;
-  @MockitoBean private ProfileRepository profileRepository;
-  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @Nested
   @DisplayName("continueWatching query")
@@ -136,10 +130,7 @@ class ContinueWatchingResolverTest {
       var resolver =
           new ContinueWatchingResolver(
               mock(ContinueWatchingService.class),
-              new SecurityContextAuthorizationService(
-                  new FakeProfileRepository(),
-                  new FakeAccountProfileRepository(),
-                  new FakeAuthorizationDecider()),
+              new SecurityContextAuthorizationService(new FakeAuthorizationDecider()),
               new PaginationService());
       var unsupported = new Object();
 

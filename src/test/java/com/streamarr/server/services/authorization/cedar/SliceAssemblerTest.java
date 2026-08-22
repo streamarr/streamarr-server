@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.cedarpolicy.value.PrimBool;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -21,13 +22,16 @@ class SliceAssemblerTest {
   void shouldFailStartupWhenActionFactHasNoContributor() {
     assertThatThrownBy(() -> new SliceAssembler(List.of()))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("LIVE_PRINCIPAL_AUTHORITY");
+        .hasMessageContaining("no contributor provides it");
   }
 
   @Test
   @DisplayName("Should fail startup when two contributors provide one fact")
   void shouldFailStartupWhenTwoContributorsProvideOneFact() {
-    var contributors = List.of(contributor("first"), contributor("second"));
+    var first = contributor("first");
+    var second = contributor("second");
+    var contributors = new ArrayList<>(ContributorStubs.allWith(first));
+    contributors.add(second);
 
     assertThatThrownBy(() -> new SliceAssembler(contributors))
         .isInstanceOf(IllegalStateException.class)
@@ -35,12 +39,12 @@ class SliceAssemblerTest {
   }
 
   @Test
-  @DisplayName("Should build the principal and resource from the identity and the check")
-  void shouldBuildPrincipalAndResourceFromIdentityAndCheck() {
+  @DisplayName("Should build the principal and resource when identity and check are provided")
+  void shouldBuildPrincipalAndResourceWhenIdentityAndCheckAreProvided() {
     var accountId = UUID.randomUUID();
     var identity =
         AuthenticatedIdentityFixture.defaultIdentityBuilder().accountId(accountId).build();
-    var assembler = new SliceAssembler(List.of(contributor("marker")));
+    var assembler = new SliceAssembler(ContributorStubs.allWith(contributor("marker")));
 
     var slice = assembler.assemble(identity, AuthorizationCheck.onServer(Action.ADD_LIBRARY));
 
@@ -62,7 +66,8 @@ class SliceAssemblerTest {
       }
 
       @Override
-      public void contribute(AuthenticatedIdentity identity, EntitySlice slice) {
+      public void contribute(
+          AuthenticatedIdentity identity, AuthorizationCheck check, EntitySlice slice) {
         slice.principalAttribute(attribute, new PrimBool(true));
       }
     };

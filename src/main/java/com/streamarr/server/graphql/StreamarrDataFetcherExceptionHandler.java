@@ -7,6 +7,7 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
+import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.RetryAfterAware;
 import com.streamarr.server.exceptions.SessionNotFoundException;
@@ -185,6 +186,8 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
       case InvalidIdException _ -> new Classification(ErrorType.BAD_REQUEST, "INVALID_INPUT");
       case InvalidPaginationArgumentException _ ->
           new Classification(ErrorType.BAD_REQUEST, "INVALID_INPUT");
+      case InvalidPaginationCursorException _ ->
+          new Classification(ErrorType.BAD_REQUEST, "INVALID_CURSOR");
       case InvalidCursorException _ -> new Classification(ErrorType.BAD_REQUEST, "INVALID_CURSOR");
       case UnsupportedMediaTypeException _ ->
           new Classification(ErrorType.FAILED_PRECONDITION, "UNSUPPORTED_MEDIA_TYPE");

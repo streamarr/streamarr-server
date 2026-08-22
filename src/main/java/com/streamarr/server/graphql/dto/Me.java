@@ -1,6 +1,6 @@
 package com.streamarr.server.graphql.dto;
 
-import java.util.List;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import java.util.UUID;
 import lombok.Builder;
 
@@ -9,6 +9,9 @@ public record Me(
     UUID accountId,
     String email,
     String displayName,
-    String role,
+    boolean serverAdmin,
     String scope,
-    List<Membership> memberships) {}
+    HouseholdSummary household,
+    HouseholdRole householdRole,
+    HouseholdSummary contextHousehold,
+    boolean deviceBound) {}

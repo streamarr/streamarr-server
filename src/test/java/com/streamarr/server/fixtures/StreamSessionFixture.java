@@ -12,6 +12,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import java.nio.file.Path;
@@ -79,9 +80,10 @@ public final class StreamSessionFixture {
 
   public static CreateStreamSessionCommand createStreamSessionCommand(
       UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    var authority = playbackAuthorityFor(profileId);
     return CreateStreamSessionCommand.builder()
         .mediaFileId(mediaFileId)
-        .authority(playbackAuthorityFor(profileId))
+        .identity(identityFor(authority))
         .options(options)
         .build();
   }
@@ -89,7 +91,17 @@ public final class StreamSessionFixture {
   public static PlaybackRequest playbackRequest(StreamSession session) {
     return PlaybackRequest.builder()
         .streamSessionId(session.getSessionId())
-        .authority(session.getAuthority())
+        .identity(identityFor(session.getAuthority()))
+        .build();
+  }
+
+  public static AuthenticatedIdentity identityFor(PlaybackAuthority authority) {
+    return AuthenticatedIdentityFixture.profileScopedBuilder()
+        .accountId(authority.accountId())
+        .authSessionId(authority.authSessionId())
+        .householdId(authority.householdId())
+        .contextHouseholdId(authority.householdId())
+        .profileId(authority.profileId())
         .build();
   }
 

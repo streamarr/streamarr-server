@@ -12,8 +12,6 @@ import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.domain.metadata.Review;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
-import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.support.security.WithProfileContext;
@@ -41,10 +39,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 class MovieFieldResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
-
-  @MockitoBean private ProfileRepository profileRepository;
-
-  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private MovieService movieService;
 

@@ -8,7 +8,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -139,8 +138,9 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
         "mutation { addLibrary(input: {name: \\\"Denied\\\", filepath: \\\"file:///denied\\\","
             + " type: MOVIE, backend: LOCAL}) { library { id } } }"
       })
-  @DisplayName("Should deny library administration when account role is user")
-  void shouldDenyLibraryAdministrationWhenAccountRoleIsUser(String mutation) throws Exception {
+  @DisplayName("Should deny library administration when the Account is not a ServerAdmin")
+  void shouldDenyLibraryAdministrationWhenAccountIsNotServerAdmin(String mutation)
+      throws Exception {
     identity = authTestSupport.createIdentity();
 
     postGraphQl(mutation, authTestSupport.profileBearer(identity))
@@ -149,7 +149,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should preserve library when remove denied for user role")
+  @DisplayName("Should preserve library when remove is denied")
   void shouldPreserveLibraryWhenRemoveDeniedForUserRole() throws Exception {
     identity = authTestSupport.createIdentity();
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
@@ -166,8 +166,8 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should remove library when account role is admin")
-  void shouldRemoveLibraryWhenAccountRoleIsAdmin() throws Exception {
+  @DisplayName("Should remove library when the Account is a ServerAdmin")
+  void shouldRemoveLibraryWhenAccountIsServerAdmin() throws Exception {
     identity = authTestSupport.createAdminIdentity();
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
@@ -236,8 +236,8 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should finish authorized removal before concurrent ServerAdmin revocation")
-  void shouldFinishAuthorizedRemovalBeforeConcurrentServerAdminRevocation() throws Exception {
+  @DisplayName("Should finish authorized removal when ServerAdmin revocation runs concurrently")
+  void shouldFinishAuthorizedRemovalWhenServerAdminRevocationRunsConcurrently() throws Exception {
     identity = authTestSupport.createAdminIdentity();
     var adminToken = authTestSupport.profileBearer(identity);
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
@@ -283,13 +283,13 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
 
     assertThat(libraryRepository.existsById(library.getId())).isFalse();
     assertThat(userAccountRepository.findById(identity.account().getId()).orElseThrow())
-        .extracting(UserAccount::getAccountRole)
-        .isEqualTo(AccountRole.USER);
+        .extracting(UserAccount::isServerAdmin)
+        .isEqualTo(false);
   }
 
   private void demoteToUser(AuthTestSupport.TestIdentity identity) {
     var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
-    account.setAccountRole(AccountRole.USER);
+    account.setServerAdmin(false);
     userAccountRepository.saveAndFlush(account);
   }
 
@@ -303,14 +303,14 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
           var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
           backendPid.set(lockProbe.currentBackendPid());
           transactionStarted.countDown();
-          account.setAccountRole(AccountRole.USER);
+          account.setServerAdmin(false);
           userAccountRepository.saveAndFlush(account);
         });
   }
 
   private void promoteToAdmin(AuthTestSupport.TestIdentity identity) {
     var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
-    account.setAccountRole(AccountRole.ADMIN);
+    account.setServerAdmin(true);
     userAccountRepository.saveAndFlush(account);
   }
 

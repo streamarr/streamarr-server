@@ -2,9 +2,11 @@ package com.streamarr.server.services.pagination;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
+import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
@@ -15,7 +17,7 @@ public class PaginationService {
 
   public PaginationOptions getPaginationOptions(int first, String after, int last, String before) {
     var cursor = getCursor(after, before);
-    var direction = cursor.isEmpty() ? PaginationDirection.FORWARD : getDirection(after, before);
+    var direction = getDirection(after, before, last);
     var limit = getLimit(first, last, direction);
 
     return PaginationOptions.builder()
@@ -25,7 +27,7 @@ public class PaginationService {
         .build();
   }
 
-  private PaginationDirection getDirection(String after, String before) {
+  private PaginationDirection getDirection(String after, String before, int last) {
 
     var afterIsBlank = StringUtils.isBlank(after);
     var beforeIsBlank = StringUtils.isBlank(before);
@@ -35,7 +37,11 @@ public class PaginationService {
           "Cannot request with both after and before simultaneously.");
     }
 
-    return afterIsBlank ? PaginationDirection.REVERSE : PaginationDirection.FORWARD;
+    if (!afterIsBlank) {
+      return PaginationDirection.FORWARD;
+    }
+
+    return !beforeIsBlank || last > 0 ? PaginationDirection.REVERSE : PaginationDirection.FORWARD;
   }
 
   private Optional<String> getCursor(String after, String before) {
@@ -114,6 +120,29 @@ public class PaginationService {
     items = pruneListByLimitGivenDirection(items, limit, direction);
 
     return new MediaPage<>(items, hasNextPage, hasPreviousPage);
+  }
+
+  public <T> MediaPage<T> buildKeysetPage(
+      List<PageItem<T>> ordered, KeysetPaginationOptions options, Function<T, UUID> idOf) {
+    var cursorId = options.getCursorId();
+    var anchor =
+        cursorId
+            .map(id -> ordered.stream().map(PageItem::item).map(idOf).toList().indexOf(id))
+            .orElse(-1);
+    if (cursorId.isPresent() && anchor < 0) {
+      throw new InvalidPaginationCursorException("Cursor no longer identifies an item.");
+    }
+
+    var pagination = options.getPaginationOptions();
+    if (pagination.getPaginationDirection() == PaginationDirection.REVERSE) {
+      var to = cursorId.isPresent() ? anchor : ordered.size();
+      var from = Math.max(0, to - pagination.getLimit());
+      return new MediaPage<>(ordered.subList(from, to), to < ordered.size(), from > 0);
+    }
+
+    var from = anchor + 1;
+    var to = Math.min(ordered.size(), from + pagination.getLimit());
+    return new MediaPage<>(ordered.subList(from, to), to < ordered.size(), from > 0);
   }
 
   private <T> MediaPage<T> emptyMediaPage() {

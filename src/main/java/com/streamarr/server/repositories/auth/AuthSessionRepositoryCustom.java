@@ -9,15 +9,16 @@ import java.util.UUID;
 
 public interface AuthSessionRepositoryCustom {
 
-  boolean hasLivePlaybackAuthority(PlaybackAuthority authority);
+  /** Whether the session's live Account, Household, and Profile match the playback authority. */
+  boolean isLive(PlaybackAuthority authority);
 
   /** Revokes a live session, returning false when it was missing or already revoked. */
   boolean revoke(UUID sessionId, SessionRevocationReason reason, Instant now);
 
   /**
-   * Persists only the remembered household/profile selection when the session is still live.
-   * Returns false when the session is missing or revoked; revocation fields are never written from
-   * the supplied entity.
+   * Persists only the remembered context Household and selected Profile when the session is still
+   * live. Returns false when the session is missing or revoked; revocation fields are never written
+   * from the supplied entity.
    */
   boolean updateSelectionIfLive(AuthSession session, Instant now);
 
