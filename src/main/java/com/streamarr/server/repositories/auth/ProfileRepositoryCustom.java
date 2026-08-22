@@ -12,9 +12,6 @@ public interface ProfileRepositoryCustom {
   /** Profiles actively shared into the Household, ordered by name then id for stable paging. */
   List<Profile> findAvailableInHousehold(UUID householdId);
 
-  /** Locks the Profile row that serializes changes to its Household relationships. */
-  boolean lockById(UUID profileId);
-
   /** Locks the Profile row for a share without loading the share into Hibernate's cache. */
   boolean lockByShareId(UUID shareId);
 

@@ -33,16 +33,6 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
   private final Clock clock;
 
   @Override
-  public boolean lockById(UUID profileId) {
-    return dsl.selectOne()
-        .from(PROFILE)
-        .where(PROFILE.ID.eq(profileId))
-        .forUpdate()
-        .fetchOptional()
-        .isPresent();
-  }
-
-  @Override
   public boolean lockByShareId(UUID shareId) {
     return dsl.selectOne()
         .from(PROFILE)

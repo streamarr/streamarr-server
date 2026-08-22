@@ -567,8 +567,8 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should invalidate pending CONNECT invitations when the Profile is deleted")
-  void shouldInvalidatePendingConnectInvitationsWhenProfileIsDeleted() {
+  @DisplayName("Should invalidate only pending CONNECT invitations when the Profile is deleted")
+  void shouldInvalidateOnlyPendingConnectInvitationsWhenProfileIsDeleted() {
     var orphan =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
@@ -588,11 +588,20 @@ class ProfileAdministrationServiceTest {
                 .publicId("pub")
                 .secretDigest(new byte[] {1})
                 .build());
+    var decided =
+        invitations.save(
+            invitation.toBuilder()
+                .id(null)
+                .status(AccountInvitationStatus.ACCEPTED)
+                .publicId("accepted")
+                .build());
 
     service.deleteProfile(identity(), orphan.getId());
 
     assertThat(invitations.findById(invitation.getId()).orElseThrow().getStatus())
         .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(invitations.findById(decided.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.ACCEPTED);
   }
 
   @Test

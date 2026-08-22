@@ -32,8 +32,62 @@ class CredentialErrorsTest {
   }
 
   @Test
-  @DisplayName("Should map cancel and reset rejections when they are converted to schema errors")
-  void shouldMapCancelAndResetRejectionsWhenConvertedToSchemaErrors() {
+  @DisplayName("Should map the Profile path when CONNECT requires a Profile")
+  void shouldMapProfilePathWhenConnectRequiresProfile() {
+    assertThat(CredentialErrors.toIssueError(new InvitationRejections.ConnectProfileRequired()))
+        .isInstanceOfSatisfying(
+            ConnectProfileRequiredError.class,
+            error -> assertThat(error.inputPath()).containsExactly("profileId"));
+  }
+
+  @Test
+  @DisplayName("Should map the Profile path when the CONNECT Profile is not found")
+  void shouldMapProfilePathWhenConnectProfileNotFound() {
+    assertThat(CredentialErrors.toIssueError(new InvitationRejections.ConnectProfileNotFound()))
+        .isInstanceOfSatisfying(
+            ConnectProfileNotFoundError.class,
+            error -> assertThat(error.inputPath()).containsExactly("profileId"));
+  }
+
+  @Test
+  @DisplayName("Should map the Profile path when the CONNECT Profile is already linked")
+  void shouldMapProfilePathWhenConnectProfileAlreadyLinked() {
+    assertThat(CredentialErrors.toIssueError(new InvitationRejections.ProfileAlreadyLinked()))
+        .isInstanceOfSatisfying(
+            ProfileAlreadyLinkedError.class,
+            error -> assertThat(error.inputPath()).containsExactly("profileId"));
+  }
+
+  @Test
+  @DisplayName("Should map the Household path when the CONNECT Profile belongs elsewhere")
+  void shouldMapHouseholdPathWhenConnectProfileBelongsElsewhere() {
+    assertThat(CredentialErrors.toIssueError(new InvitationRejections.ProfileNotInHousehold()))
+        .isInstanceOfSatisfying(
+            ProfileNotInHouseholdError.class,
+            error -> assertThat(error.inputPath()).containsExactly("householdId"));
+  }
+
+  @Test
+  @DisplayName("Should map the reoffer path when a Household is not found")
+  void shouldMapReofferPathWhenHouseholdNotFound() {
+    assertThat(CredentialErrors.toIssueError(new InvitationRejections.ReofferHouseholdNotFound()))
+        .isInstanceOfSatisfying(
+            ReofferHouseholdNotFoundError.class,
+            error -> assertThat(error.inputPath()).containsExactly("reofferHouseholdIds"));
+  }
+
+  @Test
+  @DisplayName("Should map the reoffer path when the Profile is not shared")
+  void shouldMapReofferPathWhenProfileNotShared() {
+    assertThat(CredentialErrors.toIssueError(new InvitationRejections.ReofferHouseholdNotShared()))
+        .isInstanceOfSatisfying(
+            ReofferHouseholdNotSharedError.class,
+            error -> assertThat(error.inputPath()).containsExactly("reofferHouseholdIds"));
+  }
+
+  @Test
+  @DisplayName("Should map the cancel and reset rejections to their schema errors")
+  void shouldMapCancelAndResetRejectionsToTheirSchemaErrors() {
     assertThat(CredentialErrors.toCancelError(new InvitationRejections.InvitationNotPending()))
         .isInstanceOf(InvitationNotPendingError.class);
     assertThat(CredentialErrors.toIssueResetError(new InvitationRejections.AccountNotFound()))
