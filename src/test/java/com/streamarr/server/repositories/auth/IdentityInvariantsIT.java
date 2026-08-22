@@ -309,12 +309,12 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         RestrictedAuthorityRace.builder()
             .updatesReady(new CountDownLatch(2))
             .validate(new CountDownLatch(1))
-            .validationsReady(new CountDownLatch(2))
+            .validationsStarted(new CountDownLatch(2))
+            .firstValidationReady(new CountDownLatch(1))
             .commit(new CountDownLatch(1))
             .build();
 
     List<Future<Boolean>> attempts;
-    boolean validationsCompletedConcurrently;
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       attempts =
           List.of(
@@ -324,7 +324,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                   () -> restrictPersonalProfileAfter(race, recipient.getPersonalProfileId())));
       assertThat(race.updatesReady().await(30, TimeUnit.SECONDS)).isTrue();
       race.validate().countDown();
-      validationsCompletedConcurrently = race.validationsReady().await(3, TimeUnit.SECONDS);
+      assertThat(race.validationsStarted().await(30, TimeUnit.SECONDS)).isTrue();
+      assertThat(race.firstValidationReady().await(30, TimeUnit.SECONDS)).isTrue();
       race.commit().countDown();
       for (var attempt : attempts) {
         awaitRestrictedAuthorityOutcome(attempt);
@@ -332,9 +333,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     }
 
     assertThat(attempts.stream().filter(this::completed).count())
-        .as(
-            "one conflicting write should fail; both constraint checks completed before commit: %s",
-            validationsCompletedConcurrently)
+        .as("one conflicting write should fail after both constraint validations start")
         .isEqualTo(1);
     assertThat(
             profileRepository
@@ -674,8 +673,9 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
               ProfileManager.builder().accountId(accountId).profileId(profileId).build());
           race.updatesReady().countDown();
           await(race.validate());
+          race.validationsStarted().countDown();
           dsl.execute("SET CONSTRAINTS chk_profile_manager_invariants IMMEDIATE");
-          race.validationsReady().countDown();
+          race.firstValidationReady().countDown();
           await(race.commit());
         });
     return true;
@@ -689,8 +689,9 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
           profileRepository.saveAndFlush(profile);
           race.updatesReady().countDown();
           await(race.validate());
+          race.validationsStarted().countDown();
           dsl.execute("SET CONSTRAINTS chk_profile_invariants IMMEDIATE");
-          race.validationsReady().countDown();
+          race.firstValidationReady().countDown();
           await(race.commit());
         });
     return true;
@@ -716,7 +717,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   private record RestrictedAuthorityRace(
       CountDownLatch updatesReady,
       CountDownLatch validate,
-      CountDownLatch validationsReady,
+      CountDownLatch validationsStarted,
+      CountDownLatch firstValidationReady,
       CountDownLatch commit) {}
 
   /** Waits for the attempt; the losing demotion's constraint violation is the expected outcome. */

@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -23,11 +24,19 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import lombok.Builder;
+import org.awaitility.Awaitility;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +48,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -213,35 +223,18 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
       "Should default backward pagination to one hundred when only a before cursor is provided")
   void shouldDefaultBackwardPaginationToOneHundredWhenOnlyBeforeCursorIsProvided()
       throws Exception {
-    var profiles = List.of(managedOrphan(), managedOrphan(), managedOrphan());
-    transactionTemplate.executeWithoutResult(
-        _ -> {
-          for (var profile : profiles) {
-            invitationRepository.saveAndFlush(
-                ProfileManagerInvitation.builder()
-                    .profileId(profile.getId())
-                    .profileName(profile.getName())
-                    .inviterAccountId(owner.account().getId())
-                    .inviterDisplayName(owner.account().getDisplayName())
-                    .recipientAccountId(recipient.account().getId())
-                    .recipientEmail(recipient.account().getEmail())
-                    .expiresAt(Instant.now().plusSeconds(3600))
-                    .publicId(UUID.randomUUID().toString())
-                    .secretDigest(UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8))
-                    .build());
-          }
-        });
+    persistPendingInvitations(102);
 
     var firstPage =
         graphql(
                 authTestSupport.accountBearer(recipient),
                 """
-                query { pendingManagerInvitations(first: 100) {
+                query { pendingManagerInvitations(first: 102) {
                   edges { cursor node { id } } } }
                 """)
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
-            .andExpect(jsonPath("$.data.pendingManagerInvitations.edges.length()").value(3))
+            .andExpect(jsonPath("$.data.pendingManagerInvitations.edges.length()").value(102))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -262,12 +255,12 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                 .formatted(before))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.pendingManagerInvitations.edges.length()").value(2));
+        .andExpect(jsonPath("$.data.pendingManagerInvitations.edges.length()").value(100));
   }
 
   @Test
-  @DisplayName("Should decline an invitation and remove a manager when authorized actors act")
-  void shouldDeclineInvitationAndRemoveManagerWhenAuthorizedActorsAct() throws Exception {
+  @DisplayName("Should decline an invitation when the named recipient acts")
+  void shouldDeclineInvitationWhenNamedRecipientActs() throws Exception {
     var orphan = managedOrphan();
     var declining =
         graphql(
@@ -301,7 +294,22 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.declineManagerInvitation.invitation.status").value("DECLINED"));
 
-    // The sovereign curates its own Personal Profile's managers.
+    graphql(
+            authTestSupport.accountBearer(recipient),
+            """
+            mutation { declineManagerInvitation(input: {code: "%s"}) {
+              invitation { status } userErrors { __typename } } }
+            """
+                .formatted(code))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.declineManagerInvitation.userErrors[0].__typename")
+                .value("ManagerInvitationNotFoundError"));
+  }
+
+  @Test
+  @DisplayName("Should remove a direct manager when the sovereign account acts")
+  void shouldRemoveDirectManagerWhenSovereignAccountActs() throws Exception {
     transactionTemplate.executeWithoutResult(
         _ ->
             profileManagerRepository.saveAndFlush(
@@ -323,6 +331,153 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
             profileManagerRepository.existsByAccountIdAndProfileId(
                 recipient.account().getId(), owner.account().getPersonalProfileId()))
         .isFalse();
+  }
+
+  @Test
+  @DisplayName("Should let exactly one decision win when acceptance and decline race")
+  void shouldLetExactlyOneDecisionWinWhenAcceptanceAndDeclineRace() throws Exception {
+    var orphan = managedOrphan();
+    var response =
+        graphql(
+                authTestSupport.accountBearer(owner),
+                """
+                mutation { inviteProfileManager(input: {profileId: "%s",
+                  recipientAccountId: "%s"}) {
+                  issued { code invitation { id } } userErrors { __typename } } }
+                """
+                    .formatted(orphan.getId(), recipient.account().getId()))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var issued = objectMapper.readTree(response).at("/data/inviteProfileManager/issued");
+    var code = issued.path("code").asString();
+    var bearer = authTestSupport.accountBearer(recipient);
+
+    var outcomes =
+        raceGraphql(
+            new GraphqlRaceLock(RaceLockTarget.INVITATION, persistedInvitationId(issued)),
+            new ConcurrentGraphqlCall(
+                bearer,
+                """
+                mutation { acceptManagerInvitation(input: {code: "%s"}) {
+                  invitation { status } userErrors { __typename } } }
+                """
+                    .formatted(code)),
+            new ConcurrentGraphqlCall(
+                bearer,
+                """
+                mutation { declineManagerInvitation(input: {code: "%s"}) {
+                  invitation { status } userErrors { __typename } } }
+                """
+                    .formatted(code)));
+
+    var accepted =
+        countText(outcomes, "/data/acceptManagerInvitation/invitation/status", "ACCEPTED");
+    var declined =
+        countText(outcomes, "/data/declineManagerInvitation/invitation/status", "DECLINED");
+    var misses =
+        countText(
+                outcomes,
+                "/data/acceptManagerInvitation/userErrors/0/__typename",
+                "ManagerInvitationNotFoundError")
+            + countText(
+                outcomes,
+                "/data/declineManagerInvitation/userErrors/0/__typename",
+                "ManagerInvitationNotFoundError");
+    assertThat(accepted + declined).isEqualTo(1);
+    assertThat(misses).isEqualTo(1);
+
+    var persisted =
+        invitationRepository
+            .findById(UUID.fromString(issued.path("invitation").path("id").asString()))
+            .orElseThrow();
+    assertThat(persisted.getStatus())
+        .isIn(ProfileManagerInvitationStatus.ACCEPTED, ProfileManagerInvitationStatus.DECLINED);
+    assertThat(
+            profileManagerRepository.existsByAccountIdAndProfileId(
+                recipient.account().getId(), orphan.getId()))
+        .isEqualTo(accepted == 1);
+    assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isEqualTo((int) accepted);
+  }
+
+  @Test
+  @DisplayName("Should let exactly one override grant win when two grants race")
+  void shouldLetExactlyOneOverrideGrantWinWhenTwoGrantsRace() throws Exception {
+    var orphan = managedOrphan();
+    var bearer = authTestSupport.freshAccountBearer(owner);
+    var request =
+        new ConcurrentGraphqlCall(
+            bearer, grantOverrideMutation(orphan, recipient.account().getId().toString()));
+
+    var outcomes =
+        raceGraphql(new GraphqlRaceLock(RaceLockTarget.PROFILE, orphan.getId()), request, request);
+
+    assertThat(
+            countText(
+                outcomes, "/data/grantProfileManagerOverride/profileId", orphan.getId().toString()))
+        .isEqualTo(1);
+    assertThat(
+            countText(
+                outcomes,
+                "/data/grantProfileManagerOverride/userErrors/0/__typename",
+                "AlreadyManagerError"))
+        .isEqualTo(1);
+    assertThat(
+            profileManagerRepository.findByProfileId(orphan.getId()).stream()
+                .filter(manager -> manager.getAccountId().equals(recipient.account().getId())))
+        .hasSize(1);
+    assertThat(
+            dsl.fetchCount(
+                SECURITY_AUDIT_EVENT,
+                SECURITY_AUDIT_EVENT.OPERATION.eq("grantProfileManagerOverride")))
+        .isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should let exactly one override removal win when two removals race")
+  void shouldLetExactlyOneOverrideRemovalWinWhenTwoRemovalsRace() throws Exception {
+    var orphan = managedOrphan();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            profileManagerRepository.saveAndFlush(
+                ProfileManager.builder()
+                    .accountId(recipient.account().getId())
+                    .profileId(orphan.getId())
+                    .build()));
+    var bearer = authTestSupport.freshAccountBearer(owner);
+    var request =
+        new ConcurrentGraphqlCall(
+            bearer,
+            """
+            mutation { removeProfileManagerOverride(input: {profileId: "%s", accountId: "%s",
+              reason: "abuse report"}) { profileId userErrors { __typename } } }
+            """
+                .formatted(orphan.getId(), recipient.account().getId()));
+
+    var outcomes =
+        raceGraphql(new GraphqlRaceLock(RaceLockTarget.PROFILE, orphan.getId()), request, request);
+
+    assertThat(
+            countText(
+                outcomes,
+                "/data/removeProfileManagerOverride/profileId",
+                orphan.getId().toString()))
+        .isEqualTo(1);
+    assertThat(
+            countText(
+                outcomes,
+                "/data/removeProfileManagerOverride/userErrors/0/__typename",
+                "NotAManagerError"))
+        .isEqualTo(1);
+    assertThat(
+            profileManagerRepository.existsByAccountIdAndProfileId(
+                recipient.account().getId(), orphan.getId()))
+        .isFalse();
+    assertThat(
+            dsl.fetchCount(
+                SECURITY_AUDIT_EVENT,
+                SECURITY_AUDIT_EVENT.OPERATION.eq("removeProfileManagerOverride")))
+        .isEqualTo(1);
   }
 
   @Test
@@ -424,6 +579,22 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
             invitationRepository.findById(UUID.fromString(restorableId)).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isEqualTo(2);
+    assertAuditEvent(
+        ExpectedAuditEvent.builder()
+            .operation("grantProfileManagerOverride")
+            .reason("support")
+            .actorAccountId(owner.account().getId())
+            .profileId(orphan.getId())
+            .accountId(recipient.account().getId())
+            .build());
+    assertAuditEvent(
+        ExpectedAuditEvent.builder()
+            .operation("removeProfileManagerOverride")
+            .reason("abuse report")
+            .actorAccountId(owner.account().getId())
+            .profileId(orphan.getId())
+            .accountId(recipient.account().getId())
+            .build());
   }
 
   private String grantOverrideMutation(Profile profile, String accountId) {
@@ -432,6 +603,153 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
              reason: "support"}) { profileId userErrors { __typename } } }
            """
         .formatted(profile.getId(), accountId);
+  }
+
+  private void assertAuditEvent(ExpectedAuditEvent expected) throws Exception {
+    var event =
+        dsl.selectFrom(SECURITY_AUDIT_EVENT)
+            .where(SECURITY_AUDIT_EVENT.OPERATION.eq(expected.operation()))
+            .fetchSingle();
+    assertThat(event.getActorAccountId()).isEqualTo(expected.actorAccountId());
+    assertThat(event.getReason()).isEqualTo(expected.reason());
+    assertThat(event.getOccurredAt()).isNotNull();
+    var resources = objectMapper.readTree(event.getResources().data());
+    assertThat(resources.path("profileId").asString()).isEqualTo(expected.profileId().toString());
+    assertThat(resources.path("accountId").asString()).isEqualTo(expected.accountId().toString());
+  }
+
+  @Builder
+  private record ExpectedAuditEvent(
+      String operation, String reason, UUID actorAccountId, UUID profileId, UUID accountId) {}
+
+  private void persistPendingInvitations(int count) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          for (var index = 0; index < count; index++) {
+            var profile =
+                profileRepository.save(
+                    ProfileFixture.defaultProfileBuilder()
+                        .householdId(owner.household().getId())
+                        .name("Managed orphan " + index)
+                        .build());
+            profileManagerRepository.save(
+                ProfileManager.builder()
+                    .accountId(owner.account().getId())
+                    .profileId(profile.getId())
+                    .build());
+            shareRepository.save(
+                ProfileHouseholdShare.builder()
+                    .profileId(profile.getId())
+                    .householdId(owner.household().getId())
+                    .status(ProfileShareStatus.ACTIVE)
+                    .build());
+            invitationRepository.save(
+                ProfileManagerInvitation.builder()
+                    .profileId(profile.getId())
+                    .profileName(profile.getName())
+                    .inviterAccountId(owner.account().getId())
+                    .inviterDisplayName(owner.account().getDisplayName())
+                    .recipientAccountId(recipient.account().getId())
+                    .recipientEmail(recipient.account().getEmail())
+                    .expiresAt(Instant.now().plusSeconds(3600))
+                    .publicId(UUID.randomUUID().toString())
+                    .secretDigest(UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8))
+                    .build());
+          }
+        });
+  }
+
+  private List<JsonNode> raceGraphql(
+      GraphqlRaceLock raceLock, ConcurrentGraphqlCall first, ConcurrentGraphqlCall second)
+      throws Exception {
+    var ready = new CountDownLatch(2);
+    var start = new CountDownLatch(1);
+    List<Future<JsonNode>> attempts;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      attempts =
+          List.of(first, second).stream()
+              .map(
+                  call ->
+                      executor.submit(
+                          () -> {
+                            ready.countDown();
+                            assertThat(start.await(30, TimeUnit.SECONDS)).isTrue();
+                            var response =
+                                graphql(call.bearer(), call.query())
+                                    .andExpect(status().isOk())
+                                    .andExpect(jsonPath("$.errors").doesNotExist())
+                                    .andReturn()
+                                    .getResponse()
+                                    .getContentAsString();
+                            return objectMapper.readTree(response);
+                          }))
+              .toList();
+      assertThat(ready.await(30, TimeUnit.SECONDS)).isTrue();
+      transactionTemplate.executeWithoutResult(
+          _ -> {
+            acquireRaceLock(raceLock);
+            start.countDown();
+            Awaitility.await()
+                .atMost(Duration.ofSeconds(10))
+                .untilAsserted(() -> assertThat(blockedRaceRequestCount(raceLock)).isEqualTo(2));
+          });
+      return List.of(
+          attempts.getFirst().get(30, TimeUnit.SECONDS),
+          attempts.getLast().get(30, TimeUnit.SECONDS));
+    }
+  }
+
+  private long countText(List<JsonNode> nodes, String pointer, String expected) {
+    return nodes.stream().filter(node -> expected.equals(node.at(pointer).asString())).count();
+  }
+
+  private UUID persistedInvitationId(JsonNode issued) {
+    return UUID.fromString(issued.path("invitation").path("id").asString());
+  }
+
+  private void acquireRaceLock(GraphqlRaceLock raceLock) {
+    switch (raceLock.target()) {
+      case PROFILE ->
+          assertThat(profileRepository.lockPolicyById(raceLock.id()))
+              .as("race Profile")
+              .isPresent();
+      case INVITATION ->
+          assertThat(
+                  dsl.selectOne()
+                      .from(PROFILE_MANAGER_INVITATION)
+                      .where(PROFILE_MANAGER_INVITATION.ID.eq(raceLock.id()))
+                      .forUpdate()
+                      .fetchOptional())
+              .as("race invitation")
+              .isPresent();
+    }
+  }
+
+  private int blockedRaceRequestCount(GraphqlRaceLock raceLock) {
+    var query = DSL.field("query", String.class);
+    var targetQuery =
+        switch (raceLock.target()) {
+          case PROFILE ->
+              query.containsIgnoreCase("profile").and(query.containsIgnoreCase("for update"));
+          case INVITATION ->
+              query
+                  .startsWithIgnoreCase("update")
+                  .and(query.containsIgnoreCase("profile_manager_invitation"));
+        };
+    return dsl.fetchCount(
+        dsl.selectOne()
+            .from("pg_stat_activity")
+            .where(DSL.field("wait_event_type", String.class).eq("Lock"))
+            .and(targetQuery));
+  }
+
+  private record ConcurrentGraphqlCall(String bearer, String query) {}
+
+  private record GraphqlRaceLock(RaceLockTarget target, UUID id) {}
+
+  private enum RaceLockTarget {
+    PROFILE,
+    INVITATION
   }
 
   /** A second eligible MEMBER of the owner's Household, with its own anchored Personal Profile. */
