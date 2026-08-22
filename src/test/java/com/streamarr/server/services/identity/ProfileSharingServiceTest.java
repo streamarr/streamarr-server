@@ -34,7 +34,9 @@ import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,6 +54,10 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @DisplayName("Profile Sharing Service Tests")
 class ProfileSharingServiceTest {
 
+  private static final Instant NOW = Instant.parse("2026-08-21T12:00:00Z");
+  private static final Duration INVITATION_TTL = Duration.ofDays(2);
+  private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
+
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
   private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
@@ -62,25 +68,25 @@ class ProfileSharingServiceTest {
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
 
-  private final ProfileSharingService service =
-      new ProfileSharingService(
-          authorization,
-          shares,
-          profiles,
-          households,
-          accounts,
-          sessions,
-          audit,
-          new MutationTransactions(
-              new FakeTransactionManager(), new ConstraintViolationTranslator()),
-          new CredentialCodeProperties(null, null),
-          Clock.systemUTC());
-
   private Household household;
   private Profile profile;
+  private ProfileSharingService service;
 
   @BeforeEach
   void setUp() {
+    service =
+        new ProfileSharingService(
+            authorization,
+            shares,
+            profiles,
+            households,
+            accounts,
+            sessions,
+            audit,
+            new MutationTransactions(
+                new FakeTransactionManager(), new ConstraintViolationTranslator()),
+            new CredentialCodeProperties(INVITATION_TTL, null),
+            CLOCK);
     household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     profile = profiles.save(ProfileFixture.defaultProfileBuilder().build());
   }
@@ -100,7 +106,7 @@ class ProfileSharingServiceTest {
             });
     assertThat(share.getStatus()).isEqualTo(ProfileShareStatus.PENDING);
     assertThat(share.getOfferedByAccountId()).isEqualTo(identity().accountId());
-    assertThat(share.getExpiresAt()).isNotNull();
+    assertThat(share.getExpiresAt()).isEqualTo(NOW.plus(INVITATION_TTL));
   }
 
   @Test
@@ -137,99 +143,83 @@ class ProfileSharingServiceTest {
   @DisplayName("Should authorize inside the mutation transaction when an offer is accepted")
   void shouldAuthorizeInsideMutationTransactionWhenOfferIsAccepted() {
     var offer = pendingShare();
-    authorization.decideWith(
-        intent -> {
-          if (intent instanceof Intent.AcceptProfileShare) {
-            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
-          }
-          return allowed();
-        });
+    authorization.decideWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
-    service.acceptProfileShare(identity(), offer.getId());
+    assertThat(rejectionOf(service.acceptProfileShare(identity(), offer.getId())))
+        .isInstanceOf(ShareRejections.ShareNotFound.class);
   }
 
   @Test
   @DisplayName("Should authorize inside the mutation transaction when a share is offered")
   void shouldAuthorizeInsideMutationTransactionWhenShareIsOffered() {
-    authorization.decideWith(
-        intent -> {
-          if (intent instanceof Intent.OfferProfileShare) {
-            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
-          }
-          return allowed();
-        });
+    authorization.decideWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
-    service.offerProfileShare(identity(), profile.getId(), household.getId());
+    assertThat(
+            rejectionOf(service.offerProfileShare(identity(), profile.getId(), household.getId())))
+        .isInstanceOf(ShareRejections.ProfileNotFound.class);
   }
 
   @Test
   @DisplayName("Should authorize inside the mutation transaction when an offer is rejected")
   void shouldAuthorizeInsideMutationTransactionWhenOfferIsRejected() {
     var offer = pendingShare();
-    authorization.decideWith(
-        intent -> {
-          if (intent instanceof Intent.RejectProfileShare) {
-            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
-          }
-          return allowed();
-        });
+    authorization.decideWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
-    service.rejectProfileShare(identity(), offer.getId());
+    assertThat(rejectionOf(service.rejectProfileShare(identity(), offer.getId())))
+        .isInstanceOf(ShareRejections.ShareNotFound.class);
   }
 
   @Test
   @DisplayName("Should authorize inside the mutation transaction when an offer is canceled")
   void shouldAuthorizeInsideMutationTransactionWhenOfferIsCanceled() {
     var offer = pendingShare();
-    authorization.decideWith(
-        intent -> {
-          if (intent instanceof Intent.CancelProfileShare) {
-            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
-          }
-          return allowed();
-        });
+    authorization.decideWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
-    service.cancelProfileShare(identity(), offer.getId());
+    assertThat(rejectionOf(service.cancelProfileShare(identity(), offer.getId())))
+        .isInstanceOf(ShareRejections.ShareNotFound.class);
   }
 
   @Test
   @DisplayName("Should authorize inside the mutation transaction when a share is ended")
   void shouldAuthorizeInsideMutationTransactionWhenShareIsEnded() {
     var active = activeShare();
-    authorization.decideWith(
-        intent -> {
-          if (intent instanceof Intent.EndProfileShare) {
-            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
-          }
-          return allowed();
-        });
+    authorization.decideWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
-    service.endProfileShare(identity(), active.getId());
+    assertThat(rejectionOf(service.endProfileShare(identity(), active.getId())))
+        .isInstanceOf(ShareRejections.ShareNotFound.class);
   }
 
   @Test
   @DisplayName("Should authorize inside the mutation transaction when a share is force-ended")
   void shouldAuthorizeInsideMutationTransactionWhenShareIsForceEnded() {
     var active = activeShare();
-    authorization.decideWith(
-        intent -> {
-          if (intent instanceof Intent.ForceEndProfileShare) {
-            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
-          }
-          return allowed();
-        });
+    authorization.decideWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
-    service.forceEndProfileShare(identity(), active.getId(), "abuse report");
+    assertThat(
+            rejectionOf(service.forceEndProfileShare(identity(), active.getId(), "abuse report")))
+        .isInstanceOf(ShareRejections.ShareNotFound.class);
   }
 
   @Test
   @DisplayName("Should return not-pending when an expired offer is accepted")
   void shouldReturnNotPendingWhenExpiredOfferIsAccepted() {
     var offer = pendingShare();
-    offer.setExpiresAt(Instant.now().minusSeconds(1));
+    offer.setExpiresAt(NOW.minusSeconds(1));
 
     assertThat(rejectionOf(service.acceptProfileShare(identity(), offer.getId())))
         .isInstanceOf(ShareRejections.ShareNotPending.class);
+  }
+
+  @Test
+  @DisplayName("Should set canceled status when an offerer cancels a pending offer")
+  void shouldSetCanceledStatusWhenOffererCancelsPendingOffer() {
+    var offer = pendingShare();
+
+    var canceled = service.cancelProfileShare(identity(), offer.getId());
+
+    assertThat(canceled).isInstanceOf(Outcome.Accepted.class);
+    assertThat(shares.findById(offer.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.CANCELED);
   }
 
   @Test
@@ -284,6 +274,11 @@ class ProfileSharingServiceTest {
 
     var ended = service.forceEndProfileShare(identity(), active.getId(), "abuse report");
     assertThat(ended).isInstanceOf(Outcome.Accepted.class);
+
+    assertThat(
+            rejectionOf(
+                service.forceEndProfileShare(identity(), active.getId(), "duplicate attempt")))
+        .isInstanceOf(ShareRejections.ShareNotActive.class);
     assertThat(audit.entries()).hasSize(1);
     assertThat(audit.entries().getFirst().operation()).isEqualTo("forceEndProfileShare");
   }
@@ -354,6 +349,28 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName("Should return an empty page when pending offers are not visible")
+  void shouldReturnEmptyPageWhenPendingOffersAreNotVisible() {
+    pendingShare();
+    authorization.denyAll();
+
+    var page = service.pendingShareOffers(identity(), household.getId(), paginationOptions());
+
+    assertThat(page).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return an empty page when Profile shares are not visible")
+  void shouldReturnEmptyPageWhenProfileSharesAreNotVisible() {
+    activeShare();
+    authorization.denyAll();
+
+    var page = service.profileShares(identity(), profile.getId(), paginationOptions());
+
+    assertThat(page).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should expose only wouldLock and nameConflict when an offer is preflighted")
   void shouldExposeOnlyWouldLockAndNameConflictWhenOfferIsPreflighted() {
     var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
@@ -396,7 +413,7 @@ class ProfileSharingServiceTest {
             .householdId(household.getId())
             .status(ProfileShareStatus.PENDING)
             .offeredByAccountId(identity().accountId())
-            .expiresAt(Instant.now().plusSeconds(3600))
+            .expiresAt(NOW.plusSeconds(3600))
             .build());
   }
 
@@ -419,6 +436,10 @@ class ProfileSharingServiceTest {
 
   private static Decision<?> denied() {
     return new Decision.Denied<>(Decision.DenialReason.POLICY);
+  }
+
+  private static Decision<?> denyInsideMutationTransaction(Intent<?> ignoredIntent) {
+    return TransactionSynchronizationManager.isActualTransactionActive() ? denied() : allowed();
   }
 
   private static KeysetPaginationOptions paginationOptions() {

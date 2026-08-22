@@ -98,16 +98,28 @@ class AuthorizationServiceTest {
   @Test
   @DisplayName("Should use the Account's current relationships when a stored proposal is decided")
   void shouldUseAccountsCurrentRelationshipsWhenStoredProposalIsDecided() {
-    var account = accounts.save(AccountFixture.defaultAccountBuilder().build());
+    var account =
+        accounts.save(
+            AccountFixture.defaultAccountBuilder()
+                .householdId(householdId)
+                .householdRole(HouseholdRole.MEMBER)
+                .serverAdmin(true)
+                .build());
+    var currentRelationships = new CurrentRelationshipDecider(householdId);
+    var liveAuthorizationService =
+        new SecurityContextAuthorizationService(currentRelationships, accounts);
+    var intent = new Intent.OfferProfileShare(UUID.randomUUID());
 
-    var decision =
-        authorizationService.decideForAccount(
-            account.getId(), new Intent.OfferProfileShare(UUID.randomUUID()));
+    var currentDecision = liveAuthorizationService.decideForAccount(account.getId(), intent);
 
-    assertThat(decision).isEqualTo(new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
-    assertThat(decider.recordedIntents())
-        .singleElement()
-        .isInstanceOf(Intent.OfferProfileShare.class);
+    assertThat(currentDecision).isEqualTo(new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+
+    account.setServerAdmin(false);
+    accounts.save(account);
+
+    var changedDecision = liveAuthorizationService.decideForAccount(account.getId(), intent);
+
+    assertThat(changedDecision).isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
   }
 
   @Test
@@ -277,5 +289,22 @@ class AuthorizationServiceTest {
     var authorities = List.of(new SimpleGrantedAuthority(identity.scope().authority()));
     SecurityContextHolder.getContext()
         .setAuthentication(new StreamarrAuthenticationToken(identity, token, authorities));
+  }
+
+  private record CurrentRelationshipDecider(UUID expectedHouseholdId)
+      implements AuthorizationDecider {
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent) {
+      var hasCurrentRelationships =
+          expectedHouseholdId.equals(identity.householdId())
+              && identity.householdRole() == HouseholdRole.MEMBER
+              && identity.serverAdmin();
+      if (hasCurrentRelationships) {
+        return (Decision<T>) new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
+      }
+      return new Decision.Denied<>(Decision.DenialReason.POLICY);
+    }
   }
 }
