@@ -787,9 +787,7 @@ class DeviceAuthorizationServiceTest {
   @DisplayName("Should refuse issuing a code when setup is incomplete")
   void shouldRefuseIssuingCodeWhenSetupIncomplete() {
     var unclaimedService =
-        serviceFixture()
-            .serverBootstrapRepository(new FakeServerBootstrapRepository())
-            .build();
+        serviceFixture().serverBootstrapRepository(new FakeServerBootstrapRepository()).build();
 
     assertThatThrownBy(() -> unclaimedService.issue("Apple TV", "esn-1"))
         .isInstanceOf(SetupIncompleteException.class);
