@@ -1414,6 +1414,11 @@ class CedarIdentityPoliciesTest {
       assertThat(decide(atHome(), teardown)).isEqualTo(REAUTHENTICATION_REQUIRED);
       assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), teardown))
           .isEqualTo(ALLOWED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), teardown))
+          .isEqualTo(DENIED);
     }
 
     @Test
@@ -1424,6 +1429,10 @@ class CedarIdentityPoliciesTest {
       account.setServerAdmin(true);
       accounts.save(account);
       assertThat(decide(atHome(), new Intent.ViewSecurityAudit())).isEqualTo(ALLOWED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.ViewSecurityAudit())).isEqualTo(DENIED);
     }
   }
 
