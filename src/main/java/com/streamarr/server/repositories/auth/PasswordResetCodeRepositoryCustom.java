@@ -5,6 +5,9 @@ import java.util.UUID;
 
 public interface PasswordResetCodeRepositoryCustom {
 
+  /** Serializes replacement for one Account across application instances. */
+  void lockAccountForReplacement(UUID accountId);
+
   /** Conditionally redeems one PENDING, unexpired code; a raced redemption has one winner. */
   boolean tryRedeem(UUID codeId, Instant now);
 

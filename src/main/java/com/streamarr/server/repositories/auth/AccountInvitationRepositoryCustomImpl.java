@@ -21,6 +21,11 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
   private final AuditorAware<UUID> auditorAware;
 
   @Override
+  public void lockRecipientForReplacement(String recipientEmail) {
+    PostgresTransactionLocks.lockNormalizedKey(dsl, "account-invitation", recipientEmail);
+  }
+
+  @Override
   public boolean tryDecide(UUID invitationId, AccountInvitationStatus target, Instant now) {
     return dsl.update(ACCOUNT_INVITATION)
             .set(ACCOUNT_INVITATION.STATUS, jooqStatus(target))

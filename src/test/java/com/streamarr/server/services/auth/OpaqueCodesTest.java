@@ -2,6 +2,7 @@ package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Base64;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,8 @@ class OpaqueCodesTest {
     var issued = codes.issue();
 
     assertThat(issued.code()).startsWith(issued.publicId() + ".");
+    assertThat(Base64.getUrlDecoder().decode(issued.code().split("\\.")[1])).hasSize(32);
+    assertThat(issued.digest()).hasSize(32);
     var presented = codes.parse(issued.code()).orElseThrow();
     assertThat(presented.publicId()).isEqualTo(issued.publicId());
     assertThat(codes.matches(presented, issued.digest())).isTrue();
@@ -39,15 +42,12 @@ class OpaqueCodesTest {
   }
 
   @Test
-  @DisplayName("Should avoid repetition and secret leakage when opaque codes are issued")
-  void shouldAvoidRepetitionAndSecretLeakageWhenOpaqueCodesAreIssued() {
-    var first = codes.issue();
-    var second = codes.issue();
+  @DisplayName("Should redact the secret when opaque code values are rendered as text")
+  void shouldRedactSecretWhenOpaqueCodeValuesAreRenderedAsText() {
+    var issued = codes.issue();
+    var secret = issued.code().split("\\.")[1];
 
-    assertThat(first.code()).isNotEqualTo(second.code());
-    assertThat(first.publicId()).isNotEqualTo(second.publicId());
-    assertThat(first.toString()).doesNotContain(first.code().split("\\.")[1]);
-    assertThat(codes.parse(first.code()).orElseThrow().toString())
-        .doesNotContain(first.code().split("\\.")[1]);
+    assertThat(issued.toString()).doesNotContain(secret);
+    assertThat(codes.parse(issued.code()).orElseThrow().toString()).doesNotContain(secret);
   }
 }

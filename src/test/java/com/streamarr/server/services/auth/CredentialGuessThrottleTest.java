@@ -142,6 +142,33 @@ class CredentialGuessThrottleTest {
   }
 
   @Test
+  @DisplayName("Should keep opaque-code budgets independent when public identifiers differ")
+  void shouldKeepOpaqueCodeBudgetsIndependentWhenPublicIdentifiersDiffer() {
+    throttle.registerCodeGuess("first-public-id");
+    throttle.registerCodeGuess("first-public-id");
+
+    assertThatCode(() -> throttle.registerCodeGuess("second-public-id")).doesNotThrowAnyException();
+    assertThatThrownBy(() -> throttle.registerCodeGuess("first-public-id"))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should reset only the matching opaque-code budget when a code verifies")
+  void shouldResetOnlyMatchingOpaqueCodeBudgetWhenCodeVerifies() {
+    throttle.registerCodeGuess("successful-public-id");
+    throttle.registerCodeGuess("successful-public-id");
+    throttle.registerCodeGuess("blocked-public-id");
+    throttle.registerCodeGuess("blocked-public-id");
+
+    throttle.resetCodeGuesses("successful-public-id");
+
+    assertThatCode(() -> throttle.registerCodeGuess("successful-public-id"))
+        .doesNotThrowAnyException();
+    assertThatThrownBy(() -> throttle.registerCodeGuess("blocked-public-id"))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
   @DisplayName("Should free the budget when the window passes")
   void shouldFreeBudgetWhenWindowPasses() {
     var accountId = UUID.randomUUID();
