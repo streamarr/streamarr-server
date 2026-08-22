@@ -250,6 +250,15 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   }
 
   @Override
+  public boolean tryDelete(UUID accountId, UUID expectedHouseholdId) {
+    return dsl.deleteFrom(USER_ACCOUNT)
+            .where(USER_ACCOUNT.ID.eq(accountId))
+            .and(USER_ACCOUNT.HOUSEHOLD_ID.eq(expectedHouseholdId))
+            .execute()
+        > 0;
+  }
+
+  @Override
   public boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash) {
     return dsl.select(USER_ACCOUNT.ID)
         .from(USER_ACCOUNT)

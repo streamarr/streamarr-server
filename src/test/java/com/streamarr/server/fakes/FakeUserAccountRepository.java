@@ -179,6 +179,13 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
+  public boolean tryDelete(UUID accountId, UUID expectedHouseholdId) {
+    var account = findById(accountId).filter(a -> expectedHouseholdId.equals(a.getHouseholdId()));
+    account.ifPresent(a -> deleteById(a.getId()));
+    return account.isPresent();
+  }
+
+  @Override
   public boolean mayUseHousehold(UUID accountId, UUID householdId) {
     return findById(accountId)
         .map(

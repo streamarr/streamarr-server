@@ -98,7 +98,8 @@ public class ProfileLifecycleService {
         () -> {
           // The destination anchor exists before commit; T6 judges the whole move.
           profileManagerRepository.tryGrant(command.localManagerAccountId(), command.profileId());
-          if (!profileRepository.tryRehome(command.profileId(), command.destinationHouseholdId())) {
+          if (!profileRepository.tryRehome(
+              command.profileId(), sourceHouseholdId, command.destinationHouseholdId())) {
             throw new MutationRejection(new TransferRejections.ProfileNotFound());
           }
           endHomeAvailability(command.profileId(), sourceHouseholdId, now);
@@ -149,8 +150,12 @@ public class ProfileLifecycleService {
                       authSessionRepository.clearSelections(
                           profileId, share.getHouseholdId(), now));
           invalidateProfileBoundArtifacts(profileId, PROFILE_DELETED, now);
-          profileRepository.deleteById(profileId);
-          profileRepository.flush();
+          if (!profileRepository.tryDeleteUnlinked(profileId)) {
+            if (userAccountRepository.findByPersonalProfileId(profileId).isPresent()) {
+              throw new MutationRejection(new TransferRejections.ProfileLinked());
+            }
+            throw new MutationRejection(new TransferRejections.ProfileNotFound());
+          }
           audit(identity, "forceDeleteProfile", profileId, reason);
           return profileId;
         },
