@@ -42,6 +42,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -391,58 +392,79 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should end the visit and clear its selection when CONNECT wins")
-  void shouldEndVisitAndClearItsSelectionWhenConnectWins() {
+  @DisplayName("Should end every visit and clear only visiting selections when CONNECT wins")
+  void shouldEndEveryVisitAndClearOnlyVisitingSelectionsWhenConnectWins() {
     var fixture = connectAcceptanceFixture();
 
     service.accept(acceptCommand(fixture.code()));
 
-    assertThat(shares.findById(fixture.visitId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileShareStatus.ENDED);
-    assertThat(sessions.findById(fixture.watchingSessionId()).orElseThrow().getSelectedProfileId())
-        .isNull();
+    assertThat(fixture.visitIds())
+        .allSatisfy(
+            visitId ->
+                assertThat(shares.findById(visitId).orElseThrow().getStatus())
+                    .isEqualTo(ProfileShareStatus.ENDED));
+    assertThat(fixture.visitingSessionIds())
+        .allSatisfy(
+            sessionId ->
+                assertThat(sessions.findById(sessionId).orElseThrow().getSelectedProfileId())
+                    .isNull());
+    assertThat(sessions.findById(fixture.homeSessionId()).orElseThrow().getSelectedProfileId())
+        .isEqualTo(fixture.profileId());
   }
 
   @Test
-  @DisplayName("Should invalidate the pending offer when CONNECT wins")
-  void shouldInvalidatePendingOfferWhenConnectWins() {
+  @DisplayName("Should invalidate every pending offer when CONNECT wins")
+  void shouldInvalidateEveryPendingOfferWhenConnectWins() {
     var fixture = connectAcceptanceFixture();
 
     service.accept(acceptCommand(fixture.code()));
 
-    assertThat(shares.findById(fixture.pendingOfferId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileShareStatus.INVALIDATED);
+    assertThat(fixture.pendingOfferIds())
+        .allSatisfy(
+            offerId ->
+                assertThat(shares.findById(offerId).orElseThrow().getStatus())
+                    .isEqualTo(ProfileShareStatus.INVALIDATED));
   }
 
   @Test
-  @DisplayName("Should reoffer the recorded Household once when CONNECT wins")
-  void shouldReofferRecordedHouseholdOnceWhenConnectWins() {
+  @DisplayName("Should reoffer every recorded Household once when CONNECT wins")
+  void shouldReofferEveryRecordedHouseholdOnceWhenConnectWins() {
     var fixture = connectAcceptanceFixture();
 
     var accepted = service.accept(acceptCommand(fixture.code()));
 
     var reoffered =
         shares.findAll().stream()
-            .filter(share -> share.getHouseholdId().equals(fixture.previousHouseholdId()))
+            .filter(share -> fixture.reofferHouseholdIds().contains(share.getHouseholdId()))
             .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
             .toList();
-    assertThat(reoffered).hasSize(1);
-    assertThat(reoffered.getFirst().getOfferedByAccountId()).isEqualTo(accepted.account().getId());
-    assertThat(reoffered.getFirst().getExpiresAt()).isAfter(NOW);
+    assertThat(reoffered)
+        .extracting(ProfileHouseholdShare::getHouseholdId)
+        .containsExactlyInAnyOrderElementsOf(fixture.reofferHouseholdIds());
+    assertThat(reoffered)
+        .allSatisfy(
+            share -> {
+              assertThat(share.getOfferedByAccountId()).isEqualTo(accepted.account().getId());
+              assertThat(share.getExpiresAt()).isAfter(NOW);
+            });
   }
 
   private ConnectAcceptanceFixture connectAcceptanceFixture() {
     var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var previous =
         households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
-    var third = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var otherPrevious =
+        households.save(HouseholdFixture.defaultHouseholdBuilder().name("Lodge").build());
+    var third = households.save(HouseholdFixture.defaultHouseholdBuilder().name("Third").build());
+    var fourth = households.save(HouseholdFixture.defaultHouseholdBuilder().name("Fourth").build());
     var orphan =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(home.getId()).name("Joe").build());
     accounts.save(AccountFixture.defaultAccountBuilder().householdId(home.getId()).build());
     shares.share(orphan.getId(), home.getId(), false);
-    var visit = shares.share(orphan.getId(), previous.getId(), false);
-    var pendingOffer =
+    var firstVisit = shares.share(orphan.getId(), previous.getId(), false);
+    var secondVisit = shares.share(orphan.getId(), otherPrevious.getId(), false);
+    var firstPendingOffer =
         shares.save(
             ProfileHouseholdShare.builder()
                 .profileId(orphan.getId())
@@ -450,7 +472,15 @@ class AccountInvitationServiceTest {
                 .status(ProfileShareStatus.PENDING)
                 .expiresAt(NOW.plus(Duration.ofDays(7)))
                 .build());
-    var watching =
+    var secondPendingOffer =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(orphan.getId())
+                .householdId(fourth.getId())
+                .status(ProfileShareStatus.PENDING)
+                .expiresAt(NOW.plus(Duration.ofDays(7)))
+                .build());
+    var firstWatching =
         sessions.save(
             AuthSession.builder()
                 .accountId(UUID.randomUUID())
@@ -458,21 +488,47 @@ class AccountInvitationServiceTest {
                 .selectedProfileId(orphan.getId())
                 .deviceName("tv")
                 .build());
+    var secondWatching =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(UUID.randomUUID())
+                .contextHouseholdId(otherPrevious.getId())
+                .selectedProfileId(orphan.getId())
+                .deviceName("tablet")
+                .build());
+    var homeWatching =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(UUID.randomUUID())
+                .contextHouseholdId(home.getId())
+                .selectedProfileId(orphan.getId())
+                .deviceName("phone")
+                .build());
     var issued =
         pendingConnectInvitation(
             ConnectInvitationFixture.builder()
                 .profileId(orphan.getId())
                 .householdId(home.getId())
-                .reofferHouseholdId(previous.getId())
+                .reoffers(
+                    List.of(
+                        ReofferHouseholdFixture.builder()
+                            .householdId(previous.getId())
+                            .householdName(previous.getName())
+                            .build(),
+                        ReofferHouseholdFixture.builder()
+                            .householdId(otherPrevious.getId())
+                            .householdName(otherPrevious.getName())
+                            .build()))
                 .build());
 
     return ConnectAcceptanceFixture.builder()
         .profileId(orphan.getId())
         .homeHouseholdId(home.getId())
-        .previousHouseholdId(previous.getId())
-        .visitId(visit.getId())
-        .pendingOfferId(pendingOffer.getId())
-        .watchingSessionId(watching.getId())
+        .visitIds(List.of(firstVisit.getId(), secondVisit.getId()))
+        .pendingOfferIds(List.of(firstPendingOffer.getId(), secondPendingOffer.getId()))
+        .visitingSessionIds(List.of(firstWatching.getId(), secondWatching.getId()))
+        .homeSessionId(homeWatching.getId())
+        .reofferHouseholdIds(List.of(previous.getId(), otherPrevious.getId()))
         .code(issued.code())
         .build();
   }
@@ -517,6 +573,52 @@ class AccountInvitationServiceTest {
 
     var linkedCommand = acceptCommand(issued.code());
     assertThatThrownBy(() -> service.accept(linkedCommand))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject CONNECT acceptance when the Profile moves after invitation")
+  void shouldRejectConnectAcceptanceWhenProfileMovesAfterInvitation() {
+    var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var destination = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var orphan =
+        profiles.save(ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
+    accounts.save(AccountFixture.defaultAccountBuilder().householdId(home.getId()).build());
+    var issued =
+        pendingConnectInvitation(
+            ConnectInvitationFixture.builder()
+                .profileId(orphan.getId())
+                .householdId(home.getId())
+                .build());
+    orphan.setHouseholdId(destination.getId());
+
+    var command = acceptCommand(issued.code());
+
+    assertThatThrownBy(() -> service.accept(command))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject CONNECT acceptance when a restricted Profile would become the first Account")
+  void shouldRejectConnectAcceptanceWhenRestrictedProfileWouldBecomeFirstAccount() {
+    var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var orphan =
+        profiles.save(ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
+    var resident =
+        accounts.save(AccountFixture.defaultAccountBuilder().householdId(home.getId()).build());
+    var issued =
+        pendingConnectInvitation(
+            ConnectInvitationFixture.builder()
+                .profileId(orphan.getId())
+                .householdId(home.getId())
+                .build());
+    orphan.setKind(ProfileKind.KID);
+    accounts.deleteById(resident.getId());
+
+    var command = acceptCommand(issued.code());
+
+    assertThatThrownBy(() -> service.accept(command))
         .isInstanceOf(InvalidOneTimeCodeException.class);
   }
 
@@ -568,7 +670,12 @@ class AccountInvitationServiceTest {
             ConnectInvitationFixture.builder()
                 .profileId(orphan.getId())
                 .householdId(home.getId())
-                .reofferHouseholdId(previous.getId())
+                .reoffers(
+                    List.of(
+                        ReofferHouseholdFixture.builder()
+                            .householdId(previous.getId())
+                            .householdName(previous.getName())
+                            .build()))
                 .build());
 
     var preview = service.lookup(issued.code());
@@ -597,29 +704,35 @@ class AccountInvitationServiceTest {
                 .publicId(issued.publicId())
                 .secretDigest(issued.digest())
                 .build());
-    if (fixture.reofferHouseholdId() != null) {
-      reoffers.save(
-          AccountInvitationReoffer.builder()
-              .invitationId(invitation.getId())
-              .householdId(fixture.reofferHouseholdId())
-              .householdName("Cabin")
-              .build());
+    if (fixture.reoffers() != null) {
+      for (var reoffer : fixture.reoffers()) {
+        reoffers.save(
+            AccountInvitationReoffer.builder()
+                .invitationId(invitation.getId())
+                .householdId(reoffer.householdId())
+                .householdName(reoffer.householdName())
+                .build());
+      }
     }
     return issued;
   }
 
   @Builder
   private record ConnectInvitationFixture(
-      UUID profileId, UUID householdId, UUID reofferHouseholdId) {}
+      UUID profileId, UUID householdId, List<ReofferHouseholdFixture> reoffers) {}
+
+  @Builder
+  private record ReofferHouseholdFixture(UUID householdId, String householdName) {}
 
   @Builder
   private record ConnectAcceptanceFixture(
       UUID profileId,
       UUID homeHouseholdId,
-      UUID previousHouseholdId,
-      UUID visitId,
-      UUID pendingOfferId,
-      UUID watchingSessionId,
+      List<UUID> visitIds,
+      List<UUID> pendingOfferIds,
+      List<UUID> visitingSessionIds,
+      UUID homeSessionId,
+      List<UUID> reofferHouseholdIds,
       String code) {}
 
   private static AcceptInvitationCommand acceptCommand(String code) {
