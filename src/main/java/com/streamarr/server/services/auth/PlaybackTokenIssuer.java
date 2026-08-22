@@ -38,6 +38,7 @@ public class PlaybackTokenIssuer {
     if (identity.profileId() == null) {
       throw new ProfileRequiredException();
     }
+
     // This is the only place playback capability is minted, so ownership is enforced here
     // rather than trusted to callers: an unowned session must never become a playable token,
     // and reads as missing (no existence oracle).

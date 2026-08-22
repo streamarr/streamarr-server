@@ -57,7 +57,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   static PlaybackAuthorityGate authorityGate() {
-    return _ -> true;
+    return (_, _) -> true;
   }
 
   private MediaFile savedMediaFile;

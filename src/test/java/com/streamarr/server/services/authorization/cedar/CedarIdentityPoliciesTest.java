@@ -33,6 +33,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 /**
  * The viewing and read policies against the real engine and the real contributors over fakes: every
@@ -58,7 +59,8 @@ class CedarIdentityPoliciesTest {
       new SecurityContextAuthorizationService(
           new CedarAuthorizationDecider(
               new BasicAuthorizationEngine(),
-              new CedarPolicyBundle(new BasicAuthorizationEngine()),
+              new CedarPolicyBundle(
+                  new BasicAuthorizationEngine(), new PathMatchingResourcePatternResolver()),
               new SliceAssembler(
                   List.of(
                       new LivePrincipalAuthorityContributor(accounts),

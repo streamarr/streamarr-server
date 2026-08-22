@@ -95,6 +95,7 @@ class AuthorizationParityTest {
           .extracting(member -> member.path("id").asText())
           .containsExactly("libraryAdministration");
     }
+
     assertThat(actions.get("libraryAdministration").path("memberOf"))
         .extracting(member -> member.path("id").asText())
         .containsExactly("serverAdministration");

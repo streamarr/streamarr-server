@@ -1,6 +1,7 @@
 package com.streamarr.server.services.identity;
 
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -22,11 +23,11 @@ public class PlaybackAuthorizationService implements PlaybackAuthorityGate {
   private final AuthorizationService authorizationService;
 
   @Override
-  public boolean allows(PlaybackAuthority authority) {
-    var identity = authorizationService.currentIdentity();
+  public boolean allows(AuthenticatedIdentity identity, PlaybackAuthority authority) {
     if (identity.profileId() == null || !identity.playbackAuthority().equals(authority)) {
       return false;
     }
+
     return authorizationService.decide(identity, new Intent.Playback())
         instanceof Decision.Allowed<?>;
   }

@@ -124,6 +124,7 @@ class ProfilePinVerifierTest {
       if (encodedPassword.startsWith("unreadable")) {
         throw new IllegalArgumentException(encodedPassword);
       }
+
       return encode(rawPassword).equals(encodedPassword);
     }
   }

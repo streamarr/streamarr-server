@@ -154,6 +154,21 @@ class ArchitectureTest {
               "Resolvers and controllers adapt identity and protocol data; services authorize"
                   + " use cases");
 
+  @ArchTest
+  static final ArchRule servicesMustReceiveAuthenticatedIdentityFromAdapters =
+      noClasses()
+          .that()
+          .resideInAPackage("..services..")
+          .and()
+          .resideOutsideOfPackage("..services.authorization..")
+          .should()
+          .callMethodWhere(
+              target(owner(assignableTo(AuthorizationService.class)))
+                  .and(target(name("currentIdentity"))))
+          .as(
+              "Application services receive authenticated identity explicitly from adapters;"
+                  + " only the authorization facade resolves it from the security context");
+
   // The library services call the filepath, parsers, streaming, and task services; a dependency
   // back the other way puts them in a cycle. FilepathCodec did exactly that from the library
   // package until it moved to services.filepath.

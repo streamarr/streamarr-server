@@ -31,6 +31,7 @@ public class ProfilePinVerifier {
     if (pin == null || pin.isBlank() || !matches(profile, pin)) {
       throw new InvalidProfilePinException();
     }
+
     throttle.resetProfilePinAttempts(accountId, profile.getId());
   }
 

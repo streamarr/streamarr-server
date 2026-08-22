@@ -136,7 +136,7 @@ class HlsStreamingSmokeTest {
             .transcodeDecisionService(decisionService)
             .qualityLadderService(qualityLadderService)
             .properties(properties)
-            .authorityGate(_ -> true)
+            .authorityGate((_, _) -> true)
             .runtimeRegistry(sessionRegistry)
             .producerLifecycle(producerLifecycle)
             .deliveryCoordinator(

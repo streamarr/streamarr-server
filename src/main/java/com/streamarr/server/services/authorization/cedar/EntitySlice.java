@@ -57,11 +57,13 @@ final class EntitySlice {
       entities.add(new Entity(principal, Map.copyOf(principalAttributes), Set.of()));
       entities.add(new Entity(resource, Map.copyOf(resourceAttributes), Set.of()));
     }
+
     for (var uid : referenced) {
       if (emitted.add(uid)) {
         entities.add(new Entity(uid));
       }
     }
+
     return List.copyOf(entities);
   }
 

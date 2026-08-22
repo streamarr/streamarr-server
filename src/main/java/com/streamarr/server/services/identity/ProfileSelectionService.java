@@ -66,6 +66,7 @@ public class ProfileSelectionService {
     if (ProfileSafetyRule.lockedProfiles(available).contains(profile.getId())) {
       return new ProfileLockedException();
     }
+
     return new ProfileAccessDeniedException();
   }
 }

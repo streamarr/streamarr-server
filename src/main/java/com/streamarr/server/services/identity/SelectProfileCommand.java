@@ -1,18 +1,13 @@
 package com.streamarr.server.services.identity;
 
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 
 /** The select-profile ceremony's input; the PIN is consumed and never echoed. */
 @Builder
-public record SelectProfileCommand(UUID accountId, UUID sessionId, UUID profileId, String pin) {
-
-  public SelectProfileCommand {
-    Objects.requireNonNull(accountId, "accountId is required");
-    Objects.requireNonNull(sessionId, "sessionId is required");
-    Objects.requireNonNull(profileId, "profileId is required");
-  }
+public record SelectProfileCommand(
+    @NonNull UUID accountId, @NonNull UUID sessionId, @NonNull UUID profileId, String pin) {
 
   @Override
   public String toString() {

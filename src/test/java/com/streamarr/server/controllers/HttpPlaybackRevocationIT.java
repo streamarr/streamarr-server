@@ -74,6 +74,7 @@ class HttpPlaybackRevocationIT extends AbstractIntegrationTest {
     if (host != null) {
       authTestSupport.deleteIdentity(host);
     }
+
     authTestSupport.deleteIdentity(identity);
   }
 

@@ -75,10 +75,12 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         failures.add(failure);
       }
     }
+
     identities.clear();
     if (failures.isEmpty()) {
       return;
     }
+
     var failure = failures.getFirst();
     failures.stream().skip(1).forEach(failure::addSuppressed);
     throw failure;
@@ -591,13 +593,16 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
           && violation.getConstraintName() != null) {
         return violation.getConstraintName();
       }
+
       if (cause instanceof PSQLException psql
           && psql.getServerErrorMessage() != null
           && psql.getServerErrorMessage().getConstraint() != null) {
         return psql.getServerErrorMessage().getConstraint();
       }
+
       cause = cause.getCause();
     }
+
     return null;
   }
 

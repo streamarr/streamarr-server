@@ -64,7 +64,12 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
           engine.isAuthorized(request, bundle.policies(), new Entities(new HashSet<>(entities)));
       return interpret(response, check, plan.value());
     } catch (InvalidEntitySliceException e) {
-      return failClosed(FailureCause.INVALID_SLICE, check, e.getMessage());
+      log.error(
+          "Authorization failed closed for {} ({}): {}",
+          authorizationContext,
+          FailureCause.INVALID_SLICE,
+          e.getMessage());
+      return countFailClosed(FailureCause.INVALID_SLICE);
     } catch (Exception e) {
       log.error("Authorization failed closed for {} (ENGINE_FAILURE)", authorizationContext, e);
       return countFailClosed(FailureCause.ENGINE_FAILURE);

@@ -236,6 +236,7 @@ class AuthorizationServiceTest {
     if (expiresAt != null) {
       builder.expiresAt(expiresAt);
     }
+
     return builder.build();
   }
 

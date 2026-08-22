@@ -77,6 +77,7 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
     if (host != null) {
       authTestSupport.deleteIdentity(host);
     }
+
     authTestSupport.deleteIdentity(identity);
   }
 
@@ -84,7 +85,7 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should allow playback when the session, Account, Household access, and share are live")
   void shouldAllowPlaybackWhenAllLiveFactsHold() {
-    assertThat(authorityGate.allows(authority)).isTrue();
+    assertThat(authorityGate.allows(currentIdentity(), authority)).isTrue();
   }
 
   @ParameterizedTest
@@ -93,7 +94,7 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
   void shouldDenyPlaybackWhenSessionHasAnyRevocationReason(SessionRevocationReason reason) {
     authSessionRepository.revoke(identity.session().getId(), reason, Instant.now());
 
-    assertThat(authorityGate.allows(authority)).isFalse();
+    assertThat(authorityGate.allows(currentIdentity(), authority)).isFalse();
   }
 
   @Test
@@ -103,7 +104,7 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
     account.setEnabled(false);
     userAccountRepository.saveAndFlush(account);
 
-    assertThat(authorityGate.allows(authority)).isFalse();
+    assertThat(authorityGate.allows(currentIdentity(), authority)).isFalse();
   }
 
   @Test
@@ -133,11 +134,11 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
     share(identity.profile().getId(), host.household().getId());
     authenticateAs(identity, host.household().getId(), managed.getId());
     var visitingAuthority = currentIdentity().playbackAuthority();
-    assertThat(authorityGate.allows(visitingAuthority)).isTrue();
+    assertThat(authorityGate.allows(currentIdentity(), visitingAuthority)).isTrue();
 
     end(managedShare);
 
-    assertThat(authorityGate.allows(visitingAuthority)).isFalse();
+    assertThat(authorityGate.allows(currentIdentity(), visitingAuthority)).isFalse();
   }
 
   @Test
@@ -149,21 +150,27 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
     // Household itself rests only on the visitor's own share.
     authenticateAs(identity, host.household().getId(), host.profile().getId());
     var visitingAuthority = currentIdentity().playbackAuthority();
-    assertThat(authorityGate.allows(visitingAuthority)).isTrue();
+    assertThat(authorityGate.allows(currentIdentity(), visitingAuthority)).isTrue();
 
     end(visit);
 
-    assertThat(authorityGate.allows(visitingAuthority)).isFalse();
+    assertThat(authorityGate.allows(currentIdentity(), visitingAuthority)).isFalse();
   }
 
   @Test
   @DisplayName(
       "Should deny playback when the stream's authority does not match the request identity")
   void shouldDenyPlaybackWhenStreamAuthorityDoesNotMatchRequestIdentity() {
-    assertThat(authorityGate.allows(copy().authSessionId(UUID.randomUUID()).build())).isFalse();
-    assertThat(authorityGate.allows(copy().accountId(UUID.randomUUID()).build())).isFalse();
-    assertThat(authorityGate.allows(copy().householdId(UUID.randomUUID()).build())).isFalse();
-    assertThat(authorityGate.allows(copy().profileId(UUID.randomUUID()).build())).isFalse();
+    var requestIdentity = currentIdentity();
+    assertThat(
+            authorityGate.allows(requestIdentity, copy().authSessionId(UUID.randomUUID()).build()))
+        .isFalse();
+    assertThat(authorityGate.allows(requestIdentity, copy().accountId(UUID.randomUUID()).build()))
+        .isFalse();
+    assertThat(authorityGate.allows(requestIdentity, copy().householdId(UUID.randomUUID()).build()))
+        .isFalse();
+    assertThat(authorityGate.allows(requestIdentity, copy().profileId(UUID.randomUUID()).build()))
+        .isFalse();
   }
 
   @Test
@@ -173,7 +180,7 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
         AuthenticatedIdentity.fromJwt(jwtDecoder.decode(authTestSupport.accountBearer(identity)));
     authenticate(accountScoped);
 
-    assertThat(authorityGate.allows(authority)).isFalse();
+    assertThat(authorityGate.allows(currentIdentity(), authority)).isFalse();
   }
 
   @Test
@@ -183,7 +190,7 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
     session.setSelectedProfileId(null);
     authSessionRepository.saveAndFlush(session);
 
-    assertThat(authorityGate.allows(authority)).isFalse();
+    assertThat(authorityGate.allows(currentIdentity(), authority)).isFalse();
   }
 
   @Test
@@ -212,7 +219,7 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
       try {
         // PostgreSQL readers see the last committed share while its end is uncommitted; the
         // playback request must return instead of waiting on the writer.
-        assertThat(authorityGate.allows(visitingAuthority)).isTrue();
+        assertThat(authorityGate.allows(currentIdentity(), visitingAuthority)).isTrue();
       } finally {
         commit.countDown();
       }
@@ -220,7 +227,7 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
       assertThat(unshare.get(10, TimeUnit.SECONDS)).isNotNull();
     }
 
-    assertThat(authorityGate.allows(visitingAuthority)).isFalse();
+    assertThat(authorityGate.allows(currentIdentity(), visitingAuthority)).isFalse();
   }
 
   private void await(CountDownLatch latch) {

@@ -17,6 +17,7 @@ final class ContributorStubs {
           List.of(overrides).stream().filter(c -> c.provides() == requirement).findFirst();
       contributors.add(override.orElseGet(() -> noop(requirement)));
     }
+
     return contributors;
   }
 

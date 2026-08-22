@@ -184,7 +184,7 @@ class CedarAuthorizationDeciderTest {
   @Test
   @DisplayName("Should fail closed when the intent is null")
   void shouldFailClosedWhenIntentIsNull() {
-    var identity = identityFor(UUID.randomUUID(), AccountRole.ADMIN);
+    var identity = identityFor(UUID.randomUUID(), true);
     Intent<AuthorizationUnit> intent = null;
 
     assertThat(decider.decide(identity, intent))

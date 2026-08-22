@@ -75,6 +75,7 @@ public class IdentityQueryService {
         ordered.put(id, household);
       }
     }
+
     return ordered;
   }
 
@@ -102,6 +103,7 @@ public class IdentityQueryService {
     if (household == null) {
       throw new AuthenticationRequiredException();
     }
+
     return summaryOf(household);
   }
 

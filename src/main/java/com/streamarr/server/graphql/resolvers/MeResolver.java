@@ -71,6 +71,7 @@ public class MeResolver {
     if (first == 0 && last == 0 && before != null) {
       return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
     }
+
     return paginationService.getPaginationOptions(
         firstOrDefault(first, last, before), after, last, before);
   }
@@ -80,6 +81,7 @@ public class MeResolver {
     if (first == 0 && last == 0 && before == null) {
       return DEFAULT_PAGE_SIZE;
     }
+
     return first;
   }
 

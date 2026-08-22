@@ -42,6 +42,7 @@ public class SessionContextService {
     if (!identity.contextHouseholdId().equals(session.getContextHouseholdId())) {
       throw new ProfileAccessDeniedException();
     }
+
     session.setSelectedProfileId(profileId);
     persistSelection(session);
     return TokenContext.of(account, session);
@@ -60,6 +61,7 @@ public class SessionContextService {
       session.setSelectedProfileId(null);
       persistSelection(session);
     }
+
     return TokenContext.of(account, session);
   }
 
@@ -83,6 +85,7 @@ public class SessionContextService {
     if (sessionRepository.updateSelectionIfLive(session, clock.instant())) {
       return;
     }
+
     throw classifyLostSelection(session.getId());
   }
 
@@ -96,6 +99,7 @@ public class SessionContextService {
     if (sessionRepository.hasRow(sessionId)) {
       return new AuthenticationRequiredException();
     }
+
     return new UnwrittenAuthSessionException(sessionId);
   }
 }

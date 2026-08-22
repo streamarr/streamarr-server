@@ -147,6 +147,7 @@ class ProfileSelectionServiceTest {
       assertThatThrownBy(() -> service.selectProfile(identity, command))
           .isInstanceOf(InvalidProfilePinException.class);
     }
+
     var identity = identity();
     var command = command(personal.getId(), "4242");
 

@@ -438,7 +438,7 @@ class StreamingResolverTest {
     @Override
     public StreamSession createSession(CreateStreamSessionCommand command) {
       this.lastReceivedOptions = command.options();
-      this.lastCreateProfileId = command.authority().profileId();
+      this.lastCreateProfileId = command.identity().profileId();
       return nextResult;
     }
 

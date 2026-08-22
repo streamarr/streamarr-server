@@ -126,13 +126,16 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
         issuingBackendPid.set(backendPidProbe.getAsInt());
         arrival.countDown();
       }
+
       if (failNextIssue.getAndSet(false)) {
         throw new IllegalStateException("Injected issuance failure");
       }
+
       var gate = holdGate.get();
       if (gate != null) {
         awaitQuietly(gate);
       }
+
       return super.issue(context);
     }
 

@@ -32,6 +32,7 @@ public final class ListConnections {
     if (cursorKey.isPresent() && anchor < 0) {
       throw new InvalidCursorException("Cursor no longer identifies an item.");
     }
+
     var window = window(options, anchor, ordered.size());
     var from = window.from();
     var to = window.to();
@@ -42,6 +43,7 @@ public final class ListConnections {
           new DefaultEdge<>(
               ordered.get(index), new DefaultConnectionCursor(encode(keys.get(index)))));
     }
+
     var pageInfo =
         new DefaultPageInfo(
             edges.isEmpty() ? null : edges.getFirst().getCursor(),
@@ -57,6 +59,7 @@ public final class ListConnections {
       var to = options.getCursor().isPresent() && anchor >= 0 ? anchor : itemCount;
       return new Window(Math.max(0, to - limit), to);
     }
+
     var from = anchor + 1;
     return new Window(from, Math.min(itemCount, from + limit));
   }

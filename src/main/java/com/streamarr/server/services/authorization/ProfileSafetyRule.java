@@ -24,11 +24,13 @@ public final class ProfileSafetyRule {
     if (kids.isEmpty()) {
       return requiring;
     }
+
     for (var profile : available) {
       if (profile.getKind() == ProfileKind.ADULT || isLessRestrictiveThanAnother(profile, kids)) {
         requiring.add(profile.getId());
       }
     }
+
     return requiring;
   }
 
@@ -41,6 +43,7 @@ public final class ProfileSafetyRule {
         locked.add(profile.getId());
       }
     }
+
     return locked;
   }
 
@@ -56,6 +59,7 @@ public final class ProfileSafetyRule {
     if (stricterCeiling == null) {
       return false;
     }
+
     return looserCeiling == null || stricterCeiling < looserCeiling;
   }
 }
