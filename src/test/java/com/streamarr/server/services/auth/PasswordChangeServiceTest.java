@@ -8,12 +8,14 @@ import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.DeviceBoundSessionException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -61,6 +63,18 @@ class PasswordChangeServiceTest {
                       .build(),
                   clock)),
           passwordEncoder);
+
+  @Test
+  @DisplayName("Should reject a password change when the identity is device-bound")
+  void shouldRejectPasswordChangeWhenIdentityIsDeviceBound() {
+    var identity =
+        AuthenticatedIdentityFixture.accountScopedBuilder().registrationId(UUID.randomUUID()).build();
+    var command =
+        commandBuilder().accountId(identity.accountId()).sessionId(identity.authSessionId()).build();
+
+    assertThatThrownBy(() -> service.changePassword(identity, command))
+        .isInstanceOf(DeviceBoundSessionException.class);
+  }
 
   @Test
   @DisplayName("Should fail closed without issuing a token when account is missing")
