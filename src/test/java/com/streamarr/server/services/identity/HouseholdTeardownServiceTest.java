@@ -49,10 +49,14 @@ import com.streamarr.server.services.identity.HouseholdTeardownService.TearDownH
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
@@ -602,15 +606,18 @@ class HouseholdTeardownServiceTest {
             .resource("householdId", doomed.getId())
             .build());
     assertThat(
-            service.securityAuditEvents(
-                identity(),
-                HouseholdTeardownService.SecurityAuditPageRequest.builder()
-                    .direction(PaginationDirection.FORWARD)
-                    .limit(10)
-                    .build()))
+            service
+                .securityAuditEvents(
+                    identity(),
+                    HouseholdTeardownService.SecurityAuditPageRequest.builder()
+                        .direction(PaginationDirection.FORWARD)
+                        .limit(10)
+                        .build())
+                .items())
         .singleElement()
         .satisfies(
-            event -> {
+            item -> {
+              var event = item.item();
               assertThat(event.operation()).isEqualTo("somethingAudited");
               assertThat(event.actorAccountId()).isEqualTo(actorId);
               assertThat(event.reason()).isEqualTo("because");
@@ -629,8 +636,8 @@ class HouseholdTeardownServiceTest {
     AuditFieldSetter.setLastModifiedOn(older, Instant.parse("2026-08-01T00:00:00Z"));
     AuditFieldSetter.setLastModifiedOn(newer, Instant.parse("2026-08-02T00:00:00Z"));
 
-    assertThat(service.profileActivity(identity(), profileId))
-        .extracting(SessionProgress::getId)
+    assertThat(service.profileActivity(identity(), profileId, paginationOptions()).items())
+        .extracting(item -> item.item().getId())
         .containsExactly(newer.getId(), older.getId());
   }
 
@@ -648,7 +655,8 @@ class HouseholdTeardownServiceTest {
             .durationSeconds(600)
             .build());
     authorization.denyAll();
-    assertThat(service.profileActivity(identity(), profileId)).isEmpty();
+    assertThat(service.profileActivity(identity(), profileId, paginationOptions()).items())
+        .isEmpty();
   }
 
   @Test
@@ -681,7 +689,8 @@ class HouseholdTeardownServiceTest {
   void shouldFailClosedWhenProfileActivityAuthorizationIsUnavailable() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
 
-    assertThatThrownBy(() -> service.profileActivity(identity(), UUID.randomUUID()))
+    assertThatThrownBy(
+            () -> service.profileActivity(identity(), UUID.randomUUID(), paginationOptions()))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -810,7 +819,19 @@ class HouseholdTeardownServiceTest {
         audit,
         progress,
         new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator()),
+        new PaginationService(),
         Clock.systemUTC());
+  }
+
+  private static KeysetPaginationOptions paginationOptions() {
+    return KeysetPaginationOptions.builder()
+        .paginationOptions(
+            PaginationOptions.builder()
+                .paginationDirection(PaginationDirection.FORWARD)
+                .cursor(Optional.empty())
+                .limit(100)
+                .build())
+        .build();
   }
 
   private Outcome<UUID, TeardownRejections.TearDown> completedOutcome(

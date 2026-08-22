@@ -24,9 +24,14 @@ import com.streamarr.server.services.identity.AccountLifecycleService.SourceAcce
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.MediaPage;
+import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -62,6 +67,7 @@ public class HouseholdTeardownService {
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final SessionProgressRepository sessionProgressRepository;
   private final MutationTransactions mutationTransactions;
+  private final PaginationService paginationService;
   private final Clock clock;
 
   public Outcome<UUID, TeardownRejections.TearDown> tearDownHousehold(
@@ -155,29 +161,65 @@ public class HouseholdTeardownService {
   }
 
   /** The security audit, newest first; only ServerAdmin reads it (whole-surface gate). */
-  public List<SecurityAuditEventRecordView> securityAuditEvents(
+  public MediaPage<SecurityAuditEventRecordView> securityAuditEvents(
       AuthenticatedIdentity identity, SecurityAuditPageRequest request) {
     authorizationService.requireAllowed(identity, new Intent.ViewSecurityAudit());
     var fetchLimit = request.limit() + 1;
-    return switch (request.direction()) {
-      case FORWARD ->
-          securityAuditEventRepository.pageNewestFirst(
-              request.cursorOccurredAt(), request.cursorId(), fetchLimit);
-      case REVERSE ->
-          securityAuditEventRepository.pageOldestFirst(
-              request.cursorOccurredAt(), request.cursorId(), fetchLimit);
-    };
+    var fetched =
+        switch (request.direction()) {
+          case FORWARD ->
+              securityAuditEventRepository.pageNewestFirst(
+                  request.cursorOccurredAt(), request.cursorId(), fetchLimit);
+          case REVERSE ->
+              securityAuditEventRepository.pageOldestFirst(
+                  request.cursorOccurredAt(), request.cursorId(), fetchLimit);
+        };
+    return auditPage(fetched, request);
   }
 
   /** A managed Profile's viewing activity; hidden Profiles read as empty. */
-  public List<SessionProgress> profileActivity(AuthenticatedIdentity identity, UUID profileId) {
+  public MediaPage<SessionProgress> profileActivity(
+      AuthenticatedIdentity identity, UUID profileId, KeysetPaginationOptions options) {
     return switch (authorizationService.decide(
         identity, new Intent.ViewProfileActivity(profileId))) {
-      case Decision.Allowed<?> _ ->
-          sessionProgressRepository.findByProfileIdOrderByLastModifiedOnDesc(profileId);
-      case Decision.Denied<?> _ -> List.of();
+      case Decision.Allowed<?> _ -> profileActivityPage(profileId, options);
+      case Decision.Denied<?> _ -> profileActivityPage(List.of(), options);
       case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
     };
+  }
+
+  private MediaPage<SecurityAuditEventRecordView> auditPage(
+      List<SecurityAuditEventRecordView> fetched, SecurityAuditPageRequest request) {
+    var hasLookahead = fetched.size() > request.limit();
+    var selected = fetched.subList(0, Math.min(fetched.size(), request.limit()));
+    if (request.direction() == PaginationDirection.REVERSE) {
+      selected = selected.reversed();
+    }
+
+    var items = selected.stream().map(row -> new PageItem<>(row, row.occurredAt())).toList();
+    var hasCursor = request.cursorId() != null;
+    return request.direction() == PaginationDirection.REVERSE
+        ? new MediaPage<>(items, hasCursor, hasLookahead)
+        : new MediaPage<>(items, hasLookahead, hasCursor);
+  }
+
+  private MediaPage<SessionProgress> profileActivityPage(
+      UUID profileId, KeysetPaginationOptions options) {
+    return profileActivityPage(
+        sessionProgressRepository.findByProfileIdOrderByLastModifiedOnDesc(profileId), options);
+  }
+
+  private MediaPage<SessionProgress> profileActivityPage(
+      List<SessionProgress> activity, KeysetPaginationOptions options) {
+    var items =
+        activity.stream()
+            .sorted(
+                Comparator.comparing(SessionProgress::getLastModifiedOn)
+                    .reversed()
+                    .thenComparing(SessionProgress::getId))
+            .map(progress -> new PageItem<>(progress, progress.getLastModifiedOn()))
+            .toList();
+    return paginationService.buildKeysetPage(items, options, SessionProgress::getId);
   }
 
   private void dispose(UserAccount resident, FinalAccountDisposition disposition, Instant now) {
