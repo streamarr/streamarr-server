@@ -54,6 +54,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.security.access.AccessDeniedException;
 
 @Tag("UnitTest")
@@ -61,7 +62,8 @@ import org.springframework.security.access.AccessDeniedException;
 class CedarAuthorizationDeciderTest {
 
   private static final AuthorizationEngine ENGINE = new BasicAuthorizationEngine();
-  private static final CedarPolicyBundle BUNDLE = new CedarPolicyBundle(ENGINE);
+  private static final CedarPolicyBundle BUNDLE =
+      new CedarPolicyBundle(ENGINE, new PathMatchingResourcePatternResolver());
 
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();

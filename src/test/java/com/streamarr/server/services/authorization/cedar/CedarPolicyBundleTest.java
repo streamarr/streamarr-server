@@ -22,6 +22,8 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 class CedarPolicyBundleTest {
 
   private static final AuthorizationEngine ENGINE = new BasicAuthorizationEngine();
+  private static final PathMatchingResourcePatternResolver RESOURCES =
+      new PathMatchingResourcePatternResolver();
   private static final String SCHEMA =
       """
       namespace Streamarr {
@@ -34,7 +36,7 @@ class CedarPolicyBundleTest {
   @Test
   @DisplayName("Should load the shipped bundle keyed by policy id")
   void shouldLoadShippedBundleKeyedByPolicyId() {
-    var bundle = new CedarPolicyBundle(ENGINE);
+    var bundle = new CedarPolicyBundle(ENGINE, RESOURCES);
 
     assertThat(bundle.policies().policies)
         .extracting(Policy::getID)

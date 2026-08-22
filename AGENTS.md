@@ -58,6 +58,8 @@ All PRs must pass these conditions on new code:
 - No nested conditionals — extract to well-named private methods or use early exits
 - Prefer switch expressions over if/else-if chains
 - One level of indentation inside methods is ideal; two is acceptable; three means refactor
+- Leave a blank line after a completed control-flow block when another statement follows; do not
+  add one before `else`, `catch`, `finally`, a `do`/`while` tail, or the enclosing closing brace
 
 ### Concurrency Coordination
 
@@ -239,7 +241,7 @@ We follow these factors from the Twelve-Factor App methodology:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **streamarr-server** (9554 symbols, 27152 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **streamarr-server** (12285 symbols, 35314 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

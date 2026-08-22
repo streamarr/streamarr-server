@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.stereotype.Component;
 
@@ -36,10 +35,6 @@ class CedarPolicyBundle {
   private final PolicySet policies;
 
   @Autowired
-  CedarPolicyBundle(AuthorizationEngine engine) {
-    this(engine, new PathMatchingResourcePatternResolver());
-  }
-
   CedarPolicyBundle(AuthorizationEngine engine, ResourcePatternResolver resources) {
     this(engine, readSchema(resources), readPolicySources(resources));
   }
@@ -69,23 +64,35 @@ class CedarPolicyBundle {
     var ids = new HashSet<String>();
     var rekeyed = new HashSet<Policy>();
     for (var source : policySources) {
-      for (var policy : PolicySet.parsePolicies(source).policies) {
-        var id = policy.getAnnotation(ID_ANNOTATION);
-        if (id == null || id.isBlank()) {
-          throw new CedarBundleException(
-              "Every Cedar policy needs a unique @id annotation; missing on: "
-                  + policy.getSource());
-        }
-        if (!ids.add(id)) {
-          throw new CedarBundleException("Duplicate Cedar policy @id: " + id);
-        }
-        rekeyed.add(new Policy(policy.getSource(), id));
-      }
+      rekeyPolicies(source, ids, rekeyed);
     }
+
     if (rekeyed.isEmpty()) {
       throw new CedarBundleException("Cedar bundle must contain at least one policy");
     }
+
     return rekeyed;
+  }
+
+  private static void rekeyPolicies(String source, Set<String> ids, Set<Policy> rekeyed)
+      throws AuthException {
+    for (var policy : PolicySet.parsePolicies(source).policies) {
+      rekeyed.add(rekey(policy, ids));
+    }
+  }
+
+  private static Policy rekey(Policy policy, Set<String> ids) throws AuthException {
+    var id = policy.getAnnotation(ID_ANNOTATION);
+    if (id == null || id.isBlank()) {
+      throw new CedarBundleException(
+          "Every Cedar policy needs a unique @id annotation; missing on: " + policy.getSource());
+    }
+
+    if (!ids.add(id)) {
+      throw new CedarBundleException("Duplicate Cedar policy @id: " + id);
+    }
+
+    return new Policy(policy.getSource(), id);
   }
 
   private static String readSchema(ResourcePatternResolver resources) {

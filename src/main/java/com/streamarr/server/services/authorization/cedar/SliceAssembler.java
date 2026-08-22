@@ -1,6 +1,7 @@
 package com.streamarr.server.services.authorization.cedar;
 
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -18,20 +19,26 @@ class SliceAssembler {
       new EnumMap<>(FactRequirement.class);
 
   SliceAssembler(List<FactContributor> factContributors) {
-    for (var contributor : factContributors) {
-      var replaced = contributors.put(contributor.provides(), contributor);
-      if (replaced != null) {
-        throw new IllegalStateException(
-            "Two contributors provide " + contributor.provides() + ": one fact, one contributor");
-      }
+    factContributors.forEach(this::register);
+    Arrays.stream(Action.values()).forEach(this::requireContributors);
+  }
+
+  private void register(FactContributor contributor) {
+    var replaced = contributors.put(contributor.provides(), contributor);
+    if (replaced != null) {
+      throw new IllegalStateException(
+          "Two contributors provide " + contributor.provides() + ": one fact, one contributor");
     }
-    for (var action : Action.values()) {
-      for (var requirement : action.facts()) {
-        if (!contributors.containsKey(requirement)) {
-          throw new IllegalStateException(
-              "Action " + action + " requires " + requirement + " but no contributor provides it");
-        }
-      }
+  }
+
+  private void requireContributors(Action action) {
+    action.facts().forEach(requirement -> requireContributor(action, requirement));
+  }
+
+  private void requireContributor(Action action, FactRequirement requirement) {
+    if (!contributors.containsKey(requirement)) {
+      throw new IllegalStateException(
+          "Action " + action + " requires " + requirement + " but no contributor provides it");
     }
   }
 

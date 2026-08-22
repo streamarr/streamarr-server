@@ -12,6 +12,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 /**
  * The Java action enum, the Cedar schema, the intent planner, and the contributors must describe
@@ -22,7 +23,8 @@ import org.junit.jupiter.api.Test;
 class AuthorizationParityTest {
 
   private static final CedarPolicyBundle BUNDLE =
-      new CedarPolicyBundle(new BasicAuthorizationEngine());
+      new CedarPolicyBundle(
+          new BasicAuthorizationEngine(), new PathMatchingResourcePatternResolver());
 
   @Test
   @DisplayName("Should declare every Java action in the schema with a Server resource")

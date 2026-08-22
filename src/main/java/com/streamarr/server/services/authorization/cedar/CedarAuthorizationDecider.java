@@ -82,13 +82,16 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
     if (response.success.isEmpty()) {
       return failClosed(FailureCause.INVALID_REQUEST, check, String.valueOf(response.errors));
     }
+
     var success = response.success.get();
     if (!success.getErrors().isEmpty()) {
       return failClosed(FailureCause.EVALUATION_ERROR, check, success.getErrors().toString());
     }
+
     if (success.isAllowed()) {
       return new Decision.Allowed<>(value);
     }
+
     return new Decision.Denied<>(Decision.DenialReason.POLICY);
   }
 
