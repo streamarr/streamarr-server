@@ -74,24 +74,30 @@ public class ProfileLifecycleService {
     if (refusal.isPresent()) {
       return Outcome.rejected((TransferRejections.TransferProfile) refusal.get());
     }
+
     var profile = profileRepository.findById(command.profileId());
     if (profile.isEmpty()) {
       return Outcome.rejected(new TransferRejections.ProfileNotFound());
     }
+
     if (householdRepository.findById(command.destinationHouseholdId()).isEmpty()) {
       return Outcome.rejected(new TransferRejections.HouseholdNotFound());
     }
+
     if (command.destinationHouseholdId().equals(profile.get().getHouseholdId())) {
       return Outcome.rejected(new TransferRejections.SameHousehold());
     }
+
     if (userAccountRepository.findByPersonalProfileId(command.profileId()).isPresent()) {
       // A linked Profile transfers only with its Account.
       return Outcome.rejected(new TransferRejections.ProfileLinked());
     }
+
     var managerRefusal = localManagerRefusal(command);
     if (managerRefusal.isPresent()) {
       return Outcome.rejected(managerRefusal.get());
     }
+
     var sourceHouseholdId = profile.get().getHouseholdId();
     var now = clock.instant();
     return mutationTransactions.write(
@@ -102,6 +108,7 @@ public class ProfileLifecycleService {
               command.profileId(), sourceHouseholdId, command.destinationHouseholdId())) {
             throw new MutationRejection(new TransferRejections.ProfileNotFound());
           }
+
           endHomeAvailability(command.profileId(), sourceHouseholdId, now);
           invalidateProfileBoundArtifacts(command.profileId(), PROFILE_TRANSFERRED, now);
           makeAvailableAtHome(command.profileId(), command.destinationHouseholdId(), now);
@@ -123,6 +130,7 @@ public class ProfileLifecycleService {
     if (isBlank(reason)) {
       return Outcome.rejected(new TransferRejections.ReasonRequired());
     }
+
     var refusal =
         refusalOf(
             identity,
@@ -133,15 +141,18 @@ public class ProfileLifecycleService {
     if (refusal.isPresent()) {
       return Outcome.rejected((TransferRejections.ForceDeleteProfile) refusal.get());
     }
+
     if (userAccountRepository.findByPersonalProfileId(profileId).isPresent()) {
       // A linked Profile is deleted only with its Account.
       return Outcome.rejected(new TransferRejections.ProfileLinked());
     }
+
     return mutationTransactions.write(
         () -> {
           if (profileRepository.findById(profileId).isEmpty()) {
             throw new MutationRejection(new TransferRejections.ProfileNotFound());
           }
+
           var now = clock.instant();
           shareRepository
               .findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE)
@@ -154,8 +165,10 @@ public class ProfileLifecycleService {
             if (userAccountRepository.findByPersonalProfileId(profileId).isPresent()) {
               throw new MutationRejection(new TransferRejections.ProfileLinked());
             }
+
             throw new MutationRejection(new TransferRejections.ProfileNotFound());
           }
+
           audit(identity, "forceDeleteProfile", profileId, reason);
           return profileId;
         },
@@ -180,6 +193,7 @@ public class ProfileLifecycleService {
     if (alreadyAvailable) {
       return;
     }
+
     shareRepository.saveAndFlush(
         ProfileHouseholdShare.builder()
             .profileId(profileId)
@@ -200,10 +214,12 @@ public class ProfileLifecycleService {
     if (command.localManagerAccountId() == null) {
       return Optional.of(new TransferRejections.LocalManagerRequired());
     }
+
     var manager = userAccountRepository.findById(command.localManagerAccountId());
     if (manager.isEmpty()) {
       return Optional.of(new TransferRejections.LocalManagerNotFound());
     }
+
     // T6: the anchor lives in the destination Household and is themselves unrestricted.
     var anchored =
         manager
@@ -213,6 +229,7 @@ public class ProfileLifecycleService {
     if (!anchored) {
       return Optional.of(new TransferRejections.ReplacementManagerNotEligible());
     }
+
     return Optional.empty();
   }
 
@@ -259,6 +276,7 @@ public class ProfileLifecycleService {
               if (mayView.getAsBoolean()) {
                 throw new AccessDeniedException("Not allowed.");
               }
+
               yield Optional.of(denied.get());
             }
           };
