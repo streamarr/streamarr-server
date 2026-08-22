@@ -91,6 +91,7 @@ public class AccountInvitationCeremonyService {
     if (invitation.getMode() != AccountInvitationMode.CONNECT) {
       return List.of();
     }
+
     return profileManagerRepository.findByProfileId(invitation.getProfileId()).stream()
         .map(manager -> userAccountRepository.findById(manager.getAccountId()))
         .flatMap(Optional::stream)
@@ -104,6 +105,7 @@ public class AccountInvitationCeremonyService {
     if (invitation.getMode() != AccountInvitationMode.CONNECT) {
       return List.of();
     }
+
     return shareRepository
         .findByProfileIdAndStatus(invitation.getProfileId(), ProfileShareStatus.ACTIVE)
         .stream()
@@ -119,6 +121,7 @@ public class AccountInvitationCeremonyService {
     if (invitation.getMode() != AccountInvitationMode.CONNECT) {
       return List.of();
     }
+
     return reofferRepository.findByInvitationId(invitation.getId()).stream()
         .map(AccountInvitationReoffer::getHouseholdName)
         .sorted()
@@ -136,6 +139,7 @@ public class AccountInvitationCeremonyService {
                 && !profileRepository.lockById(invitation.getProfileId())) {
               throw new InvalidOneTimeCodeException();
             }
+
             if (!invitationRepository.tryDecide(
                 invitation.getId(), AccountInvitationStatus.ACCEPTED, clock.instant())) {
               throw new InvalidOneTimeCodeException();
@@ -147,6 +151,7 @@ public class AccountInvitationCeremonyService {
               // it, and a late code must fail exactly like an unknown one.
               throw new InvalidOneTimeCodeException();
             }
+
             var account =
                 invitation.getMode() == AccountInvitationMode.CONNECT
                     ? connectAccount(command, invitation, passwordHash)
@@ -241,6 +246,7 @@ public class AccountInvitationCeremonyService {
       // The Profile moved on after issuance; a late code fails exactly like an unknown one.
       throw new InvalidOneTimeCodeException();
     }
+
     var role =
         userAccountRepository
             .roleForNewAccount(householdId, invitation.getHouseholdRole())
@@ -249,6 +255,7 @@ public class AccountInvitationCeremonyService {
       // The first Account becomes HouseholdAdmin, and a restricted Account holds no authority.
       throw new InvalidOneTimeCodeException();
     }
+
     var account =
         userAccountRepository.saveAndFlush(
             UserAccount.builder()
@@ -316,6 +323,7 @@ public class AccountInvitationCeremonyService {
         || !invitation.getExpiresAt().isAfter(clock.instant())) {
       throw new InvalidOneTimeCodeException();
     }
+
     if (invitation.getMode() == AccountInvitationMode.CONNECT
         && invitation.getProfileId() == null) {
       // The connectable Profile was deleted; invalidation should have flipped the row, and the

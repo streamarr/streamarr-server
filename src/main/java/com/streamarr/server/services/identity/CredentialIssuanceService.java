@@ -115,6 +115,7 @@ public class CredentialIssuanceService {
     if (profile != null && profile.isRestricted()) {
       return HouseholdRole.MEMBER;
     }
+
     return requestedRole;
   }
 
@@ -124,20 +125,25 @@ public class CredentialIssuanceService {
     if (isBlank(command.recipientEmail())) {
       return Optional.of(new InvitationRejections.EmailRequired());
     }
+
     if (mode == AccountInvitationMode.CREATE && isBlank(command.profileName())) {
       return Optional.of(new InvitationRejections.ProfileNameRequired());
     }
+
     if (userAccountRepository.findByEmailIgnoreCase(command.recipientEmail().strip()).isPresent()) {
       // An existing email cannot be invited or reassigned; ServerAdmin transfers instead.
       return Optional.of(new InvitationRejections.EmailAlreadyUsed());
     }
+
     if (householdRepository.findById(command.householdId()).isEmpty()) {
       return Optional.of(new InvitationRejections.HouseholdNotFound());
     }
+
     var connectRefusal = connectRefusal(mode, command);
     if (connectRefusal.isPresent()) {
       return connectRefusal;
     }
+
     var profile =
         mode == AccountInvitationMode.CREATE
             ? null
@@ -146,11 +152,15 @@ public class CredentialIssuanceService {
     if (restrictionRefusal.isPresent()) {
       return restrictionRefusal;
     }
+
     if (command.localManagerAccountId() != null
         && !userAccountRepository.isEligibleProfileManager(
-            command.localManagerAccountId(), command.householdId(), isRestricted(command, profile))) {
+            command.localManagerAccountId(),
+            command.householdId(),
+            isRestricted(command, profile))) {
       return Optional.of(new InvitationRejections.LocalManagerNotFound());
     }
+
     return reofferRefusal(profile, command);
   }
 
@@ -161,13 +171,16 @@ public class CredentialIssuanceService {
     if (!restricted) {
       return Optional.empty();
     }
+
     if (userAccountRepository.findByHouseholdId(command.householdId()).isEmpty()) {
       // The first Account becomes HouseholdAdmin, and a restricted Account holds no authority.
       return Optional.of(new InvitationRejections.RestrictedFirstAccount());
     }
+
     if (mode == AccountInvitationMode.CREATE && command.localManagerAccountId() == null) {
       return Optional.of(new InvitationRejections.LocalManagerRequired());
     }
+
     return Optional.empty();
   }
 
@@ -183,19 +196,24 @@ public class CredentialIssuanceService {
     if (mode == AccountInvitationMode.CREATE) {
       return Optional.empty();
     }
+
     if (command.profileId() == null) {
       return Optional.of(new InvitationRejections.ConnectProfileRequired());
     }
+
     var profile = profileRepository.findById(command.profileId());
     if (profile.isEmpty()) {
       return Optional.of(new InvitationRejections.ConnectProfileNotFound());
     }
+
     if (userAccountRepository.findByPersonalProfileId(command.profileId()).isPresent()) {
       return Optional.of(new InvitationRejections.ProfileAlreadyLinked());
     }
+
     if (!profile.get().getHouseholdId().equals(command.householdId())) {
       return Optional.of(new InvitationRejections.ProfileNotInHousehold());
     }
+
     return Optional.empty();
   }
 
@@ -206,6 +224,7 @@ public class CredentialIssuanceService {
       if (householdRepository.findById(householdId).isEmpty()) {
         return Optional.of(new InvitationRejections.ReofferHouseholdNotFound());
       }
+
       var visiting =
           !householdId.equals(command.householdId())
               && shareRepository
@@ -216,6 +235,7 @@ public class CredentialIssuanceService {
         return Optional.of(new InvitationRejections.ReofferHouseholdNotShared());
       }
     }
+
     return Optional.empty();
   }
 
@@ -235,6 +255,7 @@ public class CredentialIssuanceService {
     if (command.mode() != AccountInvitationMode.CONNECT || command.reofferHouseholdIds() == null) {
       return List.of();
     }
+
     return command.reofferHouseholdIds().stream().distinct().toList();
   }
 

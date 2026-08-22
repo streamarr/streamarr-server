@@ -578,6 +578,7 @@ class AccountInvitationCeremonyServiceTest {
                 .build());
       }
     }
+
     return issued;
   }
 

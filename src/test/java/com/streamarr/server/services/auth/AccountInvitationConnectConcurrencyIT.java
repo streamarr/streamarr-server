@@ -109,9 +109,7 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
       var second = executor.submit(() -> ceremonyService.accept(acceptCommand(secondCode)));
 
       try {
-        await()
-            .atMost(Duration.ofSeconds(5))
-            .until(() -> blockedConnectionCount(blockerPid) >= 2);
+        await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) >= 2);
       } finally {
         connection.rollback();
       }
@@ -148,13 +146,9 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
               () -> profileSharingService.acceptProfileShare(targetIdentity, pending.getId()));
       Future<AcceptedInvitation> connectAcceptance;
       try {
-        await()
-            .atMost(Duration.ofSeconds(5))
-            .until(() -> blockedConnectionCount(blockerPid) >= 1);
+        await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) >= 1);
         connectAcceptance = executor.submit(() -> ceremonyService.accept(acceptCommand(code)));
-        await()
-            .atMost(Duration.ofSeconds(5))
-            .until(() -> blockedConnectionCount(blockerPid) >= 2);
+        await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) >= 2);
       } finally {
         connection.rollback();
       }
@@ -347,6 +341,7 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
       for (var index = 0; index < parameters.length; index++) {
         statement.setObject(index + 1, parameters[index]);
       }
+
       try (var result = statement.executeQuery()) {
         result.next();
         return result.getInt(1);
