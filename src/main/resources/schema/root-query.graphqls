@@ -11,4 +11,5 @@ type Query {
     householdAdministration(householdId: ID!): HouseholdAdministration
     households(first: Int, after: String, last: Int, before: String): HouseholdAdministrationConnection!
     accountAdministration(accountId: ID!): AccountAdministration
+    profileAdministration(profileId: ID!): ProfileAdministration
 }

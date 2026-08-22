@@ -1,16 +1,22 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
+import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /** Pair with a {@link FakeProfileHouseholdShareRepository} so availability follows the shares. */
 public class FakeProfileRepository extends FakeJpaRepository<Profile> implements ProfileRepository {
 
   private final FakeProfileHouseholdShareRepository shares;
+  private final Map<UUID, UUID> linkedAccountsByProfile = new HashMap<>();
 
   public FakeProfileRepository() {
     this(new FakeProfileHouseholdShareRepository());
@@ -22,6 +28,64 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
 
   public FakeProfileHouseholdShareRepository shares() {
     return shares;
+  }
+
+  @Override
+  public Optional<ProfilePolicySnapshot> lockPolicyById(UUID profileId) {
+    return findById(profileId)
+        .map(
+            profile ->
+                new ProfilePolicySnapshot(
+                    profile.getKind(),
+                    profile.getMaximumAllowedRatingAge(),
+                    linkedAccountsByProfile.get(profileId)));
+  }
+
+  @Override
+  public boolean lockById(UUID profileId) {
+    return findById(profileId).isPresent();
+  }
+
+  /** Marks the Profile as some Account's Personal Profile for policy snapshots. */
+  public void linkTo(UUID profileId, UUID accountId) {
+    linkedAccountsByProfile.put(profileId, accountId);
+  }
+
+  @Override
+  public boolean tryApplyPolicy(UUID profileId, ProfilePolicyTarget target) {
+    var profile = findById(profileId);
+    profile.ifPresent(
+        current -> {
+          current.setKind(target.kind());
+          current.setMaximumAllowedRatingAge(target.maximumAllowedRatingAge());
+        });
+    return profile.isPresent();
+  }
+
+  @Override
+  public boolean tryRename(UUID profileId, String name) {
+    var profile = findById(profileId);
+    profile.ifPresent(current -> current.setName(name));
+    return profile.isPresent();
+  }
+
+  @Override
+  public boolean trySetPicture(UUID profileId, String picture) {
+    var profile = findById(profileId);
+    profile.ifPresent(current -> current.setPicture(picture));
+    return profile.isPresent();
+  }
+
+  @Override
+  public boolean trySetPinHash(UUID profileId, String pinHash) {
+    var profile = findById(profileId);
+    profile.ifPresent(current -> current.setPinHash(pinHash));
+    return profile.isPresent();
+  }
+
+  @Override
+  public Optional<Profile> findRefreshedById(UUID profileId) {
+    return findById(profileId);
   }
 
   @Override

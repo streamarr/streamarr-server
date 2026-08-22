@@ -1,5 +1,6 @@
 package com.streamarr.server.services.authorization;
 
+import com.streamarr.server.domain.auth.ProfileKind;
 import java.util.UUID;
 
 /**
@@ -70,4 +71,45 @@ public sealed interface Intent<T> {
   record DisableAccount(UUID accountId) implements Intent<AuthorizationUnit> {}
 
   record EnableAccount(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  /** Create a Profile in a Household — its HouseholdAdmin (live, eligible) or ServerAdmin. */
+  record CreateProfile(UUID householdId) implements Intent<AuthorizationUnit> {}
+
+  /** Create a Profile and grant its named local manager — live ServerAdmin work. */
+  record CreateProfileWithLocalManager(UUID householdId) implements Intent<AuthorizationUnit> {}
+
+  /** Ordinary Profile edits: managers, supervising admins while shared in, ServerAdmin. */
+  record RenameProfile(UUID profileId) implements Intent<AuthorizationUnit> {}
+
+  record SetProfilePicture(UUID profileId) implements Intent<AuthorizationUnit> {}
+
+  /**
+   * A kind or ceiling change. The authorization module reads the current policy under the caller's
+   * transaction lock, classifies the exact transition, and returns the normalized target the
+   * mutation must write.
+   */
+  sealed interface ProfilePolicyChange extends Intent<ProfilePolicyTransition>
+      permits ChangeProfileKind, SetProfileContentCeiling, ClearProfileContentCeiling {
+
+    UUID profileId();
+  }
+
+  record ChangeProfileKind(UUID profileId, ProfileKind kind) implements ProfilePolicyChange {}
+
+  record SetProfileContentCeiling(UUID profileId, int maximumAllowedRatingAge)
+      implements ProfilePolicyChange {}
+
+  record ClearProfileContentCeiling(UUID profileId) implements ProfilePolicyChange {}
+
+  /** Set or clear a Profile's PIN: managers, supervising admins, ServerAdmin. */
+  record ManageProfilePin(UUID profileId) implements Intent<AuthorizationUnit> {}
+
+  /** ServerAdmin PIN break-glass; requiresFreshReauthentication with a reason. */
+  record OverrideProfilePin(UUID profileId) implements Intent<AuthorizationUnit> {}
+
+  /**
+   * Ordinary standalone deletion: an unlinked, unshared Profile by its sole remaining direct
+   * manager; requiresFreshReauthentication.
+   */
+  record DeleteProfile(UUID profileId) implements Intent<AuthorizationUnit> {}
 }

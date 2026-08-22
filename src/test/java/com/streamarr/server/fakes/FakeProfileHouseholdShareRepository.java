@@ -50,6 +50,16 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
+  public boolean hasLiveOrPendingShares(UUID profileId) {
+    return database.values().stream()
+        .filter(share -> share.getProfileId().equals(profileId))
+        .anyMatch(
+            share ->
+                share.getStatus() == ProfileShareStatus.ACTIVE
+                    || share.getStatus() == ProfileShareStatus.PENDING);
+  }
+
+  @Override
   public boolean isActivelyShared(UUID profileId, UUID householdId) {
     return findByProfileIdAndHouseholdIdAndStatus(profileId, householdId, ProfileShareStatus.ACTIVE)
         .isPresent();

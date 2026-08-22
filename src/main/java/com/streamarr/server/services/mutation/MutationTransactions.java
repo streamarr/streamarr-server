@@ -36,6 +36,7 @@ public class MutationTransactions {
    *     constraint is a defect and the failure propagates
    * @throws IllegalTransactionStateException when the caller already owns a transaction
    */
+  @SuppressWarnings("unchecked")
   public <T, R> Outcome<T, R> write(Supplier<T> write, Function<String, Optional<R>> rejectionFor) {
     if (TransactionSynchronizationManager.isActualTransactionActive()) {
       throw new IllegalTransactionStateException(
@@ -44,6 +45,8 @@ public class MutationTransactions {
 
     try {
       return Outcome.accepted(transactionTemplate.execute(_ -> write.get()));
+    } catch (MutationRejection rejected) {
+      return Outcome.rejected((R) rejected.rejection());
     } catch (DataIntegrityViolationException e) {
       var rejection = translator.constraintName(e).flatMap(rejectionFor);
       if (rejection.isEmpty()) {

@@ -95,6 +95,13 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
+  public Optional<UserAccount> findByPersonalProfileId(UUID profileId) {
+    return database.values().stream()
+        .filter(account -> profileId.equals(account.getPersonalProfileId()))
+        .findFirst();
+  }
+
+  @Override
   public List<UserAccount> findByHouseholdId(UUID householdId) {
     return database.values().stream()
         .filter(account -> householdId.equals(account.getHouseholdId()))
