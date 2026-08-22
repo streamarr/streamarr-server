@@ -6,7 +6,6 @@ import java.util.Locale;
 public enum TokenScope {
   ACCOUNT,
   PROFILE,
-  /** Authorizes only stream paths; never an API scope. */
   PLAYBACK;
 
   public String claimValue() {

@@ -25,6 +25,7 @@ public class SecurityContextAuthorizationService implements AuthorizationService
     if (authentication instanceof StreamarrAuthenticationToken token) {
       return token.getPrincipal();
     }
+
     throw new AuthenticationRequiredException();
   }
 
@@ -35,6 +36,7 @@ public class SecurityContextAuthorizationService implements AuthorizationService
         && token.getCredentials() instanceof Jwt jwt) {
       return jwt.getTokenValue();
     }
+
     throw new AuthenticationRequiredException();
   }
 
@@ -46,6 +48,7 @@ public class SecurityContextAuthorizationService implements AuthorizationService
         && jwt.getExpiresAt() != null) {
       return jwt.getExpiresAt();
     }
+
     throw new AuthenticationRequiredException();
   }
 
@@ -65,6 +68,7 @@ public class SecurityContextAuthorizationService implements AuthorizationService
     if (profileId == null) {
       throw new ProfileRequiredException();
     }
+
     return profileId;
   }
 

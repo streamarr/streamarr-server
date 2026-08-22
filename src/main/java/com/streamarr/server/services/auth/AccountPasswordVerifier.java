@@ -48,9 +48,11 @@ public class AccountPasswordVerifier {
       timingEqualizer.burn(password);
       throw new InvalidCredentialsException();
     }
+
     if (!passwordMatches(account.getId(), expectedPasswordHash, password)) {
       throw new InvalidCredentialsException();
     }
+
     throttle.resetAccountPasswordAttempts(account.getId());
   }
 
@@ -62,6 +64,7 @@ public class AccountPasswordVerifier {
       timingEqualizer.burn(password);
       return false;
     }
+
     try {
       return passwordEncoder.matches(password, expectedPasswordHash);
     } catch (IllegalArgumentException e) {

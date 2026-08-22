@@ -46,17 +46,8 @@ final class EntitySlice {
   }
 
   List<Entity> entities() {
-    var entities = new ArrayList<Entity>();
+    var entities = new ArrayList<>(principalAndResourceEntities());
     var emitted = new HashSet<>(List.of(principal, resource));
-    if (principal.equals(resource)) {
-      requireConsistentSharedAttributes();
-      var sharedAttributes = new LinkedHashMap<>(principalAttributes);
-      sharedAttributes.putAll(resourceAttributes);
-      entities.add(new Entity(principal, Map.copyOf(sharedAttributes), Set.of()));
-    } else {
-      entities.add(new Entity(principal, Map.copyOf(principalAttributes), Set.of()));
-      entities.add(new Entity(resource, Map.copyOf(resourceAttributes), Set.of()));
-    }
 
     for (var uid : referenced) {
       if (emitted.add(uid)) {
@@ -65,6 +56,19 @@ final class EntitySlice {
     }
 
     return List.copyOf(entities);
+  }
+
+  private List<Entity> principalAndResourceEntities() {
+    if (!principal.equals(resource)) {
+      return List.of(
+          new Entity(principal, Map.copyOf(principalAttributes), Set.of()),
+          new Entity(resource, Map.copyOf(resourceAttributes), Set.of()));
+    }
+
+    requireConsistentSharedAttributes();
+    var sharedAttributes = new LinkedHashMap<>(principalAttributes);
+    sharedAttributes.putAll(resourceAttributes);
+    return List.of(new Entity(principal, Map.copyOf(sharedAttributes), Set.of()));
   }
 
   private void requireConsistentSharedAttributes() {

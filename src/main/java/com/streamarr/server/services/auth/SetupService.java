@@ -127,6 +127,7 @@ public class SetupService {
       if (!isDuplicateAdminEmail(e)) {
         throw e;
       }
+
       log.warn("Setup lost the admin-email race to a competing setup.", e);
       throw new SetupAlreadyCompletedException(e);
     }

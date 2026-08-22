@@ -44,9 +44,11 @@ class SliceAssembler {
 
   EntitySlice assemble(AuthenticatedIdentity identity, AuthorizationCheck check) {
     var slice = new EntitySlice(CedarIds.account(identity.accountId()), check.resource());
-    for (var requirement : check.action().facts()) {
-      contributors.get(requirement).contribute(identity, check, slice);
-    }
+    check
+        .action()
+        .facts()
+        .forEach(requirement -> contributors.get(requirement).contribute(identity, check, slice));
+
     return slice;
   }
 }

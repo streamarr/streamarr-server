@@ -148,6 +148,7 @@ public class DeviceAuthorizationService {
     if (authorization.hasExpiredAt(now)) {
       throw new DeviceCodeExpiredException();
     }
+
     if (authorization.getStatus() != DeviceAuthorizationStatus.PENDING) {
       throw new DeviceCodeNotPendingException();
     }
@@ -198,6 +199,7 @@ public class DeviceAuthorizationService {
     if (authorization.getDecidedByAccountId() == null) {
       return Optional.empty();
     }
+
     return userAccountRepository
         .findById(authorization.getDecidedByAccountId())
         .filter(UserAccount::isEnabled);
@@ -293,6 +295,7 @@ public class DeviceAuthorizationService {
         if (!result.inserted()) {
           throw refusedForCapacity(result.outstanding(), now);
         }
+
         warnAsCapacityNears(result.outstanding());
         return candidate;
       } catch (UserCodeCollisionException e) {
@@ -322,6 +325,7 @@ public class DeviceAuthorizationService {
     if (outstanding != warningThreshold && outstanding != properties.maxOutstandingCodes()) {
       return;
     }
+
     log.warn(
         "Device pairing issuance at {} of {} outstanding codes",
         outstanding,

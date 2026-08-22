@@ -3,7 +3,7 @@ type Me {
     accountId: ID!
     email: String!
     displayName: String!
-    "ServerAdmin display snapshot — routing and UI only, never authority."
+    "Whether the Account is currently a ServerAdmin; informational only."
     serverAdmin: Boolean!
     scope: String!
     "The Account's one membership Household."

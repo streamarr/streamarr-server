@@ -77,12 +77,7 @@ class SensitiveAuthValueRedactionTest {
             new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER),
             new RefreshRequest(SECRET_MARKER),
             new TokenRefreshService.RefreshedTokens(null, SECRET_MARKER),
-            SelectProfileCommand.builder()
-                .accountId(UUID.randomUUID())
-                .sessionId(UUID.randomUUID())
-                .profileId(UUID.randomUUID())
-                .pin(SECRET_MARKER)
-                .build(),
+            SelectProfileCommand.builder().profileId(UUID.randomUUID()).pin(SECRET_MARKER).build(),
             SelectProfileCommand.builder().pin(SECRET_MARKER),
             new SelectProfileRequest(UUID.randomUUID(), SECRET_MARKER),
             // Pairing credentials: the device code is polled with, and the user code is low-entropy

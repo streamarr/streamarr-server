@@ -48,6 +48,7 @@ public class CredentialGuessThrottle {
     if (budget.reserve(key)) {
       return;
     }
+
     log.warn(
         "Credential verification throttled: {} budget exhausted for account {}",
         key.type(),

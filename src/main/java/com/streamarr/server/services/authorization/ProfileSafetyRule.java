@@ -6,6 +6,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * ADR 0024 PIN safety, evaluated over the Profiles available in one Household: when any Kid Profile
@@ -25,26 +26,22 @@ public final class ProfileSafetyRule {
       return requiring;
     }
 
-    for (var profile : available) {
-      if (profile.getKind() == ProfileKind.ADULT || isLessRestrictiveThanAnother(profile, kids)) {
-        requiring.add(profile.getId());
-      }
-    }
-
-    return requiring;
+    return available.stream()
+        .filter(
+            profile ->
+                profile.getKind() == ProfileKind.ADULT
+                    || isLessRestrictiveThanAnother(profile, kids))
+        .map(Profile::getId)
+        .collect(Collectors.toCollection(HashSet::new));
   }
 
   /** Ids of the Profiles locked in a Household with exactly these available. */
   public static Set<UUID> lockedProfiles(Collection<Profile> available) {
-    var locked = new HashSet<UUID>();
     var requiring = profilesRequiringPin(available);
-    for (var profile : available) {
-      if (requiring.contains(profile.getId()) && !profile.hasEffectivePin()) {
-        locked.add(profile.getId());
-      }
-    }
-
-    return locked;
+    return available.stream()
+        .filter(profile -> requiring.contains(profile.getId()) && !profile.hasEffectivePin())
+        .map(Profile::getId)
+        .collect(Collectors.toCollection(HashSet::new));
   }
 
   private static boolean isLessRestrictiveThanAnother(Profile profile, Collection<Profile> kids) {

@@ -120,8 +120,6 @@ public class AuthController {
         profileSelectionService.selectProfile(
             identity,
             SelectProfileCommand.builder()
-                .accountId(identity.accountId())
-                .sessionId(identity.authSessionId())
                 .profileId(request.profileId())
                 .pin(request.pin())
                 .build());
@@ -181,6 +179,7 @@ public class AuthController {
           refreshed.rawRefreshToken(),
           carrier.cookieMode());
     }
+
     return respondAccessOnly(refreshed.accessToken(), carrier.cookieMode());
   }
 

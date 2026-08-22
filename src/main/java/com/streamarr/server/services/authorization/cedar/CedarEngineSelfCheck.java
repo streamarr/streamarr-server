@@ -73,16 +73,19 @@ public final class CedarEngineSelfCheck {
       if (!validation.validationPassed()) {
         throw new CedarSelfCheckException("Cedar self-check policies failed validation");
       }
+
       var validationSuccess = validation.success.orElseThrow();
       if (!validationSuccess.validationWarnings.isEmpty()) {
         throw new CedarSelfCheckException(
             "Cedar self-check policy validation reported diagnostics: "
                 + validationSuccess.validationWarnings);
       }
+
       if (!validation.warnings.isEmpty()) {
         throw new CedarSelfCheckException(
             "Cedar self-check validation reported diagnostics: " + validation.warnings);
       }
+
       var result =
           new Result(
               decide(PERMITTED_ACCOUNT, schema, policies),
@@ -90,6 +93,7 @@ public final class CedarEngineSelfCheck {
       if (!result.passed()) {
         throw new CedarSelfCheckException("Cedar self-check decisions did not match expectations");
       }
+
       return result;
     } catch (AuthException e) {
       throw new CedarSelfCheckException("Cedar engine could not evaluate the self-check", e);
@@ -109,6 +113,7 @@ public final class CedarEngineSelfCheck {
       throw new CedarSelfCheckException(
           "Cedar self-check evaluation reported diagnostics: " + response.warnings);
     }
+
     var success =
         response.success.orElseThrow(
             () -> new CedarSelfCheckException("Cedar self-check evaluation failed: " + response));
@@ -116,6 +121,7 @@ public final class CedarEngineSelfCheck {
       throw new CedarSelfCheckException(
           "Cedar self-check evaluation reported diagnostics: " + success.getErrors());
     }
+
     return success.isAllowed();
   }
 

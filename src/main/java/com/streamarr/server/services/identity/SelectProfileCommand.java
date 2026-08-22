@@ -6,13 +6,11 @@ import lombok.NonNull;
 
 /** The select-profile ceremony's input; the PIN is consumed and never echoed. */
 @Builder
-public record SelectProfileCommand(
-    @NonNull UUID accountId, @NonNull UUID sessionId, @NonNull UUID profileId, String pin) {
+public record SelectProfileCommand(@NonNull UUID profileId, String pin) {
 
   @Override
   public String toString() {
-    return "SelectProfileCommand[accountId=%s, sessionId=%s, profileId=%s, pin=REDACTED]"
-        .formatted(accountId, sessionId, profileId);
+    return "SelectProfileCommand[profileId=%s, pin=REDACTED]".formatted(profileId);
   }
 
   public static class SelectProfileCommandBuilder {

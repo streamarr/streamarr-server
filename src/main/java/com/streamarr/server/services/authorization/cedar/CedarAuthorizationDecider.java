@@ -52,6 +52,7 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
       if (sliceViolation.isPresent()) {
         return failClosed(FailureCause.INVALID_SLICE, check, sliceViolation.get());
       }
+
       var request =
           new AuthorizationRequest(
               slice.principal(),

@@ -226,12 +226,7 @@ class ProfileSelectionServiceTest {
   }
 
   private SelectProfileCommand command(UUID profileId, String pin) {
-    return SelectProfileCommand.builder()
-        .accountId(account.getId())
-        .sessionId(session.getId())
-        .profileId(profileId)
-        .pin(pin)
-        .build();
+    return SelectProfileCommand.builder().profileId(profileId).pin(pin).build();
   }
 
   private AuthenticatedIdentity identity() {
