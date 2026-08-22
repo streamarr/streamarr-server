@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.DeviceBoundSessionException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -21,10 +22,15 @@ public class PasswordChangeService {
   private final AccountPasswordVerifier passwordVerifier;
   private final PasswordEncoder passwordEncoder;
 
-  public PasswordChangeResult changePassword(ChangePasswordCommand command) {
+  public PasswordChangeResult changePassword(
+      AuthenticatedIdentity identity, ChangePasswordCommand command) {
+    if (identity.deviceBound()) {
+      throw new DeviceBoundSessionException();
+    }
+
     var account =
         userAccountRepository
-            .findById(command.accountId())
+            .findById(identity.accountId())
             .orElseThrow(AuthenticationRequiredException::new);
     passwordVerifier.verify(account, command.currentPassword());
     var newPasswordHash = passwordEncoder.encode(command.newPassword());
@@ -32,7 +38,7 @@ public class PasswordChangeService {
     return completionService.complete(
         PasswordChangeCompletionCommand.builder()
             .accountId(account.getId())
-            .sessionId(command.sessionId())
+            .sessionId(identity.authSessionId())
             .expectedPasswordHash(account.getPasswordHash())
             .newPasswordHash(newPasswordHash)
             .build());

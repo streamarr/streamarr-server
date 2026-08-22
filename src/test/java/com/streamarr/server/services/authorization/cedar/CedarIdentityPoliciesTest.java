@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.cedarpolicy.BasicAuthorizationEngine;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -15,6 +16,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
+import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
 import com.streamarr.server.fakes.FakeProfileManagerRepository;
@@ -66,6 +68,8 @@ class CedarIdentityPoliciesTest {
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
   private final FakeProfileManagerInvitationRepository managerInvitations =
       new FakeProfileManagerInvitationRepository();
+  private final FakeDeviceRegistrationRepository registrations =
+      new FakeDeviceRegistrationRepository();
 
   private final AuthorizationService authorizationService =
       new SecurityContextAuthorizationService(
@@ -87,7 +91,8 @@ class CedarIdentityPoliciesTest {
                       new ProfileSupervisionContributor(accounts, profiles, shares),
                       new ProfileDeletionContributor(accounts, managers, shares),
                       new ShareContributor(shares, profiles, managers, accounts),
-                      new ManagerInvitationContributor(managerInvitations))),
+                      new ManagerInvitationContributor(managerInvitations),
+                      new RegistrationContributor(registrations, accounts))),
               new ProfilePolicyPlanner(profiles),
               ContributorStubs.systemClockFreshness(),
               new SimpleMeterRegistry()),
@@ -1111,6 +1116,134 @@ class CedarIdentityPoliciesTest {
             .build());
   }
 
+  @Nested
+  @DisplayName("Devices")
+  class Devices {
+
+    @Test
+    @DisplayName("Should forbid administration when the session is device-bound")
+    void shouldForbidAdministrationWhenSessionDeviceBound() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+      var device = onDevice(withReauthenticatedAt(atHome(), Instant.now()));
+
+      // Otherwise-allowed seats: the forbid alone flips each one.
+      assertThat(decide(device, new Intent.AddLibrary())).isEqualTo(DENIED);
+      assertThat(decide(device, new Intent.RenameAccount(account.getId()))).isEqualTo(DENIED);
+      assertThat(decide(device, new Intent.ViewHouseholdAdministration(account.getHouseholdId())))
+          .isEqualTo(DENIED);
+      assertThat(decide(device, new Intent.RenameProfile(personal.getId()))).isEqualTo(DENIED);
+      assertThat(decide(device, new Intent.IssueAccountInvitation())).isEqualTo(DENIED);
+      assertThat(decide(device, new Intent.OfferProfileShare(personal.getId()))).isEqualTo(DENIED);
+      assertThat(decide(device, new Intent.InviteProfileManager(personal.getId())))
+          .isEqualTo(DENIED);
+      assertThat(decide(device, new Intent.LinkDevice(UUID.randomUUID()))).isEqualTo(DENIED);
+
+      // Watching is what a TV is for: picker and selection stay open.
+      assertThat(decide(device, new Intent.ViewProfilePicker())).isEqualTo(ALLOWED);
+      assertThat(decide(device, new Intent.SelectProfile(personal.getId(), false)))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should allow pairing approval when the Account is enabled")
+    void shouldAllowPairingApprovalWhenAccountEnabled() {
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+      assertThat(decide(member(), new Intent.LinkDevice(UUID.randomUUID()))).isEqualTo(ALLOWED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(member(), new Intent.LinkDevice(UUID.randomUUID()))).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should allow revocation when the caller is the Household admin or ServerAdmin")
+    void shouldAllowRevocationWhenCallerHouseholdAdminOrServerAdmin() {
+      var registration =
+          registrations.save(
+              DeviceRegistration.builder()
+                  .esn("esn-1")
+                  .displayName("Living Room TV")
+                  .householdId(account.getHouseholdId())
+                  .authorizingAccountId(UUID.randomUUID())
+                  .build());
+
+      assertThat(decide(atHome(), new Intent.RevokeDeviceRegistration(registration.getId())))
+          .isEqualTo(ALLOWED);
+
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.RevokeDeviceRegistration(registration.getId())))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.RevokeDeviceRegistration(registration.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.RevokeDeviceRegistration(UUID.randomUUID())))
+          .isEqualTo(ALLOWED);
+
+      // A registration that lost its Household proves nothing about any admin seat.
+      account.setServerAdmin(false);
+      account.setHouseholdRole(HouseholdRole.ADMIN);
+      accounts.save(account);
+      var orphaned =
+          registrations.save(
+              DeviceRegistration.builder()
+                  .esn("esn-orphan")
+                  .displayName("Detached TV")
+                  .authorizingAccountId(UUID.randomUUID())
+                  .build());
+      assertThat(decide(atHome(), new Intent.RevokeDeviceRegistration(orphaned.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should allow Household ESN administration when the caller is a local admin or ServerAdmin")
+    void shouldAllowHouseholdEsnAdministrationWhenCallerLocalAdminOrServerAdmin() {
+      assertThat(decide(atHome(), new Intent.BlockEsn(account.getHouseholdId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.UnblockEsn(account.getHouseholdId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.ViewDeviceAdministration(account.getHouseholdId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.BlockEsn(visitedHouseholdId))).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.BlockEsn(visitedHouseholdId))).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should allow the server-wide block when the ServerAdmin is freshly reauthenticated")
+    void shouldAllowServerWideBlockWhenServerAdminFreshlyReauthenticated() {
+      var block = new Intent.BlockEsnServerWide();
+
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), block)).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.UnblockEsnServerWide())).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), block)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), block)).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.UnblockEsnServerWide())).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.ViewServerDeviceAdministration())).isEqualTo(ALLOWED);
+    }
+  }
+
+  private ProfileHouseholdShare pendingShare(UUID profileId, UUID householdId) {
+    return shares.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profileId)
+            .householdId(householdId)
+            .status(ProfileShareStatus.PENDING)
+            .build());
+  }
+
   private AuthenticatedIdentity withReauthenticatedAt(AuthenticatedIdentity base, Instant at) {
     return AuthenticatedIdentity.builder()
         .accountId(base.accountId())
@@ -1122,6 +1255,21 @@ class CedarIdentityPoliciesTest {
         .contextHouseholdId(base.contextHouseholdId())
         .profileId(base.profileId())
         .reauthenticatedAt(Optional.of(at))
+        .build();
+  }
+
+  private AuthenticatedIdentity onDevice(AuthenticatedIdentity base) {
+    return AuthenticatedIdentity.builder()
+        .accountId(base.accountId())
+        .authSessionId(base.authSessionId())
+        .scope(base.scope())
+        .householdId(base.householdId())
+        .householdRole(base.householdRole())
+        .serverAdmin(base.serverAdmin())
+        .contextHouseholdId(base.contextHouseholdId())
+        .profileId(base.profileId())
+        .reauthenticatedAt(base.reauthenticatedAt())
+        .registrationId(UUID.randomUUID())
         .build();
   }
 

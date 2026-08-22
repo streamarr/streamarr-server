@@ -11,6 +11,7 @@ import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.tables.AccountInvitation.AccountInvitationPath;
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.DeviceAuthorization.DeviceAuthorizationPath;
+import com.streamarr.server.jooq.generated.tables.DeviceRegistration.DeviceRegistrationPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
 import com.streamarr.server.jooq.generated.tables.PasswordResetCode.PasswordResetCodePath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
@@ -299,6 +300,34 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
             _deviceAuthorization = new DeviceAuthorizationPath(this, null, Keys.DEVICE_AUTHORIZATION__FK_DEVICE_AUTHORIZATION_DECIDED_BY.getInverseKey());
 
         return _deviceAuthorization;
+    }
+
+    private transient DeviceRegistrationPath _fkDeviceRegistrationAccount;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.device_registration</code> table, via the
+     * <code>fk_device_registration_account</code> key
+     */
+    public DeviceRegistrationPath fkDeviceRegistrationAccount() {
+        if (_fkDeviceRegistrationAccount == null)
+            _fkDeviceRegistrationAccount = new DeviceRegistrationPath(this, null, Keys.DEVICE_REGISTRATION__FK_DEVICE_REGISTRATION_ACCOUNT.getInverseKey());
+
+        return _fkDeviceRegistrationAccount;
+    }
+
+    private transient DeviceRegistrationPath _fkDeviceRegistrationRevokedBy;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.device_registration</code> table, via the
+     * <code>fk_device_registration_revoked_by</code> key
+     */
+    public DeviceRegistrationPath fkDeviceRegistrationRevokedBy() {
+        if (_fkDeviceRegistrationRevokedBy == null)
+            _fkDeviceRegistrationRevokedBy = new DeviceRegistrationPath(this, null, Keys.DEVICE_REGISTRATION__FK_DEVICE_REGISTRATION_REVOKED_BY.getInverseKey());
+
+        return _fkDeviceRegistrationRevokedBy;
     }
 
     private transient PasswordResetCodePath _fkPasswordResetCodeAccount;

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.jooq.generated.Tables.DEVICE_REGISTRATION;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -8,14 +9,21 @@ import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
+import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
+import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
+import com.streamarr.server.repositories.auth.EsnBlockRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -32,6 +40,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
+import javax.sql.DataSource;
+import org.awaitility.Awaitility;
+import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -49,6 +61,8 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   private static final int POLLERS = 8;
+  private static final int ESN_LOCK_NAMESPACE = 0x5354524D;
+  private static final int REGISTRATION_INSERT_GATE_KEY = 316059;
 
   @Autowired private DeviceAuthorizationService deviceAuthorizationService;
 
@@ -56,9 +70,17 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   @Autowired private DeviceAuthorizationRepository authorizationRepository;
 
+  @Autowired private DeviceRegistrationRepository registrationRepository;
+
+  @Autowired private EsnBlockRepository esnBlockRepository;
+
   @Autowired private UserAccountRepository userAccountRepository;
 
   @Autowired private AuthSessionRepository sessionRepository;
+
+  @Autowired private DataSource dataSource;
+
+  @Autowired private DSLContext dsl;
 
   @Autowired private GatedAccessTokenIssuer gatedIssuer;
 
@@ -71,10 +93,13 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     gatedIssuer.reset();
     gatedClock.reset();
     authorizationRepository.deleteAll();
+    registrationRepository.deleteAll();
+    esnBlockRepository.deleteAll();
     for (var accountId : accountIds) {
       // FK cascades sweep auth_session and refresh_token rows.
       authTestSupport.deleteAccount(accountId);
     }
+
     accountIds.clear();
   }
 
@@ -97,7 +122,8 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   static class GatedClock extends Clock {
 
-    private static final int APPROVAL_CLOCK_CALLS_BEFORE_WRITE = 3;
+    // decide() reads the row, takes one clock instant, then writes: park on that single call.
+    private static final int APPROVAL_CLOCK_CALLS_BEFORE_WRITE = 1;
 
     private final Clock delegate;
     private final AtomicReference<Thread> gatedThread = new AtomicReference<>();
@@ -154,6 +180,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
         reachedHold.get().countDown();
         awaitRelease();
       }
+
       return delegate.instant();
     }
 
@@ -182,6 +209,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
       if (failNextIssue.getAndSet(false)) {
         throw new IllegalStateException("Injected issuance failure");
       }
+
       return super.issue(context);
     }
 
@@ -198,7 +226,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   @DisplayName("Should create exactly one session when many pollers race an approved grant")
   void shouldCreateExactlyOneSessionWhenManyPollersRaceApprovedGrant() throws Exception {
     var approver = seedApprover();
-    var issued = deviceAuthorizationService.issue("Apple TV");
+    var issued = deviceAuthorizationService.issue("Apple TV", "esn-1");
     approve(issued.userCode(), approver);
 
     var results = pollConcurrently(issued.deviceCode(), POLLERS);
@@ -211,10 +239,81 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should serialize redemptions when approved grants share an ESN")
+  void shouldSerializeRedemptionsWhenApprovedGrantsShareEsn() throws Exception {
+    var approver = seedApprover();
+    var first = deviceAuthorizationService.issue("First TV", "shared-esn");
+    var second = deviceAuthorizationService.issue("Second TV", "shared-esn");
+    approve(first.userCode(), approver);
+    approve(second.userCode(), approver);
+    var gate = holdRegistrationInserts();
+
+    List<DevicePollResult> results = new ArrayList<>();
+    var failures = new ArrayList<Throwable>();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        gate) {
+      var futures =
+          List.of(
+              executor.submit(() -> deviceAuthorizationService.redeem(first.deviceCode())),
+              executor.submit(() -> deviceAuthorizationService.redeem(second.deviceCode())));
+      Awaitility.await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(() -> assertThat(advisoryLockWaiterCount()).isEqualTo(2));
+      releaseRegistrationInserts(gate);
+      for (var future : futures) {
+        try {
+          results.add(future.get(20, TimeUnit.SECONDS));
+        } catch (ExecutionException failure) {
+          failures.add(failure.getCause());
+        }
+      }
+    } finally {
+      removeRegistrationInsertGate();
+    }
+
+    assertThat(failures).isEmpty();
+    assertThat(results).hasSize(2).allMatch(DevicePollResult.Success.class::isInstance);
+    assertThat(registrationRepository.findAll())
+        .filteredOn(registration -> registration.getStatus() == DeviceRegistrationStatus.ACTIVE)
+        .hasSize(1);
+    assertThat(sessionsOf(approver))
+        .filteredOn(session -> session.getRevokedAt() == null)
+        .hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should expire a winning poll when an ESN block commits before registration")
+  void shouldExpireWinningPollWhenEsnBlockCommitsBeforeRegistration() throws Exception {
+    var approver = seedApprover();
+    var issued = deviceAuthorizationService.issue("Apple TV", "blocked-during-poll");
+    approve(issued.userCode(), approver);
+    var esnLock = holdEsnLock("blocked-during-poll");
+
+    DevicePollResult result;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        esnLock) {
+      var poll = executor.submit(() -> deviceAuthorizationService.redeem(issued.deviceCode()));
+      Awaitility.await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(() -> assertThat(advisoryLockWaiterCount()).isEqualTo(1));
+      esnBlockRepository.saveAndFlush(
+          EsnBlock.builder().esn("blocked-during-poll").reason("stolen").build());
+      releaseEsnLock(esnLock, "blocked-during-poll");
+      result = poll.get(20, TimeUnit.SECONDS);
+    }
+
+    assertThat(result).isInstanceOf(DevicePollResult.Expired.class);
+    assertThat(
+            dsl.fetchCount(DEVICE_REGISTRATION, DEVICE_REGISTRATION.ESN.eq("blocked-during-poll")))
+        .isZero();
+    assertThat(sessionsOf(approver)).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should return pending when a poll locks the row before approval commits")
   void shouldReturnPendingWhenPollLocksRowBeforeApprovalCommits() throws Exception {
     var approver = seedApprover();
-    var issued = deviceAuthorizationService.issue("Apple TV");
+    var issued = deviceAuthorizationService.issue("Apple TV", "esn-1");
     gatedClock.prepareApprovalHold();
 
     DevicePollResult result;
@@ -234,6 +333,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
       } finally {
         gatedClock.releaseApproval();
       }
+
       approval.get(20, TimeUnit.SECONDS);
     }
 
@@ -246,7 +346,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   void shouldPreserveWinningDecisionWhenTwoApproversRace() throws Exception {
     var losingApprover = seedApprover();
     var winningApprover = seedApprover();
-    var issued = deviceAuthorizationService.issue("Apple TV");
+    var issued = deviceAuthorizationService.issue("Apple TV", "esn-1");
     gatedClock.prepareApprovalHold();
 
     DeviceAuthorizationView winningDecision;
@@ -283,7 +383,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   @DisplayName("Should refuse an approved grant when its approver has been deleted")
   void shouldRefuseApprovedGrantWhenApproverDeleted() {
     var approver = seedApprover();
-    var issued = deviceAuthorizationService.issue("Apple TV");
+    var issued = deviceAuthorizationService.issue("Apple TV", "esn-1");
     approve(issued.userCode(), approver);
 
     // A deleted approver no longer authorizes consumption. No write is attempted, so this is a
@@ -300,7 +400,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   @DisplayName("Should roll back session creation when access-token issuance fails")
   void shouldRollBackSessionCreationWhenAccessTokenIssuanceFails() {
     var approver = seedApprover();
-    var issued = deviceAuthorizationService.issue("Apple TV");
+    var issued = deviceAuthorizationService.issue("Apple TV", "esn-1");
     var deviceCode = issued.deviceCode();
     approve(issued.userCode(), approver);
     gatedIssuer.failNextIssuance();
@@ -320,7 +420,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
   @DisplayName("Should advance the cadence exactly once per poll when polls arrive concurrently")
   void shouldAdvanceCadenceExactlyOncePerPollWhenPollsArriveConcurrently() throws Exception {
     seedApprover();
-    var issued = deviceAuthorizationService.issue("Apple TV");
+    var issued = deviceAuthorizationService.issue("Apple TV", "esn-1");
 
     var results = pollConcurrently(issued.deviceCode(), 4);
 
@@ -363,6 +463,74 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
     assertThat(failures).isEmpty();
     return List.copyOf(results);
+  }
+
+  private Connection holdRegistrationInserts() throws SQLException {
+    dsl.execute(
+        """
+        CREATE FUNCTION gate_device_registration_insert()
+            RETURNS TRIGGER
+            LANGUAGE plpgsql
+        AS
+        $$
+        BEGIN
+            PERFORM pg_advisory_xact_lock(316059);
+            RETURN NEW;
+        END;
+        $$
+        """);
+    dsl.execute(
+        """
+        CREATE TRIGGER trg_gate_device_registration_insert
+            BEFORE INSERT ON device_registration
+            FOR EACH ROW EXECUTE FUNCTION gate_device_registration_insert()
+        """);
+    var connection = dataSource.getConnection();
+    try (var statement = connection.prepareStatement("SELECT pg_advisory_lock(?)")) {
+      statement.setInt(1, REGISTRATION_INSERT_GATE_KEY);
+      statement.execute();
+    }
+
+    return connection;
+  }
+
+  private Connection holdEsnLock(String esn) throws SQLException {
+    var connection = dataSource.getConnection();
+    try (var statement = connection.prepareStatement("SELECT pg_advisory_lock(?, ?)")) {
+      statement.setInt(1, ESN_LOCK_NAMESPACE);
+      statement.setInt(2, esn.hashCode());
+      statement.execute();
+    }
+
+    return connection;
+  }
+
+  private void releaseRegistrationInserts(Connection connection) throws SQLException {
+    try (var statement = connection.prepareStatement("SELECT pg_advisory_unlock(?)")) {
+      statement.setInt(1, REGISTRATION_INSERT_GATE_KEY);
+      statement.execute();
+    }
+  }
+
+  private void releaseEsnLock(Connection connection, String esn) throws SQLException {
+    try (var statement = connection.prepareStatement("SELECT pg_advisory_unlock(?, ?)")) {
+      statement.setInt(1, ESN_LOCK_NAMESPACE);
+      statement.setInt(2, esn.hashCode());
+      statement.execute();
+    }
+  }
+
+  private int advisoryLockWaiterCount() {
+    return dsl.fetchCount(
+        dsl.selectOne()
+            .from("pg_stat_activity")
+            .where(DSL.field("wait_event", String.class).eq("advisory")));
+  }
+
+  private void removeRegistrationInsertGate() {
+    dsl.execute(
+        "DROP TRIGGER IF EXISTS trg_gate_device_registration_insert ON device_registration");
+    dsl.execute("DROP FUNCTION IF EXISTS gate_device_registration_insert()");
   }
 
   private UserAccount seedApprover() {

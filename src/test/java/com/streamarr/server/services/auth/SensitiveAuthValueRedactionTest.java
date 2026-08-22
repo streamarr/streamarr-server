@@ -93,7 +93,7 @@ class SensitiveAuthValueRedactionTest {
             // too.
             new DeviceTokenRequest(SECRET_MARKER),
             new DeviceLookupRequest(SECRET_MARKER),
-            new DeviceDecisionRequest(SECRET_MARKER, "APPROVE"),
+            new DeviceDecisionRequest(SECRET_MARKER, "APPROVE", null),
             DeviceCodeResponse.builder().deviceCode(SECRET_MARKER).userCode(SECRET_MARKER),
             IssuedDeviceCode.builder().deviceCode(SECRET_MARKER).userCode(SECRET_MARKER),
             DeviceAuthorizationResponse.builder().userCode(SECRET_MARKER).deviceName("Apple TV"),
@@ -159,8 +159,6 @@ class SensitiveAuthValueRedactionTest {
             PasswordChangeResult.builder().rawRefreshToken(SECRET_MARKER),
             AuthTokensResponse.builder().accessToken(SECRET_MARKER).refreshToken(SECRET_MARKER),
             ChangePasswordCommand.builder()
-                .accountId(UUID.randomUUID())
-                .sessionId(UUID.randomUUID())
                 .currentPassword(SECRET_MARKER)
                 .newPassword(SECRET_MARKER)
                 .build(),
@@ -191,8 +189,6 @@ class SensitiveAuthValueRedactionTest {
         new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER),
         new ReauthRequest(SECRET_MARKER),
         ChangePasswordCommand.builder()
-            .accountId(UUID.randomUUID())
-            .sessionId(UUID.randomUUID())
             .currentPassword(SECRET_MARKER)
             .newPassword(SECRET_MARKER)
             .build(),

@@ -34,6 +34,9 @@ public class AuthSession extends BaseAuditableEntity<AuthSession> {
   /** The Profile selected through select-profile; null in Account scope. */
   private UUID selectedProfileId;
 
+  /** The Device registration a device-bound session was born from; null for ordinary sessions. */
+  private UUID registrationId;
+
   private Instant revokedAt;
 
   @Enumerated(EnumType.STRING)

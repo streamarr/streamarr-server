@@ -10,6 +10,7 @@ import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -42,6 +43,7 @@ public class AccountAdministrationService {
   private final AuthorizationService authorizationService;
   private final UserAccountRepository userAccountRepository;
   private final AuthSessionRepository authSessionRepository;
+  private final DeviceRegistrationLifecycle registrationLifecycle;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final AccountInvitationRepository accountInvitationRepository;
   private final PasswordResetCodeRepository passwordResetCodeRepository;
@@ -131,6 +133,9 @@ public class AccountAdministrationService {
                 () -> {
                   authSessionRepository.revokeAllForAccount(
                       accountId, SessionRevocationReason.ADMIN_REVOCATION, clock.instant());
+                  // T9: a disabled Account supports no registration; revoke before commit.
+                  registrationLifecycle.revokeAllByAccount(
+                      accountId, "authorizing Account disabled", clock.instant());
                   invalidateIssuedCredentials(accountId, "issuer disabled");
                 })
             .notFound(AdministrationRejections.AccountNotFound::new)

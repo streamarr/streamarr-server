@@ -28,5 +28,8 @@ public final class TokenClaims {
 
   public static final String STREAM_SESSION_ID = "stream_session_id";
 
+  /** The Device registration a device-bound session was born from (ADR 0024 §Devices). */
+  public static final String REGISTRATION_ID = "reg";
+
   private TokenClaims() {}
 }

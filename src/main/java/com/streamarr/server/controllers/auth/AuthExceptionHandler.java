@@ -2,6 +2,7 @@ package com.streamarr.server.controllers.auth;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.DeviceBoundSessionException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
@@ -92,6 +93,11 @@ public class AuthExceptionHandler {
   @ExceptionHandler(ProfileLockedException.class)
   public ResponseEntity<AuthErrorResponse> handleProfileLocked(ProfileLockedException e) {
     return respond(HttpStatus.CONFLICT, "PROFILE_LOCKED", e);
+  }
+
+  @ExceptionHandler(DeviceBoundSessionException.class)
+  public ResponseEntity<AuthErrorResponse> handleDeviceBound(DeviceBoundSessionException e) {
+    return respond(HttpStatus.FORBIDDEN, "DEVICE_BOUND_SESSION", e);
   }
 
   @ExceptionHandler(AuthorizationUnavailableException.class)

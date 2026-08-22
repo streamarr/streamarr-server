@@ -229,6 +229,30 @@ class RefreshTokenServiceTest {
   }
 
   @Test
+  @DisplayName("Should report the registration when a device refresh family is logged out")
+  void shouldReportRegistrationWhenDeviceRefreshFamilyLoggedOut() {
+    var accountId = UUID.randomUUID();
+    var registrationId = UUID.randomUUID();
+    var issued =
+        service.createSession(
+            CreateAuthSessionCommand.builder()
+                .accountId(accountId)
+                .deviceName("Kitchen TV")
+                .contextHouseholdId(UUID.randomUUID())
+                .registrationId(registrationId)
+                .build());
+
+    var loggedOut = service.logout(issued.rawToken());
+
+    assertThat(loggedOut)
+        .hasValueSatisfying(
+            session -> {
+              assertThat(session.accountId()).isEqualTo(accountId);
+              assertThat(session.registrationId()).isEqualTo(registrationId);
+            });
+  }
+
+  @Test
   @DisplayName("Should keep existing refresh family live when logout refresh token unknown")
   void shouldKeepExistingRefreshFamilyLiveWhenLogoutRefreshTokenUnknown() {
     var existing = issueSession();

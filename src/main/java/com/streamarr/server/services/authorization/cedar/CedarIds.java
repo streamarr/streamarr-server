@@ -12,6 +12,8 @@ final class CedarIds {
   static final String SERVER_TYPE = "Streamarr::Server";
   static final String SHARE_TYPE = "Streamarr::Share";
   static final String MANAGER_INVITATION_TYPE = "Streamarr::ManagerInvitation";
+  static final String GRANT_TYPE = "Streamarr::Grant";
+  static final String REGISTRATION_TYPE = "Streamarr::Registration";
   static final String SERVER_ID = "streamarr";
 
   private CedarIds() {}
@@ -34,6 +36,14 @@ final class CedarIds {
 
   static EntityUID managerInvitation(UUID invitationId) {
     return uid(MANAGER_INVITATION_TYPE, invitationId.toString());
+  }
+
+  static EntityUID grant(UUID grantId) {
+    return uid(GRANT_TYPE, grantId.toString());
+  }
+
+  static EntityUID registration(UUID registrationId) {
+    return uid(REGISTRATION_TYPE, registrationId.toString());
   }
 
   static EntityUID server() {

@@ -16,6 +16,7 @@ class SignedPrincipalContextContributor implements FactContributor {
   static final String MEMBERSHIP_HOUSEHOLD = "membershipHousehold";
   static final String CONTEXT_HOUSEHOLD = "contextHousehold";
   static final String SELECTED_PROFILE = "selectedProfile";
+  static final String DEVICE_BOUND = "deviceBound";
 
   @Override
   public FactRequirement provides() {

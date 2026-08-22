@@ -4,16 +4,20 @@ import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
+import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.DeviceCodeExpiredException;
 import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.exceptions.DevicePairingNotConfiguredException;
+import com.streamarr.server.exceptions.EsnRequiredException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.repositories.auth.DeviceCodeCollisionException;
+import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
+import com.streamarr.server.repositories.auth.EsnBlockRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.auth.UserCodeCollisionException;
 import java.nio.charset.StandardCharsets;
@@ -44,6 +48,9 @@ public class DeviceAuthorizationService {
 
   private final DeviceAuthorizationRepository authorizationRepository;
   private final UserAccountRepository userAccountRepository;
+  private final DeviceRegistrationRepository deviceRegistrationRepository;
+  private final EsnBlockRepository esnBlockRepository;
+  private final DeviceRegistrationLifecycle registrationLifecycle;
   private final RefreshTokenService refreshTokenService;
   private final AccessTokenIssuer accessTokenIssuer;
   private final UserCodeGenerator userCodeGenerator;
@@ -61,9 +68,14 @@ public class DeviceAuthorizationService {
    * Deliberately not transactional: each attempt below opens its own transaction, so a code
    * collision retries cleanly instead of retrying inside one already marked rollback-only.
    */
-  public IssuedDeviceCode issue(String rawDeviceName) {
+  public IssuedDeviceCode issue(String rawDeviceName, String esn) {
     if (!isPairingEnabled()) {
       throw new DevicePairingNotConfiguredException();
+    }
+
+    if (esn == null || esn.isBlank()) {
+      // The registration the winning poll creates is keyed by hardware identity (ADR 0024).
+      throw new EsnRequiredException();
     }
 
     var now = clock.instant();
@@ -72,7 +84,8 @@ public class DeviceAuthorizationService {
     for (var attempt = 0; attempt < DEVICE_CODE_ATTEMPTS; attempt++) {
       var deviceCode = deviceCodeGenerator.generate();
       try {
-        var userCode = saveWithUniqueUserCode(deviceCode, rawDeviceName, interval, now);
+        var userCode =
+            saveWithUniqueUserCode(deviceCode, rawDeviceName, esn.strip(), interval, now);
         return IssuedDeviceCode.builder()
             .deviceCode(deviceCode)
             .userCode(UserCode.forDisplay(userCode))
@@ -132,10 +145,33 @@ public class DeviceAuthorizationService {
     return viewOf(authorization, authorization.getStatus());
   }
 
+  /**
+   * Resolves a typed code to its pairing grant for the approval ceremony: the guessing budget is
+   * spent here, once per presented code, before Cedar or any validation sees the request.
+   */
+  @Transactional(readOnly = true)
+  public ResolvedGrant resolveForDecision(String typedUserCode, UUID callerAccountId) {
+    guessThrottle.registerAttempt(callerAccountId);
+    var authorization =
+        authorizationRepository
+            .findByUserCode(UserCode.normalize(typedUserCode))
+            .orElseThrow(DeviceCodeNotFoundException::new);
+    // The approver is mid-flow on a code they demonstrably saw, so expiry earns its own answer
+    // here; a bare not-found would read as a typo. Lookup collapses it to 404 on purpose.
+    if (authorization.hasExpiredAt(clock.instant())) {
+      throw new DeviceCodeExpiredException();
+    }
+
+    return new ResolvedGrant(
+        authorization.getId(), authorization.getEsn(), authorization.getDeviceName());
+  }
+
+  /**
+   * The conditional decision write. Deliberately not throttled: {@link #resolveForDecision} already
+   * spent the budget for this presentation, and the ceremony calls both in one request.
+   */
   @Transactional
   public DeviceAuthorizationView decide(DeviceDecisionCommand command) {
-    guessThrottle.registerAttempt(command.decidedByAccountId());
-
     var userCode = UserCode.normalize(command.userCode());
     var authorization =
         authorizationRepository
@@ -148,6 +184,7 @@ public class DeviceAuthorizationService {
     if (authorization.hasExpiredAt(now)) {
       throw new DeviceCodeExpiredException();
     }
+
     if (authorization.getStatus() != DeviceAuthorizationStatus.PENDING) {
       throw new DeviceCodeNotPendingException();
     }
@@ -163,6 +200,7 @@ public class DeviceAuthorizationService {
                 .userCode(userCode)
                 .status(decidedStatus)
                 .decidedByAccountId(command.decidedByAccountId())
+                .chosenHouseholdId(command.chosenHouseholdId())
                 .now(now)
                 .build());
 
@@ -186,7 +224,34 @@ public class DeviceAuthorizationService {
     // must carry is in its insert, because a jOOQ update of a row Hibernate has only queued would
     // run before the row exists.
     var account = approver.get();
-    var issued = refreshTokenService.createSession(account, authorization.getDeviceName());
+    var household =
+        authorization.getChosenHouseholdId() == null
+            ? account.getHouseholdId()
+            : authorization.getChosenHouseholdId();
+    if (!userAccountRepository.mayUseHousehold(account.getId(), household)) {
+      // Approval facts went stale; the poll answers exactly like an expired code.
+      return new DevicePollResult.Expired();
+    }
+
+    if (authorization.getEsn() == null || isEsnBlocked(authorization.getEsn(), household)) {
+      // No hardware identity, no registration, no session: an ESN-less grant (pre-V059 rows)
+      // would mint an unbound "device" session that dodges the device forbid.
+      return new DevicePollResult.Expired();
+    }
+
+    var registrationId = registerDevice(authorization, account, household, now);
+    if (registrationId.isEmpty()) {
+      return new DevicePollResult.Expired();
+    }
+
+    var issued =
+        refreshTokenService.createSession(
+            CreateAuthSessionCommand.builder()
+                .accountId(account.getId())
+                .deviceName(authorization.getDeviceName())
+                .contextHouseholdId(household)
+                .registrationId(registrationId.get())
+                .build());
     var accessToken = accessTokenIssuer.issue(TokenContext.of(account, issued.session()));
 
     authorizationRepository.markConsumed(authorization.getId(), now);
@@ -194,10 +259,42 @@ public class DeviceAuthorizationService {
     return new DevicePollResult.Success(accessToken, issued.rawToken());
   }
 
+  /**
+   * One TV, one live Household context: a re-paired ESN supersedes its previous registration — and
+   * that registration's sessions — before the new one is written, so the partial unique index never
+   * trips and the old binding cannot outlive the new consent.
+   */
+  private Optional<UUID> registerDevice(
+      DeviceAuthorization authorization, UserAccount account, UUID household, Instant now) {
+    registrationLifecycle.revokeAllByEsn(
+        authorization.getEsn(), null, account.getId(), "superseded by a new pairing", now);
+    if (isEsnBlocked(authorization.getEsn(), household)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        deviceRegistrationRepository
+            .saveAndFlush(
+                DeviceRegistration.builder()
+                    .esn(authorization.getEsn())
+                    .displayName(authorization.getDeviceName())
+                    .householdId(household)
+                    .authorizingAccountId(account.getId())
+                    .authorizationId(authorization.getId())
+                    .build())
+            .getId());
+  }
+
+  private boolean isEsnBlocked(String esn, UUID householdId) {
+    return esnBlockRepository.existsByEsnAndHouseholdIdIsNull(esn)
+        || esnBlockRepository.existsByEsnAndHouseholdId(esn, householdId);
+  }
+
   private Optional<UserAccount> findEnabledApprover(DeviceAuthorization authorization) {
     if (authorization.getDecidedByAccountId() == null) {
       return Optional.empty();
     }
+
     return userAccountRepository
         .findById(authorization.getDecidedByAccountId())
         .filter(UserAccount::isEnabled);
@@ -271,7 +368,7 @@ public class DeviceAuthorizationService {
    * check-then-act race that lets every concurrent caller past a cap none of them has filled yet.
    */
   private String saveWithUniqueUserCode(
-      String deviceCode, String rawDeviceName, int interval, Instant now) {
+      String deviceCode, String rawDeviceName, String esn, int interval, Instant now) {
     UserCodeCollisionException lastCollision = null;
     for (var attempt = 0; attempt < USER_CODE_ATTEMPTS; attempt++) {
       var candidate = userCodeGenerator.generate();
@@ -282,6 +379,7 @@ public class DeviceAuthorizationService {
                     .deviceCodeDigest(digestOf(deviceCode))
                     .userCode(candidate)
                     .deviceName(DeviceName.sanitize(rawDeviceName))
+                    .esn(esn)
                     .expiresAt(now.plus(properties.codeTtl()))
                     // RFC 8628 §3.2: the interval is the wait between polls. Nothing precedes the
                     // first one, so the gate opens at issuance and governs from the second poll on.
@@ -293,6 +391,7 @@ public class DeviceAuthorizationService {
         if (!result.inserted()) {
           throw refusedForCapacity(result.outstanding(), now);
         }
+
         warnAsCapacityNears(result.outstanding());
         return candidate;
       } catch (UserCodeCollisionException e) {
@@ -322,6 +421,7 @@ public class DeviceAuthorizationService {
     if (outstanding != warningThreshold && outstanding != properties.maxOutstandingCodes()) {
       return;
     }
+
     log.warn(
         "Device pairing issuance at {} of {} outstanding codes",
         outstanding,
@@ -365,4 +465,7 @@ public class DeviceAuthorizationService {
       throw new IllegalStateException("SHA-256 is required but unavailable.", e);
     }
   }
+
+  /** The grant the ceremony authorizes; never the code, never poll credentials. */
+  public record ResolvedGrant(UUID grantId, String esn, String deviceName) {}
 }
