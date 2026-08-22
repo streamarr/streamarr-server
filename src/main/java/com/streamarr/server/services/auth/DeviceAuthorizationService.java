@@ -237,13 +237,16 @@ public class DeviceAuthorizationService {
     }
 
     var registrationId = registerDevice(authorization, account, household, now);
+    if (registrationId.isEmpty()) {
+      return new DevicePollResult.Expired();
+    }
     var issued =
         refreshTokenService.createSession(
             CreateAuthSessionCommand.builder()
                 .accountId(account.getId())
                 .deviceName(authorization.getDeviceName())
                 .contextHouseholdId(household)
-                .registrationId(registrationId)
+                .registrationId(registrationId.get())
                 .build());
     var accessToken = accessTokenIssuer.issue(TokenContext.of(account, issued.session()));
 
@@ -257,20 +260,24 @@ public class DeviceAuthorizationService {
    * that registration's sessions — before the new one is written, so the partial unique index never
    * trips and the old binding cannot outlive the new consent.
    */
-  private UUID registerDevice(
+  private Optional<UUID> registerDevice(
       DeviceAuthorization authorization, UserAccount account, UUID household, Instant now) {
     registrationLifecycle.revokeAllByEsn(
         authorization.getEsn(), null, account.getId(), "superseded by a new pairing", now);
-    return deviceRegistrationRepository
-        .saveAndFlush(
-            DeviceRegistration.builder()
-                .esn(authorization.getEsn())
-                .displayName(authorization.getDeviceName())
-                .householdId(household)
-                .authorizingAccountId(account.getId())
-                .authorizationId(authorization.getId())
-                .build())
-        .getId();
+    if (isEsnBlocked(authorization.getEsn(), household)) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        deviceRegistrationRepository
+            .saveAndFlush(
+                DeviceRegistration.builder()
+                    .esn(authorization.getEsn())
+                    .displayName(authorization.getDeviceName())
+                    .householdId(household)
+                    .authorizingAccountId(account.getId())
+                    .authorizationId(authorization.getId())
+                    .build())
+            .getId());
   }
 
   private boolean isEsnBlocked(String esn, UUID householdId) {

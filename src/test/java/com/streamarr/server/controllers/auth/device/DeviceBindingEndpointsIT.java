@@ -10,6 +10,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
 import com.streamarr.server.repositories.auth.EsnBlockRepository;
@@ -45,6 +46,7 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private AuthSessionRepository sessionRepository;
   @Autowired private DeviceAuthorizationRepository authorizationRepository;
   @Autowired private DeviceRegistrationRepository registrationRepository;
   @Autowired private EsnBlockRepository esnBlockRepository;
@@ -87,7 +89,11 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"userCode\": \"%s\"}".formatted(userCode)))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.households.length()").value(2));
+        .andExpect(jsonPath("$.households.length()").value(2))
+        .andExpect(jsonPath("$.households[0].id").value(approver.household().getId().toString()))
+        .andExpect(jsonPath("$.households[0].name").value(approver.household().getName()))
+        .andExpect(jsonPath("$.households[1].id").value(host.household().getId().toString()))
+        .andExpect(jsonPath("$.households[1].name").value(host.household().getName()));
 
     approve(userCode, host.household().getId());
     var tokens = pollSuccessfully(issued.get("deviceCode").asString());
@@ -319,12 +325,13 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should end the visitor's device registrations when the share ends")
-  void shouldEndVisitorsDeviceRegistrationsWhenShareEnds() throws Exception {
+  @DisplayName("Should end the visitor's device access when the share ends")
+  void shouldEndVisitorsDeviceAccessWhenShareEnds() throws Exception {
     var share = visit(approver, host);
     var issued = issueCode("Cabin TV", "esn-visit");
     approve(issued.get("userCode").asString(), host.household().getId());
-    pollSuccessfully(issued.get("deviceCode").asString());
+    var tokens = pollSuccessfully(issued.get("deviceCode").asString());
+    var registration = registrationRepository.findAll().getFirst();
 
     graphql(
             authTestSupport.accountBearer(approver),
@@ -337,8 +344,20 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.endProfileShare.userErrors").isEmpty());
 
-    assertThat(registrationRepository.findAll().getFirst().getStatus())
+    assertThat(registrationRepository.findById(registration.getId()).orElseThrow().getStatus())
         .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(sessionRepository.findAll())
+        .filteredOn(session -> registration.getId().equals(session.getRegistrationId()))
+        .singleElement()
+        .satisfies(session -> assertThat(session.getRevokedAt()).isNotNull());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"refreshToken\": \"%s\", \"cookieMode\": false}"
+                        .formatted(tokens.get("refreshToken").asString())))
+        .andExpect(status().isUnauthorized());
   }
 
   @Test
