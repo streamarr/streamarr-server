@@ -47,7 +47,12 @@ class PasswordResetRedemptionServiceTest {
           accounts,
           sessions,
           opaqueCodes,
-          new CredentialGuessThrottle(new AuthThrottleProperties(5, Duration.ofMinutes(15)), clock),
+          new CredentialGuessThrottle(
+              AuthThrottleProperties.builder()
+                  .maxAttempts(5)
+                  .window(Duration.ofMinutes(15))
+                  .build(),
+              clock),
           new PlainEncoder(),
           new TransactionTemplate(new FakeTransactionManager()),
           clock);

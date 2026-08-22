@@ -57,7 +57,9 @@ class AccountInvitationCeremonyServiceTest {
   private final OpaqueCodes opaqueCodes = new OpaqueCodes();
   private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
   private final CredentialGuessThrottle throttle =
-      new CredentialGuessThrottle(new AuthThrottleProperties(5, Duration.ofMinutes(15)), clock);
+      new CredentialGuessThrottle(
+          AuthThrottleProperties.builder().maxAttempts(5).window(Duration.ofMinutes(15)).build(),
+          clock);
 
   private final AccountInvitationCeremonyService service =
       new AccountInvitationCeremonyService(
@@ -217,9 +219,7 @@ class AccountInvitationCeremonyServiceTest {
   }
 
   private PendingInvitation.PendingInvitationBuilder pendingInvitationBuilder() {
-    return PendingInvitation.builder()
-        .role(HouseholdRole.MEMBER)
-        .householdId(UUID.randomUUID());
+    return PendingInvitation.builder().role(HouseholdRole.MEMBER).householdId(UUID.randomUUID());
   }
 
   private OpaqueCodes.IssuedCode pendingInvitation(PendingInvitation invitation) {
@@ -242,8 +242,7 @@ class AccountInvitationCeremonyServiceTest {
   }
 
   @Builder
-  private record PendingInvitation(
-      HouseholdRole role, UUID localManagerId, UUID householdId) {}
+  private record PendingInvitation(HouseholdRole role, UUID localManagerId, UUID householdId) {}
 
   private static final class PlainEncoder implements PasswordEncoder {
     @Override
