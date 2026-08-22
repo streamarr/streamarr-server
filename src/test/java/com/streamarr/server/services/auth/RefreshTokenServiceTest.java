@@ -229,8 +229,8 @@ class RefreshTokenServiceTest {
   }
 
   @Test
-  @DisplayName("Should report the device registration bound to the logged-out refresh family")
-  void shouldReportDeviceRegistrationBoundToLoggedOutRefreshFamily() {
+  @DisplayName("Should report the registration when a device refresh family is logged out")
+  void shouldReportRegistrationWhenDeviceRefreshFamilyLoggedOut() {
     var accountId = UUID.randomUUID();
     var registrationId = UUID.randomUUID();
     var issued =

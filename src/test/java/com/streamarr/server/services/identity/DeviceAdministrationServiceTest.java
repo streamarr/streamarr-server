@@ -69,8 +69,8 @@ class DeviceAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should revoke a registration once, dropping its sessions with it")
-  void shouldRevokeRegistrationOnceDroppingItsSessionsWithIt() {
+  @DisplayName("Should revoke the registration and sessions when the registration is active")
+  void shouldRevokeRegistrationAndSessionsWhenRegistrationActive() {
     var registration = activeRegistration("esn-1");
     var session =
         sessions.save(
@@ -95,8 +95,8 @@ class DeviceAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should read hidden registrations as not found under the oracle rule")
-  void shouldReadHiddenRegistrationsAsNotFoundUnderOracleRule() {
+  @DisplayName("Should return not found when the registration is hidden")
+  void shouldReturnNotFoundWhenRegistrationHidden() {
     var registration = activeRegistration("esn-1");
     authorization.denyAll();
 
@@ -105,8 +105,8 @@ class DeviceAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should block an ESN only after revoking everything it still matches")
-  void shouldBlockEsnOnlyAfterRevokingEverythingItStillMatches() {
+  @DisplayName("Should revoke matching registrations before blocking when the ESN is valid")
+  void shouldRevokeMatchesBeforeBlockingWhenEsnValid() {
     var registration = activeRegistration("esn-1");
     var session =
         sessions.save(
@@ -134,8 +134,8 @@ class DeviceAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should reserve the server-wide block for the fresh ceremony")
-  void shouldReserveServerWideBlockForFreshCeremony() {
+  @DisplayName("Should allow the server-wide block when the fresh ceremony is complete")
+  void shouldAllowServerWideBlockWhenFreshCeremonyComplete() {
     authorization.decideWith(
         intent ->
             intent instanceof Intent.BlockEsnServerWide
@@ -162,8 +162,8 @@ class DeviceAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should unblock exactly the named scope")
-  void shouldUnblockExactlyNamedScope() {
+  @DisplayName("Should remove only the named scope when unblocking an ESN")
+  void shouldRemoveOnlyNamedScopeWhenUnblockingEsn() {
     blocks.save(EsnBlock.builder().esn("esn-1").householdId(householdId).reason("old").build());
     blocks.save(EsnBlock.builder().esn("esn-1").reason("server-wide").build());
 
@@ -181,8 +181,8 @@ class DeviceAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should scope the device reads by visibility")
-  void shouldScopeDeviceReadsByVisibility() {
+  @DisplayName("Should return only visible rows when reading device administration")
+  void shouldReturnOnlyVisibleRowsWhenReadingDeviceAdministration() {
     activeRegistration("esn-1");
     blocks.save(EsnBlock.builder().esn("esn-2").householdId(householdId).reason("x").build());
     blocks.save(EsnBlock.builder().esn("esn-3").reason("server-wide").build());

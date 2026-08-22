@@ -21,8 +21,8 @@ class ReauthenticationServiceTest {
           new FakeUserAccountRepository(), new FakeAuthSessionRepository(), null);
 
   @Test
-  @DisplayName("Should reject a device-bound session before any password work")
-  void shouldRejectDeviceBoundSessionBeforeAnyPasswordWork() {
+  @DisplayName("Should reject before password work when the session is device-bound")
+  void shouldRejectBeforePasswordWorkWhenSessionDeviceBound() {
     var device =
         AuthenticatedIdentityFixture.accountScopedBuilder()
             .registrationId(UUID.randomUUID())
