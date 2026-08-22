@@ -17,6 +17,7 @@ import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
+import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
 import com.streamarr.server.fakes.FakeProfileManagerRepository;
@@ -68,6 +69,7 @@ class AccountLifecycleServiceTest {
       new FakeProfileManagerInvitationRepository();
   private final FakeAccountInvitationRepository accountInvitations =
       new FakeAccountInvitationRepository();
+  private final FakePasswordResetCodeRepository resetCodes = new FakePasswordResetCodeRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
   private final FakeDeviceRegistrationRepository registrations =
       new FakeDeviceRegistrationRepository();
@@ -85,6 +87,7 @@ class AccountLifecycleServiceTest {
           managers,
           managerInvitations,
           accountInvitations,
+          resetCodes,
           sessions,
           new DeviceRegistrationLifecycle(registrations, sessions),
           audit,
@@ -123,7 +126,6 @@ class AccountLifecycleServiceTest {
                 .selectedProfileId(mover.getPersonalProfileId())
                 .deviceName("web")
                 .build());
-
     var moved =
         service.transferAccount(
             identity(),
@@ -154,8 +156,44 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
+  @DisplayName("Should join a populated destination as a HouseholdMember")
+  void shouldJoinPopulatedDestinationAsHouseholdMember() {
+    residentOf(destination, HouseholdRole.ADMIN);
+
+    var moved =
+        service.transferAccount(
+            identity(),
+            TransferAccountCommand.builder()
+                .accountId(mover.getId())
+                .destinationHouseholdId(destination.getId())
+                .sourceAccess(SourceAccess.END)
+                .build());
+
+    assertThat(moved).isInstanceOf(Outcome.Accepted.class);
+    assertThat(accounts.findById(mover.getId()).orElseThrow().getHouseholdRole())
+        .isEqualTo(HouseholdRole.MEMBER);
+  }
+
+  @Test
   @DisplayName("Should keep the old Household as an ordinary visit when asked")
   void shouldKeepOldHouseholdAsOrdinaryVisitWhenAsked() {
+    var registration =
+        registrations.save(
+            DeviceRegistration.builder()
+                .esn("esn-keep")
+                .displayName("TV")
+                .householdId(source.getId())
+                .authorizingAccountId(mover.getId())
+                .build());
+    var watching =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(mover.getId())
+                .contextHouseholdId(source.getId())
+                .selectedProfileId(mover.getPersonalProfileId())
+                .deviceName("web")
+                .build());
+
     var moved =
         service.transferAccount(
             identity(),
@@ -173,6 +211,9 @@ class AccountLifecycleServiceTest {
             .orElseThrow();
     assertThat(kept.isStructural()).isFalse();
     assertThat(structuralShareIn(destination.getId())).isPresent();
+    assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.ACTIVE);
+    assertThat(sessions.findById(watching.getId()).orElseThrow().getSelectedProfileId()).isNull();
   }
 
   @Test
@@ -310,6 +351,23 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject the deleted Account as its own replacement manager")
+  void shouldRejectDeletedAccountAsItsOwnReplacementManager() {
+    assertThat(rejectionOf(deleteKeeping(mover.getId())))
+        .isInstanceOf(TransferRejections.ReplacementManagerNotEligible.class);
+  }
+
+  @Test
+  @DisplayName("Should require a HouseholdAdmin replacement for a restricted Profile")
+  void shouldRequireHouseholdAdminReplacementForRestrictedProfile() {
+    profiles.findById(mover.getPersonalProfileId()).orElseThrow().setMaximumAllowedRatingAge(13);
+    var member = residentOf(source, HouseholdRole.MEMBER);
+
+    assertThat(rejectionOf(deleteKeeping(member.getId())))
+        .isInstanceOf(TransferRejections.ReplacementManagerNotEligible.class);
+  }
+
+  @Test
   @DisplayName("Should require the reason and classify the missing ceremony first")
   void shouldRequireReasonAndClassifyMissingCeremonyFirst() {
     assertThat(
@@ -348,6 +406,9 @@ class AccountLifecycleServiceTest {
 
     assertThat(service.deleteMyAccount(self, "DELETE")).isInstanceOf(Outcome.Accepted.class);
     assertThat(accounts.findById(mover.getId())).isEmpty();
+    assertThat(audit.entries())
+        .extracting(entry -> entry.operation())
+        .containsExactly("deleteMyAccount");
 
     var lonerHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var loner = residentOf(lonerHousehold, HouseholdRole.ADMIN);
@@ -355,6 +416,16 @@ class AccountLifecycleServiceTest {
         AuthenticatedIdentityFixture.accountScopedBuilder().accountId(loner.getId()).build();
     assertThat(rejectionOf(service.deleteMyAccount(lonerIdentity, "DELETE")))
         .isInstanceOf(TransferRejections.FinalAccount.class);
+  }
+
+  @Test
+  @DisplayName("Should refuse self-deletion without the literal confirmation")
+  void shouldRefuseSelfDeletionWithoutLiteralConfirmation() {
+    var self = AuthenticatedIdentityFixture.accountScopedBuilder().accountId(mover.getId()).build();
+
+    assertThat(rejectionOf(service.deleteMyAccount(self, "delete")))
+        .isInstanceOf(TransferRejections.ConfirmationRequired.class);
+    assertThat(accounts.findById(mover.getId())).isPresent();
   }
 
   private Outcome<UUID, TransferRejections.DeleteAccount> deleteKeeping(UUID replacement) {

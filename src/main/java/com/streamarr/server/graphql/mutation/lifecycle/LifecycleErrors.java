@@ -48,7 +48,8 @@ public final class LifecycleErrors {
       case TransferRejections.ReplacementManagerNotFound _ ->
           new ReplacementManagerNotFoundError(
               NO_SUCH_ACCOUNT, InputPath.of("replacementManagerAccountId"));
-      case TransferRejections.ReplacementManagerNotEligible _ -> replacementNotEligible();
+      case TransferRejections.ReplacementManagerNotEligible _ ->
+          replacementNotEligible("replacementManagerAccountId");
       case TransferRejections.AnchorRequired _ -> anchorRequired();
       case TransferRejections.NoEligibleAdmin _ -> noEligibleAdmin();
     };
@@ -82,7 +83,8 @@ public final class LifecycleErrors {
               InputPath.of(LOCAL_MANAGER));
       case TransferRejections.LocalManagerNotFound _ ->
           new LocalManagerNotFoundError(NO_SUCH_ACCOUNT, InputPath.of(LOCAL_MANAGER));
-      case TransferRejections.ReplacementManagerNotEligible _ -> replacementNotEligible();
+      case TransferRejections.ReplacementManagerNotEligible _ ->
+          replacementNotEligible(LOCAL_MANAGER);
       case TransferRejections.NameConflict _ -> nameTaken();
       case TransferRejections.NoEligibleAdmin _ -> noEligibleAdmin();
     };
@@ -141,10 +143,10 @@ public final class LifecycleErrors {
     return new HomeAnchorRequiredError("Every Profile keeps its required home management anchor.");
   }
 
-  private static ReplacementManagerNotEligibleError replacementNotEligible() {
+  private static ReplacementManagerNotEligibleError replacementNotEligible(String inputField) {
     return new ReplacementManagerNotEligibleError(
         "The anchor lives in the Profile's Household and is themselves an unrestricted Adult.",
-        InputPath.of(LOCAL_MANAGER));
+        InputPath.of(inputField));
   }
 
   private static ProfileLinkedError profileLinked() {

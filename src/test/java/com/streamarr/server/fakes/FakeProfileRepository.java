@@ -68,9 +68,17 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   }
 
   @Override
-  public boolean tryRehome(UUID profileId, UUID destinationHouseholdId) {
-    var profile = findById(profileId);
+  public boolean tryRehome(UUID profileId, UUID expectedHouseholdId, UUID destinationHouseholdId) {
+    var profile =
+        findById(profileId).filter(current -> expectedHouseholdId.equals(current.getHouseholdId()));
     profile.ifPresent(found -> found.setHouseholdId(destinationHouseholdId));
+    return profile.isPresent();
+  }
+
+  @Override
+  public boolean tryDeleteUnlinked(UUID profileId) {
+    var profile = findById(profileId).filter(_ -> !linkedAccountsByProfile.containsKey(profileId));
+    profile.ifPresent(_ -> deleteById(profileId));
     return profile.isPresent();
   }
 

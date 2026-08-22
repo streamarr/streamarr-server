@@ -95,6 +95,9 @@ public interface UserAccountRepositoryCustom {
   boolean tryTransfer(
       UUID accountId, UUID expectedHouseholdId, UUID destinationHouseholdId, HouseholdRole role);
 
+  /** Deletes only while the Account still belongs to the Household used for the decision. */
+  boolean tryDelete(UUID accountId, UUID expectedHouseholdId);
+
   boolean tryEnable(UUID accountId);
 
   /**
