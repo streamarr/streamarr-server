@@ -1336,8 +1336,8 @@ class CedarIdentityPoliciesTest {
   class TeardownAndAudit {
 
     @Test
-    @DisplayName("Should reserve teardown for a fresh ServerAdmin")
-    void shouldReserveTeardownForFreshServerAdmin() {
+    @DisplayName("Should allow teardown only when the caller is a fresh enabled ServerAdmin")
+    void shouldAllowTeardownOnlyWhenCallerIsFreshEnabledServerAdmin() {
       var teardown = new Intent.TearDownHousehold(visitedHouseholdId);
 
       assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), teardown))
@@ -1351,8 +1351,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let only ServerAdmin read the security audit")
-    void shouldLetOnlyServerAdminReadSecurityAudit() {
+    @DisplayName("Should allow the security audit only when the caller is an enabled ServerAdmin")
+    void shouldAllowSecurityAuditOnlyWhenCallerIsEnabledServerAdmin() {
       assertThat(decide(atHome(), new Intent.ViewSecurityAudit())).isEqualTo(DENIED);
 
       account.setServerAdmin(true);

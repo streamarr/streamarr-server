@@ -17,8 +17,8 @@ class FakeSessionProgressRepositoryTest {
   private final FakeSessionProgressRepository repository = new FakeSessionProgressRepository();
 
   @Test
-  @DisplayName("Should return profile activity by last modification newest first")
-  void shouldReturnProfileActivityByLastModificationNewestFirst() {
+  @DisplayName("Should return Profile activity newest first when modification times differ")
+  void shouldReturnProfileActivityNewestFirstWhenModificationTimesDiffer() {
     var profileId = UUID.randomUUID();
     repository.save(progress(profileId));
     repository.save(progress(profileId));
