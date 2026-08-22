@@ -188,6 +188,17 @@ class CedarAuthorizationDeciderTest {
   }
 
   @Test
+  @DisplayName("Should fail closed when the intent is null")
+  void shouldFailClosedWhenIntentIsNull() {
+    var identity = identityFor(UUID.randomUUID(), AccountRole.ADMIN);
+    Intent<AuthorizationUnit> intent = null;
+
+    assertThat(decider.decide(identity, intent))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+    assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
+  }
+
+  @Test
   @DisplayName("Should fail closed when a contributor throws")
   void shouldFailClosedWhenContributorThrows() {
     var failing =
