@@ -17,9 +17,7 @@ import org.jooq.Schema;
 @SuppressWarnings({ "all", "unchecked", "rawtypes", "this-escape" })
 public enum HouseholdRole implements EnumType {
 
-    OWNER("OWNER"),
-
-    PARENT("PARENT"),
+    ADMIN("ADMIN"),
 
     MEMBER("MEMBER");
 

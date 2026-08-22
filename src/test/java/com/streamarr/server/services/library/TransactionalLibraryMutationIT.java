@@ -5,8 +5,6 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -65,8 +63,8 @@ class TransactionalLibraryMutationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should finish authorized add before concurrent ServerAdmin revocation")
-  void shouldFinishAuthorizedAddBeforeConcurrentServerAdminRevocation() throws Exception {
+  @DisplayName("Should finish authorized add when ServerAdmin revocation runs concurrently")
+  void shouldFinishAuthorizedAddWhenServerAdminRevocationRunsConcurrently() throws Exception {
     testIdentity = authTestSupport.createAdminIdentity();
     var identity = authenticatedIdentity(testIdentity);
     var mutationReached = new CountDownLatch(1);
@@ -109,8 +107,8 @@ class TransactionalLibraryMutationIT extends AbstractIntegrationTest {
 
     assertThat(libraryRepository.findById(libraryId.get())).isPresent();
     assertThat(userAccountRepository.findById(testIdentity.account().getId()).orElseThrow())
-        .extracting(UserAccount::getAccountRole)
-        .isEqualTo(AccountRole.USER);
+        .extracting(UserAccount::isServerAdmin)
+        .isEqualTo(false);
   }
 
   private Library saveLibraryAndHoldTransaction(
@@ -130,7 +128,7 @@ class TransactionalLibraryMutationIT extends AbstractIntegrationTest {
               userAccountRepository.findById(testIdentity.account().getId()).orElseThrow();
           backendPid.set(lockProbe.currentBackendPid());
           transactionStarted.countDown();
-          account.setAccountRole(AccountRole.USER);
+          account.setServerAdmin(false);
           userAccountRepository.saveAndFlush(account);
         });
   }
@@ -139,11 +137,12 @@ class TransactionalLibraryMutationIT extends AbstractIntegrationTest {
       AuthTestSupport.TestIdentity identity) {
     return AuthenticatedIdentity.builder()
         .accountId(identity.account().getId())
-        .role(AccountRole.ADMIN)
         .authSessionId(identity.session().getId())
         .scope(TokenScope.PROFILE)
         .householdId(identity.household().getId())
-        .householdRole(HouseholdRole.OWNER)
+        .householdRole(identity.account().getHouseholdRole())
+        .serverAdmin(identity.account().isServerAdmin())
+        .contextHouseholdId(identity.household().getId())
         .profileId(identity.profile().getId())
         .build();
   }

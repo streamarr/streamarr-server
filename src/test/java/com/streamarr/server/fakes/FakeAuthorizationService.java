@@ -1,6 +1,5 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -83,7 +82,7 @@ public final class FakeAuthorizationService implements AuthorizationService {
 
   @Override
   public UUID requireHousehold() {
-    return currentIdentity().householdId();
+    return currentIdentity().contextHouseholdId();
   }
 
   @Override
@@ -105,18 +104,6 @@ public final class FakeAuthorizationService implements AuthorizationService {
       case Decision.Denied<T> _ -> throw new AccessDeniedException("Not allowed.");
       case Decision.Failed<T> _ -> throw new AuthorizationUnavailableException();
     };
-  }
-
-  @Override
-  public void requireHouseholdRole(HouseholdRole minimum) {
-    if (currentIdentity().householdRole() == null) {
-      throw new AccessDeniedException("Household role is required.");
-    }
-  }
-
-  @Override
-  public boolean canViewActivityOf(UUID profileId) {
-    return true;
   }
 
   private static Decision<?> allow(Intent<?> intent) {

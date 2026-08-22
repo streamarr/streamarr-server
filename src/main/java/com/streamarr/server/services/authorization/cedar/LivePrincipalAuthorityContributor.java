@@ -26,7 +26,8 @@ class LivePrincipalAuthorityContributor implements FactContributor {
   }
 
   @Override
-  public void contribute(AuthenticatedIdentity identity, EntitySlice slice) {
+  public void contribute(
+      AuthenticatedIdentity identity, AuthorizationCheck check, EntitySlice slice) {
     userAccountRepository
         .findAuthorityFacts(identity.accountId())
         .ifPresent(

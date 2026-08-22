@@ -7,5 +7,5 @@ interface FactContributor {
 
   FactRequirement provides();
 
-  void contribute(AuthenticatedIdentity identity, EntitySlice slice);
+  void contribute(AuthenticatedIdentity identity, AuthorizationCheck check, EntitySlice slice);
 }

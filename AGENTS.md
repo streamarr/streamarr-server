@@ -165,6 +165,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Resolvers and controllers resolve the authenticated identity and translate protocol inputs and
   outputs, then pass the identity explicitly to an application service. Authorization guarding a
   use case is enforced in the service layer.
+- Identity stack direction: `services.identity` (Profile selection, Household switching, playback gate, Me, refresh composition) → `services.authorization` (Cedar) → `services.auth` (authentication, sessions, token minting, password/PIN verification, throttles); dependencies point one way only (ArchUnit). Profile and Household facts come from ADR 0024's relationships (`UserAccount.householdId/householdRole/personalProfileId`, `profile_household_share`, `profile_manager`); the PIN safety rule is `ProfileSafetyRule`, evaluated at selection, refresh, and the picker — never stored
 - Authorization: every point decision goes through `AuthorizationService.decide(identity, intent)` (resource operation whose denial is a typed payload error) or `requireAllowed(identity, intent)` (whole-surface gate → top-level FORBIDDEN) with a typed `Intent`; callers never name a Cedar action, assemble entities, or pass their own reading of authority. Only `services.authorization.cedar` imports Cedar/JNE, only the facade knows `AuthorizationDecider`, and the engine's actions/checks/contributors are package-private. Live ServerAdmin authority is a PostgreSQL fact contributed for the actions that need it — the token's admin claim is routing/display only. `Failed` decisions surface as `AUTHORIZATION_UNAVAILABLE`; diagnostics are logged and metered (`streamarr.authorization.fail_closed`), never returned. The module is held at 100% line/branch coverage by a JaCoCo check (ADR 0025)
 - Authorization fact requirements and contributors name the semantic fact family without a
   redundant `Fact` or `Facts` suffix — for example, `PROFILE_MANAGEMENT` and
@@ -242,7 +243,7 @@ We follow these factors from the Twelve-Factor App methodology:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **streamarr-server** (12530 symbols, 35922 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **streamarr-server** (12743 symbols, 36544 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

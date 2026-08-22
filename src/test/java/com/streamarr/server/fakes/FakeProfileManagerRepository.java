@@ -1,0 +1,26 @@
+package com.streamarr.server.fakes;
+
+import com.streamarr.server.domain.auth.ProfileManager;
+import com.streamarr.server.repositories.auth.ProfileManagerRepository;
+import java.util.List;
+import java.util.UUID;
+
+public class FakeProfileManagerRepository extends FakeJpaRepository<ProfileManager>
+    implements ProfileManagerRepository {
+
+  @Override
+  public boolean existsByAccountIdAndProfileId(UUID accountId, UUID profileId) {
+    return database.values().stream()
+        .anyMatch(
+            manager ->
+                manager.getAccountId().equals(accountId)
+                    && manager.getProfileId().equals(profileId));
+  }
+
+  @Override
+  public List<ProfileManager> findByProfileId(UUID profileId) {
+    return database.values().stream()
+        .filter(manager -> manager.getProfileId().equals(profileId))
+        .toList();
+  }
+}

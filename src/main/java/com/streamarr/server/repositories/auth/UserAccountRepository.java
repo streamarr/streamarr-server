@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.UserAccount;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,4 +12,6 @@ public interface UserAccountRepository
     extends JpaRepository<UserAccount, UUID>, UserAccountRepositoryCustom {
 
   Optional<UserAccount> findByEmailIgnoreCase(String email);
+
+  List<UserAccount> findByHouseholdId(UUID householdId);
 }

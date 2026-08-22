@@ -6,8 +6,9 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.security.Argon2Properties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.AuthTestSupportConfig;
 import java.sql.Connection;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -26,12 +27,14 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Tag("IntegrationTest")
 @DisplayName("Login Service Transaction Integration Tests")
-@Import(LoginServiceTransactionIT.ProbeConfiguration.class)
+@Import({LoginServiceTransactionIT.ProbeConfiguration.class, AuthTestSupportConfig.class})
 class LoginServiceTransactionIT extends AbstractIntegrationTest {
 
   private static final String PASSWORD = UUID.randomUUID().toString();
 
   @Autowired private LoginService loginService;
+
+  @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private UserAccountRepository userAccountRepository;
 
@@ -42,18 +45,16 @@ class LoginServiceTransactionIT extends AbstractIntegrationTest {
   @AfterEach
   void deleteAccountAndCascades() {
     if (account != null) {
-      userAccountRepository.deleteById(account.getId());
+      authTestSupport.deleteAccount(account.getId());
     }
   }
 
   @Test
-  @DisplayName("Should release database connection before password verification")
-  void shouldReleaseDatabaseConnectionBeforePasswordVerification() {
+  @DisplayName("Should release the database connection when password verification runs")
+  void shouldReleaseDatabaseConnectionWhenPasswordVerificationRuns() {
     account =
-        userAccountRepository.save(
-            AccountFixture.defaultAccountBuilder()
-                .passwordHash(passwordEncoder.encode(PASSWORD))
-                .build());
+        authTestSupport.createAccount(
+            builder -> builder.passwordHash(passwordEncoder.encode(PASSWORD)));
     passwordEncoder.resetProbe();
 
     loginService.login(

@@ -109,7 +109,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   }
 
   static PlaybackAuthorityGate authorityGate() {
-    return _ -> true;
+    return (_, _) -> true;
   }
 
   static AuthorizationService authorizationService() {

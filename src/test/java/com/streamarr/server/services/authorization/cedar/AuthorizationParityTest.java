@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.cedarpolicy.BasicAuthorizationEngine;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Intent;
 import java.util.ArrayList;
@@ -27,8 +28,9 @@ class AuthorizationParityTest {
           new BasicAuthorizationEngine(), new PathMatchingResourcePatternResolver());
 
   @Test
-  @DisplayName("Should declare every Java action in the schema with a Server resource")
-  void shouldDeclareEveryJavaActionInSchemaWithServerResource() throws Exception {
+  @DisplayName(
+      "Should declare every Java action with its resource type when schema parity is checked")
+  void shouldDeclareEveryJavaActionWhenSchemaParityIsChecked() throws Exception {
     var actions = schemaActions();
 
     for (var action : Action.values()) {
@@ -37,16 +39,26 @@ class AuthorizationParityTest {
       assertThat(declared.path("appliesTo").path("resourceTypes"))
           .as("resource types of %s", action)
           .extracting(JsonNode::asText)
-          .containsExactly("Server");
+          .containsExactly(schemaTypeOf(action.resourceKind()));
       assertThat(declared.path("appliesTo").path("principalTypes"))
           .extracting(JsonNode::asText)
           .containsExactly("Account");
     }
   }
 
+  private static String schemaTypeOf(Action.ResourceKind kind) {
+    return switch (kind) {
+      case SERVER -> "Server";
+      case HOUSEHOLD -> "Household";
+      case ACCOUNT -> "Account";
+      case PROFILE -> "Profile";
+    };
+  }
+
   @Test
-  @DisplayName("Should plan every concrete schema action from exactly one intent")
-  void shouldPlanEveryConcreteSchemaActionFromExactlyOneIntent() throws Exception {
+  @DisplayName(
+      "Should plan every concrete schema action from exactly one intent when intent parity is checked")
+  void shouldPlanEveryConcreteSchemaActionWhenIntentParityIsChecked() throws Exception {
     var concrete = new ArrayList<String>();
     schemaActions()
         .properties()
@@ -57,9 +69,10 @@ class AuthorizationParityTest {
                 concrete.add(entry.getKey());
               }
             });
+    var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
     var planned =
         allIntents().stream()
-            .map(intent -> IntentPlanner.plan(intent).check().action().cedarName())
+            .map(intent -> IntentPlanner.plan(identity, intent).check().action().cedarName())
             .toList();
 
     assertThat(planned).containsExactlyInAnyOrderElementsOf(concrete);
@@ -69,23 +82,28 @@ class AuthorizationParityTest {
   }
 
   @Test
-  @DisplayName("Should keep every library administration action under serverAdministration")
-  void shouldKeepEveryLibraryAdministrationActionUnderServerAdministration() throws Exception {
+  @DisplayName(
+      "Should keep library administration actions under serverAdministration when action parity is checked")
+  void shouldKeepLibraryAdministrationActionsGroupedWhenActionParityIsChecked() throws Exception {
     var actions = schemaActions();
 
     for (var action : Action.values()) {
+      if (action.resourceKind() != Action.ResourceKind.SERVER) {
+        continue;
+      }
       assertThat(actions.get(action.cedarName()).path("memberOf"))
           .extracting(member -> member.path("id").asText())
           .containsExactly("libraryAdministration");
     }
+
     assertThat(actions.get("libraryAdministration").path("memberOf"))
         .extracting(member -> member.path("id").asText())
         .containsExactly("serverAdministration");
   }
 
   @Test
-  @DisplayName("Should require every declared fact from an action")
-  void shouldRequireEveryDeclaredFactFromAnAction() {
+  @DisplayName("Should require every declared fact when action coverage is checked")
+  void shouldRequireEveryDeclaredFactWhenActionCoverageIsChecked() {
     var required = new ArrayList<FactRequirement>();
     for (var action : Action.values()) {
       required.addAll(action.facts());
@@ -101,10 +119,18 @@ class AuthorizationParityTest {
 
   private static List<Intent<AuthorizationUnit>> allIntents() {
     var libraryId = UUID.randomUUID();
+    var id = UUID.randomUUID();
     return List.of(
         new Intent.AddLibrary(),
         new Intent.RemoveLibrary(libraryId),
         new Intent.ScanLibrary(libraryId),
-        new Intent.RefreshLibrary(libraryId));
+        new Intent.RefreshLibrary(libraryId),
+        new Intent.ViewProfilePicker(),
+        new Intent.SelectProfile(id, false),
+        new Intent.Playback(),
+        new Intent.ViewProfileActivity(id),
+        new Intent.ViewHouseholdAdministration(id),
+        new Intent.ViewAccountAdministration(id),
+        new Intent.ViewProfileAdministration(id));
   }
 }

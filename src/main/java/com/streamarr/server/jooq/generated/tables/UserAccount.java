@@ -4,23 +4,29 @@
 package com.streamarr.server.jooq.generated.tables;
 
 
+import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
-import com.streamarr.server.jooq.generated.enums.AccountRole;
+import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.DeviceAuthorization.DeviceAuthorizationPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
-import com.streamarr.server.jooq.generated.tables.HouseholdMembership.HouseholdMembershipPath;
+import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
+import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
+import com.streamarr.server.jooq.generated.tables.ProfileManager.ProfileManagerPath;
 import com.streamarr.server.jooq.generated.tables.ServerBootstrap.ServerBootstrapPath;
 import com.streamarr.server.jooq.generated.tables.records.UserAccountRecord;
 
 import java.time.OffsetDateTime;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
+import org.jooq.Index;
 import org.jooq.InverseForeignKey;
 import org.jooq.Name;
 import org.jooq.Path;
@@ -103,14 +109,29 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
     public final TableField<UserAccountRecord, String> PASSWORD_HASH = createField(DSL.name("password_hash"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
-     * The column <code>public.user_account.account_role</code>.
-     */
-    public final TableField<UserAccountRecord, AccountRole> ACCOUNT_ROLE = createField(DSL.name("account_role"), SQLDataType.VARCHAR.nullable(false).asEnumDataType(AccountRole.class), this, "");
-
-    /**
      * The column <code>public.user_account.enabled</code>.
      */
     public final TableField<UserAccountRecord, Boolean> ENABLED = createField(DSL.name("enabled"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.field(DSL.raw("true"), SQLDataType.BOOLEAN)), this, "");
+
+    /**
+     * The column <code>public.user_account.server_admin</code>.
+     */
+    public final TableField<UserAccountRecord, Boolean> SERVER_ADMIN = createField(DSL.name("server_admin"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.field(DSL.raw("false"), SQLDataType.BOOLEAN)), this, "");
+
+    /**
+     * The column <code>public.user_account.household_id</code>.
+     */
+    public final TableField<UserAccountRecord, UUID> HOUSEHOLD_ID = createField(DSL.name("household_id"), SQLDataType.UUID.nullable(false), this, "");
+
+    /**
+     * The column <code>public.user_account.household_role</code>.
+     */
+    public final TableField<UserAccountRecord, HouseholdRole> HOUSEHOLD_ROLE = createField(DSL.name("household_role"), SQLDataType.VARCHAR.nullable(false).defaultValue(DSL.field(DSL.raw("'MEMBER'::household_role"), SQLDataType.VARCHAR)).asEnumDataType(HouseholdRole.class), this, "");
+
+    /**
+     * The column <code>public.user_account.personal_profile_id</code>.
+     */
+    public final TableField<UserAccountRecord, UUID> PERSONAL_PROFILE_ID = createField(DSL.name("personal_profile_id"), SQLDataType.UUID.nullable(false), this, "");
 
     private UserAccount(Name alias, Table<UserAccountRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -180,8 +201,47 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
     }
 
     @Override
+    public List<Index> getIndexes() {
+        return Arrays.asList(Indexes.IDX_USER_ACCOUNT_HOUSEHOLD_ID);
+    }
+
+    @Override
     public UniqueKey<UserAccountRecord> getPrimaryKey() {
         return Keys.USER_ACCOUNT_PKEY;
+    }
+
+    @Override
+    public List<UniqueKey<UserAccountRecord>> getUniqueKeys() {
+        return Arrays.asList(Keys.UQ_USER_ACCOUNT_PERSONAL_PROFILE);
+    }
+
+    @Override
+    public List<ForeignKey<UserAccountRecord, ?>> getReferences() {
+        return Arrays.asList(Keys.USER_ACCOUNT__FK_USER_ACCOUNT_HOUSEHOLD, Keys.USER_ACCOUNT__FK_USER_ACCOUNT_PERSONAL_PROFILE);
+    }
+
+    private transient HouseholdPath _household;
+
+    /**
+     * Get the implicit join path to the <code>public.household</code> table.
+     */
+    public HouseholdPath household() {
+        if (_household == null)
+            _household = new HouseholdPath(this, Keys.USER_ACCOUNT__FK_USER_ACCOUNT_HOUSEHOLD, null);
+
+        return _household;
+    }
+
+    private transient ProfilePath _profile;
+
+    /**
+     * Get the implicit join path to the <code>public.profile</code> table.
+     */
+    public ProfilePath profile() {
+        if (_profile == null)
+            _profile = new ProfilePath(this, Keys.USER_ACCOUNT__FK_USER_ACCOUNT_PERSONAL_PROFILE, null);
+
+        return _profile;
     }
 
     private transient AuthSessionPath _authSession;
@@ -210,17 +270,30 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
         return _deviceAuthorization;
     }
 
-    private transient HouseholdMembershipPath _householdMembership;
+    private transient ProfileHouseholdSharePath _profileHouseholdShare;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.household_membership</code> table
+     * <code>public.profile_household_share</code> table
      */
-    public HouseholdMembershipPath householdMembership() {
-        if (_householdMembership == null)
-            _householdMembership = new HouseholdMembershipPath(this, null, Keys.HOUSEHOLD_MEMBERSHIP__FK_HOUSEHOLD_MEMBERSHIP_ACCOUNT.getInverseKey());
+    public ProfileHouseholdSharePath profileHouseholdShare() {
+        if (_profileHouseholdShare == null)
+            _profileHouseholdShare = new ProfileHouseholdSharePath(this, null, Keys.PROFILE_HOUSEHOLD_SHARE__FK_PROFILE_HOUSEHOLD_SHARE_OFFERED_BY.getInverseKey());
 
-        return _householdMembership;
+        return _profileHouseholdShare;
+    }
+
+    private transient ProfileManagerPath _profileManager;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.profile_manager</code> table
+     */
+    public ProfileManagerPath profileManager() {
+        if (_profileManager == null)
+            _profileManager = new ProfileManagerPath(this, null, Keys.PROFILE_MANAGER__FK_PROFILE_MANAGER_ACCOUNT.getInverseKey());
+
+        return _profileManager;
     }
 
     private transient ServerBootstrapPath _serverBootstrap;
@@ -234,14 +307,6 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
             _serverBootstrap = new ServerBootstrapPath(this, null, Keys.SERVER_BOOTSTRAP__FK_SERVER_BOOTSTRAP_ADMIN_ACCOUNT.getInverseKey());
 
         return _serverBootstrap;
-    }
-
-    /**
-     * Get the implicit many-to-many join path to the
-     * <code>public.household</code> table
-     */
-    public HouseholdPath household() {
-        return householdMembership().household();
     }
 
     @Override

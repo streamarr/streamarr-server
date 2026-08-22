@@ -8,7 +8,8 @@ import com.streamarr.server.domain.auth.RefreshToken;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.AuthTestSupportConfig;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -17,12 +18,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Import;
 
 @Tag("IntegrationTest")
 @DisplayName("Auth Session Revocation Integration Tests")
+@Import(AuthTestSupportConfig.class)
 class AuthSessionRevocationIT extends AbstractIntegrationTest {
 
   @Autowired private UserAccountRepository userAccountRepository;
+
+  @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private AuthSessionRepository authSessionRepository;
 
@@ -33,14 +38,14 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
   @AfterEach
   void deleteAccountAndCascades() {
     if (account != null) {
-      userAccountRepository.deleteById(account.getId());
+      authTestSupport.deleteAccount(account.getId());
     }
   }
 
   @Test
   @DisplayName("Should preserve first reason when session revoked twice")
   void shouldPreserveFirstReasonWhenSessionRevokedTwice() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var session = saveSession();
     var now = Instant.now();
 
@@ -60,7 +65,7 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should revoke every unrevoked token when session family revoked")
   void shouldRevokeEveryUnrevokedTokenWhenSessionFamilyRevoked() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var session = saveSession();
     refreshTokenRepository.save(
         tokenBuilder(session).status(RefreshTokenStatus.ROTATED).rotatedAt(Instant.now()).build());
@@ -76,7 +81,7 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should not consume active token when expired")
   void shouldNotConsumeActiveTokenWhenExpired() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var session = saveSession();
     var expired =
         refreshTokenRepository.save(
@@ -95,7 +100,7 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should not report active token when expired")
   void shouldNotReportActiveTokenWhenExpired() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var expiredSession = saveSession();
     var currentSession = saveSession();
     var now = Instant.parse("2026-01-01T00:00:02Z");

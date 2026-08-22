@@ -8,13 +8,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
-import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
-import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.support.TokenTestSupport;
 import java.time.Clock;
 import java.time.Duration;
@@ -32,14 +29,11 @@ class PlaybackTokenIssuerTest {
   private final AuthTokenProperties properties = tokenProperties();
 
   private final TokenCryptoConfig cryptoConfig = new TokenCryptoConfig();
-  private final FakePlaybackAuthorityGate authorityGate = new FakePlaybackAuthorityGate();
-
   private final PlaybackTokenIssuer issuer =
       new PlaybackTokenIssuer(
           cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(properties)),
           properties,
-          Clock.systemUTC(),
-          authorityGate);
+          Clock.systemUTC());
 
   private final UUID accountId = UUID.randomUUID();
   private final UUID sessionId = UUID.randomUUID();
@@ -65,6 +59,9 @@ class PlaybackTokenIssuerTest {
         .isEqualTo(householdId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("MEMBER");
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isEqualTo(profileId.toString());
+    assertThat(decoded.getClaimAsString(TokenClaims.CONTEXT_HOUSEHOLD_ID))
+        .isEqualTo(householdId.toString());
+    assertThat(decoded.getClaimAsBoolean(TokenClaims.SERVER_ADMIN)).isFalse();
     assertThat(decoded.getClaimAsString("stream_session_id")).isEqualTo(streamSessionId.toString());
     assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
         .isEqualTo(Duration.ofHours(24));
@@ -76,9 +73,11 @@ class PlaybackTokenIssuerTest {
     var accountScoped =
         AuthenticatedIdentity.builder()
             .accountId(accountId)
-            .role(AccountRole.USER)
             .authSessionId(sessionId)
             .scope(TokenScope.ACCOUNT)
+            .householdId(householdId)
+            .householdRole(HouseholdRole.MEMBER)
+            .contextHouseholdId(householdId)
             .build();
     var streamSession = defaultSessionBuilder().build();
     var ttl = Duration.ofHours(1);
@@ -100,26 +99,14 @@ class PlaybackTokenIssuerTest {
         .isInstanceOf(SessionNotFoundException.class);
   }
 
-  @Test
-  @DisplayName("Should refuse issuance when playback authority is no longer live")
-  void shouldRefuseIssuanceWhenPlaybackAuthorityIsNoLongerLive() {
-    var identity = profileIdentity();
-    var streamSession = sessionOwnedBy(profileId);
-    var ttl = Duration.ofHours(1);
-    authorityGate.deny();
-
-    assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
-        .isInstanceOf(AuthenticationRequiredException.class);
-  }
-
   private AuthenticatedIdentity profileIdentity() {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
-        .role(AccountRole.USER)
         .authSessionId(sessionId)
         .scope(TokenScope.PROFILE)
         .householdId(householdId)
         .householdRole(HouseholdRole.MEMBER)
+        .contextHouseholdId(householdId)
         .profileId(profileId)
         .build();
   }

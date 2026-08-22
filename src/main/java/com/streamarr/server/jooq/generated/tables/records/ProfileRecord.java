@@ -4,6 +4,7 @@
 package com.streamarr.server.jooq.generated.tables.records;
 
 
+import com.streamarr.server.jooq.generated.enums.ProfileKind;
 import com.streamarr.server.jooq.generated.tables.Profile;
 
 import java.time.OffsetDateTime;
@@ -119,6 +120,76 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
         return (String) get(6);
     }
 
+    /**
+     * Setter for <code>public.profile.kind</code>.
+     */
+    public void setKind(ProfileKind value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for <code>public.profile.kind</code>.
+     */
+    public ProfileKind getKind() {
+        return (ProfileKind) get(7);
+    }
+
+    /**
+     * Setter for <code>public.profile.maximum_allowed_rating_age</code>.
+     */
+    public void setMaximumAllowedRatingAge(Integer value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for <code>public.profile.maximum_allowed_rating_age</code>.
+     */
+    public Integer getMaximumAllowedRatingAge() {
+        return (Integer) get(8);
+    }
+
+    /**
+     * Setter for <code>public.profile.pin_hash</code>.
+     */
+    public void setPinHash(String value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>public.profile.pin_hash</code>.
+     */
+    public String getPinHash() {
+        return (String) get(9);
+    }
+
+    /**
+     * Setter for <code>public.profile.picture</code>.
+     */
+    public void setPicture(String value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>public.profile.picture</code>.
+     */
+    public String getPicture() {
+        return (String) get(10);
+    }
+
+    /**
+     * Setter for <code>public.profile.restricted</code>.
+     */
+    public void setRestricted(Boolean value) {
+        set(11, value);
+    }
+
+    /**
+     * Getter for <code>public.profile.restricted</code>.
+     */
+    public Boolean getRestricted() {
+        return (Boolean) get(11);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -142,7 +213,7 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
     /**
      * Create a detached, initialised ProfileRecord
      */
-    public ProfileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID householdId, String name) {
+    public ProfileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID householdId, String name, ProfileKind kind, Integer maximumAllowedRatingAge, String pinHash, String picture, Boolean restricted) {
         super(Profile.PROFILE);
 
         setId(id);
@@ -152,6 +223,11 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
         setLastModifiedBy(lastModifiedBy);
         setHouseholdId(householdId);
         setName(name);
+        setKind(kind);
+        setMaximumAllowedRatingAge(maximumAllowedRatingAge);
+        setPinHash(pinHash);
+        setPicture(picture);
+        setRestricted(restricted);
         resetTouchedOnNotNull();
     }
 }

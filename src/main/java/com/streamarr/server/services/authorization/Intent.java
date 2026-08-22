@@ -22,4 +22,25 @@ public sealed interface Intent<T> {
   record ScanLibrary(UUID libraryId) implements Intent<AuthorizationUnit> {}
 
   record RefreshLibrary(UUID libraryId) implements Intent<AuthorizationUnit> {}
+
+  /** See the Profiles available in the session's context Household. */
+  record ViewProfilePicker() implements Intent<AuthorizationUnit> {}
+
+  /**
+   * Select a Profile in the context Household. {@code pinVerified} is trusted attempt context
+   * created only by the selection service after the throttled PIN check — never by a client.
+   */
+  record SelectProfile(UUID profileId, boolean pinVerified) implements Intent<AuthorizationUnit> {}
+
+  /** Read a Profile's viewing history, progress, and preferences. */
+  record ViewProfileActivity(UUID profileId) implements Intent<AuthorizationUnit> {}
+
+  record ViewHouseholdAdministration(UUID householdId) implements Intent<AuthorizationUnit> {}
+
+  record ViewAccountAdministration(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  record ViewProfileAdministration(UUID profileId) implements Intent<AuthorizationUnit> {}
+
+  /** The live playback decision for the selected Profile in the context Household (ADR 0018). */
+  record Playback() implements Intent<AuthorizationUnit> {}
 }
