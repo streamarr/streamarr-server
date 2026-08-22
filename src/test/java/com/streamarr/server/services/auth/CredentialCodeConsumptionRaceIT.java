@@ -270,6 +270,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
       if (!rowLock.releaseRow().await(10, TimeUnit.SECONDS)) {
         throw new AssertionError("test did not release the credential-code row lock");
       }
+
       connection.rollback();
     } catch (Exception exception) {
       throw new AssertionError("could not coordinate the credential-code row lock", exception);
@@ -289,6 +290,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
       if (!releaseRow.await(10, TimeUnit.SECONDS)) {
         throw new AssertionError("test did not release the Account row lock");
       }
+
       connection.commit();
     } catch (Exception exception) {
       throw new AssertionError("could not coordinate the Account row lock", exception);

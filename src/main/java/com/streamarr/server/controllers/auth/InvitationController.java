@@ -61,6 +61,7 @@ public class InvitationController {
               cookieWriter.refreshCookie(accepted.rawRefreshToken()).toString())
           .body(body.build());
     }
+
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(
             body.accessToken(accessToken.value()).refreshToken(accepted.rawRefreshToken()).build());

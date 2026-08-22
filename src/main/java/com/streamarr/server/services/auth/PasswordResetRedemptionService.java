@@ -42,9 +42,11 @@ public class PasswordResetRedemptionService {
           if (!resetCodeRepository.tryRedeem(code.getId(), now)) {
             throw new InvalidOneTimeCodeException();
           }
+
           if (!userAccountRepository.trySetPasswordHash(code.getAccountId(), newPasswordHash)) {
             throw new InvalidOneTimeCodeException();
           }
+
           authSessionRepository.revokeAllForAccount(
               code.getAccountId(), SessionRevocationReason.PASSWORD_CHANGE, now);
         });
@@ -60,10 +62,12 @@ public class PasswordResetRedemptionService {
     if (!opaqueCodes.matches(presented, code.getSecretDigest())) {
       throw new InvalidOneTimeCodeException();
     }
+
     if (code.getStatus() != PasswordResetCodeStatus.PENDING
         || !code.getExpiresAt().isAfter(clock.instant())) {
       throw new InvalidOneTimeCodeException();
     }
+
     return code;
   }
 }

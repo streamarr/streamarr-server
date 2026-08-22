@@ -79,12 +79,14 @@ public class AccountInvitationCeremonyService {
                 invitation.getId(), AccountInvitationStatus.ACCEPTED, clock.instant())) {
               throw new InvalidOneTimeCodeException();
             }
+
             var householdId = invitation.getHouseholdId();
             if (householdId == null) {
               // The target Household disappeared after issuance; invalidation should have caught
               // it, and a late code must fail exactly like an unknown one.
               throw new InvalidOneTimeCodeException();
             }
+
             var account = createAccount(command, invitation, passwordHash);
             var issued = refreshTokenService.createSession(account, command.deviceName());
             return AcceptedInvitation.builder()
@@ -102,6 +104,7 @@ public class AccountInvitationCeremonyService {
       if (!duplicateEmail) {
         throw exception;
       }
+
       throw new InvitationEmailAlreadyUsedException(exception);
     }
   }
@@ -146,6 +149,7 @@ public class AccountInvitationCeremonyService {
               .profileId(profile.getId())
               .build());
     }
+
     shareRepository.saveAndFlush(
         ProfileHouseholdShare.builder()
             .profileId(profile.getId())
@@ -170,10 +174,12 @@ public class AccountInvitationCeremonyService {
     if (!opaqueCodes.matches(presented, invitation.getSecretDigest())) {
       throw new InvalidOneTimeCodeException();
     }
+
     if (invitation.getStatus() != AccountInvitationStatus.PENDING
         || !invitation.getExpiresAt().isAfter(clock.instant())) {
       throw new InvalidOneTimeCodeException();
     }
+
     throttle.resetCodeGuesses(presented.publicId());
     return invitation;
   }

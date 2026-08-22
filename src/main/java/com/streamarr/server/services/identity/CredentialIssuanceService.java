@@ -56,17 +56,21 @@ public class CredentialIssuanceService {
     if (isBlank(command.recipientEmail())) {
       return Outcome.rejected(new InvitationRejections.EmailRequired());
     }
+
     if (isBlank(command.profileName())) {
       return Outcome.rejected(new InvitationRejections.ProfileNameRequired());
     }
+
     if (userAccountRepository.findByEmailIgnoreCase(command.recipientEmail().strip()).isPresent()) {
       // An existing email cannot be invited or reassigned; ServerAdmin transfers instead.
       return Outcome.rejected(new InvitationRejections.EmailAlreadyUsed());
     }
+
     var household = householdRepository.findById(command.householdId());
     if (household.isEmpty()) {
       return Outcome.rejected(new InvitationRejections.HouseholdNotFound());
     }
+
     var restricted =
         command.profileKind() == ProfileKind.KID || command.maximumAllowedRatingAge() != null;
     var emptyHousehold = userAccountRepository.findByHouseholdId(command.householdId()).isEmpty();
@@ -74,9 +78,11 @@ public class CredentialIssuanceService {
       // The first Account becomes HouseholdAdmin, and a restricted Account holds no authority.
       return Outcome.rejected(new InvitationRejections.RestrictedFirstAccount());
     }
+
     if (restricted && command.localManagerAccountId() == null) {
       return Outcome.rejected(new InvitationRejections.LocalManagerRequired());
     }
+
     if (command.localManagerAccountId() != null
         && !userAccountRepository.isEligibleProfileManager(
             command.localManagerAccountId(), command.householdId(), restricted)) {
@@ -122,6 +128,7 @@ public class CredentialIssuanceService {
               invitationId, AccountInvitationStatus.CANCELED, clock.instant())) {
             throw new MutationRejection(new InvitationRejections.InvitationNotPending());
           }
+
           return invitationRepository.findById(invitationId).orElseThrow();
         },
         _ -> Optional.empty());
@@ -132,10 +139,12 @@ public class CredentialIssuanceService {
     if (isBlank(reason)) {
       return Outcome.rejected(new InvitationRejections.ReasonRequired());
     }
+
     var refusal = resetRefusal(identity, accountId);
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
+
     if (userAccountRepository.findById(accountId).isEmpty()) {
       return Outcome.rejected(new InvitationRejections.AccountNotFound());
     }
@@ -183,6 +192,7 @@ public class CredentialIssuanceService {
               if (mayViewAccount(identity, accountId)) {
                 throw new AccessDeniedException("Not allowed.");
               }
+
               yield Optional.of(new InvitationRejections.AccountNotFound());
             }
           };

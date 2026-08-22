@@ -259,6 +259,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     if (!locked) {
       return Optional.empty();
     }
+
     var householdHasAccount =
         dsl.fetchExists(
             dsl.selectOne().from(USER_ACCOUNT).where(USER_ACCOUNT.HOUSEHOLD_ID.eq(householdId)));
@@ -278,6 +279,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     if (householdAdminRequired) {
       eligibility = eligibility.and(USER_ACCOUNT.HOUSEHOLD_ROLE.eq(HouseholdRole.ADMIN));
     }
+
     return dsl.fetchExists(
         dsl.selectOne()
             .from(USER_ACCOUNT)

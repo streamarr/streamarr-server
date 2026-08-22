@@ -58,6 +58,7 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
     if (issuer != null) {
       authTestSupport.deleteIdentity(issuer);
     }
+
     if (resetTarget != null) {
       authTestSupport.deleteIdentity(resetTarget);
     }

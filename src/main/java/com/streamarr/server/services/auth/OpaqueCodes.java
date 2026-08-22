@@ -35,10 +35,12 @@ public class OpaqueCodes {
     if (code == null) {
       return Optional.empty();
     }
+
     var separator = code.indexOf('.');
     if (separator <= 0 || separator == code.length() - 1) {
       return Optional.empty();
     }
+
     return Optional.of(
         new PresentedCode(code.substring(0, separator), code.substring(separator + 1)));
   }

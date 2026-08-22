@@ -28,9 +28,11 @@ public record CredentialCodeProperties(
     if (invitationTtl == null) {
       invitationTtl = DEFAULT_INVITATION_TTL;
     }
+
     if (passwordResetTtl == null) {
       passwordResetTtl = DEFAULT_PASSWORD_RESET_TTL;
     }
+
     if (replacementLockTimeout == null) {
       replacementLockTimeout = DEFAULT_REPLACEMENT_LOCK_TIMEOUT;
     }

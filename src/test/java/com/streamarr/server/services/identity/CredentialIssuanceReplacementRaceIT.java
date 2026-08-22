@@ -58,9 +58,11 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
     if (firstIssuer != null) {
       authTestSupport.deleteIdentity(firstIssuer);
     }
+
     if (secondIssuer != null) {
       authTestSupport.deleteIdentity(secondIssuer);
     }
+
     if (resetTarget != null) {
       authTestSupport.deleteIdentity(resetTarget);
     }
@@ -232,6 +234,7 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
       if (!releaseRow.await(10, TimeUnit.SECONDS)) {
         throw new AssertionError("test did not release the invitation row lock");
       }
+
       connection.rollback();
     } catch (Exception exception) {
       throw new AssertionError("could not coordinate the invitation row lock", exception);
@@ -251,6 +254,7 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
       if (!releaseRow.await(10, TimeUnit.SECONDS)) {
         throw new AssertionError("test did not release the reset-code row lock");
       }
+
       connection.rollback();
     } catch (Exception exception) {
       throw new AssertionError("could not coordinate the reset-code row lock", exception);

@@ -71,6 +71,7 @@ public class CredentialGuessThrottle {
     if (available) {
       return;
     }
+
     log.warn("Credential verification throttled: {} budget exhausted for key {}", type, key);
     throw new TooManyCredentialAttemptsException();
   }

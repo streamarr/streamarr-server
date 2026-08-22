@@ -32,6 +32,7 @@ final class SlidingWindowAttemptBudget<K> {
     if (maximumTrackedKeys <= 0) {
       throw new IllegalArgumentException("maximumTrackedKeys must be positive");
     }
+
     this.maximumAttempts = maximumAttempts;
     this.window = window;
     this.clock = clock;
@@ -47,14 +48,17 @@ final class SlidingWindowAttemptBudget<K> {
           if (current == null && !availableKeySlots.tryAcquire()) {
             return null;
           }
+
           if (current == null) {
             current = new ArrayDeque<>();
           }
+
           prune(current);
           if (current.size() < maximumAttempts) {
             current.addLast(clock.instant());
             reserved.set(true);
           }
+
           return current;
         });
     return reserved.get();
@@ -79,12 +83,14 @@ final class SlidingWindowAttemptBudget<K> {
               availableKeySlots.release();
               removed.set(true);
             }
+
             return remaining;
           });
       if (removed.get()) {
         evicted++;
       }
     }
+
     return evicted;
   }
 

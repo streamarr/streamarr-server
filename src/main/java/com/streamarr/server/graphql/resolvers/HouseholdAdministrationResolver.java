@@ -103,6 +103,7 @@ public class HouseholdAdministrationResolver {
     if (first == 0 && last == 0 && before != null) {
       return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
     }
+
     return paginationService.getPaginationOptions(
         first == 0 && last == 0 ? DEFAULT_PAGE_SIZE : first, after, last, before);
   }

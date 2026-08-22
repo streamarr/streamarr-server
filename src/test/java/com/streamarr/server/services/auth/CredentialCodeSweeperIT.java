@@ -40,6 +40,7 @@ class CredentialCodeSweeperIT extends AbstractIntegrationTest {
     if (identity != null) {
       authTestSupport.deleteIdentity(identity);
     }
+
     if (activeResetIdentity != null) {
       authTestSupport.deleteIdentity(activeResetIdentity);
     }

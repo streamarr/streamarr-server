@@ -114,9 +114,11 @@ public class CredentialAdministrationResolver {
     if (first != 0 || last != 0) {
       return paginationService.getPaginationOptions(first, after, last, before);
     }
+
     if (before == null) {
       return paginationService.getPaginationOptions(100, after, last, before);
     }
+
     return paginationService.getPaginationOptions(first, after, 100, before);
   }
 }

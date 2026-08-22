@@ -24,6 +24,7 @@ public final class PostgresLockTestSupport {
         while (rows.next()) {
           lockedRows++;
         }
+
         assertThat(lockedRows).isEqualTo(ImageSize.values().length);
       }
     }

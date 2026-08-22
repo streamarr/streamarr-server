@@ -698,6 +698,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     if (!acceptance.start().await(10, TimeUnit.SECONDS)) {
       throw new AssertionError("concurrent invitation acceptance did not start");
     }
+
     return mockMvc
         .perform(
             post("/api/auth/invitation/accept")
@@ -726,6 +727,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
       if (!releaseGuard.await(10, TimeUnit.SECONDS)) {
         throw new AssertionError("test did not release the Household guard lock");
       }
+
       connection.rollback();
     } catch (Exception exception) {
       throw new AssertionError("could not coordinate the Household guard lock", exception);
