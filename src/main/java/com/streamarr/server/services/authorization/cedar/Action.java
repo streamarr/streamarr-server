@@ -272,7 +272,14 @@ enum Action {
       "forceDeleteProfile",
       ResourceKind.PROFILE,
       FreshReauthentication.REQUIRED,
-      FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  TEAR_DOWN_HOUSEHOLD(
+      "tearDownHousehold",
+      ResourceKind.HOUSEHOLD,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_SECURITY_AUDIT(
+      "viewSecurityAudit", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 

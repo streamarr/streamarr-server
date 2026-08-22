@@ -12,6 +12,12 @@ public interface HouseholdRepositoryCustom {
   List<Household> findAdministrationPage(MediaPaginationOptions options);
 
   /**
+   * Locks the Household row for the caller's transaction, serializing destructive transitions.
+   * False when the Household no longer exists after a competing transaction commits.
+   */
+  boolean lockById(UUID householdId);
+
+  /**
    * Renames only — a single-column update loses no concurrent change to other columns. True while
    * the Household exists.
    */

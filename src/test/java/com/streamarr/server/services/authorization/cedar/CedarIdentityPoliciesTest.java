@@ -1331,6 +1331,45 @@ class CedarIdentityPoliciesTest {
     }
   }
 
+  @Nested
+  @DisplayName("Teardown and audit")
+  class TeardownAndAudit {
+
+    @Test
+    @DisplayName("Should allow teardown only when the caller is a fresh enabled ServerAdmin")
+    void shouldAllowTeardownOnlyWhenCallerIsFreshEnabledServerAdmin() {
+      var teardown = new Intent.TearDownHousehold(visitedHouseholdId);
+
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), teardown))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), teardown)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), teardown))
+          .isEqualTo(ALLOWED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), teardown))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should allow the security audit only when the caller is an enabled ServerAdmin")
+    void shouldAllowSecurityAuditOnlyWhenCallerIsEnabledServerAdmin() {
+      assertThat(decide(atHome(), new Intent.ViewSecurityAudit())).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.ViewSecurityAudit())).isEqualTo(ALLOWED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.ViewSecurityAudit())).isEqualTo(DENIED);
+    }
+  }
+
   private ProfileHouseholdShare pendingShare(UUID profileId, UUID householdId) {
     return shares.save(
         ProfileHouseholdShare.builder()
