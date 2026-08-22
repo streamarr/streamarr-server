@@ -209,9 +209,9 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
-  public Optional<HouseholdRole> roleForNewAccount(
-      UUID householdId, HouseholdRole requestedRole) {
-    return Optional.of(findByHouseholdId(householdId).isEmpty() ? HouseholdRole.ADMIN : requestedRole);
+  public Optional<HouseholdRole> roleForNewAccount(UUID householdId, HouseholdRole requestedRole) {
+    return Optional.of(
+        findByHouseholdId(householdId).isEmpty() ? HouseholdRole.ADMIN : requestedRole);
   }
 
   @Override
@@ -220,8 +220,7 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     return findById(accountId)
         .filter(account -> householdId.equals(account.getHouseholdId()))
         .filter(
-            account ->
-                !householdAdminRequired || account.getHouseholdRole() == HouseholdRole.ADMIN)
+            account -> !householdAdminRequired || account.getHouseholdRole() == HouseholdRole.ADMIN)
         .isPresent();
   }
 

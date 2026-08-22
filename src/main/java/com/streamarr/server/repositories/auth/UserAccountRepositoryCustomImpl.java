@@ -1,8 +1,8 @@
 package com.streamarr.server.repositories.auth;
 
-import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.HouseholdGuard.HOUSEHOLD_GUARD;
 import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
+import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 import static org.jooq.impl.DSL.lower;
 import static org.jooq.impl.DSL.noCondition;
@@ -263,9 +263,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
         dsl.fetchExists(
             dsl.selectOne().from(USER_ACCOUNT).where(USER_ACCOUNT.HOUSEHOLD_ID.eq(householdId)));
     return Optional.of(
-        householdHasAccount
-            ? requestedRole
-            : com.streamarr.server.domain.auth.HouseholdRole.ADMIN);
+        householdHasAccount ? requestedRole : com.streamarr.server.domain.auth.HouseholdRole.ADMIN);
   }
 
   @Override
