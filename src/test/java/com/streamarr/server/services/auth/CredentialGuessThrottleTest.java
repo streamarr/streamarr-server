@@ -169,6 +169,29 @@ class CredentialGuessThrottleTest {
   }
 
   @Test
+  @DisplayName("Should bound opaque-code budgets when public identifiers are sprayed")
+  void shouldBoundOpaqueCodeBudgetsWhenPublicIdentifiersAreSprayed() {
+    var boundedThrottle =
+        new CredentialGuessThrottle(
+            AuthThrottleProperties.builder()
+                .maxAttempts(2)
+                .window(Duration.ofMinutes(15))
+                .maxOpaqueCodeBudgets(2)
+                .build(),
+            clock);
+    boundedThrottle.registerCodeGuess("first-public-id");
+    boundedThrottle.registerCodeGuess("second-public-id");
+
+    assertThatThrownBy(() -> boundedThrottle.registerCodeGuess("one-too-many"))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+
+    boundedThrottle.resetCodeGuesses("first-public-id");
+
+    assertThatCode(() -> boundedThrottle.registerCodeGuess("replacement-public-id"))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
   @DisplayName("Should free the budget when the window passes")
   void shouldFreeBudgetWhenWindowPasses() {
     var accountId = UUID.randomUUID();

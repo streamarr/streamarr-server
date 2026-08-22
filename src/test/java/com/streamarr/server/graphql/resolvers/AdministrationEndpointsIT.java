@@ -693,6 +693,40 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should use the default page size when only a before Household cursor is given")
+  void shouldUseDefaultPageSizeWhenOnlyBeforeHouseholdCursorIsGiven() throws Exception {
+    var response =
+        graphql(
+                authTestSupport.accountBearer(serverAdmin),
+                """
+                query { households(first: 2) { pageInfo { endCursor } } }
+                """)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var before =
+        objectMapper
+            .readTree(response)
+            .path("data")
+            .path("households")
+            .path("pageInfo")
+            .path("endCursor")
+            .asString();
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            query { households(before: "%s") { edges { node { id } } } }
+            """
+                .formatted(before))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.households.edges.length()").value(1));
+  }
+
+  @Test
   @DisplayName("Should show a Household to its admin and hide a foreign one as null")
   void shouldShowHouseholdToItsAdminAndHideForeignOneAsNull() throws Exception {
     graphql(

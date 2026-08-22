@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -19,12 +20,22 @@ final class SlidingWindowAttemptBudget<K> {
   private final int maximumAttempts;
   private final Duration window;
   private final Clock clock;
+  private final Semaphore availableKeySlots;
   private final ConcurrentHashMap<K, Deque<Instant>> attempts = new ConcurrentHashMap<>();
 
   SlidingWindowAttemptBudget(int maximumAttempts, Duration window, Clock clock) {
+    this(maximumAttempts, window, clock, Integer.MAX_VALUE);
+  }
+
+  SlidingWindowAttemptBudget(
+      int maximumAttempts, Duration window, Clock clock, int maximumTrackedKeys) {
+    if (maximumTrackedKeys <= 0) {
+      throw new IllegalArgumentException("maximumTrackedKeys must be positive");
+    }
     this.maximumAttempts = maximumAttempts;
     this.window = window;
     this.clock = clock;
+    availableKeySlots = new Semaphore(maximumTrackedKeys);
   }
 
   boolean reserve(K key) {
@@ -32,7 +43,13 @@ final class SlidingWindowAttemptBudget<K> {
     attempts.compute(
         key,
         (_, timestamps) -> {
-          var current = timestamps == null ? new ArrayDeque<Instant>() : timestamps;
+          var current = timestamps;
+          if (current == null && !availableKeySlots.tryAcquire()) {
+            return null;
+          }
+          if (current == null) {
+            current = new ArrayDeque<>();
+          }
           prune(current);
           if (current.size() < maximumAttempts) {
             current.addLast(clock.instant());
@@ -44,15 +61,27 @@ final class SlidingWindowAttemptBudget<K> {
   }
 
   void reset(K key) {
-    attempts.remove(key);
+    if (attempts.remove(key) != null) {
+      availableKeySlots.release();
+    }
   }
 
   /** Evicts keys whose attempts all fell out of the window; returns how many were evicted. */
   int sweepExpired() {
     var evicted = 0;
     for (var key : attempts.keySet()) {
-      var remaining = attempts.computeIfPresent(key, (_, timestamps) -> pruned(timestamps));
-      if (remaining == null) {
+      var removed = new AtomicBoolean();
+      attempts.computeIfPresent(
+          key,
+          (_, timestamps) -> {
+            var remaining = pruned(timestamps);
+            if (remaining == null) {
+              availableKeySlots.release();
+              removed.set(true);
+            }
+            return remaining;
+          });
+      if (removed.get()) {
         evicted++;
       }
     }

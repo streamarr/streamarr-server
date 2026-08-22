@@ -202,6 +202,7 @@ class AuthorizationParityTest {
           DISABLE_ACCOUNT,
           ENABLE_ACCOUNT,
           CREATE_PROFILE,
+          CREATE_PROFILE_WITH_LOCAL_MANAGER,
           EDIT_PROFILE,
           CHANGE_PROFILE_KIND,
           LIFT_FINAL_RESTRICTION,
