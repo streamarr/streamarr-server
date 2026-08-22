@@ -1,0 +1,120 @@
+# Profile sharing (ADR 0024 §Profile sharing; ADR 0026 shapes).
+
+enum ProfileShareStatus {
+    PENDING
+    ACTIVE
+    REJECTED
+    CANCELED
+    EXPIRED
+    INVALIDATED
+    ENDED
+}
+
+type ProfileShare {
+    id: ID!
+    profileId: ID!
+    householdId: ID!
+    status: ProfileShareStatus!
+    structural: Boolean!
+    expiresAt: String
+    endedAt: String
+}
+
+type ProfileShareConnection {
+    edges: [ProfileShareEdge!]!
+    pageInfo: PageInfo!
+}
+
+type ProfileShareEdge {
+    node: ProfileShare!
+    cursor: String!
+}
+
+"The offerer's whole preflight: nothing else about the target Household leaks."
+type SharePreflight {
+    wouldLock: Boolean!
+    nameConflict: Boolean!
+}
+
+input OfferProfileShareInput {
+    profileId: ID!
+    householdId: ID!
+}
+
+type OfferProfileSharePayload {
+    share: ProfileShare
+    userErrors: [OfferProfileShareError!]!
+}
+
+union OfferProfileShareError =
+    ProfileNotFoundError
+  | HouseholdNotFoundError
+  | ProfileAlreadySharedError
+
+input AcceptProfileShareInput {
+    shareId: ID!
+}
+
+type AcceptProfileSharePayload {
+    share: ProfileShare
+    userErrors: [AcceptProfileShareError!]!
+}
+
+union AcceptProfileShareError =
+    ShareNotFoundError
+  | ShareNotPendingError
+  | NoEligibleAdminError
+  | ShareNameConflictError
+
+input RejectProfileShareInput {
+    shareId: ID!
+}
+
+type RejectProfileSharePayload {
+    share: ProfileShare
+    userErrors: [RejectProfileShareError!]!
+}
+
+union RejectProfileShareError = ShareNotFoundError | ShareNotPendingError
+
+input CancelProfileShareInput {
+    shareId: ID!
+}
+
+type CancelProfileSharePayload {
+    share: ProfileShare
+    userErrors: [CancelProfileShareError!]!
+}
+
+union CancelProfileShareError = ShareNotFoundError | ShareNotPendingError
+
+input EndProfileShareInput {
+    shareId: ID!
+}
+
+type EndProfileSharePayload {
+    share: ProfileShare
+    userErrors: [EndProfileShareError!]!
+}
+
+union EndProfileShareError =
+    ShareNotFoundError
+  | ShareNotActiveError
+  | StructuralShareError
+
+input ForceEndProfileShareInput {
+    shareId: ID!
+    reason: String!
+}
+
+type ForceEndProfileSharePayload {
+    share: ProfileShare
+    userErrors: [ForceEndProfileShareError!]!
+}
+
+union ForceEndProfileShareError =
+    ShareNotFoundError
+  | ShareNotActiveError
+  | StructuralShareError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError

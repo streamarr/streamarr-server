@@ -22,6 +22,7 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
@@ -53,6 +54,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
@@ -68,6 +70,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 class StreamingResolverTest {
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
+
+  @MockitoBean private UserAccountRepository userAccountRepository;
 
   @TestConfiguration
   static class TestConfig {

@@ -136,7 +136,38 @@ enum Action {
       "issuePasswordReset",
       ResourceKind.ACCOUNT,
       FreshReauthentication.REQUIRED,
-      FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  OFFER_PROFILE_SHARE(
+      "offerProfileShare",
+      ResourceKind.PROFILE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_MANAGEMENT),
+  ACCEPT_PROFILE_SHARE(
+      "acceptProfileShare",
+      ResourceKind.SHARE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.SHARE),
+  REJECT_PROFILE_SHARE(
+      "rejectProfileShare",
+      ResourceKind.SHARE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.SHARE),
+  CANCEL_PROFILE_SHARE(
+      "cancelProfileShare",
+      ResourceKind.SHARE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.SHARE),
+  END_PROFILE_SHARE(
+      "endProfileShare",
+      ResourceKind.SHARE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.SHARE),
+  FORCE_END_PROFILE_SHARE(
+      "forceEndProfileShare",
+      ResourceKind.SHARE,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.SHARE);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 
@@ -193,6 +224,7 @@ enum Action {
     SERVER,
     HOUSEHOLD,
     ACCOUNT,
-    PROFILE
+    PROFILE,
+    SHARE
   }
 }

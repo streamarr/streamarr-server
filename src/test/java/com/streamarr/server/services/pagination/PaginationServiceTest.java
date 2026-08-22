@@ -128,6 +128,15 @@ class PaginationServiceTest {
     }
 
     @Test
+    @DisplayName("Should paginate backward when given last without a before cursor")
+    void shouldPaginateBackwardWhenGivenLastWithoutBeforeCursor() {
+      var options = paginationService.getPaginationOptions(0, null, 1, null);
+
+      assertThat(options.getPaginationDirection()).isEqualTo(PaginationDirection.REVERSE);
+      assertThat(options.getLimit()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("Should get cursor when given both first and after")
     void shouldHaveCursorWhenGivenBothFirstAndAfter() {
       var cursor = "cursor";

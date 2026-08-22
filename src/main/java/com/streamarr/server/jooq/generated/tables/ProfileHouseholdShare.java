@@ -131,6 +131,12 @@ public class ProfileHouseholdShare extends TableImpl<ProfileHouseholdShareRecord
      */
     public final TableField<ProfileHouseholdShareRecord, OffsetDateTime> ENDED_AT = createField(DSL.name("ended_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
 
+    /**
+     * The column
+     * <code>public.profile_household_share.invalidation_reason</code>.
+     */
+    public final TableField<ProfileHouseholdShareRecord, String> INVALIDATION_REASON = createField(DSL.name("invalidation_reason"), SQLDataType.CLOB, this, "");
+
     private ProfileHouseholdShare(Name alias, Table<ProfileHouseholdShareRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

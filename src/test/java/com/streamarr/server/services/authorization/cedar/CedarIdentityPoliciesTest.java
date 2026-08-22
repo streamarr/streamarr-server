@@ -1,11 +1,13 @@
 package com.streamarr.server.services.authorization.cedar;
 
+import static com.streamarr.server.fixtures.ProfileHouseholdShareFixture.activeShareBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.cedarpolicy.BasicAuthorizationEngine;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
@@ -79,10 +81,12 @@ class CedarIdentityPoliciesTest {
                       new LivePrincipalHouseholdContributor(accounts),
                       new PrincipalEligibilityContributor(accounts, profiles),
                       new ProfileSupervisionContributor(accounts, profiles, shares),
-                      new ProfileDeletionContributor(accounts, managers, shares))),
+                      new ProfileDeletionContributor(accounts, managers, shares),
+                      new ShareContributor(shares, profiles, managers, accounts))),
               new ProfilePolicyPlanner(profiles),
               ContributorStubs.systemClockFreshness(),
-              new SimpleMeterRegistry()));
+              new SimpleMeterRegistry()),
+          accounts);
 
   private UserAccount account;
   private Profile personal;
@@ -98,7 +102,12 @@ class CedarIdentityPoliciesTest {
                 .id(account.getPersonalProfileId())
                 .householdId(account.getHouseholdId())
                 .build());
-    shares.share(personal.getId(), account.getHouseholdId(), true);
+    shares.save(
+        activeShareBuilder()
+            .profileId(personal.getId())
+            .householdId(account.getHouseholdId())
+            .structural(true)
+            .build());
     session =
         sessions.save(
             AuthSession.builder()
@@ -440,8 +449,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should preserve the authority denial when reauthentication freshness changes")
-    void shouldPreserveAuthorityDenialWhenReauthenticationFreshnessChanges() {
+    @DisplayName("Should preserve an authority denial when the caller is freshly reauthenticated")
+    void shouldPreserveAuthorityDenialWhenCallerIsFreshlyReauthenticated() {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
       var fresh = withReauthenticatedAt(atHome(), Instant.now());
 
@@ -462,8 +471,9 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should allow account administration writes when the caller is a live ServerAdmin")
-    void shouldAllowAccountAdministrationWritesWhenCallerIsLiveServerAdmin() {
+    @DisplayName(
+        "Should allow account administration writes only when the caller is a live ServerAdmin")
+    void shouldAllowAccountAdministrationWritesOnlyWhenCallerIsLiveServerAdmin() {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
 
       // A HouseholdAdmin is not enough — role changes are ServerAdmin work.
@@ -522,8 +532,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should allow an Account rename when the caller is self or a ServerAdmin")
-    void shouldAllowAccountRenameWhenCallerIsSelfOrServerAdmin() {
+    @DisplayName("Should allow self-service or ServerAdmin rename when an Account is renamed")
+    void shouldAllowSelfServiceOrServerAdminRenameWhenAccountIsRenamed() {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
 
       // Self-targeted: principal and resource are one entity in the slice.
@@ -536,8 +546,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should deny an Account rename when the caller Account is disabled")
-    void shouldDenyAccountRenameWhenCallerAccountIsDisabled() {
+    @DisplayName("Should deny self-service rename when the Account is disabled")
+    void shouldDenySelfServiceRenameWhenAccountIsDisabled() {
       account.setEnabled(false);
       accounts.save(account);
 
@@ -585,10 +595,14 @@ class CedarIdentityPoliciesTest {
 
     @Test
     @DisplayName(
-        "Should distinguish ordinary edits from kind changes when authority is supervisory")
-    void shouldDistinguishOrdinaryEditsFromKindChangesWhenAuthorityIsSupervisory() {
+        "Should limit kind changes to managers when managers and supervisors edit a Profile")
+    void shouldLimitKindChangesToManagersWhenManagersAndSupervisorsEditProfile() {
       var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
-      shares.share(kid.getId(), account.getHouseholdId(), false);
+      shares.save(
+          activeShareBuilder()
+              .profileId(kid.getId())
+              .householdId(account.getHouseholdId())
+              .build());
 
       // Supervising HouseholdAdmin (restricted Profile shared into their Household).
       assertThat(decide(atHome(), new Intent.RenameProfile(kid.getId()))).isEqualTo(ALLOWED);
@@ -750,6 +764,203 @@ class CedarIdentityPoliciesTest {
                   new Intent.DeleteProfile(personal.getId())))
           .isEqualTo(DENIED);
     }
+  }
+
+  @Nested
+  @DisplayName("Sharing")
+  class Sharing {
+
+    @Test
+    @DisplayName("Should limit a sovereign Personal Profile's offerer when a share is offered")
+    void shouldLimitSovereignPersonalProfileOffererWhenShareIsOffered() {
+      // The principal's own unrestricted Adult Personal Profile: offerable by itself.
+      assertThat(decide(atHome(), new Intent.OfferProfileShare(personal.getId())))
+          .isEqualTo(ALLOWED);
+
+      // A retained direct manager of someone ELSE's sovereign Personal Profile cannot offer it.
+      var other = accounts.save(AccountFixture.defaultAccountBuilder().build());
+      var otherPersonal =
+          profiles.save(
+              ProfileFixture.defaultProfileBuilder().id(other.getPersonalProfileId()).build());
+      managers.save(
+          ProfileManager.builder()
+              .accountId(account.getId())
+              .profileId(otherPersonal.getId())
+              .build());
+      assertThat(decide(atHome(), new Intent.OfferProfileShare(otherPersonal.getId())))
+          .isEqualTo(DENIED);
+
+      // An unlinked Profile is offered by any direct manager — and nobody else.
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      assertThat(decide(atHome(), new Intent.OfferProfileShare(orphan.getId()))).isEqualTo(DENIED);
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
+      assertThat(decide(atHome(), new Intent.OfferProfileShare(orphan.getId()))).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny sovereign unsharing when the Personal Profile becomes restricted")
+    void shouldDenySovereignUnsharingWhenPersonalProfileBecomesRestricted() {
+      var visit =
+          shares.save(
+              activeShareBuilder()
+                  .profileId(personal.getId())
+                  .householdId(visitedHouseholdId)
+                  .build());
+      personal.setMaximumAllowedRatingAge(12);
+      profiles.save(personal);
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+
+      // A supervised person no longer ends their own Profile's visits.
+      assertThat(decide(member(), new Intent.EndProfileShare(visit.getId()))).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should allow only the target's live admin or ServerAdmin when an offer is decided")
+    void shouldAllowOnlyTargetsLiveAdminOrServerAdminWhenOfferIsDecided() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var offer =
+          shares.save(
+              pendingShareBuilder()
+                  .profileId(orphan.getId())
+                  .householdId(account.getHouseholdId())
+                  .build());
+
+      assertThat(decide(atHome(), new Intent.AcceptProfileShare(offer.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.RejectProfileShare(offer.getId()))).isEqualTo(ALLOWED);
+
+      // A live MEMBER of the target cannot; the token's ADMIN claim never decides.
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.AcceptProfileShare(offer.getId()))).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.AcceptProfileShare(offer.getId()))).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should refuse deciding a share when it does not exist")
+    void shouldRefuseDecidingShareWhenItDoesNotExist() {
+      assertThat(decide(atHome(), new Intent.AcceptProfileShare(UUID.randomUUID())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should allow only the offerer when a pending offer is canceled")
+    void shouldAllowOnlyOffererWhenPendingOfferIsCanceled() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var offer =
+          shares.save(
+              pendingShareBuilder()
+                  .profileId(orphan.getId())
+                  .householdId(visitedHouseholdId)
+                  .build());
+      offer.setOfferedByAccountId(account.getId());
+      shares.save(offer);
+
+      assertThat(decide(atHome(), new Intent.CancelProfileShare(offer.getId()))).isEqualTo(ALLOWED);
+
+      var strangersOffer =
+          shares.save(
+              pendingShareBuilder()
+                  .profileId(orphan.getId())
+                  .householdId(UUID.randomUUID())
+                  .build());
+      var stranger = accounts.save(AccountFixture.defaultAccountBuilder().build());
+      strangersOffer.setOfferedByAccountId(stranger.getId());
+      shares.save(strangersOffer);
+      assertThat(decide(atHome(), new Intent.CancelProfileShare(strangersOffer.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should allow only an ADR-listed seat when an active share is ended")
+    void shouldAllowOnlyAdrListedSeatWhenActiveShareIsEnded() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var hosted =
+          shares.save(
+              activeShareBuilder()
+                  .profileId(orphan.getId())
+                  .householdId(account.getHouseholdId())
+                  .build());
+
+      // Target Household's live admin.
+      assertThat(decide(atHome(), new Intent.EndProfileShare(hosted.getId()))).isEqualTo(ALLOWED);
+
+      // A direct manager may end a local share, but not one into another Household.
+      var elsewhere =
+          shares.save(
+              activeShareBuilder()
+                  .profileId(orphan.getId())
+                  .householdId(visitedHouseholdId)
+                  .build());
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.EndProfileShare(elsewhere.getId()))).isEqualTo(DENIED);
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
+      assertThat(decide(atHome(), new Intent.EndProfileShare(elsewhere.getId()))).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.EndProfileShare(hosted.getId()))).isEqualTo(ALLOWED);
+
+      // The sovereign Account over its own Personal Profile's visits.
+      var visit =
+          shares.save(
+              activeShareBuilder()
+                  .profileId(personal.getId())
+                  .householdId(visitedHouseholdId)
+                  .build());
+      assertThat(decide(atHome(), new Intent.EndProfileShare(visit.getId()))).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should allow force-end only when the caller is a fresh ServerAdmin")
+    void shouldAllowForceEndOnlyWhenCallerIsFreshServerAdmin() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var hosted =
+          shares.save(
+              activeShareBuilder()
+                  .profileId(orphan.getId())
+                  .householdId(visitedHouseholdId)
+                  .build());
+      var forceEnd = new Intent.ForceEndProfileShare(hosted.getId());
+
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), forceEnd))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), forceEnd)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), forceEnd))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny ordinary and force end when the share is structural")
+    void shouldDenyOrdinaryAndForceEndWhenShareIsStructural() {
+      var structural =
+          shares
+              .findByProfileIdAndHouseholdIdAndStatus(
+                  personal.getId(), account.getHouseholdId(), ProfileShareStatus.ACTIVE)
+              .orElseThrow();
+
+      assertThat(decide(atHome(), new Intent.EndProfileShare(structural.getId())))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(
+              decide(
+                  withReauthenticatedAt(atHome(), Instant.now()),
+                  new Intent.ForceEndProfileShare(structural.getId())))
+          .isEqualTo(DENIED);
+    }
+  }
+
+  private ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> pendingShareBuilder() {
+    return ProfileHouseholdShare.builder().status(ProfileShareStatus.PENDING);
   }
 
   private AuthenticatedIdentity withReauthenticatedAt(AuthenticatedIdentity base, Instant at) {

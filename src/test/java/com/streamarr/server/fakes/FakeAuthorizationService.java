@@ -104,6 +104,13 @@ public final class FakeAuthorizationService implements AuthorizationService {
   }
 
   @Override
+  @SuppressWarnings("unchecked")
+  public <T> Decision<T> decideForAccount(UUID accountId, Intent<T> intent) {
+    intents.add(intent);
+    return (Decision<T>) rule.apply(intent);
+  }
+
+  @Override
   public <T> T requireAllowed(AuthenticatedIdentity identity, Intent<T> intent) {
     return switch (decide(identity, intent)) {
       case Decision.Allowed<T>(var value) -> value;

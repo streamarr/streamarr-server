@@ -29,6 +29,10 @@ record AuthorizationCheck(Action action, EntityUID resource, Map<String, Value> 
     return new AuthorizationCheck(action, CedarIds.profile(profileId), Map.of());
   }
 
+  static AuthorizationCheck onShare(Action action, UUID shareId) {
+    return new AuthorizationCheck(action, CedarIds.share(shareId), Map.of());
+  }
+
   static AuthorizationCheck selectProfile(UUID profileId, boolean pinVerified) {
     return new AuthorizationCheck(
         Action.SELECT_PROFILE,
