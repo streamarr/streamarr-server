@@ -179,6 +179,7 @@ public class ProfileManagerResolver {
     if (first == 0 && last == 0 && before != null) {
       return paginationService.getPaginationOptions(first, after, 100, before);
     }
+
     return paginationService.getPaginationOptions(
         first == 0 && last == 0 ? 100 : first, after, last, before);
   }

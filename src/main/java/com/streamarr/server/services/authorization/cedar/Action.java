@@ -182,17 +182,17 @@ enum Action {
       "cancelManagerInvitation",
       ResourceKind.MANAGER_INVITATION,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.MANAGER_INVITATION_FACTS),
+      FactRequirement.MANAGER_INVITATION),
   ACCEPT_MANAGER_INVITATION(
       "acceptManagerInvitation",
       ResourceKind.MANAGER_INVITATION,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.MANAGER_INVITATION_FACTS),
+      FactRequirement.MANAGER_INVITATION),
   DECLINE_MANAGER_INVITATION(
       "declineManagerInvitation",
       ResourceKind.MANAGER_INVITATION,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.MANAGER_INVITATION_FACTS),
+      FactRequirement.MANAGER_INVITATION),
   RELINQUISH_PROFILE_MANAGEMENT(
       "relinquishProfileManagement",
       ResourceKind.PROFILE,

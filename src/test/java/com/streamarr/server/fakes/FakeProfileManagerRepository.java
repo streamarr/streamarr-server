@@ -22,6 +22,7 @@ public class FakeProfileManagerRepository extends FakeJpaRepository<ProfileManag
     if (existsByAccountIdAndProfileId(accountId, profileId)) {
       return false;
     }
+
     save(ProfileManager.builder().accountId(accountId).profileId(profileId).build());
     return true;
   }

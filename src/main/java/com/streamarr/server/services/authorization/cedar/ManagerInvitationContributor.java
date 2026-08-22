@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-class ManagerInvitationFactsContributor implements FactContributor {
+class ManagerInvitationContributor implements FactContributor {
 
   static final String RECIPIENT_IS_PRINCIPAL = "recipientIsPrincipal";
   static final String INVITED_BY_PRINCIPAL = "invitedByPrincipal";
@@ -21,7 +21,7 @@ class ManagerInvitationFactsContributor implements FactContributor {
 
   @Override
   public FactRequirement provides() {
-    return FactRequirement.MANAGER_INVITATION_FACTS;
+    return FactRequirement.MANAGER_INVITATION;
   }
 
   @Override
@@ -31,6 +31,7 @@ class ManagerInvitationFactsContributor implements FactContributor {
     if (invitation.isEmpty()) {
       return;
     }
+
     slice.resourceAttribute(
         RECIPIENT_IS_PRINCIPAL,
         new PrimBool(identity.accountId().equals(invitation.get().getRecipientAccountId())));

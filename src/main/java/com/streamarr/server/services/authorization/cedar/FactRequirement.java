@@ -29,5 +29,5 @@ enum FactRequirement {
   /** The resource Share's lifecycle and the principal's relationships to it, read live. */
   SHARE,
   /** The resource manager invitation's parties relative to the principal, read live. */
-  MANAGER_INVITATION_FACTS
+  MANAGER_INVITATION
 }

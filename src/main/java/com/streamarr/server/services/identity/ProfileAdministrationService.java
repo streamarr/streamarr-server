@@ -377,6 +377,7 @@ public class ProfileAdministrationService {
     if (!restricted) {
       return;
     }
+
     userAccountRepository
         .findByPersonalProfileId(profileId)
         .ifPresent(

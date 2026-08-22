@@ -203,6 +203,7 @@ class ProfileManagerAdministrationServiceTest {
       assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), guess)))
           .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     }
+
     var throttled = issued.code();
     var recipientIdentity = recipientIdentity();
     assertThatThrownBy(() -> service.acceptManagerInvitation(recipientIdentity, throttled))

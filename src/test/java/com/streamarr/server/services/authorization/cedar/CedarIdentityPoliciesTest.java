@@ -87,7 +87,7 @@ class CedarIdentityPoliciesTest {
                       new ProfileSupervisionContributor(accounts, profiles, shares),
                       new ProfileDeletionContributor(accounts, managers, shares),
                       new ShareContributor(shares, profiles, managers, accounts),
-                      new ManagerInvitationFactsContributor(managerInvitations))),
+                      new ManagerInvitationContributor(managerInvitations))),
               new ProfilePolicyPlanner(profiles),
               ContributorStubs.systemClockFreshness(),
               new SimpleMeterRegistry()),

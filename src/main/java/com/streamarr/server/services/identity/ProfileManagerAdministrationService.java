@@ -74,16 +74,20 @@ public class ProfileManagerAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((ManagerRejections.Invite) refusal.get());
     }
+
     var recipient = userAccountRepository.findById(recipientAccountId);
     if (recipient.isEmpty()) {
       return Outcome.rejected(new ManagerRejections.RecipientNotFound());
     }
+
     if (!isEligible(recipient.get())) {
       return Outcome.rejected(new ManagerRejections.RecipientNotEligible());
     }
+
     if (alreadyManages(recipient.get(), profileId)) {
       return Outcome.rejected(new ManagerRejections.AlreadyManager());
     }
+
     var profile = profileRepository.findById(profileId).orElseThrow();
     var inviterName =
         userAccountRepository
@@ -126,12 +130,14 @@ public class ProfileManagerAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((ManagerRejections.Cancel) refusal.get());
     }
+
     return mutationTransactions.write(
         () -> {
           if (!invitationRepository.tryDecide(
               invitationId, ProfileManagerInvitationStatus.CANCELED, clock.instant())) {
             throw new MutationRejection(new ManagerRejections.InvitationNotPending());
           }
+
           return invitationRepository.findById(invitationId).orElseThrow();
         },
         _ -> Optional.empty());
@@ -143,6 +149,7 @@ public class ProfileManagerAdministrationService {
     if (resolved.isEmpty()) {
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
+
     var invitation = resolved.get();
     if (!(authorizationService.decide(
             identity, new Intent.AcceptManagerInvitation(invitation.getId()))
@@ -150,9 +157,11 @@ public class ProfileManagerAdministrationService {
       // Whoever is not the named recipient learns nothing beyond the one deliberate answer.
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
+
     if (!userAccountRepository.findById(identity.accountId()).map(this::isEligible).orElse(false)) {
       return Outcome.rejected(new ManagerRejections.RecipientNotEligible());
     }
+
     var now = clock.instant();
     if (!stillProposable(invitation)) {
       mutationTransactions.write(
@@ -165,6 +174,7 @@ public class ProfileManagerAdministrationService {
           _ -> Optional.empty());
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
+
     return mutationTransactions.write(
         () -> {
           lockProfile(invitation.getProfileId(), ManagerRejections.ManagerInvitationNotFound::new);
@@ -172,9 +182,11 @@ public class ProfileManagerAdministrationService {
               invitation.getId(), ProfileManagerInvitationStatus.ACCEPTED, now)) {
             throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
           }
+
           if (!profileManagerRepository.tryGrant(identity.accountId(), invitation.getProfileId())) {
             throw new MutationRejection(new ManagerRejections.AlreadyManager());
           }
+
           audit(
               identity,
               SecurityAuditEntry.builder()
@@ -195,18 +207,21 @@ public class ProfileManagerAdministrationService {
     if (resolved.isEmpty()) {
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
+
     var invitation = resolved.get();
     if (!(authorizationService.decide(
             identity, new Intent.DeclineManagerInvitation(invitation.getId()))
         instanceof Decision.Allowed<?>)) {
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
+
     return mutationTransactions.write(
         () -> {
           if (!invitationRepository.tryDecide(
               invitation.getId(), ProfileManagerInvitationStatus.DECLINED, clock.instant())) {
             throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
           }
+
           return invitationRepository.findById(invitation.getId()).orElseThrow();
         },
         _ -> Optional.empty());
@@ -224,12 +239,14 @@ public class ProfileManagerAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((ManagerRejections.Relinquish) refusal.get());
     }
+
     return mutationTransactions.write(
         () -> {
           lockProfile(profileId, ManagerRejections.ProfileNotFound::new);
           if (!profileManagerRepository.tryRemove(identity.accountId(), profileId)) {
             throw new MutationRejection(new ManagerRejections.ManagementAlreadyRemoved());
           }
+
           invalidateLeaversProposals(profileId, identity.accountId());
           return profileId;
         },
@@ -248,6 +265,7 @@ public class ProfileManagerAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((ManagerRejections.Remove) refusal.get());
     }
+
     return mutationTransactions.write(
         () -> {
           lockProfile(profileId, ManagerRejections.ProfileNotFound::new);
@@ -262,6 +280,7 @@ public class ProfileManagerAdministrationService {
     if (isBlank(reason)) {
       return Outcome.rejected(new ManagerRejections.ReasonRequired());
     }
+
     var refusal =
         refusalOf(
             identity,
@@ -272,13 +291,16 @@ public class ProfileManagerAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((ManagerRejections.OverrideGrant) refusal.get());
     }
+
     var recipient = userAccountRepository.findById(accountId);
     if (recipient.isEmpty()) {
       return Outcome.rejected(new ManagerRejections.RecipientNotFound());
     }
+
     if (!isEligible(recipient.get())) {
       return Outcome.rejected(new ManagerRejections.RecipientNotEligible());
     }
+
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
@@ -286,6 +308,7 @@ public class ProfileManagerAdministrationService {
           if (!profileManagerRepository.tryGrant(accountId, profileId)) {
             throw new MutationRejection(new ManagerRejections.AlreadyManager());
           }
+
           // The consent this grant makes redundant must not linger as a second live path.
           invitationRepository.invalidatePendingForProfileAndRecipient(
               profileId, accountId, "granted by override", now);
@@ -309,6 +332,7 @@ public class ProfileManagerAdministrationService {
     if (isBlank(reason)) {
       return Outcome.rejected(new ManagerRejections.ReasonRequired());
     }
+
     var refusal =
         refusalOf(
             identity,
@@ -319,6 +343,7 @@ public class ProfileManagerAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((ManagerRejections.OverrideRemove) refusal.get());
     }
+
     return mutationTransactions.write(
         () -> {
           lockProfile(profileId, ManagerRejections.ProfileNotFound::new);
@@ -336,6 +361,7 @@ public class ProfileManagerAdministrationService {
         instanceof Decision.Allowed<?>)) {
       return List.of();
     }
+
     return unexpired(
         invitationRepository.findByProfileIdAndStatus(
             profileId, ProfileManagerInvitationStatus.PENDING));
@@ -367,6 +393,7 @@ public class ProfileManagerAdministrationService {
     if (!profileManagerRepository.tryRemove(managerAccountId, profileId)) {
       throw new MutationRejection(new ManagerRejections.NotAManager());
     }
+
     var now = clock.instant();
     // An older invitation naming the removed Account could silently restore what was disputed.
     invitationRepository.invalidatePendingForProfileAndRecipient(
@@ -404,6 +431,7 @@ public class ProfileManagerAdministrationService {
     if (presented.isEmpty()) {
       return Optional.empty();
     }
+
     throttle.registerCodeGuess(presented.get().publicId());
     return invitationRepository
         .findByPublicId(presented.get().publicId())
@@ -418,6 +446,7 @@ public class ProfileManagerAdministrationService {
     if (inviterId == null) {
       return false;
     }
+
     return userAccountRepository
         .findById(inviterId)
         .filter(this::isEligible)
@@ -462,6 +491,7 @@ public class ProfileManagerAdministrationService {
               if (mayView.getAsBoolean()) {
                 throw new AccessDeniedException("Not allowed.");
               }
+
               yield Optional.of(denied.get());
             }
           };
