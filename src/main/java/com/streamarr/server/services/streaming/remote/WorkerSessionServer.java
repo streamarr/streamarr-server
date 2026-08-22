@@ -8,11 +8,11 @@ import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.grpc.netty.shaded.io.netty.handler.ssl.ClientAuth;
 import java.io.IOException;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -31,9 +31,9 @@ public final class WorkerSessionServer implements AutoCloseable {
   private final WorkerSessionServerRuntime runtime = new WorkerSessionServerRuntime(log);
 
   public WorkerSessionServer(
-      WorkerSessionServerConfiguration configuration, SegmentStore segmentStore) {
-    this.configuration = Objects.requireNonNull(configuration);
-    this.segmentStore = Objects.requireNonNull(segmentStore);
+      @NonNull WorkerSessionServerConfiguration configuration, @NonNull SegmentStore segmentStore) {
+    this.configuration = configuration;
+    this.segmentStore = segmentStore;
   }
 
   public synchronized void start() throws IOException {

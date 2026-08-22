@@ -18,7 +18,6 @@ import java.lang.reflect.Proxy;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.util.Objects;
 import javax.net.ssl.SSLSession;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -178,16 +177,18 @@ class WorkerIdentityServerInterceptorTest {
   }
 
   private X509Certificate unmappedWorkerCertificate() throws Exception {
-    try (var certificate =
-        Objects.requireNonNull(getClass().getResourceAsStream("/tls/unmapped-worker-cert.pem"))) {
+    var certificate = getClass().getResourceAsStream("/tls/unmapped-worker-cert.pem");
+    assertThat(certificate).as("unmapped worker certificate resource must exist").isNotNull();
+    try (certificate) {
       return (X509Certificate)
           CertificateFactory.getInstance("X.509").generateCertificate(certificate);
     }
   }
 
   private X509Certificate workerCertificate() throws Exception {
-    try (var certificate =
-        Objects.requireNonNull(getClass().getResourceAsStream("/tls/worker-cert.pem"))) {
+    var certificate = getClass().getResourceAsStream("/tls/worker-cert.pem");
+    assertThat(certificate).as("worker certificate resource must exist").isNotNull();
+    try (certificate) {
       return (X509Certificate)
           CertificateFactory.getInstance("X.509").generateCertificate(certificate);
     }

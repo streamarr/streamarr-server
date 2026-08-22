@@ -1,0 +1,42 @@
+package com.streamarr.server.services.mutation;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+@Tag("UnitTest")
+@DisplayName("Outcome Tests")
+class OutcomeTest {
+
+  @Test
+  @DisplayName("Should refuse an accepted outcome when the result is missing")
+  void shouldRefuseAcceptedOutcomeWhenResultIsMissing() {
+    assertThatNullPointerException()
+        .isThrownBy(() -> Outcome.accepted(null))
+        .withMessageContaining("result");
+  }
+
+  @Test
+  @DisplayName("Should refuse a rejection when reasons are empty")
+  void shouldRefuseRejectionWhenReasonsAreEmpty() {
+    assertThatThrownBy(() -> Outcome.rejected(List.of()))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  @DisplayName("Should preserve rejection reasons when the source list changes")
+  void shouldPreserveRejectionReasonsWhenSourceListChanges() {
+    var reasons = new ArrayList<>(List.of("first"));
+
+    var outcome = Outcome.<String, String>rejected(reasons);
+    reasons.add("second");
+
+    assertThat(outcome).isEqualTo(Outcome.rejected("first"));
+  }
+}

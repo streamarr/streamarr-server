@@ -1,5 +1,7 @@
 package com.streamarr.server.fixtures;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
@@ -14,7 +16,6 @@ import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.Objects;
 import java.util.UUID;
 
 public final class RemoteWorkerFixtures {
@@ -26,7 +27,8 @@ public final class RemoteWorkerFixtures {
   private RemoteWorkerFixtures() {}
 
   public static Path tlsResource(String name) throws URISyntaxException {
-    var url = Objects.requireNonNull(RemoteWorkerFixtures.class.getResource("/tls/" + name));
+    var url = RemoteWorkerFixtures.class.getResource("/tls/" + name);
+    assertThat(url).as("TLS resource %s must exist", name).isNotNull();
     return Path.of(url.toURI());
   }
 

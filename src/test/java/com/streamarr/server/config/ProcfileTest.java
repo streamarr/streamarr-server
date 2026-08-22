@@ -48,8 +48,8 @@ class ProcfileTest {
   }
 
   @Test
-  @DisplayName("Should configure native access for every Maven JVM")
-  void shouldConfigureNativeAccessForEveryMavenJvm()
+  @DisplayName("Should enable native access when the build starts any JVM")
+  void shouldEnableNativeAccessWhenBuildStartsAnyJvm()
       throws IOException, ParserConfigurationException, SAXException, XPathExpressionException {
     var pom = pom();
 

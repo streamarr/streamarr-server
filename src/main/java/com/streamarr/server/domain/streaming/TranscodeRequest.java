@@ -1,19 +1,19 @@
 package com.streamarr.server.domain.streaming;
 
 import java.nio.file.Path;
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
 public record TranscodeRequest(
-    UUID sessionId,
+    @NonNull UUID sessionId,
     UUID attemptId,
-    Path sourcePath,
+    @NonNull Path sourcePath,
     int seekPosition,
     int targetSegmentDuration,
     double framerate,
-    TranscodeDecision transcodeDecision,
+    @NonNull TranscodeDecision transcodeDecision,
     int width,
     int height,
     long bitrate,
@@ -21,9 +21,6 @@ public record TranscodeRequest(
     int startSequenceNumber) {
 
   public TranscodeRequest {
-    Objects.requireNonNull(sessionId, "sessionId is required");
-    Objects.requireNonNull(sourcePath, "sourcePath is required");
-    Objects.requireNonNull(transcodeDecision, "transcodeDecision is required");
     if (variantLabel == null) {
       variantLabel = StreamSession.defaultVariant();
     }

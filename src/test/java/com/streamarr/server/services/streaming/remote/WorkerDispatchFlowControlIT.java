@@ -20,7 +20,6 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -166,7 +165,8 @@ class WorkerDispatchFlowControlIT {
   }
 
   private Path resource(String name) throws URISyntaxException {
-    var url = Objects.requireNonNull(getClass().getResource("/tls/" + name));
+    var url = getClass().getResource("/tls/" + name);
+    assertThat(url).as("TLS resource %s must exist", name).isNotNull();
     return Path.of(url.toURI());
   }
 

@@ -66,8 +66,8 @@ class StreamarrBearerTokenResolverTest {
     assertThat(resolver.resolve(request)).isEqualTo("playback-token");
   }
 
-  @ParameterizedTest(name = "{0}")
-  @DisplayName("Should suppress bearer resolution when unauthenticated auth path requested")
+  @ParameterizedTest(name = "Should suppress bearer resolution when {0} is requested")
+  @DisplayName("Should suppress bearer resolution when an unauthenticated auth path is requested")
   @ValueSource(
       strings = {
         "/api/auth/status",
@@ -76,7 +76,7 @@ class StreamarrBearerTokenResolverTest {
         "/api/auth/refresh",
         "/api/auth/refresh/revoke"
       })
-  void shouldSuppressBearerResolutionWhenUnauthenticatedAuthPathRequested(String uri) {
+  void shouldSuppressBearerResolutionWhenUnauthenticatedAuthPathIsRequested(String uri) {
     var request = requestFor(uri);
     request.addHeader("Authorization", "Bearer header-token");
     request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "cookie-token"));

@@ -42,7 +42,6 @@ import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -111,13 +110,11 @@ class WorkerSessionServerIT {
 
   @Test
   @DisplayName("Should reject configuration when worker session server settings are invalid")
-  void shouldRejectConfigurationWhenWorkerSessionServerSettingsAreInvalid() {
-    var negativePort =
-        WorkerSessionServerConfiguration.builder().port(-1).trustDomain("streamarr.test");
-    var excessivePort =
-        WorkerSessionServerConfiguration.builder().port(65_536).trustDomain("streamarr.test");
-    var missingTrustDomain = WorkerSessionServerConfiguration.builder().port(0);
-    var blankTrustDomain = WorkerSessionServerConfiguration.builder().port(0).trustDomain(" ");
+  void shouldRejectConfigurationWhenWorkerSessionServerSettingsAreInvalid() throws Exception {
+    var negativePort = serverConfigurationBuilder().port(-1);
+    var excessivePort = serverConfigurationBuilder().port(65_536);
+    var missingTrustDomain = serverConfigurationBuilder().trustDomain(null);
+    var blankTrustDomain = serverConfigurationBuilder().trustDomain(" ");
 
     assertThatThrownBy(negativePort::build)
         .isInstanceOf(IllegalArgumentException.class)
@@ -1211,7 +1208,9 @@ class WorkerSessionServerIT {
       implements AutoCloseable {
 
     private EstablishWorkerSessionResponse nextResponse() throws InterruptedException {
-      return Objects.requireNonNull(responses.poll(5, TimeUnit.SECONDS));
+      var response = responses.poll(5, TimeUnit.SECONDS);
+      assertThat(response).as("worker session response must arrive").isNotNull();
+      return response;
     }
 
     private void awaitClosed() throws Exception {

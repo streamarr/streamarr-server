@@ -3,6 +3,7 @@ package com.streamarr.transcode.worker;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.transcode.tls.PemTlsIdentity;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -90,7 +91,15 @@ class TranscodeWorkerSettingsTest {
         TranscodeWorkerConfiguration.builder()
             .workerId(UUID.randomUUID())
             .bootId(UUID.randomUUID())
-            .availableSlots(0);
+            .availableSlots(0)
+            .tlsIdentity(
+                PemTlsIdentity.builder()
+                    .certificate(Path.of("worker.crt"))
+                    .privateKey(Path.of("worker.key"))
+                    .trustBundle(Path.of("ca.crt"))
+                    .build())
+            .sourceNamespaces(Map.of(SOURCE_NAMESPACE_ID, Path.of("/media")))
+            .segmentBasePath(Path.of("/segments"));
 
     assertThatThrownBy(configuration::build)
         .isInstanceOf(IllegalArgumentException.class)

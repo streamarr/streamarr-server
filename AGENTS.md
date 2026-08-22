@@ -143,6 +143,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 
 ### Java Language
 - Leverage Lombok: `@Slf4j`, `@Builder`, `@Getter`, `@RequiredArgsConstructor`, etc.
+- Use Lombok `@NonNull` for required record components and method or constructor parameters instead of `Objects.requireNonNull`; in tests, use AssertJ null assertions for required fixtures and resources
 - Prefer Builders over passing args to constructors — use `@Builder` for domain objects, DTOs, and any class with more than 2-3 fields
 - The builder preference applies to methods too: no method, factory, or test helper should take more than 2-3 positional arguments. Accept a builder-built object instead, or (for fixtures/helpers) return a pre-populated builder the caller customizes with named setters — e.g. `StreamSessionFixture.defaultSessionBuilder().sessionId(id).build()`, never `buildSession(id, 3600, 50.0, 7200)`
 - Prefer `var` for local variables unless the type isn't obvious or would lead to misinterpretation
@@ -241,7 +242,7 @@ We follow these factors from the Twelve-Factor App methodology:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **streamarr-server** (12285 symbols, 35314 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **streamarr-server** (12530 symbols, 35922 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

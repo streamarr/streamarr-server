@@ -1,6 +1,6 @@
 type Mutation {
     addRating(input: RatingInput!): Rating!
-    addLibrary(input: AddLibraryInput!): Library!
+    addLibrary(input: AddLibraryInput!): AddLibraryPayload
     removeLibrary(id: ID!): Boolean!
     scanLibrary(id: ID!): Boolean!
     refreshLibrary(id: ID!, imageRefreshMode: ImageRefreshMode! = PRESERVE): Boolean!

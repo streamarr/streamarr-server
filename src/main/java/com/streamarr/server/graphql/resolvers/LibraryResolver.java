@@ -20,6 +20,9 @@ import com.streamarr.server.graphql.dto.AlphabetIndexDto;
 import com.streamarr.server.graphql.inputs.AddLibraryInput;
 import com.streamarr.server.graphql.inputs.MediaFilterInput;
 import com.streamarr.server.graphql.inputs.MediaSortInput;
+import com.streamarr.server.graphql.mutation.MutationPayloads;
+import com.streamarr.server.graphql.mutation.library.AddLibraryErrors;
+import com.streamarr.server.graphql.mutation.library.AddLibraryPayload;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -53,7 +56,7 @@ public class LibraryResolver {
   private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsMutation
-  public Library addLibrary(@InputArgument AddLibraryInput input) {
+  public AddLibraryPayload addLibrary(@InputArgument AddLibraryInput input) {
     var identity = authorizationService.currentIdentity();
     var library =
         Library.builder()
@@ -67,7 +70,10 @@ public class LibraryResolver {
                     : ExternalAgentStrategy.TMDB)
             .build();
 
-    return libraryAdministrationService.addLibrary(identity, library);
+    return MutationPayloads.payload(
+        libraryAdministrationService.addLibrary(identity, library),
+        AddLibraryErrors::toError,
+        AddLibraryPayload::new);
   }
 
   @DgsMutation

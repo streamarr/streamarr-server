@@ -5,8 +5,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
+import com.streamarr.server.exceptions.InvalidIdException;
+import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
+import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
+import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
+import com.streamarr.server.graphql.cursor.InvalidCursorException;
+import graphql.GraphQLError;
 import graphql.Scalars;
 import graphql.execution.DataFetcherExceptionHandlerParameters;
 import graphql.execution.ExecutionStepInfo;
@@ -14,6 +21,7 @@ import graphql.execution.MergedField;
 import graphql.execution.ResultPath;
 import graphql.language.Field;
 import graphql.schema.DataFetchingEnvironmentImpl;
+import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.DisplayName;
@@ -76,20 +84,139 @@ class StreamarrDataFetcherExceptionHandlerTest {
   }
 
   @Test
-  @DisplayName("Should delegate to default handler when exception unrelated to identity")
-  void shouldDelegateToDefaultHandlerWhenExceptionUnrelatedToIdentity() {
-    assertThat(codeFor(new IllegalStateException("boom"))).isNull();
+  @DisplayName("Should sanitize completion exception when no cause is available")
+  void shouldSanitizeCompletionExceptionWhenNoCauseIsAvailable() {
+    var error = errorFor(new CompletionException((Throwable) null));
+
+    assertThat(error.getMessage()).isEqualTo("The request could not be completed.");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "INTERNAL")
+        .containsEntry("code", "INTERNAL");
   }
 
-  // The cause-null arm of unwrap stays untested on purpose: a cause-less CompletionException is
-  // only constructible by hand (CompletableFuture always wraps a cause), and DGS's default
-  // handler recurses infinitely on one — the guard exists to keep our unwrap out of that state.
+  @Test
+  @DisplayName("Should sanitize and stamp the contract keys when an exception is unrecognized")
+  void shouldSanitizeAndStampContractKeysWhenExceptionIsUnrecognized() {
+    var error = errorFor(new IllegalStateException("jdbc: connection refused to 10.0.0.7"));
+
+    assertThat(error.getMessage()).isEqualTo("The request could not be completed.");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "INTERNAL")
+        .containsEntry("code", "INTERNAL")
+        .containsOnlyKeys("errorType", "code", "requestId");
+    assertThat((String) error.getExtensions().get("requestId")).startsWith("req-").hasSize(12);
+  }
+
+  @Test
+  @DisplayName("Should sanitize illegal argument when an internal value is invalid")
+  void shouldSanitizeIllegalArgumentWhenInternalValueIsInvalid() {
+    var error = errorFor(new IllegalArgumentException("Invalid filepath URI: file:///srv/media"));
+
+    assertThat(error.getMessage()).isEqualTo("The request could not be completed.");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "INTERNAL")
+        .containsEntry("code", "INTERNAL");
+  }
+
+  @Test
+  @DisplayName("Should stamp errorType, code, and requestId when a gate is classified")
+  void shouldStampErrorTypeCodeAndRequestIdWhenGateIsClassified() {
+    var error = errorFor(new AccessDeniedException("Not allowed."));
+
+    assertThat(error.getMessage()).isEqualTo("Not allowed.");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "PERMISSION_DENIED")
+        .containsEntry("code", "FORBIDDEN")
+        .containsOnlyKeys("errorType", "code", "requestId");
+  }
+
+  @Test
+  @DisplayName("Should classify each gate with its DGS error type when handled")
+  void shouldClassifyEachGateWithItsDgsErrorTypeWhenHandled() {
+    assertThat(errorTypeFor(new AuthenticationRequiredException())).isEqualTo("UNAUTHENTICATED");
+    assertThat(errorTypeFor(new ProfileRequiredException())).isEqualTo("FAILED_PRECONDITION");
+    assertThat(errorTypeFor(new HouseholdRequiredException())).isEqualTo("FAILED_PRECONDITION");
+    assertThat(errorTypeFor(new AuthorizationUnavailableException())).isEqualTo("UNAVAILABLE");
+    assertThat(errorTypeFor(new SessionNotFoundException(UUID.randomUUID())))
+        .isEqualTo("NOT_FOUND");
+    assertThat(errorTypeFor(new TooManyCredentialAttemptsException())).isEqualTo("UNAVAILABLE");
+    assertThat(codeFor(new TooManyCredentialAttemptsException()))
+        .isEqualTo("TOO_MANY_CREDENTIAL_ATTEMPTS");
+  }
+
+  @Test
+  @DisplayName("Should keep the safe ID message when a query ID is invalid")
+  void shouldKeepSafeIdMessageWhenQueryIdIsInvalid() {
+    var error = errorFor(new InvalidIdException("nope"));
+
+    assertThat(error.getMessage()).isEqualTo("Invalid ID format: nope");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "BAD_REQUEST")
+        .containsEntry("code", "INVALID_INPUT");
+  }
+
+  @Test
+  @DisplayName("Should keep the safe cursor message when a query cursor is invalid")
+  void shouldKeepSafeCursorMessageWhenQueryCursorIsInvalid() {
+    var error = errorFor(new InvalidCursorException("Cursor filter mismatch: startLetter"));
+
+    assertThat(error.getMessage()).isEqualTo("Cursor filter mismatch: startLetter");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "BAD_REQUEST")
+        .containsEntry("code", "INVALID_CURSOR");
+  }
+
+  @Test
+  @DisplayName("Should keep the safe pagination message when a query page is invalid")
+  void shouldKeepSafePaginationMessageWhenQueryPageIsInvalid() {
+    var error = errorFor(new InvalidPaginationArgumentException("first must not be negative"));
+
+    assertThat(error.getMessage()).isEqualTo("first must not be negative");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "BAD_REQUEST")
+        .containsEntry("code", "INVALID_INPUT");
+  }
+
+  @Test
+  @DisplayName("Should keep the safe media message when a query media type is unsupported")
+  void shouldKeepSafeMediaMessageWhenQueryMediaTypeIsUnsupported() {
+    var error = errorFor(new UnsupportedMediaTypeException("OTHER"));
+
+    assertThat(error.getMessage()).isEqualTo("Unsupported media type: OTHER");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "FAILED_PRECONDITION")
+        .containsEntry("code", "UNSUPPORTED_MEDIA_TYPE");
+  }
+
+  @Test
+  @DisplayName("Should add retryAfterSeconds only when the exception knows when to retry")
+  void shouldAddRetryAfterSecondsOnlyWhenExceptionKnowsWhenToRetry() {
+    var throttled = errorFor(new TooManyDeviceAttemptsException(Duration.ofSeconds(42)));
+    var plain = errorFor(new TooManyCredentialAttemptsException());
+
+    assertThat(throttled.getExtensions()).containsEntry("retryAfterSeconds", 42L);
+    assertThat(plain.getExtensions()).doesNotContainKey("retryAfterSeconds");
+  }
+
+  @Test
+  @DisplayName("Should round retry delay up when delay has a fractional second")
+  void shouldRoundRetryDelayUpWhenDelayHasFractionalSecond() {
+    var error = errorFor(new TooManyDeviceAttemptsException(Duration.ofMillis(1)));
+
+    assertThat(error.getExtensions()).containsEntry("retryAfterSeconds", 1L);
+  }
 
   private String codeFor(Throwable exception) {
-    var result = handler.handleException(parameters(exception)).join();
+    return (String) errorFor(exception).getExtensions().get("code");
+  }
 
-    var extensions = result.getErrors().getFirst().getExtensions();
-    return extensions == null ? null : (String) extensions.get("code");
+  private String errorTypeFor(Throwable exception) {
+    return (String) errorFor(exception).getExtensions().get("errorType");
+  }
+
+  private GraphQLError errorFor(Throwable exception) {
+    var result = handler.handleException(parameters(exception)).join();
+    return result.getErrors().getFirst();
   }
 
   private static DataFetcherExceptionHandlerParameters parameters(Throwable exception) {

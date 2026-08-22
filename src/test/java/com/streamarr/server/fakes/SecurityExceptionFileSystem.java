@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.channels.SeekableByteChannel;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.AccessMode;
 import java.nio.file.CopyOption;
 import java.nio.file.DirectoryStream;
@@ -33,10 +34,20 @@ public class SecurityExceptionFileSystem extends FileSystem {
 
   private final FileSystem delegate;
   private final SecurityExceptionProvider provider;
+  private final boolean reportUnreadable;
 
   public SecurityExceptionFileSystem(FileSystem delegate) {
+    this(delegate, false);
+  }
+
+  private SecurityExceptionFileSystem(FileSystem delegate, boolean reportUnreadable) {
     this.delegate = delegate;
+    this.reportUnreadable = reportUnreadable;
     this.provider = new SecurityExceptionProvider(delegate.provider(), this);
+  }
+
+  public static SecurityExceptionFileSystem reportingUnreadable(FileSystem delegate) {
+    return new SecurityExceptionFileSystem(delegate, true);
   }
 
   @Override
@@ -256,7 +267,16 @@ public class SecurityExceptionFileSystem extends FileSystem {
     }
 
     @Override
-    public void checkAccess(Path path, AccessMode... modes) {
+    public void checkAccess(Path path, AccessMode... modes) throws IOException {
+      if (fileSystem.reportUnreadable && modes.length == 0) {
+        delegate.checkAccess(unwrap(path), modes);
+        return;
+      }
+
+      if (fileSystem.reportUnreadable) {
+        throw new AccessDeniedException(path.toString());
+      }
+
       throw new SecurityException("Simulated security manager denial for path: " + path);
     }
 

@@ -4,18 +4,18 @@ import com.streamarr.transcode.tls.PemTlsIdentity;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
 public record TranscodeWorkerConfiguration(
-    UUID workerId,
-    UUID bootId,
+    @NonNull UUID workerId,
+    @NonNull UUID bootId,
     int availableSlots,
-    PemTlsIdentity tlsIdentity,
-    Map<UUID, Path> sourceNamespaces,
-    Path segmentBasePath,
+    @NonNull PemTlsIdentity tlsIdentity,
+    @NonNull Map<UUID, Path> sourceNamespaces,
+    @NonNull Path segmentBasePath,
     Duration keepAliveTime,
     Duration keepAliveTimeout) {
 
@@ -23,15 +23,10 @@ public record TranscodeWorkerConfiguration(
   private static final Duration DEFAULT_KEEPALIVE_TIMEOUT = Duration.ofSeconds(10);
 
   public TranscodeWorkerConfiguration {
-    Objects.requireNonNull(workerId, "workerId is required");
-    Objects.requireNonNull(bootId, "bootId is required");
     if (availableSlots < 1) {
       throw new IllegalArgumentException("Available slots must be positive");
     }
-    Objects.requireNonNull(tlsIdentity, "tlsIdentity is required");
-    Objects.requireNonNull(sourceNamespaces, "sourceNamespaces is required");
     sourceNamespaces = Map.copyOf(sourceNamespaces);
-    Objects.requireNonNull(segmentBasePath, "segmentBasePath is required");
     if (keepAliveTime == null) {
       keepAliveTime = DEFAULT_KEEPALIVE_TIME;
     }

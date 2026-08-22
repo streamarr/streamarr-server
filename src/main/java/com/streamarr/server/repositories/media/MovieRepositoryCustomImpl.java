@@ -21,9 +21,9 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -291,8 +291,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
         .fetchMap(Tables.MEDIA_FILE.MEDIA_ID, r -> toInstant(r.get(maxField)));
   }
 
-  private static UUID requireProfileId(UUID profileId) {
-    return Objects.requireNonNull(profileId, "profileId is required for user-scoped watch queries");
+  private static UUID requireProfileId(@NonNull UUID profileId) {
+    return profileId;
   }
 
   private static Instant toInstant(OffsetDateTime value) {

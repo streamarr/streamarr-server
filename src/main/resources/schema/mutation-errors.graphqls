@@ -1,0 +1,42 @@
+# Shared mutation error contract (ADR 0026). Every expected rejection a mutation can return is a
+# member of that mutation's own error union; the members are declared once here and reused.
+
+interface MutationError {
+    message: String!
+}
+
+interface InputMutationError implements MutationError {
+    message: String!
+    "Path of the offending field relative to the mutation's input object; list indexes are decimal strings."
+    inputPath: [String!]!
+}
+
+type LibraryNameRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type LibraryPathRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type LibraryPathNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type LibraryPathNotDirectoryError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type LibraryPathNotReadableError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type LibraryPathAlreadyRegisteredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}

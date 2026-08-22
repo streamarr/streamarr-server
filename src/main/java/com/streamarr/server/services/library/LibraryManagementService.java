@@ -5,10 +5,7 @@ import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.exceptions.InvalidLibraryPathException;
-import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
-import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
@@ -29,6 +26,8 @@ import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.mutation.MutationTransactions;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -41,6 +40,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -56,7 +56,12 @@ import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
-public class LibraryManagementService implements ActiveScanChecker {
+public class LibraryManagementService implements ActiveScanChecker, LibraryScanTrigger {
+
+  /**
+   * The unique index from V035 that makes a duplicate path a database decision, not a pre-check.
+   */
+  static final String LIBRARY_FILEPATH_UNIQUE = "library_filepath_uri_idx";
 
   private final IgnoredFileValidator ignoredFileValidator;
   private final VideoExtensionValidator videoExtensionValidator;
@@ -72,6 +77,7 @@ public class LibraryManagementService implements ActiveScanChecker {
   private final FileSystem fileSystem;
   private final LibraryMutationTransaction libraryMutationTransaction;
   private final MutexFactory<String> mutexFactory;
+  private final MutationTransactions mutationTransactions;
   private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
   private final Set<UUID> activeRefreshes = ConcurrentHashMap.newKeySet();
 
@@ -89,7 +95,8 @@ public class LibraryManagementService implements ActiveScanChecker {
       MutexFactoryProvider mutexFactoryProvider,
       LibraryRefreshService libraryRefreshService,
       FileSystem fileSystem,
-      LibraryMutationTransaction libraryMutationTransaction) {
+      LibraryMutationTransaction libraryMutationTransaction,
+      MutationTransactions mutationTransactions) {
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
     this.movieFileProcessor = movieFileProcessor;
@@ -103,6 +110,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     this.libraryRefreshService = libraryRefreshService;
     this.fileSystem = fileSystem;
     this.libraryMutationTransaction = libraryMutationTransaction;
+    this.mutationTransactions = mutationTransactions;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
@@ -116,55 +124,83 @@ public class LibraryManagementService implements ActiveScanChecker {
     return libraryMetadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
   }
 
-  public Library addLibrary(AuthenticatedIdentity identity, Library library) {
-    var rawFilepath = library.getFilepathUri();
-    validateFilepath(rawFilepath);
-    validatePathExistsAndIsDirectory(rawFilepath);
+  /**
+   * Decides before it writes: name and path are validated first, then the insert runs in one
+   * transaction that publishes {@link LibraryAddedEvent} for the AFTER_COMMIT listeners that start
+   * watching and scanning. Two concurrent adds of the same path race on the unique index; the
+   * loser's violation is translated after rollback into {@code PathAlreadyRegistered} and it
+   * performs no side effect.
+   */
+  public Outcome<Library, AddLibraryRejection> addLibrary(
+      AuthenticatedIdentity identity, Library library) {
+    var rejections = new ArrayList<AddLibraryRejection>();
+    if (library.getName() == null || library.getName().isBlank()) {
+      rejections.add(new AddLibraryRejection.NameRequired());
+    }
 
-    var encodedUri = FilepathCodec.encode(fileSystem.getPath(rawFilepath));
-    validateFilepathNotAlreadyUsed(encodedUri);
+    var path = validatedPath(library.getFilepathUri(), rejections);
+    if (!rejections.isEmpty()) {
+      return Outcome.rejected(rejections);
+    }
 
     var libraryToSave =
-        library.toBuilder().filepathUri(encodedUri).status(LibraryStatus.HEALTHY).build();
-    var savedLibrary =
-        libraryMutationTransaction.execute(
-            identity, new Intent.AddLibrary(), () -> libraryRepository.save(libraryToSave));
-
-    eventPublisher.publishEvent(
-        new LibraryAddedEvent(savedLibrary.getId(), savedLibrary.getFilepathUri()));
-
-    triggerAsyncScan(savedLibrary.getId());
-
-    return savedLibrary.toBuilder().build();
+        library.toBuilder()
+            .filepathUri(FilepathCodec.encode(path.orElseThrow()))
+            .status(LibraryStatus.HEALTHY)
+            .build();
+    return mutationTransactions.write(
+        () ->
+            libraryMutationTransaction.execute(
+                identity,
+                new Intent.AddLibrary(),
+                () -> {
+                  var saved = libraryRepository.save(libraryToSave);
+                  eventPublisher.publishEvent(
+                      new LibraryAddedEvent(saved.getId(), saved.getFilepathUri()));
+                  return saved.toBuilder().build();
+                }),
+        constraint ->
+            LIBRARY_FILEPATH_UNIQUE.equals(constraint)
+                ? Optional.of(new AddLibraryRejection.PathAlreadyRegistered())
+                : Optional.empty());
   }
 
-  private void validateFilepath(String filepath) {
-    if (filepath == null || filepath.isBlank()) {
-      throw new InvalidLibraryPathException(filepath, "filepath cannot be empty");
+  private Optional<Path> validatedPath(String rawFilepath, List<AddLibraryRejection> rejections) {
+    if (rawFilepath == null || rawFilepath.isBlank()) {
+      rejections.add(new AddLibraryRejection.PathRequired());
+      return Optional.empty();
     }
-  }
-
-  private void validateFilepathNotAlreadyUsed(String filepath) {
-    if (libraryRepository.existsByFilepathUri(filepath)) {
-      throw new LibraryAlreadyExistsException(filepath);
-    }
-  }
-
-  private void validatePathExistsAndIsDirectory(String filepath) {
-    var path = fileSystem.getPath(filepath);
 
     try {
-      if (!Files.exists(path)) {
-        throw new InvalidLibraryPathException(filepath, "path does not exist");
-      }
-      if (!Files.isDirectory(path)) {
-        throw new InvalidLibraryPathException(filepath, "path is not a directory");
-      }
+      var path = fileSystem.getPath(rawFilepath).toAbsolutePath().normalize();
+      pathRejection(path).ifPresent(rejections::add);
+      return Optional.of(path);
+    } catch (InvalidPathException _) {
+      rejections.add(new AddLibraryRejection.PathNotFound());
     } catch (SecurityException _) {
-      throw new LibraryPathPermissionDeniedException(filepath);
+      rejections.add(new AddLibraryRejection.PathNotReadable());
     }
+
+    return Optional.empty();
   }
 
+  private static Optional<AddLibraryRejection> pathRejection(Path path) {
+    if (!Files.exists(path)) {
+      return Optional.of(new AddLibraryRejection.PathNotFound());
+    }
+
+    if (!Files.isDirectory(path)) {
+      return Optional.of(new AddLibraryRejection.PathNotDirectory());
+    }
+
+    if (!Files.isReadable(path)) {
+      return Optional.of(new AddLibraryRejection.PathNotReadable());
+    }
+
+    return Optional.empty();
+  }
+
+  @Override
   public void triggerAsyncScan(UUID libraryId) {
     Thread.startVirtualThread(
         () -> {

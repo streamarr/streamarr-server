@@ -109,3 +109,16 @@ input AddLibraryInput {
     backend: LibraryBackend!
     externalAgentStrategy: ExternalAgentStrategy
 }
+
+type AddLibraryPayload {
+    library: Library
+    userErrors: [AddLibraryError!]!
+}
+
+union AddLibraryError =
+    LibraryNameRequiredError
+  | LibraryPathRequiredError
+  | LibraryPathNotFoundError
+  | LibraryPathNotDirectoryError
+  | LibraryPathNotReadableError
+  | LibraryPathAlreadyRegisteredError

@@ -1,11 +1,12 @@
 package com.streamarr.server.services.auth;
 
 import java.time.Instant;
-import java.util.Objects;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
-public record AccessToken(String value, Instant expiresAt, TokenScope scope) {
+public record AccessToken(
+    @NonNull String value, @NonNull Instant expiresAt, @NonNull TokenScope scope) {
 
   public static class AccessTokenBuilder {
 
@@ -13,12 +14,6 @@ public record AccessToken(String value, Instant expiresAt, TokenScope scope) {
     public String toString() {
       return "AccessTokenBuilder[REDACTED]";
     }
-  }
-
-  public AccessToken {
-    Objects.requireNonNull(value, "value");
-    Objects.requireNonNull(expiresAt, "expiresAt");
-    Objects.requireNonNull(scope, "scope");
   }
 
   @Override

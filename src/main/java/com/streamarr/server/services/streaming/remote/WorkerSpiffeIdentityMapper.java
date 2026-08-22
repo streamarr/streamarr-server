@@ -5,9 +5,9 @@ import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import lombok.NonNull;
 
 public final class WorkerSpiffeIdentityMapper {
 
@@ -23,8 +23,7 @@ public final class WorkerSpiffeIdentityMapper {
     workerIdentityPrefix = workerIdentityPrefix(trustDomain);
   }
 
-  public UUID workerId(X509Certificate certificate) {
-    Objects.requireNonNull(certificate);
+  public UUID workerId(@NonNull X509Certificate certificate) {
     requireLeafConstraints(certificate);
     var uriNames = uriSubjectAlternativeNames(certificate);
     if (uriNames.size() != 1) {
