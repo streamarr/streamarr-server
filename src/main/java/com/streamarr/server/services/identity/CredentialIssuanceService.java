@@ -186,7 +186,6 @@ public class CredentialIssuanceService {
         mode == AccountInvitationMode.CREATE
             ? null
             : profileRepository.findById(command.profileId()).orElseThrow();
-    var emptyHousehold = userAccountRepository.findByHouseholdId(command.householdId()).isEmpty();
     var profileName = profile == null ? command.profileName().strip() : profile.getName();
     var profileKind =
         profile == null
@@ -211,7 +210,7 @@ public class CredentialIssuanceService {
                       .recipientEmail(recipientEmail)
                       .householdId(command.householdId())
                       .householdName(household.getName())
-                      .householdRole(invitedRole(profile, command.householdRole(), emptyHousehold))
+                      .householdRole(invitedRole(profile, command.householdRole()))
                       .mode(mode)
                       .profileId(profile == null ? null : profile.getId())
                       .profileName(profileName)
@@ -232,11 +231,7 @@ public class CredentialIssuanceService {
         _ -> Optional.empty());
   }
 
-  private static HouseholdRole invitedRole(
-      Profile profile, HouseholdRole requestedRole, boolean emptyHousehold) {
-    if (emptyHousehold) {
-      return HouseholdRole.ADMIN;
-    }
+  private static HouseholdRole invitedRole(Profile profile, HouseholdRole requestedRole) {
     if (profile != null && profile.isRestricted()) {
       return HouseholdRole.MEMBER;
     }
