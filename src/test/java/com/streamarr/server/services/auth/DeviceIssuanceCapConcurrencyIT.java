@@ -47,7 +47,7 @@ class DeviceIssuanceCapConcurrencyIT extends AbstractIntegrationTest {
     var cap = properties.maxOutstandingCodes();
     // Fill to one below the cap, so every racing caller sees room for exactly one more.
     for (var issued = 0; issued < cap - 1; issued++) {
-      deviceAuthorizationService.issue("Filler");
+      deviceAuthorizationService.issue("Filler", "esn-1");
     }
 
     var racers = 8;
@@ -59,7 +59,7 @@ class DeviceIssuanceCapConcurrencyIT extends AbstractIntegrationTest {
                     (Callable<IssuedDeviceCode>)
                         () -> {
                           start.await(20, TimeUnit.SECONDS);
-                          return deviceAuthorizationService.issue("Racer");
+                          return deviceAuthorizationService.issue("Racer", "esn-1");
                         })
             .toList();
     var accepted = new ArrayList<IssuedDeviceCode>();

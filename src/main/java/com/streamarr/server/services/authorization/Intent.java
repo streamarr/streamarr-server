@@ -169,4 +169,23 @@ public sealed interface Intent<T> {
 
   /** ServerAdmin grants or removes management as a fresh-reauthenticated, audited override. */
   record OverrideProfileManager(UUID profileId) implements Intent<AuthorizationUnit> {}
+
+  /** Approve a pairing grant, binding the TV to the chosen Household (ADR 0024 §Devices). */
+  record LinkDevice(UUID grantId) implements Intent<AuthorizationUnit> {}
+
+  record RevokeDeviceRegistration(UUID registrationId) implements Intent<AuthorizationUnit> {}
+
+  /** Refuse an ESN in one Household. */
+  record BlockEsn(UUID householdId) implements Intent<AuthorizationUnit> {}
+
+  /** Refuse an ESN server-wide: ServerAdmin, freshly reauthenticated, with an audited reason. */
+  record BlockEsnServerWide() implements Intent<AuthorizationUnit> {}
+
+  record UnblockEsn(UUID householdId) implements Intent<AuthorizationUnit> {}
+
+  record UnblockEsnServerWide() implements Intent<AuthorizationUnit> {}
+
+  record ViewDeviceAdministration(UUID householdId) implements Intent<AuthorizationUnit> {}
+
+  record ViewServerDeviceAdministration() implements Intent<AuthorizationUnit> {}
 }

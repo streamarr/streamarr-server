@@ -111,6 +111,22 @@ final class IntentPlanner {
               AuthorizationCheck.onProfile(Action.REMOVE_PROFILE_MANAGER, profileId);
           case Intent.OverrideProfileManager(var profileId) ->
               AuthorizationCheck.onProfile(Action.OVERRIDE_PROFILE_MANAGER, profileId);
+          case Intent.LinkDevice(var grantId) ->
+              AuthorizationCheck.onGrant(Action.LINK_DEVICE, grantId);
+          case Intent.RevokeDeviceRegistration(var registrationId) ->
+              AuthorizationCheck.onRegistration(Action.REVOKE_DEVICE_REGISTRATION, registrationId);
+          case Intent.BlockEsn(var householdId) ->
+              AuthorizationCheck.onHousehold(Action.BLOCK_ESN, householdId);
+          case Intent.BlockEsnServerWide _ ->
+              AuthorizationCheck.onServer(Action.BLOCK_ESN_SERVER_WIDE);
+          case Intent.UnblockEsn(var householdId) ->
+              AuthorizationCheck.onHousehold(Action.UNBLOCK_ESN, householdId);
+          case Intent.UnblockEsnServerWide _ ->
+              AuthorizationCheck.onServer(Action.UNBLOCK_ESN_SERVER_WIDE);
+          case Intent.ViewDeviceAdministration(var householdId) ->
+              AuthorizationCheck.onHousehold(Action.VIEW_DEVICE_ADMINISTRATION, householdId);
+          case Intent.ViewServerDeviceAdministration _ ->
+              AuthorizationCheck.onServer(Action.VIEW_SERVER_DEVICE_ADMINISTRATION);
           case Intent.ProfilePolicyChange change ->
               throw new IllegalStateException(
                   "Policy changes are planned with their transition: " + change.getClass());

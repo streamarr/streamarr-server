@@ -37,6 +37,14 @@ record AuthorizationCheck(Action action, EntityUID resource, Map<String, Value> 
     return new AuthorizationCheck(action, CedarIds.managerInvitation(invitationId), Map.of());
   }
 
+  static AuthorizationCheck onGrant(Action action, UUID grantId) {
+    return new AuthorizationCheck(action, CedarIds.grant(grantId), Map.of());
+  }
+
+  static AuthorizationCheck onRegistration(Action action, UUID registrationId) {
+    return new AuthorizationCheck(action, CedarIds.registration(registrationId), Map.of());
+  }
+
   static AuthorizationCheck selectProfile(UUID profileId, boolean pinVerified) {
     return new AuthorizationCheck(
         Action.SELECT_PROFILE,
