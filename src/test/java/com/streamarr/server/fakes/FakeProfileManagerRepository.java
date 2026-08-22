@@ -18,6 +18,27 @@ public class FakeProfileManagerRepository extends FakeJpaRepository<ProfileManag
   }
 
   @Override
+  public boolean tryGrant(UUID accountId, UUID profileId) {
+    if (existsByAccountIdAndProfileId(accountId, profileId)) {
+      return false;
+    }
+
+    save(ProfileManager.builder().accountId(accountId).profileId(profileId).build());
+    return true;
+  }
+
+  @Override
+  public boolean tryRemove(UUID accountId, UUID profileId) {
+    var grant =
+        database.values().stream()
+            .filter(manager -> manager.getAccountId().equals(accountId))
+            .filter(manager -> manager.getProfileId().equals(profileId))
+            .findFirst();
+    grant.ifPresent(found -> database.remove(found.getId()));
+    return grant.isPresent();
+  }
+
+  @Override
   public List<ProfileManager> findByProfileId(UUID profileId) {
     return database.values().stream()
         .filter(manager -> manager.getProfileId().equals(profileId))

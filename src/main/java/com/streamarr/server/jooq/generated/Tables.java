@@ -30,6 +30,7 @@ import com.streamarr.server.jooq.generated.tables.Person;
 import com.streamarr.server.jooq.generated.tables.Profile;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare;
 import com.streamarr.server.jooq.generated.tables.ProfileManager;
+import com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation;
 import com.streamarr.server.jooq.generated.tables.Rating;
 import com.streamarr.server.jooq.generated.tables.RefreshToken;
 import com.streamarr.server.jooq.generated.tables.Review;
@@ -182,6 +183,11 @@ public class Tables {
      * The table <code>public.profile_manager</code>.
      */
     public static final ProfileManager PROFILE_MANAGER = ProfileManager.PROFILE_MANAGER;
+
+    /**
+     * The table <code>public.profile_manager_invitation</code>.
+     */
+    public static final ProfileManagerInvitation PROFILE_MANAGER_INVITATION = ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 
     /**
      * The table <code>public.rating</code>.

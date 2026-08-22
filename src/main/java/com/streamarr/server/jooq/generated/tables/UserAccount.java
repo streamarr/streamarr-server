@@ -16,6 +16,7 @@ import com.streamarr.server.jooq.generated.tables.PasswordResetCode.PasswordRese
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
 import com.streamarr.server.jooq.generated.tables.ProfileManager.ProfileManagerPath;
+import com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.ProfileManagerInvitationPath;
 import com.streamarr.server.jooq.generated.tables.ServerBootstrap.ServerBootstrapPath;
 import com.streamarr.server.jooq.generated.tables.records.UserAccountRecord;
 
@@ -326,6 +327,34 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
             _fkPasswordResetCodeIssuer = new PasswordResetCodePath(this, null, Keys.PASSWORD_RESET_CODE__FK_PASSWORD_RESET_CODE_ISSUER.getInverseKey());
 
         return _fkPasswordResetCodeIssuer;
+    }
+
+    private transient ProfileManagerInvitationPath _fkPmInvitationInviter;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.profile_manager_invitation</code> table, via the
+     * <code>fk_pm_invitation_inviter</code> key
+     */
+    public ProfileManagerInvitationPath fkPmInvitationInviter() {
+        if (_fkPmInvitationInviter == null)
+            _fkPmInvitationInviter = new ProfileManagerInvitationPath(this, null, Keys.PROFILE_MANAGER_INVITATION__FK_PM_INVITATION_INVITER.getInverseKey());
+
+        return _fkPmInvitationInviter;
+    }
+
+    private transient ProfileManagerInvitationPath _fkPmInvitationRecipient;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.profile_manager_invitation</code> table, via the
+     * <code>fk_pm_invitation_recipient</code> key
+     */
+    public ProfileManagerInvitationPath fkPmInvitationRecipient() {
+        if (_fkPmInvitationRecipient == null)
+            _fkPmInvitationRecipient = new ProfileManagerInvitationPath(this, null, Keys.PROFILE_MANAGER_INVITATION__FK_PM_INVITATION_RECIPIENT.getInverseKey());
+
+        return _fkPmInvitationRecipient;
     }
 
     private transient ProfileHouseholdSharePath _profileHouseholdShare;
