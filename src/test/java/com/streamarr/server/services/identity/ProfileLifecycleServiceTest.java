@@ -2,11 +2,15 @@ package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.auth.AccountInvitation;
+import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
@@ -104,6 +108,10 @@ class ProfileLifecycleServiceTest {
                 .status(ProfileShareStatus.PENDING)
                 .expiresAt(Instant.now().plusSeconds(3600))
                 .build());
+    var connectInvitation = accountInvitations.save(pendingAccountInvitation(orphan.getId()));
+    var managerInvitation = managerInvitations.save(pendingManagerInvitation(orphan.getId()));
+    var visitingHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var activeVisit = shares.share(orphan.getId(), visitingHousehold.getId(), false);
     var watching =
         sessions.save(
             AuthSession.builder()
@@ -138,6 +146,12 @@ class ProfileLifecycleServiceTest {
         .isEmpty();
     assertThat(shares.findById(pendingOffer.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileShareStatus.INVALIDATED);
+    assertThat(accountInvitations.findById(connectInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(managerInvitations.findById(managerInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(shares.findById(activeVisit.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.ACTIVE);
     assertThat(sessions.findById(watching.getId()).orElseThrow().getSelectedProfileId()).isNull();
     assertThat(audit.entries())
         .extracting(entry -> entry.operation())
@@ -187,12 +201,19 @@ class ProfileLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should force-delete once, clearing selections and pending proposals")
-  void shouldForceDeleteOnceClearingSelectionsAndPendingProposals() {
+  @DisplayName("Should require a reason before force-deleting a Profile")
+  void shouldRequireReasonBeforeForceDeletingProfile() {
     assertThat(rejectionOf(service.forceDeleteProfile(identity(), orphan.getId(), " ")))
         .isInstanceOf(TransferRejections.ReasonRequired.class);
+    assertThat(profiles.findById(orphan.getId())).isPresent();
+  }
 
-    var watching =
+  @Test
+  @DisplayName("Should force-delete a Profile clearing every selection and pending proposal")
+  void shouldForceDeleteProfileClearingEverySelectionAndPendingProposal() {
+    var otherHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    shares.share(orphan.getId(), otherHousehold.getId(), false);
+    var homeViewer =
         sessions.save(
             AuthSession.builder()
                 .accountId(UUID.randomUUID())
@@ -200,16 +221,47 @@ class ProfileLifecycleServiceTest {
                 .selectedProfileId(orphan.getId())
                 .deviceName("tv")
                 .build());
+    var visitor =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(UUID.randomUUID())
+                .contextHouseholdId(otherHousehold.getId())
+                .selectedProfileId(orphan.getId())
+                .deviceName("phone")
+                .build());
+    var pendingOffer =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(orphan.getId())
+                .householdId(UUID.randomUUID())
+                .status(ProfileShareStatus.PENDING)
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .build());
+    var connectInvitation = accountInvitations.save(pendingAccountInvitation(orphan.getId()));
+    var managerInvitation = managerInvitations.save(pendingManagerInvitation(orphan.getId()));
 
     var deleted = service.forceDeleteProfile(identity(), orphan.getId(), "abuse report");
 
     assertThat(deleted).isInstanceOf(Outcome.Accepted.class);
     assertThat(profiles.findById(orphan.getId())).isEmpty();
-    assertThat(sessions.findById(watching.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    assertThat(sessions.findById(homeViewer.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    assertThat(sessions.findById(visitor.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    assertThat(shares.findById(pendingOffer.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.INVALIDATED);
+    assertThat(accountInvitations.findById(connectInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(managerInvitations.findById(managerInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(audit.entries())
         .extracting(entry -> entry.operation())
         .containsExactly("forceDeleteProfile");
+  }
 
+  @Test
+  @DisplayName("Should report a Profile as missing after it was force-deleted")
+  void shouldReportProfileAsMissingAfterItWasForceDeleted() {
+    assertThat(service.forceDeleteProfile(identity(), orphan.getId(), "cleanup"))
+        .isInstanceOf(Outcome.Accepted.class);
     assertThat(rejectionOf(service.forceDeleteProfile(identity(), orphan.getId(), "again")))
         .isInstanceOf(TransferRejections.ProfileNotFound.class);
   }
@@ -220,6 +272,51 @@ class ProfileLifecycleServiceTest {
     authorization.denyAll();
     assertThat(rejectionOf(transferWithAnchor(destinationAnchor.getId())))
         .isInstanceOf(TransferRejections.ProfileNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should reject an authorized transfer when the Profile does not exist")
+  void shouldRejectAuthorizedTransferWhenProfileDoesNotExist() {
+    assertThat(
+            rejectionOf(
+                service.transferProfile(
+                    identity(),
+                    TransferProfileCommand.builder()
+                        .profileId(UUID.randomUUID())
+                        .destinationHouseholdId(destination.getId())
+                        .localManagerAccountId(destinationAnchor.getId())
+                        .build())))
+        .isInstanceOf(TransferRejections.ProfileNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a Profile transfer to an unknown Household")
+  void shouldRejectProfileTransferToUnknownHousehold() {
+    assertThat(
+            rejectionOf(
+                service.transferProfile(
+                    identity(),
+                    TransferProfileCommand.builder()
+                        .profileId(orphan.getId())
+                        .destinationHouseholdId(UUID.randomUUID())
+                        .localManagerAccountId(destinationAnchor.getId())
+                        .build())))
+        .isInstanceOf(TransferRejections.HouseholdNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a Profile transfer to its current Household")
+  void shouldRejectProfileTransferToItsCurrentHousehold() {
+    assertThat(
+            rejectionOf(
+                service.transferProfile(
+                    identity(),
+                    TransferProfileCommand.builder()
+                        .profileId(orphan.getId())
+                        .destinationHouseholdId(source.getId())
+                        .localManagerAccountId(destinationAnchor.getId())
+                        .build())))
+        .isInstanceOf(TransferRejections.SameHousehold.class);
   }
 
   private Outcome<Profile, TransferRejections.TransferProfile> transferWithAnchor(UUID anchorId) {
@@ -247,6 +344,31 @@ class ProfileLifecycleServiceTest {
             .build());
     shares.share(account.getPersonalProfileId(), household.getId(), true);
     return account;
+  }
+
+  private AccountInvitation pendingAccountInvitation(UUID profileId) {
+    return AccountInvitation.builder()
+        .recipientEmail("profile@example.com")
+        .profileId(profileId)
+        .issuerAccountId(UUID.randomUUID())
+        .expiresAt(Instant.now().plusSeconds(3600))
+        .publicId(UUID.randomUUID().toString())
+        .secretDigest(new byte[] {1})
+        .build();
+  }
+
+  private ProfileManagerInvitation pendingManagerInvitation(UUID profileId) {
+    return ProfileManagerInvitation.builder()
+        .profileId(profileId)
+        .profileName("Joe")
+        .inviterAccountId(UUID.randomUUID())
+        .inviterDisplayName("Inviter")
+        .recipientAccountId(UUID.randomUUID())
+        .recipientEmail("recipient@example.com")
+        .expiresAt(Instant.now().plusSeconds(3600))
+        .publicId(UUID.randomUUID().toString())
+        .secretDigest(new byte[] {1})
+        .build();
   }
 
   private AuthenticatedIdentity identity() {
