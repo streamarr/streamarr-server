@@ -22,6 +22,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import lombok.Builder;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -74,8 +75,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should run the invitation loop from issue through accept to login")
-  void shouldRunInvitationLoopFromIssueThroughAcceptToLogin() throws Exception {
+  @DisplayName("Should complete the invitation loop when the code is accepted")
+  void shouldCompleteInvitationLoopWhenCodeIsAccepted() throws Exception {
     var code = issueInvitation("invitee@example.com");
 
     mockMvc
@@ -128,16 +129,24 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should promote only the first accepted invitation in an empty Household")
-  void shouldPromoteOnlyFirstAcceptedInvitationInEmptyHousehold() throws Exception {
+  @DisplayName("Should promote only the first accepted invitation when the Household is empty")
+  void shouldPromoteOnlyFirstAcceptedInvitationWhenHouseholdIsEmpty() throws Exception {
     var household =
         householdRepository.saveAndFlush(
             HouseholdFixture.defaultHouseholdBuilder().name("Bootstrap Home").build());
     try {
       var firstCode =
-          issueInvitation("bootstrap-one@example.com", household.getId(), "Bootstrap One");
+          issueInvitation(
+              invitationBuilder("bootstrap-one@example.com")
+                  .householdId(household.getId())
+                  .profileName("Bootstrap One")
+                  .build());
       var secondCode =
-          issueInvitation("bootstrap-two@example.com", household.getId(), "Bootstrap Two");
+          issueInvitation(
+              invitationBuilder("bootstrap-two@example.com")
+                  .householdId(household.getId())
+                  .profileName("Bootstrap Two")
+                  .build());
 
       acceptInvitation(firstCode, "Bootstrap One");
       acceptInvitation(secondCode, "Bootstrap Two");
@@ -165,24 +174,46 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should promote exactly one invitation accepted concurrently in an empty Household")
-  void shouldPromoteExactlyOneInvitationAcceptedConcurrentlyInEmptyHousehold() throws Exception {
+  @DisplayName(
+      "Should promote exactly one invitation when invitations are accepted concurrently into an empty Household")
+  void shouldPromoteExactlyOneInvitationWhenAcceptedConcurrentlyIntoEmptyHousehold()
+      throws Exception {
     var household =
         householdRepository.saveAndFlush(
             HouseholdFixture.defaultHouseholdBuilder().name("Concurrent Bootstrap Home").build());
     try {
       var firstCode =
-          issueInvitation("concurrent-one@example.com", household.getId(), "Concurrent One");
+          issueInvitation(
+              invitationBuilder("concurrent-one@example.com")
+                  .householdId(household.getId())
+                  .profileName("Concurrent One")
+                  .build());
       var secondCode =
-          issueInvitation("concurrent-two@example.com", household.getId(), "Concurrent Two");
+          issueInvitation(
+              invitationBuilder("concurrent-two@example.com")
+                  .householdId(household.getId())
+                  .profileName("Concurrent Two")
+                  .build());
       var ready = new CountDownLatch(2);
       var start = new CountDownLatch(1);
 
       try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
         var first =
-            executor.submit(() -> acceptWhenStarted(firstCode, "Concurrent One", ready, start));
+            executor.submit(
+                () ->
+                    acceptWhenStarted(
+                        concurrentAcceptanceBuilder(firstCode, "Concurrent One")
+                            .ready(ready)
+                            .start(start)
+                            .build()));
         var second =
-            executor.submit(() -> acceptWhenStarted(secondCode, "Concurrent Two", ready, start));
+            executor.submit(
+                () ->
+                    acceptWhenStarted(
+                        concurrentAcceptanceBuilder(secondCode, "Concurrent Two")
+                            .ready(ready)
+                            .start(start)
+                            .build()));
         assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
         start.countDown();
 
@@ -204,8 +235,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should sanitize the invitation User-Agent before storing the session device name")
-  void shouldSanitizeInvitationUserAgentBeforeStoringSessionDeviceName() throws Exception {
+  @DisplayName("Should sanitize the invitation User-Agent when the session device name is stored")
+  void shouldSanitizeInvitationUserAgentWhenSessionDeviceNameIsStored() throws Exception {
     var code = issueInvitation("invitee@example.com");
     var userAgent = "\u202e" + "🎬".repeat(80);
 
@@ -296,8 +327,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should decline an invitation and leave no Account behind")
-  void shouldDeclineInvitationAndLeaveNoAccountBehind() throws Exception {
+  @DisplayName("Should leave no Account when an invitation is declined")
+  void shouldLeaveNoAccountWhenInvitationIsDeclined() throws Exception {
     var code = issueInvitation("invitee@example.com");
 
     mockMvc
@@ -333,8 +364,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should list invitations for ServerAdmin and cancel only a pending one")
-  void shouldListInvitationsForServerAdminAndCancelOnlyPendingOne() throws Exception {
+  @DisplayName("Should list and cancel only pending invitations when the caller is ServerAdmin")
+  void shouldListAndCancelOnlyPendingInvitationsWhenCallerIsServerAdmin() throws Exception {
     issueInvitation("invitee@example.com");
 
     var listed =
@@ -386,8 +417,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should accept in cookie mode without token bodies")
-  void shouldAcceptInCookieModeWithoutTokenBodies() throws Exception {
+  @DisplayName("Should omit token bodies when an invitation is accepted in cookie mode")
+  void shouldOmitTokenBodiesWhenInvitationIsAcceptedInCookieMode() throws Exception {
     var code = issueInvitation("invitee@example.com");
 
     var response =
@@ -410,8 +441,9 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should redeem a reset while disabled, revoke refresh, and create no session")
-  void shouldRedeemResetWhileDisabledRevokeRefreshAndCreateNoSession() throws Exception {
+  @DisplayName(
+      "Should revoke refresh and create no session when a reset is redeemed while disabled")
+  void shouldRevokeRefreshAndCreateNoSessionWhenResetIsRedeemedWhileDisabled() throws Exception {
     var locked = authTestSupport.createIdentity();
     try {
       var code = issuePasswordReset(locked.account().getId());
@@ -468,8 +500,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should require the ceremony to issue a reset and audit the winner")
-  void shouldRequireCeremonyToIssueResetAndAuditWinner() throws Exception {
+  @DisplayName("Should require reauthentication and audit when a reset is issued")
+  void shouldRequireReauthenticationAndAuditWhenResetIsIssued() throws Exception {
     var target = authTestSupport.createIdentity();
     try {
       graphql(
@@ -534,8 +566,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return every issuance refusal as a typed user error")
-  void shouldReturnEveryIssuanceRefusalAsTypedUserError() throws Exception {
+  @DisplayName("Should return typed user errors when invitation issuance is refused")
+  void shouldReturnTypedUserErrorsWhenInvitationIssuanceIsRefused() throws Exception {
     graphql(
             authTestSupport.accountBearer(serverAdmin),
             """
@@ -564,11 +596,17 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   private String issueInvitation(String email) throws Exception {
-    return issueInvitation(email, serverAdmin.household().getId(), "Invitee");
+    return issueInvitation(invitationBuilder(email).build());
   }
 
-  private String issueInvitation(String email, UUID householdId, String profileName)
-      throws Exception {
+  private InvitationSpec.InvitationSpecBuilder invitationBuilder(String email) {
+    return InvitationSpec.builder()
+        .email(email)
+        .householdId(serverAdmin.household().getId())
+        .profileName("Invitee");
+  }
+
+  private String issueInvitation(InvitationSpec invitation) throws Exception {
     var response =
         graphql(
                 authTestSupport.accountBearer(serverAdmin),
@@ -578,7 +616,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                   profileKind: ADULT}) {
                   issued { code invitation { status } } userErrors { __typename } } }
                 """
-                    .formatted(email, householdId, profileName))
+                    .formatted(
+                        invitation.email(), invitation.householdId(), invitation.profileName()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andExpect(jsonPath("$.data.issueAccountInvitation.issued.code").isNotEmpty())
@@ -608,10 +647,14 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isCreated());
   }
 
-  private int acceptWhenStarted(
-      String code, String displayName, CountDownLatch ready, CountDownLatch start) throws Exception {
-    ready.countDown();
-    if (!start.await(10, TimeUnit.SECONDS)) {
+  private ConcurrentAcceptance.ConcurrentAcceptanceBuilder concurrentAcceptanceBuilder(
+      String code, String displayName) {
+    return ConcurrentAcceptance.builder().code(code).displayName(displayName);
+  }
+
+  private int acceptWhenStarted(ConcurrentAcceptance acceptance) throws Exception {
+    acceptance.ready().countDown();
+    if (!acceptance.start().await(10, TimeUnit.SECONDS)) {
       throw new AssertionError("concurrent invitation acceptance did not start");
     }
     return mockMvc
@@ -623,7 +666,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                     {"code": "%s", "displayName": "%s", \
                     "password": "a strong passphrase", "cookieMode": false}
                     """
-                        .formatted(code, displayName)))
+                        .formatted(acceptance.code(), acceptance.displayName())))
         .andReturn()
         .getResponse()
         .getStatus();
@@ -659,4 +702,11 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
             .content(objectMapper.writeValueAsString(Map.of("query", query))));
   }
+
+  @Builder
+  private record InvitationSpec(String email, UUID householdId, String profileName) {}
+
+  @Builder
+  private record ConcurrentAcceptance(
+      String code, String displayName, CountDownLatch ready, CountDownLatch start) {}
 }

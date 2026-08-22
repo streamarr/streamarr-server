@@ -60,8 +60,8 @@ class PasswordResetRedemptionServiceTest {
   }
 
   @Test
-  @DisplayName("Should change the password, revoke every session, and create none")
-  void shouldChangePasswordRevokeEverySessionAndCreateNone() {
+  @DisplayName("Should change the password and revoke every session when a reset is redeemed")
+  void shouldChangePasswordAndRevokeEverySessionWhenResetIsRedeemed() {
     var session =
         sessions.save(AuthSession.builder().accountId(account.getId()).deviceName("web").build());
     var issued = pendingCode();
@@ -77,8 +77,8 @@ class PasswordResetRedemptionServiceTest {
   }
 
   @Test
-  @DisplayName("Should redeem while the Account is disabled")
-  void shouldRedeemWhileAccountIsDisabled() {
+  @DisplayName("Should redeem when the Account is disabled")
+  void shouldRedeemWhenAccountIsDisabled() {
     account.setEnabled(false);
     var issued = pendingCode();
 
@@ -90,8 +90,8 @@ class PasswordResetRedemptionServiceTest {
   }
 
   @Test
-  @DisplayName("Should let exactly one redemption win")
-  void shouldLetExactlyOneRedemptionWin() {
+  @DisplayName("Should let exactly one redemption win when a code is presented repeatedly")
+  void shouldLetExactlyOneRedemptionWinWhenCodeIsPresentedRepeatedly() {
     var issued = pendingCode();
     service.redeem(issued.code(), "first passphrase");
 
@@ -103,8 +103,8 @@ class PasswordResetRedemptionServiceTest {
   }
 
   @Test
-  @DisplayName("Should answer an expired code exactly like an unknown one")
-  void shouldAnswerExpiredCodeExactlyLikeUnknownOne() {
+  @DisplayName("Should answer like an unknown code when a reset code is expired")
+  void shouldAnswerLikeUnknownCodeWhenResetCodeIsExpired() {
     var issued = pendingCode();
     resetCodes.findAll().getFirst().setExpiresAt(NOW.minusSeconds(1));
 

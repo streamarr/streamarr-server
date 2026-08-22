@@ -28,6 +28,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -83,9 +84,9 @@ class AccountInvitationCeremonyServiceTest {
           clock);
 
   @Test
-  @DisplayName("Should preview what the code holder needs to decide")
-  void shouldPreviewWhatCodeHolderNeedsToDecide() {
-    var issued = pendingInvitation(HouseholdRole.MEMBER, null);
+  @DisplayName("Should preview the decision details when an invitation code is presented")
+  void shouldPreviewDecisionDetailsWhenInvitationCodeIsPresented() {
+    var issued = pendingInvitation(pendingInvitationBuilder().build());
 
     var preview = service.lookup(issued.code());
 
@@ -95,13 +96,16 @@ class AccountInvitationCeremonyServiceTest {
   }
 
   @Test
-  @DisplayName("Should accept once and create the whole identity shape atomically")
-  void shouldAcceptOnceAndCreateWholeIdentityShapeAtomically() {
+  @DisplayName("Should create the whole identity shape when an invitation is accepted")
+  void shouldCreateWholeIdentityShapeWhenInvitationIsAccepted() {
     // The Household already has a member, so the invited role is honored as-is.
     var localManager = accounts.save(AccountFixture.defaultAccountBuilder().build());
     var issued =
         pendingInvitation(
-            HouseholdRole.MEMBER, localManager.getId(), localManager.getHouseholdId());
+            pendingInvitationBuilder()
+                .localManagerId(localManager.getId())
+                .householdId(localManager.getHouseholdId())
+                .build());
 
     var accepted =
         service.accept(
@@ -131,9 +135,9 @@ class AccountInvitationCeremonyServiceTest {
   }
 
   @Test
-  @DisplayName("Should force the first Account of an empty Household to HouseholdAdmin")
-  void shouldForceFirstAccountOfEmptyHouseholdToHouseholdAdmin() {
-    var issued = pendingInvitation(HouseholdRole.MEMBER, null);
+  @DisplayName("Should make the first Account HouseholdAdmin when the Household is empty")
+  void shouldMakeFirstAccountHouseholdAdminWhenHouseholdIsEmpty() {
+    var issued = pendingInvitation(pendingInvitationBuilder().build());
 
     var accepted =
         service.accept(
@@ -148,9 +152,9 @@ class AccountInvitationCeremonyServiceTest {
   }
 
   @Test
-  @DisplayName("Should decline once and answer later presentations as invalid")
-  void shouldDeclineOnceAndAnswerLaterPresentationsAsInvalid() {
-    var issued = pendingInvitation(HouseholdRole.MEMBER, null);
+  @DisplayName("Should answer later presentations as invalid when an invitation is declined")
+  void shouldAnswerLaterPresentationsAsInvalidWhenInvitationIsDeclined() {
+    var issued = pendingInvitation(pendingInvitationBuilder().build());
 
     service.decline(issued.code());
 
@@ -162,9 +166,9 @@ class AccountInvitationCeremonyServiceTest {
   }
 
   @Test
-  @DisplayName("Should answer every miss the same way")
-  void shouldAnswerEveryMissTheSameWay() {
-    var issued = pendingInvitation(HouseholdRole.MEMBER, null);
+  @DisplayName("Should answer every miss the same way when an invitation code is invalid")
+  void shouldAnswerEveryMissTheSameWayWhenInvitationCodeIsInvalid() {
+    var issued = pendingInvitation(pendingInvitationBuilder().build());
     var expired = invitations.findAll().getFirst();
     var wrongSecret = expired.getPublicId() + ".not-the-secret";
 
@@ -182,9 +186,9 @@ class AccountInvitationCeremonyServiceTest {
   }
 
   @Test
-  @DisplayName("Should throttle repeated guesses against one public id")
-  void shouldThrottleRepeatedGuessesAgainstOnePublicId() {
-    var issued = pendingInvitation(HouseholdRole.MEMBER, null);
+  @DisplayName("Should throttle guesses when one public id is presented repeatedly")
+  void shouldThrottleGuessesWhenOnePublicIdIsPresentedRepeatedly() {
+    var issued = pendingInvitation(pendingInvitationBuilder().build());
     var publicId = invitations.findAll().getFirst().getPublicId();
     for (var attempt = 0; attempt < 5; attempt++) {
       var guess = publicId + ".guess-" + attempt;
@@ -199,9 +203,9 @@ class AccountInvitationCeremonyServiceTest {
   }
 
   @Test
-  @DisplayName("Should not throttle repeated presentations of the correct invitation code")
-  void shouldNotThrottleRepeatedPresentationsOfCorrectInvitationCode() {
-    var issued = pendingInvitation(HouseholdRole.MEMBER, null);
+  @DisplayName("Should not throttle when the correct invitation code is presented repeatedly")
+  void shouldNotThrottleWhenCorrectInvitationCodeIsPresentedRepeatedly() {
+    var issued = pendingInvitation(pendingInvitationBuilder().build());
 
     assertThatCode(
             () -> {
@@ -212,22 +216,23 @@ class AccountInvitationCeremonyServiceTest {
         .doesNotThrowAnyException();
   }
 
-  private OpaqueCodes.IssuedCode pendingInvitation(HouseholdRole role, UUID localManagerId) {
-    return pendingInvitation(role, localManagerId, UUID.randomUUID());
+  private PendingInvitation.PendingInvitationBuilder pendingInvitationBuilder() {
+    return PendingInvitation.builder()
+        .role(HouseholdRole.MEMBER)
+        .householdId(UUID.randomUUID());
   }
 
-  private OpaqueCodes.IssuedCode pendingInvitation(
-      HouseholdRole role, UUID localManagerId, UUID householdId) {
+  private OpaqueCodes.IssuedCode pendingInvitation(PendingInvitation invitation) {
     var issued = opaqueCodes.issue();
     invitations.save(
         AccountInvitation.builder()
             .recipientEmail("kai@example.com")
-            .householdId(householdId)
+            .householdId(invitation.householdId())
             .householdName("Home")
-            .householdRole(role)
+            .householdRole(invitation.role())
             .profileName("Kai")
             .profileKind(ProfileKind.ADULT)
-            .localManagerAccountId(localManagerId)
+            .localManagerAccountId(invitation.localManagerId())
             .issuerAccountId(UUID.randomUUID())
             .expiresAt(NOW.plus(Duration.ofDays(7)))
             .publicId(issued.publicId())
@@ -235,6 +240,10 @@ class AccountInvitationCeremonyServiceTest {
             .build());
     return issued;
   }
+
+  @Builder
+  private record PendingInvitation(
+      HouseholdRole role, UUID localManagerId, UUID householdId) {}
 
   private static final class PlainEncoder implements PasswordEncoder {
     @Override

@@ -13,8 +13,8 @@ class OpaqueCodesTest {
   private final OpaqueCodes codes = new OpaqueCodes();
 
   @Test
-  @DisplayName("Should issue a publicId.secret pair whose digest matches only that secret")
-  void shouldIssuePublicIdSecretPairWhoseDigestMatchesOnlyThatSecret() {
+  @DisplayName("Should issue a publicId.secret pair when an opaque code is generated")
+  void shouldIssuePublicIdSecretPairWhenOpaqueCodeIsGenerated() {
     var issued = codes.issue();
 
     assertThat(issued.code()).startsWith(issued.publicId() + ".");
@@ -29,8 +29,8 @@ class OpaqueCodesTest {
   }
 
   @Test
-  @DisplayName("Should refuse shapes that are not even codes")
-  void shouldRefuseShapesThatAreNotEvenCodes() {
+  @DisplayName("Should refuse malformed shapes when an opaque code is parsed")
+  void shouldRefuseMalformedShapesWhenOpaqueCodeIsParsed() {
     assertThat(codes.parse(null)).isEmpty();
     assertThat(codes.parse("")).isEmpty();
     assertThat(codes.parse("nodot")).isEmpty();
@@ -39,8 +39,8 @@ class OpaqueCodesTest {
   }
 
   @Test
-  @DisplayName("Should never repeat codes or leak secrets through toString")
-  void shouldNeverRepeatCodesOrLeakSecretsThroughToString() {
+  @DisplayName("Should avoid repetition and secret leakage when opaque codes are issued")
+  void shouldAvoidRepetitionAndSecretLeakageWhenOpaqueCodesAreIssued() {
     var first = codes.issue();
     var second = codes.issue();
 

@@ -172,8 +172,10 @@ class AuthorizationParityTest {
       strings = {
         "householdAdministration", "invitationAdministration", "libraryAdministration"
       })
-  @DisplayName("Should keep every administration group under server administration")
-  void shouldKeepEveryAdministrationGroupUnderServerAdministration(String group) throws Exception {
+  @DisplayName(
+      "Should keep every administration group under server administration when schema parity is checked")
+  void shouldKeepEveryAdministrationGroupUnderServerAdministrationWhenSchemaParityIsChecked(
+      String group) throws Exception {
     assertThat(schemaActions().get(group).path("memberOf"))
         .as("parent of %s", group)
         .extracting(member -> member.path("id").asText())
