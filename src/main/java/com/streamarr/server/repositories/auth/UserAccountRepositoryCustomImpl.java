@@ -268,6 +268,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     if (entity == null) {
       return Optional.empty();
     }
+
     entityManager.refresh(entity);
     return Optional.of(entity);
   }

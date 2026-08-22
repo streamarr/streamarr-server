@@ -189,6 +189,7 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
     if (!profileExists || hasLinkedAccount(profileId)) {
       return false;
     }
+
     return dsl.deleteFrom(PROFILE).where(PROFILE.ID.eq(profileId)).execute() > 0;
   }
 

@@ -172,6 +172,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                 if (!releaseDeletion.await(10, TimeUnit.SECONDS)) {
                   throw new AssertionError("Timed out releasing Account deletion");
                 }
+
                 return lifecycleAnswer.answer(invocation);
               })
           .when(lifecycleSpy)
@@ -248,6 +249,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                     throw new AssertionError("Timed out releasing Profile transfer");
                   }
                 }
+
                 return repositoryAnswer.answer(invocation);
               })
           .when(repositorySpy)
@@ -356,6 +358,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                 if (!releaseDeletion.await(10, TimeUnit.SECONDS)) {
                   throw new AssertionError("Timed out releasing Profile deletion");
                 }
+
                 return repositoryAnswer.answer(invocation);
               })
           .when(repositorySpy)
@@ -375,6 +378,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
               "Profile deletion returned before the mutation gate: "
                   + pendingDeletion.get(1, TimeUnit.SECONDS));
         }
+
         linkProfile(orphan, home.household().getId());
         releaseDeletion.countDown();
         deletion = pendingDeletion.get(20, TimeUnit.SECONDS);
@@ -490,6 +494,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
               if (!gate.releaseTransfer().await(10, TimeUnit.SECONDS)) {
                 throw new AssertionError("Timed out releasing Account transfer");
               }
+
               return repositoryAnswer.answer(invocation);
             })
         .when(repositorySpy)
