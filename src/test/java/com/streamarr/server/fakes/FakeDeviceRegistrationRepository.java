@@ -26,6 +26,7 @@ public class FakeDeviceRegistrationRepository extends FakeJpaRepository<DeviceRe
     if (registration == null || registration.getStatus() != DeviceRegistrationStatus.ACTIVE) {
       return false;
     }
+
     revoke(registration, actorAccountId, reason, now);
     return true;
   }

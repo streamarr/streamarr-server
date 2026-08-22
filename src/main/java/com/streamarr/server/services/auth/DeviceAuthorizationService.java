@@ -72,6 +72,7 @@ public class DeviceAuthorizationService {
     if (!isPairingEnabled()) {
       throw new DevicePairingNotConfiguredException();
     }
+
     if (esn == null || esn.isBlank()) {
       // The registration the winning poll creates is keyed by hardware identity (ADR 0024).
       throw new EsnRequiredException();
@@ -160,6 +161,7 @@ public class DeviceAuthorizationService {
     if (authorization.hasExpiredAt(clock.instant())) {
       throw new DeviceCodeExpiredException();
     }
+
     return new ResolvedGrant(
         authorization.getId(), authorization.getEsn(), authorization.getDeviceName());
   }
@@ -182,6 +184,7 @@ public class DeviceAuthorizationService {
     if (authorization.hasExpiredAt(now)) {
       throw new DeviceCodeExpiredException();
     }
+
     if (authorization.getStatus() != DeviceAuthorizationStatus.PENDING) {
       throw new DeviceCodeNotPendingException();
     }
@@ -229,6 +232,7 @@ public class DeviceAuthorizationService {
       // Approval facts went stale; the poll answers exactly like an expired code.
       return new DevicePollResult.Expired();
     }
+
     if (authorization.getEsn() == null || isEsnBlocked(authorization.getEsn(), household)) {
       // No hardware identity, no registration, no session: an ESN-less grant (pre-V059 rows)
       // would mint an unbound "device" session that dodges the device forbid.
@@ -239,6 +243,7 @@ public class DeviceAuthorizationService {
     if (registrationId.isEmpty()) {
       return new DevicePollResult.Expired();
     }
+
     var issued =
         refreshTokenService.createSession(
             CreateAuthSessionCommand.builder()
@@ -266,6 +271,7 @@ public class DeviceAuthorizationService {
     if (isEsnBlocked(authorization.getEsn(), household)) {
       return Optional.empty();
     }
+
     return Optional.of(
         deviceRegistrationRepository
             .saveAndFlush(
@@ -288,6 +294,7 @@ public class DeviceAuthorizationService {
     if (authorization.getDecidedByAccountId() == null) {
       return Optional.empty();
     }
+
     return userAccountRepository
         .findById(authorization.getDecidedByAccountId())
         .filter(UserAccount::isEnabled);
@@ -384,6 +391,7 @@ public class DeviceAuthorizationService {
         if (!result.inserted()) {
           throw refusedForCapacity(result.outstanding(), now);
         }
+
         warnAsCapacityNears(result.outstanding());
         return candidate;
       } catch (UserCodeCollisionException e) {
@@ -413,6 +421,7 @@ public class DeviceAuthorizationService {
     if (outstanding != warningThreshold && outstanding != properties.maxOutstandingCodes()) {
       return;
     }
+
     log.warn(
         "Device pairing issuance at {} of {} outstanding codes",
         outstanding,

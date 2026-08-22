@@ -98,6 +98,7 @@ public class DeviceAuthExceptionHandler {
     if (retryAfter == null || retryAfter.isNegative() || retryAfter.isZero()) {
       return 1;
     }
+
     return retryAfter.plusNanos(999_999_999L).toSeconds();
   }
 

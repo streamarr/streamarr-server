@@ -39,6 +39,7 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
     if (householdId != null) {
       scope = scope.and(DEVICE_REGISTRATION.HOUSEHOLD_ID.eq(householdId));
     }
+
     return revokeWhere(scope, actorAccountId, reason, now);
   }
 

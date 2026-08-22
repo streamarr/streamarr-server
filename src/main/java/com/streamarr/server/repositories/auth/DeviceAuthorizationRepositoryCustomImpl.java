@@ -125,9 +125,11 @@ public class DeviceAuthorizationRepositoryCustomImpl
       if (isDeviceCodeCollision(e)) {
         throw new DeviceCodeCollisionException(e);
       }
+
       if (isUserCodeCollision(e)) {
         throw new UserCodeCollisionException(e);
       }
+
       throw e;
     }
 

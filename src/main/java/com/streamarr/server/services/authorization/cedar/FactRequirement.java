@@ -31,5 +31,5 @@ enum FactRequirement {
   /** The resource manager invitation's parties relative to the principal, read live. */
   MANAGER_INVITATION,
   /** The resource Device registration's Household relative to the principal, read live. */
-  REGISTRATION_FACTS
+  REGISTRATION
 }

@@ -89,6 +89,7 @@ public class AuthController {
     if (identity.deviceBound()) {
       throw new DeviceBoundSessionException();
     }
+
     var result =
         passwordChangeService.changePassword(
             ChangePasswordCommand.builder()
@@ -116,6 +117,7 @@ public class AuthController {
       // A TV is registered to one Household context; it never switches (ADR 0024 §Devices).
       throw new DeviceBoundSessionException();
     }
+
     var context =
         householdContextService.selectHousehold(
             identity.accountId(), identity.authSessionId(), request.householdId());

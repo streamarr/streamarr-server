@@ -218,7 +218,7 @@ enum Action {
       ResourceKind.REGISTRATION,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.SIGNED_PRINCIPAL_CONTEXT,
-      FactRequirement.REGISTRATION_FACTS),
+      FactRequirement.REGISTRATION),
   BLOCK_ESN(
       "blockEsn",
       ResourceKind.HOUSEHOLD,

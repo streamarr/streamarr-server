@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-class RegistrationFactsContributor implements FactContributor {
+class RegistrationContributor implements FactContributor {
 
   static final String PRINCIPAL_ADMIN_OF_HOUSEHOLD = "principalAdminOfHousehold";
 
@@ -24,7 +24,7 @@ class RegistrationFactsContributor implements FactContributor {
 
   @Override
   public FactRequirement provides() {
-    return FactRequirement.REGISTRATION_FACTS;
+    return FactRequirement.REGISTRATION;
   }
 
   @Override
@@ -34,6 +34,7 @@ class RegistrationFactsContributor implements FactContributor {
     if (registration.isEmpty() || registration.get().getHouseholdId() == null) {
       return;
     }
+
     var householdId = registration.get().getHouseholdId();
     var adminOfHousehold =
         userAccountRepository

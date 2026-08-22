@@ -52,6 +52,7 @@ class SliceAssembler {
     for (var requirement : check.action().facts()) {
       contributors.get(requirement).contribute(identity, check, slice);
     }
+
     return slice;
   }
 }

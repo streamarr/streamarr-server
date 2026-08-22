@@ -83,6 +83,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
     if (registrationIds.isEmpty()) {
       return 0;
     }
+
     var nowOffset = now.atOffset(ZoneOffset.UTC);
     return dsl.update(AUTH_SESSION)
         .set(AUTH_SESSION.REVOKED_AT, nowOffset)

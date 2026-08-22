@@ -157,6 +157,7 @@ public class RefreshTokenService {
       if (tokenRepository.isActiveToken(session.getId(), digestOf(rawSuccessor), now)) {
         return new RefreshResult.GraceRetry(rawSuccessor, session);
       }
+
       return new RefreshResult.SupersededRetry(session);
     }
 
