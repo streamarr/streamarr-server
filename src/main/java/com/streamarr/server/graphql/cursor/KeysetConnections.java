@@ -24,6 +24,7 @@ public final class KeysetConnections {
     if (reverse) {
       selected = selected.reversed();
     }
+
     List<Edge<T>> edges =
         selected.stream()
             .<Edge<T>>map(
