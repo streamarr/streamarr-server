@@ -209,7 +209,6 @@ class IdentityQueryServiceTest {
         .scope(profileId == null ? TokenScope.ACCOUNT : TokenScope.PROFILE)
         .householdId(home.getId())
         .householdRole(HouseholdRole.MEMBER)
-        .serverAdmin(true)
         .contextHouseholdId(contextHouseholdId)
         .profileId(profileId)
         .build();

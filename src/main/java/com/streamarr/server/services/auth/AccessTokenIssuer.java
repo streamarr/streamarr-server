@@ -62,7 +62,6 @@ public class AccessTokenIssuer {
             .claim(TokenClaims.SCOPE, scope.claimValue())
             .claim(TokenClaims.HOUSEHOLD_ID, account.getHouseholdId().toString())
             .claim(TokenClaims.HOUSEHOLD_ROLE, account.getHouseholdRole().name())
-            .claim(TokenClaims.SERVER_ADMIN, account.isServerAdmin())
             .claim(TokenClaims.CONTEXT_HOUSEHOLD_ID, context.contextHouseholdId().toString());
 
     if (scope == TokenScope.PROFILE) {

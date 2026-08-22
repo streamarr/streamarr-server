@@ -82,7 +82,7 @@ class AccessTokenIssuerTest {
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
         .isEqualTo(account.getHouseholdId().toString());
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("ADMIN");
-    assertThat(decoded.getClaimAsBoolean(TokenClaims.SERVER_ADMIN)).isTrue();
+    assertThat(decoded.getClaims()).doesNotContainKey("sa");
     assertThat(decoded.getClaimAsString(TokenClaims.CONTEXT_HOUSEHOLD_ID))
         .isEqualTo(visitedHouseholdId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isEqualTo(profileId.toString());
@@ -106,7 +106,7 @@ class AccessTokenIssuerTest {
         .isEqualTo(account.getHouseholdId().toString());
     assertThat(decoded.getClaimAsString(TokenClaims.CONTEXT_HOUSEHOLD_ID))
         .isEqualTo(account.getHouseholdId().toString());
-    assertThat(decoded.getClaimAsBoolean(TokenClaims.SERVER_ADMIN)).isFalse();
+    assertThat(decoded.getClaims()).doesNotContainKey("sa");
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isNull();
   }
 

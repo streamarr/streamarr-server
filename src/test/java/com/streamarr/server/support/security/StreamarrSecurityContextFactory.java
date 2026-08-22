@@ -13,7 +13,7 @@ final class StreamarrSecurityContextFactory {
 
   private StreamarrSecurityContextFactory() {}
 
-  static SecurityContext contextFor(TokenScope scope, boolean serverAdmin) {
+  static SecurityContext contextFor(TokenScope scope) {
     var identity =
         AuthenticatedIdentity.builder()
             .accountId(TestIdentityConstants.ACCOUNT_ID)
@@ -21,7 +21,6 @@ final class StreamarrSecurityContextFactory {
             .scope(scope)
             .householdId(TestIdentityConstants.HOUSEHOLD_ID)
             .householdRole(HouseholdRole.ADMIN)
-            .serverAdmin(serverAdmin)
             .contextHouseholdId(TestIdentityConstants.HOUSEHOLD_ID)
             .profileId(scope == TokenScope.PROFILE ? TestIdentityConstants.PROFILE_ID : null)
             .build();

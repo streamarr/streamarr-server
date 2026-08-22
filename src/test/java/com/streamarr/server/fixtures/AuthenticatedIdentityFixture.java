@@ -18,7 +18,6 @@ public final class AuthenticatedIdentityFixture {
         .scope(TokenScope.PLAYBACK)
         .householdId(householdId)
         .householdRole(HouseholdRole.MEMBER)
-        .serverAdmin(false)
         .contextHouseholdId(householdId)
         .profileId(UUID.randomUUID())
         .streamSessionId(UUID.randomUUID());

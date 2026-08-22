@@ -82,7 +82,6 @@ class AuthenticatedIdentityTest {
             .claim(TokenClaims.SCOPE, "profile")
             .claim(TokenClaims.HOUSEHOLD_ID, householdId.toString())
             .claim(TokenClaims.HOUSEHOLD_ROLE, "ADMIN")
-            .claim(TokenClaims.SERVER_ADMIN, true)
             .claim(TokenClaims.CONTEXT_HOUSEHOLD_ID, visitedId.toString())
             .claim(TokenClaims.PROFILE_ID, profileId.toString())
             .build();
@@ -94,15 +93,14 @@ class AuthenticatedIdentityTest {
     assertThat(identity.scope()).isEqualTo(TokenScope.PROFILE);
     assertThat(identity.householdId()).isEqualTo(householdId);
     assertThat(identity.householdRole()).isEqualTo(HouseholdRole.ADMIN);
-    assertThat(identity.serverAdmin()).isTrue();
     assertThat(identity.contextHouseholdId()).isEqualTo(visitedId);
     assertThat(identity.profileId()).isEqualTo(profileId);
     assertThat(identity.playbackAuthority().householdId()).isEqualTo(visitedId);
   }
 
   @Test
-  @DisplayName("Should read not admin when the ServerAdmin claim is missing")
-  void shouldReadNotAdminWhenServerAdminClaimIsMissing() {
+  @DisplayName("Should read Account scope when optional Profile claims are missing")
+  void shouldReadAccountScopeWhenOptionalProfileClaimsAreMissing() {
     var householdId = UUID.randomUUID();
     var jwt =
         Jwt.withTokenValue("token")
@@ -117,7 +115,6 @@ class AuthenticatedIdentityTest {
 
     var identity = AuthenticatedIdentity.fromJwt(jwt);
 
-    assertThat(identity.serverAdmin()).isFalse();
     assertThat(identity.scope()).isEqualTo(TokenScope.ACCOUNT);
     assertThat(identity.profileId()).isNull();
   }

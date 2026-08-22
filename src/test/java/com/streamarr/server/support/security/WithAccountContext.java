@@ -15,7 +15,7 @@ public @interface WithAccountContext {
 
     @Override
     public SecurityContext createSecurityContext(WithAccountContext annotation) {
-      return StreamarrSecurityContextFactory.contextFor(TokenScope.ACCOUNT, false);
+      return StreamarrSecurityContextFactory.contextFor(TokenScope.ACCOUNT);
     }
   }
 }

@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 /**
  * Loads {@code enabled} and {@code serverAdmin} from PostgreSQL for the actions that need live
  * authority. A missing Account contributes nothing, and policy reads an absent fact as "not
- * proven"; the token's ServerAdmin claim is never consulted.
+ * proven"; ServerAdmin is never carried in the token.
  */
 @Component
 @RequiredArgsConstructor

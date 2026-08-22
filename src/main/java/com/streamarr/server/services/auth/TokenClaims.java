@@ -11,9 +11,6 @@ public final class TokenClaims {
 
   public static final String HOUSEHOLD_ROLE = "hr";
 
-  /** ServerAdmin display snapshot — routing and UI only, never authority. */
-  public static final String SERVER_ADMIN = "sa";
-
   /** The one context Household this session is using. */
   public static final String CONTEXT_HOUSEHOLD_ID = "ch";
 

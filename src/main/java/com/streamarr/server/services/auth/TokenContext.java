@@ -7,9 +7,9 @@ import lombok.Builder;
 import lombok.NonNull;
 
 /**
- * What a token is minted from: the Account (membership Household, role, ServerAdmin display fact),
- * its session, the context Household the session is using, and the selected Profile when one is.
- * The identity services validate the context before building this; the issuer only mints.
+ * What a token is minted from: the Account and its membership Household and role, its session, the
+ * context Household the session is using, and the selected Profile when one is. The identity
+ * services validate the context before building this; the issuer only mints.
  */
 @Builder
 public record TokenContext(

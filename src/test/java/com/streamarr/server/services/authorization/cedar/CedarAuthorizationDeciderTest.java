@@ -82,7 +82,7 @@ class CedarAuthorizationDeciderTest {
       "Should allow library administration through the facade when the live row is an enabled ServerAdmin")
   void shouldAllowLibraryAdministrationThroughFacadeWhenLiveRowIsEnabledServerAdmin(
       Intent<AuthorizationUnit> intent) {
-    var identity = identityFor(liveAccount(true, true), false);
+    var identity = identityFor(liveAccount(true, true));
 
     assertThat(authorizationService.requireAllowed(identity, intent))
         .isEqualTo(AuthorizationUnit.INSTANCE);
@@ -94,8 +94,7 @@ class CedarAuthorizationDeciderTest {
       "Should deny library administration through the facade when the live row is not a ServerAdmin")
   void shouldDenyLibraryAdministrationThroughFacadeWhenLiveRowIsNotServerAdmin(
       Intent<AuthorizationUnit> intent) {
-    // The token still says ADMIN: a revoked claim must never be enough.
-    var identity = identityFor(liveAccount(false, true), true);
+    var identity = identityFor(liveAccount(false, true));
 
     assertThatThrownBy(() -> authorizationService.requireAllowed(identity, intent))
         .isInstanceOf(AccessDeniedException.class)
@@ -105,7 +104,7 @@ class CedarAuthorizationDeciderTest {
   @Test
   @DisplayName("Should deny when the live ServerAdmin is disabled")
   void shouldDenyWhenLiveServerAdminIsDisabled() {
-    var identity = identityFor(liveAccount(true, false), true);
+    var identity = identityFor(liveAccount(true, false));
 
     assertThat(decider.decide(identity, new Intent.AddLibrary()))
         .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
@@ -114,7 +113,7 @@ class CedarAuthorizationDeciderTest {
   @Test
   @DisplayName("Should deny when no authority facts exist for the Account")
   void shouldDenyWhenNoAuthorityFactsExistForAccount() {
-    var identity = identityFor(UUID.randomUUID(), true);
+    var identity = identityFor(UUID.randomUUID());
 
     assertThat(decider.decide(identity, new Intent.AddLibrary()))
         .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
@@ -131,7 +130,7 @@ class CedarAuthorizationDeciderTest {
                 slice ->
                     slice.principalAttribute(
                         LivePrincipalAuthorityContributor.ENABLED, new PrimString("yes"))));
-    var identity = identityFor(liveAccount(true, true), true);
+    var identity = identityFor(liveAccount(true, true));
 
     assertThat(malformed.decide(identity, new Intent.AddLibrary()))
         .isEqualTo(new Decision.Failed<>(Decision.FailureCause.INVALID_SLICE));
@@ -152,7 +151,7 @@ class CedarAuthorizationDeciderTest {
                     new Context(Map.of("unknownKey", new PrimBool(true))),
                     request.schema,
                     request.enableRequestValidation));
-    var identity = identityFor(liveAccount(true, true), true);
+    var identity = identityFor(liveAccount(true, true));
 
     assertThat(
             decider(badContext, new LivePrincipalAuthorityContributor(accounts))
@@ -173,7 +172,7 @@ class CedarAuthorizationDeciderTest {
             forbid (principal, action, resource) when { principal.serverAdmin == false };
             """);
     var engine = new RewritingEngine(ENGINE, Function.identity(), erroringPolicies);
-    var identity = identityFor(liveAccount(true, true), true);
+    var identity = identityFor(liveAccount(true, true));
     var noFacts = decider(engine, contributor(_ -> {}));
 
     assertThat(noFacts.decide(identity, new Intent.AddLibrary()))
@@ -184,7 +183,7 @@ class CedarAuthorizationDeciderTest {
   @Test
   @DisplayName("Should fail closed when the intent is null")
   void shouldFailClosedWhenIntentIsNull() {
-    var identity = identityFor(UUID.randomUUID(), true);
+    var identity = identityFor(UUID.randomUUID());
     Intent<AuthorizationUnit> intent = null;
 
     assertThat(decider.decide(identity, intent))
@@ -202,7 +201,7 @@ class CedarAuthorizationDeciderTest {
                 _ -> {
                   throw new IllegalStateException("database unavailable");
                 }));
-    var identity = identityFor(liveAccount(true, true), true);
+    var identity = identityFor(liveAccount(true, true));
 
     assertThat(failing.decide(identity, new Intent.AddLibrary()))
         .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
@@ -218,7 +217,7 @@ class CedarAuthorizationDeciderTest {
             _ -> {
               throw new IllegalStateException("native bridge lost");
             });
-    var identity = identityFor(liveAccount(true, true), true);
+    var identity = identityFor(liveAccount(true, true));
 
     assertThat(
             decider(throwing, new LivePrincipalAuthorityContributor(accounts))
@@ -236,7 +235,7 @@ class CedarAuthorizationDeciderTest {
             _ -> {
               throw new IllegalStateException("native bridge lost");
             });
-    var identity = identityFor(liveAccount(true, true), true);
+    var identity = identityFor(liveAccount(true, true));
     var logger = (Logger) LoggerFactory.getLogger(CedarAuthorizationDecider.class);
     var appender = new ListAppender<ILoggingEvent>();
     appender.start();
@@ -293,12 +292,8 @@ class CedarAuthorizationDeciderTest {
         .getId();
   }
 
-  /** The token's ServerAdmin claim is display only; the live row decides. */
-  private static AuthenticatedIdentity identityFor(UUID accountId, boolean tokenSaysAdmin) {
-    return AuthenticatedIdentityFixture.profileScopedBuilder()
-        .accountId(accountId)
-        .serverAdmin(tokenSaysAdmin)
-        .build();
+  private static AuthenticatedIdentity identityFor(UUID accountId) {
+    return AuthenticatedIdentityFixture.profileScopedBuilder().accountId(accountId).build();
   }
 
   private double failClosedCount() {

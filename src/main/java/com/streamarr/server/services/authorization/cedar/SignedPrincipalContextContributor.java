@@ -6,8 +6,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * The principal's signed snapshot (ADR 0024 §Stateless JWT snapshots): membership Household and
- * role, context Household, and selected Profile. The token's ServerAdmin claim is deliberately not
- * here — only the live fact may grant authority.
+ * role, context Household, and selected Profile. ServerAdmin is never carried in the token; only
+ * the live fact may grant authority.
  */
 @Component
 class SignedPrincipalContextContributor implements FactContributor {

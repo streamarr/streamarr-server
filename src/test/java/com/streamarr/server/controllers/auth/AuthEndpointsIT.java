@@ -1509,7 +1509,6 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             .claim(TokenClaims.SCOPE, "account")
             .claim(TokenClaims.HOUSEHOLD_ID, account.getHouseholdId().toString())
             .claim(TokenClaims.HOUSEHOLD_ROLE, account.getHouseholdRole().name())
-            .claim(TokenClaims.SERVER_ADMIN, account.isServerAdmin())
             .claim(TokenClaims.CONTEXT_HOUSEHOLD_ID, account.getHouseholdId().toString());
     customizeClaims.accept(claims);
 

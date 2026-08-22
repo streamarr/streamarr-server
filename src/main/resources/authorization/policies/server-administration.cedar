@@ -1,6 +1,6 @@
 // Server administration is granted only by live ServerAdmin authority on an enabled Account
 // (ADR 0024 §ServerAdmin, ADR 0025). Both facts are loaded from PostgreSQL for this action group;
-// a token claim never reaches the slice, so a revoked ServerAdmin is denied on the next request.
+// tokens carry no ServerAdmin claim, so a revoked ServerAdmin is denied on the next request.
 @id("server-administration-requires-live-enabled-server-admin")
 permit (
   principal,

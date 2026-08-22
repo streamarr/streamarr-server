@@ -11,8 +11,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 
 /**
  * The token's signed identity snapshot, parsed once at authentication time (ADR 0024): the Account
- * and its session, its membership Household and role, a ServerAdmin display fact (never authority —
- * the authorization module loads the live fact), the one context Household, the scope, and the
+ * and its session, its membership Household and role, the one context Household, the scope, and the
  * selected Profile.
  */
 @Builder
@@ -22,7 +21,6 @@ public record AuthenticatedIdentity(
     @NonNull TokenScope scope,
     @NonNull UUID householdId,
     @NonNull HouseholdRole householdRole,
-    boolean serverAdmin,
     @NonNull UUID contextHouseholdId,
     UUID profileId,
     UUID streamSessionId) {
@@ -52,7 +50,6 @@ public record AuthenticatedIdentity(
         .scope(TokenScope.valueOf(jwt.getClaimAsString(TokenClaims.SCOPE).toUpperCase(Locale.ROOT)))
         .householdId(UUID.fromString(jwt.getClaimAsString(TokenClaims.HOUSEHOLD_ID)))
         .householdRole(HouseholdRole.valueOf(jwt.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)))
-        .serverAdmin(Boolean.TRUE.equals(jwt.getClaimAsBoolean(TokenClaims.SERVER_ADMIN)))
         .contextHouseholdId(UUID.fromString(jwt.getClaimAsString(TokenClaims.CONTEXT_HOUSEHOLD_ID)))
         .profileId(uuidClaim(jwt, TokenClaims.PROFILE_ID))
         .streamSessionId(uuidClaim(jwt, TokenClaims.STREAM_SESSION_ID))

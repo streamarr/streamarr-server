@@ -190,7 +190,7 @@ class LibraryResolverTest {
 
   @Nested
   @DisplayName("Library Mutations")
-  @WithProfileContext(serverAdmin = true)
+  @WithProfileContext
   class LibraryMutations {
 
     @AfterEach

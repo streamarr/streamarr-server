@@ -276,7 +276,6 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
             .scope(TokenScope.PROFILE)
             .householdId(base.householdId())
             .householdRole(base.householdRole())
-            .serverAdmin(base.serverAdmin())
             .contextHouseholdId(contextHouseholdId)
             .profileId(profileId)
             .build());

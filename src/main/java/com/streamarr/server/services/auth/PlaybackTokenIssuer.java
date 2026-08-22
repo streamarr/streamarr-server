@@ -61,7 +61,6 @@ public class PlaybackTokenIssuer {
             .claim(TokenClaims.SCOPE, TokenScope.PLAYBACK.claimValue())
             .claim(TokenClaims.HOUSEHOLD_ID, identity.householdId().toString())
             .claim(TokenClaims.HOUSEHOLD_ROLE, identity.householdRole().name())
-            .claim(TokenClaims.SERVER_ADMIN, identity.serverAdmin())
             .claim(TokenClaims.CONTEXT_HOUSEHOLD_ID, identity.contextHouseholdId().toString())
             .claim(TokenClaims.PROFILE_ID, identity.profileId().toString())
             .claim(TokenClaims.STREAM_SESSION_ID, streamSession.getSessionId().toString())

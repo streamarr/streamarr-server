@@ -61,7 +61,7 @@ class PlaybackTokenIssuerTest {
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isEqualTo(profileId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.CONTEXT_HOUSEHOLD_ID))
         .isEqualTo(householdId.toString());
-    assertThat(decoded.getClaimAsBoolean(TokenClaims.SERVER_ADMIN)).isFalse();
+    assertThat(decoded.getClaims()).doesNotContainKey("sa");
     assertThat(decoded.getClaimAsString("stream_session_id")).isEqualTo(streamSessionId.toString());
     assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
         .isEqualTo(Duration.ofHours(24));

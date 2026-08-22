@@ -141,7 +141,6 @@ class AddLibraryIT extends AbstractIntegrationTest {
         .scope(TokenScope.PROFILE)
         .householdId(identity.household().getId())
         .householdRole(identity.account().getHouseholdRole())
-        .serverAdmin(identity.account().isServerAdmin())
         .contextHouseholdId(identity.household().getId())
         .profileId(identity.profile().getId())
         .build();

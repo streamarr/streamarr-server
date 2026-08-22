@@ -11,15 +11,11 @@ import org.springframework.security.test.context.support.WithSecurityContextFact
 @WithSecurityContext(factory = WithProfileContext.Factory.class)
 public @interface WithProfileContext {
 
-  /** The token's ServerAdmin display snapshot; never authority (the live fact is). */
-  boolean serverAdmin() default false;
-
   class Factory implements WithSecurityContextFactory<WithProfileContext> {
 
     @Override
     public SecurityContext createSecurityContext(WithProfileContext annotation) {
-      return StreamarrSecurityContextFactory.contextFor(
-          TokenScope.PROFILE, annotation.serverAdmin());
+      return StreamarrSecurityContextFactory.contextFor(TokenScope.PROFILE);
     }
   }
 }
