@@ -12,7 +12,13 @@ public final class InvitationRejections {
           HouseholdNotFound,
           RestrictedFirstAccount,
           LocalManagerRequired,
-          LocalManagerNotFound {}
+          LocalManagerNotFound,
+          ConnectProfileRequired,
+          ConnectProfileNotFound,
+          ProfileAlreadyLinked,
+          ProfileNotInHousehold,
+          ReofferHouseholdNotFound,
+          ReofferHouseholdNotShared {}
 
   public sealed interface Cancel permits InvitationNotPending {}
 
@@ -35,6 +41,22 @@ public final class InvitationRejections {
   public record LocalManagerRequired() implements Issue {}
 
   public record LocalManagerNotFound() implements Issue {}
+
+  /** A CONNECT invitation names the existing Profile it links. */
+  public record ConnectProfileRequired() implements Issue {}
+
+  public record ConnectProfileNotFound() implements Issue {}
+
+  /** A linked Profile already belongs to a person; it cannot be connected again. */
+  public record ProfileAlreadyLinked() implements Issue {}
+
+  /** CONNECT joins the recipient to the Profile's own Household. */
+  public record ProfileNotInHousehold() implements Issue {}
+
+  public record ReofferHouseholdNotFound() implements Issue {}
+
+  /** Only a Household the Profile actively visits today can be offered it afresh. */
+  public record ReofferHouseholdNotShared() implements Issue {}
 
   public record InvitationNotPending() implements Cancel {}
 

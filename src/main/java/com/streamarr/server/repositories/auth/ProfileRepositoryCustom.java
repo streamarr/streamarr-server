@@ -12,6 +12,9 @@ public interface ProfileRepositoryCustom {
   /** Profiles actively shared into the Household, ordered by name then id for stable paging. */
   List<Profile> findAvailableInHousehold(UUID householdId);
 
+  /** Locks the Profile row for a share without loading the share into Hibernate's cache. */
+  boolean lockByShareId(UUID shareId);
+
   /**
    * The Profile's current policy read under a row-level write lock (SELECT … FOR UPDATE), as
    * scalars: the transition classification must see the state the transaction will change, and a

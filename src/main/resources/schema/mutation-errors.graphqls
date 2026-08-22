@@ -207,3 +207,33 @@ type ShareNameConflictError implements MutationError {
 type StructuralShareError implements MutationError {
     message: String!
 }
+
+type ConnectProfileRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ConnectProfileNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ProfileAlreadyLinkedError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ProfileNotInHouseholdError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ReofferHouseholdNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ReofferHouseholdNotSharedError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}

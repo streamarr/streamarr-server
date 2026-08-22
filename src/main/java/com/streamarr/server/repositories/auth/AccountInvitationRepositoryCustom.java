@@ -18,6 +18,9 @@ public interface AccountInvitationRepositoryCustom {
   /** Invalidates the PENDING invitation for the email, ignoring case (replacement rule). */
   int invalidatePendingForEmail(String recipientEmail, String reason, Instant now);
 
+  /** Invalidates every PENDING invitation bound to the Profile (connected, moved, or deleted). */
+  int invalidatePendingForProfile(UUID profileId, String reason, Instant now);
+
   /** Invalidates every PENDING invitation the issuer left behind (disable, revocation). */
   int invalidateIssuedBy(UUID issuerAccountId, String reason, Instant now);
 

@@ -5,6 +5,7 @@ package com.streamarr.server.jooq.generated;
 
 
 import com.streamarr.server.jooq.generated.tables.AccountInvitation;
+import com.streamarr.server.jooq.generated.tables.AccountInvitationReoffer;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
@@ -71,6 +72,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.account_invitation</code>.
      */
     public final AccountInvitation ACCOUNT_INVITATION = AccountInvitation.ACCOUNT_INVITATION;
+
+    /**
+     * The table <code>public.account_invitation_reoffer</code>.
+     */
+    public final AccountInvitationReoffer ACCOUNT_INVITATION_REOFFER = AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER;
 
     /**
      * The table <code>public.auth_session</code>.
@@ -284,6 +290,7 @@ public class Public extends SchemaImpl {
     public final List<Table<?>> getTables() {
         return Arrays.asList(
             AccountInvitation.ACCOUNT_INVITATION,
+            AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER,
             AuthSession.AUTH_SESSION,
             BaseCollectable.BASE_COLLECTABLE,
             Company.COMPANY,
