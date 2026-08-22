@@ -714,6 +714,7 @@ class AccountInvitationServiceTest {
                 .build());
       }
     }
+
     return issued;
   }
 

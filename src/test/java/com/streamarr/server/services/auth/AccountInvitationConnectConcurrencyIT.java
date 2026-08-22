@@ -340,6 +340,7 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
       for (var index = 0; index < parameters.length; index++) {
         statement.setObject(index + 1, parameters[index]);
       }
+
       try (var result = statement.executeQuery()) {
         result.next();
         return result.getInt(1);
