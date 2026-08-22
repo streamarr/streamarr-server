@@ -1,5 +1,6 @@
 package com.streamarr.server.services.authorization.cedar;
 
+import static com.streamarr.server.fixtures.ProfileHouseholdShareFixture.activeShareBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.cedarpolicy.BasicAuthorizationEngine;
@@ -101,7 +102,12 @@ class CedarIdentityPoliciesTest {
                 .id(account.getPersonalProfileId())
                 .householdId(account.getHouseholdId())
                 .build());
-    shares.share(personal.getId(), account.getHouseholdId(), true);
+    shares.save(
+        activeShareBuilder()
+            .profileId(personal.getId())
+            .householdId(account.getHouseholdId())
+            .structural(true)
+            .build());
     session =
         sessions.save(
             AuthSession.builder()
@@ -586,10 +592,14 @@ class CedarIdentityPoliciesTest {
 
     @Test
     @DisplayName(
-        "Should distinguish ordinary edits from kind changes when authority is supervisory")
-    void shouldDistinguishOrdinaryEditsFromKindChangesWhenAuthorityIsSupervisory() {
+        "Should limit kind changes to managers when managers and supervisors edit a Profile")
+    void shouldLimitKindChangesToManagersWhenManagersAndSupervisorsEditProfile() {
       var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
-      shares.share(kid.getId(), account.getHouseholdId(), false);
+      shares.save(
+          activeShareBuilder()
+              .profileId(kid.getId())
+              .householdId(account.getHouseholdId())
+              .build());
 
       // Supervising HouseholdAdmin (restricted Profile shared into their Household).
       assertThat(decide(atHome(), new Intent.RenameProfile(kid.getId()))).isEqualTo(ALLOWED);
@@ -767,8 +777,8 @@ class CedarIdentityPoliciesTest {
   class Sharing {
 
     @Test
-    @DisplayName("Should let managers offer, but a sovereign Personal Profile only its Account")
-    void shouldLetManagersOfferButSovereignPersonalProfileOnlyItsAccount() {
+    @DisplayName("Should limit a sovereign Personal Profile's offerer when a share is offered")
+    void shouldLimitSovereignPersonalProfileOffererWhenShareIsOffered() {
       // The principal's own unrestricted Adult Personal Profile: offerable by itself.
       assertThat(decide(atHome(), new Intent.OfferProfileShare(personal.getId())))
           .isEqualTo(ALLOWED);
@@ -795,9 +805,14 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should strip sovereignty from a restricted Personal Profile's own Account")
-    void shouldStripSovereigntyFromRestrictedPersonalProfilesOwnAccount() {
-      var visit = shares.share(personal.getId(), visitedHouseholdId, false);
+    @DisplayName("Should deny sovereign unsharing when the Personal Profile becomes restricted")
+    void shouldDenySovereignUnsharingWhenPersonalProfileBecomesRestricted() {
+      var visit =
+          shares.save(
+              activeShareBuilder()
+                  .profileId(personal.getId())
+                  .householdId(visitedHouseholdId)
+                  .build());
       personal.setMaximumAllowedRatingAge(12);
       profiles.save(personal);
       account.setHouseholdRole(HouseholdRole.MEMBER);
@@ -808,10 +823,16 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let only the target's live admin or ServerAdmin decide a pending offer")
-    void shouldLetOnlyTargetsLiveAdminOrServerAdminDecidePendingOffer() {
+    @DisplayName(
+        "Should allow only the target's live admin or ServerAdmin when an offer is decided")
+    void shouldAllowOnlyTargetsLiveAdminOrServerAdminWhenOfferIsDecided() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
-      var offer = pendingShare(orphan.getId(), account.getHouseholdId());
+      var offer =
+          shares.save(
+              pendingShareBuilder()
+                  .profileId(orphan.getId())
+                  .householdId(account.getHouseholdId())
+                  .build());
 
       assertThat(decide(atHome(), new Intent.AcceptProfileShare(offer.getId()))).isEqualTo(ALLOWED);
       assertThat(decide(atHome(), new Intent.RejectProfileShare(offer.getId()))).isEqualTo(ALLOWED);
@@ -834,16 +855,26 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let the offerer cancel while pending")
-    void shouldLetOffererCancelWhilePending() {
+    @DisplayName("Should allow only the offerer when a pending offer is canceled")
+    void shouldAllowOnlyOffererWhenPendingOfferIsCanceled() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
-      var offer = pendingShare(orphan.getId(), visitedHouseholdId);
+      var offer =
+          shares.save(
+              pendingShareBuilder()
+                  .profileId(orphan.getId())
+                  .householdId(visitedHouseholdId)
+                  .build());
       offer.setOfferedByAccountId(account.getId());
       shares.save(offer);
 
       assertThat(decide(atHome(), new Intent.CancelProfileShare(offer.getId()))).isEqualTo(ALLOWED);
 
-      var strangersOffer = pendingShare(orphan.getId(), UUID.randomUUID());
+      var strangersOffer =
+          shares.save(
+              pendingShareBuilder()
+                  .profileId(orphan.getId())
+                  .householdId(UUID.randomUUID())
+                  .build());
       var stranger = accounts.save(AccountFixture.defaultAccountBuilder().build());
       strangersOffer.setOfferedByAccountId(stranger.getId());
       shares.save(strangersOffer);
@@ -852,16 +883,26 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should end an active share from every ADR-listed seat and no other")
-    void shouldEndActiveShareFromEveryAdrListedSeatAndNoOther() {
+    @DisplayName("Should allow only an ADR-listed seat when an active share is ended")
+    void shouldAllowOnlyAdrListedSeatWhenActiveShareIsEnded() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
-      var hosted = shares.share(orphan.getId(), account.getHouseholdId(), false);
+      var hosted =
+          shares.save(
+              activeShareBuilder()
+                  .profileId(orphan.getId())
+                  .householdId(account.getHouseholdId())
+                  .build());
 
       // Target Household's live admin.
       assertThat(decide(atHome(), new Intent.EndProfileShare(hosted.getId()))).isEqualTo(ALLOWED);
 
       // A direct manager may end a local share, but not one into another Household.
-      var elsewhere = shares.share(orphan.getId(), visitedHouseholdId, false);
+      var elsewhere =
+          shares.save(
+              activeShareBuilder()
+                  .profileId(orphan.getId())
+                  .householdId(visitedHouseholdId)
+                  .build());
       account.setHouseholdRole(HouseholdRole.MEMBER);
       accounts.save(account);
       assertThat(decide(atHome(), new Intent.EndProfileShare(elsewhere.getId()))).isEqualTo(DENIED);
@@ -871,15 +912,25 @@ class CedarIdentityPoliciesTest {
       assertThat(decide(atHome(), new Intent.EndProfileShare(hosted.getId()))).isEqualTo(ALLOWED);
 
       // The sovereign Account over its own Personal Profile's visits.
-      var visit = shares.share(personal.getId(), visitedHouseholdId, false);
+      var visit =
+          shares.save(
+              activeShareBuilder()
+                  .profileId(personal.getId())
+                  .householdId(visitedHouseholdId)
+                  .build());
       assertThat(decide(atHome(), new Intent.EndProfileShare(visit.getId()))).isEqualTo(ALLOWED);
     }
 
     @Test
-    @DisplayName("Should reserve force-end for a fresh ServerAdmin")
-    void shouldReserveForceEndForFreshServerAdmin() {
+    @DisplayName("Should allow force-end only when the caller is a fresh ServerAdmin")
+    void shouldAllowForceEndOnlyWhenCallerIsFreshServerAdmin() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
-      var hosted = shares.share(orphan.getId(), visitedHouseholdId, false);
+      var hosted =
+          shares.save(
+              activeShareBuilder()
+                  .profileId(orphan.getId())
+                  .householdId(visitedHouseholdId)
+                  .build());
       var forceEnd = new Intent.ForceEndProfileShare(hosted.getId());
 
       assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), forceEnd))
@@ -893,8 +944,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should forbid ending a structural share before the database guardrail")
-    void shouldForbidEndingStructuralShareBeforeDatabaseGuardrail() {
+    @DisplayName("Should deny ordinary and force end when the share is structural")
+    void shouldDenyOrdinaryAndForceEndWhenShareIsStructural() {
       var structural =
           shares
               .findByProfileIdAndHouseholdIdAndStatus(
@@ -914,13 +965,8 @@ class CedarIdentityPoliciesTest {
     }
   }
 
-  private ProfileHouseholdShare pendingShare(UUID profileId, UUID householdId) {
-    return shares.save(
-        ProfileHouseholdShare.builder()
-            .profileId(profileId)
-            .householdId(householdId)
-            .status(ProfileShareStatus.PENDING)
-            .build());
+  private ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> pendingShareBuilder() {
+    return ProfileHouseholdShare.builder().status(ProfileShareStatus.PENDING);
   }
 
   private AuthenticatedIdentity withReauthenticatedAt(AuthenticatedIdentity base, Instant at) {

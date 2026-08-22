@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Test;
 class ProfileHouseholdShareTest {
 
   @Test
-  @DisplayName("Should expose an absent invalidation reason as Optional empty")
-  void shouldExposeAbsentInvalidationReasonAsOptionalEmpty() {
+  @DisplayName("Should expose Optional empty when the invalidation reason is absent")
+  void shouldExposeOptionalEmptyWhenInvalidationReasonIsAbsent() {
     var share = ProfileHouseholdShare.builder().build();
 
     assertThat(share.getInvalidationReason()).isEqualTo(Optional.empty());

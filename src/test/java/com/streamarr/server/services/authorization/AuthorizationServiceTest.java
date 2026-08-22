@@ -96,8 +96,8 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should decide a stored proposal from its Account's current relationships")
-  void shouldDecideStoredProposalFromAccountsCurrentRelationships() {
+  @DisplayName("Should use the Account's current relationships when a stored proposal is decided")
+  void shouldUseAccountsCurrentRelationshipsWhenStoredProposalIsDecided() {
     var account = accounts.save(AccountFixture.defaultAccountBuilder().build());
 
     var decision =
