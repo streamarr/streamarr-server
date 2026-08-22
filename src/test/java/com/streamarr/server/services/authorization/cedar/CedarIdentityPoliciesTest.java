@@ -1164,8 +1164,8 @@ class CedarIdentityPoliciesTest {
   class Devices {
 
     @Test
-    @DisplayName("Should forbid every administration group for a device-bound session")
-    void shouldForbidEveryAdministrationGroupForDeviceBoundSession() {
+    @DisplayName("Should forbid administration when the session is device-bound")
+    void shouldForbidAdministrationWhenSessionDeviceBound() {
       account.setServerAdmin(true);
       accounts.save(account);
       var device = onDevice(withReauthenticatedAt(atHome(), Instant.now()));
@@ -1189,8 +1189,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let any enabled Account approve its pairing grant")
-    void shouldLetAnyEnabledAccountApproveItsPairingGrant() {
+    @DisplayName("Should allow pairing approval when the Account is enabled")
+    void shouldAllowPairingApprovalWhenAccountEnabled() {
       account.setHouseholdRole(HouseholdRole.MEMBER);
       accounts.save(account);
       assertThat(decide(member(), new Intent.LinkDevice(UUID.randomUUID()))).isEqualTo(ALLOWED);
@@ -1201,8 +1201,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let the registered Household's live admin or ServerAdmin revoke")
-    void shouldLetRegisteredHouseholdsLiveAdminOrServerAdminRevoke() {
+    @DisplayName("Should allow revocation when the caller is the Household admin or ServerAdmin")
+    void shouldAllowRevocationWhenCallerHouseholdAdminOrServerAdmin() {
       var registration =
           registrations.save(
               DeviceRegistration.builder()
@@ -1243,8 +1243,9 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should scope Household ESN administration to its live admin or ServerAdmin")
-    void shouldScopeHouseholdEsnAdministrationToItsLiveAdminOrServerAdmin() {
+    @DisplayName(
+        "Should allow Household ESN administration when the caller is a local admin or ServerAdmin")
+    void shouldAllowHouseholdEsnAdministrationWhenCallerLocalAdminOrServerAdmin() {
       assertThat(decide(atHome(), new Intent.BlockEsn(account.getHouseholdId())))
           .isEqualTo(ALLOWED);
       assertThat(decide(atHome(), new Intent.UnblockEsn(account.getHouseholdId())))
@@ -1260,8 +1261,9 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should reserve the server-wide block for a fresh ServerAdmin")
-    void shouldReserveServerWideBlockForFreshServerAdmin() {
+    @DisplayName(
+        "Should allow the server-wide block when the ServerAdmin is freshly reauthenticated")
+    void shouldAllowServerWideBlockWhenServerAdminFreshlyReauthenticated() {
       var block = new Intent.BlockEsnServerWide();
 
       assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), block)).isEqualTo(DENIED);

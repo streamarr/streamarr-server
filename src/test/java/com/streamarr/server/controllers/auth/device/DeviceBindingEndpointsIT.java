@@ -71,8 +71,8 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should bind the TV to the chosen Household and confine it to watching")
-  void shouldBindTvToChosenHouseholdAndConfineItToWatching() throws Exception {
+  @DisplayName("Should bind the TV and confine it to watching when pairing completes")
+  void shouldBindTvAndConfineItToWatchingWhenPairingCompletes() throws Exception {
     // The approver visits the host's Household through an active Personal Profile share.
     visit(approver, host);
     var issued = issueCode("Living Room TV", "esn-bind");
@@ -144,8 +144,8 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject password changes from a device-bound session")
-  void shouldRejectPasswordChangesFromDeviceBoundSession() throws Exception {
+  @DisplayName("Should reject a password change when the session is device-bound")
+  void shouldRejectPasswordChangeWhenSessionDeviceBound() throws Exception {
     var issued = issueCode("Living Room TV", "esn-password");
     approve(issued.get("userCode").asString(), approver.household().getId());
     var tokens = pollSuccessfully(issued.get("deviceCode").asString());
@@ -342,8 +342,8 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should administer devices and ESN blocks through every seat and connection")
-  void shouldAdministerDevicesAndEsnBlocksThroughEverySeatAndConnection() throws Exception {
+  @DisplayName("Should list the registered devices when the caller administers the Household")
+  void shouldListRegisteredDevicesWhenCallerAdministersHousehold() throws Exception {
     var issued = issueCode("Den TV", "esn-admin");
     approve(issued.get("userCode").asString(), approver.household().getId());
     pollSuccessfully(issued.get("deviceCode").asString());
@@ -359,10 +359,13 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.householdDevices.edges[0].node.esn").value("esn-admin"))
         .andExpect(jsonPath("$.data.householdDevices.edges[0].node.status").value("ACTIVE"));
+  }
 
-    // Server-wide blocks are the fresh ceremony's; the stale bearer earns the typed answer.
+  @Test
+  @DisplayName("Should require reauthentication when a stale ServerAdmin blocks an ESN server-wide")
+  void shouldRequireReauthenticationWhenStaleServerAdminBlocksEsnServerWide() throws Exception {
     graphql(
-            bearer,
+            authTestSupport.accountBearer(approver),
             """
             mutation { blockEsnServerWide(input: {esn: "esn-wide", reason: "stolen"}) {
               block { esn } userErrors { __typename } } }
@@ -371,6 +374,12 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.blockEsnServerWide.userErrors[0].__typename")
                 .value("ReauthenticationRequiredError"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should administer the server-wide block when the ServerAdmin is freshly reauthenticated")
+  void shouldAdministerServerWideBlockWhenServerAdminFreshlyReauthenticated() throws Exception {
     graphql(
             authTestSupport.freshAccountBearer(approver),
             """
@@ -382,9 +391,26 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.blockEsnServerWide.block.esn").value("esn-wide"))
         .andExpect(jsonPath("$.data.blockEsnServerWide.block.householdId").doesNotExist());
 
-    graphql(bearer, "query { serverEsnBlocks { edges { node { esn reason } } } }")
+    graphql(
+            authTestSupport.accountBearer(approver),
+            "query { serverEsnBlocks { edges { node { esn reason } } } }")
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.serverEsnBlocks.edges[0].node.esn").value("esn-wide"));
+
+    graphql(
+            authTestSupport.accountBearer(approver),
+            """
+            mutation { unblockEsnServerWide(input: {esn: "esn-wide"}) {
+              esn userErrors { __typename } } }
+            """)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.unblockEsnServerWide.esn").value("esn-wide"));
+  }
+
+  @Test
+  @DisplayName("Should administer a Household block when the caller is its live admin")
+  void shouldAdministerHouseholdBlockWhenCallerLiveAdmin() throws Exception {
+    var bearer = authTestSupport.accountBearer(approver);
 
     graphql(
             bearer,
@@ -423,15 +449,6 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(
             jsonPath("$.data.unblockEsn.userErrors[0].__typename").value("EsnBlockNotFoundError"));
-
-    graphql(
-            authTestSupport.accountBearer(approver),
-            """
-            mutation { unblockEsnServerWide(input: {esn: "esn-wide"}) {
-              esn userErrors { __typename } } }
-            """)
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.unblockEsnServerWide.esn").value("esn-wide"));
   }
 
   /** An active visit of the approver's Personal Profile into the host's Household. */
