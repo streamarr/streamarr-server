@@ -38,6 +38,8 @@ class LoginServiceTest {
   private final PasswordEncoder serviceEncoder = encoderWith(8192, 2);
   private final CountingPasswordEncoder countingEncoder =
       new CountingPasswordEncoder(serviceEncoder);
+  private final CountingTimingEqualizer timingEqualizer =
+      new CountingTimingEqualizer(countingEncoder);
 
   private final FakeUserAccountRepository userAccountRepository = new FakeUserAccountRepository();
 
@@ -67,7 +69,8 @@ class LoginServiceTest {
                   .maxAttempts(5)
                   .window(Duration.ofMinutes(15))
                   .build(),
-              clock));
+              clock),
+          timingEqualizer);
 
   @Test
   @DisplayName("Should throttle when failures exceed limit")
@@ -117,6 +120,32 @@ class LoginServiceTest {
     assertThatThrownBy(() -> loginService.login(attempt))
         .isInstanceOf(InvalidCredentialsException.class);
     // Exactly one equalizer burn — timing stays flat with every other rejection path.
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should reject login after one full-cost burn when stored hash empty")
+  void shouldRejectLoginAfterOneFullCostBurnWhenStoredHashEmpty() {
+    var account = seedAccount("");
+    var attempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(timingEqualizer.burns()).isEqualTo(1);
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should reject login after one full-cost burn when stored hash null")
+  void shouldRejectLoginAfterOneFullCostBurnWhenStoredHashNull() {
+    var account = seedAccount(null);
+    var attempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(timingEqualizer.burns()).isEqualTo(1);
     assertThat(countingEncoder.completedVerifications()).isEqualTo(1);
   }
 
@@ -313,6 +342,25 @@ class LoginServiceTest {
 
     private int completedVerifications() {
       return completedVerifications.get();
+    }
+  }
+
+  private static final class CountingTimingEqualizer extends PasswordTimingEqualizer {
+
+    private final AtomicInteger burns = new AtomicInteger();
+
+    private CountingTimingEqualizer(PasswordEncoder passwordEncoder) {
+      super(passwordEncoder);
+    }
+
+    @Override
+    public void burn(String password) {
+      burns.incrementAndGet();
+      super.burn(password);
+    }
+
+    private int burns() {
+      return burns.get();
     }
   }
 }

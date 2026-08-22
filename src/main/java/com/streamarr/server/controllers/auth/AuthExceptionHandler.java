@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -31,8 +32,8 @@ public class AuthExceptionHandler {
     return respond(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", e);
   }
 
-  @ExceptionHandler(TooManyLoginAttemptsException.class)
-  public ResponseEntity<AuthErrorResponse> handleTooManyAttempts(TooManyLoginAttemptsException e) {
+  @ExceptionHandler({TooManyLoginAttemptsException.class, TooManyCredentialAttemptsException.class})
+  public ResponseEntity<AuthErrorResponse> handleTooManyAttempts(RuntimeException e) {
     return respond(HttpStatus.TOO_MANY_REQUESTS, "TOO_MANY_ATTEMPTS", e);
   }
 

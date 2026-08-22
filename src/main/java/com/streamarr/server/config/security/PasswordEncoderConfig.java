@@ -29,8 +29,45 @@ public class PasswordEncoderConfig {
             properties.parallelism(),
             properties.memoryKib(),
             properties.iterations());
+    var encoders =
+        Map.of(
+            ARGON2_ID,
+            strictMatching(argon2),
+            "bcrypt",
+            strictMatching(new BCryptPasswordEncoder()));
 
-    return new DelegatingPasswordEncoder(
-        ARGON2_ID, Map.of(ARGON2_ID, argon2, "bcrypt", new BCryptPasswordEncoder()));
+    return new DelegatingPasswordEncoder(ARGON2_ID, encoders);
+  }
+
+  private static PasswordEncoder strictMatching(PasswordEncoder encoder) {
+    return new StrictMatchingPasswordEncoder(encoder);
+  }
+
+  private static final class StrictMatchingPasswordEncoder implements PasswordEncoder {
+
+    private final PasswordEncoder delegate;
+
+    private StrictMatchingPasswordEncoder(PasswordEncoder delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public String encode(CharSequence rawPassword) {
+      return delegate.encode(rawPassword);
+    }
+
+    @Override
+    public boolean matches(CharSequence rawPassword, String encodedPassword) {
+      if (encodedPassword.isEmpty()) {
+        throw new IllegalArgumentException("Encoded password payload is empty");
+      }
+      delegate.upgradeEncoding(encodedPassword);
+      return delegate.matches(rawPassword, encodedPassword);
+    }
+
+    @Override
+    public boolean upgradeEncoding(String encodedPassword) {
+      return delegate.upgradeEncoding(encodedPassword);
+    }
   }
 }

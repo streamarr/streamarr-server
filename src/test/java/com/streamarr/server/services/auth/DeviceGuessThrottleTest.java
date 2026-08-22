@@ -7,17 +7,15 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
+import com.streamarr.server.fakes.GatedClock;
 import com.streamarr.server.fakes.MutableClock;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -152,58 +150,6 @@ class DeviceGuessThrottleTest {
       return true;
     } catch (TooManyDeviceAttemptsException _) {
       return false;
-    }
-  }
-
-  private static final class GatedClock extends Clock {
-
-    private final Clock delegate;
-    private final AtomicBoolean blockNextCall = new AtomicBoolean();
-    private final CountDownLatch blockedCall = new CountDownLatch(1);
-    private final CountDownLatch releaseBlockedCall = new CountDownLatch(1);
-
-    private GatedClock(Clock delegate) {
-      this.delegate = delegate;
-    }
-
-    private void blockNextCall() {
-      blockNextCall.set(true);
-    }
-
-    private boolean awaitBlockedCall() throws InterruptedException {
-      return blockedCall.await(5, TimeUnit.SECONDS);
-    }
-
-    private void releaseBlockedCall() {
-      releaseBlockedCall.countDown();
-    }
-
-    @Override
-    public ZoneId getZone() {
-      return delegate.getZone();
-    }
-
-    @Override
-    public Clock withZone(ZoneId zone) {
-      return delegate.withZone(zone);
-    }
-
-    @Override
-    public Instant instant() {
-      if (blockNextCall.compareAndSet(true, false)) {
-        blockedCall.countDown();
-        awaitRelease();
-      }
-      return delegate.instant();
-    }
-
-    private void awaitRelease() {
-      try {
-        releaseBlockedCall.await();
-      } catch (InterruptedException _) {
-        Thread.currentThread().interrupt();
-        throw new AssertionError("Interrupted while holding the throttle race gate.");
-      }
     }
   }
 }

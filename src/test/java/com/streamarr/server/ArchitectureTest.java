@@ -1,13 +1,25 @@
 package com.streamarr.server;
 
+import static com.tngtech.archunit.core.domain.JavaCall.Predicates.target;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.assignableTo;
+import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.name;
+import static com.tngtech.archunit.core.domain.properties.HasOwner.Predicates.With.owner;
+import static com.tngtech.archunit.core.domain.properties.HasParameterTypes.Predicates.rawParameterTypes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.config.security.PasswordEncoderConfig;
+import com.streamarr.server.controllers.architecturefixture.DirectControllerAccountPasswordMatchFixture;
+import com.streamarr.server.graphql.architecturefixture.PasswordEncodingResolverFixture;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.services.RootServiceCycleFixture;
+import com.streamarr.server.services.architecturefixture.DirectAccountPasswordMatchFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
+import com.streamarr.server.services.auth.AccountPasswordVerifier;
+import com.streamarr.server.services.auth.LoginService;
+import com.streamarr.server.services.auth.PasswordTimingEqualizer;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -24,6 +36,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
 @Tag("UnitTest")
@@ -156,6 +169,19 @@ class ArchitectureTest {
   static final ArchRule repositoryMethodsMustNotUseQueryAnnotations =
       repositoryMethodsMustNotUseQueryAnnotations();
 
+  // Every authenticated Account-password check must get the shared budget, the disabled-Account
+  // rule, and the one-full-cost-operation timing rule; a direct encoder comparison gets none of
+  // them. Login is the allow-listed exception (no authenticated Account yet, email+source key),
+  // and the equalizer is the burn itself.
+  @ArchTest
+  static final ArchRule accountPasswordMatchesMustUseVerifier =
+      accountPasswordMatchesMustUseVerifier();
+
+  // GraphQL adapts input to services; if a resolver could reach the encoder it could hash or
+  // compare a password and own policy the services are supposed to own.
+  @ArchTest
+  static final ArchRule graphqlMustNotOwnPasswordPolicy = graphqlMustNotOwnPasswordPolicy();
+
   @ArchTest
   @DisplayName("Should avoid Path display text when media metadata is processed")
   static void shouldAvoidPathDisplayTextWhenMediaMetadataIsProcessed(JavaClasses classes) {
@@ -201,6 +227,74 @@ class ArchitectureTest {
     assertThatThrownBy(() -> repositoryRule.check(repositoryWithQueryAnnotation))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("Query");
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject direct Account password matching when a service bypasses the verifier")
+  void shouldRejectDirectAccountPasswordMatchingWhenServiceBypassesVerifier() {
+    var directMatcher =
+        new ClassFileImporter().importClasses(DirectAccountPasswordMatchFixture.class);
+    var verifierRule = accountPasswordMatchesMustUseVerifier();
+
+    assertThatThrownBy(() -> verifierRule.check(directMatcher))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("AccountPasswordVerifier");
+  }
+
+  @Test
+  @DisplayName("Should reject direct Account password matching when a controller bypasses services")
+  void shouldRejectDirectAccountPasswordMatchingWhenControllerBypassesServices() {
+    var directMatcher =
+        new ClassFileImporter().importClasses(DirectControllerAccountPasswordMatchFixture.class);
+    var verifierRule = accountPasswordMatchesMustUseVerifier();
+
+    assertThatThrownBy(() -> verifierRule.check(directMatcher))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("AccountPasswordVerifier");
+  }
+
+  @Test
+  @DisplayName("Should reject password encoder dependencies when a resolver owns password policy")
+  void shouldRejectPasswordEncoderDependenciesWhenResolverOwnsPasswordPolicy() {
+    var encodingResolver =
+        new ClassFileImporter().importClasses(PasswordEncodingResolverFixture.class);
+    var graphqlRule = graphqlMustNotOwnPasswordPolicy();
+
+    assertThatThrownBy(() -> graphqlRule.check(encodingResolver))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("password");
+  }
+
+  private static ArchRule accountPasswordMatchesMustUseVerifier() {
+    return noClasses()
+        .that()
+        .resideInAPackage("com.streamarr.server..")
+        .and()
+        .doNotBelongToAnyOf(
+            AccountPasswordVerifier.class,
+            LoginService.class,
+            PasswordEncoderConfig.class,
+            PasswordTimingEqualizer.class)
+        .should()
+        .callMethodWhere(
+            target(owner(assignableTo(PasswordEncoder.class)))
+                .and(target(name("matches")))
+                .and(target(rawParameterTypes(CharSequence.class, String.class))))
+        .as(
+            "Authenticated Account password checks must go through AccountPasswordVerifier; only"
+                + " login (distinct email+source throttle), password-encoder composition, and the"
+                + " timing equalizer compare directly");
+  }
+
+  private static ArchRule graphqlMustNotOwnPasswordPolicy() {
+    return noClasses()
+        .that()
+        .resideInAPackage("..graphql..")
+        .should()
+        .dependOnClassesThat()
+        .areAssignableTo(PasswordEncoder.class)
+        .as("GraphQL adapts input; services own password and PIN policy");
   }
 
   private static ArchRule repositoryMethodsMustNotUseQueryAnnotations() {

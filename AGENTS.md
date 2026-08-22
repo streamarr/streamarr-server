@@ -36,7 +36,7 @@
 ### Commit Discipline
 - Only commit when ALL tests pass and ALL warnings are resolved
 - Each commit is a single logical unit of work
-- Commit messages state whether the change is structural or behavioral
+- Commit subjects start with the lowercase prefix `structural:` or `behavioral:` (e.g. `structural: extract password verifier`); this is the server repo's casing — streamarr-web uses the same lowercase prefixes
 - Small, frequent commits over large, infrequent ones
 - Commit messages must be under 200 words
 - Always use signed commits (`git commit -S`)

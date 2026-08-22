@@ -7,7 +7,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Periodically evicts throttle entries whose window has passed; {@link LoginThrottle#sweepExpired}
- * documents why sprayed keys need a sweep.
+ * documents why sprayed keys need a sweep. Credential budgets are keyed by Account and Profile, so
+ * they cannot be sprayed, but entries for deleted Accounts would otherwise linger for the JVM's
+ * lifetime.
  */
 @Slf4j
 @Component
@@ -15,12 +17,13 @@ import org.springframework.stereotype.Component;
 public class LoginThrottleSweeper {
 
   private final LoginThrottle throttle;
+  private final CredentialGuessThrottle credentialThrottle;
 
   @Scheduled(fixedDelayString = "${auth.throttle.sweep-interval-ms:900000}")
   public void sweep() {
-    var evicted = throttle.sweepExpired();
+    var evicted = throttle.sweepExpired() + credentialThrottle.sweepExpired();
     if (evicted > 0) {
-      log.debug("Evicted {} stale login-throttle entries.", evicted);
+      log.debug("Evicted {} stale throttle entries.", evicted);
     }
   }
 }
