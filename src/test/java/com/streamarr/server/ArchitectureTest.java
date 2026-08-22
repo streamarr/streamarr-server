@@ -22,6 +22,7 @@ import com.streamarr.server.services.auth.AccountPasswordVerifier;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordTimingEqualizer;
 import com.streamarr.server.services.authorization.AuthorizationDecider;
+import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.DirectAuthorizationDeciderFixture;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.library.MovieFileProcessor;
@@ -138,6 +139,19 @@ class ArchitectureTest {
           .should()
           .beAnnotatedWith(Transactional.class)
           .as(TRANSACTION_BOUNDARY_REASON);
+
+  @ArchTest
+  static final ArchRule controllersAndResolversMustNotAuthorizeUseCases =
+      noClasses()
+          .that()
+          .resideInAnyPackage("..controllers..", "..graphql..")
+          .should()
+          .callMethodWhere(
+              target(owner(assignableTo(AuthorizationService.class)))
+                  .and(target(name("decide").or(name("requireAllowed")))))
+          .as(
+              "Resolvers and controllers adapt identity and protocol data; services authorize"
+                  + " use cases");
 
   // The library services call the filepath, parsers, streaming, and task services; a dependency
   // back the other way puts them in a cycle. FilepathCodec did exactly that from the library

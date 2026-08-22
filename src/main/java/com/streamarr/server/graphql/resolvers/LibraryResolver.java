@@ -24,7 +24,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.library.LibraryAdministrationService;
 import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.pagination.MediaFilter;
@@ -43,6 +43,7 @@ public class LibraryResolver {
 
   private final LibraryRepository libraryRepository;
   private final AuthorizationService authorizationService;
+  private final LibraryAdministrationService libraryAdministrationService;
   private final LibraryManagementService libraryManagementService;
   private final MovieService movieService;
   private final SeriesService seriesService;
@@ -54,7 +55,6 @@ public class LibraryResolver {
   @DgsMutation
   public Library addLibrary(@InputArgument AddLibraryInput input) {
     var identity = authorizationService.currentIdentity();
-    authorizationService.requireAllowed(identity, new Intent.AddLibrary());
     var library =
         Library.builder()
             .name(input.name())
@@ -67,33 +67,29 @@ public class LibraryResolver {
                     : ExternalAgentStrategy.TMDB)
             .build();
 
-    return libraryManagementService.addLibrary(identity, library);
+    return libraryAdministrationService.addLibrary(identity, library);
   }
 
   @DgsMutation
   public boolean removeLibrary(String id) {
     var libraryId = parseUuid(id);
     var identity = authorizationService.currentIdentity();
-    authorizationService.requireAllowed(identity, new Intent.RemoveLibrary(libraryId));
-    libraryManagementService.removeLibrary(identity, libraryId);
+    libraryAdministrationService.removeLibrary(identity, libraryId);
     return true;
   }
 
   @DgsMutation
   public boolean scanLibrary(String id) {
     var libraryId = parseUuid(id);
-    authorizationService.requireAllowed(
-        authorizationService.currentIdentity(), new Intent.ScanLibrary(libraryId));
-    libraryManagementService.triggerAsyncScan(libraryId);
+    libraryAdministrationService.scanLibrary(authorizationService.currentIdentity(), libraryId);
     return true;
   }
 
   @DgsMutation
   public boolean refreshLibrary(String id, @InputArgument ImageRefreshMode imageRefreshMode) {
     var libraryId = parseUuid(id);
-    authorizationService.requireAllowed(
-        authorizationService.currentIdentity(), new Intent.RefreshLibrary(libraryId));
-    libraryManagementService.triggerAsyncRefresh(libraryId, imageRefreshMode);
+    libraryAdministrationService.refreshLibrary(
+        authorizationService.currentIdentity(), libraryId, imageRefreshMode);
     return true;
   }
 
