@@ -76,8 +76,16 @@ class ProfileManagerAdministrationServiceTest {
           shares,
           audit,
           new OpaqueOneTimeCodes(),
-          new CredentialGuessThrottle(new AuthThrottleProperties(5, Duration.ofMinutes(15)), clock),
-          new CredentialCodeProperties(Duration.ofDays(7), null),
+          new CredentialGuessThrottle(
+              AuthThrottleProperties.builder()
+                  .maxAttempts(5)
+                  .window(Duration.ofMinutes(15))
+                  .build(),
+              clock),
+          CredentialCodeProperties.builder()
+              .invitationTtl(Duration.ofDays(7))
+              .replacementLockTimeout(Duration.ofSeconds(5))
+              .build(),
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
           clock);
@@ -108,6 +116,22 @@ class ProfileManagerAdministrationServiceTest {
     assertThat(invitations.findById(first.invitation().getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(second.invitation().getStatus()).isEqualTo(ProfileManagerInvitationStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName("Should cancel a pending invitation when its inviter acts")
+  void shouldCancelPendingInvitationWhenInviterActs() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+
+    var canceled = service.cancelManagerInvitation(identity(), issued.invitation().getId());
+
+    assertThat(canceled).isInstanceOf(Outcome.Accepted.class);
+    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.CANCELED);
+    assertThat(
+            rejectionOf(service.cancelManagerInvitation(identity(), issued.invitation().getId())))
+        .isInstanceOf(ManagerRejections.InvitationNotPending.class);
   }
 
   @Test
@@ -151,8 +175,16 @@ class ProfileManagerAdministrationServiceTest {
     assertThat(accepted).isInstanceOf(Outcome.Accepted.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isTrue();
     assertThat(audit.entries())
-        .extracting(entry -> entry.operation())
-        .containsExactly("acceptManagerInvitation");
+        .singleElement()
+        .satisfies(
+            entry -> {
+              assertThat(entry.operation()).isEqualTo("acceptManagerInvitation");
+              assertThat(entry.actorAccountId()).isEqualTo(recipient.getId());
+              assertThat(entry.reason()).isNull();
+              assertThat(entry.resources())
+                  .containsEntry("profileId", orphan.getId())
+                  .containsEntry("accountId", recipient.getId());
+            });
 
     assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), issued.code())))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
@@ -276,15 +308,16 @@ class ProfileManagerAdministrationServiceTest {
     assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(audit.entries())
-        .extracting(entry -> entry.operation())
-        .containsExactly("grantProfileManagerOverride");
-    assertThat(audit.entries())
         .singleElement()
         .satisfies(
-            entry ->
-                assertThat(entry.resources())
-                    .containsEntry("profileId", orphan.getId())
-                    .containsEntry("accountId", recipient.getId()));
+            entry -> {
+              assertThat(entry.operation()).isEqualTo("grantProfileManagerOverride");
+              assertThat(entry.actorAccountId()).isEqualTo(inviter.getId());
+              assertThat(entry.reason()).isEqualTo("support");
+              assertThat(entry.resources())
+                  .containsEntry("profileId", orphan.getId())
+                  .containsEntry("accountId", recipient.getId());
+            });
 
     assertThat(
             rejectionOf(
@@ -322,10 +355,14 @@ class ProfileManagerAdministrationServiceTest {
     assertThat(audit.entries())
         .singleElement()
         .satisfies(
-            entry ->
-                assertThat(entry.resources())
-                    .containsEntry("profileId", orphan.getId())
-                    .containsEntry("accountId", recipient.getId()));
+            entry -> {
+              assertThat(entry.operation()).isEqualTo("removeProfileManagerOverride");
+              assertThat(entry.actorAccountId()).isEqualTo(inviter.getId());
+              assertThat(entry.reason()).isEqualTo("abuse");
+              assertThat(entry.resources())
+                  .containsEntry("profileId", orphan.getId())
+                  .containsEntry("accountId", recipient.getId());
+            });
 
     assertThat(
             rejectionOf(
