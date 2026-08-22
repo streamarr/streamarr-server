@@ -832,8 +832,9 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should connect an existing Profile, end its visits, and reoffer on acceptance")
-  void shouldConnectExistingProfileEndItsVisitsAndReofferOnAcceptance() throws Exception {
+  @DisplayName(
+      "Should connect an existing Profile, end its visits, and reoffer when the invitation is accepted")
+  void shouldConnectExistingProfileEndVisitsAndReofferWhenInvitationAccepted() throws Exception {
     var previousHost = authTestSupport.createIdentity();
     try {
       var orphan = orphanVisiting(previousHost.household().getId());
