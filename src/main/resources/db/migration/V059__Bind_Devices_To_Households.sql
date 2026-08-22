@@ -47,6 +47,31 @@ CREATE UNIQUE INDEX uq_device_registration_live ON device_registration (esn)
 CREATE INDEX idx_device_registration_household ON device_registration (household_id);
 CREATE INDEX idx_device_registration_account ON device_registration (authorizing_account_id);
 
+CREATE FUNCTION revoke_device_registrations_before_account_delete()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+AS
+$$
+DECLARE
+    deleted_at TIMESTAMP WITH TIME ZONE := transaction_timestamp();
+BEGIN
+    UPDATE device_registration
+    SET status            = 'REVOKED',
+        revoked_at        = deleted_at,
+        revocation_reason = 'authorizing Account deleted',
+        last_modified_on  = deleted_at
+    WHERE authorizing_account_id = OLD.id
+      AND status = 'ACTIVE';
+    RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER trg_revoke_device_registrations_before_account_delete
+    BEFORE DELETE
+    ON user_account
+    FOR EACH ROW
+EXECUTE FUNCTION revoke_device_registrations_before_account_delete();
+
 CREATE TABLE esn_block
 (
     id               UUID                     NOT NULL DEFAULT gen_random_uuid(),
@@ -69,6 +94,39 @@ ALTER TABLE auth_session
     ADD CONSTRAINT fk_auth_session_registration FOREIGN KEY (registration_id)
         REFERENCES device_registration (id) ON DELETE SET NULL;
 CREATE INDEX idx_auth_session_registration ON auth_session (registration_id);
+
+CREATE FUNCTION revoke_device_registrations_before_household_delete()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+AS
+$$
+DECLARE
+    deleted_at TIMESTAMP WITH TIME ZONE := transaction_timestamp();
+BEGIN
+    UPDATE auth_session
+    SET revoked_at       = deleted_at,
+        revoked_reason   = 'ADMIN_REVOCATION',
+        last_modified_on = deleted_at
+    WHERE registration_id IN (SELECT id
+                              FROM device_registration
+                              WHERE household_id = OLD.id)
+      AND revoked_at IS NULL;
+    UPDATE device_registration
+    SET status            = 'REVOKED',
+        revoked_at        = deleted_at,
+        revocation_reason = 'Household deleted',
+        last_modified_on  = deleted_at
+    WHERE household_id = OLD.id
+      AND status = 'ACTIVE';
+    RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER trg_revoke_device_registrations_before_household_delete
+    BEFORE DELETE
+    ON household
+    FOR EACH ROW
+EXECUTE FUNCTION revoke_device_registrations_before_household_delete();
 
 -- Whether the ESN is blocked for that Household (its own block or a server-wide one).
 CREATE FUNCTION esn_is_blocked(candidate_esn TEXT, candidate_household_id UUID)

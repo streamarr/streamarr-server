@@ -1,6 +1,8 @@
 package com.streamarr.server.controllers.auth.device;
 
-public record DeviceDecisionRequest(String userCode, String decision, String householdId) {
+import java.util.UUID;
+
+public record DeviceDecisionRequest(String userCode, String decision, UUID householdId) {
 
   @Override
   public String toString() {

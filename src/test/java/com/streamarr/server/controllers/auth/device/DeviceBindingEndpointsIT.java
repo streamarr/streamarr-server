@@ -1,6 +1,7 @@
 package com.streamarr.server.controllers.auth.device;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -14,8 +15,10 @@ import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
 import com.streamarr.server.repositories.auth.EsnBlockRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import jakarta.servlet.ServletException;
 import java.util.Map;
 import java.util.UUID;
+import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -47,6 +50,7 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
   @Autowired private EsnBlockRepository esnBlockRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private DSLContext dsl;
 
   private AuthTestSupport.TestIdentity approver;
   private AuthTestSupport.TestIdentity host;
@@ -140,6 +144,31 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject password changes from a device-bound session")
+  void shouldRejectPasswordChangesFromDeviceBoundSession() throws Exception {
+    var issued = issueCode("Living Room TV", "esn-password");
+    approve(issued.get("userCode").asString(), approver.household().getId());
+    var tokens = pollSuccessfully(issued.get("deviceCode").asString());
+
+    mockMvc
+        .perform(
+            post("/api/auth/change-password")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokens.get("accessToken").asString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "currentPassword": "%s",
+                      "newPassword": "a different long passphrase",
+                      "cookieMode": false
+                    }
+                    """
+                        .formatted(authTestSupport.password())))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("DEVICE_BOUND_SESSION"));
+  }
+
+  @Test
   @DisplayName("Should remove device access at refresh when the registration is revoked")
   void shouldRemoveDeviceAccessAtRefreshWhenRegistrationIsRevoked() throws Exception {
     var issued = issueCode("Bedroom TV", "esn-revoke");
@@ -189,6 +218,40 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
 
     assertThat(registrationRepository.findById(registration.getId()).orElseThrow().getStatus())
         .isEqualTo(DeviceRegistrationStatus.REVOKED);
+  }
+
+  @Test
+  @DisplayName("Should roll back logout when device registration revocation fails")
+  void shouldRollBackLogoutWhenDeviceRegistrationRevocationFails() throws Exception {
+    var issued = issueCode("Den TV", "esn-logout-rollback");
+    approve(issued.get("userCode").asString(), approver.household().getId());
+    var tokens = pollSuccessfully(issued.get("deviceCode").asString());
+    var refreshToken = tokens.get("refreshToken").asString();
+
+    installRegistrationRevocationFailureTrigger();
+    try {
+      assertThatThrownBy(
+              () ->
+                  mockMvc.perform(
+                      post("/api/auth/refresh/revoke")
+                          .contentType(MediaType.APPLICATION_JSON)
+                          .content(
+                              "{\"refreshToken\": \"%s\", \"cookieMode\": false}"
+                                  .formatted(refreshToken))))
+          .isInstanceOf(ServletException.class);
+    } finally {
+      removeRegistrationRevocationFailureTrigger();
+    }
+
+    assertThat(registrationRepository.findAll().getFirst().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.ACTIVE);
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"refreshToken\": \"%s\", \"cookieMode\": false}".formatted(refreshToken)))
+        .andExpect(status().isOk());
   }
 
   @Test
@@ -433,5 +496,32 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
             .contentType(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
             .content(objectMapper.writeValueAsString(Map.of("query", query))));
+  }
+
+  private void installRegistrationRevocationFailureTrigger() {
+    dsl.execute(
+        """
+        CREATE FUNCTION reject_registration_revocation() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          IF OLD.status = 'ACTIVE' AND NEW.status = 'REVOKED' THEN
+            RAISE EXCEPTION 'forced registration revocation failure';
+          END IF;
+          RETURN NEW;
+        END;
+        $$
+        """);
+    dsl.execute(
+        """
+        CREATE TRIGGER test_reject_registration_revocation
+        BEFORE UPDATE ON device_registration
+        FOR EACH ROW EXECUTE FUNCTION reject_registration_revocation()
+        """);
+  }
+
+  private void removeRegistrationRevocationFailureTrigger() {
+    dsl.execute(
+        "DROP TRIGGER IF EXISTS test_reject_registration_revocation ON device_registration");
+    dsl.execute("DROP FUNCTION IF EXISTS reject_registration_revocation()");
   }
 }
