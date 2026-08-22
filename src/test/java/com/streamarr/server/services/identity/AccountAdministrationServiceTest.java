@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.DeviceRegistration;
+import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
@@ -193,8 +195,6 @@ class AccountAdministrationServiceTest {
   void shouldRevokeEveryLiveSessionWhenAccountIsDisabled() {
     var browser =
         sessions.save(AuthSession.builder().accountId(target.getId()).deviceName("web").build());
-    var television =
-        sessions.save(AuthSession.builder().accountId(target.getId()).deviceName("tv").build());
     var alreadyRevokedAt = Instant.parse("2026-08-20T12:00:00Z");
     var alreadyRevoked =
         sessions.save(
@@ -204,26 +204,42 @@ class AccountAdministrationServiceTest {
                 .revokedAt(alreadyRevokedAt)
                 .revokedReason(SessionRevocationReason.LOGOUT)
                 .build());
+    var registration =
+        registrations.save(
+            DeviceRegistration.builder()
+                .esn("esn-1")
+                .displayName("TV")
+                .householdId(target.getHouseholdId())
+                .authorizingAccountId(target.getId())
+                .build());
+    var deviceSession =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(target.getId())
+                .registrationId(registration.getId())
+                .deviceName("tv")
+                .build());
 
     var outcome = service.disableAccount(identity(), target.getId());
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(accounts.findById(target.getId()).orElseThrow().isEnabled()).isFalse();
-    assertThat(List.of(browser, television))
-        .isNotEmpty()
-        .allSatisfy(
-            session -> {
-              var revoked = sessions.findById(session.getId()).orElseThrow();
-              assertThat(revoked.getRevokedAt()).isNotNull();
-              assertThat(revoked.getRevokedReason())
-                  .isEqualTo(SessionRevocationReason.ADMIN_REVOCATION);
-            });
+    var revokedBrowser = sessions.findById(browser.getId()).orElseThrow();
+    assertThat(revokedBrowser.getRevokedAt()).isNotNull();
+    assertThat(revokedBrowser.getRevokedReason())
+        .isEqualTo(SessionRevocationReason.ADMIN_REVOCATION);
     assertThat(sessions.findById(alreadyRevoked.getId()).orElseThrow())
         .satisfies(
             session -> {
               assertThat(session.getRevokedAt()).isEqualTo(alreadyRevokedAt);
               assertThat(session.getRevokedReason()).isEqualTo(SessionRevocationReason.LOGOUT);
             });
+    assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    var revokedDeviceSession = sessions.findById(deviceSession.getId()).orElseThrow();
+    assertThat(revokedDeviceSession.getRevokedAt()).isNotNull();
+    assertThat(revokedDeviceSession.getRevokedReason())
+        .isEqualTo(SessionRevocationReason.ADMIN_REVOCATION);
     assertThat(audit.entries())
         .extracting(entry -> entry.operation())
         .containsExactly("disableAccount");
