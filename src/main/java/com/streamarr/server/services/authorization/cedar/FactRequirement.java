@@ -19,5 +19,11 @@ enum FactRequirement {
   /** The resource Account's membership Household. */
   ACCOUNT_HOUSEHOLD,
   /** The principal's live Household role and membership Household from PostgreSQL. */
-  LIVE_PRINCIPAL_HOUSEHOLD
+  LIVE_PRINCIPAL_HOUSEHOLD,
+  /** Whether the principal's own Personal Profile is a live unrestricted Adult. */
+  PRINCIPAL_ELIGIBILITY,
+  /** Whether the principal supervises the restricted resource Profile in its live Household. */
+  PROFILE_SUPERVISION,
+  /** The resource Profile's deletability facts: linkage, shares, and the sole-manager rule. */
+  PROFILE_DELETION
 }

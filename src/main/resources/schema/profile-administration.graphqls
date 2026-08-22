@@ -1,0 +1,167 @@
+# Profile administration (ADR 0024 §ProfileManager, §Profile creation, §PIN safety; ADR 0026).
+
+type ProfileAdministration {
+    id: ID!
+    name: String!
+    kind: ProfileKind!
+    maximumAllowedRatingAge: Int
+    picture: String
+    pinConfigured: Boolean!
+    restricted: Boolean!
+    householdId: ID!
+    linked: Boolean!
+}
+
+input CreateProfileInput {
+    householdId: ID!
+    name: String!
+    kind: ProfileKind!
+    maximumAllowedRatingAge: Int
+    "Required when a remote ServerAdmin creates: an eligible local manager to anchor the Profile."
+    localManagerAccountId: ID
+}
+
+type CreateProfilePayload {
+    profile: ProfileAdministration
+    userErrors: [CreateProfileError!]!
+}
+
+union CreateProfileError =
+    HouseholdNotFoundError
+  | ProfileNameRequiredError
+  | ProfileNameTakenError
+  | HomeAnchorRequiredError
+  | ManagerNotEligibleError
+  | LocalManagerNotFoundError
+  | MaximumAllowedRatingAgeInvalidError
+
+input RenameProfileInput {
+    profileId: ID!
+    name: String!
+}
+
+type RenameProfilePayload {
+    profile: ProfileAdministration
+    userErrors: [RenameProfileError!]!
+}
+
+union RenameProfileError =
+    ProfileNotFoundError
+  | ProfileNameRequiredError
+  | ProfileNameTakenError
+
+input SetProfilePictureInput {
+    profileId: ID!
+    picture: String!
+}
+
+type SetProfilePicturePayload {
+    profile: ProfileAdministration
+    userErrors: [SetProfilePictureError!]!
+}
+
+union SetProfilePictureError = ProfileNotFoundError
+
+input ChangeProfileKindInput {
+    profileId: ID!
+    kind: ProfileKind!
+}
+
+type ChangeProfileKindPayload {
+    profile: ProfileAdministration
+    userErrors: [ChangeProfileKindError!]!
+}
+
+union ChangeProfileKindError =
+    ProfileNotFoundError
+  | ReauthenticationRequiredError
+  | HomeAnchorRequiredError
+  | RestrictedAccountAuthorityError
+  | MaximumAllowedRatingAgeInvalidError
+
+input SetProfileContentCeilingInput {
+    profileId: ID!
+    maximumAllowedRatingAge: Int!
+}
+
+type SetProfileContentCeilingPayload {
+    profile: ProfileAdministration
+    userErrors: [SetProfileContentCeilingError!]!
+}
+
+union SetProfileContentCeilingError =
+    ProfileNotFoundError
+  | ReauthenticationRequiredError
+  | HomeAnchorRequiredError
+  | RestrictedAccountAuthorityError
+  | MaximumAllowedRatingAgeInvalidError
+
+input ClearProfileContentCeilingInput {
+    profileId: ID!
+}
+
+type ClearProfileContentCeilingPayload {
+    profile: ProfileAdministration
+    userErrors: [ClearProfileContentCeilingError!]!
+}
+
+union ClearProfileContentCeilingError =
+    ProfileNotFoundError
+  | ReauthenticationRequiredError
+  | HomeAnchorRequiredError
+  | RestrictedAccountAuthorityError
+  | MaximumAllowedRatingAgeInvalidError
+
+input SetProfilePinInput {
+    profileId: ID!
+    pin: String!
+}
+
+type SetProfilePinPayload {
+    profile: ProfileAdministration
+    userErrors: [SetProfilePinError!]!
+}
+
+union SetProfilePinError = ProfileNotFoundError | PinMalformedError
+
+input ClearProfilePinInput {
+    profileId: ID!
+}
+
+type ClearProfilePinPayload {
+    profile: ProfileAdministration
+    userErrors: [ClearProfilePinError!]!
+}
+
+union ClearProfilePinError = ProfileNotFoundError | WouldLockProfileError
+
+input OverrideProfilePinInput {
+    profileId: ID!
+    pin: String!
+    reason: String!
+}
+
+type OverrideProfilePinPayload {
+    profile: ProfileAdministration
+    userErrors: [OverrideProfilePinError!]!
+}
+
+union OverrideProfilePinError =
+    ProfileNotFoundError
+  | PinMalformedError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+
+input DeleteProfileInput {
+    profileId: ID!
+}
+
+type DeleteProfilePayload {
+    deletedProfileId: ID
+    userErrors: [DeleteProfileError!]!
+}
+
+union DeleteProfileError =
+    ProfileNotFoundError
+  | ProfileNotDeletableError
+  | ReauthenticationRequiredError

@@ -72,6 +72,11 @@ type RestrictedAccountAuthorityError implements InputMutationError & MutationErr
     inputPath: [String!]!
 }
 
+type MaximumAllowedRatingAgeInvalidError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 "At least one enabled ServerAdmin must remain after bootstrap."
 type LastServerAdminError implements MutationError {
     message: String!
@@ -90,4 +95,52 @@ type DisplayNameRequiredError implements InputMutationError & MutationError {
 type HouseholdNameRequiredError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
+}
+
+type ProfileNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ProfileNameRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"Active Profile names are unique, ignoring case, within each Household."
+type ProfileNameTakenError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"Every Profile keeps an eligible home management anchor in the Household it belongs to."
+type HomeAnchorRequiredError implements MutationError {
+    message: String!
+}
+
+"An Account whose Personal Profile is restricted cannot hold manager authority."
+type ManagerNotEligibleError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type LocalManagerNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type PinMalformedError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"Clearing this PIN would lock the Profile where a Household's safety policy requires one."
+type WouldLockProfileError implements MutationError {
+    message: String!
+    householdId: ID!
+}
+
+"Deletion needs an unlinked, unshared Profile and the caller as its sole remaining manager."
+type ProfileNotDeletableError implements MutationError {
+    message: String!
 }

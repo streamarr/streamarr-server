@@ -18,6 +18,16 @@ type Mutation {
     renameAccount(input: RenameAccountInput!): RenameAccountPayload
     createHousehold(input: CreateHouseholdInput!): CreateHouseholdPayload
     renameHousehold(input: RenameHouseholdInput!): RenameHouseholdPayload
+    createProfile(input: CreateProfileInput!): CreateProfilePayload
+    renameProfile(input: RenameProfileInput!): RenameProfilePayload
+    setProfilePicture(input: SetProfilePictureInput!): SetProfilePicturePayload
+    changeProfileKind(input: ChangeProfileKindInput!): ChangeProfileKindPayload
+    setProfileContentCeiling(input: SetProfileContentCeilingInput!): SetProfileContentCeilingPayload
+    clearProfileContentCeiling(input: ClearProfileContentCeilingInput!): ClearProfileContentCeilingPayload
+    setProfilePin(input: SetProfilePinInput!): SetProfilePinPayload
+    clearProfilePin(input: ClearProfilePinInput!): ClearProfilePinPayload
+    overrideProfilePin(input: OverrideProfilePinInput!): OverrideProfilePinPayload
+    deleteProfile(input: DeleteProfileInput!): DeleteProfilePayload
 }
 
 enum ImageRefreshMode {
