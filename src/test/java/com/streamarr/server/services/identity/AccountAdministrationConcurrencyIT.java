@@ -163,7 +163,13 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
     assertThat(userAccountRepository.findById(target.account().getId()).orElseThrow())
         .extracting(UserAccount::isServerAdmin)
         .isEqualTo(true);
-    assertThat(dsl.selectFrom(SECURITY_AUDIT_EVENT).fetch())
+    assertThat(
+            dsl.selectFrom(SECURITY_AUDIT_EVENT)
+                .where(SECURITY_AUDIT_EVENT.OPERATION.eq("grantServerAdmin"))
+                .and(SECURITY_AUDIT_EVENT.ACTOR_ACCOUNT_ID.eq(actor.account().getId()))
+                .fetch())
+        .filteredOn(
+            audit -> audit.getResources().data().contains(target.account().getId().toString()))
         .singleElement()
         .satisfies(
             audit -> {
