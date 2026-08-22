@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-class ShareFactsContributor implements FactContributor {
+class ShareContributor implements FactContributor {
 
   static final String STRUCTURAL = "structural";
   static final String OFFERED_BY_PRINCIPAL = "offeredByPrincipal";
@@ -34,7 +34,7 @@ class ShareFactsContributor implements FactContributor {
 
   @Override
   public FactRequirement provides() {
-    return FactRequirement.SHARE_FACTS;
+    return FactRequirement.SHARE;
   }
 
   @Override
@@ -44,6 +44,7 @@ class ShareFactsContributor implements FactContributor {
     if (share.isEmpty()) {
       return;
     }
+
     var found = share.get();
     slice.resourceAttribute(STRUCTURAL, new PrimBool(found.isStructural()));
     slice.resourceAttribute(

@@ -77,6 +77,7 @@ public class ProfileSharingService {
           if (householdRepository.findById(householdId).isEmpty()) {
             throw new MutationRejection(new ShareRejections.HouseholdNotFound());
           }
+
           var now = clock.instant();
           shareRepository.retirePendingForPair(profileId, householdId, now);
           return shareRepository.saveAndFlush(
@@ -148,6 +149,7 @@ public class ProfileSharingService {
     if (reason == null || reason.isBlank()) {
       return Outcome.rejected(new ShareRejections.ReasonRequired());
     }
+
     return endInTransaction(
         shareId,
         () ->
@@ -182,13 +184,16 @@ public class ProfileSharingService {
     if (decision instanceof Decision.Failed<?>) {
       throw new AuthorizationUnavailableException();
     }
+
     if (!(decision instanceof Decision.Allowed<?>)) {
       return Optional.empty();
     }
+
     var profile = profileRepository.findById(profileId);
     if (profile.isEmpty() || householdRepository.findById(householdId).isEmpty()) {
       return Optional.empty();
     }
+
     var available = new ArrayList<>(profileRepository.findAvailableInHousehold(householdId));
     available.removeIf(other -> other.getId().equals(profileId));
     var nameConflict =
@@ -216,6 +221,7 @@ public class ProfileSharingService {
           if (!shareRepository.tryDecline(shareId, target, clock.instant())) {
             throw new MutationRejection(new ShareRejections.ShareNotPending());
           }
+
           return shareRepository.findFreshById(shareId).orElseThrow();
         },
         _ -> Optional.empty());
@@ -243,11 +249,14 @@ public class ProfileSharingService {
           shareId, "offerer no longer authorized", clock.instant())) {
         throw new MutationRejection(new ShareRejections.ShareNotPending());
       }
+
       return Optional.empty();
     }
+
     if (!shareRepository.tryActivate(shareId, clock.instant())) {
       throw new MutationRejection(new ShareRejections.ShareNotPending());
     }
+
     return Optional.of(shareRepository.findFreshById(shareId).orElseThrow());
   }
 
@@ -260,6 +269,7 @@ public class ProfileSharingService {
           if (!shareRepository.tryEnd(shareId, now)) {
             throw new MutationRejection(new ShareRejections.ShareNotActive());
           }
+
           var share = shareRepository.findFreshById(shareId).orElseThrow();
           // Unsharing returns affected sessions to the picker; a visitor whose Personal
           // Profile's share ended also loses the Household context itself.
@@ -295,6 +305,7 @@ public class ProfileSharingService {
               if (mayView.getAsBoolean()) {
                 throw new AccessDeniedException("Not allowed.");
               }
+
               yield Optional.of(denied.get());
             }
           };
@@ -347,6 +358,7 @@ public class ProfileSharingService {
     if (!mayViewHousehold(identity, householdId)) {
       return List.of();
     }
+
     return shareRepository.findHouseholdPage(householdId, ProfileShareStatus.PENDING, options);
   }
 
@@ -356,6 +368,7 @@ public class ProfileSharingService {
     if (!mayViewProfile(identity, profileId)) {
       return List.of();
     }
+
     return shareRepository.findProfilePage(profileId, options);
   }
 

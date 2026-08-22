@@ -146,28 +146,28 @@ enum Action {
       "acceptProfileShare",
       ResourceKind.SHARE,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.SHARE_FACTS),
+      FactRequirement.SHARE),
   REJECT_PROFILE_SHARE(
       "rejectProfileShare",
       ResourceKind.SHARE,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.SHARE_FACTS),
+      FactRequirement.SHARE),
   CANCEL_PROFILE_SHARE(
       "cancelProfileShare",
       ResourceKind.SHARE,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.SHARE_FACTS),
+      FactRequirement.SHARE),
   END_PROFILE_SHARE(
       "endProfileShare",
       ResourceKind.SHARE,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.SHARE_FACTS),
+      FactRequirement.SHARE),
   FORCE_END_PROFILE_SHARE(
       "forceEndProfileShare",
       ResourceKind.SHARE,
       FreshReauthentication.REQUIRED,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.SHARE_FACTS);
+      FactRequirement.SHARE);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 

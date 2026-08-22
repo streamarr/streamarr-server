@@ -304,6 +304,7 @@ class AuthorizationServiceTest {
       if (hasCurrentRelationships) {
         return (Decision<T>) new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
       }
+
       return new Decision.Denied<>(Decision.DenialReason.POLICY);
     }
   }
