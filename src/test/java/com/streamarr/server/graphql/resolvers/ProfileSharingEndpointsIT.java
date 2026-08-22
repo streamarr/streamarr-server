@@ -1,7 +1,9 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -20,9 +22,17 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,6 +67,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private DataSource dataSource;
 
   private AuthTestSupport.TestIdentity owner;
   private AuthTestSupport.TestIdentity host;
@@ -322,6 +333,54 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should allow one decision when acceptance and rejection race")
+  void shouldAllowOneDecisionWhenAcceptanceAndRejectionRace() throws Exception {
+    var orphan = managedOrphan();
+    var shareId = UUID.fromString(offer(orphan, host.household().getId()));
+    var bearer = authTestSupport.accountBearer(host);
+
+    var responses =
+        raceWhileShareLocked(
+            shareId,
+            () ->
+                graphql(
+                        bearer,
+                        """
+                        mutation { acceptProfileShare(input: {shareId: "%s"}) {
+                          share { status } userErrors { __typename } } }
+                        """
+                            .formatted(shareId))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString(),
+            () ->
+                graphql(
+                        bearer,
+                        """
+                        mutation { rejectProfileShare(input: {shareId: "%s"}) {
+                          share { status } userErrors { __typename } } }
+                        """
+                            .formatted(shareId))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString());
+
+    var results =
+        List.of(
+            mutationResult(responses.getFirst(), "acceptProfileShare"),
+            mutationResult(responses.getLast(), "rejectProfileShare"));
+    assertThat(results).extracting(MutationResult::accepted).containsExactlyInAnyOrder(true, false);
+    assertThat(results)
+        .filteredOn(result -> !result.accepted())
+        .extracting(MutationResult::errorType)
+        .containsExactly("ShareNotPendingError");
+    assertThat(shareRepository.findById(shareId).orElseThrow().getStatus())
+        .isIn(ProfileShareStatus.ACTIVE, ProfileShareStatus.REJECTED);
+  }
+
+  @Test
   @DisplayName("Should clear visitor context and preserve structural shares when a visit ends")
   void shouldClearVisitorContextAndPreserveStructuralSharesWhenVisitEnds() throws Exception {
     // The owner's Personal Profile visits the host's Household.
@@ -426,6 +485,66 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should audit one winner when two force-end requests race")
+  void shouldAuditOneWinnerWhenTwoForceEndRequestsRace() throws Exception {
+    var orphan = managedOrphan();
+    var shareId = UUID.fromString(offer(orphan, host.household().getId()));
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { acceptProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.acceptProfileShare.share.status").value("ACTIVE"));
+
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    try {
+      var bearer = authTestSupport.freshAccountBearer(serverAdmin);
+      var forceEnd =
+          """
+          mutation { forceEndProfileShare(input: {shareId: "%s", reason: "abuse report"}) {
+            share { status } userErrors { __typename } } }
+          """
+              .formatted(shareId);
+      var responses =
+          raceWhileShareLocked(
+              shareId,
+              () ->
+                  graphql(bearer, forceEnd)
+                      .andExpect(status().isOk())
+                      .andReturn()
+                      .getResponse()
+                      .getContentAsString(),
+              () ->
+                  graphql(bearer, forceEnd)
+                      .andExpect(status().isOk())
+                      .andReturn()
+                      .getResponse()
+                      .getContentAsString());
+
+      var results =
+          responses.stream()
+              .map(response -> mutationResult(response, "forceEndProfileShare"))
+              .toList();
+      assertThat(results)
+          .extracting(MutationResult::accepted)
+          .containsExactlyInAnyOrder(true, false);
+      assertThat(results)
+          .filteredOn(result -> !result.accepted())
+          .extracting(MutationResult::errorType)
+          .containsExactly("ShareNotActiveError");
+      assertThat(
+              dsl.fetchCount(
+                  SECURITY_AUDIT_EVENT, SECURITY_AUDIT_EVENT.OPERATION.eq("forceEndProfileShare")))
+          .isEqualTo(1);
+    } finally {
+      authTestSupport.deleteIdentity(serverAdmin);
+    }
+  }
+
+  @Test
   @DisplayName("Should expose only lock and name facts when the offerer runs preflight")
   void shouldExposeOnlyLockAndNameFactsWhenOffererRunsPreflight() throws Exception {
     var kid = managedKid();
@@ -457,17 +576,21 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   void shouldReturnFinalShareWhenLastIsSuppliedWithoutBefore() throws Exception {
     var orphan = managedOrphan();
     offer(orphan, host.household().getId());
+    var expectedId = orderedShareIds(orphan.getId()).getLast();
 
     graphql(
             authTestSupport.accountBearer(owner),
             """
             query { profileShares(profileId: "%s", last: 1) {
-              edges { node { id } } } }
+              edges { node { id } }
+              pageInfo { hasNextPage } } }
             """
                 .formatted(orphan.getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.profileShares.edges[0].node.id").exists());
+        .andExpect(jsonPath("$.data.profileShares.edges.length()").value(1))
+        .andExpect(jsonPath("$.data.profileShares.edges[0].node.id").value(expectedId.toString()))
+        .andExpect(jsonPath("$.data.profileShares.pageInfo.hasNextPage").value(false));
   }
 
   @Test
@@ -475,11 +598,23 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   void shouldApplyDefaultPageSizeWhenBeforeIsSuppliedWithoutLast() throws Exception {
     var orphan = managedOrphan();
     offer(orphan, host.household().getId());
+    var endedShares = new ArrayList<ProfileHouseholdShare>();
+    for (var index = 0; index < 105; index++) {
+      endedShares.add(
+          ProfileHouseholdShare.builder()
+              .profileId(orphan.getId())
+              .householdId(host.household().getId())
+              .status(ProfileShareStatus.ENDED)
+              .endedAt(Instant.now())
+              .build());
+    }
+    shareRepository.saveAllAndFlush(endedShares);
+    var orderedIds = orderedShareIds(orphan.getId());
     var response =
         graphql(
                 authTestSupport.accountBearer(owner),
                 """
-                query { profileShares(profileId: "%s", first: 2) {
+                query { profileShares(profileId: "%s", last: 1) {
                   edges { cursor node { id } } } }
                 """
                     .formatted(orphan.getId()))
@@ -494,20 +629,159 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
             .path("data")
             .path("profileShares")
             .path("edges")
-            .path(1)
+            .path(0)
+            .path("cursor")
+            .asString();
+
+    var beforeResponse =
+        graphql(
+                authTestSupport.accountBearer(owner),
+                """
+                query { profileShares(profileId: "%s", before: "%s") {
+                  edges { node { id } } } }
+                """
+                    .formatted(orphan.getId(), before))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    var expectedIds =
+        orderedIds.subList(orderedIds.size() - 101, orderedIds.size() - 1).stream()
+            .map(UUID::toString)
+            .toList();
+    assertThat(edgeIds(beforeResponse)).containsExactlyElementsOf(expectedIds);
+  }
+
+  @Test
+  @DisplayName("Should return the next share when an after cursor is supplied")
+  void shouldReturnNextShareWhenAfterCursorIsSupplied() throws Exception {
+    var orphan = managedOrphan();
+    offer(orphan, host.household().getId());
+    var orderedIds = orderedShareIds(orphan.getId());
+    var firstPage =
+        graphql(
+                authTestSupport.accountBearer(owner),
+                """
+                query { profileShares(profileId: "%s", first: 1) {
+                  edges { cursor node { id } } } }
+                """
+                    .formatted(orphan.getId()))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var after =
+        objectMapper
+            .readTree(firstPage)
+            .path("data")
+            .path("profileShares")
+            .path("edges")
+            .path(0)
             .path("cursor")
             .asString();
 
     graphql(
             authTestSupport.accountBearer(owner),
             """
-            query { profileShares(profileId: "%s", before: "%s") {
+            query { profileShares(profileId: "%s", after: "%s", first: 1) {
               edges { node { id } } } }
             """
-                .formatted(orphan.getId(), before))
+                .formatted(orphan.getId(), after))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.profileShares.edges[0].node.id").exists());
+        .andExpect(
+            jsonPath("$.data.profileShares.edges[0].node.id").value(orderedIds.get(1).toString()));
+  }
+
+  private List<String> raceWhileShareLocked(
+      UUID shareId, Callable<String> firstMutation, Callable<String> secondMutation)
+      throws Exception {
+    var rowLocked = new CountDownLatch(1);
+    var releaseRow = new CountDownLatch(1);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try {
+        var blocker =
+            executor.submit(
+                () -> {
+                  holdShareRowLock(shareId, rowLocked, releaseRow);
+                  return null;
+                });
+        assertThat(rowLocked.await(10, TimeUnit.SECONDS))
+            .as("share row should be locked before racing mutations")
+            .isTrue();
+
+        var first = executor.submit(firstMutation);
+        var second = executor.submit(secondMutation);
+        await()
+            .atMost(Duration.ofSeconds(10))
+            .untilAsserted(
+                () ->
+                    assertThat(waitingProfileShareTransitions())
+                        .as("both mutations should wait on the same share transition")
+                        .isEqualTo(2));
+
+        releaseRow.countDown();
+        var responses = List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS));
+        blocker.get(10, TimeUnit.SECONDS);
+        return responses;
+      } finally {
+        releaseRow.countDown();
+      }
+    }
+  }
+
+  private void holdShareRowLock(UUID shareId, CountDownLatch rowLocked, CountDownLatch releaseRow)
+      throws Exception {
+    try (var connection = dataSource.getConnection()) {
+      connection.setAutoCommit(false);
+      try (var statement =
+          connection.prepareStatement(
+              "SELECT id FROM profile_household_share WHERE id = ? FOR UPDATE")) {
+        statement.setObject(1, shareId);
+        statement.executeQuery();
+      }
+      rowLocked.countDown();
+      assertThat(releaseRow.await(10, TimeUnit.SECONDS))
+          .as("share row should be released by the race")
+          .isTrue();
+      connection.rollback();
+    }
+  }
+
+  private int waitingProfileShareTransitions() {
+    return dsl.fetchOne(
+            """
+            SELECT count(*)
+            FROM pg_stat_activity
+            WHERE wait_event_type = 'Lock'
+              AND query ILIKE '%update%profile_household_share%'
+            """)
+        .get(0, int.class);
+  }
+
+  private List<UUID> orderedShareIds(UUID profileId) {
+    return dsl.select(PROFILE_HOUSEHOLD_SHARE.ID)
+        .from(PROFILE_HOUSEHOLD_SHARE)
+        .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
+        .orderBy(PROFILE_HOUSEHOLD_SHARE.ID.asc())
+        .fetch(PROFILE_HOUSEHOLD_SHARE.ID);
+  }
+
+  private List<String> edgeIds(String response) {
+    var edges = objectMapper.readTree(response).path("data").path("profileShares").path("edges");
+    var ids = new ArrayList<String>();
+    edges.forEach(edge -> ids.add(edge.path("node").path("id").asString()));
+    return ids;
+  }
+
+  private MutationResult mutationResult(String response, String operation) {
+    var payload = objectMapper.readTree(response).path("data").path(operation);
+    var accepted = !payload.path("share").isMissingNode() && !payload.path("share").isNull();
+    var errorType = payload.path("userErrors").path(0).path("__typename").asString(null);
+    return new MutationResult(accepted, errorType);
   }
 
   private String offer(Profile profile, UUID householdId) throws Exception {
@@ -572,4 +846,6 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
             .content(objectMapper.writeValueAsString(Map.of("query", query))));
   }
+
+  private record MutationResult(boolean accepted, String errorType) {}
 }

@@ -212,7 +212,13 @@ class AuthorizationParityTest {
           MANAGE_PROFILE_PIN,
           OVERRIDE_PROFILE_PIN,
           DELETE_PROFILE,
-          ISSUE_PASSWORD_RESET ->
+          ISSUE_PASSWORD_RESET,
+          OFFER_PROFILE_SHARE,
+          ACCEPT_PROFILE_SHARE,
+          REJECT_PROFILE_SHARE,
+          CANCEL_PROFILE_SHARE,
+          END_PROFILE_SHARE,
+          FORCE_END_PROFILE_SHARE ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
