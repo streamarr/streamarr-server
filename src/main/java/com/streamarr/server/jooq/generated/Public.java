@@ -30,6 +30,7 @@ import com.streamarr.server.jooq.generated.tables.Person;
 import com.streamarr.server.jooq.generated.tables.Profile;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare;
 import com.streamarr.server.jooq.generated.tables.ProfileManager;
+import com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation;
 import com.streamarr.server.jooq.generated.tables.Rating;
 import com.streamarr.server.jooq.generated.tables.RefreshToken;
 import com.streamarr.server.jooq.generated.tables.Review;
@@ -199,6 +200,11 @@ public class Public extends SchemaImpl {
     public final ProfileManager PROFILE_MANAGER = ProfileManager.PROFILE_MANAGER;
 
     /**
+     * The table <code>public.profile_manager_invitation</code>.
+     */
+    public final ProfileManagerInvitation PROFILE_MANAGER_INVITATION = ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
+
+    /**
      * The table <code>public.rating</code>.
      */
     public final Rating RATING = Rating.RATING;
@@ -315,6 +321,7 @@ public class Public extends SchemaImpl {
             Profile.PROFILE,
             ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE,
             ProfileManager.PROFILE_MANAGER,
+            ProfileManagerInvitation.PROFILE_MANAGER_INVITATION,
             Rating.RATING,
             RefreshToken.REFRESH_TOKEN,
             Review.REVIEW,

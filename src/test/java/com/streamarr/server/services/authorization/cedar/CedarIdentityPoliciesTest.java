@@ -10,11 +10,13 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
+import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
 import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
@@ -62,6 +64,8 @@ class CedarIdentityPoliciesTest {
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
   private final FakeProfileManagerRepository managers = new FakeProfileManagerRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
+  private final FakeProfileManagerInvitationRepository managerInvitations =
+      new FakeProfileManagerInvitationRepository();
 
   private final AuthorizationService authorizationService =
       new SecurityContextAuthorizationService(
@@ -82,7 +86,8 @@ class CedarIdentityPoliciesTest {
                       new PrincipalEligibilityContributor(accounts, profiles),
                       new ProfileSupervisionContributor(accounts, profiles, shares),
                       new ProfileDeletionContributor(accounts, managers, shares),
-                      new ShareContributor(shares, profiles, managers, accounts))),
+                      new ShareContributor(shares, profiles, managers, accounts),
+                      new ManagerInvitationContributor(managerInvitations))),
               new ProfilePolicyPlanner(profiles),
               ContributorStubs.systemClockFreshness(),
               new SimpleMeterRegistry()),
@@ -410,9 +415,8 @@ class CedarIdentityPoliciesTest {
   class Administration {
 
     @Test
-    @DisplayName(
-        "Should allow ServerAdmin authority changes when the admin is fresh, live, and enabled")
-    void shouldAllowServerAdminAuthorityChangesWhenAdminIsFreshLiveAndEnabled() {
+    @DisplayName("Should allow authority changes when ServerAdmin is fresh, live, and enabled")
+    void shouldAllowAuthorityChangesWhenServerAdminIsFreshLiveAndEnabled() {
       account.setServerAdmin(true);
       accounts.save(account);
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
@@ -449,8 +453,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should preserve an authority denial when the caller is freshly reauthenticated")
-    void shouldPreserveAuthorityDenialWhenCallerIsFreshlyReauthenticated() {
+    @DisplayName("Should return policy denial when a fresh caller lacks ServerAdmin authority")
+    void shouldReturnPolicyDenialWhenFreshCallerLacksServerAdminAuthority() {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
       var fresh = withReauthenticatedAt(atHome(), Instant.now());
 
@@ -471,9 +475,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName(
-        "Should allow account administration writes only when the caller is a live ServerAdmin")
-    void shouldAllowAccountAdministrationWritesOnlyWhenCallerIsLiveServerAdmin() {
+    @DisplayName("Should allow account administration writes when the caller is a live ServerAdmin")
+    void shouldAllowAccountAdministrationWritesWhenCallerIsLiveServerAdmin() {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
 
       // A HouseholdAdmin is not enough — role changes are ServerAdmin work.
@@ -532,8 +535,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should allow self-service or ServerAdmin rename when an Account is renamed")
-    void shouldAllowSelfServiceOrServerAdminRenameWhenAccountIsRenamed() {
+    @DisplayName("Should allow Account rename when the caller has self or ServerAdmin authority")
+    void shouldAllowAccountRenameWhenCallerHasSelfOrServerAdminAuthority() {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
 
       // Self-targeted: principal and resource are one entity in the slice.
@@ -546,8 +549,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should deny self-service rename when the Account is disabled")
-    void shouldDenySelfServiceRenameWhenAccountIsDisabled() {
+    @DisplayName("Should deny self rename when the Account is disabled")
+    void shouldDenySelfRenameWhenAccountIsDisabled() {
       account.setEnabled(false);
       accounts.save(account);
 
@@ -595,8 +598,8 @@ class CedarIdentityPoliciesTest {
 
     @Test
     @DisplayName(
-        "Should limit kind changes to managers when managers and supervisors edit a Profile")
-    void shouldLimitKindChangesToManagersWhenManagersAndSupervisorsEditProfile() {
+        "Should restrict Profile edits when the caller is a manager or share-derived supervisor")
+    void shouldRestrictProfileEditsWhenCallerIsManagerOrSupervisor() {
       var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
       shares.save(
           activeShareBuilder()
@@ -771,8 +774,9 @@ class CedarIdentityPoliciesTest {
   class Sharing {
 
     @Test
-    @DisplayName("Should limit a sovereign Personal Profile's offerer when a share is offered")
-    void shouldLimitSovereignPersonalProfileOffererWhenShareIsOffered() {
+    @DisplayName(
+        "Should authorize a share offer when the caller has manager or sovereign authority")
+    void shouldAuthorizeShareOfferWhenCallerHasManagerOrSovereignAuthority() {
       // The principal's own unrestricted Adult Personal Profile: offerable by itself.
       assertThat(decide(atHome(), new Intent.OfferProfileShare(personal.getId())))
           .isEqualTo(ALLOWED);
@@ -799,8 +803,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should deny sovereign unsharing when the Personal Profile becomes restricted")
-    void shouldDenySovereignUnsharingWhenPersonalProfileBecomesRestricted() {
+    @DisplayName("Should deny sovereign share ending when the Personal Profile is restricted")
+    void shouldDenySovereignShareEndingWhenPersonalProfileIsRestricted() {
       var visit =
           shares.save(
               activeShareBuilder()
@@ -818,8 +822,8 @@ class CedarIdentityPoliciesTest {
 
     @Test
     @DisplayName(
-        "Should allow only the target's live admin or ServerAdmin when an offer is decided")
-    void shouldAllowOnlyTargetsLiveAdminOrServerAdminWhenOfferIsDecided() {
+        "Should allow a pending offer decision when the caller is target admin or ServerAdmin")
+    void shouldAllowPendingOfferDecisionWhenCallerIsTargetAdminOrServerAdmin() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var offer =
           shares.save(
@@ -849,8 +853,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should allow only the offerer when a pending offer is canceled")
-    void shouldAllowOnlyOffererWhenPendingOfferIsCanceled() {
+    @DisplayName("Should allow cancellation when the caller created the pending offer")
+    void shouldAllowCancellationWhenCallerCreatedPendingOffer() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var offer =
           shares.save(
@@ -877,8 +881,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should allow only an ADR-listed seat when an active share is ended")
-    void shouldAllowOnlyAdrListedSeatWhenActiveShareIsEnded() {
+    @DisplayName("Should authorize an active share end when the caller occupies an ADR-listed seat")
+    void shouldAuthorizeActiveShareEndWhenCallerOccupiesAdrListedSeat() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var hosted =
           shares.save(
@@ -961,6 +965,150 @@ class CedarIdentityPoliciesTest {
 
   private ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> pendingShareBuilder() {
     return ProfileHouseholdShare.builder().status(ProfileShareStatus.PENDING);
+  }
+
+  @Nested
+  @DisplayName("Direct ProfileManagers")
+  class Managers {
+
+    @Test
+    @DisplayName("Should allow a manager invitation only when the caller has durable management")
+    void shouldAllowManagerInvitationOnlyWhenCallerHasDurableManagement() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      assertThat(decide(atHome(), new Intent.InviteProfileManager(orphan.getId())))
+          .isEqualTo(DENIED);
+
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
+      assertThat(decide(atHome(), new Intent.InviteProfileManager(orphan.getId())))
+          .isEqualTo(ALLOWED);
+
+      // A supervising HouseholdAdmin proposes while the restricted Profile is hosted with them.
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      assertThat(decide(atHome(), new Intent.InviteProfileManager(kid.getId()))).isEqualTo(DENIED);
+      shares.share(kid.getId(), account.getHouseholdId(), false);
+      assertThat(decide(atHome(), new Intent.InviteProfileManager(kid.getId()))).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should allow invitation visibility when the caller is a manager or ServerAdmin")
+    void shouldAllowInvitationVisibilityWhenCallerIsManagerOrServerAdmin() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var view = new Intent.ViewManagerInvitations(orphan.getId());
+      assertThat(decide(atHome(), view)).isEqualTo(DENIED);
+
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
+      assertThat(decide(atHome(), view)).isEqualTo(ALLOWED);
+      managers.deleteAll();
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), view)).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should allow an invitation answer when the caller is the named recipient")
+    void shouldAllowInvitationAnswerWhenCallerIsNamedRecipient() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var invitation = pendingManagerInvitation(orphan.getId(), account.getId());
+
+      assertThat(decide(atHome(), new Intent.AcceptManagerInvitation(invitation.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.DeclineManagerInvitation(invitation.getId())))
+          .isEqualTo(ALLOWED);
+
+      // Consent is the recipient's alone: even ServerAdmin cannot answer for them.
+      var someoneElse = pendingManagerInvitation(orphan.getId(), UUID.randomUUID());
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.AcceptManagerInvitation(someoneElse.getId())))
+          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.DeclineManagerInvitation(someoneElse.getId())))
+          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.AcceptManagerInvitation(UUID.randomUUID())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should allow invitation cancellation when the caller is the inviter or ServerAdmin")
+    void shouldAllowInvitationCancellationWhenCallerIsInviterOrServerAdmin() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var strangers = pendingManagerInvitation(orphan.getId(), UUID.randomUUID());
+      assertThat(decide(atHome(), new Intent.CancelManagerInvitation(strangers.getId())))
+          .isEqualTo(DENIED);
+
+      var mine = pendingManagerInvitation(orphan.getId(), UUID.randomUUID());
+      mine.setInviterAccountId(account.getId());
+      managerInvitations.save(mine);
+      assertThat(decide(atHome(), new Intent.CancelManagerInvitation(mine.getId())))
+          .isEqualTo(ALLOWED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.CancelManagerInvitation(strangers.getId())))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should allow relinquishment when the caller has a stored grant")
+    void shouldAllowRelinquishmentWhenCallerHasStoredGrant() {
+      // The sovereign self-manages without a row: nothing to relinquish.
+      assertThat(decide(atHome(), new Intent.RelinquishProfileManagement(personal.getId())))
+          .isEqualTo(DENIED);
+
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
+      assertThat(decide(atHome(), new Intent.RelinquishProfileManagement(orphan.getId())))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should allow manager removal when the caller is the sovereign Account")
+    void shouldAllowManagerRemovalWhenCallerIsSovereignAccount() {
+      assertThat(decide(atHome(), new Intent.RemoveProfileManager(personal.getId())))
+          .isEqualTo(ALLOWED);
+
+      // A direct manager of someone else's Profile is a peer, and peers cannot remove peers.
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
+      assertThat(decide(atHome(), new Intent.RemoveProfileManager(orphan.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should require a fresh ServerAdmin when a manager override is requested")
+    void shouldRequireFreshServerAdminWhenManagerOverrideIsRequested() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var override = new Intent.OverrideProfileManager(orphan.getId());
+
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), override))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), override)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), override))
+          .isEqualTo(ALLOWED);
+    }
+  }
+
+  private ProfileManagerInvitation pendingManagerInvitation(UUID profileId, UUID recipientId) {
+    return managerInvitations.save(
+        ProfileManagerInvitation.builder()
+            .profileId(profileId)
+            .profileName("Joe")
+            .inviterAccountId(UUID.randomUUID())
+            .inviterDisplayName("Inviter")
+            .recipientAccountId(recipientId)
+            .recipientEmail("recipient@example.com")
+            .expiresAt(Instant.now().plusSeconds(3600))
+            .publicId(UUID.randomUUID().toString())
+            .secretDigest(new byte[] {1})
+            .build());
   }
 
   private AuthenticatedIdentity withReauthenticatedAt(AuthenticatedIdentity base, Instant at) {

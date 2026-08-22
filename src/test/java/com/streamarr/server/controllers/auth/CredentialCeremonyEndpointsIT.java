@@ -13,6 +13,8 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
@@ -21,11 +23,13 @@ import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -68,6 +72,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @Autowired private PasswordResetCodeRepository resetCodeRepository;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
+  @Autowired private ProfileManagerInvitationRepository managerInvitationRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
@@ -84,6 +89,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @AfterEach
   void tearDown() {
     dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
+    managerInvitationRepository.deleteAll();
     invitationRepository.deleteAll();
     resetCodeRepository.deleteAll();
     userAccountRepository
@@ -651,12 +657,27 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should connect an existing Profile, end its visits, and reoffer when the invitation is accepted")
-  void shouldConnectExistingProfileEndVisitsAndReofferWhenInvitationAccepted() throws Exception {
+      "Should connect the Profile, end visits, reoffer, and invalidate manager invitations when a CONNECT invitation is accepted")
+  void
+      shouldConnectProfileEndVisitsReofferAndInvalidateManagerInvitationsWhenConnectInvitationIsAccepted()
+          throws Exception {
     var previousHost = authTestSupport.createIdentity();
     try {
       var orphan = orphanVisiting(previousHost.household().getId());
       var code = issueConnectInvitation(orphan.getId(), previousHost.household().getId());
+      var managerInvitation =
+          managerInvitationRepository.saveAndFlush(
+              ProfileManagerInvitation.builder()
+                  .profileId(orphan.getId())
+                  .profileName(orphan.getName())
+                  .inviterAccountId(serverAdmin.account().getId())
+                  .inviterDisplayName(serverAdmin.account().getDisplayName())
+                  .recipientAccountId(previousHost.account().getId())
+                  .recipientEmail(previousHost.account().getEmail())
+                  .expiresAt(Instant.now().plusSeconds(3600))
+                  .publicId(UUID.randomUUID().toString())
+                  .secretDigest(new byte[] {1})
+                  .build());
 
       mockMvc
           .perform(
@@ -708,6 +729,12 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
               .findFirst()
               .orElseThrow();
       assertThat(reoffered.getOfferedByAccountId()).isEqualTo(connected.getId());
+      assertThat(
+              managerInvitationRepository
+                  .findById(managerInvitation.getId())
+                  .orElseThrow()
+                  .getStatus())
+          .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
 
       // The linked Profile can never be connected again.
       graphql(
@@ -723,6 +750,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
               jsonPath("$.data.issueAccountInvitation.userErrors[0].__typename")
                   .value("ProfileAlreadyLinkedError"));
     } finally {
+      managerInvitationRepository.deleteAll();
       userAccountRepository
           .findByEmailIgnoreCase("invitee@example.com")
           .ifPresent(created -> authTestSupport.deleteAccount(created.getId()));

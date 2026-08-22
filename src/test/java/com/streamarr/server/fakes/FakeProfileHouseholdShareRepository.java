@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -185,6 +186,26 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
           share.setStatus(ProfileShareStatus.INVALIDATED);
           share.setInvalidationReason(reason);
           share.setDecidedAt(now);
+          AuditFieldSetter.setLastModifiedOn(share, now);
+        });
+    return pending.size();
+  }
+
+  @Override
+  public int invalidatePendingSharesOfferedBy(
+      UUID profileId, UUID offererAccountId, String reason, Instant now) {
+    var pending =
+        database.values().stream()
+            .filter(share -> share.getProfileId().equals(profileId))
+            .filter(share -> offererAccountId.equals(share.getOfferedByAccountId()))
+            .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+            .toList();
+    pending.forEach(
+        share -> {
+          share.setStatus(ProfileShareStatus.INVALIDATED);
+          share.setInvalidationReason(reason);
+          share.setDecidedAt(now);
+          AuditFieldSetter.setLastModifiedOn(share, now);
         });
     return pending.size();
   }
