@@ -83,16 +83,20 @@ public class AccountLifecycleService {
     if (refusal.isPresent()) {
       return Outcome.rejected((TransferRejections.TransferAccount) refusal.get());
     }
+
     var account = userAccountRepository.findById(command.accountId());
     if (account.isEmpty()) {
       return Outcome.rejected(new TransferRejections.AccountNotFound());
     }
+
     if (householdRepository.findById(command.destinationHouseholdId()).isEmpty()) {
       return Outcome.rejected(new TransferRejections.HouseholdNotFound());
     }
+
     if (command.destinationHouseholdId().equals(account.get().getHouseholdId())) {
       return Outcome.rejected(new TransferRejections.SameHousehold());
     }
+
     var sourceHouseholdId = account.get().getHouseholdId();
     var profileId = account.get().getPersonalProfileId();
     var now = clock.instant();
@@ -102,6 +106,7 @@ public class AccountLifecycleService {
             // The final Account of a Household is handled only by teardown (ADR 0024).
             throw new MutationRejection(new TransferRejections.FinalAccount());
           }
+
           var destinationEmpty =
               userAccountRepository.findByHouseholdId(command.destinationHouseholdId()).isEmpty();
           if (!userAccountRepository.tryTransfer(
@@ -111,10 +116,12 @@ public class AccountLifecycleService {
               destinationEmpty ? HouseholdRole.ADMIN : HouseholdRole.MEMBER)) {
             throw new MutationRejection(new TransferRejections.AccountNotFound());
           }
+
           if (!profileRepository.tryRehome(
               profileId, sourceHouseholdId, command.destinationHouseholdId())) {
             throw new MutationRejection(new TransferRejections.AccountNotFound());
           }
+
           moveHomeAvailability(command, sourceHouseholdId, profileId, now);
           shareRepository.upsertStructuralHomeShare(
               profileId, command.destinationHouseholdId(), now);
@@ -131,6 +138,7 @@ public class AccountLifecycleService {
     if (isBlank(command.reason())) {
       return Outcome.rejected(new TransferRejections.ReasonRequired());
     }
+
     var refusal =
         refusalOf(
             identity,
@@ -141,14 +149,17 @@ public class AccountLifecycleService {
     if (refusal.isPresent()) {
       return Outcome.rejected((TransferRejections.DeleteAccount) refusal.get());
     }
+
     var account = userAccountRepository.findById(command.accountId());
     if (account.isEmpty()) {
       return Outcome.rejected(new TransferRejections.AccountNotFound());
     }
+
     var replacementRefusal = replacementRefusal(command, account.get());
     if (replacementRefusal.isPresent()) {
       return Outcome.rejected(replacementRefusal.get());
     }
+
     return mutationTransactions.write(
         () -> {
           erase(identity, account.get(), command);
@@ -163,6 +174,7 @@ public class AccountLifecycleService {
     if (!"DELETE".equals(confirmation)) {
       return Outcome.rejected(new TransferRejections.ConfirmationRequired());
     }
+
     var refusal =
         refusalOf(
             identity,
@@ -174,6 +186,7 @@ public class AccountLifecycleService {
     if (refusal.isPresent()) {
       return Outcome.rejected((TransferRejections.DeleteMyAccount) refusal.get());
     }
+
     var account = userAccountRepository.findById(identity.accountId()).orElseThrow();
     return mutationTransactions.write(
         () -> {
@@ -197,6 +210,7 @@ public class AccountLifecycleService {
     if (userAccountRepository.findByHouseholdId(account.getHouseholdId()).size() <= 1) {
       throw new MutationRejection(new TransferRejections.FinalAccount());
     }
+
     registrationLifecycle.revokeAllByAccount(account.getId(), "Account deleted", now);
     authSessionRepository.revokeAllForAccount(
         account.getId(), SessionRevocationReason.ADMIN_REVOCATION, now);
@@ -238,6 +252,7 @@ public class AccountLifecycleService {
       authSessionRepository.clearSelections(profileId, sourceHouseholdId, now);
       return;
     }
+
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
@@ -260,13 +275,16 @@ public class AccountLifecycleService {
     if (command.profileDisposition() != ProfileDisposition.KEEP) {
       return Optional.empty();
     }
+
     if (command.replacementManagerAccountId() == null) {
       return Optional.of(new TransferRejections.ReplacementManagerRequired());
     }
+
     var replacement = userAccountRepository.findById(command.replacementManagerAccountId());
     if (replacement.isEmpty()) {
       return Optional.of(new TransferRejections.ReplacementManagerNotFound());
     }
+
     var restricted =
         profileRepository.findById(account.getPersonalProfileId()).orElseThrow().isRestricted();
     // T6: the anchor lives in the Profile's own Household and is themselves unrestricted.
@@ -280,6 +298,7 @@ public class AccountLifecycleService {
     if (!anchored) {
       return Optional.of(new TransferRejections.ReplacementManagerNotEligible());
     }
+
     return Optional.empty();
   }
 
@@ -363,6 +382,7 @@ public class AccountLifecycleService {
               if (mayView.getAsBoolean()) {
                 throw new AccessDeniedException("Not allowed.");
               }
+
               yield Optional.of(denied.get());
             }
           };
