@@ -598,8 +598,8 @@ class CedarIdentityPoliciesTest {
 
     @Test
     @DisplayName(
-        "Should limit kind changes to managers when managers and supervisors edit a Profile")
-    void shouldLimitKindChangesToManagersWhenManagersAndSupervisorsEditProfile() {
+        "Should restrict Profile edits when the caller is a manager or share-derived supervisor")
+    void shouldRestrictProfileEditsWhenCallerIsManagerOrSupervisor() {
       var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
       shares.save(
           activeShareBuilder()
@@ -783,8 +783,9 @@ class CedarIdentityPoliciesTest {
   class Sharing {
 
     @Test
-    @DisplayName("Should limit a sovereign Personal Profile's offerer when a share is offered")
-    void shouldLimitSovereignPersonalProfileOffererWhenShareIsOffered() {
+    @DisplayName(
+        "Should authorize a share offer when the caller has manager or sovereign authority")
+    void shouldAuthorizeShareOfferWhenCallerHasManagerOrSovereignAuthority() {
       // The principal's own unrestricted Adult Personal Profile: offerable by itself.
       assertThat(decide(atHome(), new Intent.OfferProfileShare(personal.getId())))
           .isEqualTo(ALLOWED);
@@ -812,8 +813,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should deny sovereign unsharing when the Personal Profile becomes restricted")
-    void shouldDenySovereignUnsharingWhenPersonalProfileBecomesRestricted() {
+    @DisplayName("Should deny sovereign share ending when the Personal Profile is restricted")
+    void shouldDenySovereignShareEndingWhenPersonalProfileIsRestricted() {
       var visit =
           shares.save(
               activeShareBuilder()
@@ -831,8 +832,8 @@ class CedarIdentityPoliciesTest {
 
     @Test
     @DisplayName(
-        "Should allow only the target's live admin or ServerAdmin when an offer is decided")
-    void shouldAllowOnlyTargetsLiveAdminOrServerAdminWhenOfferIsDecided() {
+        "Should allow a pending offer decision when the caller is target admin or ServerAdmin")
+    void shouldAllowPendingOfferDecisionWhenCallerIsTargetAdminOrServerAdmin() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var offer =
           shares.save(
@@ -907,8 +908,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should allow only an ADR-listed seat when an active share is ended")
-    void shouldAllowOnlyAdrListedSeatWhenActiveShareIsEnded() {
+    @DisplayName("Should authorize an active share end when the caller occupies an ADR-listed seat")
+    void shouldAuthorizeActiveShareEndWhenCallerOccupiesAdrListedSeat() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var hosted =
           shares.save(
@@ -1014,8 +1015,8 @@ class CedarIdentityPoliciesTest {
   class Managers {
 
     @Test
-    @DisplayName("Should let a ProfileManager invite and deny share-derived supervision")
-    void shouldLetProfileManagerInviteAndDenyShareDerivedSupervision() {
+    @DisplayName("Should allow a manager invitation only when the caller has durable management")
+    void shouldAllowManagerInvitationOnlyWhenCallerHasDurableManagement() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       assertThat(decide(atHome(), new Intent.InviteProfileManager(orphan.getId())))
           .isEqualTo(DENIED);
@@ -1033,8 +1034,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let a ProfileManager or ServerAdmin view manager invitations")
-    void shouldLetProfileManagerOrServerAdminViewManagerInvitations() {
+    @DisplayName("Should allow invitation visibility when the caller is a manager or ServerAdmin")
+    void shouldAllowInvitationVisibilityWhenCallerIsManagerOrServerAdmin() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var view = new Intent.ViewManagerInvitations(orphan.getId());
       assertThat(decide(atHome(), view)).isEqualTo(DENIED);
@@ -1050,8 +1051,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let only the named recipient answer an invitation")
-    void shouldLetOnlyNamedRecipientAnswerInvitation() {
+    @DisplayName("Should allow an invitation answer when the caller is the named recipient")
+    void shouldAllowInvitationAnswerWhenCallerIsNamedRecipient() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var invitation = pendingManagerInvitation(orphan.getId(), account.getId());
 
@@ -1073,8 +1074,9 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let the inviter or ServerAdmin cancel a pending invitation")
-    void shouldLetInviterOrServerAdminCancelPendingInvitation() {
+    @DisplayName(
+        "Should allow invitation cancellation when the caller is the inviter or ServerAdmin")
+    void shouldAllowInvitationCancellationWhenCallerIsInviterOrServerAdmin() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var strangers = pendingManagerInvitation(orphan.getId(), UUID.randomUUID());
       assertThat(decide(atHome(), new Intent.CancelManagerInvitation(strangers.getId())))
@@ -1093,8 +1095,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should tie relinquishing to a stored grant, not self-management")
-    void shouldTieRelinquishingToStoredGrantNotSelfManagement() {
+    @DisplayName("Should allow relinquishment when the caller has a stored grant")
+    void shouldAllowRelinquishmentWhenCallerHasStoredGrant() {
       // The sovereign self-manages without a row: nothing to relinquish.
       assertThat(decide(atHome(), new Intent.RelinquishProfileManagement(personal.getId())))
           .isEqualTo(DENIED);
@@ -1107,8 +1109,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let only the sovereign Account remove a direct manager")
-    void shouldLetOnlySovereignAccountRemoveDirectManager() {
+    @DisplayName("Should allow manager removal when the caller is the sovereign Account")
+    void shouldAllowManagerRemovalWhenCallerIsSovereignAccount() {
       assertThat(decide(atHome(), new Intent.RemoveProfileManager(personal.getId())))
           .isEqualTo(ALLOWED);
 
@@ -1121,8 +1123,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should reserve the manager override for a fresh ServerAdmin")
-    void shouldReserveManagerOverrideForFreshServerAdmin() {
+    @DisplayName("Should require a fresh ServerAdmin when a manager override is requested")
+    void shouldRequireFreshServerAdminWhenManagerOverrideIsRequested() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var override = new Intent.OverrideProfileManager(orphan.getId());
 
