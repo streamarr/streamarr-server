@@ -26,6 +26,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -41,6 +42,7 @@ import tools.jackson.databind.ObjectMapper;
  * step up, and revocation, ESN blocks, and unsharing all remove device access at refresh.
  */
 @Tag("IntegrationTest")
+@ResourceLock("server-bootstrap")
 @DisplayName("Device Binding Endpoints Integration Tests")
 class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
 

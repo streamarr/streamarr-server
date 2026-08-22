@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -22,6 +23,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 
 @Tag("IntegrationTest")
+@ResourceLock("server-bootstrap")
 @DisplayName("Device Authorization Collision Integration Tests")
 @Import({DeviceAuthorizationCollisionIT.CollisionCodeConfig.class, AuthTestSupportConfig.class})
 class DeviceAuthorizationCollisionIT extends AbstractIntegrationTest {

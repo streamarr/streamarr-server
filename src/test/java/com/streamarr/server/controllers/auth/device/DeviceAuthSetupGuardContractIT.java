@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.jooq.generated.tables.records.ServerBootstrapRecord;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import org.jooq.DSLContext;
 import org.jooq.Result;
 import org.junit.jupiter.api.AfterEach;
@@ -39,6 +40,8 @@ class DeviceAuthSetupGuardContractIT extends AbstractIntegrationTest {
 
   @Autowired private DSLContext dsl;
 
+  @Autowired private DeviceAuthorizationRepository authorizationRepository;
+
   private Result<ServerBootstrapRecord> claimedRows;
 
   @BeforeEach
@@ -53,8 +56,9 @@ class DeviceAuthSetupGuardContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse issuing a pairing code before setup completes")
-  void shouldRefuseIssuingPairingCodeBeforeSetupCompletes() throws Exception {
+  @DisplayName("Should refuse issuing a pairing code when setup is incomplete")
+  void shouldRefuseIssuingPairingCodeWhenSetupIncomplete() throws Exception {
+    var authorizationsBefore = authorizationRepository.count();
     var errorBody =
         objectMapper.readTree(
             mockMvc
@@ -70,5 +74,6 @@ class DeviceAuthSetupGuardContractIT extends AbstractIntegrationTest {
     assertThat(errorBody.get("code").asString()).isEqualTo("SETUP_INCOMPLETE");
     assertThat(errorBody.get("message").asString())
         .isEqualTo("The server has not completed initial setup.");
+    assertThat(authorizationRepository.count()).isEqualTo(authorizationsBefore);
   }
 }

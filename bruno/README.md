@@ -30,3 +30,6 @@ wait a few seconds while FFmpeg produces it.
 
 Requests tagged `manual` or `destructive` intentionally change durable state. Exclude
 them from broad collection runs unless that behavior is desired.
+The embedded tests are live request-contract checks, not an isolated Maven test suite.
+Mutation requests intentionally build on prior requests: choose a fresh `NEW_PROFILE_NAME`,
+run `Create Profile`, then run `Set Profile PIN` with the chained `NEW_PROFILE_ID`.

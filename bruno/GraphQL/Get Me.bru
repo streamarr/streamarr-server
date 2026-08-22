@@ -55,16 +55,27 @@ tests {
   test("Should return the authenticated identity and its context Household", function() {
     expect(res.status).to.equal(200);
     expect(res.body).to.not.have.property("errors");
-    expect(res.body.data.me.accountId).to.be.a("string");
-    expect(res.body.data.me.contextHousehold.id).to.be.a("string");
+    const me = res.body.data.me;
+    expect(me.accountId).to.be.a("string");
+    expect(me.email).to.be.a("string");
+    expect(me.scope).to.be.oneOf(["ACCOUNT", "HOUSEHOLD", "PROFILE"]);
+    expect(me.deviceBound).to.be.a("boolean");
+    expect(me.contextHousehold.id).to.be.a("string");
+    expect(me.contextHousehold.name).to.be.a("string");
+    expect(bru.getVar("HOUSEHOLD_ID")).to.equal(me.contextHousehold.id);
   });
 
-  test("Should chain the selected or first unlocked Profile", function() {
+  test("Should chain the selected or first unlocked Profile when one is usable", function() {
     const edges = res.body.data.me.selectableProfiles?.edges ?? [];
-    const expectedProfile =
+    const expectedEdge =
       edges.find((edge) => edge.node.selected) ?? edges.find((edge) => !edge.node.locked);
-    if (expectedProfile) {
-      expect(bru.getVar("PROFILE_ID")).to.equal(expectedProfile.node.id);
+    if (!expectedEdge) {
+      expect(edges).to.satisfy((profiles) => profiles.every((edge) => edge.node.locked));
+      return;
     }
+
+    const chainedEdge = edges.find((edge) => edge.node.id === bru.getVar("PROFILE_ID"));
+    expect(chainedEdge).to.not.equal(undefined);
+    expect(chainedEdge.node.id).to.equal(expectedEdge.node.id);
   });
 }
