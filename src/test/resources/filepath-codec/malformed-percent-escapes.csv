@@ -5,7 +5,7 @@
 # Spring copyright: Copyright 2002-present the original author or authors.
 # Spring source: https://github.com/spring-projects/spring-framework/blob/e8729d043887bf0d0baf91e062e909b56eb2b708/spring-web/src/test/java/org/springframework/web/util/UriUtilsTests.java
 # Spring license: Apache-2.0
-# License text: src/test/resources/filepath-codec/licenses/Apache-2.0.txt
+# License text: src/main/resources/META-INF/LICENSE-APACHE-2.0.txt
 # Changes by Streamarr contributors: selected, deduplicated, renamed, expressed as filepath URI path suffixes, and tested against Streamarr's strict-rejection contract.
 # Full attribution and notices: THIRD_PARTY_NOTICES.md
 bad-hex|abc%xyz
