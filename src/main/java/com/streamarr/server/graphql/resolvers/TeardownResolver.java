@@ -4,10 +4,12 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
+import com.streamarr.server.domain.auth.SecurityAuditEventRecordView;
+import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.graphql.Ids;
+import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
-import com.streamarr.server.graphql.cursor.KeysetConnections;
-import com.streamarr.server.graphql.cursor.ListConnections;
+import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.ProfileActivityView;
 import com.streamarr.server.graphql.dto.SecurityAuditEventView;
 import com.streamarr.server.graphql.inputs.TearDownHouseholdInput;
@@ -20,14 +22,13 @@ import com.streamarr.server.services.identity.HouseholdTeardownService.FinalAcco
 import com.streamarr.server.services.identity.HouseholdTeardownService.SecurityAuditPageRequest;
 import com.streamarr.server.services.identity.HouseholdTeardownService.TearDownHouseholdCommand;
 import com.streamarr.server.services.identity.HouseholdTeardownService.TeardownPreflightView;
+import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
-import java.nio.charset.StandardCharsets;
 import java.time.DateTimeException;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 
@@ -35,9 +36,13 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class TeardownResolver {
 
+  private static final int DEFAULT_PAGE_SIZE = 100;
+
   private final AuthorizationService authorizationService;
   private final HouseholdTeardownService householdTeardownService;
   private final PaginationService paginationService;
+  private final CursorUtil cursorUtil;
+  private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsMutation
   public TearDownHouseholdPayload tearDownHousehold(@InputArgument TearDownHouseholdInput input) {
@@ -62,54 +67,25 @@ public class TeardownResolver {
         .orElse(null);
   }
 
-  /** True database keyset paging: the after cursor names the last row already seen. */
   @DgsQuery
   public Connection<SecurityAuditEventView> securityAuditEvents(DataFetchingEnvironment dfe) {
     var options = options(dfe);
-    Instant beforeOccurredAt = null;
-    UUID beforeId = null;
-    var cursor = options.getCursor().orElse(null);
-    if (cursor != null) {
-      var key = decodeCursor(cursor);
-      var separator = key.lastIndexOf('|');
-      if (separator < 0) {
-        throw new InvalidCursorException("Cursor is not valid.");
-      }
-
-      try {
-        beforeOccurredAt = Instant.parse(key.substring(0, separator));
-        beforeId = UUID.fromString(key.substring(separator + 1));
-      } catch (DateTimeException | IllegalArgumentException _) {
-        throw new InvalidCursorException("Cursor is not valid.");
-      }
-    }
-
     var page =
-        householdTeardownService
-            .securityAuditEvents(
-                authorizationService.currentIdentity(),
-                SecurityAuditPageRequest.builder()
-                    .direction(options.getPaginationDirection())
-                    .cursorOccurredAt(beforeOccurredAt)
-                    .cursorId(beforeId)
-                    .limit(options.getLimit())
-                    .build())
-            .stream()
-            .map(SecurityAuditEventView::from)
-            .toList();
-    return KeysetConnections.page(page, SecurityAuditEventView::cursorKey, options);
+        householdTeardownService.securityAuditEvents(
+            authorizationService.currentIdentity(), auditPageRequest(options));
+    return toAuditConnection(page);
   }
 
   @DgsQuery
   public Connection<ProfileActivityView> profileActivity(
       @InputArgument String profileId, DataFetchingEnvironment dfe) {
-    var activity =
-        householdTeardownService
-            .profileActivity(authorizationService.currentIdentity(), Ids.parseUuid(profileId))
-            .stream()
-            .map(ProfileActivityView::from)
-            .toList();
-    return ListConnections.page(activity, view -> view.id().toString(), options(dfe));
+    var options = options(dfe);
+    var page =
+        householdTeardownService.profileActivity(
+            authorizationService.currentIdentity(),
+            Ids.parseUuid(profileId),
+            cursorUtil.decodeKeysetCursor(options));
+    return toActivityConnection(page);
   }
 
   private static FinalAccountDisposition dispositionOf(TearDownHouseholdInput input) {
@@ -130,12 +106,49 @@ public class TeardownResolver {
         .build();
   }
 
-  private static String decodeCursor(String cursor) {
-    try {
-      return new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
-    } catch (IllegalArgumentException _) {
+  private SecurityAuditPageRequest auditPageRequest(PaginationOptions options) {
+    var cursor =
+        options
+            .getCursor()
+            .map(cursorUtil::decodeOpaqueCursor)
+            .map(TeardownResolver::auditCursor)
+            .orElse(null);
+    return SecurityAuditPageRequest.builder()
+        .direction(options.getPaginationDirection())
+        .cursorOccurredAt(cursor == null ? null : cursor.occurredAt())
+        .cursorId(cursor == null ? null : cursor.id())
+        .limit(options.getLimit())
+        .build();
+  }
+
+  private static AuditCursor auditCursor(String key) {
+    var separator = key.lastIndexOf('|');
+    if (separator < 0) {
       throw new InvalidCursorException("Cursor is not valid.");
     }
+
+    try {
+      return new AuditCursor(
+          Instant.parse(key.substring(0, separator)),
+          UUID.fromString(key.substring(separator + 1)));
+    } catch (DateTimeException | IllegalArgumentException _) {
+      throw new InvalidCursorException("Cursor is not valid.");
+    }
+  }
+
+  private Connection<SecurityAuditEventView> toAuditConnection(
+      MediaPage<SecurityAuditEventRecordView> page) {
+    return relayConnectionAdapter.toConnection(
+        page,
+        item -> SecurityAuditEventView.from(item.item()),
+        item -> cursorUtil.encodeOpaqueCursor(item.item().occurredAt() + "|" + item.item().id()));
+  }
+
+  private Connection<ProfileActivityView> toActivityConnection(MediaPage<SessionProgress> page) {
+    return relayConnectionAdapter.toConnection(
+        page,
+        item -> ProfileActivityView.from(item.item()),
+        item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
   }
 
   private PaginationOptions options(DataFetchingEnvironment dfe) {
@@ -143,7 +156,21 @@ public class TeardownResolver {
     String after = dfe.getArgument("after");
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
+    if (first == 0 && last == 0 && before != null) {
+      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
+    }
+
     return paginationService.getPaginationOptions(
-        first == 0 && last == 0 && before == null ? 100 : first, after, last, before);
+        firstOrDefault(first, last, before), after, last, before);
   }
+
+  private static int firstOrDefault(int first, int last, String before) {
+    if (first == 0 && last == 0 && before == null) {
+      return DEFAULT_PAGE_SIZE;
+    }
+
+    return first;
+  }
+
+  private record AuditCursor(Instant occurredAt, UUID id) {}
 }

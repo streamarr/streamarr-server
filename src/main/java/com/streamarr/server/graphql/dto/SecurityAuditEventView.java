@@ -25,9 +25,4 @@ public record SecurityAuditEventView(
         .resources(row.resources())
         .build();
   }
-
-  /** The keyset cursor key: strictly descending (occurredAt, id). */
-  public String cursorKey() {
-    return occurredAt + "|" + id;
-  }
 }
