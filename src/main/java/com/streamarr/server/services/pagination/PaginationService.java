@@ -15,7 +15,7 @@ public class PaginationService {
 
   public PaginationOptions getPaginationOptions(int first, String after, int last, String before) {
     var cursor = getCursor(after, before);
-    var direction = cursor.isEmpty() ? PaginationDirection.FORWARD : getDirection(after, before);
+    var direction = cursor.isEmpty() ? directionWithoutCursor(last) : getDirection(after, before);
     var limit = getLimit(first, last, direction);
 
     return PaginationOptions.builder()
@@ -23,6 +23,10 @@ public class PaginationService {
         .paginationDirection(direction)
         .limit(limit)
         .build();
+  }
+
+  private static PaginationDirection directionWithoutCursor(int last) {
+    return last > 0 ? PaginationDirection.REVERSE : PaginationDirection.FORWARD;
   }
 
   private PaginationDirection getDirection(String after, String before) {

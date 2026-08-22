@@ -15,12 +15,16 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -375,6 +379,62 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         .isInstanceOf(DataIntegrityViolationException.class)
         .extracting(IdentityInvariantsIT::constraintName)
         .isEqualTo("chk_profile_home_anchor");
+  }
+
+  @Test
+  @DisplayName("Should reject the transition when its decline target is not declined")
+  void shouldRejectTransitionWhenDeclineTargetIsNotDeclined() {
+    var owner = create();
+    var host = create();
+    var offer =
+        shareRepository.saveAndFlush(
+            ProfileHouseholdShare.builder()
+                .profileId(owner.profile().getId())
+                .householdId(host.household().getId())
+                .status(ProfileShareStatus.PENDING)
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .build());
+
+    assertThatThrownBy(
+            () ->
+                shareRepository.tryDecline(offer.getId(), ProfileShareStatus.ACTIVE, Instant.now()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(shareRepository.findById(offer.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName("Should fetch one page plus its lookahead when Profile shares are requested")
+  void shouldFetchPagePlusLookaheadWhenProfileSharesAreRequested() {
+    var owner = create();
+    var firstHost = create();
+    var secondHost = create();
+    for (var host : List.of(firstHost, secondHost)) {
+      shareRepository.saveAndFlush(
+          ProfileHouseholdShare.builder()
+              .profileId(owner.profile().getId())
+              .householdId(host.household().getId())
+              .status(ProfileShareStatus.PENDING)
+              .expiresAt(Instant.now().plusSeconds(3600))
+              .build());
+    }
+
+    var options =
+        KeysetPaginationOptions.builder()
+            .paginationOptions(
+                PaginationOptions.builder()
+                    .paginationDirection(PaginationDirection.FORWARD)
+                    .cursor(Optional.empty())
+                    .limit(1)
+                    .build())
+            .build();
+
+    var window = shareRepository.findProfilePage(owner.profile().getId(), options);
+
+    assertThat(window)
+        .hasSize(2)
+        .isSortedAccordingTo(
+            (left, right) -> left.getId().toString().compareTo(right.getId().toString()));
   }
 
   // ---- T8 / PIN ---------------------------------------------------------------------------------

@@ -27,6 +27,8 @@ public enum ProfileShareStatus implements EnumType {
 
     EXPIRED("EXPIRED"),
 
+    INVALIDATED("INVALIDATED"),
+
     ENDED("ENDED");
 
     private final String literal;

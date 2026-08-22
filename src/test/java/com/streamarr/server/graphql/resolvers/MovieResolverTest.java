@@ -8,6 +8,7 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.support.security.WithProfileContext;
@@ -35,6 +36,7 @@ class MovieResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
+  @MockitoBean private UserAccountRepository userAccountRepository;
   @MockitoBean private MovieService movieService;
 
   @Test

@@ -59,6 +59,7 @@ class AuthorizationParityTest {
       case HOUSEHOLD -> "Household";
       case ACCOUNT -> "Account";
       case PROFILE -> "Profile";
+      case SHARE -> "Share";
     };
   }
 
@@ -211,7 +212,13 @@ class AuthorizationParityTest {
           MANAGE_PROFILE_PIN,
           OVERRIDE_PROFILE_PIN,
           DELETE_PROFILE,
-          ISSUE_PASSWORD_RESET ->
+          ISSUE_PASSWORD_RESET,
+          OFFER_PROFILE_SHARE,
+          ACCEPT_PROFILE_SHARE,
+          REJECT_PROFILE_SHARE,
+          CANCEL_PROFILE_SHARE,
+          END_PROFILE_SHARE,
+          FORCE_END_PROFILE_SHARE ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
@@ -267,6 +274,12 @@ class AuthorizationParityTest {
         new Intent.IssueAccountInvitation(),
         new Intent.CancelAccountInvitation(),
         new Intent.ViewAccountInvitations(),
-        new Intent.IssuePasswordReset(id));
+        new Intent.IssuePasswordReset(id),
+        new Intent.OfferProfileShare(id),
+        new Intent.AcceptProfileShare(id),
+        new Intent.RejectProfileShare(id),
+        new Intent.CancelProfileShare(id),
+        new Intent.EndProfileShare(id),
+        new Intent.ForceEndProfileShare(id));
   }
 }

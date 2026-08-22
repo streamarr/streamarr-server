@@ -99,6 +99,16 @@ class ListConnectionsTest {
         .isInstanceOf(InvalidCursorException.class);
   }
 
+  @Test
+  @DisplayName("Should reject a cursor when its decoded value is not a UUID")
+  void shouldRejectCursorWhenDecodedValueIsNotUuid() {
+    var cursor = ListConnections.encode("not-a-uuid");
+
+    assertThatThrownBy(() -> ListConnections.decodeUuid(cursor))
+        .isInstanceOf(InvalidCursorException.class)
+        .hasMessage("Cursor does not identify a UUID.");
+  }
+
   private static PaginationOptions options(
       PaginationDirection direction, String cursor, int limit) {
     return PaginationOptions.builder()

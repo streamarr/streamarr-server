@@ -25,5 +25,7 @@ enum FactRequirement {
   /** Whether the principal supervises the restricted resource Profile in its live Household. */
   PROFILE_SUPERVISION,
   /** The resource Profile's deletability facts: linkage, shares, and the sole-manager rule. */
-  PROFILE_DELETION
+  PROFILE_DELETION,
+  /** The resource Share's lifecycle and the principal's relationships to it, read live. */
+  SHARE
 }

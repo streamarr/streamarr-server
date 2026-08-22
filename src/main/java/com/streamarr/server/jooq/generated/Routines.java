@@ -11,6 +11,7 @@ import com.streamarr.server.jooq.generated.routines.AssertHouseholdRetainsAdmin;
 import com.streamarr.server.jooq.generated.routines.AssertPersonalProfileStructurallyShared;
 import com.streamarr.server.jooq.generated.routines.AssertProfileHomeAnchor;
 import com.streamarr.server.jooq.generated.routines.AssertRestrictedAccountHoldsNoAuthority;
+import com.streamarr.server.jooq.generated.routines.AssertRestrictedSharesSupervised;
 import com.streamarr.server.jooq.generated.routines.BumpHouseholdGuards;
 import com.streamarr.server.jooq.generated.routines.UuidGenerateV1;
 import com.streamarr.server.jooq.generated.routines.UuidGenerateV1mc;
@@ -147,6 +148,19 @@ public class Routines {
     ) {
         AssertRestrictedAccountHoldsNoAuthority p = new AssertRestrictedAccountHoldsNoAuthority();
         p.setCandidateAccountId(candidateAccountId);
+
+        p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.assert_restricted_shares_supervised</code>
+     */
+    public static void assertRestrictedSharesSupervised(
+          Configuration configuration
+        , UUID candidateHouseholdId
+    ) {
+        AssertRestrictedSharesSupervised p = new AssertRestrictedSharesSupervised();
+        p.setCandidateHouseholdId(candidateHouseholdId);
 
         p.execute(configuration);
     }

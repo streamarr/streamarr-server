@@ -45,6 +45,12 @@ public interface AuthorizationService {
   <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent);
 
   /**
+   * Re-evaluates a stored proposal as its originating Account using that Account's current
+   * PostgreSQL relationships, without trusting an old token snapshot.
+   */
+  <T> Decision<T> decideForAccount(UUID accountId, Intent<T> intent);
+
+  /**
    * Gates a whole surface: returns the intent's value when allowed, throws {@link
    * org.springframework.security.access.AccessDeniedException} (top-level FORBIDDEN) when denied,
    * and {@link com.streamarr.server.exceptions.AuthorizationUnavailableException} when no decision

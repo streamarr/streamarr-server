@@ -13,6 +13,7 @@ import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
@@ -74,6 +75,7 @@ class MeResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
+  @MockitoBean private UserAccountRepository userAccountRepository;
   @MockitoBean private IdentityQueryService identityQueryService;
 
   private final UUID accountId = UUID.randomUUID();
