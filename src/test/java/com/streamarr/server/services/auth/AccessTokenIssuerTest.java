@@ -16,7 +16,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -140,7 +139,7 @@ class AccessTokenIssuerTest {
   void shouldRepresentMissingReauthenticationInstantWithoutReturningNull() {
     var context = TokenContext.of(account(), session(account()));
 
-    assertThat(context.reauthenticatedAt()).isEqualTo(Optional.empty());
+    assertThat(context.reauthenticatedAt()).isEmpty();
   }
 
   @Test
