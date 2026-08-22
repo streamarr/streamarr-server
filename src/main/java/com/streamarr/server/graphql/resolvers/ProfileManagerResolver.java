@@ -4,8 +4,10 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.graphql.Ids;
-import com.streamarr.server.graphql.cursor.ListConnections;
+import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.IssuedManagerInvitation;
 import com.streamarr.server.graphql.dto.ManagerInvitationView;
 import com.streamarr.server.graphql.inputs.AcceptManagerInvitationInput;
@@ -28,6 +30,7 @@ import com.streamarr.server.graphql.mutation.managers.RemoveProfileManagerOverri
 import com.streamarr.server.graphql.mutation.managers.RemoveProfileManagerPayload;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
+import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
@@ -39,29 +42,33 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class ProfileManagerResolver {
 
+  private static final int DEFAULT_PAGE_SIZE = 100;
+
   private final AuthorizationService authorizationService;
   private final ProfileManagerAdministrationService managerService;
   private final PaginationService paginationService;
+  private final CursorUtil cursorUtil;
+  private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsQuery
   public Connection<ManagerInvitationView> managerInvitations(
       @InputArgument String profileId, DataFetchingEnvironment dfe) {
-    var pending =
-        managerService
-            .managerInvitations(authorizationService.currentIdentity(), Ids.parseUuid(profileId))
-            .stream()
-            .map(ManagerInvitationView::from)
-            .toList();
-    return ListConnections.page(pending, invitation -> invitation.id().toString(), options(dfe));
+    var options = options(dfe);
+    var page =
+        managerService.managerInvitations(
+            authorizationService.currentIdentity(),
+            Ids.parseUuid(profileId),
+            cursorUtil.decodeKeysetCursor(options));
+    return toConnection(page);
   }
 
   @DgsQuery
   public Connection<ManagerInvitationView> pendingManagerInvitations(DataFetchingEnvironment dfe) {
-    var pending =
-        managerService.pendingManagerInvitations(authorizationService.currentIdentity()).stream()
-            .map(ManagerInvitationView::from)
-            .toList();
-    return ListConnections.page(pending, invitation -> invitation.id().toString(), options(dfe));
+    var options = options(dfe);
+    var page =
+        managerService.pendingManagerInvitations(
+            authorizationService.currentIdentity(), cursorUtil.decodeKeysetCursor(options));
+    return toConnection(page);
   }
 
   @DgsMutation
@@ -177,9 +184,25 @@ public class ProfileManagerResolver {
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
     if (first == 0 && last == 0 && before != null) {
-      return paginationService.getPaginationOptions(first, after, 100, before);
+      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
     }
+
     return paginationService.getPaginationOptions(
-        first == 0 && last == 0 ? 100 : first, after, last, before);
+        firstOrDefault(first, last, before), after, last, before);
+  }
+
+  private Connection<ManagerInvitationView> toConnection(MediaPage<ProfileManagerInvitation> page) {
+    return relayConnectionAdapter.toConnection(
+        page,
+        item -> ManagerInvitationView.from(item.item()),
+        item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
+  }
+
+  private static int firstOrDefault(int first, int last, String before) {
+    if (first == 0 && last == 0 && before == null) {
+      return DEFAULT_PAGE_SIZE;
+    }
+
+    return first;
   }
 }

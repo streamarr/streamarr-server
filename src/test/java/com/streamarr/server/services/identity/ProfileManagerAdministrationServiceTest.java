@@ -33,10 +33,15 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -88,6 +93,7 @@ class ProfileManagerAdministrationServiceTest {
               .build(),
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
+          new PaginationService(),
           clock);
 
   private UserAccount inviter;
@@ -210,6 +216,7 @@ class ProfileManagerAdministrationServiceTest {
       assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), guess)))
           .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     }
+
     var throttled = issued.code();
     var recipientIdentity = recipientIdentity();
     assertThatThrownBy(() -> service.acceptManagerInvitation(recipientIdentity, throttled))
@@ -437,11 +444,14 @@ class ProfileManagerAdministrationServiceTest {
     expired.setExpiresAt(NOW.minusSeconds(1));
     invitations.save(expired);
 
-    assertThat(service.managerInvitations(identity(), orphan.getId())).hasSize(1);
-    assertThat(service.pendingManagerInvitations(recipientIdentity())).hasSize(1);
+    assertThat(service.managerInvitations(identity(), orphan.getId(), paginationOptions()).items())
+        .hasSize(1);
+    assertThat(service.pendingManagerInvitations(recipientIdentity(), paginationOptions()).items())
+        .hasSize(1);
 
     authorization.denyAll();
-    assertThat(service.managerInvitations(identity(), orphan.getId())).isEmpty();
+    assertThat(service.managerInvitations(identity(), orphan.getId(), paginationOptions()).items())
+        .isEmpty();
   }
 
   private UserAccount eligibleAccount(UUID accountId) {
@@ -454,6 +464,17 @@ class ProfileManagerAdministrationServiceTest {
     profiles.save(
         ProfileFixture.defaultProfileBuilder().id(account.getPersonalProfileId()).build());
     return account;
+  }
+
+  private static KeysetPaginationOptions paginationOptions() {
+    return KeysetPaginationOptions.builder()
+        .paginationOptions(
+            PaginationOptions.builder()
+                .paginationDirection(PaginationDirection.FORWARD)
+                .cursor(Optional.empty())
+                .limit(100)
+                .build())
+        .build();
   }
 
   private ProfileManagerInvitation pendingInvitation(
