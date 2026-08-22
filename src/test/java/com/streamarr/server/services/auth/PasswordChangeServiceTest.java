@@ -180,6 +180,7 @@ class PasswordChangeServiceTest {
       assertThatThrownBy(() -> service.changePassword(identity, wrongCommand))
           .isInstanceOf(InvalidCredentialsException.class);
     }
+
     var correctCommand = commandBuilder().currentPassword(currentPassword).build();
 
     assertThatThrownBy(() -> service.changePassword(identity, correctCommand))

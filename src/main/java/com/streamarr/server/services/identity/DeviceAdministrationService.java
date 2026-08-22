@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
 import com.streamarr.server.domain.auth.EsnBlock;
@@ -17,7 +18,12 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.MediaPage;
+import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -46,6 +52,7 @@ public class DeviceAdministrationService {
   private final DeviceRegistrationLifecycle registrationLifecycle;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final MutationTransactions mutationTransactions;
+  private final PaginationService paginationService;
   private final Clock clock;
 
   public Outcome<UUID, DeviceRejections.Revoke> revokeDeviceRegistration(
@@ -167,30 +174,48 @@ public class DeviceAdministrationService {
   }
 
   /** ACTIVE registrations of the Household, for whoever may view its device administration. */
-  public List<DeviceRegistration> householdDevices(
-      AuthenticatedIdentity identity, UUID householdId) {
+  public MediaPage<DeviceRegistration> householdDevices(
+      AuthenticatedIdentity identity, UUID householdId, KeysetPaginationOptions options) {
     if (!mayReadDevices(identity, new Intent.ViewDeviceAdministration(householdId))) {
-      return List.of();
+      return page(List.<DeviceRegistration>of(), options);
     }
 
-    return registrationRepository.findByHouseholdIdAndStatus(
-        householdId, DeviceRegistrationStatus.ACTIVE);
+    return page(
+        registrationRepository.findByHouseholdIdAndStatus(
+            householdId, DeviceRegistrationStatus.ACTIVE),
+        options);
   }
 
-  public List<EsnBlock> esnBlocks(AuthenticatedIdentity identity, UUID householdId) {
+  public MediaPage<EsnBlock> esnBlocks(
+      AuthenticatedIdentity identity, UUID householdId, KeysetPaginationOptions options) {
     if (!mayReadDevices(identity, new Intent.ViewDeviceAdministration(householdId))) {
-      return List.of();
+      return page(List.<EsnBlock>of(), options);
     }
 
-    return esnBlockRepository.findByHouseholdId(householdId);
+    return page(esnBlockRepository.findByHouseholdId(householdId), options);
   }
 
-  public List<EsnBlock> serverEsnBlocks(AuthenticatedIdentity identity) {
+  public MediaPage<EsnBlock> serverEsnBlocks(
+      AuthenticatedIdentity identity, KeysetPaginationOptions options) {
     if (!mayReadDevices(identity, new Intent.ViewServerDeviceAdministration())) {
-      return List.of();
+      return page(List.<EsnBlock>of(), options);
     }
 
-    return esnBlockRepository.findByHouseholdIdIsNull();
+    return page(esnBlockRepository.findByHouseholdIdIsNull(), options);
+  }
+
+  private <T extends BaseAuditableEntity<T>> MediaPage<T> page(
+      List<T> values, KeysetPaginationOptions options) {
+    var items =
+        values.stream()
+            .sorted(
+                Comparator.comparing(
+                        (T value) -> value.getCreatedOn(),
+                        Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(BaseAuditableEntity::getId))
+            .map(value -> new PageItem<>(value, value.getCreatedOn()))
+            .toList();
+    return paginationService.buildKeysetPage(items, options, BaseAuditableEntity::getId);
   }
 
   private <R> Outcome<EsnBlock, R> writeBlock(
