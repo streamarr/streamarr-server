@@ -31,6 +31,7 @@ class ManagerInvitationFactsContributor implements FactContributor {
     if (invitation.isEmpty()) {
       return;
     }
+
     slice.resourceAttribute(
         RECIPIENT_IS_PRINCIPAL,
         new PrimBool(identity.accountId().equals(invitation.get().getRecipientAccountId())));

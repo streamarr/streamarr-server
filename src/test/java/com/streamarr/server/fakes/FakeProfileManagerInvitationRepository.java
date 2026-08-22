@@ -47,6 +47,7 @@ public class FakeProfileManagerInvitationRepository
         || !invitation.getExpiresAt().isAfter(now)) {
       return false;
     }
+
     invitation.setStatus(target);
     invitation.setDecidedAt(now);
     return true;
