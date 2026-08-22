@@ -1313,6 +1313,18 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName("Should deny transfers when the ServerAdmin Account is disabled")
+    void shouldDenyTransfersWhenServerAdminAccountIsDisabled() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      account.setServerAdmin(true);
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(decide(atHome(), new Intent.TransferAccount(account.getId()))).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.TransferProfile(orphan.getId()))).isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should reserve deletions for a fresh ServerAdmin")
     void shouldReserveDeletionsForFreshServerAdmin() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
@@ -1333,20 +1345,47 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let only the fresh, eligible person delete their own Account")
-    void shouldLetOnlyFreshEligiblePersonDeleteTheirOwnAccount() {
+    @DisplayName("Should deny deletions when the ServerAdmin Account is disabled")
+    void shouldDenyDeletionsWhenServerAdminAccountIsDisabled() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      account.setServerAdmin(true);
+      account.setEnabled(false);
+      accounts.save(account);
+      var fresh = withReauthenticatedAt(atHome(), Instant.now());
+
+      assertThat(decide(fresh, new Intent.DeleteAccount(UUID.randomUUID()))).isEqualTo(DENIED);
+      assertThat(decide(fresh, new Intent.ForceDeleteProfile(orphan.getId()))).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should require freshness for an eligible person deleting their own Account")
+    void shouldRequireFreshnessForEligiblePersonDeletingTheirOwnAccount() {
       var selfDeletion = new Intent.DeleteMyAccount();
 
       assertThat(decide(atHome(), selfDeletion)).isEqualTo(REAUTHENTICATION_REQUIRED);
       assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), selfDeletion))
           .isEqualTo(ALLOWED);
+    }
 
-      // A restricted Personal Profile ends eligibility; the ceremony cannot help.
+    @Test
+    @DisplayName("Should deny self-deletion when the Personal Profile is restricted")
+    void shouldDenySelfDeletionWhenPersonalProfileIsRestricted() {
+      var selfDeletion = new Intent.DeleteMyAccount();
+
       personal.setMaximumAllowedRatingAge(12);
       profiles.save(personal);
-      account.setHouseholdRole(HouseholdRole.MEMBER);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), selfDeletion))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should deny self-deletion when the Account is disabled")
+    void shouldDenySelfDeletionWhenAccountIsDisabled() {
+      account.setEnabled(false);
       accounts.save(account);
-      assertThat(decide(withReauthenticatedAt(member(), Instant.now()), selfDeletion))
+
+      assertThat(
+              decide(withReauthenticatedAt(atHome(), Instant.now()), new Intent.DeleteMyAccount()))
           .isEqualTo(DENIED);
     }
   }
