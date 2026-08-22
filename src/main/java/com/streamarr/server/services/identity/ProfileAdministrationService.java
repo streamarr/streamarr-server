@@ -76,20 +76,25 @@ public class ProfileAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((ProfileRejections.CreateProfile) refusal.get());
     }
+
     if (isBlank(command.name())) {
       return Outcome.rejected(new ProfileRejections.ProfileNameRequired());
     }
+
     if (isNegative(command.maximumAllowedRatingAge())) {
       return Outcome.rejected(new ProfileRejections.MaximumAllowedRatingAgeInvalid());
     }
+
     if (householdRepository.findById(command.householdId()).isEmpty()) {
       return Outcome.rejected(new ProfileRejections.HouseholdNotFound());
     }
+
     if (command.localManagerAccountId() != null) {
       var localManager = userAccountRepository.findById(command.localManagerAccountId());
       if (localManager.isEmpty()) {
         return Outcome.rejected(new ProfileRejections.LocalManagerNotFound());
       }
+
       if (!isEligibleLocalManager(localManager.get(), command.householdId())) {
         return Outcome.rejected(new ProfileRejections.ManagerNotEligible());
       }
@@ -120,6 +125,7 @@ public class ProfileAdministrationService {
                     .profileId(profile.getId())
                     .build());
           }
+
           shareRepository.saveAndFlush(
               ProfileHouseholdShare.builder()
                   .profileId(profile.getId())
@@ -144,14 +150,17 @@ public class ProfileAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((ProfileRejections.RenameProfile) refusal.get());
     }
+
     if (isBlank(name)) {
       return Outcome.rejected(new ProfileRejections.ProfileNameRequired());
     }
+
     return mutationTransactions.write(
         () -> {
           if (!profileRepository.tryRename(profileId, name.strip())) {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
+
           return profileRepository.findById(profileId).orElseThrow();
         },
         constraint ->
@@ -166,11 +175,13 @@ public class ProfileAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((ProfileRejections.SetProfilePicture) refusal.get());
     }
+
     return mutationTransactions.write(
         () -> {
           if (!profileRepository.trySetPicture(profileId, picture)) {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
+
           return profileRepository.findById(profileId).orElseThrow();
         },
         _ -> Optional.empty());
@@ -186,6 +197,7 @@ public class ProfileAdministrationService {
     if (maximumAllowedRatingAge < 0) {
       return Outcome.rejected(new ProfileRejections.MaximumAllowedRatingAgeInvalid());
     }
+
     return applyPolicyChange(
         identity,
         new Intent.SetProfileContentCeiling(profileId, maximumAllowedRatingAge),
@@ -203,15 +215,18 @@ public class ProfileAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((ProfileRejections.SetProfilePin) refusal.get());
     }
+
     if (!profilePinHasher.isWellFormed(pin)) {
       return Outcome.rejected(new ProfileRejections.PinMalformed());
     }
+
     var pinHash = profilePinHasher.hash(pin);
     return mutationTransactions.write(
         () -> {
           if (!profileRepository.trySetPinHash(profileId, pinHash)) {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
+
           return profileRepository.findById(profileId).orElseThrow();
         },
         _ -> Optional.empty());
@@ -223,15 +238,18 @@ public class ProfileAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((ProfileRejections.ClearProfilePin) refusal.get());
     }
+
     return mutationTransactions.write(
         () -> {
           var wouldLockIn = wouldLockIn(identity, profileId);
           if (wouldLockIn.isPresent()) {
             throw new MutationRejection(wouldLockIn.get());
           }
+
           if (!profileRepository.trySetPinHash(profileId, null)) {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
+
           return profileRepository.findRefreshedById(profileId).orElseThrow();
         },
         _ -> Optional.empty());
@@ -242,6 +260,7 @@ public class ProfileAdministrationService {
     if (isBlank(reason)) {
       return Outcome.rejected(new ProfileRejections.ReasonRequired());
     }
+
     var refusal =
         refusalOf(
             identity,
@@ -252,15 +271,18 @@ public class ProfileAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected((ProfileRejections.OverrideProfilePin) refusal.get());
     }
+
     if (!profilePinHasher.isWellFormed(pin)) {
       return Outcome.rejected(new ProfileRejections.PinMalformed());
     }
+
     var pinHash = profilePinHasher.hash(pin);
     return mutationTransactions.write(
         () -> {
           if (!profileRepository.trySetPinHash(profileId, pinHash)) {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
+
           securityAuditEventRepository.append(
               SecurityAuditEntry.builder()
                   .operation("overrideProfilePin")
@@ -280,6 +302,7 @@ public class ProfileAdministrationService {
           if (!profileRepository.lockById(profileId)) {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
+
           var refusal =
               refusalOf(
                   identity,
@@ -291,6 +314,7 @@ public class ProfileAdministrationService {
           if (refusal.isPresent()) {
             throw new MutationRejection(refusal.get());
           }
+
           profileRepository.deleteById(profileId);
           profileRepository.flush();
           securityAuditEventRepository.append(
@@ -316,6 +340,7 @@ public class ProfileAdministrationService {
               new ProfilePolicyTarget(transition.targetKind(), transition.targetCeiling()))) {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
+
           // The decision above JPA-loaded this row in this transaction; re-read past the
           // first-level cache or the payload would show the pre-transition state.
           return profileRepository.findRefreshedById(profileId).orElseThrow();
@@ -343,6 +368,7 @@ public class ProfileAdministrationService {
               if (mayViewProfile(identity, profileId)) {
                 yield new AccessDeniedException("Not allowed.");
               }
+
               yield new MutationRejection(new ProfileRejections.ProfileNotFound());
             }
           };
@@ -380,6 +406,7 @@ public class ProfileAdministrationService {
               if (mayView.getAsBoolean()) {
                 throw new AccessDeniedException("Not allowed.");
               }
+
               yield Optional.of(denied.get());
             }
           };
@@ -406,6 +433,7 @@ public class ProfileAdministrationService {
         return Optional.of(new ProfileRejections.WouldLockProfile(householdId, name));
       }
     }
+
     return Optional.empty();
   }
 
@@ -434,6 +462,7 @@ public class ProfileAdministrationService {
         || account.getHouseholdRole() != HouseholdRole.ADMIN) {
       return false;
     }
+
     return profileRepository
         .findById(account.getPersonalProfileId())
         .filter(profile -> profile.getKind() == ProfileKind.ADULT)

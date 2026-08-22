@@ -44,6 +44,7 @@ class ProfileSupervisionContributor implements FactContributor {
     if (!restricted) {
       return false;
     }
+
     return userAccountRepository
         .findById(identity.accountId())
         .filter(account -> account.getHouseholdRole() == HouseholdRole.ADMIN)

@@ -320,6 +320,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
       } finally {
         commitTransition.countDown();
       }
+
       transitioning.get(30, TimeUnit.SECONDS);
       var result = changing.get(30, TimeUnit.SECONDS);
       var response = objectMapper.readTree(result.getResponse().getContentAsString());
@@ -740,6 +741,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
       } finally {
         commitShare.countDown();
       }
+
       sharing.get(30, TimeUnit.SECONDS);
       var result = deleting.get(30, TimeUnit.SECONDS);
       var response = objectMapper.readTree(result.getResponse().getContentAsString());
