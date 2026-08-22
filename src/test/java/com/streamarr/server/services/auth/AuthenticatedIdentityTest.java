@@ -35,8 +35,7 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName(
-      "Should require the membership Household, role, and context Household when assigned")
+  @DisplayName("Should require the membership Household, role, and context Household when assigned")
   void shouldRequireMembershipRoleAndContextWhenAssigned() {
     assertThatThrownBy(() -> profileScopedBuilder().householdId(null))
         .isInstanceOf(NullPointerException.class)
