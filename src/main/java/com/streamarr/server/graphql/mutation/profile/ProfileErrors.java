@@ -50,7 +50,7 @@ public final class ProfileErrors {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
       case ProfileRejections.HomeAnchorRequired _ -> homeAnchorRequired();
-      case ProfileRejections.RestrictedAccountAuthority _ -> restrictedAccountAuthority();
+      case ProfileRejections.RestrictedAccountAuthority _ -> restrictedAccountAuthority("kind");
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
@@ -61,7 +61,8 @@ public final class ProfileErrors {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
       case ProfileRejections.HomeAnchorRequired _ -> homeAnchorRequired();
-      case ProfileRejections.RestrictedAccountAuthority _ -> restrictedAccountAuthority();
+      case ProfileRejections.RestrictedAccountAuthority _ ->
+          restrictedAccountAuthority("maximumAllowedRatingAge");
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
@@ -72,7 +73,8 @@ public final class ProfileErrors {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
       case ProfileRejections.HomeAnchorRequired _ -> homeAnchorRequired();
-      case ProfileRejections.RestrictedAccountAuthority _ -> restrictedAccountAuthority();
+      case ProfileRejections.RestrictedAccountAuthority _ ->
+          restrictedAccountAuthority("maximumAllowedRatingAge");
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
@@ -139,10 +141,9 @@ public final class ProfileErrors {
             + " restricted Profile.");
   }
 
-  private static RestrictedAccountAuthorityError restrictedAccountAuthority() {
+  private static RestrictedAccountAuthorityError restrictedAccountAuthority(String inputPath) {
     return new RestrictedAccountAuthorityError(
-        "A restricted Personal Profile's Account cannot hold authority.",
-        InputPath.of("maximumAllowedRatingAge"));
+        "A restricted Personal Profile's Account cannot hold authority.", InputPath.of(inputPath));
   }
 
   private static MaximumAllowedRatingAgeInvalidError maximumAllowedRatingAgeInvalid() {
