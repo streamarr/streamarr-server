@@ -223,6 +223,43 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   }
 
   @Override
+  public Optional<com.streamarr.server.domain.auth.UserAccount> findRefreshedById(UUID accountId) {
+    var entity = entityManager.find(com.streamarr.server.domain.auth.UserAccount.class, accountId);
+    if (entity == null) {
+      return Optional.empty();
+    }
+
+    entityManager.refresh(entity);
+    return Optional.of(entity);
+  }
+
+  @Override
+  public boolean tryTransfer(
+      UUID accountId,
+      UUID expectedHouseholdId,
+      UUID destinationHouseholdId,
+      com.streamarr.server.domain.auth.HouseholdRole role) {
+    return dsl.update(USER_ACCOUNT)
+            .set(USER_ACCOUNT.HOUSEHOLD_ID, destinationHouseholdId)
+            .set(USER_ACCOUNT.HOUSEHOLD_ROLE, HouseholdRole.valueOf(role.name()))
+            .set(USER_ACCOUNT.LAST_MODIFIED_ON, clock.instant().atOffset(ZoneOffset.UTC))
+            .set(USER_ACCOUNT.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+            .where(USER_ACCOUNT.ID.eq(accountId))
+            .and(USER_ACCOUNT.HOUSEHOLD_ID.eq(expectedHouseholdId))
+            .execute()
+        > 0;
+  }
+
+  @Override
+  public boolean tryDelete(UUID accountId, UUID expectedHouseholdId) {
+    return dsl.deleteFrom(USER_ACCOUNT)
+            .where(USER_ACCOUNT.ID.eq(accountId))
+            .and(USER_ACCOUNT.HOUSEHOLD_ID.eq(expectedHouseholdId))
+            .execute()
+        > 0;
+  }
+
+  @Override
   public boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash) {
     return dsl.select(USER_ACCOUNT.ID)
         .from(USER_ACCOUNT)
