@@ -13,6 +13,10 @@ import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfileSafetyRule;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.MediaPage;
+import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PaginationService;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,31 +39,59 @@ public class IdentityQueryService {
   private final HouseholdRepository householdRepository;
   private final ProfileRepository profileRepository;
   private final AuthorizationService authorizationService;
+  private final PaginationService paginationService;
 
   @Transactional(readOnly = true)
   public MeView meView(AuthenticatedIdentity identity) {
+    var account = requireAuthorizedAccount(identity);
+
+    var membership = summary(account.getHouseholdId());
+    var context = summary(identity.contextHouseholdId());
+    return new MeView(account, identity.scope(), membership, context, false);
+  }
+
+  @Transactional(readOnly = true)
+  public MediaPage<SelectableProfileView> selectableProfiles(
+      AuthenticatedIdentity identity, KeysetPaginationOptions options) {
+    var account = requireAuthorizedAccount(identity);
+    var items =
+        selectableProfiles(identity, account).stream()
+            .map(profile -> new PageItem<>(profile, profile.name()))
+            .toList();
+    return paginationService.buildKeysetPage(items, options, SelectableProfileView::id);
+  }
+
+  @Transactional(readOnly = true)
+  public MediaPage<UsableHouseholdView> usableHouseholds(
+      AuthenticatedIdentity identity, KeysetPaginationOptions options) {
+    var account = requireAuthorizedAccount(identity);
+    var items =
+        usableHouseholds(account).values().stream()
+            .map(
+                household ->
+                    new UsableHouseholdView(
+                        summaryOf(household), household.getId().equals(account.getHouseholdId())))
+            .map(household -> new PageItem<>(household, household.membership() ? 0 : 1))
+            .toList();
+    return paginationService.buildKeysetPage(
+        items, options, household -> household.household().id());
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<SelectableProfileView> selectedProfile(AuthenticatedIdentity identity) {
+    var account = requireAuthorizedAccount(identity);
+    return selectableProfiles(identity, account).stream()
+        .filter(SelectableProfileView::selected)
+        .findFirst();
+  }
+
+  private UserAccount requireAuthorizedAccount(AuthenticatedIdentity identity) {
     var account =
         userAccountRepository
             .findById(identity.accountId())
             .orElseThrow(AuthenticationRequiredException::new);
     authorizationService.requireAllowed(identity, new Intent.ViewProfilePicker());
-
-    var householdsById = usableHouseholds(account);
-    var membership = summary(householdsById, account.getHouseholdId());
-    var context = summary(householdsById, identity.contextHouseholdId());
-    var usable =
-        householdsById.values().stream()
-            .map(
-                household ->
-                    new UsableHouseholdView(
-                        summaryOf(household), household.getId().equals(account.getHouseholdId())))
-            .toList();
-    var profiles = selectableProfiles(identity, account);
-    var selected =
-        profiles.stream().filter(SelectableProfileView::selected).findFirst().orElse(null);
-
-    return new MeView(
-        account, identity.scope(), membership, context, usable, profiles, selected, false);
+    return account;
   }
 
   /** Membership Household first, then visited Households in stable id order. */
@@ -98,13 +130,11 @@ public class IdentityQueryService {
         .toList();
   }
 
-  private static HouseholdSummaryView summary(Map<UUID, Household> households, UUID householdId) {
-    var household = households.get(householdId);
-    if (household == null) {
-      throw new AuthenticationRequiredException();
-    }
-
-    return summaryOf(household);
+  private HouseholdSummaryView summary(UUID householdId) {
+    return householdRepository
+        .findById(householdId)
+        .map(IdentityQueryService::summaryOf)
+        .orElseThrow(AuthenticationRequiredException::new);
   }
 
   private static HouseholdSummaryView summaryOf(Household household) {
@@ -116,9 +146,6 @@ public class IdentityQueryService {
       TokenScope scope,
       HouseholdSummaryView household,
       HouseholdSummaryView contextHousehold,
-      List<UsableHouseholdView> usableHouseholds,
-      List<SelectableProfileView> selectableProfiles,
-      SelectableProfileView selectedProfile,
       boolean deviceBound) {
 
     public HouseholdRole householdRole() {

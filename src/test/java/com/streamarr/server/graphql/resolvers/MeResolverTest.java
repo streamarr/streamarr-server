@@ -13,6 +13,8 @@ import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
+import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
@@ -20,6 +22,8 @@ import com.streamarr.server.services.identity.IdentityQueryService;
 import com.streamarr.server.services.identity.IdentityQueryService.HouseholdSummaryView;
 import com.streamarr.server.services.identity.IdentityQueryService.SelectableProfileView;
 import com.streamarr.server.services.identity.IdentityQueryService.UsableHouseholdView;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +34,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -41,6 +46,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
     classes = {
       MeResolver.class,
       PaginationService.class,
+      CursorUtil.class,
+      RelayConnectionAdapter.class,
+      JacksonAutoConfiguration.class,
       SecurityContextAuthorizationService.class,
       FakeAuthorizationDecider.class,
       StreamarrDataFetcherExceptionHandler.class
@@ -73,6 +81,8 @@ class MeResolverTest {
       """;
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+
+  @Autowired private PaginationService paginationService;
 
   @MockitoBean private IdentityQueryService identityQueryService;
 
@@ -117,18 +127,12 @@ class MeResolverTest {
             true,
             false,
             false);
-    when(identityQueryService.meView(any()))
-        .thenReturn(
-            new IdentityQueryService.MeView(
-                account,
-                TokenScope.ACCOUNT,
-                home,
-                home,
-                List.of(
-                    new UsableHouseholdView(home, true), new UsableHouseholdView(visited, false)),
-                List.of(personal, kid),
-                null,
-                false));
+    var view = new IdentityQueryService.MeView(account, TokenScope.ACCOUNT, home, home, false);
+    when(identityQueryService.meView(any())).thenReturn(view);
+    stubPages(
+        List.of(new UsableHouseholdView(home, true), new UsableHouseholdView(visited, false)),
+        List.of(personal, kid),
+        null);
 
     Map<String, Object> me = dgsQueryExecutor.executeAndExtractJsonPath(ME_QUERY, "data.me");
 
@@ -202,6 +206,24 @@ class MeResolverTest {
   }
 
   @Test
+  @DisplayName("Should return the requested last Profiles when before is omitted")
+  void shouldReturnRequestedLastProfilesWhenBeforeIsOmitted() {
+    stubTwoSelectableProfiles();
+    var query =
+        "{ me { selectableProfiles(last: 1) { edges { node { name } } pageInfo { hasNextPage hasPreviousPage } } } }";
+
+    List<String> names =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            query, "data.me.selectableProfiles.edges[*].node.name");
+    Boolean hasPrevious =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            query, "data.me.selectableProfiles.pageInfo.hasPreviousPage");
+
+    assertThat(names).containsExactly("Kai");
+    assertThat(hasPrevious).isTrue();
+  }
+
+  @Test
   @DisplayName("Should return profile required code when the query service demands a profile")
   void shouldReturnProfileRequiredCodeWhenQueryServiceDemandsProfile() {
     authenticateAtAccountScope();
@@ -232,17 +254,37 @@ class MeResolverTest {
     var second =
         new SelectableProfileView(
             UUID.randomUUID(), "Kai", Optional.empty(), ProfileKind.KID, false, true, false, false);
-    when(identityQueryService.meView(any()))
-        .thenReturn(
-            new IdentityQueryService.MeView(
-                account,
-                TokenScope.PROFILE,
-                home,
-                home,
-                List.of(new UsableHouseholdView(home, true)),
-                List.of(first, second),
-                first,
-                false));
+    var view = new IdentityQueryService.MeView(account, TokenScope.PROFILE, home, home, false);
+    when(identityQueryService.meView(any())).thenReturn(view);
+    stubPages(List.of(new UsableHouseholdView(home, true)), List.of(first, second), first);
+  }
+
+  private void stubPages(
+      List<UsableHouseholdView> households,
+      List<SelectableProfileView> profiles,
+      SelectableProfileView selected) {
+    when(identityQueryService.usableHouseholds(any(), any()))
+        .thenAnswer(
+            invocation -> {
+              KeysetPaginationOptions options = invocation.getArgument(1);
+              var items =
+                  households.stream()
+                      .map(household -> new PageItem<>(household, household.membership() ? 0 : 1))
+                      .toList();
+              return paginationService.buildKeysetPage(
+                  items, options, household -> household.household().id());
+            });
+    when(identityQueryService.selectableProfiles(any(), any()))
+        .thenAnswer(
+            invocation -> {
+              KeysetPaginationOptions options = invocation.getArgument(1);
+              var items =
+                  profiles.stream()
+                      .map(profile -> new PageItem<>(profile, profile.name()))
+                      .toList();
+              return paginationService.buildKeysetPage(items, options, SelectableProfileView::id);
+            });
+    when(identityQueryService.selectedProfile(any())).thenReturn(Optional.ofNullable(selected));
   }
 
   private void authenticateAtAccountScope() {

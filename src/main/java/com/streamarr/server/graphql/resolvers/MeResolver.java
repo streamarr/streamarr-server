@@ -3,7 +3,8 @@ package com.streamarr.server.graphql.resolvers;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsQuery;
-import com.streamarr.server.graphql.cursor.ListConnections;
+import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.HouseholdSummary;
 import com.streamarr.server.graphql.dto.Me;
 import com.streamarr.server.graphql.dto.SelectableProfile;
@@ -25,6 +26,8 @@ public class MeResolver {
   private final AuthorizationService authorizationService;
   private final IdentityQueryService identityQueryService;
   private final PaginationService paginationService;
+  private final CursorUtil cursorUtil;
+  private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsQuery
   public Me me() {
@@ -40,27 +43,41 @@ public class MeResolver {
         .household(toSummary(view.household()))
         .householdRole(view.householdRole())
         .contextHousehold(toSummary(view.contextHousehold()))
-        .usableHouseholds(view.usableHouseholds().stream().map(MeResolver::toUsable).toList())
-        .selectableProfiles(
-            view.selectableProfiles().stream().map(MeResolver::toSelectable).toList())
-        .selectedProfile(
-            view.selectedProfile() == null ? null : toSelectable(view.selectedProfile()))
         .deviceBound(view.deviceBound())
         .build();
   }
 
   @DgsData(parentType = "Me", field = "usableHouseholds")
   public Connection<UsableHousehold> usableHouseholds(DataFetchingEnvironment dfe) {
-    Me me = dfe.getSource();
-    return ListConnections.page(
-        me.usableHouseholds(), usable -> usable.household().id().toString(), options(dfe));
+    var identity = authorizationService.currentIdentity();
+    var options = options(dfe);
+    var page =
+        identityQueryService.usableHouseholds(identity, cursorUtil.decodeKeysetCursor(options));
+    return relayConnectionAdapter.toConnection(
+        page,
+        item -> toUsable(item.item()),
+        item -> cursorUtil.encodeKeysetCursor(item.item().household().id()));
   }
 
   @DgsData(parentType = "Me", field = "selectableProfiles")
   public Connection<SelectableProfile> selectableProfiles(DataFetchingEnvironment dfe) {
-    Me me = dfe.getSource();
-    return ListConnections.page(
-        me.selectableProfiles(), profile -> profile.id().toString(), options(dfe));
+    var identity = authorizationService.currentIdentity();
+    var options = options(dfe);
+    var page =
+        identityQueryService.selectableProfiles(identity, cursorUtil.decodeKeysetCursor(options));
+    return relayConnectionAdapter.toConnection(
+        page,
+        item -> toSelectable(item.item()),
+        item -> cursorUtil.encodeKeysetCursor(item.item().id()));
+  }
+
+  @DgsData(parentType = "Me", field = "selectedProfile")
+  public SelectableProfile selectedProfile() {
+    var identity = authorizationService.currentIdentity();
+    return identityQueryService
+        .selectedProfile(identity)
+        .map(MeResolver::toSelectable)
+        .orElse(null);
   }
 
   private PaginationOptions options(DataFetchingEnvironment dfe) {

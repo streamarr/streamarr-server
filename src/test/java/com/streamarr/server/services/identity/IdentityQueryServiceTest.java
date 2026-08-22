@@ -2,12 +2,10 @@ package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.groups.Tuple.tuple;
 
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -21,6 +19,11 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.PaginationService;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -66,62 +69,90 @@ class IdentityQueryServiceTest {
     shares.share(personal.getId(), home.getId(), true);
     shares.share(personal.getId(), visited.getId(), false);
     authorization = new FakeAuthorizationService(identity(home.getId(), null));
-    service = new IdentityQueryService(accounts, households, profiles, authorization);
+    service =
+        new IdentityQueryService(
+            accounts, households, profiles, authorization, new PaginationService());
   }
 
   @Test
-  @DisplayName(
-      "Should describe the Account, its Households, and the picker when Me view is requested")
-  void shouldDescribeAccountHouseholdsAndPickerWhenMeViewIsRequested() {
-    var kid =
-        profiles.save(
-            ProfileFixture.kidProfileBuilder()
-                .householdId(home.getId())
-                .name("Kai")
-                .picture("kai.png")
-                .pinHash("{argon2id}x")
-                .build());
-    shares.share(kid.getId(), home.getId(), false);
-
-    var me = service.meView(identity(home.getId(), kid.getId()));
+  @DisplayName("Should describe the Account and Household context when Me view is requested")
+  void shouldDescribeAccountAndHouseholdContextWhenMeViewIsRequested() {
+    var me = service.meView(identity(home.getId(), personal.getId()));
 
     assertThat(me.account().getId()).isEqualTo(account.getId());
     assertThat(me.scope()).isEqualTo(TokenScope.PROFILE);
     assertThat(me.household().name()).isEqualTo("Home");
     assertThat(me.householdRole()).isEqualTo(HouseholdRole.MEMBER);
     assertThat(me.contextHousehold().name()).isEqualTo("Home");
-    assertThat(me.usableHouseholds())
-        .extracting(
-            view -> view.household().name(), IdentityQueryService.UsableHouseholdView::membership)
-        .containsExactly(tuple("Home", true), tuple("Grandma", false));
-    assertThat(me.selectableProfiles())
-        .extracting(IdentityQueryService.SelectableProfileView::name)
-        .containsExactly("Andrew", "Kai");
-    var andrew = me.selectableProfiles().getFirst();
-    assertThat(andrew.personal()).isTrue();
-    assertThat(andrew.pinConfigured()).isFalse();
-    assertThat(andrew.locked()).as("a Kid is present and Andrew has no PIN").isTrue();
-    assertThat(andrew.selected()).isFalse();
-    var kaiView = me.selectableProfiles().getLast();
-    assertThat(kaiView.kind()).isEqualTo(ProfileKind.KID);
-    assertThat(kaiView.picture()).contains("kai.png");
-    assertThat(kaiView.pinConfigured()).isTrue();
-    assertThat(kaiView.selected()).isTrue();
-    assertThat(me.selectedProfile()).isEqualTo(kaiView);
     assertThat(me.deviceBound()).isFalse();
     assertThat(authorization.recordedIntents()).containsExactly(new Intent.ViewProfilePicker());
   }
 
   @Test
-  @DisplayName("Should show the visited Household's picker when that is the context")
-  void shouldShowVisitedHouseholdsPickerWhenThatIsContext() {
+  @DisplayName("Should show the visited Household when that is the context")
+  void shouldShowVisitedHouseholdWhenThatIsContext() {
     var me = service.meView(identity(visited.getId(), null));
 
     assertThat(me.contextHousehold().name()).isEqualTo("Grandma");
-    assertThat(me.selectableProfiles())
-        .extracting(IdentityQueryService.SelectableProfileView::name)
-        .containsExactly("Andrew");
-    assertThat(me.selectedProfile()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should return the requested first page of selectable Profiles")
+  void shouldReturnRequestedFirstPageOfSelectableProfiles() {
+    var kid =
+        profiles.save(
+            ProfileFixture.kidProfileBuilder().householdId(home.getId()).name("Kai").build());
+    shares.share(kid.getId(), home.getId(), false);
+    var options =
+        KeysetPaginationOptions.builder()
+            .paginationOptions(
+                PaginationOptions.builder()
+                    .paginationDirection(PaginationDirection.FORWARD)
+                    .cursor(Optional.empty())
+                    .limit(1)
+                    .build())
+            .build();
+
+    var page = service.selectableProfiles(identity(home.getId(), null), options);
+
+    assertThat(page.items()).extracting(item -> item.item().name()).containsExactly("Andrew");
+    assertThat(page.hasNextPage()).isTrue();
+    assertThat(page.hasPreviousPage()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should return the selected Profile only when requested")
+  void shouldReturnSelectedProfileOnlyWhenRequested() {
+    var kid =
+        profiles.save(
+            ProfileFixture.kidProfileBuilder().householdId(home.getId()).name("Kai").build());
+    shares.share(kid.getId(), home.getId(), false);
+
+    var selected = service.selectedProfile(identity(home.getId(), kid.getId()));
+
+    assertThat(selected).map(IdentityQueryService.SelectableProfileView::name).contains("Kai");
+  }
+
+  @Test
+  @DisplayName("Should return the requested first page of usable Households")
+  void shouldReturnRequestedFirstPageOfUsableHouseholds() {
+    var options =
+        KeysetPaginationOptions.builder()
+            .paginationOptions(
+                PaginationOptions.builder()
+                    .paginationDirection(PaginationDirection.FORWARD)
+                    .cursor(Optional.empty())
+                    .limit(1)
+                    .build())
+            .build();
+
+    var page = service.usableHouseholds(identity(home.getId(), null), options);
+
+    assertThat(page.items())
+        .extracting(item -> item.item().household().name())
+        .containsExactly("Home");
+    assertThat(page.hasNextPage()).isTrue();
+    assertThat(page.hasPreviousPage()).isFalse();
   }
 
   @Test
@@ -131,6 +162,24 @@ class IdentityQueryServiceTest {
     var identity = identity(home.getId(), null);
 
     assertThatThrownBy(() -> service.meView(identity)).isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when paged Profiles are not allowed")
+  void shouldFailClosedWhenPagedProfilesAreNotAllowed() {
+    authorization.denyAll();
+    var options =
+        KeysetPaginationOptions.builder()
+            .paginationOptions(
+                PaginationOptions.builder()
+                    .paginationDirection(PaginationDirection.FORWARD)
+                    .cursor(Optional.empty())
+                    .limit(1)
+                    .build())
+            .build();
+
+    assertThatThrownBy(() -> service.selectableProfiles(identity(home.getId(), null), options))
+        .isInstanceOf(AccessDeniedException.class);
   }
 
   @Test
