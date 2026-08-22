@@ -38,7 +38,7 @@ public final class PostgresLockTestSupport {
   }
 
   public static int awaitBlockedBackendPid(
-      Connection observer, int blockerPid, String expectedWaitEvent) throws SQLException {
+      Connection observer, int blockerPid, String expectedWaitEvent) {
     var blockedPid = new AtomicInteger();
     await()
         .atMost(Duration.ofSeconds(5))

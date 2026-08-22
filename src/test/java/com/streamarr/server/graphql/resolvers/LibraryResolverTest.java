@@ -754,10 +754,14 @@ class LibraryResolverTest {
     }
 
     @Override
-    public void removeLibrary(UUID libraryId) {}
+    public void removeLibrary(UUID libraryId) {
+      assertThat(libraryId).isNotNull();
+    }
 
     @Override
-    public void triggerAsyncScan(UUID libraryId) {}
+    public void triggerAsyncScan(UUID libraryId) {
+      assertThat(libraryId).isNotNull();
+    }
 
     @Override
     public void triggerAsyncRefresh(UUID libraryId, ImageRefreshMode imageRefreshMode) {

@@ -40,7 +40,7 @@ class ImageRepositoryCustomImplTest {
     try (var connection = new MockConnection(_ -> new MockResult[] {new MockResult(1)})) {
       var repository =
           new ImageRepositoryCustomImpl(
-              DSL.using(connection, SQLDialect.POSTGRES), () -> Optional.empty(), null);
+              DSL.using(connection, SQLDialect.POSTGRES), Optional::empty, null);
 
       assertThat(repository.insertAllIfAbsent(List.of(image))).containsExactly(imageId);
     }
