@@ -16,14 +16,22 @@ body:graphql {
       accountId
       email
       scope
-      memberships {
-        householdId
-        householdName
-        householdRole
-        profiles {
-          id
-          name
-          active
+      deviceBound
+      contextHousehold {
+        id
+        name
+      }
+      selectableProfiles(first: 100) {
+        edges {
+          node {
+            id
+            name
+            kind
+            personal
+            pinConfigured
+            locked
+            selected
+          }
         }
       }
     }
@@ -31,19 +39,43 @@ body:graphql {
 }
 
 script:post-response {
-  if (res.status === 200 && res.body.data?.me?.memberships?.length) {
-    const membership = res.body.data.me.memberships[0];
-    bru.setVar("HOUSEHOLD_ID", membership.householdId);
-    if (membership.profiles.length) {
-      bru.setVar("PROFILE_ID", membership.profiles[0].id);
+  if (res.status === 200 && res.body.data?.me) {
+    const me = res.body.data.me;
+    bru.setVar("HOUSEHOLD_ID", me.contextHousehold.id);
+    const edges = me.selectableProfiles?.edges ?? [];
+    const profile =
+      edges.find((edge) => edge.node.selected) ?? edges.find((edge) => !edge.node.locked);
+    if (profile) {
+      bru.setVar("PROFILE_ID", profile.node.id);
     }
   }
 }
 
 tests {
-  test("Should return the authenticated identity and memberships", function() {
+  test("Should return the authenticated identity and its context Household", function() {
     expect(res.status).to.equal(200);
     expect(res.body).to.not.have.property("errors");
-    expect(res.body.data.me.accountId).to.be.a("string");
+    const me = res.body.data.me;
+    expect(me.accountId).to.be.a("string");
+    expect(me.email).to.be.a("string");
+    expect(me.scope).to.be.oneOf(["ACCOUNT", "HOUSEHOLD", "PROFILE"]);
+    expect(me.deviceBound).to.be.a("boolean");
+    expect(me.contextHousehold.id).to.be.a("string");
+    expect(me.contextHousehold.name).to.be.a("string");
+    expect(bru.getVar("HOUSEHOLD_ID")).to.equal(me.contextHousehold.id);
+  });
+
+  test("Should chain the selected or first unlocked Profile when one is usable", function() {
+    const edges = res.body.data.me.selectableProfiles?.edges ?? [];
+    const expectedEdge =
+      edges.find((edge) => edge.node.selected) ?? edges.find((edge) => !edge.node.locked);
+    if (!expectedEdge) {
+      expect(edges).to.satisfy((profiles) => profiles.every((edge) => edge.node.locked));
+      return;
+    }
+
+    const chainedEdge = edges.find((edge) => edge.node.id === bru.getVar("PROFILE_ID"));
+    expect(chainedEdge).to.not.equal(undefined);
+    expect(chainedEdge.node.id).to.equal(expectedEdge.node.id);
   });
 }

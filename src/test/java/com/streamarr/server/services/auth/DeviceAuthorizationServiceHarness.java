@@ -4,6 +4,7 @@ import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
+import com.streamarr.server.fakes.FakeServerBootstrapRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
@@ -12,6 +13,7 @@ import com.streamarr.server.repositories.auth.RefreshTokenRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.UUID;
 import lombok.Builder;
 
 /**
@@ -24,6 +26,13 @@ public final class DeviceAuthorizationServiceHarness {
       "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQga+ZKCbAcyZIb7k2FE8rMPFtIpTdzX2dR/csZ8k6A95uhRANCAAQawOmVKMDLAOsboxKLb9khGsWyxwcIikucXDCfX18ME5X9/kqSS2vdMnFfZ6KR12U/Sy/EwOwnc82xFAyFdNbe";
 
   private DeviceAuthorizationServiceHarness() {}
+
+  /** Pairing presumes a set-up server; the guard has its own dedicated test. */
+  private static FakeServerBootstrapRepository claimedBootstrap() {
+    var bootstrap = new FakeServerBootstrapRepository();
+    bootstrap.claim(UUID.randomUUID());
+    return bootstrap;
+  }
 
   @Builder(builderMethodName = "harness")
   private static DeviceAuthorizationService build(
@@ -57,6 +66,7 @@ public final class DeviceAuthorizationServiceHarness {
         accounts,
         registrations,
         esnBlocks,
+        claimedBootstrap(),
         new DeviceRegistrationLifecycle(registrations, sessions),
         new RefreshTokenService(
             sessions,
