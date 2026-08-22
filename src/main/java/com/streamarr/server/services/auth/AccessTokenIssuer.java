@@ -82,6 +82,7 @@ public class AccessTokenIssuer {
     if (scope == TokenScope.PROFILE) {
       claims.claim(TokenClaims.PROFILE_ID, context.profileId().toString());
     }
+
     context
         .reauthenticatedAt()
         .ifPresent(

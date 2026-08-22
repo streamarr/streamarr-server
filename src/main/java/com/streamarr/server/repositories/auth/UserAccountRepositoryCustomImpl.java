@@ -98,6 +98,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     if (reverse) {
       pages.values().forEach(Collections::reverse);
     }
+
     return pages;
   }
 
@@ -106,6 +107,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     if (options.getCursorId().isEmpty()) {
       return noCondition();
     }
+
     var cursorName = lower(val(options.getMediaFilter().getPreviousSortFieldValue().toString()));
     var cursorId = options.getCursorId().orElseThrow();
     var fields = row(displayName, USER_ACCOUNT.ID);

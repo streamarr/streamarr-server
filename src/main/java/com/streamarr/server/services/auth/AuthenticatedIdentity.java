@@ -38,12 +38,15 @@ public record AuthenticatedIdentity(
     if (scope == TokenScope.ACCOUNT && profileId != null) {
       throw new IllegalArgumentException("Account scope cannot carry a selected profile");
     }
+
     if (scope != TokenScope.ACCOUNT && profileId == null) {
       throw new IllegalArgumentException("Profile and playback scope require a selected profile");
     }
+
     if (scope == TokenScope.PLAYBACK && streamSessionId == null) {
       throw new IllegalArgumentException("Playback scope requires a stream session");
     }
+
     if (scope != TokenScope.PLAYBACK && streamSessionId != null) {
       throw new IllegalArgumentException("Only playback scope can carry a stream session");
     }
@@ -70,6 +73,7 @@ public record AuthenticatedIdentity(
     if (profileId == null) {
       throw new ProfileRequiredException();
     }
+
     return PlaybackAuthority.builder()
         .authSessionId(authSessionId)
         .accountId(accountId)
@@ -83,6 +87,7 @@ public record AuthenticatedIdentity(
     if (value == null) {
       return null;
     }
+
     return UUID.fromString(value);
   }
 }

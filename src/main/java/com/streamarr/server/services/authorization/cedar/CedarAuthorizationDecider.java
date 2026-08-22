@@ -54,9 +54,11 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
       if (sliceViolation.isPresent()) {
         return failClosed(FailureCause.INVALID_SLICE, check, sliceViolation.get());
       }
+
       if (!check.action().requiresFreshReauthentication()) {
         return evaluate(check, slice, entities, plan.value());
       }
+
       return decideWithFreshness(identity, check, slice, entities, plan.value());
     } catch (InvalidEntitySliceException e) {
       log.error(
@@ -99,10 +101,12 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
     if (fresh || !(decision instanceof Decision.Denied<T>)) {
       return decision;
     }
+
     var stepUp = evaluate(check.withFreshReauthentication(true), slice, entities, value);
     if (stepUp instanceof Decision.Allowed<T>) {
       return new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED);
     }
+
     return decision;
   }
 

@@ -49,6 +49,7 @@ public class AccountAdministrationService {
     if (isBlank(reason)) {
       return Outcome.rejected(new AdministrationRejections.ReasonRequired());
     }
+
     return transition(
         identity,
         new Intent.GrantServerAdmin(accountId),
@@ -68,6 +69,7 @@ public class AccountAdministrationService {
     if (isBlank(reason)) {
       return Outcome.rejected(new AdministrationRejections.ReasonRequired());
     }
+
     return transition(
         identity,
         new Intent.RevokeServerAdmin(accountId),
@@ -146,6 +148,7 @@ public class AccountAdministrationService {
     if (isBlank(displayName)) {
       return Outcome.rejected(new AdministrationRejections.DisplayNameRequired());
     }
+
     return transition(
         identity,
         new Intent.RenameAccount(accountId),
@@ -173,17 +176,21 @@ public class AccountAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
+
     var target = userAccountRepository.findById(accountId);
     if (target.isEmpty()) {
       return Outcome.rejected(plan.notFound().get());
     }
+
     if (plan.transition().getAsBoolean()) {
       plan.runAfterTransition();
       if (plan.isAudited()) {
         securityAuditEventRepository.append(auditEntry(identity, plan, target.get()));
       }
+
       userAccountRepository.refresh(target.get());
     }
+
     return Outcome.accepted(target.get());
   }
 
@@ -204,6 +211,7 @@ public class AccountAdministrationService {
               if (mayViewAccount(identity, accountId)) {
                 throw new AccessDeniedException("Not allowed.");
               }
+
               yield Optional.of(plan.notFound().get());
             }
           };
@@ -261,6 +269,7 @@ public class AccountAdministrationService {
       if (constraintName != null && constraintName.equals(violated)) {
         return Optional.of(constraintRejection.get());
       }
+
       return Optional.empty();
     }
 

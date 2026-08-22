@@ -202,6 +202,7 @@ public class AuthController {
           refreshed.rawRefreshToken(),
           carrier.cookieMode());
     }
+
     return respondAccessOnly(refreshed.accessToken(), carrier.cookieMode());
   }
 
