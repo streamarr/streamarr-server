@@ -57,15 +57,18 @@ class AccountRemoval {
         destinationEmpty ? HouseholdRole.ADMIN : HouseholdRole.MEMBER)) {
       return false;
     }
+
     if (!profileRepository.tryRehome(profileId, sourceHouseholdId, destinationHouseholdId)) {
       return false;
     }
+
     if (sourceAccess == SourceAccess.KEEP_AS_VISITOR) {
       shareRepository.tryDemoteStructural(profileId, sourceHouseholdId, now);
       authSessionRepository.clearSelections(profileId, sourceHouseholdId, now);
     } else {
       endSourceAccess(accountId, profileId, sourceHouseholdId, now);
     }
+
     shareRepository.upsertStructuralHomeShare(profileId, destinationHouseholdId, now);
     return true;
   }
@@ -96,6 +99,7 @@ class AccountRemoval {
       deleteAccountRow(account);
       return;
     }
+
     deleteAccountRow(account);
     deleteProfile(profileId, now);
   }
