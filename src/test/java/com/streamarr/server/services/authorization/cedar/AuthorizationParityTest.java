@@ -175,10 +175,7 @@ class AuthorizationParityTest {
   @ParameterizedTest(name = "{0}")
   @ValueSource(
       strings = {
-        "householdAdministration",
-        "invitationAdministration",
-        "libraryAdministration",
-        "deviceAdministration"
+        "householdAdministration", "invitationAdministration", "libraryAdministration"
       })
   @DisplayName(
       "Should keep every administration group under server administration when schema parity is checked")

@@ -2,12 +2,36 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.repositories.auth.EsnBlockRepository;
+import java.sql.SQLException;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 
 public class FakeEsnBlockRepository extends FakeJpaRepository<EsnBlock>
     implements EsnBlockRepository {
+
+  @Override
+  public <S extends EsnBlock> S save(S entity) {
+    var duplicateScope =
+        database.values().stream()
+            .anyMatch(
+                block ->
+                    !Objects.equals(block.getId(), entity.getId())
+                        && block.getEsn().equals(entity.getEsn())
+                        && Objects.equals(block.getHouseholdId(), entity.getHouseholdId()));
+    if (duplicateScope) {
+      var constraint = "uq_esn_block_scope";
+      var message = "duplicate key value violates unique constraint \"%s\"".formatted(constraint);
+      throw new DataIntegrityViolationException(
+          message,
+          new ConstraintViolationException(
+              message, new SQLException(message, "23505"), constraint));
+    }
+    return super.save(entity);
+  }
 
   @Override
   public List<EsnBlock> findByHouseholdId(UUID householdId) {
