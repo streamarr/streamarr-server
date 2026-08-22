@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.fixtures.ProfileHouseholdShareFixture.activeShareBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -85,8 +86,9 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should create a pending offer with its offerer and expiry")
-  void shouldCreatePendingOfferWithItsOffererAndExpiry() {
+  @DisplayName(
+      "Should create a pending offer with its offerer and expiry when an offer is authorized")
+  void shouldCreatePendingOfferWithOffererAndExpiryWhenOfferIsAuthorized() {
     var offered = service.offerProfileShare(identity(), profile.getId(), household.getId());
 
     assertThat(offered).isInstanceOf(Outcome.Accepted.class);
@@ -102,8 +104,8 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should read hidden targets as not found under the oracle rule")
-  void shouldReadHiddenTargetsAsNotFoundUnderOracleRule() {
+  @DisplayName("Should return not-found when offer targets are hidden by the oracle rule")
+  void shouldReturnNotFoundWhenOfferTargetsAreHiddenByOracleRule() {
     authorization.denyAll();
     assertThat(
             rejectionOf(service.offerProfileShare(identity(), profile.getId(), household.getId())))
@@ -116,8 +118,8 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should let exactly one decision win a pending offer")
-  void shouldLetExactlyOneDecisionWinPendingOffer() {
+  @DisplayName("Should return not-pending when a decision has already won a pending offer")
+  void shouldReturnNotPendingWhenDecisionAlreadyWonPendingOffer() {
     var offer = pendingShare();
 
     assertThat(service.acceptProfileShare(identity(), offer.getId()))
@@ -132,8 +134,8 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should authorize acceptance inside its mutation transaction")
-  void shouldAuthorizeAcceptanceInsideItsMutationTransaction() {
+  @DisplayName("Should authorize inside the mutation transaction when an offer is accepted")
+  void shouldAuthorizeInsideMutationTransactionWhenOfferIsAccepted() {
     var offer = pendingShare();
     authorization.decideWith(
         intent -> {
@@ -147,8 +149,8 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should authorize an offer inside its mutation transaction")
-  void shouldAuthorizeOfferInsideItsMutationTransaction() {
+  @DisplayName("Should authorize inside the mutation transaction when a share is offered")
+  void shouldAuthorizeInsideMutationTransactionWhenShareIsOffered() {
     authorization.decideWith(
         intent -> {
           if (intent instanceof Intent.OfferProfileShare) {
@@ -161,8 +163,8 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should authorize rejection inside its mutation transaction")
-  void shouldAuthorizeRejectionInsideItsMutationTransaction() {
+  @DisplayName("Should authorize inside the mutation transaction when an offer is rejected")
+  void shouldAuthorizeInsideMutationTransactionWhenOfferIsRejected() {
     var offer = pendingShare();
     authorization.decideWith(
         intent -> {
@@ -176,8 +178,8 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should authorize cancellation inside its mutation transaction")
-  void shouldAuthorizeCancellationInsideItsMutationTransaction() {
+  @DisplayName("Should authorize inside the mutation transaction when an offer is canceled")
+  void shouldAuthorizeInsideMutationTransactionWhenOfferIsCanceled() {
     var offer = pendingShare();
     authorization.decideWith(
         intent -> {
@@ -191,9 +193,9 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should authorize ending inside its mutation transaction")
-  void shouldAuthorizeEndingInsideItsMutationTransaction() {
-    var active = shares.share(profile.getId(), household.getId(), false);
+  @DisplayName("Should authorize inside the mutation transaction when a share is ended")
+  void shouldAuthorizeInsideMutationTransactionWhenShareIsEnded() {
+    var active = activeShare();
     authorization.decideWith(
         intent -> {
           if (intent instanceof Intent.EndProfileShare) {
@@ -206,9 +208,9 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should authorize force-ending inside its mutation transaction")
-  void shouldAuthorizeForceEndingInsideItsMutationTransaction() {
-    var active = shares.share(profile.getId(), household.getId(), false);
+  @DisplayName("Should authorize inside the mutation transaction when a share is force-ended")
+  void shouldAuthorizeInsideMutationTransactionWhenShareIsForceEnded() {
+    var active = activeShare();
     authorization.decideWith(
         intent -> {
           if (intent instanceof Intent.ForceEndProfileShare) {
@@ -221,8 +223,8 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse accepting an expired offer")
-  void shouldRefuseAcceptingExpiredOffer() {
+  @DisplayName("Should return not-pending when an expired offer is accepted")
+  void shouldReturnNotPendingWhenExpiredOfferIsAccepted() {
     var offer = pendingShare();
     offer.setExpiresAt(Instant.now().minusSeconds(1));
 
@@ -236,7 +238,7 @@ class ProfileSharingServiceTest {
     var visitor =
         accounts.save(
             AccountFixture.defaultAccountBuilder().personalProfileId(profile.getId()).build());
-    var active = shares.share(profile.getId(), household.getId(), false);
+    var active = activeShare();
     var watching =
         sessions.save(
             AuthSession.builder()
@@ -263,8 +265,8 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse ending a share that is not active")
-  void shouldRefuseEndingShareThatIsNotActive() {
+  @DisplayName("Should return not-active when a pending share is ended")
+  void shouldReturnNotActiveWhenPendingShareIsEnded() {
     var offer = pendingShare();
 
     assertThat(rejectionOf(service.endProfileShare(identity(), offer.getId())))
@@ -272,9 +274,9 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should audit exactly one force-end win and require its reason first")
-  void shouldAuditExactlyOneForceEndWinAndRequireItsReasonFirst() {
-    var active = shares.share(profile.getId(), household.getId(), false);
+  @DisplayName("Should require a reason before authorization and audit when force-end succeeds")
+  void shouldRequireReasonBeforeAuthorizationAndAuditWhenForceEndSucceeds() {
+    var active = activeShare();
 
     assertThat(rejectionOf(service.forceEndProfileShare(identity(), active.getId(), " ")))
         .isInstanceOf(ShareRejections.ReasonRequired.class);
@@ -287,9 +289,9 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should report the missing ceremony for a stale force-end")
-  void shouldReportMissingCeremonyForStaleForceEnd() {
-    var active = shares.share(profile.getId(), household.getId(), false);
+  @DisplayName("Should require reauthentication when the force-end ceremony is stale")
+  void shouldRequireReauthenticationWhenForceEndCeremonyIsStale() {
+    var active = activeShare();
     authorization.decideWith(
         intent ->
             intent instanceof Intent.ForceEndProfileShare
@@ -303,7 +305,7 @@ class ProfileSharingServiceTest {
   @Test
   @DisplayName("Should report missing reauthentication when ordinary end requires it")
   void shouldReportMissingReauthenticationWhenOrdinaryEndRequiresIt() {
-    var active = shares.share(profile.getId(), household.getId(), false);
+    var active = activeShare();
     authorization.decideWith(
         intent ->
             intent instanceof Intent.EndProfileShare
@@ -315,9 +317,9 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should split denials into forbidden and not-found by visibility")
-  void shouldSplitDenialsIntoForbiddenAndNotFoundByVisibility() {
-    var active = shares.share(profile.getId(), household.getId(), false);
+  @DisplayName("Should distinguish not-found from forbidden when visibility differs")
+  void shouldDistinguishNotFoundFromForbiddenWhenVisibilityDiffers() {
+    var active = activeShare();
     var identity = identity();
     var shareId = active.getId();
 
@@ -352,13 +354,14 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should report only wouldLock and nameConflict from the preflight")
-  void shouldReportOnlyWouldLockAndNameConflictFromPreflight() {
+  @DisplayName("Should expose only wouldLock and nameConflict when an offer is preflighted")
+  void shouldExposeOnlyWouldLockAndNameConflictWhenOfferIsPreflighted() {
     var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
-    shares.share(kid.getId(), household.getId(), false);
+    shares.save(activeShareBuilder().profileId(kid.getId()).householdId(household.getId()).build());
     var twin =
         profiles.save(ProfileFixture.defaultProfileBuilder().name(profile.getName()).build());
-    shares.share(twin.getId(), household.getId(), false);
+    shares.save(
+        activeShareBuilder().profileId(twin.getId()).householdId(household.getId()).build());
 
     var preflight =
         service.sharePreflight(identity(), profile.getId(), household.getId()).orElseThrow();
@@ -372,9 +375,9 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should not report a Profile as conflicting with its own name")
-  void shouldNotReportProfileAsConflictingWithItsOwnName() {
-    shares.share(profile.getId(), household.getId(), false);
+  @DisplayName("Should ignore the Profile itself when its name conflict is checked")
+  void shouldIgnoreProfileItselfWhenNameConflictIsChecked() {
+    activeShare();
 
     var preflight =
         service.sharePreflight(identity(), profile.getId(), household.getId()).orElseThrow();
@@ -395,6 +398,11 @@ class ProfileSharingServiceTest {
             .offeredByAccountId(identity().accountId())
             .expiresAt(Instant.now().plusSeconds(3600))
             .build());
+  }
+
+  private ProfileHouseholdShare activeShare() {
+    return shares.save(
+        activeShareBuilder().profileId(profile.getId()).householdId(household.getId()).build());
   }
 
   private static Object rejectionOf(Outcome<?, ?> outcome) {

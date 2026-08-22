@@ -75,8 +75,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should run the share loop from offer through acceptance to availability")
-  void shouldRunShareLoopFromOfferThroughAcceptanceToAvailability() throws Exception {
+  @DisplayName("Should make a Profile available when its share offer is accepted")
+  void shouldMakeProfileAvailableWhenShareOfferIsAccepted() throws Exception {
     var orphan = managedOrphan();
 
     var shareId = offer(orphan, host.household().getId());
@@ -118,8 +118,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should replace a pending offer and cancel the older one")
-  void shouldReplacePendingOfferAndCancelOlderOne() throws Exception {
+  @DisplayName("Should cancel the older offer when a pending offer is replaced")
+  void shouldCancelOlderOfferWhenPendingOfferIsReplaced() throws Exception {
     var orphan = managedOrphan();
     var firstShareId = offer(orphan, host.household().getId());
 
@@ -139,8 +139,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should expire an old offer before creating its replacement")
-  void shouldExpireOldOfferBeforeCreatingReplacement() throws Exception {
+  @DisplayName("Should expire the older offer when an expired offer is replaced")
+  void shouldExpireOlderOfferWhenExpiredOfferIsReplaced() throws Exception {
     var orphan = managedOrphan();
     var firstShareId = UUID.fromString(offer(orphan, host.household().getId()));
     transactionTemplate.executeWithoutResult(
@@ -221,8 +221,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse activating a restricted share into a Household with no admin")
-  void shouldRefuseActivatingRestrictedShareIntoHouseholdWithNoAdmin() throws Exception {
+  @DisplayName("Should refuse activation when a restricted share would leave no eligible admin")
+  void shouldRefuseActivationWhenRestrictedShareWouldLeaveNoEligibleAdmin() throws Exception {
     var kid = managedKid();
     var empty =
         householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
@@ -253,8 +253,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse activating a share whose name collides in the target")
-  void shouldRefuseActivatingShareWhoseNameCollidesInTarget() throws Exception {
+  @DisplayName("Should refuse activation when the Profile name conflicts in the target Household")
+  void shouldRefuseActivationWhenProfileNameConflictsInTargetHousehold() throws Exception {
     var twin =
         transactionTemplate.execute(
             _ -> {
@@ -293,8 +293,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should let one decision win and answer the loser with not-pending")
-  void shouldLetOneDecisionWinAndAnswerLoserWithNotPending() throws Exception {
+  @DisplayName("Should return not-pending when another decision has already won")
+  void shouldReturnNotPendingWhenAnotherDecisionAlreadyWon() throws Exception {
     var orphan = managedOrphan();
     var shareId = offer(orphan, host.household().getId());
 
@@ -322,8 +322,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should end a visitor's share, clear their context, and keep structural shares")
-  void shouldEndVisitorsShareClearTheirContextAndKeepStructuralShares() throws Exception {
+  @DisplayName("Should clear visitor context and preserve structural shares when a visit ends")
+  void shouldClearVisitorContextAndPreserveStructuralSharesWhenVisitEnds() throws Exception {
     // The owner's Personal Profile visits the host's Household.
     var visitShareId =
         transactionTemplate.execute(
@@ -379,8 +379,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reserve force-end for a fresh ServerAdmin and audit the win")
-  void shouldReserveForceEndForFreshServerAdminAndAuditWin() throws Exception {
+  @DisplayName("Should require a fresh ServerAdmin and audit when a share is force-ended")
+  void shouldRequireFreshServerAdminAndAuditWhenShareIsForceEnded() throws Exception {
     var orphan = managedOrphan();
     var shareId = offer(orphan, host.household().getId());
     graphql(
@@ -426,8 +426,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should answer the offerer's preflight with only the lock and name facts")
-  void shouldAnswerOfferersPreflightWithOnlyLockAndNameFacts() throws Exception {
+  @DisplayName("Should expose only lock and name facts when the offerer runs preflight")
+  void shouldExposeOnlyLockAndNameFactsWhenOffererRunsPreflight() throws Exception {
     var kid = managedKid();
     var shareId = offer(kid, host.household().getId());
     graphql(

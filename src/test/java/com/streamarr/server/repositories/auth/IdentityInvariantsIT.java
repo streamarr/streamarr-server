@@ -382,8 +382,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject a non-declined target passed to the decline transition")
-  void shouldRejectNonDeclinedTargetPassedToDeclineTransition() {
+  @DisplayName("Should reject the transition when its decline target is not declined")
+  void shouldRejectTransitionWhenDeclineTargetIsNotDeclined() {
     var owner = create();
     var host = create();
     var offer =
@@ -404,8 +404,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should fetch only one Profile-share page and its lookahead row")
-  void shouldFetchOnlyProfileSharePageAndLookaheadRow() {
+  @DisplayName("Should fetch one page plus its lookahead when Profile shares are requested")
+  void shouldFetchPagePlusLookaheadWhenProfileSharesAreRequested() {
     var owner = create();
     var firstHost = create();
     var secondHost = create();
