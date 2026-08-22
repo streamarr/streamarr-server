@@ -36,15 +36,17 @@ class AuthenticatedIdentityTest {
 
   @Test
   @DisplayName(
-      "Should require the membership Household, role, and context Household when an identity is constructed")
-  void shouldRequireMembershipRoleAndContextWhenIdentityIsConstructed() {
-    var withoutHousehold = profileScopedBuilder().householdId(null);
-    var withoutRole = profileScopedBuilder().householdRole(null);
-    var withoutContext = profileScopedBuilder().contextHouseholdId(null);
-
-    assertThatThrownBy(withoutHousehold::build).isInstanceOf(NullPointerException.class);
-    assertThatThrownBy(withoutRole::build).isInstanceOf(NullPointerException.class);
-    assertThatThrownBy(withoutContext::build).isInstanceOf(NullPointerException.class);
+      "Should require the membership Household, role, and context Household when assigned")
+  void shouldRequireMembershipRoleAndContextWhenAssigned() {
+    assertThatThrownBy(() -> profileScopedBuilder().householdId(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("householdId");
+    assertThatThrownBy(() -> profileScopedBuilder().householdRole(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("householdRole");
+    assertThatThrownBy(() -> profileScopedBuilder().contextHouseholdId(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("contextHouseholdId");
   }
 
   @Test
