@@ -26,6 +26,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullSource;
@@ -43,6 +44,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /** Pins {@code /api/auth/device/**} and the status extension as an executable client contract. */
 @Tag("IntegrationTest")
+@ResourceLock("server-bootstrap")
 @DisplayName("Device Auth Contract Integration Tests")
 @Import(AuthTestSupportConfig.class)
 class DeviceAuthContractIT extends AbstractIntegrationTest {
