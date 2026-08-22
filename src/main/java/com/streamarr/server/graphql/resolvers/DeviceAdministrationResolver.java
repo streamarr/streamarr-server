@@ -4,8 +4,11 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
+import com.streamarr.server.domain.auth.DeviceRegistration;
+import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.graphql.Ids;
-import com.streamarr.server.graphql.cursor.ListConnections;
+import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.DeviceRegistrationView;
 import com.streamarr.server.graphql.dto.EsnBlockView;
 import com.streamarr.server.graphql.inputs.BlockEsnInput;
@@ -22,6 +25,7 @@ import com.streamarr.server.graphql.mutation.devices.UnblockEsnPayload;
 import com.streamarr.server.graphql.mutation.devices.UnblockEsnServerWidePayload;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.DeviceAdministrationService;
+import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
@@ -33,41 +37,45 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class DeviceAdministrationResolver {
 
+  private static final int DEFAULT_PAGE_SIZE = 100;
+
   private final AuthorizationService authorizationService;
   private final DeviceAdministrationService deviceAdministrationService;
   private final PaginationService paginationService;
+  private final CursorUtil cursorUtil;
+  private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsQuery
   public Connection<DeviceRegistrationView> householdDevices(
       @InputArgument String householdId, DataFetchingEnvironment dfe) {
-    var devices =
-        deviceAdministrationService
-            .householdDevices(authorizationService.currentIdentity(), Ids.parseUuid(householdId))
-            .stream()
-            .map(DeviceRegistrationView::from)
-            .toList();
-    return ListConnections.page(devices, device -> device.id().toString(), options(dfe));
+    var options = options(dfe);
+    var page =
+        deviceAdministrationService.householdDevices(
+            authorizationService.currentIdentity(),
+            Ids.parseUuid(householdId),
+            cursorUtil.decodeKeysetCursor(options));
+    return toDeviceConnection(page);
   }
 
   @DgsQuery
   public Connection<EsnBlockView> esnBlocks(
       @InputArgument String householdId, DataFetchingEnvironment dfe) {
-    var blocks =
-        deviceAdministrationService
-            .esnBlocks(authorizationService.currentIdentity(), Ids.parseUuid(householdId))
-            .stream()
-            .map(EsnBlockView::from)
-            .toList();
-    return ListConnections.page(blocks, block -> block.id().toString(), options(dfe));
+    var options = options(dfe);
+    var page =
+        deviceAdministrationService.esnBlocks(
+            authorizationService.currentIdentity(),
+            Ids.parseUuid(householdId),
+            cursorUtil.decodeKeysetCursor(options));
+    return toEsnBlockConnection(page);
   }
 
   @DgsQuery
   public Connection<EsnBlockView> serverEsnBlocks(DataFetchingEnvironment dfe) {
-    var blocks =
-        deviceAdministrationService.serverEsnBlocks(authorizationService.currentIdentity()).stream()
-            .map(EsnBlockView::from)
-            .toList();
-    return ListConnections.page(blocks, block -> block.id().toString(), options(dfe));
+    var options = options(dfe);
+    var page =
+        deviceAdministrationService.serverEsnBlocks(
+            authorizationService.currentIdentity(), cursorUtil.decodeKeysetCursor(options));
+    return toEsnBlockConnection(page);
   }
 
   @DgsMutation
@@ -133,14 +141,34 @@ public class DeviceAdministrationResolver {
     String after = dfe.getArgument("after");
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
-    if (first != 0 || last != 0) {
-      return paginationService.getPaginationOptions(first, after, last, before);
+    if (first == 0 && last == 0 && before != null) {
+      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
     }
 
-    if (before == null || before.isBlank()) {
-      return paginationService.getPaginationOptions(100, after, 0, before);
+    return paginationService.getPaginationOptions(
+        firstOrDefault(first, last, before), after, last, before);
+  }
+
+  private Connection<DeviceRegistrationView> toDeviceConnection(
+      MediaPage<DeviceRegistration> page) {
+    return relayConnectionAdapter.toConnection(
+        page,
+        item -> DeviceRegistrationView.from(item.item()),
+        item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
+  }
+
+  private Connection<EsnBlockView> toEsnBlockConnection(MediaPage<EsnBlock> page) {
+    return relayConnectionAdapter.toConnection(
+        page,
+        item -> EsnBlockView.from(item.item()),
+        item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
+  }
+
+  private static int firstOrDefault(int first, int last, String before) {
+    if (first == 0 && last == 0 && before == null) {
+      return DEFAULT_PAGE_SIZE;
     }
 
-    return paginationService.getPaginationOptions(0, after, 100, before);
+    return first;
   }
 }

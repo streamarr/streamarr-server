@@ -21,11 +21,15 @@ import com.streamarr.server.services.authorization.SecurityContextAuthorizationS
 import com.streamarr.server.services.identity.DeviceAdministrationService;
 import com.streamarr.server.services.identity.DeviceRejections;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.MediaPage;
+import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.support.security.WithAccountContext;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -71,8 +75,7 @@ class DeviceAdministrationResolverTest {
         IntStream.rangeClosed(1, 101)
             .mapToObj(index -> registration("esn-%03d".formatted(index)))
             .toList();
-    when(deviceAdministrationService.householdDevices(any(), eq(householdId)))
-        .thenReturn(registrations);
+    stubRegistrations(registrations);
 
     List<String> esns =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -141,9 +144,6 @@ class DeviceAdministrationResolverTest {
   @Test
   @DisplayName("Should reject invalid Household Device pagination")
   void shouldRejectInvalidHouseholdDevicePagination() {
-    when(deviceAdministrationService.householdDevices(any(), eq(householdId)))
-        .thenReturn(List.of());
-
     var result = dgsQueryExecutor.execute(householdDevicesQuery("first: -1"));
 
     assertThat(result.getErrors())
@@ -157,9 +157,14 @@ class DeviceAdministrationResolverTest {
   void shouldMapHouseholdAndServerWideEsnBlockQueries() {
     var householdBlock = block("household-esn", householdId);
     var serverBlock = block("server-esn", null);
-    when(deviceAdministrationService.esnBlocks(any(), eq(householdId)))
-        .thenReturn(List.of(householdBlock));
-    when(deviceAdministrationService.serverEsnBlocks(any())).thenReturn(List.of(serverBlock));
+    when(deviceAdministrationService.esnBlocks(
+            any(), eq(householdId), any(KeysetPaginationOptions.class)))
+        .thenAnswer(
+            invocation ->
+                page(List.of(householdBlock), invocation.getArgument(2), EsnBlock::getId));
+    when(deviceAdministrationService.serverEsnBlocks(any(), any(KeysetPaginationOptions.class)))
+        .thenAnswer(
+            invocation -> page(List.of(serverBlock), invocation.getArgument(1), EsnBlock::getId));
 
     String householdEsn =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -258,8 +263,21 @@ class DeviceAdministrationResolverTest {
   }
 
   private void stubThreeRegistrations() {
-    when(deviceAdministrationService.householdDevices(any(), eq(householdId)))
-        .thenReturn(List.of(registration("esn-1"), registration("esn-2"), registration("esn-3")));
+    stubRegistrations(List.of(registration("esn-1"), registration("esn-2"), registration("esn-3")));
+  }
+
+  private void stubRegistrations(List<DeviceRegistration> registrations) {
+    when(deviceAdministrationService.householdDevices(
+            any(), eq(householdId), any(KeysetPaginationOptions.class)))
+        .thenAnswer(
+            invocation ->
+                page(registrations, invocation.getArgument(2), DeviceRegistration::getId));
+  }
+
+  private static <T> MediaPage<T> page(
+      List<T> values, KeysetPaginationOptions options, Function<T, UUID> idOf) {
+    var items = values.stream().map(value -> new PageItem<>(value, null)).toList();
+    return new PaginationService().buildKeysetPage(items, options, idOf);
   }
 
   private DeviceRegistration registration(String esn) {

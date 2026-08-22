@@ -1307,7 +1307,6 @@ class CedarIdentityPoliciesTest {
         .scope(base.scope())
         .householdId(base.householdId())
         .householdRole(base.householdRole())
-        .serverAdmin(base.serverAdmin())
         .contextHouseholdId(base.contextHouseholdId())
         .profileId(base.profileId())
         .reauthenticatedAt(base.reauthenticatedAt())

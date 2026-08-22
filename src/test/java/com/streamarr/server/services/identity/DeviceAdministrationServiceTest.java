@@ -3,6 +3,7 @@ package com.streamarr.server.services.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
@@ -25,7 +26,13 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -59,6 +66,7 @@ class DeviceAdministrationServiceTest {
           audit,
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
+          new PaginationService(),
           Clock.systemUTC());
 
   private UUID householdId;
@@ -235,14 +243,38 @@ class DeviceAdministrationServiceTest {
     blocks.save(EsnBlock.builder().esn("esn-2").householdId(householdId).reason("x").build());
     blocks.save(EsnBlock.builder().esn("esn-3").reason("server-wide").build());
 
-    assertThat(service.householdDevices(identity(), householdId)).hasSize(1);
-    assertThat(service.esnBlocks(identity(), householdId)).hasSize(1);
-    assertThat(service.serverEsnBlocks(identity())).hasSize(1);
+    assertThat(service.householdDevices(identity(), householdId, paginationOptions()).items())
+        .hasSize(1);
+    assertThat(service.esnBlocks(identity(), householdId, paginationOptions()).items()).hasSize(1);
+    assertThat(service.serverEsnBlocks(identity(), paginationOptions()).items()).hasSize(1);
 
     authorization.denyAll();
-    assertThat(service.householdDevices(identity(), householdId)).isEmpty();
-    assertThat(service.esnBlocks(identity(), householdId)).isEmpty();
-    assertThat(service.serverEsnBlocks(identity())).isEmpty();
+    assertThat(service.householdDevices(identity(), householdId, paginationOptions()).items())
+        .isEmpty();
+    assertThat(service.esnBlocks(identity(), householdId, paginationOptions()).items()).isEmpty();
+    assertThat(service.serverEsnBlocks(identity(), paginationOptions()).items()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should page device administration reads by stable keyset")
+  void shouldPageDeviceAdministrationReadsByStableKeyset() {
+    var newest = activeRegistration("esn-newest");
+    var oldest = activeRegistration("esn-oldest");
+    AuditFieldSetter.setCreatedOn(newest, Instant.parse("2026-08-22T12:00:00Z"));
+    AuditFieldSetter.setCreatedOn(oldest, Instant.parse("2026-08-21T12:00:00Z"));
+
+    var firstPage = service.householdDevices(identity(), householdId, paginationOptions(null, 1));
+    var secondPage =
+        service.householdDevices(identity(), householdId, paginationOptions(newest.getId(), 1));
+
+    assertThat(firstPage.items())
+        .extracting(item -> item.item().getEsn())
+        .containsExactly("esn-newest");
+    assertThat(firstPage.hasNextPage()).isTrue();
+    assertThat(secondPage.items())
+        .extracting(item -> item.item().getEsn())
+        .containsExactly("esn-oldest");
+    assertThat(secondPage.hasPreviousPage()).isTrue();
   }
 
   @Test
@@ -250,11 +282,11 @@ class DeviceAdministrationServiceTest {
   void shouldFailClosedWhenAuthorizationCannotDecideDeviceRead() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
 
-    assertThatThrownBy(() -> service.householdDevices(identity(), householdId))
+    assertThatThrownBy(() -> service.householdDevices(identity(), householdId, paginationOptions()))
         .isInstanceOf(AuthorizationUnavailableException.class);
-    assertThatThrownBy(() -> service.esnBlocks(identity(), householdId))
+    assertThatThrownBy(() -> service.esnBlocks(identity(), householdId, paginationOptions()))
         .isInstanceOf(AuthorizationUnavailableException.class);
-    assertThatThrownBy(() -> service.serverEsnBlocks(identity()))
+    assertThatThrownBy(() -> service.serverEsnBlocks(identity(), paginationOptions()))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -286,6 +318,22 @@ class DeviceAdministrationServiceTest {
             .householdId(householdId)
             .authorizingAccountId(UUID.randomUUID())
             .build());
+  }
+
+  private static KeysetPaginationOptions paginationOptions() {
+    return paginationOptions(null, 100);
+  }
+
+  private static KeysetPaginationOptions paginationOptions(UUID cursorId, int limit) {
+    return KeysetPaginationOptions.builder()
+        .cursorId(cursorId)
+        .paginationOptions(
+            PaginationOptions.builder()
+                .paginationDirection(PaginationDirection.FORWARD)
+                .cursor(Optional.empty())
+                .limit(limit)
+                .build())
+        .build();
   }
 
   private AuthenticatedIdentity identity() {
