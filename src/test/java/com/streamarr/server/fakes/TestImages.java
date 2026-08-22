@@ -29,6 +29,47 @@ public final class TestImages {
     }
   }
 
+  public static byte[] createSolidPngImage(int width, int height, int rgb) {
+    var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+    var graphics = image.createGraphics();
+    graphics.setColor(new Color(rgb));
+    graphics.fillRect(0, 0, width, height);
+    graphics.dispose();
+
+    return writePng(image);
+  }
+
+  public static byte[] createDistinctColorPngImage() {
+    var image = new BufferedImage(300, 200, BufferedImage.TYPE_INT_RGB);
+    var graphics = image.createGraphics();
+    graphics.setColor(new Color(0x202020));
+    graphics.fillRect(0, 0, 150, 100);
+    graphics.setColor(new Color(0x404040));
+    graphics.fillRect(150, 0, 150, 100);
+    graphics.setColor(new Color(0x808080));
+    graphics.fillRect(0, 100, 150, 100);
+    graphics.setColor(new Color(0xC0C0C0));
+    graphics.fillRect(150, 100, 150, 100);
+    graphics.setColor(new Color(0x00A0A0));
+    graphics.fillRect(148, 98, 4, 4);
+    graphics.dispose();
+
+    return writePng(image);
+  }
+
+  public static byte[] createTransparentPngImage() {
+    return writePng(new BufferedImage(185, 278, BufferedImage.TYPE_INT_ARGB));
+  }
+
+  private static byte[] writePng(BufferedImage image) {
+    try (var outputStream = new ByteArrayOutputStream()) {
+      ImageIO.write(image, "png", outputStream);
+      return outputStream.toByteArray();
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   /** CC0-1.0 synthetic fixture with no third-party creative content. */
   public static byte[] createTestImageWithMismatchedColorProfile() {
     var jpeg = createTestImage(16, 16);

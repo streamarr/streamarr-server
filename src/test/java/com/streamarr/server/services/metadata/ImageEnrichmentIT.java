@@ -3,13 +3,17 @@ package com.streamarr.server.services.metadata;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.streamarr.server.fakes.TestImages.createDistinctColorPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
+import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
@@ -64,13 +68,81 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
             });
   }
 
+  @Test
+  @DisplayName("Should persist ambient colors on small variant when enrichment completes")
+  void shouldPersistAmbientColorsOnSmallVariantWhenEnrichmentCompletes() {
+    var entityId = UUID.randomUUID();
+    stubImageDownload("/backdrop.jpg", createDistinctColorPngImage());
+
+    transactionTemplate.executeWithoutResult(
+        status ->
+            eventPublisher.publishEvent(
+                new MetadataEnrichedEvent(
+                    entityId,
+                    ImageEntityType.MOVIE,
+                    List.of(new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg")))));
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images)
+                  .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
+                  .singleElement()
+                  .satisfies(
+                      small ->
+                          assertThat(small.getAmbientColors())
+                              .hasValue(
+                                  AmbientColors.builder()
+                                      .topLeft("#202020")
+                                      .topRight("#404040")
+                                      .bottomRight("#c0c0c0")
+                                      .bottomLeft("#808080")
+                                      .primary("#00a0a0")
+                                      .build()));
+            });
+  }
+
+  @Test
+  @DisplayName("Should persist null ambient colors when artwork has insufficient opaque coverage")
+  void shouldPersistNullAmbientColorsWhenArtworkHasInsufficientOpaqueCoverage() {
+    var entityId = UUID.randomUUID();
+    stubImageDownload("/transparent.png", createTransparentPngImage());
+
+    transactionTemplate.executeWithoutResult(
+        status ->
+            eventPublisher.publishEvent(
+                new MetadataEnrichedEvent(
+                    entityId,
+                    ImageEntityType.MOVIE,
+                    List.of(new TmdbImageSource(ImageType.POSTER, "/transparent.png")))));
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images)
+                  .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
+                  .singleElement()
+                  .satisfies(image -> assertThat(image.getAmbientColors()).isEmpty());
+            });
+  }
+
   private void stubImageDownload(String path) {
+    stubImageDownload(path, createTestImage(600, 900));
+  }
+
+  private void stubImageDownload(String path, byte[] imageData) {
     wireMock.stubFor(
         get(urlPathEqualTo(path))
             .willReturn(
                 aResponse()
                     .withStatus(200)
                     .withHeader("Content-Type", "image/jpeg")
-                    .withBody(createTestImage(600, 900))));
+                    .withBody(imageData)));
   }
 }

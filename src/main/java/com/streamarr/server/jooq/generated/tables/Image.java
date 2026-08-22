@@ -124,6 +124,31 @@ public class Image extends TableImpl<ImageRecord> {
      */
     public final TableField<ImageRecord, String> PATH = createField(DSL.name("path"), SQLDataType.CLOB.nullable(false), this, "");
 
+    /**
+     * The column <code>public.image.ambient_top_left</code>.
+     */
+    public final TableField<ImageRecord, String> AMBIENT_TOP_LEFT = createField(DSL.name("ambient_top_left"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.image.ambient_top_right</code>.
+     */
+    public final TableField<ImageRecord, String> AMBIENT_TOP_RIGHT = createField(DSL.name("ambient_top_right"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.image.ambient_bottom_right</code>.
+     */
+    public final TableField<ImageRecord, String> AMBIENT_BOTTOM_RIGHT = createField(DSL.name("ambient_bottom_right"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.image.ambient_bottom_left</code>.
+     */
+    public final TableField<ImageRecord, String> AMBIENT_BOTTOM_LEFT = createField(DSL.name("ambient_bottom_left"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.image.ambient_primary</code>.
+     */
+    public final TableField<ImageRecord, String> AMBIENT_PRIMARY = createField(DSL.name("ambient_primary"), SQLDataType.CLOB, this, "");
+
     private Image(Name alias, Table<ImageRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

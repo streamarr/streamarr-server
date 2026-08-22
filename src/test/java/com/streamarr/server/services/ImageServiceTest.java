@@ -1,7 +1,9 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fakes.TestImages.createTestImageWithMismatchedColorProfile;
+import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -22,8 +24,10 @@ import java.nio.file.Files;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("UnitTest")
 @DisplayName("Image Service Tests")
 class ImageServiceTest {
 
@@ -39,6 +43,39 @@ class ImageServiceTest {
     var imageVariantService = new ImageVariantService();
     imageService =
         new ImageService(imageRepository, imageVariantService, imageProperties, fileSystem);
+  }
+
+  @Test
+  @DisplayName("Should map ambient colors onto small image row when processing image")
+  void shouldMapAmbientColorsOntoSmallImageRowWhenProcessingImage() {
+    var entityId = UUID.randomUUID();
+    var imageData = createSolidPngImage(600, 900, 0x00A0A0);
+
+    var result =
+        imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    imageService.saveImages(result.images());
+
+    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+    var small =
+        images.stream().filter(i -> i.getVariant() == ImageSize.SMALL).findFirst().orElseThrow();
+    assertThat(small.getAmbientColors())
+        .hasValueSatisfying(colors -> assertThat(colors.primary()).isEqualTo("#00a0a0"));
+  }
+
+  @Test
+  @DisplayName("Should omit ambient colors when small image has insufficient opaque coverage")
+  void shouldOmitAmbientColorsWhenSmallImageHasInsufficientOpaqueCoverage() {
+    var result =
+        imageService.processImage(
+            createTransparentPngImage(),
+            ImageType.POSTER,
+            UUID.randomUUID(),
+            ImageEntityType.MOVIE);
+
+    assertThat(result.images())
+        .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
+        .singleElement()
+        .satisfies(image -> assertThat(image.getAmbientColors()).isEmpty());
   }
 
   @Test

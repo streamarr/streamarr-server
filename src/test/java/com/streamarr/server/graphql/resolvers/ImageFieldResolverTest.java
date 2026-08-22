@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
+import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
@@ -25,6 +26,7 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -79,6 +81,80 @@ class ImageFieldResolverTest {
               "data.movie.images[0].imageType");
 
       assertThat(imageType).isEqualTo("POSTER");
+    }
+
+    @Test
+    @DisplayName("Should serialize ambient colors when resolving movie images")
+    void shouldSerializeAmbientColorsWhenResolvingMovieImages() {
+      var movie = setupMovie();
+      var ambientColors =
+          AmbientColors.builder()
+              .topLeft("#101010")
+              .topRight("#202020")
+              .bottomRight("#303030")
+              .bottomLeft("#404040")
+              .primary("#00a0a0")
+              .build();
+      var image = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER);
+      image.setAmbientColors(Optional.of(ambientColors));
+      when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
+          .thenReturn(List.of(image));
+
+      Map<String, String> result =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              """
+              {
+                movie(id: "%s") {
+                  images {
+                    ambientColors {
+                      topLeft
+                      topRight
+                      bottomRight
+                      bottomLeft
+                      primary
+                    }
+                  }
+                }
+              }
+              """
+                  .formatted(movie.getId()),
+              "data.movie.images[0].ambientColors");
+
+      assertThat(result)
+          .containsExactlyInAnyOrderEntriesOf(
+              Map.of(
+                  "topLeft", "#101010",
+                  "topRight", "#202020",
+                  "bottomRight", "#303030",
+                  "bottomLeft", "#404040",
+                  "primary", "#00a0a0"));
+    }
+
+    @Test
+    @DisplayName("Should serialize null ambient colors when small image has none")
+    void shouldSerializeNullAmbientColorsWhenSmallImageHasNone() {
+      var movie = setupMovie();
+      var image = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER);
+      when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
+          .thenReturn(List.of(image));
+
+      Object result =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              """
+              {
+                movie(id: "%s") {
+                  images {
+                    ambientColors {
+                      primary
+                    }
+                  }
+                }
+              }
+              """
+                  .formatted(movie.getId()),
+              "data.movie.images[0].ambientColors");
+
+      assertThat(result).isNull();
     }
 
     @Test
