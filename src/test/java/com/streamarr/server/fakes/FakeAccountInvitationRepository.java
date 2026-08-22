@@ -12,6 +12,11 @@ public class FakeAccountInvitationRepository extends FakeJpaRepository<AccountIn
     implements AccountInvitationRepository {
 
   @Override
+  public void lockRecipientForReplacement(String recipientEmail) {
+    // Unit tests are single-threaded; PostgreSQL integration tests prove cross-instance locking.
+  }
+
+  @Override
   public Optional<AccountInvitation> findByPublicId(String publicId) {
     return database.values().stream()
         .filter(invitation -> publicId.equals(invitation.getPublicId()))

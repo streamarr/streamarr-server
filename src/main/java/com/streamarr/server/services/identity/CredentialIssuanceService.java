@@ -88,6 +88,7 @@ public class CredentialIssuanceService {
     return mutationTransactions.write(
         () -> {
           requireIssuerStillAllowed(identity);
+          invitationRepository.lockRecipientForReplacement(command.recipientEmail());
           invitationRepository.invalidatePendingForEmail(
               command.recipientEmail().strip(), "replaced by a newer invitation", now);
           var invitation =
@@ -144,6 +145,7 @@ public class CredentialIssuanceService {
     return mutationTransactions.write(
         () -> {
           requireIssuerStillAllowed(identity);
+          resetCodeRepository.lockAccountForReplacement(accountId);
           resetCodeRepository.invalidatePendingForAccount(
               accountId, "replaced by a newer code", now);
           var code =

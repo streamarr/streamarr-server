@@ -12,6 +12,11 @@ public class FakePasswordResetCodeRepository extends FakeJpaRepository<PasswordR
     implements PasswordResetCodeRepository {
 
   @Override
+  public void lockAccountForReplacement(UUID accountId) {
+    // The fake runs synchronously; the PostgreSQL integration test proves cross-instance locking.
+  }
+
+  @Override
   public Optional<PasswordResetCode> findByPublicId(String publicId) {
     return database.values().stream()
         .filter(code -> publicId.equals(code.getPublicId()))

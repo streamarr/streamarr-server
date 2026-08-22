@@ -119,6 +119,12 @@ class CredentialIssuanceServiceTest {
             rejectionOf(
                 service.issueAccountInvitation(
                     authorization.currentIdentity(),
+                    command().toBuilder().profileName(" ").build())))
+        .isInstanceOf(InvitationRejections.ProfileNameRequired.class);
+    assertThat(
+            rejectionOf(
+                service.issueAccountInvitation(
+                    authorization.currentIdentity(),
                     command().toBuilder().recipientEmail(resident.getEmail()).build())))
         .isInstanceOf(InvitationRejections.EmailAlreadyUsed.class);
     assertThat(

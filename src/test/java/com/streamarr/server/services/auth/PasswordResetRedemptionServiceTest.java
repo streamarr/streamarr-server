@@ -62,18 +62,23 @@ class PasswordResetRedemptionServiceTest {
   @Test
   @DisplayName("Should change the password and revoke every session when a reset is redeemed")
   void shouldChangePasswordAndRevokeEverySessionWhenResetIsRedeemed() {
-    var session =
+    var webSession =
         sessions.save(AuthSession.builder().accountId(account.getId()).deviceName("web").build());
+    var televisionSession =
+        sessions.save(
+            AuthSession.builder().accountId(account.getId()).deviceName("television").build());
     var issued = pendingCode();
 
     service.redeem(issued.code(), "a brand new passphrase");
 
     assertThat(accounts.findById(account.getId()).orElseThrow().getPasswordHash())
         .isEqualTo("hashed:a brand new passphrase");
-    assertThat(sessions.findById(session.getId()).orElseThrow().getRevokedAt()).isNotNull();
+    assertThat(sessions.findById(webSession.getId()).orElseThrow().getRevokedAt()).isNotNull();
+    assertThat(sessions.findById(televisionSession.getId()).orElseThrow().getRevokedAt())
+        .isNotNull();
     assertThat(resetCodes.findAll().getFirst().getStatus())
         .isEqualTo(PasswordResetCodeStatus.REDEEMED);
-    assertThat(sessions.findAll()).hasSize(1);
+    assertThat(sessions.findAll()).hasSize(2);
   }
 
   @Test

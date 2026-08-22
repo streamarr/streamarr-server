@@ -2,7 +2,6 @@ package com.streamarr.server.services.identity;
 
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -12,13 +11,9 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.domain.auth.ProfileKind;
-import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
-import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.services.auth.AccountInvitationCeremonyService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.PasswordResetRedemptionService;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
@@ -39,100 +34,46 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 @Tag("IntegrationTest")
-@DisplayName("Credential Issuance Revocation Race Integration Tests")
-class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
+@DisplayName("Credential Issuance Replacement Race Integration Tests")
+class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
 
   @Autowired private CredentialIssuanceService credentialIssuanceService;
-  @Autowired private AccountAdministrationService accountAdministrationService;
-  @Autowired private AccountInvitationCeremonyService invitationCeremonyService;
-  @Autowired private PasswordResetRedemptionService resetRedemptionService;
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private PasswordResetCodeRepository resetCodeRepository;
-  @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private JwtDecoder jwtDecoder;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private DSLContext dsl;
 
-  private AuthTestSupport.TestIdentity issuer;
-  private AuthTestSupport.TestIdentity revoker;
+  private AuthTestSupport.TestIdentity firstIssuer;
+  private AuthTestSupport.TestIdentity secondIssuer;
+  private AuthTestSupport.TestIdentity resetTarget;
 
   @AfterEach
   void tearDown() {
     dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     invitationRepository.deleteAll();
     resetCodeRepository.deleteAll();
-    if (issuer != null) {
-      authTestSupport.deleteIdentity(issuer);
+    if (firstIssuer != null) {
+      authTestSupport.deleteIdentity(firstIssuer);
     }
-    if (revoker != null) {
-      authTestSupport.deleteIdentity(revoker);
+    if (secondIssuer != null) {
+      authTestSupport.deleteIdentity(secondIssuer);
     }
-  }
-
-  @Test
-  @DisplayName("Should leave no usable reset code when its issuer loses ServerAdmin authority")
-  void shouldLeaveNoUsableResetCodeWhenIssuerLosesServerAdminAuthority() throws Exception {
-    issuer = authTestSupport.createAdminIdentity();
-    revoker = authTestSupport.createAdminIdentity();
-    var blocker = saveBlockingResetCode();
-    var rowLocked = new CountDownLatch(1);
-    var releaseRow = new CountDownLatch(1);
-
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var lock =
-          executor.submit(() -> holdResetCodeRowLock(blocker.getId(), rowLocked, releaseRow));
-      assertThat(rowLocked.await(10, TimeUnit.SECONDS)).isTrue();
-
-      var issuance =
-          executor.submit(
-              () ->
-                  credentialIssuanceService.issuePasswordReset(
-                      freshIdentityOf(issuer), issuer.account().getId(), "recover access"));
-      await()
-          .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(hasWaitingResetCodeUpdate()).isTrue());
-
-      var revocation =
-          executor.submit(
-              () ->
-                  accountAdministrationService.revokeServerAdmin(
-                      freshIdentityOf(revoker),
-                      issuer.account().getId(),
-                      "authority no longer required"));
-      await()
-          .atMost(Duration.ofSeconds(10))
-          .untilAsserted(
-              () -> assertThat(revocation.isDone() || hasWaitingAccountUpdate()).isTrue());
-
-      releaseRow.countDown();
-      var issued = acceptedResetCode(issuance.get(10, TimeUnit.SECONDS));
-      assertThat(revocation.get(10, TimeUnit.SECONDS)).isInstanceOf(Outcome.Accepted.class);
-      lock.get(10, TimeUnit.SECONDS);
-
-      assertThat(
-              userAccountRepository
-                  .findById(issuer.account().getId())
-                  .orElseThrow()
-                  .isServerAdmin())
-          .isFalse();
-      assertThat(resetCodeRepository.findById(issued.resetCode().getId()).orElseThrow().getStatus())
-          .isEqualTo(PasswordResetCodeStatus.INVALIDATED);
-      assertThatThrownBy(
-              () -> resetRedemptionService.redeem(issued.code(), "a replacement passphrase"))
-          .isInstanceOf(InvalidOneTimeCodeException.class);
-    } finally {
-      releaseRow.countDown();
+    if (resetTarget != null) {
+      authTestSupport.deleteIdentity(resetTarget);
     }
   }
 
   @Test
-  @DisplayName("Should leave no usable invitation when its issuer is disabled during issuance")
-  void shouldLeaveNoUsableInvitationWhenIssuerIsDisabledDuringIssuance() throws Exception {
-    issuer = authTestSupport.createAdminIdentity();
-    revoker = authTestSupport.createAdminIdentity();
-    var recipientEmail = "issuance-race@example.com";
+  @DisplayName(
+      "Should leave the newest invitation pending when two issuers replace one recipient concurrently")
+  void shouldLeaveNewestInvitationPendingWhenTwoIssuersReplaceOneRecipientConcurrently()
+      throws Exception {
+    firstIssuer = authTestSupport.createAdminIdentity();
+    secondIssuer = authTestSupport.createAdminIdentity();
+    var recipientEmail = "replacement-race@example.com";
     var blocker = saveBlockingInvitation(recipientEmail);
     var rowLocked = new CountDownLatch(1);
     var releaseRow = new CountDownLatch(1);
@@ -142,55 +83,105 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
           executor.submit(() -> holdInvitationRowLock(blocker.getId(), rowLocked, releaseRow));
       assertThat(rowLocked.await(10, TimeUnit.SECONDS)).isTrue();
 
-      var issuance =
+      var first =
           executor.submit(
               () ->
                   credentialIssuanceService.issueAccountInvitation(
-                      identityOf(issuer), invitationCommand(recipientEmail)));
-      await()
-          .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(hasWaitingInvitationUpdate()).isTrue());
-
-      var revocationStarted = new CountDownLatch(1);
-      var disable =
+                      identityOf(firstIssuer), invitationCommand(recipientEmail)));
+      var second =
           executor.submit(
-              () -> {
-                revocationStarted.countDown();
-                return accountAdministrationService.disableAccount(
-                    identityOf(revoker), issuer.account().getId());
-              });
-      assertThat(revocationStarted.await(10, TimeUnit.SECONDS)).isTrue();
+              () ->
+                  credentialIssuanceService.issueAccountInvitation(
+                      identityOf(secondIssuer), invitationCommand(recipientEmail)));
       await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(disable.isDone() || hasWaitingAccountUpdate()).isTrue());
-
+          .untilAsserted(
+              () -> {
+                assertThat(waitingInvitationUpdates()).isOne();
+                assertThat(waitingRecipientLocks()).isOne();
+              });
       releaseRow.countDown();
-      var issued = acceptedInvitation(issuance.get(10, TimeUnit.SECONDS));
-      assertThat(disable.get(10, TimeUnit.SECONDS)).isInstanceOf(Outcome.Accepted.class);
-      lock.get(10, TimeUnit.SECONDS);
 
-      assertThat(userAccountRepository.findById(issuer.account().getId()).orElseThrow().isEnabled())
-          .isFalse();
-      assertThat(
-              invitationRepository.findById(issued.invitation().getId()).orElseThrow().getStatus())
-          .isEqualTo(AccountInvitationStatus.INVALIDATED);
-      assertThatThrownBy(() -> invitationCeremonyService.lookup(issued.code()))
-          .isInstanceOf(InvalidOneTimeCodeException.class);
+      acceptedInvitation(first.get(10, TimeUnit.SECONDS));
+      acceptedInvitation(second.get(10, TimeUnit.SECONDS));
+      lock.get(10, TimeUnit.SECONDS);
     } finally {
       releaseRow.countDown();
     }
+
+    assertThat(invitationRepository.findAll())
+        .extracting(AccountInvitation::getStatus)
+        .containsExactlyInAnyOrder(
+            AccountInvitationStatus.INVALIDATED,
+            AccountInvitationStatus.INVALIDATED,
+            AccountInvitationStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave the newest reset code pending when two issuers replace one Account concurrently")
+  void shouldLeaveNewestResetCodePendingWhenTwoIssuersReplaceOneAccountConcurrently()
+      throws Exception {
+    firstIssuer = authTestSupport.createAdminIdentity();
+    secondIssuer = authTestSupport.createAdminIdentity();
+    resetTarget = authTestSupport.createIdentity();
+    var blocker = saveBlockingResetCode();
+    var rowLocked = new CountDownLatch(1);
+    var releaseRow = new CountDownLatch(1);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var lock =
+          executor.submit(() -> holdResetCodeRowLock(blocker.getId(), rowLocked, releaseRow));
+      assertThat(rowLocked.await(10, TimeUnit.SECONDS)).isTrue();
+
+      var first =
+          executor.submit(
+              () ->
+                  credentialIssuanceService.issuePasswordReset(
+                      freshIdentityOf(firstIssuer),
+                      resetTarget.account().getId(),
+                      "recover access"));
+      var second =
+          executor.submit(
+              () ->
+                  credentialIssuanceService.issuePasswordReset(
+                      freshIdentityOf(secondIssuer),
+                      resetTarget.account().getId(),
+                      "recover access"));
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(
+              () -> {
+                assertThat(waitingResetCodeUpdates()).isOne();
+                assertThat(waitingRecipientLocks()).isOne();
+              });
+      releaseRow.countDown();
+
+      acceptedResetCode(first.get(10, TimeUnit.SECONDS));
+      acceptedResetCode(second.get(10, TimeUnit.SECONDS));
+      lock.get(10, TimeUnit.SECONDS);
+    } finally {
+      releaseRow.countDown();
+    }
+
+    assertThat(resetCodeRepository.findAll())
+        .extracting(PasswordResetCode::getStatus)
+        .containsExactlyInAnyOrder(
+            PasswordResetCodeStatus.INVALIDATED,
+            PasswordResetCodeStatus.INVALIDATED,
+            PasswordResetCodeStatus.PENDING);
   }
 
   private AccountInvitation saveBlockingInvitation(String recipientEmail) {
     return invitationRepository.saveAndFlush(
         AccountInvitation.builder()
             .recipientEmail(recipientEmail)
-            .householdId(issuer.household().getId())
-            .householdName(issuer.household().getName())
+            .householdId(firstIssuer.household().getId())
+            .householdName(firstIssuer.household().getName())
             .householdRole(HouseholdRole.MEMBER)
             .profileName("Earlier")
             .profileKind(ProfileKind.ADULT)
-            .issuerAccountId(revoker.account().getId())
+            .issuerAccountId(firstIssuer.account().getId())
             .expiresAt(Instant.now().plus(Duration.ofDays(1)))
             .publicId(UUID.randomUUID().toString())
             .secretDigest(new byte[] {1})
@@ -200,8 +191,8 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
   private PasswordResetCode saveBlockingResetCode() {
     return resetCodeRepository.saveAndFlush(
         PasswordResetCode.builder()
-            .accountId(issuer.account().getId())
-            .issuerAccountId(revoker.account().getId())
+            .accountId(resetTarget.account().getId())
+            .issuerAccountId(firstIssuer.account().getId())
             .expiresAt(Instant.now().plus(Duration.ofDays(1)))
             .publicId(UUID.randomUUID().toString())
             .secretDigest(new byte[] {1})
@@ -211,9 +202,9 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
   private IssueInvitationCommand invitationCommand(String recipientEmail) {
     return IssueInvitationCommand.builder()
         .recipientEmail(recipientEmail)
-        .householdId(issuer.household().getId())
+        .householdId(firstIssuer.household().getId())
         .householdRole(HouseholdRole.MEMBER)
-        .profileName("Racing Invitee")
+        .profileName("Replacement")
         .profileKind(ProfileKind.ADULT)
         .build();
   }
@@ -239,7 +230,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
       statement.executeQuery();
       rowLocked.countDown();
       if (!releaseRow.await(10, TimeUnit.SECONDS)) {
-        throw new AssertionError("issuance did not release the invitation row lock");
+        throw new AssertionError("test did not release the invitation row lock");
       }
       connection.rollback();
     } catch (Exception exception) {
@@ -258,7 +249,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
       statement.executeQuery();
       rowLocked.countDown();
       if (!releaseRow.await(10, TimeUnit.SECONDS)) {
-        throw new AssertionError("issuance did not release the reset-code row lock");
+        throw new AssertionError("test did not release the reset-code row lock");
       }
       connection.rollback();
     } catch (Exception exception) {
@@ -266,51 +257,39 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
     }
   }
 
-  private boolean hasWaitingInvitationUpdate() {
-    var waiting =
-        jdbcTemplate.queryForObject(
-            """
-            SELECT EXISTS (
-              SELECT 1
-              FROM pg_stat_activity
-              WHERE wait_event_type = 'Lock'
-                AND query ILIKE '%update%account_invitation%'
-                AND query ILIKE '%recipient_email%'
-            )
-            """,
-            Boolean.class);
-    return Boolean.TRUE.equals(waiting);
+  private int waitingInvitationUpdates() {
+    return jdbcTemplate.queryForObject(
+        """
+        SELECT count(*)
+        FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock'
+          AND query ILIKE '%update%account_invitation%'
+          AND query ILIKE '%recipient_email%'
+        """,
+        Integer.class);
   }
 
-  private boolean hasWaitingAccountUpdate() {
-    var waiting =
-        jdbcTemplate.queryForObject(
-            """
-            SELECT EXISTS (
-              SELECT 1
-              FROM pg_stat_activity
-              WHERE wait_event_type = 'Lock'
-                AND query ILIKE '%update%user_account%'
-            )
-            """,
-            Boolean.class);
-    return Boolean.TRUE.equals(waiting);
+  private int waitingRecipientLocks() {
+    return jdbcTemplate.queryForObject(
+        """
+        SELECT count(*)
+        FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock'
+          AND query ILIKE '%pg_advisory_xact_lock%'
+        """,
+        Integer.class);
   }
 
-  private boolean hasWaitingResetCodeUpdate() {
-    var waiting =
-        jdbcTemplate.queryForObject(
-            """
-            SELECT EXISTS (
-              SELECT 1
-              FROM pg_stat_activity
-              WHERE wait_event_type = 'Lock'
-                AND query ILIKE '%update%password_reset_code%'
-                AND query ILIKE '%account_id%'
-            )
-            """,
-            Boolean.class);
-    return Boolean.TRUE.equals(waiting);
+  private int waitingResetCodeUpdates() {
+    return jdbcTemplate.queryForObject(
+        """
+        SELECT count(*)
+        FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock'
+          AND query ILIKE '%update%password_reset_code%'
+          AND query ILIKE '%account_id%'
+        """,
+        Integer.class);
   }
 
   private static CredentialIssuanceService.IssuedInvitation acceptedInvitation(

@@ -6,6 +6,9 @@ import java.util.UUID;
 
 public interface AccountInvitationRepositoryCustom {
 
+  /** Serializes replacement for one case-insensitive recipient across application instances. */
+  void lockRecipientForReplacement(String recipientEmail);
+
   /**
    * Conditionally moves one PENDING, unexpired invitation to a terminal status. True means this
    * statement made the transition — a raced acceptance, decline, or cancel has exactly one winner.

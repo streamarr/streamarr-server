@@ -2,6 +2,7 @@ package com.streamarr.server.controllers.auth;
 
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -15,13 +16,14 @@ import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.services.auth.DeviceName;
 import com.streamarr.server.support.AuthTestSupport;
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 import lombok.Builder;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -32,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
@@ -55,6 +58,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private PasswordResetCodeRepository resetCodeRepository;
   @Autowired private DSLContext dsl;
+  @Autowired private DataSource dataSource;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private AuthTestSupport.TestIdentity serverAdmin;
 
@@ -196,29 +201,44 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                   .build());
       var ready = new CountDownLatch(2);
       var start = new CountDownLatch(1);
+      var guardLocked = new CountDownLatch(1);
+      var releaseGuard = new CountDownLatch(1);
 
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        var first =
-            executor.submit(
-                () ->
-                    acceptWhenStarted(
-                        concurrentAcceptanceBuilder(firstCode, "Concurrent One")
-                            .ready(ready)
-                            .start(start)
-                            .build()));
-        var second =
-            executor.submit(
-                () ->
-                    acceptWhenStarted(
-                        concurrentAcceptanceBuilder(secondCode, "Concurrent Two")
-                            .ready(ready)
-                            .start(start)
-                            .build()));
-        assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
-        start.countDown();
+      try {
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          var guard =
+              executor.submit(
+                  () -> holdHouseholdGuard(household.getId(), guardLocked, releaseGuard));
+          assertThat(guardLocked.await(10, TimeUnit.SECONDS)).isTrue();
+          var first =
+              executor.submit(
+                  () ->
+                      acceptWhenStarted(
+                          concurrentAcceptanceBuilder(firstCode, "Concurrent One")
+                              .ready(ready)
+                              .start(start)
+                              .build()));
+          var second =
+              executor.submit(
+                  () ->
+                      acceptWhenStarted(
+                          concurrentAcceptanceBuilder(secondCode, "Concurrent Two")
+                              .ready(ready)
+                              .start(start)
+                              .build()));
+          assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+          start.countDown();
+          await()
+              .atMost(Duration.ofSeconds(10))
+              .untilAsserted(() -> assertThat(waitingHouseholdGuardLocks()).isEqualTo(2));
+          releaseGuard.countDown();
 
-        assertThat(first.get(20, TimeUnit.SECONDS)).isEqualTo(201);
-        assertThat(second.get(20, TimeUnit.SECONDS)).isEqualTo(201);
+          assertThat(first.get(20, TimeUnit.SECONDS)).isEqualTo(201);
+          assertThat(second.get(20, TimeUnit.SECONDS)).isEqualTo(201);
+          guard.get(10, TimeUnit.SECONDS);
+        }
+      } finally {
+        releaseGuard.countDown();
       }
 
       assertThat(userAccountRepository.findByHouseholdId(household.getId()))
@@ -257,7 +277,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     assertThat(authSessionRepository.findByAccountId(account.getId()))
         .singleElement()
         .extracting(session -> session.getDeviceName())
-        .isEqualTo(DeviceName.sanitize(userAgent));
+        .isEqualTo("🎬".repeat(64));
   }
 
   @Test
@@ -304,8 +324,9 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return conflict when the invitation email is claimed before acceptance")
-  void shouldReturnConflictWhenInvitationEmailIsClaimedBeforeAcceptance() throws Exception {
+  @DisplayName(
+      "Should return a typed conflict and preserve the invitation when its email is claimed")
+  void shouldReturnTypedConflictAndPreserveInvitationWhenItsEmailIsClaimed() throws Exception {
     var code = issueInvitation("invitee@example.com");
     var competingAccount =
         authTestSupport.createAccount(builder -> builder.email("invitee@example.com"));
@@ -320,9 +341,17 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                       "password": "a strong passphrase", "cookieMode": false}
                       """
                           .formatted(code)))
-          .andExpect(status().isConflict());
-    } finally {
+          .andExpect(status().isConflict())
+          .andExpect(jsonPath("$.code").value("INVITATION_EMAIL_ALREADY_USED"));
+
       authTestSupport.deleteAccount(competingAccount.getId());
+
+      acceptInvitation(code, "Invitee");
+      assertThat(userAccountRepository.findByEmailIgnoreCase("invitee@example.com")).isPresent();
+    } finally {
+      if (userAccountRepository.existsById(competingAccount.getId())) {
+        authTestSupport.deleteAccount(competingAccount.getId());
+      }
     }
   }
 
@@ -447,6 +476,10 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     var locked = authTestSupport.createIdentity();
     try {
       var code = issuePasswordReset(locked.account().getId());
+      var sessionIdsBefore =
+          authSessionRepository.findByAccountId(locked.account().getId()).stream()
+              .map(session -> session.getId())
+              .toList();
       var account = userAccountRepository.findById(locked.account().getId()).orElseThrow();
       account.setEnabled(false);
       userAccountRepository.saveAndFlush(account);
@@ -461,6 +494,14 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                       """
                           .formatted(code)))
           .andExpect(status().isNoContent());
+
+      assertThat(authSessionRepository.findByAccountId(locked.account().getId()))
+          .hasSameSizeAs(sessionIdsBefore)
+          .allSatisfy(
+              session -> {
+                assertThat(sessionIdsBefore).contains(session.getId());
+                assertThat(session.getRevokedAt()).isNotNull();
+              });
 
       // Refresh authority died with the reset; the Account stays disabled for login.
       mockMvc
@@ -670,6 +711,36 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .andReturn()
         .getResponse()
         .getStatus();
+  }
+
+  private void holdHouseholdGuard(
+      UUID householdId, CountDownLatch guardLocked, CountDownLatch releaseGuard) {
+    try (var connection = dataSource.getConnection();
+        var statement =
+            connection.prepareStatement(
+                "SELECT household_id FROM household_guard WHERE household_id = ? FOR UPDATE")) {
+      connection.setAutoCommit(false);
+      statement.setObject(1, householdId);
+      statement.executeQuery();
+      guardLocked.countDown();
+      if (!releaseGuard.await(10, TimeUnit.SECONDS)) {
+        throw new AssertionError("test did not release the Household guard lock");
+      }
+      connection.rollback();
+    } catch (Exception exception) {
+      throw new AssertionError("could not coordinate the Household guard lock", exception);
+    }
+  }
+
+  private int waitingHouseholdGuardLocks() {
+    return jdbcTemplate.queryForObject(
+        """
+        SELECT count(*)
+        FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock'
+          AND query ILIKE '%household_guard%'
+        """,
+        Integer.class);
   }
 
   private String issuePasswordReset(UUID accountId) throws Exception {
