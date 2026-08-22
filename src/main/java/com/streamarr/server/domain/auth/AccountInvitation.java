@@ -32,6 +32,14 @@ public class AccountInvitation extends BaseAuditableEntity<AccountInvitation> {
 
   private String recipientEmail;
 
+  @Enumerated(EnumType.STRING)
+  @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+  @Builder.Default
+  private AccountInvitationMode mode = AccountInvitationMode.CREATE;
+
+  /** The existing unlinked Profile a CONNECT invitation links; null for CREATE. */
+  private UUID profileId;
+
   private UUID householdId;
 
   private String householdName;

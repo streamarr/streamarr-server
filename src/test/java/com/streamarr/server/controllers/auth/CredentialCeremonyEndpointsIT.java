@@ -10,11 +10,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileManager;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.HouseholdFixture;
+import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Duration;
@@ -37,6 +45,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -57,6 +66,10 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @Autowired private HouseholdRepository householdRepository;
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private PasswordResetCodeRepository resetCodeRepository;
+  @Autowired private ProfileRepository profileRepository;
+  @Autowired private ProfileManagerRepository profileManagerRepository;
+  @Autowired private ProfileHouseholdShareRepository shareRepository;
+  @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
@@ -634,6 +647,145 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.issueAccountInvitation.userErrors[0].__typename")
                 .value("LocalManagerRequiredError"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should connect an existing Profile, end its visits, and reoffer when the invitation is accepted")
+  void shouldConnectExistingProfileEndVisitsAndReofferWhenInvitationAccepted() throws Exception {
+    var previousHost = authTestSupport.createIdentity();
+    try {
+      var orphan = orphanVisiting(previousHost.household().getId());
+      var code = issueConnectInvitation(orphan.getId(), previousHost.household().getId());
+
+      mockMvc
+          .perform(
+              post("/api/auth/invitation/lookup")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content("{\"code\": \"%s\"}".formatted(code)))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.mode").value("CONNECT"))
+          .andExpect(jsonPath("$.profileName").value("Grandpa Joe"))
+          .andExpect(
+              jsonPath("$.remainingManagers[0]").value(serverAdmin.account().getDisplayName()))
+          .andExpect(jsonPath("$.endingHouseholds[0]").value(previousHost.household().getName()))
+          .andExpect(jsonPath("$.reofferHouseholds[0]").value(previousHost.household().getName()));
+
+      mockMvc
+          .perform(
+              post("/api/auth/invitation/accept")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      """
+                      {"code": "%s", "displayName": "Joe", \
+                      "password": "a strong passphrase", "cookieMode": false}
+                      """
+                          .formatted(code)))
+          .andExpect(status().isCreated())
+          .andExpect(jsonPath("$.accessToken").isNotEmpty());
+
+      var connected =
+          userAccountRepository.findByEmailIgnoreCase("invitee@example.com").orElseThrow();
+      assertThat(connected.getPersonalProfileId()).isEqualTo(orphan.getId());
+      var shares = shareRepository.findByProfileId(orphan.getId());
+      var home =
+          shares.stream()
+              .filter(share -> share.getHouseholdId().equals(serverAdmin.household().getId()))
+              .findFirst()
+              .orElseThrow();
+      assertThat(home.getStatus()).isEqualTo(ProfileShareStatus.ACTIVE);
+      assertThat(home.isStructural()).isTrue();
+      var visits =
+          shares.stream()
+              .filter(share -> share.getHouseholdId().equals(previousHost.household().getId()))
+              .toList();
+      assertThat(visits)
+          .extracting(ProfileHouseholdShare::getStatus)
+          .containsExactlyInAnyOrder(ProfileShareStatus.ENDED, ProfileShareStatus.PENDING);
+      var reoffered =
+          visits.stream()
+              .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+              .findFirst()
+              .orElseThrow();
+      assertThat(reoffered.getOfferedByAccountId()).isEqualTo(connected.getId());
+
+      // The linked Profile can never be connected again.
+      graphql(
+              authTestSupport.accountBearer(serverAdmin),
+              """
+              mutation { issueAccountInvitation(input: {recipientEmail: "second@example.com",
+                householdId: "%s", householdRole: MEMBER, mode: CONNECT, profileId: "%s"}) {
+                issued { code } userErrors { __typename } } }
+              """
+                  .formatted(serverAdmin.household().getId(), orphan.getId()))
+          .andExpect(status().isOk())
+          .andExpect(
+              jsonPath("$.data.issueAccountInvitation.userErrors[0].__typename")
+                  .value("ProfileAlreadyLinkedError"));
+    } finally {
+      userAccountRepository
+          .findByEmailIgnoreCase("invitee@example.com")
+          .ifPresent(created -> authTestSupport.deleteAccount(created.getId()));
+      authTestSupport.deleteIdentity(previousHost);
+    }
+  }
+
+  /** An unlinked Profile managed by the admin, at home and actively visiting one Household. */
+  private Profile orphanVisiting(UUID visitedHouseholdId) {
+    return transactionTemplate.execute(
+        _ -> {
+          var profile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder()
+                      .householdId(serverAdmin.household().getId())
+                      .name("Grandpa Joe")
+                      .build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(serverAdmin.account().getId())
+                  .profileId(profile.getId())
+                  .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(serverAdmin.household().getId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(visitedHouseholdId)
+                  .status(ProfileShareStatus.ACTIVE)
+                  .build());
+          return profile;
+        });
+  }
+
+  private String issueConnectInvitation(UUID profileId, UUID reofferHouseholdId) throws Exception {
+    var response =
+        graphql(
+                authTestSupport.accountBearer(serverAdmin),
+                """
+                mutation { issueAccountInvitation(input: {recipientEmail: "invitee@example.com",
+                  householdId: "%s", householdRole: MEMBER, mode: CONNECT, profileId: "%s",
+                  reofferHouseholdIds: ["%s"]}) {
+                  issued { code invitation { mode profileId } } userErrors { __typename } } }
+                """
+                    .formatted(serverAdmin.household().getId(), profileId, reofferHouseholdId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(
+                jsonPath("$.data.issueAccountInvitation.issued.invitation.mode").value("CONNECT"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper
+        .readTree(response)
+        .path("data")
+        .path("issueAccountInvitation")
+        .path("issued")
+        .path("code")
+        .asString();
   }
 
   private String issueInvitation(String email) throws Exception {
