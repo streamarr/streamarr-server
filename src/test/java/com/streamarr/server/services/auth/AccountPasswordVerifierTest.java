@@ -130,7 +130,7 @@ class AccountPasswordVerifierTest {
   @ValueSource(strings = {"{argon2id}", "{bcrypt}"})
   @DisplayName("Should reject password after one full-cost burn when recognized hash payload empty")
   void shouldRejectPasswordAfterOneFullCostBurnWhenRecognizedHashPayloadEmpty(String passwordHash) {
-    var productionEncoder = productionPasswordEncoder();
+    var productionEncoder = new DelegatingRecordingPasswordEncoder(productionPasswordEncoder());
     var productionEqualizer = new CountingTimingEqualizer(productionEncoder);
     var productionVerifier =
         new AccountPasswordVerifier(productionEncoder, productionEqualizer, throttle);
@@ -140,6 +140,7 @@ class AccountPasswordVerifierTest {
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(productionEqualizer.burns()).isEqualTo(1);
+    assertThat(productionEncoder.comparedAgainst()).hasSize(1).doesNotContain(passwordHash);
   }
 
   @Test
@@ -274,6 +275,31 @@ class AccountPasswordVerifierTest {
 
     private int completedComparisons() {
       return completedComparisons.get();
+    }
+
+    private List<String> comparedAgainst() {
+      return comparedAgainst;
+    }
+  }
+
+  private static final class DelegatingRecordingPasswordEncoder implements PasswordEncoder {
+
+    private final PasswordEncoder delegate;
+    private final List<String> comparedAgainst = new ArrayList<>();
+
+    private DelegatingRecordingPasswordEncoder(PasswordEncoder delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public String encode(CharSequence rawPassword) {
+      return delegate.encode(rawPassword);
+    }
+
+    @Override
+    public boolean matches(CharSequence rawPassword, String encodedPassword) {
+      comparedAgainst.add(encodedPassword);
+      return delegate.matches(rawPassword, encodedPassword);
     }
 
     private List<String> comparedAgainst() {

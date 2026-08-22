@@ -55,7 +55,9 @@ public class AccountPasswordVerifier {
   }
 
   private boolean passwordMatches(UUID accountId, String expectedPasswordHash, String password) {
-    if (expectedPasswordHash == null || expectedPasswordHash.isEmpty()) {
+    if (expectedPasswordHash == null
+        || expectedPasswordHash.isEmpty()
+        || (expectedPasswordHash.startsWith("{") && expectedPasswordHash.endsWith("}"))) {
       log.error("Stored password hash for account {} is unreadable.", accountId);
       timingEqualizer.burn(password);
       return false;
