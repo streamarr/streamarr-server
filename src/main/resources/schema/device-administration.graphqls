@@ -1,4 +1,4 @@
-# Devices (ADR 0024 §Devices; ADR 0026 shapes). Pairing itself is the REST ceremony of ADR 0021;
+# Devices (ADR 0024 §Devices; ADR 0026 shapes). Pairing uses the REST endpoint defined by ADR 0021;
 # these are the administrative surfaces around registrations and ESN blocks.
 
 enum DeviceRegistrationStatus {

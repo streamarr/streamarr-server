@@ -36,7 +36,7 @@ public final class DeviceErrors {
       case DeviceRejections.ReasonRequired _ -> reasonRequired();
       case DeviceRejections.AlreadyBlocked _ -> alreadyBlocked();
       case DeviceRejections.ReauthenticationRequired _ ->
-          new ReauthenticationRequiredError("Confirm your password to continue.");
+          new ReauthenticationRequiredError("Confirm your password before retrying this action.");
     };
   }
 
