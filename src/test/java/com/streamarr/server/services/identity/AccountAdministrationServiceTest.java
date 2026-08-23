@@ -99,6 +99,15 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should require a reason when the grant reason is null")
+  void shouldRequireReasonWhenGrantReasonIsNull() {
+    var outcome = service.grantServerAdmin(identity(), target.getId(), null);
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(AdministrationRejections.ReasonRequired.class);
+    assertThat(authorization.recordedIntents()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should report the missing ceremony when reauthentication is all that is missing")
   void shouldReportMissingCeremonyWhenReauthenticationIsAllThatIsMissing() {
     authorization.decideWith(
@@ -294,12 +303,36 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should require a reason when the revocation reason is null")
+  void shouldRequireReasonWhenRevocationReasonIsNull() {
+    target.setServerAdmin(true);
+    accounts.save(target);
+
+    var outcome = service.revokeServerAdmin(identity(), target.getId(), null);
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(AdministrationRejections.ReasonRequired.class);
+    assertThat(accounts.findById(target.getId()).orElseThrow().isServerAdmin()).isTrue();
+    assertThat(audit.entries()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should require a display name when renaming")
   void shouldRequireDisplayNameWhenRenaming() {
     var outcome = service.renameAccount(identity(), target.getId(), " ");
 
     assertThat(rejectionOf(outcome))
         .isInstanceOf(AdministrationRejections.DisplayNameRequired.class);
+  }
+
+  @Test
+  @DisplayName("Should require a display name when the rename value is null")
+  void shouldRequireDisplayNameWhenRenameValueIsNull() {
+    var outcome = service.renameAccount(identity(), target.getId(), null);
+
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(AdministrationRejections.DisplayNameRequired.class);
+    assertThat(accounts.findById(target.getId()).orElseThrow().getDisplayName())
+        .isEqualTo(target.getDisplayName());
   }
 
   private AuthenticatedIdentity identity() {

@@ -155,6 +155,15 @@ class AccessTokenIssuerTest {
   }
 
   @Test
+  @DisplayName("Should reject the reauthentication Optional when its value is null")
+  void shouldRejectReauthenticationOptionalWhenValueIsNull() {
+    var context = TokenContext.of(account(), session(account()));
+
+    assertThatThrownBy(() -> context.withReauthenticatedAt((Optional<Instant>) null))
+        .isInstanceOf(NullPointerException.class);
+  }
+
+  @Test
   @DisplayName("Should use the account household when a session has no remembered context")
   void shouldUseAccountHouseholdWhenSessionHasNoRememberedContext() {
     var account = account();

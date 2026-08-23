@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
@@ -49,6 +50,39 @@ class LiveWorkerConnectionRegistryTest {
     } finally {
       observer.acceptanceRelease.countDown();
     }
+  }
+
+  @Test
+  @DisplayName("Should remove the connection when its initial acknowledgement fails")
+  void shouldRemoveConnectionWhenInitialAcknowledgementFails() {
+    var registry = new LiveWorkerConnectionRegistry();
+
+    assertThatThrownBy(
+            () -> registry.register(WORKER_ID, registration(), new RejectingAcceptanceObserver()))
+        .isInstanceOf(RuntimeException.class);
+
+    assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
+    assertThat(registry.dispatch(variantJob())).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should restore the previous connection when replacement acknowledgement fails")
+  void shouldRestorePreviousConnectionWhenReplacementAcknowledgementFails() {
+    var registry = new LiveWorkerConnectionRegistry();
+    var originalResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    registry.register(WORKER_ID, registration(), collecting(originalResponses));
+
+    assertThatThrownBy(
+            () -> registry.register(WORKER_ID, registration(), new RejectingAcceptanceObserver()))
+        .isInstanceOf(RuntimeException.class);
+
+    assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
+    assertThat(registry.dispatch(variantJob())).isTrue();
+    assertThat(originalResponses)
+        .extracting(EstablishWorkerSessionResponse::getCommandCase)
+        .containsExactly(
+            EstablishWorkerSessionResponse.CommandCase.SESSION_ACCEPTED,
+            EstablishWorkerSessionResponse.CommandCase.START_VARIANT);
   }
 
   @Test
@@ -421,6 +455,23 @@ class LiveWorkerConnectionRegistryTest {
     public void onCompleted() {
       throw new AssertionError("Worker registration should remain connected");
     }
+  }
+
+  private static final class RejectingAcceptanceObserver
+      implements StreamObserver<EstablishWorkerSessionResponse> {
+
+    @Override
+    public void onNext(EstablishWorkerSessionResponse value) {
+      if (value.hasSessionAccepted()) {
+        throw Status.CANCELLED.withDescription("acknowledgement rejected").asRuntimeException();
+      }
+    }
+
+    @Override
+    public void onError(Throwable ignored) {}
+
+    @Override
+    public void onCompleted() {}
   }
 
   private record BlockingCloseObserver(CountDownLatch closing, CountDownLatch continueClosing)

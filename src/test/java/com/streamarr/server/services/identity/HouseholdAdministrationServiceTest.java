@@ -62,6 +62,16 @@ class HouseholdAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should require a Household name when the create value is null")
+  void shouldRequireHouseholdNameWhenCreateValueIsNull() {
+    var outcome = service.createHousehold(authorization.currentIdentity(), null);
+
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(AdministrationRejections.HouseholdNameRequired.class);
+    assertThat(households.findAll()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should gate Household creation as a whole surface")
   void shouldGateHouseholdCreationAsWholeSurface() {
     var identity = authorization.currentIdentity();
@@ -147,6 +157,36 @@ class HouseholdAdministrationServiceTest {
         .isInstanceOf(AdministrationRejections.HouseholdNameRequired.class);
     assertThat(households.findById(household.getId()).orElseThrow().getName())
         .isEqualTo(originalName);
+  }
+
+  @Test
+  @DisplayName("Should require a Household name when the rename value is null")
+  void shouldRequireHouseholdNameWhenRenameValueIsNull() {
+    var household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+
+    var outcome = service.renameHousehold(authorization.currentIdentity(), household.getId(), null);
+
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(AdministrationRejections.HouseholdNameRequired.class);
+    assertThat(households.findById(household.getId()).orElseThrow().getName())
+        .isEqualTo(household.getName());
+  }
+
+  @Test
+  @DisplayName("Should fail closed when Household rename authority cannot be decided")
+  void shouldFailClosedWhenHouseholdRenameAuthorityCannotBeDecided() {
+    var household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var identity = authorization.currentIdentity();
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.RenameHousehold
+                ? new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE)
+                : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+
+    assertThatThrownBy(() -> service.renameHousehold(identity, household.getId(), "New Name"))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+    assertThat(households.findById(household.getId()).orElseThrow().getName())
+        .isEqualTo(household.getName());
   }
 
   @Test

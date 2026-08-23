@@ -2,10 +2,12 @@ package com.streamarr.server.controllers.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.security.AuthCookies;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -25,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
@@ -89,6 +92,49 @@ class ReauthEndpointIT extends AbstractIntegrationTest {
     assertThat(replacement.getExpiresAt()).isEqualTo(expectedExpiry);
     assertThat(Instant.parse(body.get("accessTokenExpiresAt").asString()))
         .isEqualTo(expectedExpiry);
+  }
+
+  @Test
+  @DisplayName("Should return an access cookie only when the browser reauthenticates")
+  void shouldReturnAccessCookieOnlyWhenBrowserReauthenticates() throws Exception {
+    var loginResponse = cookieModeLogin();
+    var accessCookie = loginResponse.getCookie(AuthCookies.ACCESS_COOKIE);
+    var csrfCookie = loginResponse.getCookie(AuthCookies.CSRF_COOKIE);
+
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/reauth")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .cookie(accessCookie, csrfCookie)
+                    .header(AuthCookies.CSRF_HEADER, csrfCookie.getValue())
+                    .content("{\"password\": \"%s\"}".formatted(authTestSupport.password())))
+            .andExpect(status().isOk())
+            .andExpect(cookie().exists(AuthCookies.ACCESS_COOKIE))
+            .andExpect(cookie().doesNotExist(AuthCookies.REFRESH_COOKIE))
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andExpect(jsonPath("$.refreshToken").doesNotExist())
+            .andReturn()
+            .getResponse();
+
+    var replacement = response.getCookie(AuthCookies.ACCESS_COOKIE);
+    assertThat(replacement).isNotNull();
+    assertThat(reauthenticatedAt(jwtDecoder.decode(replacement.getValue()))).isNotNull();
+  }
+
+  @Test
+  @DisplayName("Should reject browser reauthentication when the CSRF token is missing")
+  void shouldRejectBrowserReauthenticationWhenCsrfTokenMissing() throws Exception {
+    var accessCookie = cookieModeLogin().getCookie(AuthCookies.ACCESS_COOKIE);
+
+    mockMvc
+        .perform(
+            post("/api/auth/reauth")
+                .contentType(MediaType.APPLICATION_JSON)
+                .cookie(accessCookie)
+                .content("{\"password\": \"%s\"}".formatted(authTestSupport.password())))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("CSRF_TOKEN_REQUIRED"));
   }
 
   @Test
@@ -290,6 +336,21 @@ class ReauthEndpointIT extends AbstractIntegrationTest {
             .contentType(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
             .content("{\"password\": \"%s\"}".formatted(password)));
+  }
+
+  private MockHttpServletResponse cookieModeLogin() throws Exception {
+    return mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"email": "%s", "password": "%s", "cookieMode": true}
+                    """
+                        .formatted(identity.account().getEmail(), authTestSupport.password())))
+        .andExpect(status().isOk())
+        .andReturn()
+        .getResponse();
   }
 
   private static Instant reauthenticatedAt(Jwt jwt) {

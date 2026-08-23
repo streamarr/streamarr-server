@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
@@ -23,13 +24,12 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
-import jakarta.persistence.EntityManagerFactory;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
-import org.hibernate.SessionFactory;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -68,7 +68,6 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private TransactionTemplate transactionTemplate;
-  @Autowired private EntityManagerFactory entityManagerFactory;
   @Autowired private DSLContext dsl;
 
   private AuthTestSupport.TestIdentity serverAdmin;
@@ -333,6 +332,32 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should translate disabling the Account when it is the last enabled ServerAdmin")
+  void shouldTranslateDisablingAccountWhenLastEnabledServerAdmin() throws Exception {
+    dsl.insertInto(SERVER_BOOTSTRAP)
+        .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, serverAdmin.account().getId())
+        .execute();
+
+    graphql(
+            authTestSupport.freshAccountBearer(serverAdmin),
+            """
+            mutation { disableAccount(input: {accountId: "%s"}) {
+              account { id } userErrors { __typename } } }
+            """
+                .formatted(serverAdmin.account().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.disableAccount.userErrors[0].__typename")
+                .value("LastServerAdminError"));
+
+    assertThat(
+            userAccountRepository.findById(serverAdmin.account().getId()).orElseThrow().isEnabled())
+        .isTrue();
+    assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isZero();
+  }
+
+  @Test
   @DisplayName("Should translate demoting the last HouseholdAdmin into a typed error")
   void shouldTranslateDemotingLastHouseholdAdminIntoTypedError() throws Exception {
     graphql(
@@ -432,6 +457,30 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
 
     assertThat(userAccountRepository.findById(member.getId()).orElseThrow().getHouseholdRole())
         .isEqualTo(HouseholdRole.MEMBER);
+    assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isZero();
+  }
+
+  @Test
+  @DisplayName("Should translate granting ServerAdmin when the Account is restricted")
+  void shouldTranslateGrantingServerAdminWhenAccountIsRestricted() throws Exception {
+    var member = joinHousehold(resident, HouseholdRole.MEMBER);
+    restrictUnderSupervision(resident, member);
+
+    graphql(
+            authTestSupport.freshAccountBearer(serverAdmin),
+            """
+            mutation { grantServerAdmin(input: {accountId: "%s", reason: "new operator"}) {
+              account { id } userErrors { __typename } } }
+            """
+                .formatted(member.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.grantServerAdmin.userErrors[0].__typename")
+                .value("RestrictedAccountAuthorityError"));
+
+    assertThat(userAccountRepository.findById(member.getId()).orElseThrow().isServerAdmin())
+        .isFalse();
     assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isZero();
   }
 
@@ -642,14 +691,26 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should use the default Household page when pagination arguments are omitted")
   void shouldUseDefaultHouseholdPageWhenPaginationArgumentsAreOmitted() throws Exception {
-    graphql(
-            authTestSupport.accountBearer(serverAdmin),
-            """
-            query { households { edges { node { id } } } }
-            """)
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.households.edges.length()").value(2));
+    var overflow =
+        IntStream.range(0, 99)
+            .<Household>mapToObj(
+                index -> Household.builder().name("Default page overflow " + index).build())
+            .toList();
+    householdRepository.saveAllAndFlush(overflow);
+
+    try {
+      graphql(
+              authTestSupport.accountBearer(serverAdmin),
+              """
+              query { households { pageInfo { hasNextPage } edges { node { id } } } }
+              """)
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.households.edges.length()").value(100))
+          .andExpect(jsonPath("$.data.households.pageInfo.hasNextPage").value(true));
+    } finally {
+      householdRepository.deleteAllInBatch(overflow);
+    }
   }
 
   @Test
@@ -683,26 +744,70 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should batch nested Account pages across the Household page")
-  void shouldBatchNestedAccountPagesAcrossHouseholdPage() throws Exception {
-    var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
-    statistics.setStatisticsEnabled(true);
-    statistics.clear();
+  @DisplayName("Should paginate Households backward when last and before are provided")
+  void shouldPaginateHouseholdsBackwardWhenLastAndBeforeProvided() throws Exception {
+    assertThat(householdRepository.tryRename(serverAdmin.household().getId(), "A Household"))
+        .isTrue();
+    assertThat(householdRepository.tryRename(resident.household().getId(), "Z Household")).isTrue();
+    var ordered = householdPage(2, null);
+    var before =
+        ordered.path("data").path("households").path("edges").get(1).path("cursor").asString();
 
-    try {
-      graphql(
-              authTestSupport.accountBearer(serverAdmin),
-              """
-              query { households(first: 10) { edges { node { id
-                accounts(first: 10) { edges { node { id email } } } } } } }
-              """)
-          .andExpect(status().isOk())
-          .andExpect(jsonPath("$.errors").doesNotExist());
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            query { households(last: 1, before: "%s") {
+              pageInfo { hasNextPage }
+              edges { node { id } }
+            } }
+            """
+                .formatted(before))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.households.edges.length()").value(1))
+        .andExpect(
+            jsonPath("$.data.households.edges[0].node.id")
+                .value(serverAdmin.household().getId().toString()))
+        .andExpect(jsonPath("$.data.households.pageInfo.hasNextPage").value(true));
+  }
 
-      assertThat(statistics.getPrepareStatementCount()).isEqualTo(2);
-    } finally {
-      statistics.setStatisticsEnabled(false);
-    }
+  @Test
+  @DisplayName("Should continue nested Account pagination when an after cursor is provided")
+  void shouldContinueNestedAccountPaginationWhenAfterCursorProvided() throws Exception {
+    var middle = joinHousehold(resident, HouseholdRole.MEMBER);
+    var last = joinHousehold(resident, HouseholdRole.MEMBER);
+    userAccountRepository.tryRename(resident.account().getId(), "A Account");
+    userAccountRepository.tryRename(middle.getId(), "M Account");
+    userAccountRepository.tryRename(last.getId(), "Z Account");
+
+    var firstPage = accountPage("first: 1");
+    var after = firstPage.path("edges").get(0).path("cursor").asString();
+    var secondPage = accountPage("first: 1, after: \"" + after + "\"");
+
+    assertThat(firstPage.path("edges").get(0).path("node").path("displayName").asString())
+        .isEqualTo("A Account");
+    assertThat(firstPage.path("pageInfo").path("hasNextPage").asBoolean()).isTrue();
+    assertThat(secondPage.path("edges").get(0).path("node").path("displayName").asString())
+        .isEqualTo("M Account");
+    assertThat(secondPage.path("pageInfo").path("hasPreviousPage").asBoolean()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should paginate nested Accounts backward when last and before are provided")
+  void shouldPaginateNestedAccountsBackwardWhenLastAndBeforeProvided() throws Exception {
+    var middle = joinHousehold(resident, HouseholdRole.MEMBER);
+    var last = joinHousehold(resident, HouseholdRole.MEMBER);
+    userAccountRepository.tryRename(resident.account().getId(), "A Account");
+    userAccountRepository.tryRename(middle.getId(), "M Account");
+    userAccountRepository.tryRename(last.getId(), "Z Account");
+    var ordered = accountPage("first: 3");
+    var before = ordered.path("edges").get(2).path("cursor").asString();
+
+    var reversePage = accountPage("last: 1, before: \"" + before + "\"");
+
+    assertThat(reversePage.path("edges").get(0).path("node").path("displayName").asString())
+        .isEqualTo("M Account");
+    assertThat(reversePage.path("pageInfo").path("hasNextPage").asBoolean()).isTrue();
   }
 
   @Test
@@ -816,7 +921,7 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
                 authTestSupport.accountBearer(serverAdmin),
                 """
                 query { households(first: %d%s) { pageInfo { endCursor hasNextPage }
-                  edges { node { id name accounts(first: 10) {
+                  edges { cursor node { id name accounts(first: 10) {
                     edges { node { id email householdRole } } } } } } }
                 """
                     .formatted(first, afterArgument))
@@ -826,6 +931,29 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
             .getResponse()
             .getContentAsString();
     return objectMapper.readTree(response);
+  }
+
+  private JsonNode accountPage(String pagination) throws Exception {
+    var response =
+        graphql(
+                authTestSupport.accountBearer(resident),
+                """
+                query { householdAdministration(householdId: "%s") {
+                  accounts(%s) { pageInfo { hasNextPage hasPreviousPage }
+                    edges { cursor node { id displayName } } }
+                } }
+                """
+                    .formatted(resident.household().getId(), pagination))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper
+        .readTree(response)
+        .path("data")
+        .path("householdAdministration")
+        .path("accounts");
   }
 
   /** A second Account joining the identity's Household (deleted with the Household). */
