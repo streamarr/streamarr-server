@@ -203,7 +203,7 @@ type ProfileAlreadySharedError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"A Household hosting a restricted Profile holds an eligible HouseholdAdmin."
+"A Household hosting a restricted Profile needs an eligible HouseholdAdmin."
 type RestrictedProfileRequiresHouseholdAdminError implements MutationError {
     message: String!
 }
