@@ -250,7 +250,6 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
         .scope(TokenScope.ACCOUNT)
         .householdId(identity.household().getId())
         .householdRole(identity.account().getHouseholdRole())
-        .serverAdmin(true)
         .contextHouseholdId(identity.household().getId())
         .reauthenticatedAt(Optional.of(Instant.now()))
         .build();
