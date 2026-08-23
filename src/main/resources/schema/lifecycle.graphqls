@@ -6,7 +6,7 @@ enum SourceAccess {
 }
 
 enum ProfileDisposition {
-    "Preserve and unlink the Profile behind a named replacement anchor."
+    "Preserve and unlink the Profile with a named replacement manager."
     KEEP
     "Delete the Account and Profile pair."
     ERASE
@@ -39,7 +39,7 @@ union TransferAccountError =
 input DeleteAccountInput {
     accountId: ID!
     profileDisposition: ProfileDisposition!
-    "Required for KEEP: the eligible local manager who anchors the preserved Profile."
+    "Required for KEEP: an eligible replacement manager for the preserved Profile."
     replacementManagerAccountId: ID
     reason: String!
 }
@@ -84,7 +84,7 @@ union DeleteMyAccountError =
 input TransferProfileInput {
     profileId: ID!
     destinationHouseholdId: ID!
-    "The eligible destination manager who anchors the Profile before commit."
+    "An eligible manager in the destination Household."
     localManagerAccountId: ID
     reason: String
 }
