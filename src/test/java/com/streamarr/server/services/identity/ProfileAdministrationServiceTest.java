@@ -1161,6 +1161,7 @@ class ProfileAdministrationServiceTest {
         households,
         accounts,
         invitations,
+        managerInvitations,
         audit,
         new ProfilePinHasher(encoder),
         new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),
