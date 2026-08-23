@@ -5,11 +5,12 @@ import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECU
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.jooq.JSONB;
 import org.springframework.stereotype.Repository;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @Repository
 @RequiredArgsConstructor
@@ -18,6 +19,7 @@ public class SecurityAuditEventRepositoryImpl implements SecurityAuditEventRepos
   private static final String SUCCESS = "SUCCESS";
 
   private final DSLContext dsl;
+  private final ObjectMapper objectMapper;
 
   @Override
   public void append(SecurityAuditEntry entry) {
@@ -30,11 +32,12 @@ public class SecurityAuditEventRepositoryImpl implements SecurityAuditEventRepos
         .execute();
   }
 
-  /** Keys are code-owned identifiers and values are UUIDs, so the JSON needs no escaping. */
-  private static JSONB resourcesJson(Map<String, UUID> resources) {
-    return JSONB.jsonb(
-        resources.entrySet().stream()
-            .map(entry -> "\"%s\": \"%s\"".formatted(entry.getKey(), entry.getValue()))
-            .collect(Collectors.joining(", ", "{", "}")));
+  private JSONB resourcesJson(Map<String, UUID> resources) {
+    try {
+      return JSONB.jsonb(objectMapper.writeValueAsString(resources));
+    } catch (JacksonException exception) {
+      throw new IllegalStateException(
+          "Security audit resources could not be serialized", exception);
+    }
   }
 }
