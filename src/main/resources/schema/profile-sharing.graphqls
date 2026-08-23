@@ -15,7 +15,7 @@ type ProfileShare {
     profileId: ID!
     householdId: ID!
     status: ProfileShareStatus!
-    structural: Boolean!
+    requiredByAccountMembership: Boolean!
     expiresAt: String
     endedAt: String
 }
@@ -30,8 +30,8 @@ type ProfileShareEdge {
     cursor: String!
 }
 
-"The offerer's whole preflight: nothing else about the target Household leaks."
-type SharePreflight {
+"The effects of offering this Profile to the Household."
+type ProfileSharePreview {
     wouldLock: Boolean!
     nameConflict: Boolean!
 }
@@ -63,7 +63,7 @@ type AcceptProfileSharePayload {
 union AcceptProfileShareError =
     ShareNotFoundError
   | ShareNotPendingError
-  | NoEligibleAdminError
+  | RestrictedProfileRequiresHouseholdAdminError
   | ShareNameConflictError
 
 input RejectProfileShareInput {
@@ -100,7 +100,7 @@ type EndProfileSharePayload {
 union EndProfileShareError =
     ShareNotFoundError
   | ShareNotActiveError
-  | StructuralShareError
+  | MembershipShareCannotEndError
 
 input ForceEndProfileShareInput {
     shareId: ID!
@@ -115,6 +115,6 @@ type ForceEndProfileSharePayload {
 union ForceEndProfileShareError =
     ShareNotFoundError
   | ShareNotActiveError
-  | StructuralShareError
+  | MembershipShareCannotEndError
   | ReasonRequiredError
   | ReauthenticationRequiredError

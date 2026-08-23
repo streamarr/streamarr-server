@@ -9,6 +9,6 @@ import com.streamarr.server.graphql.mutation.MutationError;
 public sealed interface ForceEndProfileShareError extends MutationError
     permits ShareNotFoundError,
         ShareNotActiveError,
-        StructuralShareError,
+        MembershipShareCannotEndError,
         ReasonRequiredError,
         ReauthenticationRequiredError {}

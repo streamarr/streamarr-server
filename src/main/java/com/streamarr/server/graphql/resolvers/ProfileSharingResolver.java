@@ -8,8 +8,8 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
+import com.streamarr.server.graphql.dto.ProfileSharePreview;
 import com.streamarr.server.graphql.dto.ProfileShareView;
-import com.streamarr.server.graphql.dto.SharePreflightView;
 import com.streamarr.server.graphql.inputs.AcceptProfileShareInput;
 import com.streamarr.server.graphql.inputs.CancelProfileShareInput;
 import com.streamarr.server.graphql.inputs.EndProfileShareInput;
@@ -46,14 +46,14 @@ public class ProfileSharingResolver {
   private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsQuery
-  public SharePreflightView sharePreflight(
+  public ProfileSharePreview profileSharePreview(
       @InputArgument String profileId, @InputArgument String householdId) {
     return profileSharingService
         .sharePreflight(
             authorizationService.currentIdentity(),
             Ids.parseUuid(profileId),
             Ids.parseUuid(householdId))
-        .map(preflight -> new SharePreflightView(preflight.wouldLock(), preflight.nameConflict()))
+        .map(preview -> new ProfileSharePreview(preview.wouldLock(), preview.nameConflict()))
         .orElse(null);
   }
 

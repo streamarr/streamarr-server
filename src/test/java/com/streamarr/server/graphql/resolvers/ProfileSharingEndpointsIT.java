@@ -49,8 +49,8 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * The sharing lifecycle through the GraphQL boundary against real PostgreSQL and Cedar: offers and
- * their decisions, T7's eligible-admin activation rule, T8's name rule, T3's structural rule, the
- * fresh-reauthenticated force-end, the preflight, and the unshare session effects.
+ * their decisions, activation eligibility, name conflicts, membership-required shares, force-ending
+ * after password confirmation, previews, and visitor-session effects.
  */
 @Tag("IntegrationTest")
 @DisplayName("Profile Sharing Endpoints Integration Tests")
@@ -114,7 +114,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
 
     assertThat(shareRepository.isActivelyShared(orphan.getId(), host.household().getId())).isTrue();
 
-    // One live share per pair: a second offer refuses.
+    // A Profile can have only one pending or active share per Household.
     graphql(
             authTestSupport.accountBearer(owner),
             """
@@ -240,7 +240,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     try {
       var shareId = offer(kid, empty.getId());
 
-      // ServerAdmin may accept on the Household's behalf, but T7 still needs an eligible admin.
+      // ServerAdmin may accept on the Household's behalf, but the Household still needs an
+      // eligible HouseholdAdmin.
       var serverAdmin = authTestSupport.createAdminIdentity();
       try {
         graphql(
@@ -254,7 +255,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andExpect(
                 jsonPath("$.data.acceptProfileShare.userErrors[0].__typename")
-                    .value("NoEligibleAdminError"));
+                    .value("RestrictedProfileRequiresHouseholdAdminError"));
       } finally {
         authTestSupport.deleteIdentity(serverAdmin);
       }
@@ -381,8 +382,10 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should clear visitor context and preserve structural shares when a visit ends")
-  void shouldClearVisitorContextAndPreserveStructuralSharesWhenVisitEnds() throws Exception {
+  @DisplayName(
+      "Should clear visitor context and preserve membership-required shares when a visit ends")
+  void shouldClearVisitorContextAndPreserveMembershipRequiredSharesWhenVisitEnds()
+      throws Exception {
     // The owner's Personal Profile visits the host's Household.
     var visitShareId =
         transactionTemplate.execute(
@@ -418,8 +421,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
                 .getContextHouseholdId())
         .isNull();
 
-    // Cedar refuses to end the structural share before the database constraint is reached.
-    var structuralShareId =
+    // Cedar refuses to end the membership-required share before the database constraint runs.
+    var membershipShareId =
         shareRepository
             .findByProfileIdAndHouseholdIdAndStatus(
                 owner.profile().getId(), owner.household().getId(), ProfileShareStatus.ACTIVE)
@@ -431,7 +434,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
             mutation { endProfileShare(input: {shareId: "%s"}) {
               share { status } userErrors { __typename } } }
             """
-                .formatted(structuralShareId))
+                .formatted(membershipShareId))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.endProfileShare").doesNotExist())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
@@ -545,8 +548,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should expose only lock and name facts when the offerer runs preflight")
-  void shouldExposeOnlyLockAndNameFactsWhenOffererRunsPreflight() throws Exception {
+  @DisplayName("Should expose only lock and name facts when the offerer requests a preview")
+  void shouldExposeOnlyLockAndNameFactsWhenOffererRequestsPreview() throws Exception {
     var kid = managedKid();
     var shareId = offer(kid, host.household().getId());
     graphql(
@@ -563,12 +566,12 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.accountBearer(owner),
             """
-            query { sharePreflight(profileId: "%s", householdId: "%s") { wouldLock nameConflict } }
+            query { profileSharePreview(profileId: "%s", householdId: "%s") { wouldLock nameConflict } }
             """
                 .formatted(owner.profile().getId(), host.household().getId()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.sharePreflight.wouldLock").value(true))
-        .andExpect(jsonPath("$.data.sharePreflight.nameConflict").value(false));
+        .andExpect(jsonPath("$.data.profileSharePreview.wouldLock").value(true))
+        .andExpect(jsonPath("$.data.profileSharePreview.nameConflict").value(false));
   }
 
   @Test
@@ -582,7 +585,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
             authTestSupport.accountBearer(owner),
             """
             query { profileShares(profileId: "%s", last: 1) {
-              edges { node { id } }
+              edges { node { id requiredByAccountMembership } }
               pageInfo { hasNextPage } } }
             """
                 .formatted(orphan.getId()))
@@ -590,6 +593,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.profileShares.edges.length()").value(1))
         .andExpect(jsonPath("$.data.profileShares.edges[0].node.id").value(expectedId.toString()))
+        .andExpect(
+            jsonPath("$.data.profileShares.edges[0].node.requiredByAccountMembership").value(false))
         .andExpect(jsonPath("$.data.profileShares.pageInfo.hasNextPage").value(false));
   }
 
@@ -813,7 +818,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     return managedProfile(ProfileFixture.defaultProfileBuilder());
   }
 
-  /** A Kid Profile the owner manages, anchored by the owner (a HouseholdAdmin). */
+  /** A Kid Profile managed by its owner, who is a HouseholdAdmin. */
   private Profile managedKid() {
     return managedProfile(ProfileFixture.kidProfileBuilder());
   }

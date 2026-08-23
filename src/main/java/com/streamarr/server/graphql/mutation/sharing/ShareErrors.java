@@ -18,7 +18,7 @@ public final class ShareErrors {
           new HouseholdNotFoundError("No such Household.", InputPath.of("householdId"));
       case ShareRejections.AlreadyShared _ ->
           new ProfileAlreadySharedError(
-              "That Profile already has a live share into that Household.",
+              "That Profile already has a pending or active share with that Household.",
               InputPath.of("householdId"));
     };
   }
@@ -28,10 +28,10 @@ public final class ShareErrors {
       case ShareRejections.ShareNotFound _ -> shareNotFound();
       case ShareRejections.ShareNotPending _ -> shareNotPending();
       case ShareRejections.NoEligibleAdmin _ ->
-          new NoEligibleAdminError(
+          new RestrictedProfileRequiresHouseholdAdminError(
               "A Household hosting a restricted Profile needs an eligible HouseholdAdmin.");
       case ShareRejections.NameConflict _ ->
-          new ShareNameConflictError("Another available Profile there already uses that name.");
+          new ShareNameConflictError("Another Profile in that Household already uses that name.");
     };
   }
 
@@ -71,7 +71,7 @@ public final class ShareErrors {
       case ShareRejections.ReasonRequired _ ->
           new ReasonRequiredError("Enter a reason for the audit record.", InputPath.of("reason"));
       case ShareRejections.ReauthenticationRequired _ ->
-          new ReauthenticationRequiredError("Confirm your password to continue.");
+          new ReauthenticationRequiredError("Confirm your password before retrying this action.");
     };
   }
 
@@ -87,10 +87,10 @@ public final class ShareErrors {
     return new ShareNotActiveError("That share is not active.", InputPath.of(SHARE_ID));
   }
 
-  private static StructuralShareError structuralShare() {
-    return new StructuralShareError(
-        "A Personal Profile's share into its own Household cannot end while the Account remains a"
-            + " member.");
+  private static MembershipShareCannotEndError structuralShare() {
+    return new MembershipShareCannotEndError(
+        "This share is required by Account membership and cannot end while the Account remains in"
+            + " the Household.");
   }
 
   private static IllegalStateException impossible(String operation, Object rejection) {

@@ -41,7 +41,7 @@ class ShareErrorsTest {
               .isExactlyInstanceOf(ShareNotPendingError.class);
           softly
               .assertThat(ShareErrors.toAcceptError(new ShareRejections.NoEligibleAdmin()))
-              .isExactlyInstanceOf(NoEligibleAdminError.class);
+              .isExactlyInstanceOf(RestrictedProfileRequiresHouseholdAdminError.class);
           softly
               .assertThat(ShareErrors.toAcceptError(new ShareRejections.NameConflict()))
               .isExactlyInstanceOf(ShareNameConflictError.class);
@@ -89,7 +89,7 @@ class ShareErrorsTest {
               .isExactlyInstanceOf(ShareNotActiveError.class);
           softly
               .assertThat(ShareErrors.toEndError(new ShareRejections.StructuralShareCannotEnd()))
-              .isExactlyInstanceOf(StructuralShareError.class);
+              .isExactlyInstanceOf(MembershipShareCannotEndError.class);
         });
   }
 
@@ -107,7 +107,7 @@ class ShareErrorsTest {
           softly
               .assertThat(
                   ShareErrors.toForceEndError(new ShareRejections.StructuralShareCannotEnd()))
-              .isExactlyInstanceOf(StructuralShareError.class);
+              .isExactlyInstanceOf(MembershipShareCannotEndError.class);
           softly
               .assertThat(ShareErrors.toForceEndError(new ShareRejections.ReasonRequired()))
               .isExactlyInstanceOf(ReasonRequiredError.class);

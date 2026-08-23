@@ -197,23 +197,23 @@ type ShareNotActiveError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"One live share per Profile and Household."
+"A Profile can have only one pending or active share per Household."
 type ProfileAlreadySharedError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
 
 "A Household hosting a restricted Profile holds an eligible HouseholdAdmin."
-type NoEligibleAdminError implements MutationError {
+type RestrictedProfileRequiresHouseholdAdminError implements MutationError {
     message: String!
 }
 
-"The Profile's name collides with another available Profile in the target Household."
+"Another Profile in the target Household already uses the name."
 type ShareNameConflictError implements MutationError {
     message: String!
 }
 
-"Nobody ends a structural share while the Account remains a member."
-type StructuralShareError implements MutationError {
+"A share required by Account membership cannot end while the Account remains in the Household."
+type MembershipShareCannotEndError implements MutationError {
     message: String!
 }

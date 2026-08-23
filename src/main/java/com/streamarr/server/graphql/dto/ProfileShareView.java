@@ -11,7 +11,7 @@ public record ProfileShareView(
     UUID profileId,
     UUID householdId,
     ProfileShareStatus status,
-    boolean structural,
+    boolean requiredByAccountMembership,
     String expiresAt,
     String endedAt) {
 
@@ -21,7 +21,7 @@ public record ProfileShareView(
         .profileId(share.getProfileId())
         .householdId(share.getHouseholdId())
         .status(share.getStatus())
-        .structural(share.isStructural())
+        .requiredByAccountMembership(share.isStructural())
         .expiresAt(share.getExpiresAt() == null ? null : share.getExpiresAt().toString())
         .endedAt(share.getEndedAt() == null ? null : share.getEndedAt().toString())
         .build();
