@@ -13,6 +13,19 @@ import org.junit.jupiter.api.Test;
 class ManagerErrorsTest {
 
   @Test
+  @DisplayName("Should describe the eligible manager requirement without implementation detail")
+  void shouldDescribeEligibleManagerRequirementWithoutImplementationDetail() {
+    var error = ManagerErrors.toRelinquishError(new ManagerRejections.EligibleManagerRequired());
+
+    assertThat(error)
+        .isInstanceOfSatisfying(
+            EligibleManagerRequiredError.class,
+            required ->
+                assertThat(required.message())
+                    .isEqualTo("The Profile needs an eligible manager in its Household."));
+  }
+
+  @Test
   @DisplayName("Should map invitation rejections when converting to schema errors")
   void shouldMapInvitationRejectionsWhenConvertingToSchemaErrors() {
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.ProfileNotFound()))

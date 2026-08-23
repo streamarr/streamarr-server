@@ -127,7 +127,7 @@ public final class ManagerErrors {
 
   private static EligibleManagerRequiredError eligibleManagerRequired() {
     return new EligibleManagerRequiredError(
-        "Every Profile keeps its required home management anchor.");
+        "The Profile needs an eligible manager in its Household.");
   }
 
   private static ReasonRequiredError reasonRequired() {
