@@ -5,7 +5,8 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.graphql.Ids;
-import com.streamarr.server.graphql.cursor.ListConnections;
+import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.AccountInvitationView;
 import com.streamarr.server.graphql.dto.IssuedAccountInvitation;
 import com.streamarr.server.graphql.dto.IssuedPasswordReset;
@@ -31,21 +32,25 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class CredentialAdministrationResolver {
 
+  private static final int DEFAULT_PAGE_SIZE = 100;
+
   private final AuthorizationService authorizationService;
   private final CredentialIssuanceService credentialIssuanceService;
   private final AdministrationQueryService administrationQueryService;
   private final PaginationService paginationService;
+  private final CursorUtil cursorUtil;
+  private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsQuery
   public Connection<AccountInvitationView> accountInvitations(DataFetchingEnvironment dfe) {
-    var invitations =
-        administrationQueryService
-            .accountInvitations(authorizationService.currentIdentity())
-            .stream()
-            .map(AccountInvitationView::from)
-            .toList();
-    return ListConnections.page(
-        invitations, invitation -> invitation.id().toString(), options(dfe));
+    var options = options(dfe);
+    var page =
+        administrationQueryService.accountInvitations(
+            authorizationService.currentIdentity(), cursorUtil.decodeKeysetCursor(options));
+    return relayConnectionAdapter.toConnection(
+        page,
+        item -> AccountInvitationView.from(item.item()),
+        item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
   }
 
   @DgsMutation
@@ -111,12 +116,19 @@ public class CredentialAdministrationResolver {
     String after = dfe.getArgument("after");
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
-    if (first != 0 || last != 0) {
-      return paginationService.getPaginationOptions(first, after, last, before);
+    if (first == 0 && last == 0 && before != null) {
+      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
     }
-    if (before == null) {
-      return paginationService.getPaginationOptions(100, after, last, before);
+
+    return paginationService.getPaginationOptions(
+        firstOrDefault(first, last, before), after, last, before);
+  }
+
+  private static int firstOrDefault(int first, int last, String before) {
+    if (first == 0 && last == 0 && before == null) {
+      return DEFAULT_PAGE_SIZE;
     }
-    return paginationService.getPaginationOptions(first, after, 100, before);
+
+    return first;
   }
 }

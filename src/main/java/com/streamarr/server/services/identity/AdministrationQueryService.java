@@ -13,6 +13,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
@@ -79,14 +80,18 @@ public class AdministrationQueryService {
   public record ProfileAdministrationView(Profile profile, boolean linked) {}
 
   /** Every invitation, newest first — ServerAdmin's inspection surface. */
-  public List<AccountInvitation> accountInvitations(AuthenticatedIdentity identity) {
+  public MediaPage<AccountInvitation> accountInvitations(
+      AuthenticatedIdentity identity, KeysetPaginationOptions options) {
     authorizationService.requireAllowed(identity, new Intent.ViewAccountInvitations());
-    return accountInvitationRepository.findAll().stream()
-        .sorted(
-            Comparator.comparing(AccountInvitation::getCreatedOn)
-                .reversed()
-                .thenComparing(AccountInvitation::getId))
-        .toList();
+    var items =
+        accountInvitationRepository.findAll().stream()
+            .sorted(
+                Comparator.comparing(AccountInvitation::getCreatedOn)
+                    .reversed()
+                    .thenComparing(AccountInvitation::getId))
+            .map(invitation -> new PageItem<>(invitation, invitation.getCreatedOn()))
+            .toList();
+    return paginationService.buildKeysetPage(items, options, AccountInvitation::getId);
   }
 
   /** A bounded page of Households on the server, in stable name-then-id order. */
