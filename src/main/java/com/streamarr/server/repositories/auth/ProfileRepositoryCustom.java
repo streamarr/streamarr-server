@@ -34,7 +34,7 @@ public interface ProfileRepositoryCustom {
 
   boolean trySetPicture(UUID profileId, String picture);
 
-  /** Writes the PIN hash (null clears); the database refuses a blank hash. */
+  /** Writes the PIN hash (null removes it); the database refuses a blank hash. */
   boolean trySetPinHash(UUID profileId, String pinHash);
 
   /**

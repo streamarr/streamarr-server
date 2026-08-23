@@ -9,6 +9,7 @@ public final class ProfileErrors {
   private static final String PROFILE_ID = "profileId";
   private static final String NAME = "name";
   private static final String PIN = "pin";
+  private static final String MAXIMUM_ALLOWED_RATING_AGE = "maximumAllowedRatingAge";
 
   private ProfileErrors() {}
 
@@ -18,7 +19,7 @@ public final class ProfileErrors {
           new HouseholdNotFoundError("No such Household.", InputPath.of("householdId"));
       case ProfileRejections.ProfileNameRequired _ -> nameRequired();
       case ProfileRejections.ProfileNameTaken _ -> nameTaken();
-      case ProfileRejections.HomeAnchorRequired _ -> homeAnchorRequired();
+      case ProfileRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
       case ProfileRejections.ManagerNotEligible _ ->
           new ManagerNotEligibleError(
               "That Account's Personal Profile is restricted; it cannot manage.",
@@ -49,7 +50,7 @@ public final class ProfileErrors {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
-      case ProfileRejections.HomeAnchorRequired _ -> homeAnchorRequired();
+      case ProfileRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
       case ProfileRejections.RestrictedAccountAuthority _ -> restrictedAccountAuthority("kind");
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
@@ -60,9 +61,9 @@ public final class ProfileErrors {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
-      case ProfileRejections.HomeAnchorRequired _ -> homeAnchorRequired();
+      case ProfileRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
       case ProfileRejections.RestrictedAccountAuthority _ ->
-          restrictedAccountAuthority("maximumAllowedRatingAge");
+          restrictedAccountAuthority(MAXIMUM_ALLOWED_RATING_AGE);
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
@@ -72,9 +73,9 @@ public final class ProfileErrors {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
-      case ProfileRejections.HomeAnchorRequired _ -> homeAnchorRequired();
+      case ProfileRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
       case ProfileRejections.RestrictedAccountAuthority _ ->
-          restrictedAccountAuthority("maximumAllowedRatingAge");
+          restrictedAccountAuthority(MAXIMUM_ALLOWED_RATING_AGE);
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
@@ -86,18 +87,16 @@ public final class ProfileErrors {
     };
   }
 
-  public static ClearProfilePinError toClearProfilePinError(
-      ProfileRejections.ClearProfilePin rejection) {
+  public static RemoveProfilePinError toRemoveProfilePinError(
+      ProfileRejections.RemoveProfilePin rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
-      case ProfileRejections.WouldLockProfile wouldLock ->
+      case ProfileRejections.WouldLockProfile(var householdId, var householdName) ->
           new WouldLockProfileError(
-              wouldLock
-                  .householdName()
-                  .map(
-                      name -> "Clearing this PIN would lock the Profile in \"%s\".".formatted(name))
+              householdName
+                  .map(ProfileErrors::removalWouldLockMessage)
                   .orElse("A Household's safety policy requires this PIN."),
-              wouldLock.householdId());
+              householdId);
     };
   }
 
@@ -135,10 +134,9 @@ public final class ProfileErrors {
         "Another available Profile already uses that name.", InputPath.of(NAME));
   }
 
-  private static HomeAnchorRequiredError homeAnchorRequired() {
-    return new HomeAnchorRequiredError(
-        "The Profile needs an eligible manager in its Household — a HouseholdAdmin for a"
-            + " restricted Profile.");
+  private static EligibleManagerRequiredError eligibleManagerRequired() {
+    return new EligibleManagerRequiredError(
+        "The Profile needs an eligible manager in its Household.");
   }
 
   private static RestrictedAccountAuthorityError restrictedAccountAuthority(String inputPath) {
@@ -148,7 +146,11 @@ public final class ProfileErrors {
 
   private static MaximumAllowedRatingAgeInvalidError maximumAllowedRatingAgeInvalid() {
     return new MaximumAllowedRatingAgeInvalidError(
-        "Maximum allowed rating age cannot be negative.", InputPath.of("maximumAllowedRatingAge"));
+        "Maximum allowed rating age cannot be negative.", InputPath.of(MAXIMUM_ALLOWED_RATING_AGE));
+  }
+
+  private static String removalWouldLockMessage(String householdName) {
+    return "Removing this PIN would lock the Profile in \"%s\".".formatted(householdName);
   }
 
   private static PinMalformedError pinMalformed() {

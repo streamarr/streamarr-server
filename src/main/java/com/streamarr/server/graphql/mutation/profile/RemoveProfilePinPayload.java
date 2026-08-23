@@ -4,5 +4,5 @@ import com.streamarr.server.graphql.dto.ProfileAdministration;
 import java.util.List;
 import java.util.Optional;
 
-public record ClearProfilePinPayload(
-    Optional<ProfileAdministration> profile, List<ClearProfilePinError> userErrors) {}
+public record RemoveProfilePinPayload(
+    Optional<ProfileAdministration> profile, List<RemoveProfilePinError> userErrors) {}

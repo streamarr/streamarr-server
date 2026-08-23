@@ -6,7 +6,7 @@ import java.util.List;
 public record ProfileNotFoundError(String message, List<String> inputPath)
     implements ChangeProfileKindError,
         ClearProfileContentCeilingError,
-        ClearProfilePinError,
+        RemoveProfilePinError,
         DeleteProfileError,
         OverrideProfilePinError,
         RenameProfileError,

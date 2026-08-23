@@ -9,10 +9,10 @@ import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.dto.ProfileAdministration;
 import com.streamarr.server.graphql.inputs.ChangeProfileKindInput;
 import com.streamarr.server.graphql.inputs.ClearProfileContentCeilingInput;
-import com.streamarr.server.graphql.inputs.ClearProfilePinInput;
 import com.streamarr.server.graphql.inputs.CreateProfileInput;
 import com.streamarr.server.graphql.inputs.DeleteProfileInput;
 import com.streamarr.server.graphql.inputs.OverrideProfilePinInput;
+import com.streamarr.server.graphql.inputs.RemoveProfilePinInput;
 import com.streamarr.server.graphql.inputs.RenameProfileInput;
 import com.streamarr.server.graphql.inputs.SetProfileContentCeilingInput;
 import com.streamarr.server.graphql.inputs.SetProfilePictureInput;
@@ -20,11 +20,11 @@ import com.streamarr.server.graphql.inputs.SetProfilePinInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.profile.ChangeProfileKindPayload;
 import com.streamarr.server.graphql.mutation.profile.ClearProfileContentCeilingPayload;
-import com.streamarr.server.graphql.mutation.profile.ClearProfilePinPayload;
 import com.streamarr.server.graphql.mutation.profile.CreateProfilePayload;
 import com.streamarr.server.graphql.mutation.profile.DeleteProfilePayload;
 import com.streamarr.server.graphql.mutation.profile.OverrideProfilePinPayload;
 import com.streamarr.server.graphql.mutation.profile.ProfileErrors;
+import com.streamarr.server.graphql.mutation.profile.RemoveProfilePinPayload;
 import com.streamarr.server.graphql.mutation.profile.RenameProfilePayload;
 import com.streamarr.server.graphql.mutation.profile.SetProfileContentCeilingPayload;
 import com.streamarr.server.graphql.mutation.profile.SetProfilePicturePayload;
@@ -151,14 +151,14 @@ public class ProfileAdministrationResolver {
   }
 
   @DgsMutation
-  public ClearProfilePinPayload clearProfilePin(@InputArgument ClearProfilePinInput input) {
+  public RemoveProfilePinPayload removeProfilePin(@InputArgument RemoveProfilePinInput input) {
     return MutationPayloads.payload(
         profileAdministrationService
-            .clearProfilePin(
+            .removeProfilePin(
                 authorizationService.currentIdentity(), Ids.parseUuid(input.profileId()))
             .map(this::toDto),
-        ProfileErrors::toClearProfilePinError,
-        ClearProfilePinPayload::new);
+        ProfileErrors::toRemoveProfilePinError,
+        RemoveProfilePinPayload::new);
   }
 
   @DgsMutation

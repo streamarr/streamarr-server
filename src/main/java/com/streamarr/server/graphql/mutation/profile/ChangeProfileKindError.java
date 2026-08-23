@@ -8,6 +8,6 @@ import com.streamarr.server.graphql.mutation.MutationError;
 public sealed interface ChangeProfileKindError extends MutationError
     permits ProfileNotFoundError,
         ReauthenticationRequiredError,
-        HomeAnchorRequiredError,
+        EligibleManagerRequiredError,
         RestrictedAccountAuthorityError,
         MaximumAllowedRatingAgeInvalidError {}

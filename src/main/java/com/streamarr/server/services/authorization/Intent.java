@@ -94,7 +94,7 @@ public sealed interface Intent<T> {
 
   record ClearProfileContentCeiling(UUID profileId) implements ProfilePolicyChange {}
 
-  /** Set or clear a Profile's PIN: managers, supervising admins, ServerAdmin. */
+  /** Set or remove a Profile's PIN: managers, supervising admins, ServerAdmin. */
   record ManageProfilePin(UUID profileId) implements Intent<AuthorizationUnit> {}
 
   /** ServerAdmin PIN break-glass; requiresFreshReauthentication with a reason. */

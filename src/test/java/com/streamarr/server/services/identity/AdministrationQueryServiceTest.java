@@ -50,4 +50,15 @@ class AdministrationQueryServiceTest {
     assertThatThrownBy(() -> service.accountAdministration(identity, accountId))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
+
+  @Test
+  @DisplayName("Should fail closed when Profile administration visibility cannot be decided")
+  void shouldFailClosedWhenProfileAdministrationVisibilityCannotBeDecided() {
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var identity = authorization.currentIdentity();
+    var profileId = UUID.randomUUID();
+
+    assertThatThrownBy(() -> service.profileAdministration(identity, profileId))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
 }

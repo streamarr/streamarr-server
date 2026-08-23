@@ -17,7 +17,7 @@ input CreateProfileInput {
     name: String!
     kind: ProfileKind!
     maximumAllowedRatingAge: Int
-    "Required when a remote ServerAdmin creates: an eligible local manager to anchor the Profile."
+    "Required when a remote ServerAdmin creates a restricted Profile."
     localManagerAccountId: ID
 }
 
@@ -30,7 +30,7 @@ union CreateProfileError =
     HouseholdNotFoundError
   | ProfileNameRequiredError
   | ProfileNameTakenError
-  | HomeAnchorRequiredError
+  | EligibleManagerRequiredError
   | ManagerNotEligibleError
   | LocalManagerNotFoundError
   | MaximumAllowedRatingAgeInvalidError
@@ -75,7 +75,7 @@ type ChangeProfileKindPayload {
 union ChangeProfileKindError =
     ProfileNotFoundError
   | ReauthenticationRequiredError
-  | HomeAnchorRequiredError
+  | EligibleManagerRequiredError
   | RestrictedAccountAuthorityError
   | MaximumAllowedRatingAgeInvalidError
 
@@ -92,7 +92,7 @@ type SetProfileContentCeilingPayload {
 union SetProfileContentCeilingError =
     ProfileNotFoundError
   | ReauthenticationRequiredError
-  | HomeAnchorRequiredError
+  | EligibleManagerRequiredError
   | RestrictedAccountAuthorityError
   | MaximumAllowedRatingAgeInvalidError
 
@@ -108,7 +108,7 @@ type ClearProfileContentCeilingPayload {
 union ClearProfileContentCeilingError =
     ProfileNotFoundError
   | ReauthenticationRequiredError
-  | HomeAnchorRequiredError
+  | EligibleManagerRequiredError
   | RestrictedAccountAuthorityError
   | MaximumAllowedRatingAgeInvalidError
 
@@ -124,16 +124,16 @@ type SetProfilePinPayload {
 
 union SetProfilePinError = ProfileNotFoundError | PinMalformedError
 
-input ClearProfilePinInput {
+input RemoveProfilePinInput {
     profileId: ID!
 }
 
-type ClearProfilePinPayload {
+type RemoveProfilePinPayload {
     profile: ProfileAdministration
-    userErrors: [ClearProfilePinError!]!
+    userErrors: [RemoveProfilePinError!]!
 }
 
-union ClearProfilePinError = ProfileNotFoundError | WouldLockProfileError
+union RemoveProfilePinError = ProfileNotFoundError | WouldLockProfileError
 
 input OverrideProfilePinInput {
     profileId: ID!

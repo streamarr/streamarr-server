@@ -7,7 +7,7 @@ public sealed interface CreateProfileError extends MutationError
     permits HouseholdNotFoundError,
         ProfileNameRequiredError,
         ProfileNameTakenError,
-        HomeAnchorRequiredError,
+        EligibleManagerRequiredError,
         ManagerNotEligibleError,
         LocalManagerNotFoundError,
         MaximumAllowedRatingAgeInvalidError {}

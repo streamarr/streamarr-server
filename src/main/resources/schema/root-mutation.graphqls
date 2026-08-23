@@ -25,7 +25,7 @@ type Mutation {
     setProfileContentCeiling(input: SetProfileContentCeilingInput!): SetProfileContentCeilingPayload
     clearProfileContentCeiling(input: ClearProfileContentCeilingInput!): ClearProfileContentCeilingPayload
     setProfilePin(input: SetProfilePinInput!): SetProfilePinPayload
-    clearProfilePin(input: ClearProfilePinInput!): ClearProfilePinPayload
+    removeProfilePin(input: RemoveProfilePinInput!): RemoveProfilePinPayload
     overrideProfilePin(input: OverrideProfilePinInput!): OverrideProfilePinPayload
     deleteProfile(input: DeleteProfileInput!): DeleteProfilePayload
 }

@@ -113,8 +113,8 @@ type ProfileNameTakenError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"Every Profile keeps an eligible home management anchor in the Household it belongs to."
-type HomeAnchorRequiredError implements MutationError {
+"The Profile needs an eligible manager in its Household."
+type EligibleManagerRequiredError implements MutationError {
     message: String!
 }
 
@@ -134,7 +134,7 @@ type PinMalformedError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"Clearing this PIN would lock the Profile where a Household's safety policy requires one."
+"Removing this PIN would lock the Profile where a Household's safety policy requires one."
 type WouldLockProfileError implements MutationError {
     message: String!
     householdId: ID!

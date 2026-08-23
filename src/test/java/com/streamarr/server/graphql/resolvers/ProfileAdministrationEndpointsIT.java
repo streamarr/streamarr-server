@@ -48,8 +48,8 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Profile administration through the GraphQL boundary against real PostgreSQL and the real Cedar
- * engine: creation with its anchor rules, the transition classifications and their
- * fresh-reauthentication boundary, PIN safety on clearing, the break-glass override audit, and
+ * engine: creation with its eligible-manager rules, the transition classifications and their
+ * fresh-reauthentication boundary, PIN safety on removal, the break-glass override audit, and
  * ordinary standalone deletion.
  */
 @Tag("IntegrationTest")
@@ -132,8 +132,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse a remote ServerAdmin Kid creation when a local anchor is omitted")
-  void shouldRefuseRemoteServerAdminKidCreationWhenLocalAnchorIsOmitted() throws Exception {
+  @DisplayName("Should refuse a remote ServerAdmin Kid creation when a local manager is omitted")
+  void shouldRefuseRemoteServerAdminKidCreationWhenLocalManagerIsOmitted() throws Exception {
     var profilesBefore = profileRepository.count();
     var managersBefore = profileManagerRepository.count();
     var sharesBefore = shareRepository.count();
@@ -149,7 +149,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(
             jsonPath("$.data.createProfile.userErrors[0].__typename")
-                .value("HomeAnchorRequiredError"));
+                .value("EligibleManagerRequiredError"));
 
     assertThat(profileRepository.count()).isEqualTo(profilesBefore);
     assertThat(profileManagerRepository.count()).isEqualTo(managersBefore);
@@ -320,6 +320,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
       } finally {
         commitTransition.countDown();
       }
+
       transitioning.get(30, TimeUnit.SECONDS);
       var result = changing.get(30, TimeUnit.SECONDS);
       var response = objectMapper.readTree(result.getResponse().getContentAsString());
@@ -403,7 +404,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should return the authority rejection when restricting an Account that holds authority")
   void shouldReturnAuthorityRejectionWhenRestrictingAccountThatHoldsAuthority() throws Exception {
-    establishReplacementAnchorForAdminProfile();
+    establishReplacementManagerForAdminProfile();
 
     graphql(
             authTestSupport.freshAccountBearer(serverAdmin),
@@ -425,7 +426,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
       "Should restrict the sovereign Adult when authority is removed and a replacement manager exists")
   void shouldRestrictSovereignAdultWhenAuthorityIsRemovedAndReplacementManagerExists()
       throws Exception {
-    establishReplacementAnchorForAdminProfile();
+    establishReplacementManagerForAdminProfile();
     transactionTemplate.executeWithoutResult(
         _ -> {
           var account = userAccountRepository.findById(admin.account().getId()).orElseThrow();
@@ -526,8 +527,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse clearing a PIN when a Household's safety policy requires it")
-  void shouldRefuseClearingPinWhenHouseholdSafetyPolicyRequiresIt() throws Exception {
+  @DisplayName("Should refuse removing a PIN when a Household's safety policy requires it")
+  void shouldRefuseRemovingPinWhenHouseholdSafetyPolicyRequiresIt() throws Exception {
     kidProfile();
     graphql(
             authTestSupport.accountBearer(admin),
@@ -542,23 +543,23 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.accountBearer(admin),
             """
-            mutation { clearProfilePin(input: {profileId: "%s"}) {
+            mutation { removeProfilePin(input: {profileId: "%s"}) {
               profile { id } userErrors { __typename ... on WouldLockProfileError { householdId message } } } }
             """
                 .formatted(admin.profile().getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(
-            jsonPath("$.data.clearProfilePin.userErrors[0].__typename")
+            jsonPath("$.data.removeProfilePin.userErrors[0].__typename")
                 .value("WouldLockProfileError"))
         .andExpect(
-            jsonPath("$.data.clearProfilePin.userErrors[0].householdId")
+            jsonPath("$.data.removeProfilePin.userErrors[0].householdId")
                 .value(admin.household().getId().toString()));
   }
 
   @Test
-  @DisplayName("Should return the cleared PIN state when the clear succeeds")
-  void shouldReturnClearedPinStateWhenClearSucceeds() throws Exception {
+  @DisplayName("Should return the removed PIN state when removal succeeds")
+  void shouldReturnRemovedPinStateWhenRemovalSucceeds() throws Exception {
     graphql(
             authTestSupport.accountBearer(admin),
             """
@@ -572,14 +573,14 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.accountBearer(admin),
             """
-            mutation { clearProfilePin(input: {profileId: "%s"}) {
+            mutation { removeProfilePin(input: {profileId: "%s"}) {
               profile { pinConfigured } userErrors { __typename } } }
             """
                 .formatted(admin.profile().getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.clearProfilePin.userErrors").isEmpty())
-        .andExpect(jsonPath("$.data.clearProfilePin.profile.pinConfigured").value(false));
+        .andExpect(jsonPath("$.data.removeProfilePin.userErrors").isEmpty())
+        .andExpect(jsonPath("$.data.removeProfilePin.profile.pinConfigured").value(false));
   }
 
   @Test
@@ -740,6 +741,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
       } finally {
         commitShare.countDown();
       }
+
       sharing.get(30, TimeUnit.SECONDS);
       var result = deleting.get(30, TimeUnit.SECONDS);
       var response = objectMapper.readTree(result.getResponse().getContentAsString());
@@ -821,7 +823,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
             .content(objectMapper.writeValueAsString(Map.of("query", query))));
   }
 
-  /** A Kid Profile in the admin's Household, anchored by the admin, available there. */
+  /** A Kid Profile in the admin's Household, managed by the admin, available there. */
   private Profile kidProfile() {
     return transactionTemplate.execute(
         _ -> {
@@ -864,7 +866,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
         });
   }
 
-  /** Another eligible HouseholdAdmin in the admin's Household, available as a home anchor. */
+  /** Another eligible HouseholdAdmin in the admin's Household. */
   private UserAccount joinHouseholdAsAdmin() {
     return transactionTemplate.execute(
         _ -> {
@@ -923,13 +925,13 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
         });
   }
 
-  private void establishReplacementAnchorForAdminProfile() {
-    var replacementAnchor = joinHouseholdAsAdmin();
+  private void establishReplacementManagerForAdminProfile() {
+    var replacementManager = joinHouseholdAsAdmin();
     transactionTemplate.executeWithoutResult(
         _ ->
             profileManagerRepository.saveAndFlush(
                 ProfileManager.builder()
-                    .accountId(replacementAnchor.getId())
+                    .accountId(replacementManager.getId())
                     .profileId(admin.profile().getId())
                     .build()));
   }

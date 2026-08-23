@@ -3,7 +3,7 @@ package com.streamarr.server.graphql.mutation.profile;
 import com.streamarr.server.graphql.mutation.MutationError;
 
 /**
- * The {@code ClearProfilePinError} union; record names are the schema type names DGS resolves by.
+ * The {@code RemoveProfilePinError} union; record names are the schema type names DGS resolves by.
  */
-public sealed interface ClearProfilePinError extends MutationError
+public sealed interface RemoveProfilePinError extends MutationError
     permits ProfileNotFoundError, WouldLockProfileError {}

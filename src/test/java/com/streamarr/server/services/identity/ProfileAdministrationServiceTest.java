@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
@@ -19,6 +21,7 @@ import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfilePinHasher;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
@@ -29,15 +32,19 @@ import com.streamarr.server.services.identity.ProfileAdministrationService.Creat
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -134,9 +141,165 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should default the Profile kind to Adult when creation omits it")
+  void shouldDefaultProfileKindToAdultWhenCreationOmitsIt() {
+    var outcome =
+        service.createProfile(
+            identity(),
+            CreateProfileCommand.builder()
+                .householdId(household.getId())
+                .name("Kai")
+                .maximumAllowedRatingAge(12)
+                .build());
+
+    var created = outcome.fold(profile -> profile, _ -> null);
+    assertThat(created).isNotNull();
+    assertThat(created.getKind()).isEqualTo(ProfileKind.ADULT);
+  }
+
+  @Test
+  @DisplayName("Should add the creator only once when it is also the named local manager")
+  void shouldAddCreatorOnlyOnceWhenItIsAlsoNamedLocalManager() {
+    var identity = identity();
+    var personal =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    accounts.save(
+        AccountFixture.defaultAccountBuilder()
+            .id(identity.accountId())
+            .householdId(household.getId())
+            .householdRole(HouseholdRole.ADMIN)
+            .personalProfileId(personal.getId())
+            .build());
+
+    var outcome =
+        service.createProfile(
+            identity,
+            CreateProfileCommand.builder()
+                .householdId(household.getId())
+                .name("Kai")
+                .kind(ProfileKind.KID)
+                .localManagerAccountId(identity.accountId())
+                .build());
+
+    var created = outcome.fold(profile -> profile, _ -> null);
+    assertThat(created).isNotNull();
+    assertThat(managers.findByProfileId(created.getId())).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should reject a named local manager when it is not a HouseholdAdmin")
+  void shouldRejectNamedLocalManagerWhenItIsNotHouseholdAdmin() {
+    var personal =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var member =
+        accounts.save(
+            AccountFixture.defaultAccountBuilder()
+                .householdId(household.getId())
+                .householdRole(HouseholdRole.MEMBER)
+                .personalProfileId(personal.getId())
+                .build());
+
+    var outcome =
+        service.createProfile(
+            identity(),
+            CreateProfileCommand.builder()
+                .householdId(household.getId())
+                .name("Kai")
+                .localManagerAccountId(member.getId())
+                .build());
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ManagerNotEligible.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a named local manager from another Household")
+  void shouldRejectNamedLocalManagerWhenItBelongsToAnotherHousehold() {
+    var otherHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var personal =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(otherHousehold.getId()).build());
+    var manager =
+        accounts.save(
+            AccountFixture.defaultAccountBuilder()
+                .householdId(otherHousehold.getId())
+                .householdRole(HouseholdRole.ADMIN)
+                .personalProfileId(personal.getId())
+                .build());
+
+    var outcome =
+        service.createProfile(
+            identity(),
+            CreateProfileCommand.builder()
+                .householdId(household.getId())
+                .name("Kai")
+                .localManagerAccountId(manager.getId())
+                .build());
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ManagerNotEligible.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a named local manager whose Personal Profile is restricted")
+  void shouldRejectNamedLocalManagerWhenPersonalProfileIsRestricted() {
+    var personal =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder()
+                .householdId(household.getId())
+                .maximumAllowedRatingAge(12)
+                .build());
+    var manager =
+        accounts.save(
+            AccountFixture.defaultAccountBuilder()
+                .householdId(household.getId())
+                .householdRole(HouseholdRole.ADMIN)
+                .personalProfileId(personal.getId())
+                .build());
+
+    var outcome =
+        service.createProfile(
+            identity(),
+            CreateProfileCommand.builder()
+                .householdId(household.getId())
+                .name("Kai")
+                .localManagerAccountId(manager.getId())
+                .build());
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ManagerNotEligible.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a named local manager whose Personal Profile is a Kid")
+  void shouldRejectNamedLocalManagerWhenPersonalProfileIsKid() {
+    var personal =
+        profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
+    var manager =
+        accounts.save(
+            AccountFixture.defaultAccountBuilder()
+                .householdId(household.getId())
+                .householdRole(HouseholdRole.ADMIN)
+                .personalProfileId(personal.getId())
+                .build());
+
+    var outcome =
+        service.createProfile(
+            identity(),
+            CreateProfileCommand.builder()
+                .householdId(household.getId())
+                .name("Kai")
+                .localManagerAccountId(manager.getId())
+                .build());
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ManagerNotEligible.class);
+  }
+
+  @ParameterizedTest
+  @NullSource
+  @ValueSource(strings = " ")
   @DisplayName("Should refuse creation when the Profile name is blank")
-  void shouldRefuseCreationWhenProfileNameIsBlank() {
-    assertThat(rejectionOf(service.createProfile(identity(), create(household.getId(), " "))))
+  void shouldRefuseCreationWhenProfileNameIsBlank(String name) {
+    assertThat(rejectionOf(service.createProfile(identity(), create(household.getId(), name))))
         .isInstanceOf(ProfileRejections.ProfileNameRequired.class);
   }
 
@@ -197,6 +360,32 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should translate every known creation constraint when the database rejects creation")
+  void shouldTranslateEveryKnownCreationConstraintWhenDatabaseRejectsCreation() {
+    assertThat(creationRejectionFor("chk_household_profile_names_unique"))
+        .isInstanceOf(ProfileRejections.ProfileNameTaken.class);
+    assertThat(creationRejectionFor("chk_profile_home_anchor"))
+        .isInstanceOf(ProfileRejections.EligibleManagerRequired.class);
+    assertThat(creationRejectionFor("chk_restricted_account_holds_no_authority"))
+        .isInstanceOf(ProfileRejections.ManagerNotEligible.class);
+  }
+
+  @Test
+  @DisplayName("Should propagate an unknown creation constraint when the database rejects creation")
+  void shouldPropagateUnknownCreationConstraintWhenDatabaseRejectsCreation() {
+    var failingProfiles =
+        new ConstraintFailingProfileRepository(
+            shares, "chk_unexpected", ConstraintOperation.CREATE);
+    var failingService = serviceWith(failingProfiles);
+    var identity = identity();
+    var command = create(household.getId(), "Kai");
+
+    assertThatThrownBy(() -> failingService.createProfile(identity, command))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
   @DisplayName("Should write the normalized transition when authorization returns a decision value")
   void shouldWriteNormalizedTransitionWhenAuthorizationReturnsDecisionValue() {
     var profile =
@@ -218,6 +407,29 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should set the Content Ceiling when authorization normalizes the target")
+  void shouldSetContentCeilingWhenAuthorizationNormalizesTarget() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.ProfilePolicyChange
+                ? new Decision.Allowed<>(
+                    new ProfilePolicyTransition(
+                        ProfileKind.ADULT,
+                        12,
+                        ProfilePolicyTransition.Classification.ORDINARY_EDIT))
+                : allowed());
+
+    var outcome = service.setProfileContentCeiling(identity(), profile.getId(), 12);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(profiles.findById(profile.getId()).orElseThrow().getMaximumAllowedRatingAge())
+        .isEqualTo(12);
+  }
+
+  @Test
   @DisplayName("Should report the missing ceremony when a policy change needs reauthentication")
   void shouldReportMissingCeremonyWhenPolicyChangeNeedsReauthentication() {
     var profile =
@@ -233,6 +445,83 @@ class ProfileAdministrationServiceTest {
     assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ReauthenticationRequired.class);
     assertThat(profiles.findById(profile.getId()).orElseThrow().getKind())
         .isEqualTo(ProfileKind.KID);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when a policy-change decision is unavailable")
+  void shouldFailClosedWhenPolicyChangeDecisionIsUnavailable() {
+    var profile =
+        profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var identity = identity();
+    var profileId = profile.getId();
+
+    assertThatThrownBy(() -> service.changeProfileKind(identity, profileId, ProfileKind.ADULT))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("Should hide or forbid a policy denial when Profile visibility changes")
+  void shouldHideOrForbidPolicyDenialWhenProfileVisibilityChanges() {
+    var profile =
+        profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
+    var identity = identity();
+    var profileId = profile.getId();
+    authorization.decideWith(
+        intent -> intent instanceof Intent.ProfilePolicyChange ? denied() : allowed());
+
+    assertThatThrownBy(() -> service.changeProfileKind(identity, profileId, ProfileKind.ADULT))
+        .isInstanceOf(AccessDeniedException.class);
+
+    authorization.denyAll();
+    assertThat(rejectionOf(service.changeProfileKind(identity, profileId, ProfileKind.ADULT)))
+        .isInstanceOf(ProfileRejections.ProfileNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should return not found when an allowed policy write loses the Profile")
+  void shouldReturnNotFoundWhenAllowedPolicyWriteLosesProfile() {
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.ProfilePolicyChange
+                ? new Decision.Allowed<>(
+                    new ProfilePolicyTransition(
+                        ProfileKind.ADULT,
+                        null,
+                        ProfilePolicyTransition.Classification.KIND_CHANGE))
+                : allowed());
+
+    var outcome = service.changeProfileKind(identity(), UUID.randomUUID(), ProfileKind.ADULT);
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ProfileNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should translate every known policy constraint when the database rejects the write")
+  void shouldTranslateEveryKnownPolicyConstraintWhenDatabaseRejectsWrite() {
+    assertThat(policyRejectionFor("chk_profile_home_anchor"))
+        .isInstanceOf(ProfileRejections.EligibleManagerRequired.class);
+    assertThat(policyRejectionFor("chk_restricted_account_holds_no_authority"))
+        .isInstanceOf(ProfileRejections.RestrictedAccountAuthority.class);
+  }
+
+  @Test
+  @DisplayName("Should propagate an unknown policy constraint when the database rejects the write")
+  void shouldPropagateUnknownPolicyConstraintWhenDatabaseRejectsWrite() {
+    var failingProfiles =
+        new ConstraintFailingProfileRepository(
+            shares, "chk_unexpected", ConstraintOperation.POLICY);
+    var profile =
+        failingProfiles.save(
+            ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
+    var failingService = serviceWith(failingProfiles);
+    allowPolicyTransition();
+    var identity = identity();
+    var profileId = profile.getId();
+
+    assertThatThrownBy(
+            () -> failingService.changeProfileKind(identity, profileId, ProfileKind.ADULT))
+        .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test
@@ -305,6 +594,34 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should trim and rename a Profile when the edit is allowed")
+  void shouldTrimAndRenameProfileWhenEditIsAllowed() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+
+    var outcome = service.renameProfile(identity(), profile.getId(), "  Kai  ");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(profiles.findById(profile.getId()).orElseThrow().getName()).isEqualTo("Kai");
+  }
+
+  @Test
+  @DisplayName("Should translate the unique-name constraint when the database rejects a rename")
+  void shouldTranslateUniqueNameConstraintWhenDatabaseRejectsRename() {
+    var failingProfiles =
+        new ConstraintFailingProfileRepository(
+            shares, "chk_household_profile_names_unique", ConstraintOperation.RENAME);
+    var profile =
+        failingProfiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+
+    var outcome = serviceWith(failingProfiles).renameProfile(identity(), profile.getId(), "Kai");
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ProfileNameTaken.class);
+  }
+
+  @Test
   @DisplayName("Should return not found when renaming a missing Profile")
   void shouldReturnNotFoundWhenRenamingMissingProfile() {
     var outcome = service.renameProfile(identity(), UUID.randomUUID(), "Kai");
@@ -320,6 +637,31 @@ class ProfileAdministrationServiceTest {
 
     assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ProfileNotFound.class);
     assertThat(transactionManager.rollbacks()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should hide or forbid ordinary edits when Profile visibility changes")
+  void shouldHideOrForbidOrdinaryEditsWhenProfileVisibilityChanges() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var identity = identity();
+    var profileId = profile.getId();
+    authorization.decideWith(
+        intent -> intent instanceof Intent.RenameProfile ? denied() : allowed());
+
+    assertThatThrownBy(() -> service.renameProfile(identity, profileId, "Kai"))
+        .isInstanceOf(AccessDeniedException.class);
+
+    authorization.denyAll();
+    assertThat(rejectionOf(service.renameProfile(identity, profileId, "Kai")))
+        .isInstanceOf(ProfileRejections.ProfileNotFound.class);
+    assertThat(rejectionOf(service.setProfilePicture(identity, profileId, "kai.png")))
+        .isInstanceOf(ProfileRejections.ProfileNotFound.class);
+    assertThat(rejectionOf(service.setProfilePin(identity, profileId, "4242")))
+        .isInstanceOf(ProfileRejections.ProfileNotFound.class);
+    assertThat(rejectionOf(service.removeProfilePin(identity, profileId)))
+        .isInstanceOf(ProfileRejections.ProfileNotFound.class);
   }
 
   @Test
@@ -379,17 +721,17 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should return not found when clearing the PIN on a missing Profile")
-  void shouldReturnNotFoundWhenClearingPinOnMissingProfile() {
-    var outcome = service.clearProfilePin(identity(), UUID.randomUUID());
+  @DisplayName("Should return not found when removing the PIN from a missing Profile")
+  void shouldReturnNotFoundWhenRemovingPinFromMissingProfile() {
+    var outcome = service.removeProfilePin(identity(), UUID.randomUUID());
 
     assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ProfileNotFound.class);
     assertThat(transactionManager.rollbacks()).isEqualTo(1);
   }
 
   @Test
-  @DisplayName("Should refuse clearing a PIN when the safety rule still requires it")
-  void shouldRefuseClearingPinWhenSafetyRuleStillRequiresIt() {
+  @DisplayName("Should refuse removing a PIN when the safety rule still requires it")
+  void shouldRefuseRemovingPinWhenSafetyRuleStillRequiresIt() {
     var adult =
         profiles.save(
             ProfileFixture.defaultProfileBuilder()
@@ -401,7 +743,7 @@ class ProfileAdministrationServiceTest {
     shares.share(adult.getId(), household.getId(), false);
     shares.share(kid.getId(), household.getId(), false);
 
-    var outcome = service.clearProfilePin(identity(), adult.getId());
+    var outcome = service.removeProfilePin(identity(), adult.getId());
 
     var rejection = rejectionOf(outcome);
     assertThat(rejection).isInstanceOf(ProfileRejections.WouldLockProfile.class);
@@ -412,8 +754,8 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse clearing a PIN when another shared Household requires it")
-  void shouldRefuseClearingPinWhenAnotherSharedHouseholdRequiresIt() {
+  @DisplayName("Should refuse removing a PIN when another shared Household requires it")
+  void shouldRefuseRemovingPinWhenAnotherSharedHouseholdRequiresIt() {
     var otherHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var adult =
         profiles.save(
@@ -428,7 +770,7 @@ class ProfileAdministrationServiceTest {
     shares.share(adult.getId(), otherHousehold.getId(), false);
     shares.share(otherHouseholdKid.getId(), otherHousehold.getId(), false);
 
-    var rejection = rejectionOf(service.clearProfilePin(identity(), adult.getId()));
+    var rejection = rejectionOf(service.removeProfilePin(identity(), adult.getId()));
 
     assertThat(rejection).isInstanceOf(ProfileRejections.WouldLockProfile.class);
     var wouldLock = (ProfileRejections.WouldLockProfile) rejection;
@@ -453,14 +795,14 @@ class ProfileAdministrationServiceTest {
     authorization.decideWith(
         intent -> intent instanceof Intent.ViewHouseholdAdministration ? denied() : allowed());
 
-    var rejection = rejectionOf(service.clearProfilePin(identity(), adult.getId()));
+    var rejection = rejectionOf(service.removeProfilePin(identity(), adult.getId()));
 
     assertThat(((ProfileRejections.WouldLockProfile) rejection).householdName()).isEmpty();
   }
 
   @Test
-  @DisplayName("Should clear the PIN when no Household's safety rule requires it")
-  void shouldClearPinWhenNoHouseholdSafetyRuleRequiresIt() {
+  @DisplayName("Should remove the PIN when no Household's safety rule requires it")
+  void shouldRemovePinWhenNoHouseholdSafetyRuleRequiresIt() {
     var adult =
         profiles.save(
             ProfileFixture.defaultProfileBuilder()
@@ -469,7 +811,7 @@ class ProfileAdministrationServiceTest {
                 .build());
     shares.share(adult.getId(), household.getId(), false);
 
-    var outcome = service.clearProfilePin(identity(), adult.getId());
+    var outcome = service.removeProfilePin(identity(), adult.getId());
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(profiles.findById(adult.getId()).orElseThrow().getPinHash()).isNull();
@@ -518,6 +860,39 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should hide a denied PIN override when the Profile may not be viewed")
+  void shouldHideDeniedPinOverrideWhenProfileMayNotBeViewed() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    authorization.denyAll();
+
+    var outcome = service.overrideProfilePin(identity(), profile.getId(), "4242", "locked out");
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ProfileNotFound.class);
+    assertThat(encoder.encodedValues()).isEmpty();
+    assertThat(audit.entries()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should report reauthentication when overriding a PIN requires a fresh ceremony")
+  void shouldReportReauthenticationWhenOverridingPinRequiresFreshCeremony() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.OverrideProfilePin
+                ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
+                : allowed());
+
+    var outcome = service.overrideProfilePin(identity(), profile.getId(), "4242", "locked out");
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ReauthenticationRequired.class);
+    assertThat(audit.entries()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should require a reason before deciding when the PIN override reason is blank")
   void shouldRequireReasonBeforeDecidingWhenPinOverrideReasonIsBlank() {
     var profile =
@@ -558,6 +933,25 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should report reauthentication when deletion requires a fresh ceremony")
+  void shouldReportReauthenticationWhenDeletionRequiresFreshCeremony() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.DeleteProfile
+                ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
+                : allowed());
+
+    var outcome = service.deleteProfile(identity(), profile.getId());
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ReauthenticationRequired.class);
+    assertThat(profiles.findById(profile.getId())).isPresent();
+    assertThat(audit.entries()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should explain or hide refusal when Profile visibility changes")
   void shouldExplainOrHideRefusalWhenProfileVisibilityChanges() {
     var orphan =
@@ -585,9 +979,69 @@ class ProfileAdministrationServiceTest {
             intent instanceof Intent.RenameProfile
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
                 : allowed());
+    var identity = identity();
+    var profileId = profile.getId();
 
-    assertThatThrownBy(() -> service.renameProfile(identity(), profile.getId(), "Kai"))
+    assertThatThrownBy(() -> service.renameProfile(identity, profileId, "Kai"))
         .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when an ordinary edit decision is unavailable")
+  void shouldFailClosedWhenOrdinaryEditDecisionIsUnavailable() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var identity = identity();
+    var profileId = profile.getId();
+
+    assertThatThrownBy(() -> service.renameProfile(identity, profileId, "Kai"))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  private Object creationRejectionFor(String constraint) {
+    var failingProfiles =
+        new ConstraintFailingProfileRepository(shares, constraint, ConstraintOperation.CREATE);
+    return rejectionOf(
+        serviceWith(failingProfiles).createProfile(identity(), create(household.getId(), "Kai")));
+  }
+
+  private Object policyRejectionFor(String constraint) {
+    var failingProfiles =
+        new ConstraintFailingProfileRepository(shares, constraint, ConstraintOperation.POLICY);
+    var profile =
+        failingProfiles.save(
+            ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
+    allowPolicyTransition();
+    return rejectionOf(
+        serviceWith(failingProfiles)
+            .changeProfileKind(identity(), profile.getId(), ProfileKind.ADULT));
+  }
+
+  private void allowPolicyTransition() {
+    authorization.decideWith(
+        intent ->
+            intent instanceof Intent.ProfilePolicyChange
+                ? new Decision.Allowed<>(
+                    new ProfilePolicyTransition(
+                        ProfileKind.ADULT,
+                        null,
+                        ProfilePolicyTransition.Classification.KIND_CHANGE))
+                : allowed());
+  }
+
+  private ProfileAdministrationService serviceWith(ProfileRepository profileRepository) {
+    return new ProfileAdministrationService(
+        authorization,
+        profileRepository,
+        managers,
+        shares,
+        households,
+        accounts,
+        audit,
+        new ProfilePinHasher(encoder),
+        new MutationTransactions(transactionManager, new ConstraintViolationTranslator()));
   }
 
   private AuthenticatedIdentity identity() {
@@ -612,6 +1066,61 @@ class ProfileAdministrationServiceTest {
 
   private static Decision<?> denied() {
     return new Decision.Denied<>(Decision.DenialReason.POLICY);
+  }
+
+  private static DataIntegrityViolationException violation(String constraint) {
+    var message = "violated constraint \"" + constraint + "\"";
+    return new DataIntegrityViolationException(
+        message,
+        new ConstraintViolationException(message, new SQLException(message, "23514"), constraint));
+  }
+
+  private enum ConstraintOperation {
+    CREATE,
+    RENAME,
+    POLICY
+  }
+
+  private static final class ConstraintFailingProfileRepository extends FakeProfileRepository {
+
+    private final String constraint;
+    private final ConstraintOperation operation;
+
+    private ConstraintFailingProfileRepository(
+        FakeProfileHouseholdShareRepository shares,
+        String constraint,
+        ConstraintOperation operation) {
+      super(shares);
+      this.constraint = constraint;
+      this.operation = operation;
+    }
+
+    @Override
+    public <S extends Profile> S saveAndFlush(S entity) {
+      if (operation == ConstraintOperation.CREATE) {
+        throw violation(constraint);
+      }
+
+      return super.saveAndFlush(entity);
+    }
+
+    @Override
+    public boolean tryRename(UUID profileId, String name) {
+      if (operation == ConstraintOperation.RENAME) {
+        throw violation(constraint);
+      }
+
+      return super.tryRename(profileId, name);
+    }
+
+    @Override
+    public boolean tryApplyPolicy(UUID profileId, ProfilePolicyTarget target) {
+      if (operation == ConstraintOperation.POLICY) {
+        throw violation(constraint);
+      }
+
+      return super.tryApplyPolicy(profileId, target);
+    }
   }
 
   private static final class RecordingEncoder implements PasswordEncoder {

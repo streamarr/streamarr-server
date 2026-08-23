@@ -9,6 +9,6 @@ import com.streamarr.server.graphql.mutation.MutationError;
 public sealed interface ClearProfileContentCeilingError extends MutationError
     permits ProfileNotFoundError,
         ReauthenticationRequiredError,
-        HomeAnchorRequiredError,
+        EligibleManagerRequiredError,
         RestrictedAccountAuthorityError,
         MaximumAllowedRatingAgeInvalidError {}

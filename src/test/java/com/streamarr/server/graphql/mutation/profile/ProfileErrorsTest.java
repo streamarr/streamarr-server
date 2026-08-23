@@ -31,8 +31,8 @@ class ProfileErrorsTest {
         ProfileErrors.toCreateProfileError(new ProfileRejections.ProfileNameTaken()),
         ProfileNameTakenError.class,
         "name");
-    assertThat(ProfileErrors.toCreateProfileError(new ProfileRejections.HomeAnchorRequired()))
-        .isInstanceOf(HomeAnchorRequiredError.class)
+    assertThat(ProfileErrors.toCreateProfileError(new ProfileRejections.EligibleManagerRequired()))
+        .isInstanceOf(EligibleManagerRequiredError.class)
         .isNotInstanceOf(InputMutationError.class);
     assertInputError(
         ProfileErrors.toCreateProfileError(new ProfileRejections.ManagerNotEligible()),
@@ -85,8 +85,9 @@ class ProfileErrorsTest {
             ProfileErrors.toChangeProfileKindError(
                 new ProfileRejections.ReauthenticationRequired()))
         .isInstanceOf(ReauthenticationRequiredError.class);
-    assertThat(ProfileErrors.toChangeProfileKindError(new ProfileRejections.HomeAnchorRequired()))
-        .isInstanceOf(HomeAnchorRequiredError.class);
+    assertThat(
+            ProfileErrors.toChangeProfileKindError(new ProfileRejections.EligibleManagerRequired()))
+        .isInstanceOf(EligibleManagerRequiredError.class);
     assertInputError(
         ProfileErrors.toChangeProfileKindError(new ProfileRejections.RestrictedAccountAuthority()),
         RestrictedAccountAuthorityError.class,
@@ -111,8 +112,8 @@ class ProfileErrorsTest {
         .isInstanceOf(ReauthenticationRequiredError.class);
     assertThat(
             ProfileErrors.toSetProfileContentCeilingError(
-                new ProfileRejections.HomeAnchorRequired()))
-        .isInstanceOf(HomeAnchorRequiredError.class);
+                new ProfileRejections.EligibleManagerRequired()))
+        .isInstanceOf(EligibleManagerRequiredError.class);
     assertInputError(
         ProfileErrors.toSetProfileContentCeilingError(
             new ProfileRejections.RestrictedAccountAuthority()),
@@ -138,8 +139,8 @@ class ProfileErrorsTest {
         .isInstanceOf(ReauthenticationRequiredError.class);
     assertThat(
             ProfileErrors.toClearProfileContentCeilingError(
-                new ProfileRejections.HomeAnchorRequired()))
-        .isInstanceOf(HomeAnchorRequiredError.class);
+                new ProfileRejections.EligibleManagerRequired()))
+        .isInstanceOf(EligibleManagerRequiredError.class);
     assertInputError(
         ProfileErrors.toClearProfileContentCeilingError(
             new ProfileRejections.RestrictedAccountAuthority()),
@@ -157,10 +158,10 @@ class ProfileErrorsTest {
   void shouldNameHouseholdInLockErrorWhenItMayBeSeen() {
     var householdId = UUID.randomUUID();
     var named =
-        ProfileErrors.toClearProfilePinError(
+        ProfileErrors.toRemoveProfilePinError(
             new ProfileRejections.WouldLockProfile(householdId, Optional.of("Beach House")));
     var unnamed =
-        ProfileErrors.toClearProfilePinError(
+        ProfileErrors.toRemoveProfilePinError(
             new ProfileRejections.WouldLockProfile(householdId, Optional.empty()));
 
     assertThat(named)
@@ -185,10 +186,10 @@ class ProfileErrorsTest {
   }
 
   @Test
-  @DisplayName("Should map every clear-PIN rejection when the service refuses the mutation")
-  void shouldMapEveryClearPinRejectionWhenServiceRefusesMutation() {
+  @DisplayName("Should map every remove-PIN rejection when the service refuses the mutation")
+  void shouldMapEveryRemovePinRejectionWhenServiceRefusesMutation() {
     assertInputError(
-        ProfileErrors.toClearProfilePinError(new ProfileRejections.ProfileNotFound()),
+        ProfileErrors.toRemoveProfilePinError(new ProfileRejections.ProfileNotFound()),
         ProfileNotFoundError.class,
         "profileId");
   }
