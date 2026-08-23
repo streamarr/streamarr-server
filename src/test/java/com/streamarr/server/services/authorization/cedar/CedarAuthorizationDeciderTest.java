@@ -248,7 +248,7 @@ class CedarAuthorizationDeciderTest {
             new ProfilePolicyPlanner(unavailableProfiles),
             ContributorStubs.systemClockFreshness(),
             meters);
-    var identity = identityFor(liveAccount(true, true), true);
+    var identity = identityFor(liveAccount(true, true));
 
     assertThat(
             failing.decide(
