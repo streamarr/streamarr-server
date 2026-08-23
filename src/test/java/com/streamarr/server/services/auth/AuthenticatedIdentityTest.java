@@ -130,7 +130,9 @@ class AuthenticatedIdentityTest {
   @Test
   @DisplayName("Should reject a null reauthentication value")
   void shouldRejectNullReauthenticationValue() {
-    assertThatThrownBy(() -> accountScopedBuilder().reauthenticatedAt(null).build())
+    var builder = accountScopedBuilder();
+
+    assertThatThrownBy(() -> builder.reauthenticatedAt(null))
         .isInstanceOf(NullPointerException.class)
         .hasMessageContaining("reauthenticatedAt");
   }
