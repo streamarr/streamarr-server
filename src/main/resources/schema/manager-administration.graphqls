@@ -102,7 +102,7 @@ type RelinquishProfileManagementPayload {
 union RelinquishProfileManagementError =
     ProfileNotFoundError
   | ManagementAlreadyRemovedError
-  | ManagerAnchorRequiredError
+  | EligibleManagerRequiredError
 
 input RemoveProfileManagerInput {
     profileId: ID!
@@ -117,7 +117,7 @@ type RemoveProfileManagerPayload {
 union RemoveProfileManagerError =
     ProfileNotFoundError
   | NotAManagerError
-  | ManagerAnchorRequiredError
+  | EligibleManagerRequiredError
 
 input GrantProfileManagerOverrideInput {
     profileId: ID!
@@ -154,4 +154,4 @@ union RemoveProfileManagerOverrideError =
   | ReasonRequiredError
   | ReauthenticationRequiredError
   | NotAManagerError
-  | ManagerAnchorRequiredError
+  | EligibleManagerRequiredError

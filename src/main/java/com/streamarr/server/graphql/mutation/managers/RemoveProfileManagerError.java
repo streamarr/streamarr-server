@@ -7,4 +7,4 @@ import com.streamarr.server.graphql.mutation.MutationError;
  * by.
  */
 public sealed interface RemoveProfileManagerError extends MutationError
-    permits ProfileNotFoundError, NotAManagerError, ManagerAnchorRequiredError {}
+    permits ProfileNotFoundError, NotAManagerError, EligibleManagerRequiredError {}

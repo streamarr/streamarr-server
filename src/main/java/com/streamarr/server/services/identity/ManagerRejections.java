@@ -1,6 +1,6 @@
 package com.streamarr.server.services.identity;
 
-/** Expected refusals of the ProfileManager mutations (ADR 0026 shapes, ADR 0024 authority). */
+/** Expected refusals of the ProfileManager mutations. */
 public final class ManagerRejections {
 
   private ManagerRejections() {}
@@ -16,9 +16,9 @@ public final class ManagerRejections {
   public sealed interface Decline permits ManagerInvitationNotFound {}
 
   public sealed interface Relinquish
-      permits ProfileNotFound, ManagementAlreadyRemoved, ManagerAnchorRequired {}
+      permits ProfileNotFound, ManagementAlreadyRemoved, EligibleManagerRequired {}
 
-  public sealed interface Remove permits ProfileNotFound, NotAManager, ManagerAnchorRequired {}
+  public sealed interface Remove permits ProfileNotFound, NotAManager, EligibleManagerRequired {}
 
   public sealed interface OverrideGrant
       permits ProfileNotFound,
@@ -33,14 +33,14 @@ public final class ManagerRejections {
           ReasonRequired,
           ReauthenticationRequired,
           NotAManager,
-          ManagerAnchorRequired {}
+          EligibleManagerRequired {}
 
   public record ProfileNotFound()
       implements Invite, Relinquish, Remove, OverrideGrant, OverrideRemove {}
 
   public record RecipientNotFound() implements Invite, OverrideGrant {}
 
-  /** Eligible means the Account's own Personal Profile is an unrestricted Adult (ADR 0024). */
+  /** Eligible means the Account's own Personal Profile is an unrestricted Adult. */
   public record RecipientNotEligible() implements Invite, Accept, OverrideGrant {}
 
   public record AlreadyManager() implements Invite, Accept, OverrideGrant {}
@@ -54,8 +54,7 @@ public final class ManagerRejections {
 
   public record NotAManager() implements Remove, OverrideRemove {}
 
-  /** T6: every Profile retains its required home management anchor. */
-  public record ManagerAnchorRequired() implements Relinquish, Remove, OverrideRemove {}
+  public record EligibleManagerRequired() implements Relinquish, Remove, OverrideRemove {}
 
   public record ReasonRequired() implements OverrideGrant, OverrideRemove {}
 

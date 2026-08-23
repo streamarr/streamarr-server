@@ -74,14 +74,14 @@ class ManagerErrorsTest {
         .isInstanceOf(ProfileNotFoundError.class);
     assertThat(ManagerErrors.toRelinquishError(new ManagerRejections.ManagementAlreadyRemoved()))
         .isInstanceOf(ManagementAlreadyRemovedError.class);
-    assertThat(ManagerErrors.toRelinquishError(new ManagerRejections.ManagerAnchorRequired()))
-        .isInstanceOf(ManagerAnchorRequiredError.class);
+    assertThat(ManagerErrors.toRelinquishError(new ManagerRejections.EligibleManagerRequired()))
+        .isInstanceOf(EligibleManagerRequiredError.class);
     assertThat(ManagerErrors.toRemoveError(new ManagerRejections.ProfileNotFound()))
         .isInstanceOf(ProfileNotFoundError.class);
     assertThat(ManagerErrors.toRemoveError(new ManagerRejections.NotAManager()))
         .isInstanceOf(NotAManagerError.class);
-    assertThat(ManagerErrors.toRemoveError(new ManagerRejections.ManagerAnchorRequired()))
-        .isInstanceOf(ManagerAnchorRequiredError.class);
+    assertThat(ManagerErrors.toRemoveError(new ManagerRejections.EligibleManagerRequired()))
+        .isInstanceOf(EligibleManagerRequiredError.class);
     assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.ProfileNotFound()))
         .isInstanceOf(ProfileNotFoundError.class);
     assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.ReasonRequired()))
@@ -103,7 +103,7 @@ class ManagerErrorsTest {
         .isInstanceOf(ReauthenticationRequiredError.class);
     assertThat(ManagerErrors.toRemoveOverrideError(new ManagerRejections.NotAManager()))
         .isInstanceOf(NotAManagerError.class);
-    assertThat(ManagerErrors.toRemoveOverrideError(new ManagerRejections.ManagerAnchorRequired()))
-        .isInstanceOf(ManagerAnchorRequiredError.class);
+    assertThat(ManagerErrors.toRemoveOverrideError(new ManagerRejections.EligibleManagerRequired()))
+        .isInstanceOf(EligibleManagerRequiredError.class);
   }
 }

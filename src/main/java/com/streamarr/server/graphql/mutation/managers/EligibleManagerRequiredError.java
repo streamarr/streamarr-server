@@ -1,6 +1,6 @@
 package com.streamarr.server.graphql.mutation.managers;
 
-public record ManagerAnchorRequiredError(String message)
+public record EligibleManagerRequiredError(String message)
     implements RelinquishProfileManagementError,
         RemoveProfileManagerError,
         RemoveProfileManagerOverrideError {}

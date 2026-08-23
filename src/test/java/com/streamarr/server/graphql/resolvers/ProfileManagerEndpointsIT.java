@@ -53,8 +53,9 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * The direct-manager lifecycle through the GraphQL boundary against real PostgreSQL and Cedar:
- * invitation and consent (the code appears exactly once), one winner per transition, T6's anchor
- * rule on relinquishing, and the fresh-reauthenticated override killing restorable proposals.
+ * invitation and consent (the code appears exactly once), one winner per transition, the eligible
+ * manager rule on relinquishing, and the fresh-reauthenticated override killing restorable
+ * proposals.
  */
 @Tag("IntegrationTest")
 @DisplayName("Profile Manager Endpoints Integration Tests")
@@ -481,7 +482,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should hold the home anchor when the sole manager relinquishes")
+  @DisplayName("Should retain an eligible manager when the sole manager relinquishes")
   void shouldHoldHomeAnchorWhenSoleManagerRelinquishes() throws Exception {
     var orphan = managedOrphan();
 
@@ -495,9 +496,9 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(
             jsonPath("$.data.relinquishProfileManagement.userErrors[0].__typename")
-                .value("ManagerAnchorRequiredError"));
+                .value("EligibleManagerRequiredError"));
 
-    // With a second eligible local manager anchoring, the same relinquish succeeds.
+    // With a second eligible local manager, the same relinquish succeeds.
     transactionTemplate.executeWithoutResult(
         _ ->
             profileManagerRepository.saveAndFlush(
