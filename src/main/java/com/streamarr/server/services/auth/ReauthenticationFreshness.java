@@ -22,11 +22,13 @@ public class ReauthenticationFreshness {
     if (reauthenticatedAt.isEmpty()) {
       return false;
     }
+
     var now = clock.instant();
     var instant = reauthenticatedAt.orElseThrow();
     if (instant.isAfter(now)) {
       return false;
     }
+
     return now.isBefore(instant.plus(properties.reauthenticationWindow()));
   }
 }

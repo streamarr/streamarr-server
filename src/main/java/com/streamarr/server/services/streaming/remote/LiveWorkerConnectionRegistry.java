@@ -66,6 +66,7 @@ final class LiveWorkerConnectionRegistry {
       connections.remove(workerId, connection);
       return;
     }
+
     connections.replace(workerId, connection, replaced);
   }
 

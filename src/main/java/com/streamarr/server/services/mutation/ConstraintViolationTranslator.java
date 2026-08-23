@@ -22,6 +22,7 @@ public class ConstraintViolationTranslator {
           && violation.getConstraintName() != null) {
         return Optional.of(violation.getConstraintName());
       }
+
       // A deferred trigger fails at commit, where Hibernate reports the raw driver error without
       // wrapping it; the constraint name is still on the server error message.
       if (cause instanceof PSQLException psql

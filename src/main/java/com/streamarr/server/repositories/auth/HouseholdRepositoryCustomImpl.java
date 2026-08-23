@@ -60,6 +60,7 @@ public class HouseholdRepositoryCustomImpl implements HouseholdRepositoryCustom 
     if (reverse) {
       Collections.reverse(households);
     }
+
     return households;
   }
 
@@ -68,6 +69,7 @@ public class HouseholdRepositoryCustomImpl implements HouseholdRepositoryCustom 
     if (options.getCursorId().isEmpty()) {
       return noCondition();
     }
+
     var cursorName = lower(val(options.getMediaFilter().getPreviousSortFieldValue().toString()));
     var cursorId = options.getCursorId().orElseThrow();
     var fields = row(name, HOUSEHOLD.ID);

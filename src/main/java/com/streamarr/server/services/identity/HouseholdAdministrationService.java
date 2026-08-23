@@ -52,6 +52,7 @@ public class HouseholdAdministrationService {
     if (isBlank(name)) {
       return Outcome.rejected(new AdministrationRejections.HouseholdNameRequired());
     }
+
     var household = Household.builder().name(name.strip()).build();
     return Outcome.accepted(householdRepository.saveAndFlush(household));
   }
@@ -63,13 +64,16 @@ public class HouseholdAdministrationService {
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
+
     if (isBlank(name)) {
       return Outcome.rejected(new AdministrationRejections.HouseholdNameRequired());
     }
+
     var household = householdRepository.findById(householdId);
     if (household.isEmpty()) {
       return Outcome.rejected(new AdministrationRejections.HouseholdNotFound());
     }
+
     householdRepository.tryRename(householdId, name.strip());
     householdRepository.refresh(household.get());
     return Outcome.accepted(household.get());
@@ -84,6 +88,7 @@ public class HouseholdAdministrationService {
         if (mayViewHousehold(identity, householdId)) {
           throw new AccessDeniedException("Not allowed.");
         }
+
         yield Optional.of(new AdministrationRejections.HouseholdNotFound());
       }
     };

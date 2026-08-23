@@ -37,9 +37,11 @@ public record AuthTokenProperties(
     if (issuer == null || issuer.isBlank()) {
       issuer = DEFAULT_ISSUER;
     }
+
     if (reauthenticationWindow == null) {
       reauthenticationWindow = DEFAULT_REAUTHENTICATION_WINDOW;
     }
+
     if (audience == null || audience.isBlank()) {
       audience = DEFAULT_AUDIENCE;
     }

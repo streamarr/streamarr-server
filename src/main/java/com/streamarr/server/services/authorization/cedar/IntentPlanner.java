@@ -57,6 +57,7 @@ final class IntentPlanner {
           case Intent.EnableAccount(var accountId) ->
               AuthorizationCheck.onAccount(Action.ENABLE_ACCOUNT, accountId);
         };
+
     return (IntentPlan<T>) new IntentPlan<>(check, AuthorizationUnit.INSTANCE);
   }
 }
