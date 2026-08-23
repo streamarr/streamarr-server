@@ -1,12 +1,10 @@
 package com.streamarr.server.graphql.inputs;
 
-import com.streamarr.server.services.identity.HouseholdTeardownService.FinalAccountChoice;
-
 public record TearDownHouseholdInput(
-    String householdId, String reason, FinalAccountInput finalAccount) {
+    String householdId, String reason, LastAccountInput lastAccount) {
 
-  public record FinalAccountInput(
-      FinalAccountChoice choice,
+  public record LastAccountInput(
+      LastAccountAction choice,
       String destinationHouseholdId,
       String replacementManagerAccountId) {}
 }

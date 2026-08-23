@@ -10,14 +10,18 @@ import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
+import com.streamarr.server.graphql.dto.HouseholdTeardownPreview;
 import com.streamarr.server.graphql.dto.ProfileActivityView;
+import com.streamarr.server.graphql.dto.ProfileDeletionPreview;
 import com.streamarr.server.graphql.dto.SecurityAuditEventView;
+import com.streamarr.server.graphql.inputs.LastAccountAction;
 import com.streamarr.server.graphql.inputs.TearDownHouseholdInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.teardown.TearDownHouseholdPayload;
 import com.streamarr.server.graphql.mutation.teardown.TeardownErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.HouseholdTeardownService;
+import com.streamarr.server.services.identity.HouseholdTeardownService.FinalAccountChoice;
 import com.streamarr.server.services.identity.HouseholdTeardownService.FinalAccountDisposition;
 import com.streamarr.server.services.identity.HouseholdTeardownService.SecurityAuditPageRequest;
 import com.streamarr.server.services.identity.HouseholdTeardownService.TearDownHouseholdCommand;
@@ -61,9 +65,10 @@ public class TeardownResolver {
   }
 
   @DgsQuery
-  public TeardownPreflightView teardownPreflight(@InputArgument String householdId) {
+  public HouseholdTeardownPreview householdTeardownPreview(@InputArgument String householdId) {
     return householdTeardownService
         .teardownPreflight(authorizationService.currentIdentity(), Ids.parseUuid(householdId))
+        .map(TeardownResolver::toDto)
         .orElse(null);
   }
 
@@ -89,21 +94,38 @@ public class TeardownResolver {
   }
 
   private static FinalAccountDisposition dispositionOf(TearDownHouseholdInput input) {
-    if (input.finalAccount() == null) {
+    if (input.lastAccount() == null) {
       return null;
     }
 
     return FinalAccountDisposition.builder()
-        .choice(input.finalAccount().choice())
+        .choice(choiceOf(input.lastAccount().choice()))
         .destinationHouseholdId(
-            input.finalAccount().destinationHouseholdId() == null
+            input.lastAccount().destinationHouseholdId() == null
                 ? null
-                : Ids.parseUuid(input.finalAccount().destinationHouseholdId()))
+                : Ids.parseUuid(input.lastAccount().destinationHouseholdId()))
         .replacementManagerAccountId(
-            input.finalAccount().replacementManagerAccountId() == null
+            input.lastAccount().replacementManagerAccountId() == null
                 ? null
-                : Ids.parseUuid(input.finalAccount().replacementManagerAccountId()))
+                : Ids.parseUuid(input.lastAccount().replacementManagerAccountId()))
         .build();
+  }
+
+  private static FinalAccountChoice choiceOf(LastAccountAction action) {
+    return switch (action) {
+      case TRANSFER -> FinalAccountChoice.TRANSFER;
+      case DELETE -> FinalAccountChoice.DELETE;
+      case DELETE_ACCOUNT_KEEP_PROFILE -> FinalAccountChoice.DELETE_KEEPING_PROFILE;
+    };
+  }
+
+  private static HouseholdTeardownPreview toDto(TeardownPreflightView preview) {
+    var profiles =
+        preview.unlinkedProfiles().stream()
+            .map(profile -> new ProfileDeletionPreview(profile.id(), profile.name()))
+            .toList();
+    return new HouseholdTeardownPreview(
+        preview.accountCount(), profiles, preview.hostedVisitCount());
   }
 
   private SecurityAuditPageRequest auditPageRequest(PaginationOptions options) {

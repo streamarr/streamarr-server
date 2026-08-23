@@ -127,25 +127,27 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should report teardown preflight when the caller may view the Household")
-  void shouldReportTeardownPreflightWhenCallerMayViewHousehold() throws Exception {
+  @DisplayName("Should return a teardown preview when the caller may view the Household")
+  void shouldReturnTeardownPreviewWhenCallerMayViewHousehold() throws Exception {
     seedTeardownArtifacts();
 
     graphql(
             authTestSupport.accountBearer(admin),
             """
-            query { teardownPreflight(householdId: "%s") {
-              accountCount unlinkedProfiles { name } hostedVisitCount } }
+            query { householdTeardownPreview(householdId: "%s") {
+              accountCount profilesToDelete { name } visitingProfileCount } }
             """
                 .formatted(doomed.household().getId()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.teardownPreflight.accountCount").value(1))
-        .andExpect(jsonPath("$.data.teardownPreflight.unlinkedProfiles[0].name").value("Orphan"));
+        .andExpect(jsonPath("$.data.householdTeardownPreview.accountCount").value(1))
+        .andExpect(
+            jsonPath("$.data.householdTeardownPreview.profilesToDelete[0].name").value("Orphan"))
+        .andExpect(jsonPath("$.data.householdTeardownPreview.visitingProfileCount").value(1));
   }
 
   @Test
-  @DisplayName("Should require reauthentication when teardown uses a stale ceremony")
-  void shouldRequireReauthenticationWhenTeardownUsesStaleCeremony() throws Exception {
+  @DisplayName("Should require reauthentication when password confirmation is stale")
+  void shouldRequireReauthenticationWhenPasswordConfirmationIsStale() throws Exception {
     graphql(
             authTestSupport.accountBearer(admin),
             tearDownMutation(doomed.household().getId(), admin.household().getId()))
@@ -162,7 +164,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
             authTestSupport.freshAccountBearer(admin),
             """
             mutation { tearDownHousehold(input: {householdId: "%s", reason: "closing",
-              finalAccount: {choice: TRANSFER}}) {
+              lastAccount: {choice: TRANSFER}}) {
               userErrors { __typename ... on InputMutationError { inputPath } } } }
             """
                 .formatted(doomed.household().getId()))
@@ -173,7 +175,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
                 .value("DestinationRequiredError"))
         .andExpect(
             jsonPath("$.data.tearDownHousehold.userErrors[0].inputPath")
-                .value(contains("finalAccount", "destinationHouseholdId")));
+                .value(contains("lastAccount", "destinationHouseholdId")));
   }
 
   @Test
@@ -185,7 +187,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
             authTestSupport.freshAccountBearer(admin),
             """
             mutation { tearDownHousehold(input: {householdId: "%s", reason: "closing",
-              finalAccount: {choice: DELETE_KEEPING_PROFILE, destinationHouseholdId: "%s"}}) {
+              lastAccount: {choice: DELETE_ACCOUNT_KEEP_PROFILE, destinationHouseholdId: "%s"}}) {
               userErrors { __typename ... on InputMutationError { inputPath } } } }
             """
                 .formatted(doomed.household().getId(), admin.household().getId()))
@@ -196,7 +198,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
                 .value("ReplacementManagerRequiredError"))
         .andExpect(
             jsonPath("$.data.tearDownHousehold.userErrors[0].inputPath")
-                .value(contains("finalAccount", "replacementManagerAccountId")));
+                .value(contains("lastAccount", "replacementManagerAccountId")));
   }
 
   @Test
@@ -211,7 +213,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
             bearer,
             """
             mutation { tearDownHousehold(input: {householdId: "%s", reason: "closing",
-              finalAccount: {choice: DELETE}}) {
+              lastAccount: {choice: DELETE}}) {
               householdId userErrors { __typename } } }
             """
                 .formatted(admin.household().getId()))
@@ -693,7 +695,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
     var delete =
         """
         mutation { tearDownHousehold(input: {householdId: "%s", reason: "closing shop",
-          finalAccount: {choice: DELETE}}) {
+          lastAccount: {choice: DELETE}}) {
           householdId userErrors { __typename } } }
         """
             .formatted(householdId);
@@ -826,7 +828,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
   private String tearDownMutation(UUID householdId, UUID destination) {
     return """
            mutation { tearDownHousehold(input: {householdId: "%s", reason: "closing shop",
-             finalAccount: {choice: TRANSFER, destinationHouseholdId: "%s"}}) {
+             lastAccount: {choice: TRANSFER, destinationHouseholdId: "%s"}}) {
              householdId userErrors { __typename } } }
            """
         .formatted(householdId, destination);
@@ -835,7 +837,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
   private String deleteMutation(UUID householdId) {
     return """
            mutation { tearDownHousehold(input: {householdId: "%s", reason: "closing shop",
-             finalAccount: {choice: DELETE}}) {
+             lastAccount: {choice: DELETE}}) {
              householdId userErrors { __typename } } }
            """
         .formatted(householdId);

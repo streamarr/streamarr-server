@@ -1,16 +1,16 @@
 # Household teardown, the security audit, and Profile activity (ADR 0024 §Teardown, §Audit).
 
-enum FinalAccountChoice {
+enum LastAccountAction {
     "Transfer the Account and linked Profile pair to the destination Household."
     TRANSFER
     "Delete the Account and Profile pair."
     DELETE
-    "Delete the Account; preserve the Profile behind a destination anchor."
-    DELETE_KEEPING_PROFILE
+    "Delete the Account and preserve its Profile with a manager in the destination Household."
+    DELETE_ACCOUNT_KEEP_PROFILE
 }
 
-input FinalAccountInput {
-    choice: FinalAccountChoice!
+input LastAccountInput {
+    choice: LastAccountAction!
     destinationHouseholdId: ID
     replacementManagerAccountId: ID
 }
@@ -19,7 +19,7 @@ input TearDownHouseholdInput {
     householdId: ID!
     reason: String!
     "Required when exactly one Account remains; absent when none do."
-    finalAccount: FinalAccountInput
+    lastAccount: LastAccountInput
 }
 
 type TearDownHouseholdPayload {
@@ -32,25 +32,25 @@ union TearDownHouseholdError =
   | ReasonRequiredError
   | ReauthenticationRequiredError
   | AccountsRemainError
-  | FinalAccountRequiredError
-  | FinalAccountUnexpectedError
+  | LastAccountActionRequiredError
+  | LastAccountActionNotAllowedError
   | DestinationRequiredError
   | DestinationNotFoundError
   | ReplacementManagerRequiredError
-  | ReplacementManagerNotFoundError
-  | ReplacementManagerNotEligibleError
+  | AccountNotFoundError
+  | ProfileManagerNotEligibleError
   | LastServerAdminError
 
-type DoomedProfileView {
+type ProfileDeletionPreview {
     id: ID!
     name: String!
 }
 
 "What teardown will take with it; null for whoever may not view the Household."
-type TeardownPreflightView {
+type HouseholdTeardownPreview {
     accountCount: Int!
-    unlinkedProfiles: [DoomedProfileView!]!
-    hostedVisitCount: Int!
+    profilesToDelete: [ProfileDeletionPreview!]!
+    visitingProfileCount: Int!
 }
 
 type SecurityAuditEventView {
