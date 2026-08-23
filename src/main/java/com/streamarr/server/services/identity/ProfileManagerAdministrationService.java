@@ -50,7 +50,7 @@ public class ProfileManagerAdministrationService {
 
   private static final String CHK_RESTRICTED_AUTHORITY =
       "chk_restricted_account_holds_no_authority";
-  private static final String CHK_HOME_ANCHOR = "chk_profile_home_anchor";
+  private static final String CHK_ELIGIBLE_MANAGER = "chk_profile_home_anchor";
   private static final String REPLACED_REASON = "replaced by a newer invitation";
   private static final String INVITER_LEFT_REASON = "inviting manager lost management";
 
@@ -256,7 +256,8 @@ public class ProfileManagerAdministrationService {
           invalidateLeaversProposals(profileId, identity.accountId());
           return profileId;
         },
-        constraint -> anchorRejection(constraint, ManagerRejections.ManagerAnchorRequired::new));
+        constraint ->
+            eligibleManagerRejection(constraint, ManagerRejections.EligibleManagerRequired::new));
   }
 
   public Outcome<UUID, ManagerRejections.Remove> removeProfileManager(
@@ -278,7 +279,8 @@ public class ProfileManagerAdministrationService {
           removeDisputedAuthority(identity, profileId, managerAccountId, "removeProfileManager");
           return profileId;
         },
-        constraint -> anchorRejection(constraint, ManagerRejections.ManagerAnchorRequired::new));
+        constraint ->
+            eligibleManagerRejection(constraint, ManagerRejections.EligibleManagerRequired::new));
   }
 
   public Outcome<UUID, ManagerRejections.OverrideGrant> grantProfileManagerOverride(
@@ -357,7 +359,8 @@ public class ProfileManagerAdministrationService {
               identity, profileId, accountId, "removeProfileManagerOverride", reason);
           return profileId;
         },
-        constraint -> anchorRejection(constraint, ManagerRejections.ManagerAnchorRequired::new));
+        constraint ->
+            eligibleManagerRejection(constraint, ManagerRejections.EligibleManagerRequired::new));
   }
 
   /** Pending invitations for the Profile, visible only to direct managers and ServerAdmin. */
@@ -496,8 +499,11 @@ public class ProfileManagerAdministrationService {
     securityAuditEventRepository.append(entry.actorAccountId(identity.accountId()).build());
   }
 
-  private static <R> Optional<R> anchorRejection(String constraint, Supplier<R> anchor) {
-    return CHK_HOME_ANCHOR.equals(constraint) ? Optional.of(anchor.get()) : Optional.empty();
+  private static <R> Optional<R> eligibleManagerRejection(
+      String constraint, Supplier<R> rejection) {
+    return CHK_ELIGIBLE_MANAGER.equals(constraint)
+        ? Optional.of(rejection.get())
+        : Optional.empty();
   }
 
   private Optional<Object> refusalOf(

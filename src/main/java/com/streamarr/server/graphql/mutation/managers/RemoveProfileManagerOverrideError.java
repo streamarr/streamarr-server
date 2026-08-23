@@ -11,4 +11,4 @@ public sealed interface RemoveProfileManagerOverrideError extends MutationError
         ReasonRequiredError,
         ReauthenticationRequiredError,
         NotAManagerError,
-        ManagerAnchorRequiredError {}
+        EligibleManagerRequiredError {}

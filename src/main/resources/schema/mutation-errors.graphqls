@@ -284,8 +284,3 @@ type NotAManagerError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
-
-"T6: every Profile retains its required home management anchor."
-type ManagerAnchorRequiredError implements MutationError {
-    message: String!
-}

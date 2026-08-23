@@ -55,7 +55,7 @@ public final class ManagerErrors {
       case ManagerRejections.ProfileNotFound _ -> profileNotFound();
       case ManagerRejections.ManagementAlreadyRemoved _ ->
           new ManagementAlreadyRemovedError("You no longer manage that Profile.");
-      case ManagerRejections.ManagerAnchorRequired _ -> anchorRequired();
+      case ManagerRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
     };
   }
 
@@ -63,7 +63,7 @@ public final class ManagerErrors {
     return switch (rejection) {
       case ManagerRejections.ProfileNotFound _ -> profileNotFound();
       case ManagerRejections.NotAManager _ -> notAManager();
-      case ManagerRejections.ManagerAnchorRequired _ -> anchorRequired();
+      case ManagerRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
     };
   }
 
@@ -86,7 +86,7 @@ public final class ManagerErrors {
       case ManagerRejections.ReasonRequired _ -> reasonRequired();
       case ManagerRejections.ReauthenticationRequired _ -> reauthenticationRequired();
       case ManagerRejections.NotAManager _ -> notAManager();
-      case ManagerRejections.ManagerAnchorRequired _ -> anchorRequired();
+      case ManagerRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
     };
   }
 
@@ -125,8 +125,8 @@ public final class ManagerErrors {
         "That Account does not manage the Profile.", InputPath.of(ACCOUNT_ID));
   }
 
-  private static ManagerAnchorRequiredError anchorRequired() {
-    return new ManagerAnchorRequiredError(
+  private static EligibleManagerRequiredError eligibleManagerRequired() {
+    return new EligibleManagerRequiredError(
         "Every Profile keeps its required home management anchor.");
   }
 
