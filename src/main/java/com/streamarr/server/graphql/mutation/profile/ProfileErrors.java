@@ -132,7 +132,7 @@ public final class ProfileErrors {
 
   private static ProfileNameTakenError nameTaken() {
     return new ProfileNameTakenError(
-        "Another available Profile already uses that name.", InputPath.of(NAME));
+        "Another Profile in that Household already uses that name.", InputPath.of(NAME));
   }
 
   private static ProfileRequiresEligibleManagerError profileRequiresEligibleManager() {

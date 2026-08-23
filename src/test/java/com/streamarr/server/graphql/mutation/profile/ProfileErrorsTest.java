@@ -59,10 +59,11 @@ class ProfileErrorsTest {
         ProfileErrors.toRenameProfileError(new ProfileRejections.ProfileNameRequired()),
         ProfileNameRequiredError.class,
         "name");
-    assertInputError(
-        ProfileErrors.toRenameProfileError(new ProfileRejections.ProfileNameTaken()),
-        ProfileNameTakenError.class,
-        "name");
+    var nameTaken = ProfileErrors.toRenameProfileError(new ProfileRejections.ProfileNameTaken());
+
+    assertInputError(nameTaken, ProfileNameTakenError.class, "name");
+    assertThat(nameTaken.message())
+        .isEqualTo("Another Profile in that Household already uses that name.");
   }
 
   @Test

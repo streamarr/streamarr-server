@@ -467,8 +467,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject a rename when an available Profile already uses the name")
-  void shouldRejectRenameWhenAvailableProfileAlreadyUsesName() throws Exception {
+  @DisplayName("Should reject a rename when another Profile in the Household uses the name")
+  void shouldRejectRenameWhenAnotherProfileInHouseholdUsesName() throws Exception {
     var kid = kidProfile();
 
     graphql(
