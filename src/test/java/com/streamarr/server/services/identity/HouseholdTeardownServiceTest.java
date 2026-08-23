@@ -824,14 +824,13 @@ class HouseholdTeardownServiceTest {
   }
 
   private static KeysetPaginationOptions paginationOptions() {
-    return KeysetPaginationOptions.builder()
-        .paginationOptions(
-            PaginationOptions.builder()
-                .paginationDirection(PaginationDirection.FORWARD)
-                .cursor(Optional.empty())
-                .limit(100)
-                .build())
-        .build();
+    return new KeysetPaginationOptions(
+        null,
+        PaginationOptions.builder()
+            .paginationDirection(PaginationDirection.FORWARD)
+            .cursor(Optional.empty())
+            .limit(100)
+            .build());
   }
 
   private Outcome<UUID, TeardownRejections.TearDown> completedOutcome(
