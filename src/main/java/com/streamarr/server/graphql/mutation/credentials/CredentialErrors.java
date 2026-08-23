@@ -67,7 +67,7 @@ public final class CredentialErrors {
               "No such Household.", InputPath.of("reofferHouseholdIds"));
       case CredentialRejections.ReofferHouseholdNotShared _ ->
           new ReofferHouseholdNotSharedError(
-              "Only a Household the Profile actively visits can be offered it afresh.",
+              "Choose a Household where the Profile previously had an active share.",
               InputPath.of("reofferHouseholdIds"));
     };
   }

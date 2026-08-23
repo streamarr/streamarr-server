@@ -96,12 +96,17 @@ class CredentialErrorsTest {
   }
 
   @Test
-  @DisplayName("Should map the reoffer path when the Profile is not shared")
-  void shouldMapReofferPathWhenProfileNotShared() {
+  @DisplayName("Should explain the previous-share requirement when a Profile is not shared")
+  void shouldExplainPreviousShareRequirementWhenProfileNotShared() {
     assertThat(CredentialErrors.toIssueError(new CredentialRejections.ReofferHouseholdNotShared()))
         .isInstanceOfSatisfying(
             ReofferHouseholdNotSharedError.class,
-            error -> assertThat(error.inputPath()).containsExactly("reofferHouseholdIds"));
+            error -> {
+              assertThat(error.message())
+                  .isEqualTo(
+                      "Choose a Household where the Profile previously had an active share.");
+              assertThat(error.inputPath()).containsExactly("reofferHouseholdIds");
+            });
   }
 
   @Test
