@@ -800,7 +800,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
               authTestSupport.freshAccountBearer(survivingAdmin),
               """
               mutation { tearDownHousehold(input: {householdId: "%s", reason: "closing",
-                finalAccount: {choice: DELETE}}) {
+                lastAccount: {choice: DELETE}}) {
                 householdId userErrors { __typename } } }
               """
                   .formatted(serverAdmin.household().getId()))
