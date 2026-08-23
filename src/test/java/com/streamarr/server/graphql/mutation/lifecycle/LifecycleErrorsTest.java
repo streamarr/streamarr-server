@@ -19,17 +19,18 @@ import org.junit.jupiter.params.provider.MethodSource;
 class LifecycleErrorsTest {
 
   @Test
-  @DisplayName("Should describe the eligible manager requirement without implementation detail")
-  void shouldDescribeEligibleManagerRequirementWithoutImplementationDetail() {
+  @DisplayName(
+      "Should describe the eligible Profile manager requirement without implementation detail")
+  void shouldDescribeEligibleProfileManagerRequirementWithoutImplementationDetail() {
     var error =
         LifecycleErrors.toTransferAccountError(new TransferRejections.EligibleManagerRequired());
 
     assertThat(error)
         .isInstanceOfSatisfying(
-            EligibleManagerRequiredError.class,
+            ProfileRequiresEligibleManagerError.class,
             required ->
                 assertThat(required.message())
-                    .isEqualTo("The Profile needs an eligible manager in its Household."));
+                    .isEqualTo("The Profile needs an eligible Profile manager in its Household."));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -58,7 +59,7 @@ class LifecycleErrorsTest {
         errorCase(
             "Final Account",
             () -> LifecycleErrors.toTransferAccountError(new TransferRejections.FinalAccount()),
-            FinalAccountError.class),
+            LastHouseholdAccountError.class),
         errorCase(
             "Last HouseholdAdmin",
             () ->
@@ -67,17 +68,17 @@ class LifecycleErrorsTest {
         errorCase(
             "No eligible HouseholdAdmin",
             () -> LifecycleErrors.toTransferAccountError(new TransferRejections.NoEligibleAdmin()),
-            NoEligibleAdminError.class),
+            RestrictedProfileRequiresHouseholdAdminError.class),
         errorCase(
             "Account Profile name conflict",
             () -> LifecycleErrors.toTransferAccountError(new TransferRejections.NameConflict()),
             ProfileNameTakenError.class),
         errorCase(
-            "Account Profile needs an eligible manager",
+            "Account Profile needs an eligible Profile manager",
             () ->
                 LifecycleErrors.toTransferAccountError(
                     new TransferRejections.EligibleManagerRequired()),
-            EligibleManagerRequiredError.class),
+            ProfileRequiresEligibleManagerError.class),
         errorCase(
             "Restricted first Account",
             () ->
@@ -100,25 +101,25 @@ class LifecycleErrorsTest {
         errorCase(
             "Linked Profile",
             () -> LifecycleErrors.toTransferProfileError(new TransferRejections.ProfileLinked()),
-            ProfileLinkedError.class),
+            ProfileBelongsToAccountError.class),
         errorCase(
             "Local manager required",
             () ->
                 LifecycleErrors.toTransferProfileError(
                     new TransferRejections.LocalManagerRequired()),
-            LocalManagerRequiredError.class),
+            EligibleProfileManagerRequiredError.class),
         errorCase(
             "Local manager not found",
             () ->
                 LifecycleErrors.toTransferProfileError(
                     new TransferRejections.LocalManagerNotFound()),
-            LocalManagerNotFoundError.class),
+            AccountNotFoundError.class),
         errorCase(
             "Local manager ineligible",
             () ->
                 LifecycleErrors.toTransferProfileError(
                     new TransferRejections.ReplacementManagerNotEligible()),
-            ReplacementManagerNotEligibleError.class),
+            ProfileManagerNotEligibleError.class),
         errorCase(
             "Profile name conflict",
             () -> LifecycleErrors.toTransferProfileError(new TransferRejections.NameConflict()),
@@ -126,7 +127,7 @@ class LifecycleErrorsTest {
         errorCase(
             "Profile leaves no eligible HouseholdAdmin",
             () -> LifecycleErrors.toTransferProfileError(new TransferRejections.NoEligibleAdmin()),
-            NoEligibleAdminError.class));
+            RestrictedProfileRequiresHouseholdAdminError.class));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -156,7 +157,7 @@ class LifecycleErrorsTest {
         errorCase(
             "Final Account",
             () -> LifecycleErrors.toDeleteAccountError(new TransferRejections.FinalAccount()),
-            FinalAccountError.class),
+            LastHouseholdAccountError.class),
         errorCase(
             "Last HouseholdAdmin",
             () -> LifecycleErrors.toDeleteAccountError(new TransferRejections.LastHouseholdAdmin()),
@@ -176,23 +177,23 @@ class LifecycleErrorsTest {
             () ->
                 LifecycleErrors.toDeleteAccountError(
                     new TransferRejections.ReplacementManagerNotFound()),
-            ReplacementManagerNotFoundError.class),
+            AccountNotFoundError.class),
         errorCase(
             "Replacement manager ineligible",
             () ->
                 LifecycleErrors.toDeleteAccountError(
                     new TransferRejections.ReplacementManagerNotEligible()),
-            ReplacementManagerNotEligibleError.class),
+            ProfileManagerNotEligibleError.class),
         errorCase(
-            "Account Profile needs an eligible manager",
+            "Account Profile needs an eligible Profile manager",
             () ->
                 LifecycleErrors.toDeleteAccountError(
                     new TransferRejections.EligibleManagerRequired()),
-            EligibleManagerRequiredError.class),
+            ProfileRequiresEligibleManagerError.class),
         errorCase(
             "Account leaves no eligible HouseholdAdmin",
             () -> LifecycleErrors.toDeleteAccountError(new TransferRejections.NoEligibleAdmin()),
-            NoEligibleAdminError.class),
+            RestrictedProfileRequiresHouseholdAdminError.class),
         errorCase(
             "Self-deletion confirmation required",
             () ->
@@ -208,7 +209,7 @@ class LifecycleErrorsTest {
         errorCase(
             "Self-deletion of final Account",
             () -> LifecycleErrors.toDeleteMyAccountError(new TransferRejections.FinalAccount()),
-            FinalAccountError.class),
+            LastHouseholdAccountError.class),
         errorCase(
             "Self-deletion of last HouseholdAdmin",
             () ->
@@ -219,15 +220,15 @@ class LifecycleErrorsTest {
             () -> LifecycleErrors.toDeleteMyAccountError(new TransferRejections.LastServerAdmin()),
             LastServerAdminError.class),
         errorCase(
-            "Self-deletion leaves Profile without an eligible manager",
+            "Self-deletion leaves Profile without an eligible Profile manager",
             () ->
                 LifecycleErrors.toDeleteMyAccountError(
                     new TransferRejections.EligibleManagerRequired()),
-            EligibleManagerRequiredError.class),
+            ProfileRequiresEligibleManagerError.class),
         errorCase(
             "Self-deletion leaves no eligible HouseholdAdmin",
             () -> LifecycleErrors.toDeleteMyAccountError(new TransferRejections.NoEligibleAdmin()),
-            NoEligibleAdminError.class),
+            RestrictedProfileRequiresHouseholdAdminError.class),
         errorCase(
             "Force-delete Profile not found",
             () ->
@@ -247,7 +248,7 @@ class LifecycleErrorsTest {
         errorCase(
             "Force-delete linked Profile",
             () -> LifecycleErrors.toForceDeleteProfileError(new TransferRejections.ProfileLinked()),
-            ProfileLinkedError.class));
+            ProfileBelongsToAccountError.class));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -264,7 +265,7 @@ class LifecycleErrorsTest {
             "Account deletion",
             (Supplier<List<String>>)
                 () ->
-                    ((ReplacementManagerNotEligibleError)
+                    ((ProfileManagerNotEligibleError)
                             LifecycleErrors.toDeleteAccountError(
                                 new TransferRejections.ReplacementManagerNotEligible()))
                         .inputPath(),
@@ -273,11 +274,11 @@ class LifecycleErrorsTest {
             "Profile transfer",
             (Supplier<List<String>>)
                 () ->
-                    ((ReplacementManagerNotEligibleError)
+                    ((ProfileManagerNotEligibleError)
                             LifecycleErrors.toTransferProfileError(
                                 new TransferRejections.ReplacementManagerNotEligible()))
                         .inputPath(),
-            "localManagerAccountId"));
+            "profileManagerAccountId"));
   }
 
   private static Arguments errorCase(

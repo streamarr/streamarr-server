@@ -7,11 +7,10 @@ public sealed interface DeleteAccountError extends MutationError
     permits AccountNotFoundError,
         ReasonRequiredError,
         ReauthenticationRequiredError,
-        FinalAccountError,
+        LastHouseholdAccountError,
         LastHouseholdAdminError,
         LastServerAdminError,
         ReplacementManagerRequiredError,
-        ReplacementManagerNotFoundError,
-        ReplacementManagerNotEligibleError,
-        EligibleManagerRequiredError,
-        NoEligibleAdminError {}
+        ProfileManagerNotEligibleError,
+        ProfileRequiresEligibleManagerError,
+        RestrictedProfileRequiresHouseholdAdminError {}

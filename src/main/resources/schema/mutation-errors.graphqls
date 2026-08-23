@@ -298,27 +298,17 @@ type SameHouseholdError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"The final Account of a Household moves only through teardown."
-type FinalAccountError implements MutationError {
+"The last Account in a Household must be handled through Household teardown."
+type LastHouseholdAccountError implements MutationError {
     message: String!
 }
 
-"A linked Profile moves or dies only with its Account."
-type ProfileLinkedError implements MutationError {
+"The Profile belongs to an Account; transfer or delete the Account instead."
+type ProfileBelongsToAccountError implements MutationError {
     message: String!
 }
 
 type ReplacementManagerRequiredError implements InputMutationError & MutationError {
-    message: String!
-    inputPath: [String!]!
-}
-
-type ReplacementManagerNotFoundError implements InputMutationError & MutationError {
-    message: String!
-    inputPath: [String!]!
-}
-
-type ReplacementManagerNotEligibleError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }

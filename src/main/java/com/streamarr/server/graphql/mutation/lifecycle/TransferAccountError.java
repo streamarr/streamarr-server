@@ -9,9 +9,9 @@ public sealed interface TransferAccountError extends MutationError
     permits AccountNotFoundError,
         HouseholdNotFoundError,
         SameHouseholdError,
-        FinalAccountError,
+        LastHouseholdAccountError,
         LastHouseholdAdminError,
-        NoEligibleAdminError,
+        RestrictedProfileRequiresHouseholdAdminError,
         ProfileNameTakenError,
-        EligibleManagerRequiredError,
+        ProfileRequiresEligibleManagerError,
         RestrictedFirstAccountError {}

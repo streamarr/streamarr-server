@@ -9,9 +9,9 @@ public sealed interface TransferProfileError extends MutationError
     permits ProfileNotFoundError,
         HouseholdNotFoundError,
         SameHouseholdError,
-        ProfileLinkedError,
-        LocalManagerRequiredError,
-        LocalManagerNotFoundError,
-        ReplacementManagerNotEligibleError,
+        ProfileBelongsToAccountError,
+        EligibleProfileManagerRequiredError,
+        AccountNotFoundError,
+        ProfileManagerNotEligibleError,
         ProfileNameTakenError,
-        NoEligibleAdminError {}
+        RestrictedProfileRequiresHouseholdAdminError {}

@@ -9,7 +9,7 @@ public final class LifecycleErrors {
   private static final String ACCOUNT_ID = "accountId";
   private static final String PROFILE_ID = "profileId";
   private static final String DESTINATION = "destinationHouseholdId";
-  private static final String LOCAL_MANAGER = "localManagerAccountId";
+  private static final String PROFILE_MANAGER = "profileManagerAccountId";
   private static final String NO_SUCH_ACCOUNT = "No such Account.";
 
   private LifecycleErrors() {}
@@ -43,11 +43,10 @@ public final class LifecycleErrors {
       case TransferRejections.LastServerAdmin _ -> lastServerAdmin();
       case TransferRejections.ReplacementManagerRequired _ ->
           new ReplacementManagerRequiredError(
-              "KEEP preserves the Profile only with a replacement manager named up front.",
+              "Keeping the Profile requires a replacement Profile manager.",
               InputPath.of("replacementManagerAccountId"));
       case TransferRejections.ReplacementManagerNotFound _ ->
-          new ReplacementManagerNotFoundError(
-              NO_SUCH_ACCOUNT, InputPath.of("replacementManagerAccountId"));
+          new AccountNotFoundError(NO_SUCH_ACCOUNT, InputPath.of("replacementManagerAccountId"));
       case TransferRejections.ReplacementManagerNotEligible _ ->
           replacementNotEligible("replacementManagerAccountId");
       case TransferRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
@@ -78,13 +77,13 @@ public final class LifecycleErrors {
       case TransferRejections.SameHousehold _ -> sameHousehold();
       case TransferRejections.ProfileLinked _ -> profileLinked();
       case TransferRejections.LocalManagerRequired _ ->
-          new LocalManagerRequiredError(
-              "Name an eligible manager in the destination Household.",
-              InputPath.of(LOCAL_MANAGER));
+          new EligibleProfileManagerRequiredError(
+              "Name an eligible Profile manager in the destination Household.",
+              InputPath.of(PROFILE_MANAGER));
       case TransferRejections.LocalManagerNotFound _ ->
-          new LocalManagerNotFoundError(NO_SUCH_ACCOUNT, InputPath.of(LOCAL_MANAGER));
+          new AccountNotFoundError(NO_SUCH_ACCOUNT, InputPath.of(PROFILE_MANAGER));
       case TransferRejections.ReplacementManagerNotEligible _ ->
-          replacementNotEligible(LOCAL_MANAGER);
+          replacementNotEligible(PROFILE_MANAGER);
       case TransferRejections.NameConflict _ -> nameTaken();
       case TransferRejections.NoEligibleAdmin _ -> noEligibleAdmin();
     };
@@ -117,8 +116,9 @@ public final class LifecycleErrors {
         "The destination is already this Household.", InputPath.of(DESTINATION));
   }
 
-  private static FinalAccountError finalAccount() {
-    return new FinalAccountError("The final Account of a Household moves only through teardown.");
+  private static LastHouseholdAccountError finalAccount() {
+    return new LastHouseholdAccountError(
+        "The last Account in a Household must be handled through Household teardown.");
   }
 
   private static LastHouseholdAdminError lastHouseholdAdmin() {
@@ -129,29 +129,30 @@ public final class LifecycleErrors {
     return new LastServerAdminError("At least one enabled ServerAdmin remains.");
   }
 
-  private static NoEligibleAdminError noEligibleAdmin() {
-    return new NoEligibleAdminError(
+  private static RestrictedProfileRequiresHouseholdAdminError noEligibleAdmin() {
+    return new RestrictedProfileRequiresHouseholdAdminError(
         "A Household hosting a restricted Profile needs an eligible HouseholdAdmin.");
   }
 
   private static ProfileNameTakenError nameTaken() {
     return new ProfileNameTakenError(
-        "Another available Profile there already uses that name.", InputPath.of(DESTINATION));
+        "Another Profile in that Household already uses that name.", InputPath.of(DESTINATION));
   }
 
-  private static EligibleManagerRequiredError eligibleManagerRequired() {
-    return new EligibleManagerRequiredError(
-        "The Profile needs an eligible manager in its Household.");
+  private static ProfileRequiresEligibleManagerError eligibleManagerRequired() {
+    return new ProfileRequiresEligibleManagerError(
+        "The Profile needs an eligible Profile manager in its Household.");
   }
 
-  private static ReplacementManagerNotEligibleError replacementNotEligible(String inputField) {
-    return new ReplacementManagerNotEligibleError(
-        "The manager must belong to the Profile's Household and have an unrestricted Adult Personal Profile.",
+  private static ProfileManagerNotEligibleError replacementNotEligible(String inputField) {
+    return new ProfileManagerNotEligibleError(
+        "That Account cannot manage the Profile because it is outside the Household or its Personal Profile is restricted.",
         InputPath.of(inputField));
   }
 
-  private static ProfileLinkedError profileLinked() {
-    return new ProfileLinkedError("A linked Profile moves or dies only with its Account.");
+  private static ProfileBelongsToAccountError profileLinked() {
+    return new ProfileBelongsToAccountError(
+        "This Profile belongs to an Account; transfer or delete the Account instead.");
   }
 
   private static ReasonRequiredError reasonRequired() {
@@ -159,6 +160,6 @@ public final class LifecycleErrors {
   }
 
   private static ReauthenticationRequiredError reauthenticationRequired() {
-    return new ReauthenticationRequiredError("Confirm your password to continue.");
+    return new ReauthenticationRequiredError("Confirm your password before retrying this action.");
   }
 }

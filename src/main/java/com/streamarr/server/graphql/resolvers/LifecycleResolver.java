@@ -95,9 +95,9 @@ public class LifecycleResolver {
                     .profileId(Ids.parseUuid(input.profileId()))
                     .destinationHouseholdId(Ids.parseUuid(input.destinationHouseholdId()))
                     .localManagerAccountId(
-                        input.localManagerAccountId() == null
+                        input.profileManagerAccountId() == null
                             ? null
-                            : Ids.parseUuid(input.localManagerAccountId()))
+                            : Ids.parseUuid(input.profileManagerAccountId()))
                     .reason(input.reason())
                     .build())
             .map(profile -> ProfileAdministration.from(profile, false)),

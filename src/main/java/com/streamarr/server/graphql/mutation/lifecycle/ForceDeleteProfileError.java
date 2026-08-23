@@ -10,4 +10,4 @@ public sealed interface ForceDeleteProfileError extends MutationError
     permits ProfileNotFoundError,
         ReasonRequiredError,
         ReauthenticationRequiredError,
-        ProfileLinkedError {}
+        ProfileBelongsToAccountError {}

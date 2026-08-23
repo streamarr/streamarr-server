@@ -40,8 +40,8 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Transfers and deletion through the GraphQL boundary against real PostgreSQL and Cedar: the
- * Account moves with its Personal Profile, T1/T8 judge the move at commit as typed rejections, a
- * partial transfer write never disturbs credentials, and the deletion paths leave nothing behind.
+ * Account moves with its Personal Profile, commit-time constraints become typed rejections, a
+ * partial transfer write never disturbs credentials, and deletion paths leave nothing behind.
  */
 @Tag("IntegrationTest")
 @DisplayName("Lifecycle Endpoints Integration Tests")
@@ -109,12 +109,12 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
     // The partial transfer write left the password hash and display name alone.
     assertThat(moved.getPasswordHash()).isEqualTo(mover.getPasswordHash());
     assertThat(moved.getDisplayName()).isEqualTo("Mover");
-    var structural =
+    var membershipShare =
         shareRepository
             .findByProfileIdAndHouseholdIdAndStatus(
                 moved.getPersonalProfileId(), host.household().getId(), ProfileShareStatus.ACTIVE)
             .orElseThrow();
-    assertThat(structural.isStructural()).isTrue();
+    assertThat(membershipShare.isStructural()).isTrue();
     assertThat(
             shareRepository.findByProfileIdAndHouseholdIdAndStatus(
                 moved.getPersonalProfileId(), admin.household().getId(), ProfileShareStatus.ACTIVE))
@@ -234,8 +234,8 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should erase an Account and keep one only behind a replacement anchor")
-  void shouldEraseAccountAndKeepOneOnlyBehindReplacementAnchor() throws Exception {
+  @DisplayName("Should erase an Account and keep its Profile with a replacement Profile manager")
+  void shouldEraseAccountAndKeepProfileWithReplacementProfileManager() throws Exception {
     var doomed =
         residentOf(
             ResidentSpec.builder()
@@ -326,15 +326,15 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should move an unlinked Profile behind its new anchor")
-  void shouldMoveUnlinkedProfileBehindNewAnchor() throws Exception {
+  @DisplayName("Should move an unlinked Profile to its new Profile manager")
+  void shouldMoveUnlinkedProfileToNewProfileManager() throws Exception {
     var orphan = managedOrphan();
 
     graphql(
             authTestSupport.accountBearer(admin),
             """
             mutation { transferProfile(input: {profileId: "%s",
-              destinationHouseholdId: "%s", localManagerAccountId: "%s"}) {
+              destinationHouseholdId: "%s", profileManagerAccountId: "%s"}) {
               profile { householdId } userErrors { __typename } } }
             """
                 .formatted(orphan.getId(), host.household().getId(), host.account().getId()))
@@ -371,7 +371,7 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(
             jsonPath("$.data.transferProfile.userErrors[0].__typename")
-                .value("LocalManagerRequiredError"));
+                .value("EligibleProfileManagerRequiredError"));
   }
 
   @Test
@@ -403,7 +403,7 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
             authTestSupport.accountBearer(admin),
             """
             mutation { transferProfile(input: {profileId: "%s",
-              destinationHouseholdId: "%s", localManagerAccountId: "%s"}) {
+              destinationHouseholdId: "%s", profileManagerAccountId: "%s"}) {
               profile { id } userErrors { __typename } } }
             """
                 .formatted(orphan.getId(), host.household().getId(), host.account().getId()))
@@ -439,7 +439,7 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
         .formatted(accountId, destinationHouseholdId);
   }
 
-  /** A complete resident of the Household: Account, anchored Personal Profile, structural share. */
+  /** A complete Household resident: Account, Personal Profile, and membership-required share. */
   private UserAccount residentOf(ResidentSpec resident) {
     return transactionTemplate.execute(
         _ -> {
