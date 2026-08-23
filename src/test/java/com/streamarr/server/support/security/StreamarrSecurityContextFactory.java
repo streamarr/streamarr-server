@@ -1,7 +1,6 @@
 package com.streamarr.server.support.security;
 
 import com.streamarr.server.config.security.StreamarrAuthenticationToken;
-import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
@@ -14,15 +13,15 @@ final class StreamarrSecurityContextFactory {
 
   private StreamarrSecurityContextFactory() {}
 
-  static SecurityContext contextFor(TokenScope scope, AccountRole role) {
+  static SecurityContext contextFor(TokenScope scope) {
     var identity =
         AuthenticatedIdentity.builder()
             .accountId(TestIdentityConstants.ACCOUNT_ID)
-            .role(role)
             .authSessionId(TestIdentityConstants.SESSION_ID)
             .scope(scope)
-            .householdId(scope == TokenScope.ACCOUNT ? null : TestIdentityConstants.HOUSEHOLD_ID)
-            .householdRole(scope == TokenScope.ACCOUNT ? null : HouseholdRole.OWNER)
+            .householdId(TestIdentityConstants.HOUSEHOLD_ID)
+            .householdRole(HouseholdRole.ADMIN)
+            .contextHouseholdId(TestIdentityConstants.HOUSEHOLD_ID)
             .profileId(scope == TokenScope.PROFILE ? TestIdentityConstants.PROFILE_ID : null)
             .build();
 

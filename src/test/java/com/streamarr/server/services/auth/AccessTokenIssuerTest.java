@@ -4,21 +4,13 @@ import static com.streamarr.server.support.TokenTestSupport.TEST_SIGNING_KEY;
 import static com.streamarr.server.support.TokenTestSupport.decoder;
 import static com.streamarr.server.support.TokenTestSupport.tokenProperties;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
-import com.streamarr.server.domain.auth.AccountProfile;
 import com.streamarr.server.domain.auth.AuthSession;
-import com.streamarr.server.domain.auth.HouseholdMembership;
 import com.streamarr.server.domain.auth.HouseholdRole;
-import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
-import com.streamarr.server.exceptions.ProfileAccessDeniedException;
-import com.streamarr.server.fakes.FakeAccountProfileRepository;
-import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
-import com.streamarr.server.fakes.FakeProfileRepository;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
-import com.streamarr.server.fixtures.ProfileFixture;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -35,22 +27,8 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 class AccessTokenIssuerTest {
 
   private final AuthTokenProperties properties = tokenProperties();
-
-  private final FakeHouseholdMembershipRepository membershipRepository =
-      new FakeHouseholdMembershipRepository();
-  private final FakeProfileRepository profileRepository = new FakeProfileRepository();
-  private final FakeAccountProfileRepository accountProfileRepository =
-      new FakeAccountProfileRepository();
-
   private final TokenCryptoConfig cryptoConfig = new TokenCryptoConfig();
-
-  private final AccessTokenIssuer issuer =
-      new AccessTokenIssuer(
-          cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(properties)),
-          properties,
-          Clock.systemUTC(),
-          membershipRepository,
-          accountProfileRepository);
+  private final AccessTokenIssuer issuer = issuerAt(Clock.systemUTC());
 
   @Test
   @DisplayName("Should mint the configured issuer when one is provided")
@@ -67,51 +45,33 @@ class AccessTokenIssuerTest {
         new AccessTokenIssuer(
             cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(urlIssuerProperties)),
             urlIssuerProperties,
-            Clock.systemUTC(),
-            membershipRepository,
-            accountProfileRepository);
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
+            Clock.systemUTC());
 
-    var token = urlIssuer.issue(TokenContext.builder().account(account).session(session).build());
+    var token = urlIssuer.issue(accountContext(account()));
 
     var decoded = buildDecoder().decode(token.value());
     assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo("https://auth.example.test");
   }
 
   @Test
-  @DisplayName("Should nest scopes when issuing profile token")
-  void shouldNestScopesWhenIssuingProfileToken() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
-    var householdId = UUID.randomUUID();
-    membershipRepository.grantMembership(
-        HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(householdId)
-            .householdRole(HouseholdRole.OWNER)
-            .build());
-    var profile =
-        profileRepository.save(
-            ProfileFixture.defaultProfileBuilder().householdId(householdId).build());
-    accountProfileRepository.save(
-        AccountProfile.builder()
-            .accountId(account.getId())
-            .householdId(householdId)
-            .profileId(profile.getId())
-            .build());
+  @DisplayName("Should carry every signed fact when issuing a profile token")
+  void shouldCarryEverySignedFactWhenIssuingProfileToken() {
+    var account =
+        account().toBuilder().serverAdmin(true).householdRole(HouseholdRole.ADMIN).build();
+    var session = session(account);
+    var visitedHouseholdId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
 
     var token =
         issuer.issue(
             TokenContext.builder()
                 .account(account)
                 .session(session)
-                .householdId(householdId)
-                .profileId(profile.getId())
+                .contextHouseholdId(visitedHouseholdId)
+                .profileId(profileId)
                 .build());
 
     assertThat(token.scope()).isEqualTo(TokenScope.PROFILE);
-
     var decoded = buildDecoder().decode(token.value());
     assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo("streamarr");
     assertThat(decoded.getAudience()).containsExactly("streamarr");
@@ -120,75 +80,67 @@ class AccessTokenIssuerTest {
         .isEqualTo(session.getId().toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("profile");
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
-        .isEqualTo(householdId.toString());
-    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("OWNER");
-    assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID))
-        .isEqualTo(profile.getId().toString());
-    assertThat(decoded.getClaimAsStringList("roles")).containsExactly("USER");
+        .isEqualTo(account.getHouseholdId().toString());
+    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("ADMIN");
+    assertThat(decoded.getClaims()).doesNotContainKey("sa");
+    assertThat(decoded.getClaimAsString(TokenClaims.CONTEXT_HOUSEHOLD_ID))
+        .isEqualTo(visitedHouseholdId.toString());
+    assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isEqualTo(profileId.toString());
+    assertThat(decoded.getClaims()).doesNotContainKeys("roles", "reauthenticated_at");
     assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
         .isEqualTo(properties.accessTokenTtl());
     assertThat(token.expiresAt()).isEqualTo(decoded.getExpiresAt());
   }
 
   @Test
-  @DisplayName("Should reject profile when outside household")
-  void shouldRejectProfileWhenOutsideHousehold() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
-    var memberHouseholdId = UUID.randomUUID();
-    var otherHouseholdId = UUID.randomUUID();
-    membershipRepository.grantMembership(
-        HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(memberHouseholdId)
-            .householdRole(HouseholdRole.OWNER)
-            .build());
-    var foreignProfile =
-        profileRepository.save(
-            ProfileFixture.defaultProfileBuilder().householdId(otherHouseholdId).build());
-    accountProfileRepository.save(
-        AccountProfile.builder()
-            .accountId(account.getId())
-            .householdId(otherHouseholdId)
-            .profileId(foreignProfile.getId())
-            .build());
+  @DisplayName("Should issue an account scoped token at the picker when no profile is selected")
+  void shouldIssueAccountScopedTokenAtPickerWhenNoProfileIsSelected() {
+    var account = account();
 
-    var context =
-        TokenContext.builder()
-            .account(account)
-            .session(session)
-            .householdId(memberHouseholdId)
-            .profileId(foreignProfile.getId())
-            .build();
+    var token = issuer.issue(accountContext(account));
 
-    assertThatThrownBy(() -> issuer.issue(context))
-        .isInstanceOf(ProfileAccessDeniedException.class);
+    assertThat(token.scope()).isEqualTo(TokenScope.ACCOUNT);
+    var decoded = buildDecoder().decode(token.value());
+    assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("account");
+    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
+        .isEqualTo(account.getHouseholdId().toString());
+    assertThat(decoded.getClaimAsString(TokenClaims.CONTEXT_HOUSEHOLD_ID))
+        .isEqualTo(account.getHouseholdId().toString());
+    assertThat(decoded.getClaims()).doesNotContainKey("sa");
+    assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isNull();
   }
 
   @Test
-  @DisplayName("Should issue account scoped token when no context selected")
-  void shouldIssueAccountScopedTokenWhenNoContextSelected() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
+  @DisplayName("Should take the session's remembered context when building from a session")
+  void shouldTakeSessionsRememberedContextWhenBuildingFromSession() {
+    var account = account();
+    var visited = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
+    var session =
+        AuthSession.builder()
+            .id(UUID.randomUUID())
+            .accountId(account.getId())
+            .contextHouseholdId(visited)
+            .selectedProfileId(profileId)
+            .build();
 
-    var token = issuer.issue(TokenContext.builder().account(account).session(session).build());
+    var context = TokenContext.of(account, session);
 
-    assertThat(token.scope()).isEqualTo(TokenScope.ACCOUNT);
-
-    var decoded = buildDecoder().decode(token.value());
-    assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("account");
-    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID)).isNull();
-    assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isNull();
+    assertThat(context.contextHouseholdId()).isEqualTo(visited);
+    assertThat(context.profileId()).isEqualTo(profileId);
+    assertThat(context.scope()).isEqualTo(TokenScope.PROFILE);
+    assertThat(TokenContext.of(account, session(account)).contextHouseholdId())
+        .isEqualTo(account.getHouseholdId());
   }
 
   @Test
   @DisplayName("Should cap derived expiry when source expires sooner")
   void shouldCapDerivedExpiryWhenSourceExpiresSooner() {
     var now = Instant.parse("2026-07-10T12:00:00Z");
-    var fixedIssuer = issuerAt(now);
+    var fixedIssuer = issuerAt(Clock.fixed(now, ZoneOffset.UTC));
     var sourceExpiry = now.plus(Duration.ofMinutes(3));
 
-    var token = fixedIssuer.issueDerived(accountContext(), sourceExpiry);
+    var token = fixedIssuer.issueDerived(accountContext(account()), sourceExpiry);
 
     assertThat(token.expiresAt()).isEqualTo(sourceExpiry);
   }
@@ -197,113 +149,35 @@ class AccessTokenIssuerTest {
   @DisplayName("Should use configured ttl when source expires later")
   void shouldUseConfiguredTtlWhenSourceExpiresLater() {
     var now = Instant.parse("2026-07-10T12:00:00Z");
-    var fixedIssuer = issuerAt(now);
+    var fixedIssuer = issuerAt(Clock.fixed(now, ZoneOffset.UTC));
     var sourceExpiry = now.plus(Duration.ofMinutes(30));
 
-    var token = fixedIssuer.issueDerived(accountContext(), sourceExpiry);
+    var token = fixedIssuer.issueDerived(accountContext(account()), sourceExpiry);
 
     // A derived token never outlives its source, but a source with generous remaining
     // lifetime still yields only the configured TTL.
     assertThat(token.expiresAt()).isEqualTo(now.plus(Duration.ofMinutes(10)));
   }
 
-  private AccessTokenIssuer issuerAt(Instant now) {
+  private AccessTokenIssuer issuerAt(Clock clock) {
     return new AccessTokenIssuer(
-        cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(properties)),
-        properties,
-        Clock.fixed(now, ZoneOffset.UTC),
-        membershipRepository,
-        accountProfileRepository);
+        cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(properties)), properties, clock);
   }
 
-  private TokenContext accountContext() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
-    return TokenContext.builder().account(account).session(session).build();
+  private static UserAccount account() {
+    return AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
   }
 
-  @Test
-  @DisplayName("Should issue household scoped token when membership exists")
-  void shouldIssueHouseholdScopedTokenWhenMembershipExists() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
-    var householdId = UUID.randomUUID();
-    membershipRepository.grantMembership(
-        HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(householdId)
-            .householdRole(HouseholdRole.PARENT)
-            .build());
-
-    var token =
-        issuer.issue(
-            TokenContext.builder()
-                .account(account)
-                .session(session)
-                .householdId(householdId)
-                .build());
-
-    assertThat(token.scope()).isEqualTo(TokenScope.HOUSEHOLD);
-
-    var decoded = buildDecoder().decode(token.value());
-    assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("household");
-    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
-        .isEqualTo(householdId.toString());
-    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("PARENT");
-    assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isNull();
+  private static AuthSession session(UserAccount account) {
+    return AuthSession.builder()
+        .id(UUID.randomUUID())
+        .accountId(account.getId())
+        .contextHouseholdId(account.getHouseholdId())
+        .build();
   }
 
-  @Test
-  @DisplayName("Should reject household token when account not member")
-  void shouldRejectHouseholdTokenWhenAccountNotMember() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
-
-    var context =
-        TokenContext.builder()
-            .account(account)
-            .session(session)
-            .householdId(UUID.randomUUID())
-            .build();
-
-    assertThatThrownBy(() -> issuer.issue(context))
-        .isInstanceOf(HouseholdAccessDeniedException.class);
-  }
-
-  @Test
-  @DisplayName("Should reject profile context when household not selected")
-  void shouldRejectProfileContextWhenHouseholdNotSelected() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
-    var profileId = UUID.randomUUID();
-    var contextBuilder =
-        TokenContext.builder().account(account).session(session).profileId(profileId);
-
-    assertThatThrownBy(contextBuilder::build)
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Profile context requires a household");
-  }
-
-  @Test
-  @DisplayName("Should reject context when account missing")
-  void shouldRejectContextWhenAccountMissing() {
-    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(UUID.randomUUID()).build();
-    var contextBuilder = TokenContext.builder().session(session);
-
-    assertThatThrownBy(contextBuilder::build)
-        .isInstanceOf(NullPointerException.class)
-        .hasMessageContaining("account");
-  }
-
-  @Test
-  @DisplayName("Should reject context when session missing")
-  void shouldRejectContextWhenSessionMissing() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var contextBuilder = TokenContext.builder().account(account);
-
-    assertThatThrownBy(contextBuilder::build)
-        .isInstanceOf(NullPointerException.class)
-        .hasMessageContaining("session");
+  private static TokenContext accountContext(UserAccount account) {
+    return TokenContext.of(account, session(account));
   }
 
   private NimbusJwtDecoder buildDecoder() {

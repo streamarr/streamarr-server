@@ -11,8 +11,6 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
-import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.support.security.WithProfileContext;
@@ -40,10 +38,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 class SeriesResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
-
-  @MockitoBean private ProfileRepository profileRepository;
-
-  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private SeriesService seriesService;
 

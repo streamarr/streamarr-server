@@ -12,11 +12,15 @@ import com.streamarr.server.services.auth.LoginCommand;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordChangeService;
 import com.streamarr.server.services.auth.RefreshTokenService;
-import com.streamarr.server.services.auth.SessionScopeService;
 import com.streamarr.server.services.auth.SetupCommand;
 import com.streamarr.server.services.auth.SetupService;
-import com.streamarr.server.services.auth.TokenRefreshService;
+import com.streamarr.server.services.auth.TokenContext;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.identity.HouseholdContextService;
+import com.streamarr.server.services.identity.ProfileSelectionService;
+import com.streamarr.server.services.identity.SelectProfileCommand;
+import com.streamarr.server.services.identity.SessionContextService;
+import com.streamarr.server.services.identity.TokenRefreshService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -40,7 +44,9 @@ public class AuthController {
   private final LoginService loginService;
   private final RefreshTokenService refreshTokenService;
   private final TokenRefreshService tokenRefreshService;
-  private final SessionScopeService sessionScopeService;
+  private final SessionContextService sessionContextService;
+  private final HouseholdContextService householdContextService;
+  private final ProfileSelectionService profileSelectionService;
   private final AccessTokenIssuer accessTokenIssuer;
   private final AuthorizationService authorizationService;
   private final PasswordChangeService passwordChangeService;
@@ -84,7 +90,7 @@ public class AuthController {
                 .newPassword(request.newPassword())
                 .build());
 
-    var context = sessionScopeService.revalidateStoredContext(result.account(), result.session());
+    var context = sessionContextService.revalidateStoredContext(result.account(), result.session());
     var accessToken = accessTokenIssuer.issue(context);
 
     return respond(
@@ -99,7 +105,7 @@ public class AuthController {
       @Valid @RequestBody SelectHouseholdRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
     var context =
-        sessionScopeService.selectHousehold(
+        householdContextService.selectHousehold(
             identity.accountId(), identity.authSessionId(), request.householdId());
     return respondAccessOnly(
         accessTokenIssuer.issueDerived(context, authorizationService.currentTokenExpiry()),
@@ -111,8 +117,12 @@ public class AuthController {
       @Valid @RequestBody SelectProfileRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
     var context =
-        sessionScopeService.selectProfile(
-            identity.accountId(), identity.authSessionId(), request.profileId());
+        profileSelectionService.selectProfile(
+            identity,
+            SelectProfileCommand.builder()
+                .profileId(request.profileId())
+                .pin(request.pin())
+                .build());
     return respondAccessOnly(
         accessTokenIssuer.issueDerived(context, authorizationService.currentTokenExpiry()),
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
@@ -132,8 +142,7 @@ public class AuthController {
                 .build());
 
     var issued = refreshTokenService.createSession(result.admin(), deviceNameOf(httpRequest));
-    var context = sessionScopeService.autoSelectContext(result.admin(), issued.session());
-    var accessToken = accessTokenIssuer.issue(context);
+    var accessToken = accessTokenIssuer.issue(TokenContext.of(result.admin(), issued.session()));
 
     return respond(HttpStatus.CREATED, accessToken, issued.rawToken(), request.cookieMode());
   }
@@ -150,8 +159,8 @@ public class AuthController {
                 .source(httpRequest.getRemoteAddr())
                 .build());
 
-    var context = sessionScopeService.autoSelectContext(result.account(), result.session());
-    var accessToken = accessTokenIssuer.issue(context);
+    // A new session starts in the membership Household at the Profile picker (Account scope).
+    var accessToken = accessTokenIssuer.issue(TokenContext.of(result.account(), result.session()));
 
     return respond(HttpStatus.OK, accessToken, result.rawRefreshToken(), request.cookieMode());
   }
@@ -170,6 +179,7 @@ public class AuthController {
           refreshed.rawRefreshToken(),
           carrier.cookieMode());
     }
+
     return respondAccessOnly(refreshed.accessToken(), carrier.cookieMode());
   }
 

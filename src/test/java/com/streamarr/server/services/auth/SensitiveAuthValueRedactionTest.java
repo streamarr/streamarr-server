@@ -6,6 +6,7 @@ import com.streamarr.server.controllers.auth.AuthTokensResponse;
 import com.streamarr.server.controllers.auth.ChangePasswordRequest;
 import com.streamarr.server.controllers.auth.LoginRequest;
 import com.streamarr.server.controllers.auth.RefreshRequest;
+import com.streamarr.server.controllers.auth.SelectProfileRequest;
 import com.streamarr.server.controllers.auth.SetupRequest;
 import com.streamarr.server.controllers.auth.device.DeviceAuthorizationResponse;
 import com.streamarr.server.controllers.auth.device.DeviceCodeResponse;
@@ -17,6 +18,8 @@ import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
+import com.streamarr.server.services.identity.SelectProfileCommand;
+import com.streamarr.server.services.identity.TokenRefreshService;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -74,6 +77,9 @@ class SensitiveAuthValueRedactionTest {
             new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER),
             new RefreshRequest(SECRET_MARKER),
             new TokenRefreshService.RefreshedTokens(null, SECRET_MARKER),
+            SelectProfileCommand.builder().profileId(UUID.randomUUID()).pin(SECRET_MARKER).build(),
+            SelectProfileCommand.builder().pin(SECRET_MARKER),
+            new SelectProfileRequest(UUID.randomUUID(), SECRET_MARKER),
             // Pairing credentials: the device code is polled with, and the user code is low-entropy
             // enough that a log line naming it is a guess an attacker never has to make. Lombok's
             // generated builder toString is its own leakage surface, so unbuilt builders are here

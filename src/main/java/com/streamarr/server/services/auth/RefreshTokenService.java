@@ -45,10 +45,12 @@ public class RefreshTokenService {
 
   @Transactional
   public IssuedRefreshToken createSession(UserAccount account, String deviceName) {
+    // A new session starts in the Account's membership Household with no Profile selected.
     return createSessionAndToken(
         CreateAuthSessionCommand.builder()
             .accountId(account.getId())
             .deviceName(deviceName)
+            .contextHouseholdId(account.getHouseholdId())
             .build());
   }
 
@@ -63,8 +65,8 @@ public class RefreshTokenService {
             AuthSession.builder()
                 .accountId(command.accountId())
                 .deviceName(command.deviceName())
-                .activeHouseholdId(command.activeHouseholdId())
-                .activeProfileId(command.activeProfileId())
+                .contextHouseholdId(command.contextHouseholdId())
+                .selectedProfileId(command.selectedProfileId())
                 .build());
 
     var rawToken = generateRawToken();
@@ -141,6 +143,7 @@ public class RefreshTokenService {
       if (tokenRepository.isActiveToken(session.getId(), digestOf(rawSuccessor), now)) {
         return new RefreshResult.GraceRetry(rawSuccessor, session);
       }
+
       return new RefreshResult.SupersededRetry(session);
     }
 

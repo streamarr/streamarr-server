@@ -1,11 +1,14 @@
 package com.streamarr.server.controllers.auth;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.exceptions.InvalidProfilePinException;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.ProfileLockedException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
@@ -61,6 +64,22 @@ public class AuthExceptionHandler {
   @ExceptionHandler(ProfileAccessDeniedException.class)
   public ResponseEntity<AuthErrorResponse> handleProfileDenied(ProfileAccessDeniedException e) {
     return respond(HttpStatus.FORBIDDEN, "PROFILE_ACCESS_DENIED", e);
+  }
+
+  @ExceptionHandler(InvalidProfilePinException.class)
+  public ResponseEntity<AuthErrorResponse> handleInvalidProfilePin(InvalidProfilePinException e) {
+    return respond(HttpStatus.UNAUTHORIZED, "INVALID_PROFILE_PIN", e);
+  }
+
+  @ExceptionHandler(ProfileLockedException.class)
+  public ResponseEntity<AuthErrorResponse> handleProfileLocked(ProfileLockedException e) {
+    return respond(HttpStatus.CONFLICT, "PROFILE_LOCKED", e);
+  }
+
+  @ExceptionHandler(AuthorizationUnavailableException.class)
+  public ResponseEntity<AuthErrorResponse> handleAuthorizationUnavailable(
+      AuthorizationUnavailableException e) {
+    return respond(HttpStatus.SERVICE_UNAVAILABLE, "AUTHORIZATION_UNAVAILABLE", e);
   }
 
   private static ResponseEntity<AuthErrorResponse> respond(

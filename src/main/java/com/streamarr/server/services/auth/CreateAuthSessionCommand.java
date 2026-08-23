@@ -6,4 +6,4 @@ import lombok.NonNull;
 
 @Builder
 public record CreateAuthSessionCommand(
-    @NonNull UUID accountId, String deviceName, UUID activeHouseholdId, UUID activeProfileId) {}
+    @NonNull UUID accountId, String deviceName, UUID contextHouseholdId, UUID selectedProfileId) {}

@@ -9,8 +9,6 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.controllers.StreamController;
-import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -25,10 +23,10 @@ import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeStreamingService;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -457,14 +455,7 @@ class RemotePlaybackIT {
   }
 
   private AuthenticatedIdentity identity(UUID streamSessionId) {
-    return AuthenticatedIdentity.builder()
-        .accountId(UUID.randomUUID())
-        .role(AccountRole.USER)
-        .authSessionId(UUID.randomUUID())
-        .scope(TokenScope.PLAYBACK)
-        .householdId(UUID.randomUUID())
-        .householdRole(HouseholdRole.MEMBER)
-        .profileId(UUID.randomUUID())
+    return AuthenticatedIdentityFixture.defaultIdentityBuilder()
         .streamSessionId(streamSessionId)
         .build();
   }

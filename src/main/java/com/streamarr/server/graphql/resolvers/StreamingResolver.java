@@ -43,7 +43,7 @@ public class StreamingResolver {
         streamingService.createSession(
             CreateStreamSessionCommand.builder()
                 .mediaFileId(parseUuid(mediaFileId))
-                .authority(identity.playbackAuthority())
+                .identity(identity)
                 .options(opts)
                 .build());
 

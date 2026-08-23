@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
+import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -125,6 +126,15 @@ class PaginationServiceTest {
       var options = paginationService.getPaginationOptions(0, null, 1, "cursor");
 
       assertThat(options.getPaginationDirection()).isEqualTo(PaginationDirection.REVERSE);
+    }
+
+    @Test
+    @DisplayName("Should paginate backward when given last without before")
+    void shouldPaginateBackwardWhenGivenLastWithoutBefore() {
+      var options = paginationService.getPaginationOptions(0, null, 1, null);
+
+      assertThat(options.getPaginationDirection()).isEqualTo(PaginationDirection.REVERSE);
+      assertThat(options.getLimit()).isEqualTo(1);
     }
 
     @Test
@@ -563,4 +573,51 @@ class PaginationServiceTest {
       assertThat(page.hasPreviousPage()).isTrue();
     }
   }
+
+  @Nested
+  @DisplayName("Building keyset pages")
+  class BuildKeysetPage {
+
+    @Test
+    @DisplayName("Should return the last items when paging in reverse without a cursor")
+    void shouldReturnLastItemsWhenPagingInReverseWithoutCursor() {
+      var first = new KeyedItem(UUID.randomUUID());
+      var last = new KeyedItem(UUID.randomUUID());
+      var items = List.of(new PageItem<>(first, "first"), new PageItem<>(last, "last"));
+      var options =
+          new KeysetPaginationOptions(
+              null,
+              PaginationOptions.builder()
+                  .cursor(Optional.empty())
+                  .paginationDirection(PaginationDirection.REVERSE)
+                  .limit(1)
+                  .build());
+
+      var page = paginationService.buildKeysetPage(items, options, KeyedItem::id);
+
+      assertThat(page.items()).extracting(PageItem::item).containsExactly(last);
+      assertThat(page.hasPreviousPage()).isTrue();
+      assertThat(page.hasNextPage()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Should reject a cursor whose anchor is no longer present")
+    void shouldRejectCursorWhoseAnchorIsNoLongerPresent() {
+      var items = List.of(new PageItem<>(new KeyedItem(UUID.randomUUID()), "item"));
+      var options =
+          new KeysetPaginationOptions(
+              UUID.randomUUID(),
+              PaginationOptions.builder()
+                  .cursor(Optional.of("opaque-cursor"))
+                  .paginationDirection(PaginationDirection.FORWARD)
+                  .limit(1)
+                  .build());
+
+      assertThatExceptionOfType(InvalidPaginationCursorException.class)
+          .isThrownBy(() -> paginationService.buildKeysetPage(items, options, KeyedItem::id))
+          .withMessage("Cursor no longer identifies an item.");
+    }
+  }
+
+  private record KeyedItem(UUID id) {}
 }

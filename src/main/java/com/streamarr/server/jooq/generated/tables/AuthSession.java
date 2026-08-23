@@ -8,9 +8,7 @@ import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.SessionRevocationReason;
-import com.streamarr.server.jooq.generated.tables.AccountProfile.AccountProfilePath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
-import com.streamarr.server.jooq.generated.tables.HouseholdMembership.HouseholdMembershipPath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.RefreshToken.RefreshTokenPath;
 import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
@@ -104,14 +102,9 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
     public final TableField<AuthSessionRecord, String> DEVICE_NAME = createField(DSL.name("device_name"), SQLDataType.CLOB, this, "");
 
     /**
-     * The column <code>public.auth_session.active_household_id</code>.
+     * The column <code>public.auth_session.selected_profile_id</code>.
      */
-    public final TableField<AuthSessionRecord, UUID> ACTIVE_HOUSEHOLD_ID = createField(DSL.name("active_household_id"), SQLDataType.UUID, this, "");
-
-    /**
-     * The column <code>public.auth_session.active_profile_id</code>.
-     */
-    public final TableField<AuthSessionRecord, UUID> ACTIVE_PROFILE_ID = createField(DSL.name("active_profile_id"), SQLDataType.UUID, this, "");
+    public final TableField<AuthSessionRecord, UUID> SELECTED_PROFILE_ID = createField(DSL.name("selected_profile_id"), SQLDataType.UUID, this, "");
 
     /**
      * The column <code>public.auth_session.revoked_at</code>.
@@ -127,6 +120,11 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
      * The column <code>public.auth_session.last_used_at</code>.
      */
     public final TableField<AuthSessionRecord, OffsetDateTime> LAST_USED_AT = createField(DSL.name("last_used_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
+
+    /**
+     * The column <code>public.auth_session.context_household_id</code>.
+     */
+    public final TableField<AuthSessionRecord, UUID> CONTEXT_HOUSEHOLD_ID = createField(DSL.name("context_household_id"), SQLDataType.UUID, this, "");
 
     private AuthSession(Name alias, Table<AuthSessionRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -197,7 +195,7 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_AUTH_SESSION_ACCOUNT_ID, Indexes.IDX_AUTH_SESSION_ACTIVE_HOUSEHOLD_ID, Indexes.IDX_AUTH_SESSION_ACTIVE_PROFILE_ID);
+        return Arrays.asList(Indexes.IDX_AUTH_SESSION_ACCOUNT_ID, Indexes.IDX_AUTH_SESSION_CONTEXT_HOUSEHOLD_ID, Indexes.IDX_AUTH_SESSION_SELECTED_PROFILE_ID);
     }
 
     @Override
@@ -207,7 +205,7 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
 
     @Override
     public List<ForeignKey<AuthSessionRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.AUTH_SESSION__FK_AUTH_SESSION_ACCOUNT, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_ACCOUNT_PROFILE, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_HOUSEHOLD, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_MEMBERSHIP, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE_HOUSEHOLD);
+        return Arrays.asList(Keys.AUTH_SESSION__FK_AUTH_SESSION_ACCOUNT, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE, Keys.AUTH_SESSION__FK_AUTH_SESSION_CONTEXT_HOUSEHOLD);
     }
 
     private transient UserAccountPath _userAccount;
@@ -222,17 +220,16 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
         return _userAccount;
     }
 
-    private transient AccountProfilePath _accountProfile;
+    private transient ProfilePath _profile;
 
     /**
-     * Get the implicit join path to the <code>public.account_profile</code>
-     * table.
+     * Get the implicit join path to the <code>public.profile</code> table.
      */
-    public AccountProfilePath accountProfile() {
-        if (_accountProfile == null)
-            _accountProfile = new AccountProfilePath(this, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_ACCOUNT_PROFILE, null);
+    public ProfilePath profile() {
+        if (_profile == null)
+            _profile = new ProfilePath(this, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE, null);
 
-        return _accountProfile;
+        return _profile;
     }
 
     private transient HouseholdPath _household;
@@ -242,48 +239,9 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
      */
     public HouseholdPath household() {
         if (_household == null)
-            _household = new HouseholdPath(this, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_HOUSEHOLD, null);
+            _household = new HouseholdPath(this, Keys.AUTH_SESSION__FK_AUTH_SESSION_CONTEXT_HOUSEHOLD, null);
 
         return _household;
-    }
-
-    private transient HouseholdMembershipPath _householdMembership;
-
-    /**
-     * Get the implicit join path to the
-     * <code>public.household_membership</code> table.
-     */
-    public HouseholdMembershipPath householdMembership() {
-        if (_householdMembership == null)
-            _householdMembership = new HouseholdMembershipPath(this, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_MEMBERSHIP, null);
-
-        return _householdMembership;
-    }
-
-    private transient ProfilePath _fkAuthSessionActiveProfile;
-
-    /**
-     * Get the implicit join path to the <code>public.profile</code> table, via
-     * the <code>fk_auth_session_active_profile</code> key.
-     */
-    public ProfilePath fkAuthSessionActiveProfile() {
-        if (_fkAuthSessionActiveProfile == null)
-            _fkAuthSessionActiveProfile = new ProfilePath(this, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE, null);
-
-        return _fkAuthSessionActiveProfile;
-    }
-
-    private transient ProfilePath _fkAuthSessionActiveProfileHousehold;
-
-    /**
-     * Get the implicit join path to the <code>public.profile</code> table, via
-     * the <code>fk_auth_session_active_profile_household</code> key.
-     */
-    public ProfilePath fkAuthSessionActiveProfileHousehold() {
-        if (_fkAuthSessionActiveProfileHousehold == null)
-            _fkAuthSessionActiveProfileHousehold = new ProfilePath(this, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE_HOUSEHOLD, null);
-
-        return _fkAuthSessionActiveProfileHousehold;
     }
 
     private transient RefreshTokenPath _refreshToken;

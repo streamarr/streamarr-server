@@ -4,6 +4,14 @@
 package com.streamarr.server.jooq.generated;
 
 
+import com.streamarr.server.jooq.generated.routines.AccountIsEligible;
+import com.streamarr.server.jooq.generated.routines.AssertEnabledServerAdminRemains;
+import com.streamarr.server.jooq.generated.routines.AssertHouseholdProfileNamesUnique;
+import com.streamarr.server.jooq.generated.routines.AssertHouseholdRetainsAdmin;
+import com.streamarr.server.jooq.generated.routines.AssertPersonalProfileStructurallyShared;
+import com.streamarr.server.jooq.generated.routines.AssertProfileHomeAnchor;
+import com.streamarr.server.jooq.generated.routines.AssertRestrictedAccountHoldsNoAuthority;
+import com.streamarr.server.jooq.generated.routines.BumpHouseholdGuards;
 import com.streamarr.server.jooq.generated.routines.UuidGenerateV1;
 import com.streamarr.server.jooq.generated.routines.UuidGenerateV1mc;
 import com.streamarr.server.jooq.generated.routines.UuidGenerateV3;
@@ -26,6 +34,135 @@ import org.jooq.Field;
  */
 @SuppressWarnings({ "all", "unchecked", "rawtypes", "this-escape" })
 public class Routines {
+
+    /**
+     * Call <code>public.account_is_eligible</code>
+     */
+    public static Boolean accountIsEligible(
+          Configuration configuration
+        , UUID candidateAccountId
+    ) {
+        AccountIsEligible f = new AccountIsEligible();
+        f.setCandidateAccountId(candidateAccountId);
+
+        f.execute(configuration);
+        return f.getReturnValue();
+    }
+
+    /**
+     * Get <code>public.account_is_eligible</code> as a field.
+     */
+    public static Field<Boolean> accountIsEligible(
+          UUID candidateAccountId
+    ) {
+        AccountIsEligible f = new AccountIsEligible();
+        f.setCandidateAccountId(candidateAccountId);
+
+        return f.asField();
+    }
+
+    /**
+     * Get <code>public.account_is_eligible</code> as a field.
+     */
+    public static Field<Boolean> accountIsEligible(
+          Field<UUID> candidateAccountId
+    ) {
+        AccountIsEligible f = new AccountIsEligible();
+        f.setCandidateAccountId(candidateAccountId);
+
+        return f.asField();
+    }
+
+    /**
+     * Call <code>public.assert_enabled_server_admin_remains</code>
+     */
+    public static void assertEnabledServerAdminRemains(
+          Configuration configuration
+    ) {
+        AssertEnabledServerAdminRemains p = new AssertEnabledServerAdminRemains();
+
+        p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.assert_household_profile_names_unique</code>
+     */
+    public static void assertHouseholdProfileNamesUnique(
+          Configuration configuration
+        , UUID candidateHouseholdId
+    ) {
+        AssertHouseholdProfileNamesUnique p = new AssertHouseholdProfileNamesUnique();
+        p.setCandidateHouseholdId(candidateHouseholdId);
+
+        p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.assert_household_retains_admin</code>
+     */
+    public static void assertHouseholdRetainsAdmin(
+          Configuration configuration
+        , UUID candidateHouseholdId
+        , Boolean hadAccount
+    ) {
+        AssertHouseholdRetainsAdmin p = new AssertHouseholdRetainsAdmin();
+        p.setCandidateHouseholdId(candidateHouseholdId);
+        p.setHadAccount(hadAccount);
+
+        p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.assert_personal_profile_structurally_shared</code>
+     */
+    public static void assertPersonalProfileStructurallyShared(
+          Configuration configuration
+        , UUID candidateAccountId
+    ) {
+        AssertPersonalProfileStructurallyShared p = new AssertPersonalProfileStructurallyShared();
+        p.setCandidateAccountId(candidateAccountId);
+
+        p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.assert_profile_home_anchor</code>
+     */
+    public static void assertProfileHomeAnchor(
+          Configuration configuration
+        , UUID candidateProfileId
+    ) {
+        AssertProfileHomeAnchor p = new AssertProfileHomeAnchor();
+        p.setCandidateProfileId(candidateProfileId);
+
+        p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.assert_restricted_account_holds_no_authority</code>
+     */
+    public static void assertRestrictedAccountHoldsNoAuthority(
+          Configuration configuration
+        , UUID candidateAccountId
+    ) {
+        AssertRestrictedAccountHoldsNoAuthority p = new AssertRestrictedAccountHoldsNoAuthority();
+        p.setCandidateAccountId(candidateAccountId);
+
+        p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.bump_household_guards</code>
+     */
+    public static void bumpHouseholdGuards(
+          Configuration configuration
+        , UUID[] householdIds
+    ) {
+        BumpHouseholdGuards p = new BumpHouseholdGuards();
+        p.setHouseholdIds(householdIds);
+
+        p.execute(configuration);
+    }
 
     /**
      * Call <code>public.uuid_generate_v1</code>

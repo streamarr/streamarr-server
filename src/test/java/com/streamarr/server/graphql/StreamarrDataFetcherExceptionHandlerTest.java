@@ -7,6 +7,7 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
+import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
@@ -161,6 +162,19 @@ class StreamarrDataFetcherExceptionHandlerTest {
     var error = errorFor(new InvalidCursorException("Cursor filter mismatch: startLetter"));
 
     assertThat(error.getMessage()).isEqualTo("Cursor filter mismatch: startLetter");
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "BAD_REQUEST")
+        .containsEntry("code", "INVALID_CURSOR");
+  }
+
+  @Test
+  @DisplayName(
+      "Should classify a pagination failure as an invalid cursor when the anchor is absent")
+  void shouldClassifyPaginationFailureAsInvalidCursorWhenAnchorIsAbsent() {
+    var error =
+        errorFor(new InvalidPaginationCursorException("Cursor no longer identifies an item."));
+
+    assertThat(error.getMessage()).isEqualTo("Cursor no longer identifies an item.");
     assertThat(error.getExtensions())
         .containsEntry("errorType", "BAD_REQUEST")
         .containsEntry("code", "INVALID_CURSOR");

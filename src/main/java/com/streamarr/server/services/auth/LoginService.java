@@ -33,9 +33,11 @@ public class LoginService {
       timingEqualizer.burn(command.password());
       throw new InvalidCredentialsException();
     }
+
     if (!credentialsValid(account, command.password())) {
       throw new InvalidCredentialsException();
     }
+
     var result =
         loginCompletionService.complete(
             LoginCompletionCommand.builder()
@@ -54,12 +56,14 @@ public class LoginService {
       timingEqualizer.burn(password);
       return false;
     }
+
     var passwordHash = account.getPasswordHash();
     if (passwordHash == null || passwordHash.isEmpty()) {
       log.error("Stored password hash for account {} is unreadable.", account.getId());
       timingEqualizer.burn(password);
       return false;
     }
+
     try {
       return passwordEncoder.matches(password, passwordHash);
     } catch (IllegalArgumentException e) {

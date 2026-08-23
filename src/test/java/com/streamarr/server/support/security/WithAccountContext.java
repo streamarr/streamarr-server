@@ -1,6 +1,5 @@
 package com.streamarr.server.support.security;
 
-import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.services.auth.TokenScope;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -16,7 +15,7 @@ public @interface WithAccountContext {
 
     @Override
     public SecurityContext createSecurityContext(WithAccountContext annotation) {
-      return StreamarrSecurityContextFactory.contextFor(TokenScope.ACCOUNT, AccountRole.USER);
+      return StreamarrSecurityContextFactory.contextFor(TokenScope.ACCOUNT);
     }
   }
 }

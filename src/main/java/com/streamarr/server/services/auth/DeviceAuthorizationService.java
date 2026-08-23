@@ -45,7 +45,6 @@ public class DeviceAuthorizationService {
   private final DeviceAuthorizationRepository authorizationRepository;
   private final UserAccountRepository userAccountRepository;
   private final RefreshTokenService refreshTokenService;
-  private final SessionScopeService sessionScopeService;
   private final AccessTokenIssuer accessTokenIssuer;
   private final UserCodeGenerator userCodeGenerator;
   private final DeviceCodeGenerator deviceCodeGenerator;
@@ -149,6 +148,7 @@ public class DeviceAuthorizationService {
     if (authorization.hasExpiredAt(now)) {
       throw new DeviceCodeExpiredException();
     }
+
     if (authorization.getStatus() != DeviceAuthorizationStatus.PENDING) {
       throw new DeviceCodeNotPendingException();
     }
@@ -182,27 +182,13 @@ public class DeviceAuthorizationService {
     }
 
     // The session is born here, at the winning poll — never at approval, which would mean storing
-    // a raw refresh token to wait for pickup. It is born already scoped: the selection follows
-    // from the account alone, and updating a session this transaction only queued for insert would
-    // write through jOOQ before Hibernate ever flushed the row.
+    // a raw refresh token to wait for pickup. It is born in the approver's membership Household
+    // with no Profile selected (the TV picks one through select-profile); everything the session
+    // must carry is in its insert, because a jOOQ update of a row Hibernate has only queued would
+    // run before the row exists.
     var account = approver.get();
-    var selection = sessionScopeService.resolveAutoSelection(account);
-    var issued =
-        refreshTokenService.createSession(
-            CreateAuthSessionCommand.builder()
-                .accountId(account.getId())
-                .deviceName(authorization.getDeviceName())
-                .activeHouseholdId(selection.householdId())
-                .activeProfileId(selection.profileId())
-                .build());
-    var accessToken =
-        accessTokenIssuer.issue(
-            TokenContext.builder()
-                .account(account)
-                .session(issued.session())
-                .householdId(selection.householdId())
-                .profileId(selection.profileId())
-                .build());
+    var issued = refreshTokenService.createSession(account, authorization.getDeviceName());
+    var accessToken = accessTokenIssuer.issue(TokenContext.of(account, issued.session()));
 
     authorizationRepository.markConsumed(authorization.getId(), now);
 
@@ -213,6 +199,7 @@ public class DeviceAuthorizationService {
     if (authorization.getDecidedByAccountId() == null) {
       return Optional.empty();
     }
+
     return userAccountRepository
         .findById(authorization.getDecidedByAccountId())
         .filter(UserAccount::isEnabled);
@@ -308,6 +295,7 @@ public class DeviceAuthorizationService {
         if (!result.inserted()) {
           throw refusedForCapacity(result.outstanding(), now);
         }
+
         warnAsCapacityNears(result.outstanding());
         return candidate;
       } catch (UserCodeCollisionException e) {
@@ -337,6 +325,7 @@ public class DeviceAuthorizationService {
     if (outstanding != warningThreshold && outstanding != properties.maxOutstandingCodes()) {
       return;
     }
+
     log.warn(
         "Device pairing issuance at {} of {} outstanding codes",
         outstanding,

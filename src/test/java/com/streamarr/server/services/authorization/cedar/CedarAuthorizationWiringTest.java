@@ -5,10 +5,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
-import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.repositories.auth.AuthSessionRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.AuthorizationDecider;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -43,6 +45,10 @@ class CedarAuthorizationWiringTest {
   @Autowired private AuthorizationDecider decider;
 
   @MockitoBean private UserAccountRepository userAccountRepository;
+  @MockitoBean private AuthSessionRepository authSessionRepository;
+  @MockitoBean private ProfileRepository profileRepository;
+  @MockitoBean private ProfileManagerRepository profileManagerRepository;
+  @MockitoBean private ProfileHouseholdShareRepository shareRepository;
 
   @Configuration(proxyBeanMethods = false)
   @ComponentScan(basePackageClasses = CedarEngineConfiguration.class)
@@ -61,12 +67,7 @@ class CedarAuthorizationWiringTest {
   void shouldDecideThroughWiredCedarEngineWhenContextStarts() {
     when(userAccountRepository.findAuthorityFacts(any()))
         .thenReturn(Optional.of(new AccountAuthorityFacts(true, true)));
-    var identity =
-        AuthenticatedIdentityFixture.defaultIdentityBuilder()
-            .role(AccountRole.USER)
-            .scope(TokenScope.PROFILE)
-            .streamSessionId(null)
-            .build();
+    var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
 
     assertThat(decider).isInstanceOf(CedarAuthorizationDecider.class);
     assertThat(decider.decide(identity, new Intent.AddLibrary()))

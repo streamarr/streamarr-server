@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.cursor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
@@ -29,6 +30,24 @@ class CursorUtilTest {
   @Nested
   @DisplayName("Encode/Decode Round-Trip")
   class EncodeDecodeRoundTrip {
+
+    @Test
+    @DisplayName("Should preserve a keyset cursor id when round-tripping encode and decode")
+    void shouldPreserveKeysetCursorIdWhenRoundTrippingEncodeAndDecode() {
+      var cursorId = UUID.randomUUID();
+      var encoded = cursorUtil.encodeKeysetCursor(cursorId);
+      var paginationOptions =
+          PaginationOptions.builder()
+              .cursor(Optional.of(encoded.getValue()))
+              .paginationDirection(PaginationDirection.FORWARD)
+              .limit(10)
+              .build();
+
+      KeysetPaginationOptions decoded = cursorUtil.decodeKeysetCursor(paginationOptions);
+
+      assertThat(decoded.getCursorId()).contains(cursorId);
+      assertThat(decoded.getPaginationOptions()).isEqualTo(paginationOptions);
+    }
 
     @Test
     @DisplayName(
@@ -139,6 +158,20 @@ class CursorUtilTest {
   @Nested
   @DisplayName("Decode Errors")
   class DecodeErrors {
+
+    @Test
+    @DisplayName("Should throw InvalidCursorException when a keyset cursor is malformed")
+    void shouldThrowInvalidCursorExceptionWhenKeysetCursorIsMalformed() {
+      var paginationOptions =
+          PaginationOptions.builder()
+              .cursor(Optional.of("not-base64!!!"))
+              .paginationDirection(PaginationDirection.FORWARD)
+              .limit(10)
+              .build();
+
+      assertThatThrownBy(() -> cursorUtil.decodeKeysetCursor(paginationOptions))
+          .isInstanceOf(InvalidCursorException.class);
+    }
 
     @Test
     @DisplayName("Should throw InvalidCursorException when cursor string is malformed Base64")

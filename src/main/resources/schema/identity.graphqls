@@ -1,21 +1,75 @@
+"The authenticated Account and the viewing context of this session (ADR 0024)."
 type Me {
     accountId: ID!
     email: String!
     displayName: String!
-    role: String!
+    "Whether the Account is currently a ServerAdmin; informational only."
+    serverAdmin: Boolean!
     scope: String!
-    memberships: [Membership!]!
+    "The Account's one membership Household."
+    household: HouseholdSummary!
+    householdRole: HouseholdRole!
+    "The Household this session is using: the membership Household, or a visited one."
+    contextHousehold: HouseholdSummary!
+    "Every Household the Account may use: its membership Household first, then the ones its Personal Profile is shared into."
+    usableHouseholds(first: Int, after: String, last: Int, before: String): UsableHouseholdConnection!
+    "The Profile picker of the context Household."
+    selectableProfiles(first: Int, after: String, last: Int, before: String): SelectableProfileConnection!
+    selectedProfile: SelectableProfile
+    "True for a session bound to a registered Device; it cannot switch Household or administer."
+    deviceBound: Boolean!
 }
 
-type Membership {
-    householdId: ID!
-    householdName: String!
-    householdRole: String!
-    profiles: [SelectableProfile!]!
+enum HouseholdRole {
+    ADMIN
+    MEMBER
+}
+
+enum ProfileKind {
+    KID
+    ADULT
+}
+
+type HouseholdSummary {
+    id: ID!
+    name: String!
+}
+
+type UsableHousehold {
+    household: HouseholdSummary!
+    "Whether this is the Account's membership Household (otherwise a visited one)."
+    membership: Boolean!
+}
+
+type UsableHouseholdConnection {
+    edges: [UsableHouseholdEdge!]!
+    pageInfo: PageInfo!
+}
+
+type UsableHouseholdEdge {
+    node: UsableHousehold!
+    cursor: String!
 }
 
 type SelectableProfile {
     id: ID!
     name: String!
-    active: Boolean!
+    picture: String
+    kind: ProfileKind!
+    "Whether this is the requesting Account's own Personal Profile."
+    personal: Boolean!
+    pinConfigured: Boolean!
+    "Locked by the Household's PIN safety rule until a PIN is set; still visible, not selectable here."
+    locked: Boolean!
+    selected: Boolean!
+}
+
+type SelectableProfileConnection {
+    edges: [SelectableProfileEdge!]!
+    pageInfo: PageInfo!
+}
+
+type SelectableProfileEdge {
+    node: SelectableProfile!
+    cursor: String!
 }

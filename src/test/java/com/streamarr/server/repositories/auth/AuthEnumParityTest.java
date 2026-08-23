@@ -2,8 +2,9 @@ package com.streamarr.server.repositories.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import java.util.Arrays;
@@ -36,11 +37,19 @@ class AuthEnumParityTest {
   }
 
   @Test
-  @DisplayName("Should keep account role literals in sync")
-  void shouldKeepAccountRoleInSync() {
+  @DisplayName("Should keep profile kind literals in sync when parity is checked")
+  void shouldKeepProfileKindInSyncWhenParityIsChecked() {
     assertParity(
-        names(AccountRole.values()),
-        literals(com.streamarr.server.jooq.generated.enums.AccountRole.values()));
+        names(ProfileKind.values()),
+        literals(com.streamarr.server.jooq.generated.enums.ProfileKind.values()));
+  }
+
+  @Test
+  @DisplayName("Should keep profile share status literals in sync when parity is checked")
+  void shouldKeepProfileShareStatusInSyncWhenParityIsChecked() {
+    assertParity(
+        names(ProfileShareStatus.values()),
+        literals(com.streamarr.server.jooq.generated.enums.ProfileShareStatus.values()));
   }
 
   @Test

@@ -14,7 +14,6 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
-import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
@@ -27,8 +26,6 @@ import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
-import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -101,10 +98,6 @@ class LibraryResolverTest {
   @Autowired private FakeAuthorizationDecider authorizationDecider;
 
   @Autowired private AuthorizationService authorizationService;
-
-  @MockitoBean private ProfileRepository profileRepository;
-
-  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private LibraryRepository libraryRepository;
 
@@ -197,7 +190,7 @@ class LibraryResolverTest {
 
   @Nested
   @DisplayName("Library Mutations")
-  @WithProfileContext(role = AccountRole.ADMIN)
+  @WithProfileContext
   class LibraryMutations {
 
     @AfterEach

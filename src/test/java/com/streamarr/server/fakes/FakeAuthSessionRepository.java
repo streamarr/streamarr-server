@@ -13,8 +13,13 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
     implements AuthSessionRepository {
 
   @Override
-  public boolean hasLivePlaybackAuthority(PlaybackAuthority authority) {
-    throw new UnsupportedOperationException("Live playback authority is not configured");
+  public boolean isLive(PlaybackAuthority authority) {
+    return findById(authority.authSessionId())
+        .filter(session -> session.getAccountId().equals(authority.accountId()))
+        .filter(session -> authority.householdId().equals(session.getContextHouseholdId()))
+        .filter(session -> authority.profileId().equals(session.getSelectedProfileId()))
+        .filter(session -> session.getRevokedAt() == null)
+        .isPresent();
   }
 
   @Override
@@ -54,8 +59,8 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
         .filter(stored -> stored.getRevokedAt() == null)
         .map(
             stored -> {
-              stored.setActiveHouseholdId(session.getActiveHouseholdId());
-              stored.setActiveProfileId(session.getActiveProfileId());
+              stored.setContextHouseholdId(session.getContextHouseholdId());
+              stored.setSelectedProfileId(session.getSelectedProfileId());
               return true;
             })
         .orElse(false);

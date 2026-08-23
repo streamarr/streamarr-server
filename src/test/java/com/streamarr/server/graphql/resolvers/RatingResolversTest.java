@@ -9,8 +9,6 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.repositories.RatingRepository;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
-import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.util.Map;
@@ -36,10 +34,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 class RatingResolversTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
-
-  @MockitoBean private ProfileRepository profileRepository;
-
-  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private RatingRepository ratingRepository;
 

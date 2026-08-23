@@ -402,13 +402,13 @@ class RefreshTokenServiceTest {
             CreateAuthSessionCommand.builder()
                 .accountId(UUID.randomUUID())
                 .deviceName("replacement-device")
-                .activeHouseholdId(householdId)
-                .activeProfileId(profileId)
+                .contextHouseholdId(householdId)
+                .selectedProfileId(profileId)
                 .build());
 
     var persisted = sessionRepository.findById(issued.session().getId()).orElseThrow();
-    assertThat(persisted.getActiveHouseholdId()).isEqualTo(householdId);
-    assertThat(persisted.getActiveProfileId()).isEqualTo(profileId);
+    assertThat(persisted.getContextHouseholdId()).isEqualTo(householdId);
+    assertThat(persisted.getSelectedProfileId()).isEqualTo(profileId);
   }
 
   private IssuedRefreshToken issueSession() {

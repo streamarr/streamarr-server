@@ -10,10 +10,11 @@ import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
-import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.RefreshTokenRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.AuthTestSupportConfig;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -25,16 +26,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Import;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Refresh Revocation Race Integration Tests")
+@Import(AuthTestSupportConfig.class)
 class RefreshRevocationRaceIT extends AbstractIntegrationTest {
 
   private static final int ROUNDS = 25;
 
   @Autowired private RefreshTokenService refreshTokenService;
+
+  @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private UserAccountRepository userAccountRepository;
 
@@ -49,14 +54,14 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
   @AfterEach
   void deleteAccountAndCascades() {
     if (account != null) {
-      userAccountRepository.deleteById(account.getId());
+      authTestSupport.deleteAccount(account.getId());
     }
   }
 
   @Test
   @DisplayName("Should leave no active token on session when refresh races revocation")
   void shouldLeaveNoActiveTokenOnSessionWhenRefreshRacesRevocation() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
 
     for (int round = 0; round < ROUNDS; round++) {
       var issued = refreshTokenService.createSession(account, "race-device");
@@ -75,7 +80,7 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject redeeming a successor when minted before revocation")
   void shouldRejectRedeemingSuccessorWhenMintedBeforeRevocation() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    account = authTestSupport.createAccount();
     var issued = refreshTokenService.createSession(account, "sequential-device");
 
     var rotated = (RefreshResult.Rotated) refreshTokenService.redeem(issued.rawToken());

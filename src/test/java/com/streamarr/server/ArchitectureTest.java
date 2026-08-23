@@ -21,6 +21,7 @@ import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFi
 import com.streamarr.server.services.auth.AccountPasswordVerifier;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordTimingEqualizer;
+import com.streamarr.server.services.auth.ProfilePinVerifier;
 import com.streamarr.server.services.authorization.AuthorizationDecider;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.DirectAuthorizationDeciderFixture;
@@ -153,6 +154,21 @@ class ArchitectureTest {
               "Resolvers and controllers adapt identity and protocol data; services authorize"
                   + " use cases");
 
+  @ArchTest
+  static final ArchRule servicesMustReceiveAuthenticatedIdentityFromAdapters =
+      noClasses()
+          .that()
+          .resideInAPackage("..services..")
+          .and()
+          .resideOutsideOfPackage("..services.authorization..")
+          .should()
+          .callMethodWhere(
+              target(owner(assignableTo(AuthorizationService.class)))
+                  .and(target(name("currentIdentity"))))
+          .as(
+              "Application services receive authenticated identity explicitly from adapters;"
+                  + " only the authorization facade resolves it from the security context");
+
   // The library services call the filepath, parsers, streaming, and task services; a dependency
   // back the other way puts them in a cycle. FilepathCodec did exactly that from the library
   // package until it moved to services.filepath.
@@ -229,6 +245,29 @@ class ArchitectureTest {
           .as(
               "Only SecurityContextAuthorizationService and CedarAuthorizationDecider know"
                   + " AuthorizationDecider");
+
+  // ADR 0024 package direction: services.identity → services.authorization → services.auth.
+  // Authentication, sessions, token issuance, and credential verification never reach back into
+  // authorization or identity; the authorization module never imports identity.
+  @ArchTest
+  static final ArchRule authMustNotDependOnAuthorizationOrIdentity =
+      noClasses()
+          .that()
+          .resideInAPackage("..services.auth..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage("..services.authorization..", "..services.identity..")
+          .as("services.auth is the bottom of the identity stack");
+
+  @ArchTest
+  static final ArchRule authorizationMustNotDependOnIdentity =
+      noClasses()
+          .that()
+          .resideInAPackage("..services.authorization..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("..services.identity..")
+          .as("services.authorization decides; it never calls the identity workflows above it");
 
   // Actions, checks, slices, and contributors stay inside the engine package so no caller can
   // name a Cedar action or supply its own authority facts.
@@ -357,7 +396,8 @@ class ArchitectureTest {
             AccountPasswordVerifier.class,
             LoginService.class,
             PasswordEncoderConfig.class,
-            PasswordTimingEqualizer.class)
+            PasswordTimingEqualizer.class,
+            ProfilePinVerifier.class)
         .should()
         .callMethodWhere(
             target(owner(assignableTo(PasswordEncoder.class)))
@@ -365,8 +405,9 @@ class ArchitectureTest {
                 .and(target(rawParameterTypes(CharSequence.class, String.class))))
         .as(
             "Authenticated Account password checks must go through AccountPasswordVerifier; only"
-                + " login (distinct email+source throttle), password-encoder composition, and the"
-                + " timing equalizer compare directly");
+                + " login (distinct email+source throttle), password-encoder composition, the"
+                + " timing equalizer, and the Profile PIN verifier (distinct PROFILE_PIN budget)"
+                + " compare directly");
   }
 
   private static ArchRule graphqlMustNotOwnPasswordPolicy() {

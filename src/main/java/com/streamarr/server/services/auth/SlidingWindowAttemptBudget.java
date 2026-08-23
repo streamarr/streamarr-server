@@ -38,6 +38,7 @@ final class SlidingWindowAttemptBudget<K> {
             current.addLast(clock.instant());
             reserved.set(true);
           }
+
           return current;
         });
     return reserved.get();
@@ -56,6 +57,7 @@ final class SlidingWindowAttemptBudget<K> {
         evicted++;
       }
     }
+
     return evicted;
   }
 
