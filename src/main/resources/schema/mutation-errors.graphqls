@@ -249,7 +249,7 @@ type AlreadyManagerError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"The invitation is unavailable when it is unknown, expired, decided, or hidden."
+"The invitation is unavailable."
 type ManagerInvitationNotFoundError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
