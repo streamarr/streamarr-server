@@ -35,14 +35,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
-/**
- * Account transfers and deletion (ADR 0024 §Transfers, §Account deletion): an Account and its
- * Personal Profile move together, the write is a conditional partial update that can never carry a
- * stale password hash or clobber a concurrent rename, and every lifecycle boundary — final Account,
- * last HouseholdAdmin, last ServerAdmin, anchors, supervision — is judged by the deferred
- * invariants at commit and answered as its typed rejection. The final Account of a Household moves
- * only through teardown.
- */
 @Service
 @RequiredArgsConstructor
 public class AccountLifecycleService {
@@ -50,7 +42,7 @@ public class AccountLifecycleService {
   private static final String CHK_RETAINS_ADMIN = "chk_household_retains_admin";
   private static final String CHK_RETAINS_ACCOUNT = "chk_household_retains_account";
   private static final String CHK_SERVER_ADMIN_REMAINS = "chk_enabled_server_admin_remains";
-  private static final String CHK_HOME_ANCHOR = "chk_profile_home_anchor";
+  private static final String CHK_ELIGIBLE_MANAGER = "chk_profile_home_anchor";
   private static final String CHK_NAMES_UNIQUE = "chk_household_profile_names_unique";
   private static final String CHK_HOSTING_ADMIN = "chk_hosting_household_retains_eligible_admin";
   private static final String CHK_RESTRICTED_AUTHORITY =
@@ -103,7 +95,6 @@ public class AccountLifecycleService {
     return mutationTransactions.write(
         () -> {
           if (userAccountRepository.findByHouseholdId(sourceHouseholdId).size() <= 1) {
-            // The final Account of a Household is handled only by teardown (ADR 0024).
             throw new MutationRejection(new TransferRejections.FinalAccount());
           }
 
@@ -225,7 +216,6 @@ public class AccountLifecycleService {
 
     var profileId = account.getPersonalProfileId();
     if (command.profileDisposition() == ProfileDisposition.KEEP) {
-      // The preserved Profile needs its replacement anchor before the person leaves it behind.
       profileManagerRepository.tryGrant(command.replacementManagerAccountId(), profileId);
       shareRepository.tryDemoteStructural(profileId, account.getHouseholdId(), now);
       deleteAccountRow(account);
@@ -287,15 +277,14 @@ public class AccountLifecycleService {
 
     var restricted =
         profileRepository.findById(account.getPersonalProfileId()).orElseThrow().isRestricted();
-    // T6: the anchor lives in the Profile's own Household and is themselves unrestricted.
-    var anchored =
+    var eligible =
         replacement
-            .filter(anchor -> anchor.getHouseholdId().equals(account.getHouseholdId()))
-            .filter(anchor -> !anchor.getId().equals(account.getId()))
-            .filter(anchor -> !restricted || anchor.getHouseholdRole() == HouseholdRole.ADMIN)
+            .filter(candidate -> candidate.getHouseholdId().equals(account.getHouseholdId()))
+            .filter(candidate -> !candidate.getId().equals(account.getId()))
+            .filter(candidate -> !restricted || candidate.getHouseholdRole() == HouseholdRole.ADMIN)
             .filter(this::isEligible)
             .isPresent();
-    if (!anchored) {
+    if (!eligible) {
       return Optional.of(new TransferRejections.ReplacementManagerNotEligible());
     }
 
@@ -314,7 +303,7 @@ public class AccountLifecycleService {
       case CHK_RETAINS_ADMIN -> Optional.of(new TransferRejections.LastHouseholdAdmin());
       case CHK_HOSTING_ADMIN -> Optional.of(new TransferRejections.NoEligibleAdmin());
       case CHK_NAMES_UNIQUE -> Optional.of(new TransferRejections.NameConflict());
-      case CHK_HOME_ANCHOR -> Optional.of(new TransferRejections.AnchorRequired());
+      case CHK_ELIGIBLE_MANAGER -> Optional.of(new TransferRejections.EligibleManagerRequired());
       case CHK_RESTRICTED_AUTHORITY -> Optional.of(new TransferRejections.RestrictedFirstAccount());
       default -> Optional.empty();
     };
@@ -325,7 +314,7 @@ public class AccountLifecycleService {
       case CHK_RETAINS_ACCOUNT -> Optional.of(new TransferRejections.FinalAccount());
       case CHK_RETAINS_ADMIN -> Optional.of(new TransferRejections.LastHouseholdAdmin());
       case CHK_SERVER_ADMIN_REMAINS -> Optional.of(new TransferRejections.LastServerAdmin());
-      case CHK_HOME_ANCHOR -> Optional.of(new TransferRejections.AnchorRequired());
+      case CHK_ELIGIBLE_MANAGER -> Optional.of(new TransferRejections.EligibleManagerRequired());
       case CHK_HOSTING_ADMIN -> Optional.of(new TransferRejections.NoEligibleAdmin());
       default -> Optional.empty();
     };
@@ -336,7 +325,7 @@ public class AccountLifecycleService {
       case CHK_RETAINS_ACCOUNT -> Optional.of(new TransferRejections.FinalAccount());
       case CHK_RETAINS_ADMIN -> Optional.of(new TransferRejections.LastHouseholdAdmin());
       case CHK_SERVER_ADMIN_REMAINS -> Optional.of(new TransferRejections.LastServerAdmin());
-      case CHK_HOME_ANCHOR -> Optional.of(new TransferRejections.AnchorRequired());
+      case CHK_ELIGIBLE_MANAGER -> Optional.of(new TransferRejections.EligibleManagerRequired());
       case CHK_HOSTING_ADMIN -> Optional.of(new TransferRejections.NoEligibleAdmin());
       default -> Optional.empty();
     };
@@ -389,13 +378,13 @@ public class AccountLifecycleService {
     };
   }
 
-  /** How the old Household reads after the person moves on (ADR 0024 §Transfers). */
+  /** Access retained in the Account's former Household after transfer. */
   public enum SourceAccess {
     END,
     KEEP_AS_VISITOR
   }
 
-  /** What happens to the deleted person's Personal Profile (ADR 0024 §Account deletion). */
+  /** Fate of the Personal Profile when its Account is deleted. */
   public enum ProfileDisposition {
     KEEP,
     ERASE

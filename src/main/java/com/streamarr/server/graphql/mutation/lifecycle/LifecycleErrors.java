@@ -24,7 +24,7 @@ public final class LifecycleErrors {
       case TransferRejections.LastHouseholdAdmin _ -> lastHouseholdAdmin();
       case TransferRejections.NoEligibleAdmin _ -> noEligibleAdmin();
       case TransferRejections.NameConflict _ -> nameTaken();
-      case TransferRejections.AnchorRequired _ -> anchorRequired();
+      case TransferRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
       case TransferRejections.RestrictedFirstAccount _ ->
           new RestrictedFirstAccountError(
               "The first Account of an empty Household becomes HouseholdAdmin; it cannot be"
@@ -50,7 +50,7 @@ public final class LifecycleErrors {
               NO_SUCH_ACCOUNT, InputPath.of("replacementManagerAccountId"));
       case TransferRejections.ReplacementManagerNotEligible _ ->
           replacementNotEligible("replacementManagerAccountId");
-      case TransferRejections.AnchorRequired _ -> anchorRequired();
+      case TransferRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
       case TransferRejections.NoEligibleAdmin _ -> noEligibleAdmin();
     };
   }
@@ -65,7 +65,7 @@ public final class LifecycleErrors {
       case TransferRejections.FinalAccount _ -> finalAccount();
       case TransferRejections.LastHouseholdAdmin _ -> lastHouseholdAdmin();
       case TransferRejections.LastServerAdmin _ -> lastServerAdmin();
-      case TransferRejections.AnchorRequired _ -> anchorRequired();
+      case TransferRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
       case TransferRejections.NoEligibleAdmin _ -> noEligibleAdmin();
     };
   }
@@ -139,8 +139,9 @@ public final class LifecycleErrors {
         "Another available Profile there already uses that name.", InputPath.of(DESTINATION));
   }
 
-  private static HomeAnchorRequiredError anchorRequired() {
-    return new HomeAnchorRequiredError("Every Profile keeps its required home management anchor.");
+  private static EligibleManagerRequiredError eligibleManagerRequired() {
+    return new EligibleManagerRequiredError(
+        "Every Profile keeps its required home management anchor.");
   }
 
   private static ReplacementManagerNotEligibleError replacementNotEligible(String inputField) {

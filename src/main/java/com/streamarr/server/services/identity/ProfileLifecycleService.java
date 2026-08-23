@@ -33,17 +33,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
-/**
- * Unlinked-Profile transfers and force-deletion (ADR 0024 §Transfers, §Permanent Profile deletion):
- * ServerAdmin recovery work. A transfer establishes the destination anchor before commit and never
- * silently reactivates anything — pending Profile-bound artifacts are invalidated, visits elsewhere
- * stay untouched. A linked Profile moves or dies only with its Account.
- */
 @Service
 @RequiredArgsConstructor
 public class ProfileLifecycleService {
 
-  private static final String CHK_HOME_ANCHOR = "chk_profile_home_anchor";
+  private static final String CHK_ELIGIBLE_MANAGER = "chk_profile_home_anchor";
   private static final String CHK_NAMES_UNIQUE = "chk_household_profile_names_unique";
   private static final String CHK_HOSTING_ADMIN = "chk_hosting_household_retains_eligible_admin";
   private static final String PROFILE_TRANSFERRED = "Profile transferred";
@@ -102,7 +96,6 @@ public class ProfileLifecycleService {
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
-          // The destination anchor exists before commit; T6 judges the whole move.
           profileManagerRepository.tryGrant(command.localManagerAccountId(), command.profileId());
           if (!profileRepository.tryRehome(
               command.profileId(), sourceHouseholdId, command.destinationHouseholdId())) {
@@ -119,7 +112,7 @@ public class ProfileLifecycleService {
             switch (constraint) {
               case CHK_NAMES_UNIQUE -> Optional.of(new TransferRejections.NameConflict());
               case CHK_HOSTING_ADMIN -> Optional.of(new TransferRejections.NoEligibleAdmin());
-              case CHK_HOME_ANCHOR ->
+              case CHK_ELIGIBLE_MANAGER ->
                   Optional.of(new TransferRejections.ReplacementManagerNotEligible());
               default -> Optional.empty();
             });
@@ -220,13 +213,13 @@ public class ProfileLifecycleService {
       return Optional.of(new TransferRejections.LocalManagerNotFound());
     }
 
-    // T6: the anchor lives in the destination Household and is themselves unrestricted.
-    var anchored =
+    var eligible =
         manager
-            .filter(anchor -> anchor.getHouseholdId().equals(command.destinationHouseholdId()))
+            .filter(
+                candidate -> candidate.getHouseholdId().equals(command.destinationHouseholdId()))
             .filter(this::isEligible)
             .isPresent();
-    if (!anchored) {
+    if (!eligible) {
       return Optional.of(new TransferRejections.ReplacementManagerNotEligible());
     }
 

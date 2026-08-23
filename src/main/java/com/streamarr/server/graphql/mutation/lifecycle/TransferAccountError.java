@@ -13,5 +13,5 @@ public sealed interface TransferAccountError extends MutationError
         LastHouseholdAdminError,
         NoEligibleAdminError,
         ProfileNameTakenError,
-        HomeAnchorRequiredError,
+        EligibleManagerRequiredError,
         RestrictedFirstAccountError {}

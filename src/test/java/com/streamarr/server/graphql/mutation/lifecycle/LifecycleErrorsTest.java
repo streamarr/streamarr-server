@@ -58,9 +58,11 @@ class LifecycleErrorsTest {
             () -> LifecycleErrors.toTransferAccountError(new TransferRejections.NameConflict()),
             ProfileNameTakenError.class),
         errorCase(
-            "Account Profile anchor required",
-            () -> LifecycleErrors.toTransferAccountError(new TransferRejections.AnchorRequired()),
-            HomeAnchorRequiredError.class),
+            "Account Profile needs an eligible manager",
+            () ->
+                LifecycleErrors.toTransferAccountError(
+                    new TransferRejections.EligibleManagerRequired()),
+            EligibleManagerRequiredError.class),
         errorCase(
             "Restricted first Account",
             () ->
@@ -167,9 +169,11 @@ class LifecycleErrorsTest {
                     new TransferRejections.ReplacementManagerNotEligible()),
             ReplacementManagerNotEligibleError.class),
         errorCase(
-            "Account Profile anchor required",
-            () -> LifecycleErrors.toDeleteAccountError(new TransferRejections.AnchorRequired()),
-            HomeAnchorRequiredError.class),
+            "Account Profile needs an eligible manager",
+            () ->
+                LifecycleErrors.toDeleteAccountError(
+                    new TransferRejections.EligibleManagerRequired()),
+            EligibleManagerRequiredError.class),
         errorCase(
             "Account leaves no eligible HouseholdAdmin",
             () -> LifecycleErrors.toDeleteAccountError(new TransferRejections.NoEligibleAdmin()),
@@ -200,9 +204,11 @@ class LifecycleErrorsTest {
             () -> LifecycleErrors.toDeleteMyAccountError(new TransferRejections.LastServerAdmin()),
             LastServerAdminError.class),
         errorCase(
-            "Self-deletion leaves Profile without anchor",
-            () -> LifecycleErrors.toDeleteMyAccountError(new TransferRejections.AnchorRequired()),
-            HomeAnchorRequiredError.class),
+            "Self-deletion leaves Profile without an eligible manager",
+            () ->
+                LifecycleErrors.toDeleteMyAccountError(
+                    new TransferRejections.EligibleManagerRequired()),
+            EligibleManagerRequiredError.class),
         errorCase(
             "Self-deletion leaves no eligible HouseholdAdmin",
             () -> LifecycleErrors.toDeleteMyAccountError(new TransferRejections.NoEligibleAdmin()),
