@@ -195,8 +195,8 @@ class ReauthEndpointIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should never start the claim at login and remove it on refresh")
-  void shouldNeverStartClaimAtLoginAndRemoveItOnRefresh() throws Exception {
+  @DisplayName("Should omit the reauthentication claim when logging in or refreshing")
+  void shouldOmitReauthenticationClaimWhenLoggingInOrRefreshing() throws Exception {
     var login =
         objectMapper.readTree(
             mockMvc
@@ -276,8 +276,8 @@ class ReauthEndpointIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should throttle reauthentication after repeated wrong passwords")
-  void shouldThrottleReauthenticationAfterRepeatedWrongPasswords() throws Exception {
+  @DisplayName("Should throttle reauthentication when repeated passwords are wrong")
+  void shouldThrottleReauthenticationWhenRepeatedPasswordsAreWrong() throws Exception {
     var bearer = authTestSupport.accountBearer(identity);
     for (var attempt = 0; attempt < 5; attempt++) {
       reauth(bearer, "wrong-" + attempt).andExpect(status().isUnauthorized());

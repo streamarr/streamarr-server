@@ -40,8 +40,8 @@ class AdministrationErrorsTest {
 
   @ParameterizedTest(name = "Should map {0}")
   @MethodSource("rejectionMappings")
-  @DisplayName("Should map every administration rejection to its GraphQL error")
-  void shouldMapEveryAdministrationRejectionToItsGraphqlError(
+  @DisplayName("Should map every administration rejection when building GraphQL errors")
+  void shouldMapEveryAdministrationRejectionWhenBuildingGraphqlErrors(
       String description, Supplier<? extends MutationError> mapping, MutationError expected) {
     assertThat(mapping.get()).as(description).isEqualTo(expected);
   }

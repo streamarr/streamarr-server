@@ -120,16 +120,16 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
-  @DisplayName("Should represent a missing reauthentication claim without returning null")
-  void shouldRepresentMissingReauthenticationClaimWithoutReturningNull() {
+  @DisplayName("Should return an empty Optional when the reauthentication claim is missing")
+  void shouldReturnEmptyOptionalWhenReauthenticationClaimMissing() {
     var identity = accountScopedBuilder().build();
 
     assertThat(identity.reauthenticatedAt()).isEmpty();
   }
 
   @Test
-  @DisplayName("Should reject a null reauthentication value")
-  void shouldRejectNullReauthenticationValue() {
+  @DisplayName("Should reject the reauthentication value when it is null")
+  void shouldRejectReauthenticationValueWhenNull() {
     var builder = accountScopedBuilder();
 
     assertThatThrownBy(() -> builder.reauthenticatedAt(null))

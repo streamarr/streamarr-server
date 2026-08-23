@@ -37,8 +37,8 @@ class HouseholdAdministrationServiceTest {
               new FakeTransactionManager(), new ConstraintViolationTranslator()));
 
   @Test
-  @DisplayName("Should create a Household with a stripped name")
-  void shouldCreateHouseholdWithStrippedName() {
+  @DisplayName("Should strip the name when creating a Household")
+  void shouldStripNameWhenCreatingHousehold() {
     var outcome = service.createHousehold(authorization.currentIdentity(), "  Beach House  ");
 
     var created =
@@ -52,8 +52,8 @@ class HouseholdAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse creating a Household without a name")
-  void shouldRefuseCreatingHouseholdWithoutName() {
+  @DisplayName("Should reject creation when the Household name is blank")
+  void shouldRejectCreationWhenHouseholdNameBlank() {
     var outcome = service.createHousehold(authorization.currentIdentity(), "  ");
 
     assertThat(rejectionOf(outcome))
@@ -72,8 +72,8 @@ class HouseholdAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should gate Household creation as a whole surface")
-  void shouldGateHouseholdCreationAsWholeSurface() {
+  @DisplayName("Should forbid creation when the whole-surface gate denies")
+  void shouldForbidCreationWhenWholeSurfaceGateDenies() {
     var identity = authorization.currentIdentity();
     authorization.denyAll();
 
@@ -82,8 +82,8 @@ class HouseholdAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should rename a Household the caller administers")
-  void shouldRenameHouseholdCallerAdministers() {
+  @DisplayName("Should rename a Household when the caller administers it")
+  void shouldRenameHouseholdWhenCallerAdministersIt() {
     var household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
 
     var outcome =
@@ -95,8 +95,8 @@ class HouseholdAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should read a hidden Household as not found")
-  void shouldReadHiddenHouseholdAsNotFound() {
+  @DisplayName("Should return not found when the Household is hidden")
+  void shouldReturnNotFoundWhenHouseholdHidden() {
     var household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var identity = authorization.currentIdentity();
     var householdId = household.getId();
@@ -110,8 +110,8 @@ class HouseholdAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should forbid renaming a visible Household")
-  void shouldForbidRenamingVisibleHousehold() {
+  @DisplayName("Should forbid rename when the Household is visible but authority is missing")
+  void shouldForbidRenameWhenHouseholdVisibleButAuthorityMissing() {
     var household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var identity = authorization.currentIdentity();
     var householdId = household.getId();
@@ -146,8 +146,8 @@ class HouseholdAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse renaming without a name once authorized")
-  void shouldRefuseRenamingWithoutNameOnceAuthorized() {
+  @DisplayName("Should reject rename when the Household name is blank")
+  void shouldRejectRenameWhenHouseholdNameBlank() {
     var household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var originalName = household.getName();
 
@@ -190,8 +190,8 @@ class HouseholdAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should read an unknown Household as not found for an allowed caller")
-  void shouldReadUnknownHouseholdAsNotFoundForAllowedCaller() {
+  @DisplayName("Should return not found when the Household is unknown to an allowed caller")
+  void shouldReturnNotFoundWhenHouseholdUnknownToAllowedCaller() {
     var outcome =
         service.renameHousehold(authorization.currentIdentity(), UUID.randomUUID(), "New Name");
 

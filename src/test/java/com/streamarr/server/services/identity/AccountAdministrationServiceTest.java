@@ -65,8 +65,8 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should grant server admin and audit the winning transition once")
-  void shouldGrantServerAdminAndAuditWinningTransitionOnce() {
+  @DisplayName("Should grant server admin and audit once when the transition wins")
+  void shouldGrantServerAdminAndAuditOnceWhenTransitionWins() {
     var outcome = service.grantServerAdmin(identity(), target.getId(), "onboarding");
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
@@ -90,8 +90,8 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should require a reason before any decision is made")
-  void shouldRequireReasonBeforeAnyDecisionIsMade() {
+  @DisplayName("Should avoid authorization when the grant reason is missing")
+  void shouldAvoidAuthorizationWhenGrantReasonMissing() {
     var outcome = service.grantServerAdmin(identity(), target.getId(), "  ");
 
     assertThat(rejectionOf(outcome)).isInstanceOf(AdministrationRejections.ReasonRequired.class);
@@ -172,8 +172,8 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should read an unknown Account as not found even for an allowed caller")
-  void shouldReadUnknownAccountAsNotFoundEvenForAllowedCaller() {
+  @DisplayName("Should return not found when the Account is unknown to an allowed caller")
+  void shouldReturnNotFoundWhenAccountUnknownToAllowedCaller() {
     var outcome = service.grantServerAdmin(identity(), UUID.randomUUID(), "onboarding");
 
     assertThat(rejectionOf(outcome)).isInstanceOf(AdministrationRejections.AccountNotFound.class);
@@ -221,8 +221,8 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should enable a disabled Account and audit the transition")
-  void shouldEnableDisabledAccountAndAuditTransition() {
+  @DisplayName("Should enable an Account and audit when the transition wins")
+  void shouldEnableAccountAndAuditWhenTransitionWins() {
     target.setEnabled(false);
     accounts.save(target);
 
@@ -235,8 +235,8 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should grant HouseholdAdmin and audit the transition")
-  void shouldGrantHouseholdAdminAndAuditTransition() {
+  @DisplayName("Should grant HouseholdAdmin and audit when the transition wins")
+  void shouldGrantHouseholdAdminAndAuditWhenTransitionWins() {
     target.setHouseholdRole(HouseholdRole.MEMBER);
     assertThat(service.grantHouseholdAdmin(identity(), target.getId()))
         .isInstanceOf(Outcome.Accepted.class);
@@ -248,8 +248,8 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should revoke HouseholdAdmin and audit the transition")
-  void shouldRevokeHouseholdAdminAndAuditTransition() {
+  @DisplayName("Should revoke HouseholdAdmin and audit when the transition wins")
+  void shouldRevokeHouseholdAdminAndAuditWhenTransitionWins() {
     target.setHouseholdRole(HouseholdRole.ADMIN);
     assertThat(service.revokeHouseholdAdmin(identity(), target.getId()))
         .isInstanceOf(Outcome.Accepted.class);
@@ -261,8 +261,8 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should rename an Account without creating an authority audit")
-  void shouldRenameAccountWithoutCreatingAuthorityAudit() {
+  @DisplayName("Should rename an Account without an authority audit when allowed")
+  void shouldRenameAccountWithoutAuthorityAuditWhenAllowed() {
     assertThat(service.renameAccount(identity(), target.getId(), "  New Name  "))
         .isInstanceOf(Outcome.Accepted.class);
     assertThat(accounts.findById(target.getId()).orElseThrow().getDisplayName())
@@ -271,8 +271,8 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should revoke server admin and audit the winning transition")
-  void shouldRevokeServerAdminAndAuditWinningTransition() {
+  @DisplayName("Should revoke server admin and audit when the transition wins")
+  void shouldRevokeServerAdminAndAuditWhenTransitionWins() {
     target.setServerAdmin(true);
     accounts.save(target);
 
@@ -290,8 +290,8 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should require a reason before revoking server admin")
-  void shouldRequireReasonBeforeRevokingServerAdmin() {
+  @DisplayName("Should require a reason when revoking server admin")
+  void shouldRequireReasonWhenRevokingServerAdmin() {
     target.setServerAdmin(true);
     accounts.save(target);
 

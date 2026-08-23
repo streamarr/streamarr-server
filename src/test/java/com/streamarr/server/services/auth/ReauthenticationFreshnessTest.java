@@ -26,8 +26,8 @@ class ReauthenticationFreshnessTest {
           Clock.fixed(NOW, ZoneOffset.UTC));
 
   @Test
-  @DisplayName("Should be fresh only inside the window")
-  void shouldBeFreshOnlyInsideWindow() {
+  @DisplayName("Should report fresh only when the claim is inside the window")
+  void shouldReportFreshOnlyWhenClaimInsideWindow() {
     assertThat(freshness.isFresh(identityReauthenticatedAt(NOW))).isTrue();
     assertThat(freshness.isFresh(identityReauthenticatedAt(NOW.minus(WINDOW).plusSeconds(1))))
         .isTrue();
@@ -35,15 +35,15 @@ class ReauthenticationFreshnessTest {
   }
 
   @Test
-  @DisplayName("Should never be fresh without a claim")
-  void shouldNeverBeFreshWithoutClaim() {
+  @DisplayName("Should report stale when the claim is missing")
+  void shouldReportStaleWhenClaimMissing() {
     assertThat(freshness.isFresh(AuthenticatedIdentityFixture.accountScopedBuilder().build()))
         .isFalse();
   }
 
   @Test
-  @DisplayName("Should never trust a future-dated claim")
-  void shouldNeverTrustFutureDatedClaim() {
+  @DisplayName("Should report stale when the claim is future-dated")
+  void shouldReportStaleWhenClaimFutureDated() {
     assertThat(freshness.isFresh(identityReauthenticatedAt(NOW.plusSeconds(30)))).isFalse();
   }
 

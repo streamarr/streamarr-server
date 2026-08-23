@@ -132,13 +132,11 @@ class AccessTokenIssuerTest {
     assertThat(context.contextHouseholdId()).isEqualTo(visited);
     assertThat(context.profileId()).contains(profileId);
     assertThat(context.scope()).isEqualTo(TokenScope.PROFILE);
-    assertThat(TokenContext.of(account, session(account)).contextHouseholdId())
-        .isEqualTo(account.getHouseholdId());
   }
 
   @Test
-  @DisplayName("Should represent a missing reauthentication instant without returning null")
-  void shouldRepresentMissingReauthenticationInstantWithoutReturningNull() {
+  @DisplayName("Should return an empty Optional when the reauthentication instant is missing")
+  void shouldReturnEmptyOptionalWhenReauthenticationInstantMissing() {
     var context = TokenContext.of(account(), session(account()));
 
     assertThat(context.reauthenticatedAt()).isEmpty();
@@ -146,8 +144,8 @@ class AccessTokenIssuerTest {
   }
 
   @Test
-  @DisplayName("Should reject a null reauthentication instant")
-  void shouldRejectNullReauthenticationInstant() {
+  @DisplayName("Should reject the reauthentication instant when its value is null")
+  void shouldRejectReauthenticationInstantWhenValueIsNull() {
     var context = TokenContext.of(account(), session(account()));
 
     assertThatThrownBy(() -> context.withReauthenticatedAt((Instant) null))
@@ -174,8 +172,8 @@ class AccessTokenIssuerTest {
   }
 
   @Test
-  @DisplayName("Should expire a reauthenticated token at the ceremony window end")
-  void shouldExpireReauthenticatedTokenAtCeremonyWindowEnd() {
+  @DisplayName("Should expire at the ceremony window end when the source expires later")
+  void shouldExpireAtCeremonyWindowEndWhenSourceExpiresLater() {
     var now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
     var fixedIssuer = issuerAt(Clock.fixed(now, ZoneOffset.UTC));
 

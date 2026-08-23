@@ -19,8 +19,8 @@ class ConstraintViolationTranslatorTest {
   private final ConstraintViolationTranslator translator = new ConstraintViolationTranslator();
 
   @Test
-  @DisplayName("Should ignore a Hibernate violation without a constraint name")
-  void shouldIgnoreHibernateViolationWithoutConstraintName() {
+  @DisplayName("Should return empty when a Hibernate violation has no constraint name")
+  void shouldReturnEmptyWhenHibernateViolationHasNoConstraintName() {
     var cause = new ConstraintViolationException("write failed", new SQLException(), null);
     var exception = new DataIntegrityViolationException("write failed", cause);
 
@@ -28,8 +28,8 @@ class ConstraintViolationTranslatorTest {
   }
 
   @Test
-  @DisplayName("Should ignore a PostgreSQL violation without a server error")
-  void shouldIgnorePostgresqlViolationWithoutServerError() {
+  @DisplayName("Should return empty when a PostgreSQL violation has no server error")
+  void shouldReturnEmptyWhenPostgresqlViolationHasNoServerError() {
     var cause = new PSQLException("write failed", PSQLState.UNKNOWN_STATE);
     var exception = new DataIntegrityViolationException("write failed", cause);
 
@@ -37,8 +37,8 @@ class ConstraintViolationTranslatorTest {
   }
 
   @Test
-  @DisplayName("Should ignore a PostgreSQL server error without a constraint name")
-  void shouldIgnorePostgresqlServerErrorWithoutConstraintName() {
+  @DisplayName("Should return empty when a PostgreSQL server error has no constraint name")
+  void shouldReturnEmptyWhenPostgresqlServerErrorHasNoConstraintName() {
     var serverError = new ServerErrorMessage("SERROR\0C23505\0Mwrite failed\0\0");
     var exception =
         new DataIntegrityViolationException("write failed", new PSQLException(serverError));

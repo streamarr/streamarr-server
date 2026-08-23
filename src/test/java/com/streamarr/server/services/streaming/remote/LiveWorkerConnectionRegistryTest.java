@@ -34,8 +34,8 @@ class LiveWorkerConnectionRegistryTest {
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
   @Test
-  @DisplayName("Should publish a worker connection before acknowledging its registration")
-  void shouldPublishWorkerConnectionBeforeAcknowledgingItsRegistration() throws Exception {
+  @DisplayName("Should expose the connection when acknowledgement is in progress")
+  void shouldExposeConnectionWhenAcknowledgementIsInProgress() throws Exception {
     var registry = new LiveWorkerConnectionRegistry();
     var observer = new BlockingAcceptanceObserver();
 

@@ -179,8 +179,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should require a reason before revoking server admin")
-  void shouldRequireReasonBeforeRevokingServerAdmin() throws Exception {
+  @DisplayName("Should require a reason when revoking server admin")
+  void shouldRequireReasonWhenRevokingServerAdmin() throws Exception {
     assertThat(userAccountRepository.tryGrantServerAdmin(resident.account().getId())).isTrue();
 
     graphql(
@@ -232,8 +232,9 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should forbid a HouseholdAdmin who can see the Account but lacks authority")
-  void shouldForbidHouseholdAdminWhoCanSeeAccountButLacksAuthority() throws Exception {
+  @DisplayName(
+      "Should forbid a HouseholdAdmin when the Account is visible but authority is missing")
+  void shouldForbidHouseholdAdminWhenAccountVisibleButAuthorityMissing() throws Exception {
     var peer = joinHousehold(resident, HouseholdRole.ADMIN);
     var peerIdentity = identityFor(peer);
 
@@ -257,8 +258,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should read a hidden Account as not found under the oracle rule")
-  void shouldReadHiddenAccountAsNotFoundUnderOracleRule() throws Exception {
+  @DisplayName("Should return Account not found when the oracle rule hides it")
+  void shouldReturnAccountNotFoundWhenAccountHiddenByOracleRule() throws Exception {
     var hidden = authTestSupport.createIdentity();
     try {
       graphql(
@@ -303,8 +304,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should translate revoking the last enabled ServerAdmin into a typed error")
-  void shouldTranslateRevokingLastEnabledServerAdminIntoTypedError() throws Exception {
+  @DisplayName("Should return a typed error when revoking the last enabled ServerAdmin")
+  void shouldReturnTypedErrorWhenRevokingLastEnabledServerAdmin() throws Exception {
     dsl.insertInto(SERVER_BOOTSTRAP)
         .set(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID, serverAdmin.account().getId())
         .execute();
@@ -358,8 +359,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should translate demoting the last HouseholdAdmin into a typed error")
-  void shouldTranslateDemotingLastHouseholdAdminIntoTypedError() throws Exception {
+  @DisplayName("Should return a typed error when demoting the last HouseholdAdmin")
+  void shouldReturnTypedErrorWhenDemotingLastHouseholdAdmin() throws Exception {
     graphql(
             authTestSupport.freshAccountBearer(serverAdmin),
             """
@@ -383,8 +384,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should grant HouseholdAdmin and audit the winning transition")
-  void shouldGrantHouseholdAdminAndAuditWinningTransition() throws Exception {
+  @DisplayName("Should grant HouseholdAdmin and audit when the transition wins")
+  void shouldGrantHouseholdAdminAndAuditWhenTransitionWins() throws Exception {
     var member = joinHousehold(resident, HouseholdRole.MEMBER);
 
     graphql(
@@ -408,8 +409,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should revoke HouseholdAdmin and audit the winning transition")
-  void shouldRevokeHouseholdAdminAndAuditWinningTransition() throws Exception {
+  @DisplayName("Should revoke HouseholdAdmin and audit when the transition wins")
+  void shouldRevokeHouseholdAdminAndAuditWhenTransitionWins() throws Exception {
     var additionalAdmin = joinHousehold(resident, HouseholdRole.ADMIN);
 
     graphql(
@@ -437,8 +438,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should translate promoting a restricted Account into a typed error")
-  void shouldTranslatePromotingRestrictedAccountIntoTypedError() throws Exception {
+  @DisplayName("Should return a typed error when promoting a restricted Account")
+  void shouldReturnTypedErrorWhenPromotingRestrictedAccount() throws Exception {
     var member = joinHousehold(resident, HouseholdRole.MEMBER);
     restrictUnderSupervision(resident, member);
 
@@ -506,8 +507,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should enable an Account and audit the winning transition")
-  void shouldEnableAccountAndAuditWinningTransition() throws Exception {
+  @DisplayName("Should enable an Account and audit when the transition wins")
+  void shouldEnableAccountAndAuditWhenTransitionWins() throws Exception {
     assertThat(userAccountRepository.tryDisable(resident.account().getId())).isTrue();
 
     graphql(
@@ -531,8 +532,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should let an Account rename itself")
-  void shouldLetAccountRenameItself() throws Exception {
+  @DisplayName("Should rename an Account when the caller is that Account")
+  void shouldRenameAccountWhenCallerIsSameAccount() throws Exception {
     graphql(
             authTestSupport.accountBearer(resident),
             """
@@ -552,8 +553,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse a blank Account display name without changing it")
-  void shouldRefuseBlankAccountDisplayNameWithoutChangingIt() throws Exception {
+  @DisplayName("Should preserve the Account name when the rename value is blank")
+  void shouldPreserveAccountNameWhenRenameValueBlank() throws Exception {
     var originalName = resident.account().getDisplayName();
 
     graphql(
@@ -577,8 +578,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should let a HouseholdAdmin rename its Household")
-  void shouldLetHouseholdAdminRenameItsHousehold() throws Exception {
+  @DisplayName("Should rename a Household when the caller is its HouseholdAdmin")
+  void shouldRenameHouseholdWhenCallerIsHouseholdAdmin() throws Exception {
     graphql(
             authTestSupport.accountBearer(resident),
             """
@@ -617,8 +618,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should create a Household for ServerAdmin")
-  void shouldCreateHouseholdForServerAdmin() throws Exception {
+  @DisplayName("Should create a Household when the caller is ServerAdmin")
+  void shouldCreateHouseholdWhenCallerIsServerAdmin() throws Exception {
     var response =
         graphql(
                 authTestSupport.accountBearer(serverAdmin),
@@ -646,8 +647,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should forbid Household creation for a non-ServerAdmin")
-  void shouldForbidHouseholdCreationForNonServerAdmin() throws Exception {
+  @DisplayName("Should forbid Household creation when the caller is not ServerAdmin")
+  void shouldForbidHouseholdCreationWhenCallerIsNotServerAdmin() throws Exception {
     var householdCount = householdRepository.count();
 
     graphql(
@@ -663,8 +664,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should list every Household with its Accounts for ServerAdmin only")
-  void shouldListEveryHouseholdWithItsAccountsForServerAdminOnly() throws Exception {
+  @DisplayName("Should list every Household and Account when the caller is ServerAdmin")
+  void shouldListAllHouseholdsAndAccountsWhenCallerIsServerAdmin() throws Exception {
     var page = householdPage(50, null);
     var nodesById = new HashMap<String, JsonNode>();
     for (var edge : page.path("data").path("households").path("edges")) {
@@ -811,8 +812,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should show a Household to its admin and hide a foreign one as null")
-  void shouldShowHouseholdToItsAdminAndHideForeignOneAsNull() throws Exception {
+  @DisplayName("Should show owned and hide foreign Households when the caller is HouseholdAdmin")
+  void shouldShowOwnedAndHideForeignHouseholdWhenCallerIsHouseholdAdmin() throws Exception {
     graphql(
             authTestSupport.accountBearer(resident),
             """
@@ -841,8 +842,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should show Account administration to its Household admin and hide it otherwise")
-  void shouldShowAccountAdministrationToItsHouseholdAdminAndHideItOtherwise() throws Exception {
+  @DisplayName("Should show owned and hide foreign Accounts when the caller is HouseholdAdmin")
+  void shouldShowOwnedAndHideForeignAccountWhenCallerIsHouseholdAdmin() throws Exception {
     var member = joinHousehold(resident, HouseholdRole.MEMBER);
 
     graphql(

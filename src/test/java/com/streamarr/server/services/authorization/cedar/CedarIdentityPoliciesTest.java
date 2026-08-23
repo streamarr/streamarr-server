@@ -395,8 +395,9 @@ class CedarIdentityPoliciesTest {
   class Administration {
 
     @Test
-    @DisplayName("Should allow ServerAdmin authority changes for a fresh, live, enabled admin")
-    void shouldAllowServerAdminAuthorityChangesForFreshLiveEnabledAdmin() {
+    @DisplayName(
+        "Should allow ServerAdmin authority changes when the caller is fresh, live, and enabled")
+    void shouldAllowServerAdminAuthorityChangesWhenCallerFreshLiveEnabledAdmin() {
       account.setServerAdmin(true);
       accounts.save(account);
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
@@ -418,8 +419,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should treat a stale or future-dated ceremony claim as not fresh")
-    void shouldTreatStaleOrFutureDatedCeremonyClaimAsNotFresh() {
+    @DisplayName("Should report not fresh when the ceremony claim is stale or future-dated")
+    void shouldReportNotFreshWhenCeremonyClaimStaleOrFutureDated() {
       account.setServerAdmin(true);
       accounts.save(account);
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
@@ -433,8 +434,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should never misclassify a true authority denial as reauthentication required")
-    void shouldNeverMisclassifyTrueAuthorityDenialAsReauthenticationRequired() {
+    @DisplayName("Should keep a policy denial when authority is missing")
+    void shouldKeepPolicyDenialWhenAuthorityMissing() {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
       var fresh = withReauthenticatedAt(atHome(), Instant.now());
 
@@ -455,8 +456,9 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should reserve account administration writes for a live ServerAdmin")
-    void shouldReserveAccountAdministrationWritesForLiveServerAdmin() {
+    @DisplayName(
+        "Should allow Account administration writes only when the caller is live ServerAdmin")
+    void shouldAllowAccountAdministrationWritesOnlyWhenCallerLiveServerAdmin() {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
 
       // A HouseholdAdmin is not enough — role changes are ServerAdmin work.
@@ -479,14 +481,14 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should deny creating a Household to anyone but a live ServerAdmin")
-    void shouldDenyCreatingHouseholdToAnyoneButLiveServerAdmin() {
+    @DisplayName("Should deny Household creation when the caller is not live ServerAdmin")
+    void shouldDenyHouseholdCreationWhenCallerNotLiveServerAdmin() {
       assertThat(decide(atHome(), new Intent.CreateHousehold())).isEqualTo(DENIED);
     }
 
     @Test
-    @DisplayName("Should reserve the Household catalogue for a live ServerAdmin")
-    void shouldReserveHouseholdCatalogueForLiveServerAdmin() {
+    @DisplayName("Should allow the Household catalogue only when the caller is live ServerAdmin")
+    void shouldAllowHouseholdCatalogueOnlyWhenCallerLiveServerAdmin() {
       assertThat(decide(atHome(), new Intent.ViewHouseholds())).isEqualTo(DENIED);
 
       account.setServerAdmin(true);
@@ -495,8 +497,9 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let only a live HouseholdAdmin of that Household or ServerAdmin rename it")
-    void shouldLetOnlyLiveHouseholdAdminOfThatHouseholdOrServerAdminRenameIt() {
+    @DisplayName(
+        "Should allow Household rename when the caller is its live HouseholdAdmin or ServerAdmin")
+    void shouldAllowHouseholdRenameWhenCallerLiveHouseholdAdminOrServerAdmin() {
       var home = account.getHouseholdId();
 
       assertThat(decide(atHome(), new Intent.RenameHousehold(home))).isEqualTo(ALLOWED);
@@ -515,8 +518,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let an Account rename itself and ServerAdmin rename anyone")
-    void shouldLetAccountRenameItselfAndServerAdminRenameAnyone() {
+    @DisplayName("Should allow Account rename when the caller is itself or ServerAdmin")
+    void shouldAllowAccountRenameWhenCallerSelfOrServerAdmin() {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
 
       // Self-targeted: principal and resource are one entity in the slice.
@@ -529,8 +532,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should deny a disabled Account renaming itself")
-    void shouldDenyDisabledAccountRenamingItself() {
+    @DisplayName("Should deny self rename when the Account is disabled")
+    void shouldDenySelfRenameWhenAccountDisabled() {
       account.setEnabled(false);
       accounts.save(account);
 

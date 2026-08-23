@@ -23,6 +23,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import lombok.Builder;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -53,8 +54,10 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should finish an authorized transition before ServerAdmin revocation commits")
-  void shouldFinishAuthorizedTransitionBeforeServerAdminRevocationCommits() throws Exception {
+  @DisplayName(
+      "Should finish the authorized transition when ServerAdmin revocation commits concurrently")
+  void shouldFinishAuthorizedTransitionWhenServerAdminRevocationCommitsConcurrently()
+      throws Exception {
     var actor = identity(authTestSupport.createAdminIdentity());
     identity(authTestSupport.createAdminIdentity());
     var target = identity(authTestSupport.createIdentity());
@@ -64,13 +67,24 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
     var revocationBackendPid = new AtomicInteger();
     var targetLockerBackendPid = new AtomicInteger();
     var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
+    var targetLockPlan =
+        TargetLockPlan.builder()
+            .target(target)
+            .locked(targetLocked)
+            .release(releaseTarget)
+            .backendPid(targetLockerBackendPid)
+            .lockProbe(lockProbe)
+            .build();
+    var revocationPlan =
+        RevocationPlan.builder()
+            .actor(actor)
+            .started(revocationStarted)
+            .backendPid(revocationBackendPid)
+            .lockProbe(lockProbe)
+            .build();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var targetLock =
-          executor.submit(
-              () ->
-                  lockTarget(
-                      target, targetLocked, releaseTarget, targetLockerBackendPid, lockProbe));
+      var targetLock = executor.submit(() -> lockTarget(targetLockPlan));
       assertThat(targetLocked.await(10, TimeUnit.SECONDS)).isTrue();
 
       var grant =
@@ -88,7 +102,7 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
       var revocation =
           executor.submit(
               () -> {
-                revokeServerAdmin(actor, revocationStarted, revocationBackendPid, lockProbe);
+                revokeServerAdmin(revocationPlan);
                 return null;
               });
       assertThat(revocationStarted.await(10, TimeUnit.SECONDS)).isTrue();
@@ -125,13 +139,17 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
     var releaseTarget = new CountDownLatch(1);
     var targetLockerBackendPid = new AtomicInteger();
     var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
+    var targetLockPlan =
+        TargetLockPlan.builder()
+            .target(target)
+            .locked(targetLocked)
+            .release(releaseTarget)
+            .backendPid(targetLockerBackendPid)
+            .lockProbe(lockProbe)
+            .build();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var targetLock =
-          executor.submit(
-              () ->
-                  lockTarget(
-                      target, targetLocked, releaseTarget, targetLockerBackendPid, lockProbe));
+      var targetLock = executor.submit(() -> lockTarget(targetLockPlan));
       assertThat(targetLocked.await(10, TimeUnit.SECONDS)).isTrue();
 
       var first =
@@ -179,36 +197,28 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
             });
   }
 
-  private Void lockTarget(
-      AuthTestSupport.TestIdentity target,
-      CountDownLatch targetLocked,
-      CountDownLatch releaseTarget,
-      AtomicInteger targetLockerBackendPid,
-      PostgresLockProbe lockProbe) {
+  private Void lockTarget(TargetLockPlan plan) {
     transactionTemplate.executeWithoutResult(
         _ -> {
-          targetLockerBackendPid.set(lockProbe.currentBackendPid());
+          plan.backendPid().set(plan.lockProbe().currentBackendPid());
           dsl.select(USER_ACCOUNT.ID)
               .from(USER_ACCOUNT)
-              .where(USER_ACCOUNT.ID.eq(target.account().getId()))
+              .where(USER_ACCOUNT.ID.eq(plan.target().account().getId()))
               .forUpdate()
               .fetchSingle();
-          targetLocked.countDown();
-          awaitLatch(releaseTarget, "Account transition did not reach the target row");
+          plan.locked().countDown();
+          awaitLatch(plan.release(), "Account transition did not reach the target row");
         });
     return null;
   }
 
-  private void revokeServerAdmin(
-      AuthTestSupport.TestIdentity actor,
-      CountDownLatch revocationStarted,
-      AtomicInteger revocationBackendPid,
-      PostgresLockProbe lockProbe) {
+  private void revokeServerAdmin(RevocationPlan plan) {
     transactionTemplate.executeWithoutResult(
         _ -> {
-          var account = userAccountRepository.findById(actor.account().getId()).orElseThrow();
-          revocationBackendPid.set(lockProbe.currentBackendPid());
-          revocationStarted.countDown();
+          var account =
+              userAccountRepository.findById(plan.actor().account().getId()).orElseThrow();
+          plan.backendPid().set(plan.lockProbe().currentBackendPid());
+          plan.started().countDown();
           account.setServerAdmin(false);
           userAccountRepository.saveAndFlush(account);
         });
@@ -263,4 +273,19 @@ class AccountAdministrationConcurrencyIT extends AbstractIntegrationTest {
       throw new AssertionError("Interrupted while coordinating Account administration", e);
     }
   }
+
+  @Builder
+  private record TargetLockPlan(
+      AuthTestSupport.TestIdentity target,
+      CountDownLatch locked,
+      CountDownLatch release,
+      AtomicInteger backendPid,
+      PostgresLockProbe lockProbe) {}
+
+  @Builder
+  private record RevocationPlan(
+      AuthTestSupport.TestIdentity actor,
+      CountDownLatch started,
+      AtomicInteger backendPid,
+      PostgresLockProbe lockProbe) {}
 }
