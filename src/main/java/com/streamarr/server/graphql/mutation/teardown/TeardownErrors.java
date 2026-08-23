@@ -8,9 +8,9 @@ import java.util.List;
 public final class TeardownErrors {
 
   private static final List<String> DESTINATION =
-      InputPath.of("finalAccount", "destinationHouseholdId");
+      InputPath.of("lastAccount", "destinationHouseholdId");
   private static final List<String> REPLACEMENT =
-      InputPath.of("finalAccount", "replacementManagerAccountId");
+      InputPath.of("lastAccount", "replacementManagerAccountId");
 
   private TeardownErrors() {}
 
@@ -21,29 +21,28 @@ public final class TeardownErrors {
       case TeardownRejections.ReasonRequired _ ->
           new ReasonRequiredError("Enter a reason for the audit record.", InputPath.of("reason"));
       case TeardownRejections.ReauthenticationRequired _ ->
-          new ReauthenticationRequiredError("Confirm your password to continue.");
+          new ReauthenticationRequiredError("Confirm your password before retrying this action.");
       case TeardownRejections.AccountsRemain _ ->
           new AccountsRemainError(
               "Every other Account must already have been transferred or deleted.");
       case TeardownRejections.FinalAccountRequired _ ->
-          new FinalAccountRequiredError("One Account remains; choose its atomic disposition.");
+          new LastAccountActionRequiredError(
+              "One Account remains; choose whether to transfer or delete it.");
       case TeardownRejections.FinalAccountUnexpected _ ->
-          new FinalAccountUnexpectedError(
-              "The Household has no Accounts; there is nothing to dispose of.");
+          new LastAccountActionNotAllowedError(
+              "The Household has no Accounts, so lastAccount must be omitted.");
       case TeardownRejections.DestinationRequired _ ->
           new DestinationRequiredError("Name the destination Household.", DESTINATION);
       case TeardownRejections.DestinationNotFound _ ->
           new DestinationNotFoundError("No such Household.", DESTINATION);
       case TeardownRejections.ReplacementManagerRequired _ ->
           new ReplacementManagerRequiredError(
-              "KEEP preserves the Profile only with a replacement manager named up front.",
-              REPLACEMENT);
+              "Keeping the Profile requires a replacement Profile manager.", REPLACEMENT);
       case TeardownRejections.ReplacementManagerNotFound _ ->
-          new ReplacementManagerNotFoundError("No such Account.", REPLACEMENT);
+          new AccountNotFoundError("No such Account.", REPLACEMENT);
       case TeardownRejections.ReplacementManagerNotEligible _ ->
-          new ReplacementManagerNotEligibleError(
-              "The anchor lives in the destination Household and is themselves an unrestricted"
-                  + " Adult.",
+          new ProfileManagerNotEligibleError(
+              "That Account cannot manage the Profile because it is outside the destination Household or its Personal Profile is restricted.",
               REPLACEMENT);
       case TeardownRejections.LastServerAdmin _ ->
           new LastServerAdminError("At least one enabled ServerAdmin remains.");

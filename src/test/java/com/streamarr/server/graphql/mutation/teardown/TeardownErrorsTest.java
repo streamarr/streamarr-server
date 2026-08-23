@@ -34,9 +34,9 @@ class TeardownErrorsTest {
         (ReplacementManagerRequiredError)
             TeardownErrors.toTearDownError(new TeardownRejections.ReplacementManagerRequired());
 
-    assertThat(destination.inputPath()).containsExactly("finalAccount", "destinationHouseholdId");
+    assertThat(destination.inputPath()).containsExactly("lastAccount", "destinationHouseholdId");
     assertThat(replacement.inputPath())
-        .containsExactly("finalAccount", "replacementManagerAccountId");
+        .containsExactly("lastAccount", "replacementManagerAccountId");
   }
 
   private static Stream<Arguments> rejectionMappings() {
@@ -47,20 +47,20 @@ class TeardownErrorsTest {
             new TeardownRejections.ReauthenticationRequired(), ReauthenticationRequiredError.class),
         Arguments.of(new TeardownRejections.AccountsRemain(), AccountsRemainError.class),
         Arguments.of(
-            new TeardownRejections.FinalAccountRequired(), FinalAccountRequiredError.class),
+            new TeardownRejections.FinalAccountRequired(), LastAccountActionRequiredError.class),
         Arguments.of(
-            new TeardownRejections.FinalAccountUnexpected(), FinalAccountUnexpectedError.class),
+            new TeardownRejections.FinalAccountUnexpected(),
+            LastAccountActionNotAllowedError.class),
         Arguments.of(new TeardownRejections.DestinationRequired(), DestinationRequiredError.class),
         Arguments.of(new TeardownRejections.DestinationNotFound(), DestinationNotFoundError.class),
         Arguments.of(
             new TeardownRejections.ReplacementManagerRequired(),
             ReplacementManagerRequiredError.class),
         Arguments.of(
-            new TeardownRejections.ReplacementManagerNotFound(),
-            ReplacementManagerNotFoundError.class),
+            new TeardownRejections.ReplacementManagerNotFound(), AccountNotFoundError.class),
         Arguments.of(
             new TeardownRejections.ReplacementManagerNotEligible(),
-            ReplacementManagerNotEligibleError.class),
+            ProfileManagerNotEligibleError.class),
         Arguments.of(new TeardownRejections.LastServerAdmin(), LastServerAdminError.class));
   }
 }
