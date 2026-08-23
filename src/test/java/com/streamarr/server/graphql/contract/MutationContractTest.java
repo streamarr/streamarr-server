@@ -111,6 +111,24 @@ class MutationContractTest {
   }
 
   @Test
+  @DisplayName("Should require unique member types when mutation error unions are declared")
+  void shouldRequireUniqueMemberTypesWhenMutationErrorUnionsAreDeclared() {
+    var duplicateMemberUnions =
+        errorUnions(SCHEMA).stream()
+            .filter(
+                union ->
+                    union.getMemberTypes().stream()
+                            .map(type -> ((TypeName) type).getName())
+                            .distinct()
+                            .count()
+                        != union.getMemberTypes().size())
+            .map(UnionTypeDefinition::getName)
+            .toList();
+
+    assertThat(duplicateMemberUnions).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should require the mutation-specific error union when payload declares user errors")
   void shouldRequireMutationSpecificErrorUnionWhenPayloadDeclaresUserErrors() {
     var fixture =
