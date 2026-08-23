@@ -13,16 +13,17 @@ import org.junit.jupiter.api.Test;
 class ManagerErrorsTest {
 
   @Test
-  @DisplayName("Should describe the eligible manager requirement without implementation detail")
-  void shouldDescribeEligibleManagerRequirementWithoutImplementationDetail() {
+  @DisplayName(
+      "Should describe the eligible Profile manager requirement without implementation detail")
+  void shouldDescribeEligibleProfileManagerRequirementWithoutImplementationDetail() {
     var error = ManagerErrors.toRelinquishError(new ManagerRejections.EligibleManagerRequired());
 
     assertThat(error)
         .isInstanceOfSatisfying(
-            EligibleManagerRequiredError.class,
+            ProfileRequiresEligibleManagerError.class,
             required ->
                 assertThat(required.message())
-                    .isEqualTo("The Profile needs an eligible manager in its Household."));
+                    .isEqualTo("The Profile needs an eligible Profile manager in its Household."));
   }
 
   @Test
@@ -31,9 +32,9 @@ class ManagerErrorsTest {
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.ProfileNotFound()))
         .isInstanceOf(ProfileNotFoundError.class);
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.RecipientNotFound()))
-        .isInstanceOf(RecipientNotFoundError.class);
+        .isInstanceOf(AccountNotFoundError.class);
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.RecipientNotEligible()))
-        .isInstanceOf(RecipientNotEligibleError.class);
+        .isInstanceOf(ProfileManagerNotEligibleError.class);
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.AlreadyManager()))
         .isInstanceOf(AlreadyManagerError.class);
     assertThat(ManagerErrors.toCancelError(new ManagerRejections.ManagerInvitationNotFound()))
@@ -43,7 +44,7 @@ class ManagerErrorsTest {
     assertThat(ManagerErrors.toAcceptError(new ManagerRejections.ManagerInvitationNotFound()))
         .isInstanceOf(ManagerInvitationNotFoundError.class);
     assertThat(ManagerErrors.toAcceptError(new ManagerRejections.RecipientNotEligible()))
-        .isInstanceOf(RecipientNotEligibleError.class);
+        .isInstanceOf(ProfileManagerNotEligibleError.class);
     assertThat(ManagerErrors.toAcceptError(new ManagerRejections.AlreadyManager()))
         .isInstanceOf(AlreadyManagerError.class);
     assertThat(ManagerErrors.toDeclineError(new ManagerRejections.ManagerInvitationNotFound()))
@@ -55,11 +56,11 @@ class ManagerErrorsTest {
   void shouldPointAtRecipientAccountIdWhenInvitationRecipientIsInvalid() {
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.RecipientNotFound()))
         .isInstanceOfSatisfying(
-            RecipientNotFoundError.class,
+            AccountNotFoundError.class,
             error -> assertThat(error.inputPath()).containsExactly("recipientAccountId"));
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.RecipientNotEligible()))
         .isInstanceOfSatisfying(
-            RecipientNotEligibleError.class,
+            ProfileManagerNotEligibleError.class,
             error -> assertThat(error.inputPath()).containsExactly("recipientAccountId"));
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.AlreadyManager()))
         .isInstanceOfSatisfying(
@@ -72,7 +73,7 @@ class ManagerErrorsTest {
   void shouldPointAtCodeWhenAcceptanceIsRejected() {
     assertThat(ManagerErrors.toAcceptError(new ManagerRejections.RecipientNotEligible()))
         .isInstanceOfSatisfying(
-            RecipientNotEligibleError.class,
+            ProfileManagerNotEligibleError.class,
             error -> assertThat(error.inputPath()).containsExactly("code"));
     assertThat(ManagerErrors.toAcceptError(new ManagerRejections.AlreadyManager()))
         .isInstanceOfSatisfying(
@@ -88,13 +89,13 @@ class ManagerErrorsTest {
     assertThat(ManagerErrors.toRelinquishError(new ManagerRejections.ManagementAlreadyRemoved()))
         .isInstanceOf(ManagementAlreadyRemovedError.class);
     assertThat(ManagerErrors.toRelinquishError(new ManagerRejections.EligibleManagerRequired()))
-        .isInstanceOf(EligibleManagerRequiredError.class);
+        .isInstanceOf(ProfileRequiresEligibleManagerError.class);
     assertThat(ManagerErrors.toRemoveError(new ManagerRejections.ProfileNotFound()))
         .isInstanceOf(ProfileNotFoundError.class);
     assertThat(ManagerErrors.toRemoveError(new ManagerRejections.NotAManager()))
         .isInstanceOf(NotAManagerError.class);
     assertThat(ManagerErrors.toRemoveError(new ManagerRejections.EligibleManagerRequired()))
-        .isInstanceOf(EligibleManagerRequiredError.class);
+        .isInstanceOf(ProfileRequiresEligibleManagerError.class);
     assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.ProfileNotFound()))
         .isInstanceOf(ProfileNotFoundError.class);
     assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.ReasonRequired()))
@@ -102,9 +103,9 @@ class ManagerErrorsTest {
     assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.ReauthenticationRequired()))
         .isInstanceOf(ReauthenticationRequiredError.class);
     assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.RecipientNotFound()))
-        .isInstanceOf(RecipientNotFoundError.class);
+        .isInstanceOf(AccountNotFoundError.class);
     assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.RecipientNotEligible()))
-        .isInstanceOf(RecipientNotEligibleError.class);
+        .isInstanceOf(ProfileManagerNotEligibleError.class);
     assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.AlreadyManager()))
         .isInstanceOf(AlreadyManagerError.class);
     assertThat(ManagerErrors.toRemoveOverrideError(new ManagerRejections.ProfileNotFound()))
@@ -117,6 +118,6 @@ class ManagerErrorsTest {
     assertThat(ManagerErrors.toRemoveOverrideError(new ManagerRejections.NotAManager()))
         .isInstanceOf(NotAManagerError.class);
     assertThat(ManagerErrors.toRemoveOverrideError(new ManagerRejections.EligibleManagerRequired()))
-        .isInstanceOf(EligibleManagerRequiredError.class);
+        .isInstanceOf(ProfileRequiresEligibleManagerError.class);
   }
 }
