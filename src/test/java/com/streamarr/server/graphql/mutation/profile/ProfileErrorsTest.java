@@ -32,16 +32,16 @@ class ProfileErrorsTest {
         ProfileNameTakenError.class,
         "name");
     assertThat(ProfileErrors.toCreateProfileError(new ProfileRejections.EligibleManagerRequired()))
-        .isInstanceOf(EligibleManagerRequiredError.class)
+        .isInstanceOf(ProfileRequiresEligibleManagerError.class)
         .isNotInstanceOf(InputMutationError.class);
     assertInputError(
         ProfileErrors.toCreateProfileError(new ProfileRejections.ManagerNotEligible()),
-        ManagerNotEligibleError.class,
-        "localManagerAccountId");
+        ProfileManagerNotEligibleError.class,
+        "profileManagerAccountId");
     assertInputError(
         ProfileErrors.toCreateProfileError(new ProfileRejections.LocalManagerNotFound()),
-        LocalManagerNotFoundError.class,
-        "localManagerAccountId");
+        AccountNotFoundError.class,
+        "profileManagerAccountId");
     assertInputError(
         ProfileErrors.toCreateProfileError(new ProfileRejections.MaximumAllowedRatingAgeInvalid()),
         MaximumAllowedRatingAgeInvalidError.class,
@@ -87,10 +87,10 @@ class ProfileErrorsTest {
         .isInstanceOf(ReauthenticationRequiredError.class);
     assertThat(
             ProfileErrors.toChangeProfileKindError(new ProfileRejections.EligibleManagerRequired()))
-        .isInstanceOf(EligibleManagerRequiredError.class);
+        .isInstanceOf(ProfileRequiresEligibleManagerError.class);
     assertInputError(
         ProfileErrors.toChangeProfileKindError(new ProfileRejections.RestrictedAccountAuthority()),
-        RestrictedAccountAuthorityError.class,
+        RestrictedAccountCannotAdministerError.class,
         "kind");
     assertInputError(
         ProfileErrors.toChangeProfileKindError(
@@ -100,54 +100,56 @@ class ProfileErrorsTest {
   }
 
   @Test
-  @DisplayName("Should map every policy rejection when the service refuses a ceiling change")
-  void shouldMapEveryPolicyRejectionWhenServiceRefusesCeilingChange() {
+  @DisplayName("Should map every policy rejection when setting the maximum allowed rating age")
+  void shouldMapEveryPolicyRejectionWhenSettingMaximumAllowedRatingAge() {
     assertInputError(
-        ProfileErrors.toSetProfileContentCeilingError(new ProfileRejections.ProfileNotFound()),
+        ProfileErrors.toSetProfileMaximumAllowedRatingAgeError(
+            new ProfileRejections.ProfileNotFound()),
         ProfileNotFoundError.class,
         "profileId");
     assertThat(
-            ProfileErrors.toSetProfileContentCeilingError(
+            ProfileErrors.toSetProfileMaximumAllowedRatingAgeError(
                 new ProfileRejections.ReauthenticationRequired()))
         .isInstanceOf(ReauthenticationRequiredError.class);
     assertThat(
-            ProfileErrors.toSetProfileContentCeilingError(
+            ProfileErrors.toSetProfileMaximumAllowedRatingAgeError(
                 new ProfileRejections.EligibleManagerRequired()))
-        .isInstanceOf(EligibleManagerRequiredError.class);
+        .isInstanceOf(ProfileRequiresEligibleManagerError.class);
     assertInputError(
-        ProfileErrors.toSetProfileContentCeilingError(
+        ProfileErrors.toSetProfileMaximumAllowedRatingAgeError(
             new ProfileRejections.RestrictedAccountAuthority()),
-        RestrictedAccountAuthorityError.class,
+        RestrictedAccountCannotAdministerError.class,
         "maximumAllowedRatingAge");
     assertInputError(
-        ProfileErrors.toSetProfileContentCeilingError(
+        ProfileErrors.toSetProfileMaximumAllowedRatingAgeError(
             new ProfileRejections.MaximumAllowedRatingAgeInvalid()),
         MaximumAllowedRatingAgeInvalidError.class,
         "maximumAllowedRatingAge");
   }
 
   @Test
-  @DisplayName("Should map every policy rejection when the service refuses a ceiling clear")
-  void shouldMapEveryPolicyRejectionWhenServiceRefusesCeilingClear() {
+  @DisplayName("Should map every policy rejection when removing the maximum allowed rating age")
+  void shouldMapEveryPolicyRejectionWhenRemovingMaximumAllowedRatingAge() {
     assertInputError(
-        ProfileErrors.toClearProfileContentCeilingError(new ProfileRejections.ProfileNotFound()),
+        ProfileErrors.toRemoveProfileMaximumAllowedRatingAgeError(
+            new ProfileRejections.ProfileNotFound()),
         ProfileNotFoundError.class,
         "profileId");
     assertThat(
-            ProfileErrors.toClearProfileContentCeilingError(
+            ProfileErrors.toRemoveProfileMaximumAllowedRatingAgeError(
                 new ProfileRejections.ReauthenticationRequired()))
         .isInstanceOf(ReauthenticationRequiredError.class);
     assertThat(
-            ProfileErrors.toClearProfileContentCeilingError(
+            ProfileErrors.toRemoveProfileMaximumAllowedRatingAgeError(
                 new ProfileRejections.EligibleManagerRequired()))
-        .isInstanceOf(EligibleManagerRequiredError.class);
+        .isInstanceOf(ProfileRequiresEligibleManagerError.class);
     assertInputError(
-        ProfileErrors.toClearProfileContentCeilingError(
+        ProfileErrors.toRemoveProfileMaximumAllowedRatingAgeError(
             new ProfileRejections.RestrictedAccountAuthority()),
-        RestrictedAccountAuthorityError.class,
+        RestrictedAccountCannotAdministerError.class,
         "maximumAllowedRatingAge");
     assertInputError(
-        ProfileErrors.toClearProfileContentCeilingError(
+        ProfileErrors.toRemoveProfileMaximumAllowedRatingAgeError(
             new ProfileRejections.MaximumAllowedRatingAgeInvalid()),
         MaximumAllowedRatingAgeInvalidError.class,
         "maximumAllowedRatingAge");
@@ -165,11 +167,12 @@ class ProfileErrorsTest {
             new ProfileRejections.WouldLockProfile(householdId, Optional.empty()));
 
     assertThat(named)
-        .isInstanceOf(WouldLockProfileError.class)
+        .isInstanceOf(ProfilePinRequiredError.class)
         .satisfies(
-            error -> assertThat(((WouldLockProfileError) error).message()).contains("Beach House"));
-    assertThat(((WouldLockProfileError) unnamed).message()).doesNotContain("Beach House");
-    assertThat(((WouldLockProfileError) unnamed).householdId()).isEqualTo(householdId);
+            error ->
+                assertThat(((ProfilePinRequiredError) error).message()).contains("Beach House"));
+    assertThat(((ProfilePinRequiredError) unnamed).message()).doesNotContain("Beach House");
+    assertThat(((ProfilePinRequiredError) unnamed).householdId()).isEqualTo(householdId);
   }
 
   @Test
@@ -181,7 +184,7 @@ class ProfileErrorsTest {
         "profileId");
     assertInputError(
         ProfileErrors.toSetProfilePinError(new ProfileRejections.PinMalformed()),
-        PinMalformedError.class,
+        InvalidProfilePinError.class,
         "pin");
   }
 
@@ -203,7 +206,7 @@ class ProfileErrorsTest {
         "profileId");
     assertInputError(
         ProfileErrors.toOverrideProfilePinError(new ProfileRejections.PinMalformed()),
-        PinMalformedError.class,
+        InvalidProfilePinError.class,
         "pin");
     assertInputError(
         ProfileErrors.toOverrideProfilePinError(new ProfileRejections.ReasonRequired()),

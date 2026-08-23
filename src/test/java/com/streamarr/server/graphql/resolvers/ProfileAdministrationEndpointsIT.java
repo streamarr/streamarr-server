@@ -112,7 +112,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject a negative Content Ceiling as a typed input error when creating")
+  @DisplayName("Should reject a negative maximum allowed rating age when creating")
   void shouldRejectNegativeContentCeilingAsTypedInputErrorWhenCreating() throws Exception {
     graphql(
             authTestSupport.accountBearer(admin),
@@ -132,8 +132,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse a remote ServerAdmin Kid creation when a local manager is omitted")
-  void shouldRefuseRemoteServerAdminKidCreationWhenLocalManagerIsOmitted() throws Exception {
+  @DisplayName("Should refuse a remote ServerAdmin Kid creation when a Profile manager is omitted")
+  void shouldRefuseRemoteServerAdminKidCreationWhenProfileManagerIsOmitted() throws Exception {
     var profilesBefore = profileRepository.count();
     var managersBefore = profileManagerRepository.count();
     var sharesBefore = shareRepository.count();
@@ -149,7 +149,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(
             jsonPath("$.data.createProfile.userErrors[0].__typename")
-                .value("EligibleManagerRequiredError"));
+                .value("ProfileRequiresEligibleManagerError"));
 
     assertThat(profileRepository.count()).isEqualTo(profilesBefore);
     assertThat(profileManagerRepository.count()).isEqualTo(managersBefore);
@@ -159,7 +159,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
             authTestSupport.accountBearer(serverAdmin),
             """
             mutation { createProfile(input: {householdId: "%s", name: "Kai", kind: KID,
-              localManagerAccountId: "%s"}) {
+              profileManagerAccountId: "%s"}) {
               profile { id } userErrors { __typename } } }
             """
                 .formatted(admin.household().getId(), admin.account().getId()))
@@ -168,8 +168,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject and roll back creation when the named local manager is ineligible")
-  void shouldRejectAndRollBackCreationWhenNamedLocalManagerIsIneligible() throws Exception {
+  @DisplayName("Should reject creation when the named Profile manager is ineligible")
+  void shouldRejectCreationWhenNamedProfileManagerIsIneligible() throws Exception {
     var ineligibleManager = joinHouseholdAsRestrictedMember();
     var profilesBefore = profileRepository.count();
     var managersBefore = profileManagerRepository.count();
@@ -179,7 +179,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
             authTestSupport.accountBearer(serverAdmin),
             """
             mutation { createProfile(input: {householdId: "%s", name: "Kai", kind: KID,
-              localManagerAccountId: "%s"}) {
+              profileManagerAccountId: "%s"}) {
               profile { id } userErrors { __typename } } }
             """
                 .formatted(admin.household().getId(), ineligibleManager.getId()))
@@ -188,7 +188,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.createProfile.profile").doesNotExist())
         .andExpect(
             jsonPath("$.data.createProfile.userErrors[0].__typename")
-                .value("ManagerNotEligibleError"));
+                .value("ProfileManagerNotEligibleError"));
 
     assertThat(profileRepository.count()).isEqualTo(profilesBefore);
     assertThat(profileManagerRepository.count()).isEqualTo(managersBefore);
@@ -204,7 +204,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
               authTestSupport.accountBearer(admin),
               """
               mutation { createProfile(input: {householdId: "%s", name: "Kai", kind: ADULT,
-                localManagerAccountId: "%s"}) {
+                profileManagerAccountId: "%s"}) {
                 profile { id } userErrors { __typename } } }
               """
                   .formatted(admin.household().getId(), outsider.account().getId()))
@@ -358,32 +358,33 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should apply an ordinary ceiling edit when a ceremony is absent")
-  void shouldApplyOrdinaryCeilingEditWhenCeremonyIsAbsent() throws Exception {
+  @DisplayName("Should set the maximum allowed rating age without recent reauthentication")
+  void shouldSetMaximumAllowedRatingAgeWithoutRecentReauthentication() throws Exception {
     var kid = kidProfile();
 
     graphql(
             authTestSupport.accountBearer(admin),
             """
-            mutation { setProfileContentCeiling(input: {profileId: "%s", maximumAllowedRatingAge: 12}) {
+            mutation { setProfileMaximumAllowedRatingAge(input: {profileId: "%s", maximumAllowedRatingAge: 12}) {
               profile { maximumAllowedRatingAge } userErrors { __typename } } }
             """
                 .formatted(kid.getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(
-            jsonPath("$.data.setProfileContentCeiling.profile.maximumAllowedRatingAge").value(12));
+            jsonPath("$.data.setProfileMaximumAllowedRatingAge.profile.maximumAllowedRatingAge")
+                .value(12));
   }
 
   @Test
-  @DisplayName("Should reject a negative Content Ceiling as a typed input error when setting it")
-  void shouldRejectNegativeContentCeilingAsTypedInputErrorWhenSettingIt() throws Exception {
+  @DisplayName("Should reject a negative maximum allowed rating age when setting it")
+  void shouldRejectNegativeMaximumAllowedRatingAgeWhenSettingIt() throws Exception {
     var kid = kidProfile();
 
     graphql(
             authTestSupport.accountBearer(admin),
             """
-            mutation { setProfileContentCeiling(input: {profileId: "%s", maximumAllowedRatingAge: -1}) {
+            mutation { setProfileMaximumAllowedRatingAge(input: {profileId: "%s", maximumAllowedRatingAge: -1}) {
               profile { id }
               userErrors { __typename ... on InputMutationError { inputPath } }
             } }
@@ -391,12 +392,12 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
                 .formatted(kid.getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.setProfileContentCeiling.profile").doesNotExist())
+        .andExpect(jsonPath("$.data.setProfileMaximumAllowedRatingAge.profile").doesNotExist())
         .andExpect(
-            jsonPath("$.data.setProfileContentCeiling.userErrors[0].__typename")
+            jsonPath("$.data.setProfileMaximumAllowedRatingAge.userErrors[0].__typename")
                 .value("MaximumAllowedRatingAgeInvalidError"))
         .andExpect(
-            jsonPath("$.data.setProfileContentCeiling.userErrors[0].inputPath[0]")
+            jsonPath("$.data.setProfileMaximumAllowedRatingAge.userErrors[0].inputPath[0]")
                 .value("maximumAllowedRatingAge"));
   }
 
@@ -409,16 +410,16 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.freshAccountBearer(serverAdmin),
             """
-            mutation { setProfileContentCeiling(input: {profileId: "%s", maximumAllowedRatingAge: 12}) {
+            mutation { setProfileMaximumAllowedRatingAge(input: {profileId: "%s", maximumAllowedRatingAge: 12}) {
               profile { id } userErrors { __typename } } }
             """
                 .formatted(admin.profile().getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.setProfileContentCeiling.profile").doesNotExist())
+        .andExpect(jsonPath("$.data.setProfileMaximumAllowedRatingAge.profile").doesNotExist())
         .andExpect(
-            jsonPath("$.data.setProfileContentCeiling.userErrors[0].__typename")
-                .value("RestrictedAccountAuthorityError"));
+            jsonPath("$.data.setProfileMaximumAllowedRatingAge.userErrors[0].__typename")
+                .value("RestrictedAccountCannotAdministerError"));
   }
 
   @Test
@@ -437,15 +438,16 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.freshAccountBearer(serverAdmin),
             """
-            mutation { setProfileContentCeiling(input: {profileId: "%s", maximumAllowedRatingAge: 12}) {
+            mutation { setProfileMaximumAllowedRatingAge(input: {profileId: "%s", maximumAllowedRatingAge: 12}) {
               profile { maximumAllowedRatingAge } userErrors { __typename } } }
             """
                 .formatted(admin.profile().getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.setProfileContentCeiling.userErrors").isEmpty())
+        .andExpect(jsonPath("$.data.setProfileMaximumAllowedRatingAge.userErrors").isEmpty())
         .andExpect(
-            jsonPath("$.data.setProfileContentCeiling.profile.maximumAllowedRatingAge").value(12));
+            jsonPath("$.data.setProfileMaximumAllowedRatingAge.profile.maximumAllowedRatingAge")
+                .value(12));
   }
 
   @Test
@@ -499,14 +501,14 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should clear a Content Ceiling when its manager performs an ordinary edit")
-  void shouldClearContentCeilingWhenManagerPerformsOrdinaryEdit() throws Exception {
+  @DisplayName("Should remove the maximum allowed rating age when its manager edits it")
+  void shouldRemoveMaximumAllowedRatingAgeWhenManagerEditsIt() throws Exception {
     var kid = kidProfile();
 
     graphql(
             authTestSupport.accountBearer(admin),
             """
-            mutation { setProfileContentCeiling(input: {profileId: "%s", maximumAllowedRatingAge: 12}) {
+            mutation { setProfileMaximumAllowedRatingAge(input: {profileId: "%s", maximumAllowedRatingAge: 12}) {
               profile { maximumAllowedRatingAge } userErrors { __typename } } }
             """
                 .formatted(kid.getId()))
@@ -514,16 +516,17 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.accountBearer(admin),
             """
-            mutation { clearProfileContentCeiling(input: {profileId: "%s"}) {
+            mutation { removeProfileMaximumAllowedRatingAge(input: {profileId: "%s"}) {
               profile { maximumAllowedRatingAge kind } userErrors { __typename } } }
             """
                 .formatted(kid.getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(
-            jsonPath("$.data.clearProfileContentCeiling.profile.maximumAllowedRatingAge")
+            jsonPath("$.data.removeProfileMaximumAllowedRatingAge.profile.maximumAllowedRatingAge")
                 .doesNotExist())
-        .andExpect(jsonPath("$.data.clearProfileContentCeiling.profile.kind").value("KID"));
+        .andExpect(
+            jsonPath("$.data.removeProfileMaximumAllowedRatingAge.profile.kind").value("KID"));
   }
 
   @Test
@@ -544,14 +547,14 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
             authTestSupport.accountBearer(admin),
             """
             mutation { removeProfilePin(input: {profileId: "%s"}) {
-              profile { id } userErrors { __typename ... on WouldLockProfileError { householdId message } } } }
+              profile { id } userErrors { __typename ... on ProfilePinRequiredError { householdId message } } } }
             """
                 .formatted(admin.profile().getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(
             jsonPath("$.data.removeProfilePin.userErrors[0].__typename")
-                .value("WouldLockProfileError"))
+                .value("ProfilePinRequiredError"))
         .andExpect(
             jsonPath("$.data.removeProfilePin.userErrors[0].householdId")
                 .value(admin.household().getId().toString()));
@@ -584,8 +587,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse the PIN with its input path when the PIN is malformed")
-  void shouldRefusePinWithInputPathWhenPinIsMalformed() throws Exception {
+  @DisplayName("Should refuse an invalid PIN with its input path")
+  void shouldRefuseInvalidPinWithItsInputPath() throws Exception {
     graphql(
             authTestSupport.accountBearer(admin),
             """
@@ -595,7 +598,8 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
                 .formatted(admin.profile().getId()))
         .andExpect(status().isOk())
         .andExpect(
-            jsonPath("$.data.setProfilePin.userErrors[0].__typename").value("PinMalformedError"))
+            jsonPath("$.data.setProfilePin.userErrors[0].__typename")
+                .value("InvalidProfilePinError"))
         .andExpect(jsonPath("$.data.setProfilePin.userErrors[0].inputPath[0]").value("pin"));
   }
 

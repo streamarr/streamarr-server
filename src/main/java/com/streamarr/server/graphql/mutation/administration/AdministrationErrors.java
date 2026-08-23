@@ -101,16 +101,16 @@ public final class AdministrationErrors {
   }
 
   private static ReauthenticationRequiredError reauthenticationRequired() {
-    return new ReauthenticationRequiredError("Confirm your password to continue.");
+    return new ReauthenticationRequiredError("Confirm your password before retrying this action.");
   }
 
   private static ReasonRequiredError reasonRequired() {
     return new ReasonRequiredError("Enter a reason for the audit record.", InputPath.of(REASON));
   }
 
-  private static RestrictedAccountAuthorityError restrictedAccount() {
-    return new RestrictedAccountAuthorityError(
-        "An Account with a restricted Personal Profile cannot hold authority.",
+  private static RestrictedAccountCannotAdministerError restrictedAccount() {
+    return new RestrictedAccountCannotAdministerError(
+        "An Account with a restricted Personal Profile cannot be a ServerAdmin, HouseholdAdmin, or Profile manager.",
         InputPath.of(ACCOUNT_ID));
   }
 

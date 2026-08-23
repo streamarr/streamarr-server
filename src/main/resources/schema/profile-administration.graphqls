@@ -18,7 +18,7 @@ input CreateProfileInput {
     kind: ProfileKind!
     maximumAllowedRatingAge: Int
     "Required when a remote ServerAdmin creates a restricted Profile."
-    localManagerAccountId: ID
+    profileManagerAccountId: ID
 }
 
 type CreateProfilePayload {
@@ -30,9 +30,9 @@ union CreateProfileError =
     HouseholdNotFoundError
   | ProfileNameRequiredError
   | ProfileNameTakenError
-  | EligibleManagerRequiredError
-  | ManagerNotEligibleError
-  | LocalManagerNotFoundError
+  | ProfileRequiresEligibleManagerError
+  | ProfileManagerNotEligibleError
+  | AccountNotFoundError
   | MaximumAllowedRatingAgeInvalidError
 
 input RenameProfileInput {
@@ -75,41 +75,41 @@ type ChangeProfileKindPayload {
 union ChangeProfileKindError =
     ProfileNotFoundError
   | ReauthenticationRequiredError
-  | EligibleManagerRequiredError
-  | RestrictedAccountAuthorityError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedAccountCannotAdministerError
   | MaximumAllowedRatingAgeInvalidError
 
-input SetProfileContentCeilingInput {
+input SetProfileMaximumAllowedRatingAgeInput {
     profileId: ID!
     maximumAllowedRatingAge: Int!
 }
 
-type SetProfileContentCeilingPayload {
+type SetProfileMaximumAllowedRatingAgePayload {
     profile: ProfileAdministration
-    userErrors: [SetProfileContentCeilingError!]!
+    userErrors: [SetProfileMaximumAllowedRatingAgeError!]!
 }
 
-union SetProfileContentCeilingError =
+union SetProfileMaximumAllowedRatingAgeError =
     ProfileNotFoundError
   | ReauthenticationRequiredError
-  | EligibleManagerRequiredError
-  | RestrictedAccountAuthorityError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedAccountCannotAdministerError
   | MaximumAllowedRatingAgeInvalidError
 
-input ClearProfileContentCeilingInput {
+input RemoveProfileMaximumAllowedRatingAgeInput {
     profileId: ID!
 }
 
-type ClearProfileContentCeilingPayload {
+type RemoveProfileMaximumAllowedRatingAgePayload {
     profile: ProfileAdministration
-    userErrors: [ClearProfileContentCeilingError!]!
+    userErrors: [RemoveProfileMaximumAllowedRatingAgeError!]!
 }
 
-union ClearProfileContentCeilingError =
+union RemoveProfileMaximumAllowedRatingAgeError =
     ProfileNotFoundError
   | ReauthenticationRequiredError
-  | EligibleManagerRequiredError
-  | RestrictedAccountAuthorityError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedAccountCannotAdministerError
   | MaximumAllowedRatingAgeInvalidError
 
 input SetProfilePinInput {
@@ -122,7 +122,7 @@ type SetProfilePinPayload {
     userErrors: [SetProfilePinError!]!
 }
 
-union SetProfilePinError = ProfileNotFoundError | PinMalformedError
+union SetProfilePinError = ProfileNotFoundError | InvalidProfilePinError
 
 input RemoveProfilePinInput {
     profileId: ID!
@@ -133,7 +133,7 @@ type RemoveProfilePinPayload {
     userErrors: [RemoveProfilePinError!]!
 }
 
-union RemoveProfilePinError = ProfileNotFoundError | WouldLockProfileError
+union RemoveProfilePinError = ProfileNotFoundError | ProfilePinRequiredError
 
 input OverrideProfilePinInput {
     profileId: ID!
@@ -148,7 +148,7 @@ type OverrideProfilePinPayload {
 
 union OverrideProfilePinError =
     ProfileNotFoundError
-  | PinMalformedError
+  | InvalidProfilePinError
   | ReasonRequiredError
   | ReauthenticationRequiredError
 

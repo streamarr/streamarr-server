@@ -56,7 +56,7 @@ type HouseholdNotFoundError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"The action is allowed except for a current reauthentication ceremony (POST /api/auth/reauth)."
+"The action requires recent password confirmation."
 type ReauthenticationRequiredError implements MutationError {
     message: String!
 }
@@ -66,8 +66,8 @@ type ReasonRequiredError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"An Account whose Personal Profile is restricted holds no administrative authority."
-type RestrictedAccountAuthorityError implements InputMutationError & MutationError {
+"An Account whose Personal Profile is restricted cannot administer the server, Household, or Profiles."
+type RestrictedAccountCannotAdministerError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
@@ -77,7 +77,7 @@ type MaximumAllowedRatingAgeInvalidError implements InputMutationError & Mutatio
     inputPath: [String!]!
 }
 
-"At least one enabled ServerAdmin must remain after bootstrap."
+"At least one enabled ServerAdmin must remain."
 type LastServerAdminError implements MutationError {
     message: String!
 }
@@ -113,29 +113,24 @@ type ProfileNameTakenError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"The Profile needs an eligible manager in its Household."
-type EligibleManagerRequiredError implements MutationError {
+"The Profile needs an eligible Profile manager in its Household."
+type ProfileRequiresEligibleManagerError implements MutationError {
     message: String!
 }
 
-"An Account whose Personal Profile is restricted cannot hold manager authority."
-type ManagerNotEligibleError implements InputMutationError & MutationError {
-    message: String!
-    inputPath: [String!]!
-}
-
-type LocalManagerNotFoundError implements InputMutationError & MutationError {
+"The Account cannot manage Profiles because its Personal Profile is restricted."
+type ProfileManagerNotEligibleError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
 
-type PinMalformedError implements InputMutationError & MutationError {
+type InvalidProfilePinError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
 
-"Removing this PIN would lock the Profile where a Household's safety policy requires one."
-type WouldLockProfileError implements MutationError {
+"The Profile must keep a PIN under its Household's safety policy."
+type ProfilePinRequiredError implements MutationError {
     message: String!
     householdId: ID!
 }

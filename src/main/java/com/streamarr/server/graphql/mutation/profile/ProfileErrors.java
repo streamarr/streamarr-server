@@ -19,13 +19,13 @@ public final class ProfileErrors {
           new HouseholdNotFoundError("No such Household.", InputPath.of("householdId"));
       case ProfileRejections.ProfileNameRequired _ -> nameRequired();
       case ProfileRejections.ProfileNameTaken _ -> nameTaken();
-      case ProfileRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
+      case ProfileRejections.EligibleManagerRequired _ -> profileRequiresEligibleManager();
       case ProfileRejections.ManagerNotEligible _ ->
-          new ManagerNotEligibleError(
-              "That Account's Personal Profile is restricted; it cannot manage.",
-              InputPath.of("localManagerAccountId"));
+          new ProfileManagerNotEligibleError(
+              "That Account cannot manage Profiles because its Personal Profile is restricted.",
+              InputPath.of("profileManagerAccountId"));
       case ProfileRejections.LocalManagerNotFound _ ->
-          new LocalManagerNotFoundError("No such Account.", InputPath.of("localManagerAccountId"));
+          new AccountNotFoundError("No such Account.", InputPath.of("profileManagerAccountId"));
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
@@ -50,32 +50,33 @@ public final class ProfileErrors {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
-      case ProfileRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
-      case ProfileRejections.RestrictedAccountAuthority _ -> restrictedAccountAuthority("kind");
+      case ProfileRejections.EligibleManagerRequired _ -> profileRequiresEligibleManager();
+      case ProfileRejections.RestrictedAccountAuthority _ ->
+          restrictedAccountCannotAdminister("kind");
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
 
-  public static SetProfileContentCeilingError toSetProfileContentCeilingError(
+  public static SetProfileMaximumAllowedRatingAgeError toSetProfileMaximumAllowedRatingAgeError(
       ProfileRejections.ChangeProfilePolicy rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
-      case ProfileRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
+      case ProfileRejections.EligibleManagerRequired _ -> profileRequiresEligibleManager();
       case ProfileRejections.RestrictedAccountAuthority _ ->
-          restrictedAccountAuthority(MAXIMUM_ALLOWED_RATING_AGE);
+          restrictedAccountCannotAdminister(MAXIMUM_ALLOWED_RATING_AGE);
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
 
-  public static ClearProfileContentCeilingError toClearProfileContentCeilingError(
-      ProfileRejections.ChangeProfilePolicy rejection) {
+  public static RemoveProfileMaximumAllowedRatingAgeError
+      toRemoveProfileMaximumAllowedRatingAgeError(ProfileRejections.ChangeProfilePolicy rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
-      case ProfileRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
+      case ProfileRejections.EligibleManagerRequired _ -> profileRequiresEligibleManager();
       case ProfileRejections.RestrictedAccountAuthority _ ->
-          restrictedAccountAuthority(MAXIMUM_ALLOWED_RATING_AGE);
+          restrictedAccountCannotAdminister(MAXIMUM_ALLOWED_RATING_AGE);
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
@@ -92,7 +93,7 @@ public final class ProfileErrors {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.WouldLockProfile(var householdId, var householdName) ->
-          new WouldLockProfileError(
+          new ProfilePinRequiredError(
               householdName
                   .map(ProfileErrors::removalWouldLockMessage)
                   .orElse("A Household's safety policy requires this PIN."),
@@ -134,14 +135,16 @@ public final class ProfileErrors {
         "Another available Profile already uses that name.", InputPath.of(NAME));
   }
 
-  private static EligibleManagerRequiredError eligibleManagerRequired() {
-    return new EligibleManagerRequiredError(
-        "The Profile needs an eligible manager in its Household.");
+  private static ProfileRequiresEligibleManagerError profileRequiresEligibleManager() {
+    return new ProfileRequiresEligibleManagerError(
+        "The Profile needs an eligible Profile manager in its Household.");
   }
 
-  private static RestrictedAccountAuthorityError restrictedAccountAuthority(String inputPath) {
-    return new RestrictedAccountAuthorityError(
-        "A restricted Personal Profile's Account cannot hold authority.", InputPath.of(inputPath));
+  private static RestrictedAccountCannotAdministerError restrictedAccountCannotAdminister(
+      String inputPath) {
+    return new RestrictedAccountCannotAdministerError(
+        "An Account with a restricted Personal Profile cannot be a ServerAdmin, HouseholdAdmin, or Profile manager.",
+        InputPath.of(inputPath));
   }
 
   private static MaximumAllowedRatingAgeInvalidError maximumAllowedRatingAgeInvalid() {
@@ -153,11 +156,11 @@ public final class ProfileErrors {
     return "Removing this PIN would lock the Profile in \"%s\".".formatted(householdName);
   }
 
-  private static PinMalformedError pinMalformed() {
-    return new PinMalformedError("Enter a 4-8 digit PIN.", InputPath.of(PIN));
+  private static InvalidProfilePinError pinMalformed() {
+    return new InvalidProfilePinError("Enter a 4-8 digit PIN.", InputPath.of(PIN));
   }
 
   private static ReauthenticationRequiredError reauthenticationRequired() {
-    return new ReauthenticationRequiredError("Confirm your password to continue.");
+    return new ReauthenticationRequiredError("Confirm your password before retrying this action.");
   }
 }

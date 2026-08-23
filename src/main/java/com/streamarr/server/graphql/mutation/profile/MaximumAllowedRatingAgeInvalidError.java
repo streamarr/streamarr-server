@@ -5,7 +5,7 @@ import java.util.List;
 
 public record MaximumAllowedRatingAgeInvalidError(String message, List<String> inputPath)
     implements ChangeProfileKindError,
-        ClearProfileContentCeilingError,
+        RemoveProfileMaximumAllowedRatingAgeError,
         CreateProfileError,
-        SetProfileContentCeilingError,
+        SetProfileMaximumAllowedRatingAgeError,
         InputMutationError {}

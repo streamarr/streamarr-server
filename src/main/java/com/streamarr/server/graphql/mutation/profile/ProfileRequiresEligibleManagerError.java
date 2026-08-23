@@ -1,8 +1,7 @@
 package com.streamarr.server.graphql.mutation.profile;
 
-public record ReauthenticationRequiredError(String message)
+public record ProfileRequiresEligibleManagerError(String message)
     implements ChangeProfileKindError,
         RemoveProfileMaximumAllowedRatingAgeError,
-        DeleteProfileError,
-        OverrideProfilePinError,
+        CreateProfileError,
         SetProfileMaximumAllowedRatingAgeError {}

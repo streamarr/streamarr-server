@@ -8,6 +8,6 @@ import com.streamarr.server.graphql.mutation.MutationError;
  */
 public sealed interface OverrideProfilePinError extends MutationError
     permits ProfileNotFoundError,
-        PinMalformedError,
+        InvalidProfilePinError,
         ReasonRequiredError,
         ReauthenticationRequiredError {}

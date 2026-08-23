@@ -22,8 +22,8 @@ type Mutation {
     renameProfile(input: RenameProfileInput!): RenameProfilePayload
     setProfilePicture(input: SetProfilePictureInput!): SetProfilePicturePayload
     changeProfileKind(input: ChangeProfileKindInput!): ChangeProfileKindPayload
-    setProfileContentCeiling(input: SetProfileContentCeilingInput!): SetProfileContentCeilingPayload
-    clearProfileContentCeiling(input: ClearProfileContentCeilingInput!): ClearProfileContentCeilingPayload
+    setProfileMaximumAllowedRatingAge(input: SetProfileMaximumAllowedRatingAgeInput!): SetProfileMaximumAllowedRatingAgePayload
+    removeProfileMaximumAllowedRatingAge(input: RemoveProfileMaximumAllowedRatingAgeInput!): RemoveProfileMaximumAllowedRatingAgePayload
     setProfilePin(input: SetProfilePinInput!): SetProfilePinPayload
     removeProfilePin(input: RemoveProfilePinInput!): RemoveProfilePinPayload
     overrideProfilePin(input: OverrideProfilePinInput!): OverrideProfilePinPayload

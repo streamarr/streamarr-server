@@ -8,25 +8,25 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.dto.ProfileAdministration;
 import com.streamarr.server.graphql.inputs.ChangeProfileKindInput;
-import com.streamarr.server.graphql.inputs.ClearProfileContentCeilingInput;
 import com.streamarr.server.graphql.inputs.CreateProfileInput;
 import com.streamarr.server.graphql.inputs.DeleteProfileInput;
 import com.streamarr.server.graphql.inputs.OverrideProfilePinInput;
+import com.streamarr.server.graphql.inputs.RemoveProfileMaximumAllowedRatingAgeInput;
 import com.streamarr.server.graphql.inputs.RemoveProfilePinInput;
 import com.streamarr.server.graphql.inputs.RenameProfileInput;
-import com.streamarr.server.graphql.inputs.SetProfileContentCeilingInput;
+import com.streamarr.server.graphql.inputs.SetProfileMaximumAllowedRatingAgeInput;
 import com.streamarr.server.graphql.inputs.SetProfilePictureInput;
 import com.streamarr.server.graphql.inputs.SetProfilePinInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.profile.ChangeProfileKindPayload;
-import com.streamarr.server.graphql.mutation.profile.ClearProfileContentCeilingPayload;
 import com.streamarr.server.graphql.mutation.profile.CreateProfilePayload;
 import com.streamarr.server.graphql.mutation.profile.DeleteProfilePayload;
 import com.streamarr.server.graphql.mutation.profile.OverrideProfilePinPayload;
 import com.streamarr.server.graphql.mutation.profile.ProfileErrors;
+import com.streamarr.server.graphql.mutation.profile.RemoveProfileMaximumAllowedRatingAgePayload;
 import com.streamarr.server.graphql.mutation.profile.RemoveProfilePinPayload;
 import com.streamarr.server.graphql.mutation.profile.RenameProfilePayload;
-import com.streamarr.server.graphql.mutation.profile.SetProfileContentCeilingPayload;
+import com.streamarr.server.graphql.mutation.profile.SetProfileMaximumAllowedRatingAgePayload;
 import com.streamarr.server.graphql.mutation.profile.SetProfilePicturePayload;
 import com.streamarr.server.graphql.mutation.profile.SetProfilePinPayload;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -63,9 +63,9 @@ public class ProfileAdministrationResolver {
                     .kind(input.kind())
                     .maximumAllowedRatingAge(input.maximumAllowedRatingAge())
                     .localManagerAccountId(
-                        input.localManagerAccountId() == null
+                        input.profileManagerAccountId() == null
                             ? null
-                            : Ids.parseUuid(input.localManagerAccountId()))
+                            : Ids.parseUuid(input.profileManagerAccountId()))
                     .build())
             .map(this::toDto),
         ProfileErrors::toCreateProfileError,
@@ -112,8 +112,8 @@ public class ProfileAdministrationResolver {
   }
 
   @DgsMutation
-  public SetProfileContentCeilingPayload setProfileContentCeiling(
-      @InputArgument SetProfileContentCeilingInput input) {
+  public SetProfileMaximumAllowedRatingAgePayload setProfileMaximumAllowedRatingAge(
+      @InputArgument SetProfileMaximumAllowedRatingAgeInput input) {
     return MutationPayloads.payload(
         profileAdministrationService
             .setProfileContentCeiling(
@@ -121,20 +121,20 @@ public class ProfileAdministrationResolver {
                 Ids.parseUuid(input.profileId()),
                 input.maximumAllowedRatingAge())
             .map(this::toDto),
-        ProfileErrors::toSetProfileContentCeilingError,
-        SetProfileContentCeilingPayload::new);
+        ProfileErrors::toSetProfileMaximumAllowedRatingAgeError,
+        SetProfileMaximumAllowedRatingAgePayload::new);
   }
 
   @DgsMutation
-  public ClearProfileContentCeilingPayload clearProfileContentCeiling(
-      @InputArgument ClearProfileContentCeilingInput input) {
+  public RemoveProfileMaximumAllowedRatingAgePayload removeProfileMaximumAllowedRatingAge(
+      @InputArgument RemoveProfileMaximumAllowedRatingAgeInput input) {
     return MutationPayloads.payload(
         profileAdministrationService
             .clearProfileContentCeiling(
                 authorizationService.currentIdentity(), Ids.parseUuid(input.profileId()))
             .map(this::toDto),
-        ProfileErrors::toClearProfileContentCeilingError,
-        ClearProfileContentCeilingPayload::new);
+        ProfileErrors::toRemoveProfileMaximumAllowedRatingAgeError,
+        RemoveProfileMaximumAllowedRatingAgePayload::new);
   }
 
   @DgsMutation

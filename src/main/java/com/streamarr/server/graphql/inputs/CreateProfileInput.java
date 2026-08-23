@@ -7,4 +7,4 @@ public record CreateProfileInput(
     String name,
     ProfileKind kind,
     Integer maximumAllowedRatingAge,
-    String localManagerAccountId) {}
+    String profileManagerAccountId) {}
