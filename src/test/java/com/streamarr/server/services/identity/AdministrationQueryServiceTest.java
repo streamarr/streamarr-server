@@ -3,6 +3,7 @@ package com.streamarr.server.services.identity;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
@@ -27,7 +28,8 @@ class AdministrationQueryServiceTest {
           new FakeHouseholdRepository(),
           new FakeUserAccountRepository(),
           new PaginationService(),
-          new FakeProfileRepository());
+          new FakeProfileRepository(),
+          new FakeAccountInvitationRepository());
 
   @Test
   @DisplayName("Should fail closed when Household administration visibility cannot be decided")
