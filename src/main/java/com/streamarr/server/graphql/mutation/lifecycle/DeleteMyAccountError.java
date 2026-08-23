@@ -8,8 +8,8 @@ import com.streamarr.server.graphql.mutation.MutationError;
 public sealed interface DeleteMyAccountError extends MutationError
     permits ConfirmationRequiredError,
         ReauthenticationRequiredError,
-        FinalAccountError,
+        LastHouseholdAccountError,
         LastHouseholdAdminError,
         LastServerAdminError,
-        EligibleManagerRequiredError,
-        NoEligibleAdminError {}
+        ProfileRequiresEligibleManagerError,
+        RestrictedProfileRequiresHouseholdAdminError {}

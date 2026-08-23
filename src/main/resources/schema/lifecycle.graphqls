@@ -1,5 +1,5 @@
 enum SourceAccess {
-    "End the old Household's access: structural share, registrations, sessions."
+    "End the old Household's membership-required share, registrations, and sessions."
     END
     "Keep the old share as an ordinary visit; warn when the Profile is restricted."
     KEEP_AS_VISITOR
@@ -29,11 +29,11 @@ union TransferAccountError =
     AccountNotFoundError
   | HouseholdNotFoundError
   | SameHouseholdError
-  | FinalAccountError
+  | LastHouseholdAccountError
   | LastHouseholdAdminError
-  | NoEligibleAdminError
+  | RestrictedProfileRequiresHouseholdAdminError
   | ProfileNameTakenError
-  | EligibleManagerRequiredError
+  | ProfileRequiresEligibleManagerError
   | RestrictedFirstAccountError
 
 input DeleteAccountInput {
@@ -53,14 +53,14 @@ union DeleteAccountError =
     AccountNotFoundError
   | ReasonRequiredError
   | ReauthenticationRequiredError
-  | FinalAccountError
+  | LastHouseholdAccountError
   | LastHouseholdAdminError
   | LastServerAdminError
   | ReplacementManagerRequiredError
-  | ReplacementManagerNotFoundError
-  | ReplacementManagerNotEligibleError
-  | EligibleManagerRequiredError
-  | NoEligibleAdminError
+  | AccountNotFoundError
+  | ProfileManagerNotEligibleError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedProfileRequiresHouseholdAdminError
 
 input DeleteMyAccountInput {
     "Type the literal word DELETE."
@@ -75,17 +75,17 @@ type DeleteMyAccountPayload {
 union DeleteMyAccountError =
     ConfirmationRequiredError
   | ReauthenticationRequiredError
-  | FinalAccountError
+  | LastHouseholdAccountError
   | LastHouseholdAdminError
   | LastServerAdminError
-  | EligibleManagerRequiredError
-  | NoEligibleAdminError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedProfileRequiresHouseholdAdminError
 
 input TransferProfileInput {
     profileId: ID!
     destinationHouseholdId: ID!
-    "An eligible manager in the destination Household."
-    localManagerAccountId: ID
+    "An eligible Profile manager in the destination Household."
+    profileManagerAccountId: ID
     reason: String
 }
 
@@ -98,12 +98,12 @@ union TransferProfileError =
     ProfileNotFoundError
   | HouseholdNotFoundError
   | SameHouseholdError
-  | ProfileLinkedError
-  | LocalManagerRequiredError
-  | LocalManagerNotFoundError
-  | ReplacementManagerNotEligibleError
+  | ProfileBelongsToAccountError
+  | EligibleProfileManagerRequiredError
+  | AccountNotFoundError
+  | ProfileManagerNotEligibleError
   | ProfileNameTakenError
-  | NoEligibleAdminError
+  | RestrictedProfileRequiresHouseholdAdminError
 
 input ForceDeleteProfileInput {
     profileId: ID!
@@ -119,4 +119,4 @@ union ForceDeleteProfileError =
     ProfileNotFoundError
   | ReasonRequiredError
   | ReauthenticationRequiredError
-  | ProfileLinkedError
+  | ProfileBelongsToAccountError
