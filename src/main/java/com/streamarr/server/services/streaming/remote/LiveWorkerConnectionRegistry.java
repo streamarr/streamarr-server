@@ -35,8 +35,16 @@ final class LiveWorkerConnectionRegistry {
       WorkerRegistration registration,
       StreamObserver<EstablishWorkerSessionResponse> responseObserver) {
     var connection = new WorkerConnection(UUID.randomUUID(), registration, responseObserver);
-    connection.accept();
-    var replaced = connections.put(workerId, connection);
+    WorkerConnection replaced;
+    synchronized (connection) {
+      replaced = connections.put(workerId, connection);
+      try {
+        connection.accept();
+      } catch (RuntimeException e) {
+        rollbackRegistration(workerId, connection, replaced);
+        throw e;
+      }
+    }
     if (replaced == null) {
       log.info("Worker {} connected", workerId);
       return connection.workerSessionId();
@@ -50,6 +58,15 @@ final class LiveWorkerConnectionRegistry {
         workerId,
         abandonedJobs.size());
     return connection.workerSessionId();
+  }
+
+  private void rollbackRegistration(
+      UUID workerId, WorkerConnection connection, WorkerConnection replaced) {
+    if (replaced == null) {
+      connections.remove(workerId, connection);
+      return;
+    }
+    connections.replace(workerId, connection, replaced);
   }
 
   synchronized void disconnect(UUID workerId, UUID workerSessionId) {

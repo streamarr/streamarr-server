@@ -33,6 +33,25 @@ class LiveWorkerConnectionRegistryTest {
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
   @Test
+  @DisplayName("Should publish a worker connection before acknowledging its registration")
+  void shouldPublishWorkerConnectionBeforeAcknowledgingItsRegistration() throws Exception {
+    var registry = new LiveWorkerConnectionRegistry();
+    var observer = new BlockingAcceptanceObserver();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var registration =
+          executor.submit(() -> registry.register(WORKER_ID, registration(), observer));
+      assertThat(observer.acceptanceReached.await(5, TimeUnit.SECONDS)).isTrue();
+
+      assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
+      observer.acceptanceRelease.countDown();
+      registration.get(5, TimeUnit.SECONDS);
+    } finally {
+      observer.acceptanceRelease.countDown();
+    }
+  }
+
+  @Test
   @DisplayName(
       "Should accept a replacement worker before dispatching work to it when managing a connection")
   void shouldAcceptReplacementWorkerBeforeDispatchingWorkToItWhenManagingConnection()
@@ -371,6 +390,36 @@ class LiveWorkerConnectionRegistryTest {
     @Override
     public void onCompleted() {
       cancelled = true;
+    }
+  }
+
+  private static final class BlockingAcceptanceObserver
+      implements StreamObserver<EstablishWorkerSessionResponse> {
+
+    private final CountDownLatch acceptanceReached = new CountDownLatch(1);
+    private final CountDownLatch acceptanceRelease = new CountDownLatch(1);
+
+    @Override
+    public void onNext(EstablishWorkerSessionResponse value) {
+      if (!value.hasSessionAccepted()) {
+        return;
+      }
+      acceptanceReached.countDown();
+      try {
+        acceptanceRelease.await(5, TimeUnit.SECONDS);
+      } catch (InterruptedException _) {
+        Thread.currentThread().interrupt();
+      }
+    }
+
+    @Override
+    public void onError(Throwable throwable) {
+      throw new AssertionError("Worker registration should remain connected", throwable);
+    }
+
+    @Override
+    public void onCompleted() {
+      throw new AssertionError("Worker registration should remain connected");
     }
   }
 
