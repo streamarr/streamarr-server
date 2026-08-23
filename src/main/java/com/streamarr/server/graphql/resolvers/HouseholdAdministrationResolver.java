@@ -29,12 +29,8 @@ import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
-import graphql.relay.DefaultConnection;
-import graphql.relay.DefaultEdge;
-import graphql.relay.Edge;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import org.dataloader.DataLoader;
 
@@ -63,8 +59,7 @@ public class HouseholdAdministrationResolver {
     var options = mediaOptions(dfe);
     var page =
         administrationQueryService.households(authorizationService.currentIdentity(), options);
-    return mapConnection(
-        relayConnectionAdapter.toConnection(page, options), HouseholdAdministration::from);
+    return relayConnectionAdapter.toConnection(page, options, HouseholdAdministration::from);
   }
 
   @DgsData(parentType = "HouseholdAdministration", field = "accounts")
@@ -78,9 +73,7 @@ public class HouseholdAdministrationResolver {
         .load(new AdministrationAccountsLoaderKey(household.id(), options))
         .thenApply(
             page ->
-                mapConnection(
-                    relayConnectionAdapter.toConnection(page, options),
-                    AccountAdministration::from));
+                relayConnectionAdapter.toConnection(page, options, AccountAdministration::from));
   }
 
   private MediaPaginationOptions mediaOptions(DataFetchingEnvironment dfe) {
@@ -100,15 +93,6 @@ public class HouseholdAdministrationResolver {
     String before = dfe.getArgument("before");
     return paginationService.getPaginationOptions(
         first == 0 && last == 0 && before == null ? 100 : first, after, last, before);
-  }
-
-  private static <S, T> Connection<T> mapConnection(
-      Connection<S> connection, Function<S, T> mapper) {
-    var edges =
-        connection.getEdges().stream()
-            .<Edge<T>>map(edge -> new DefaultEdge<>(mapper.apply(edge.getNode()), edge.getCursor()))
-            .toList();
-    return new DefaultConnection<>(edges, connection.getPageInfo());
   }
 
   @DgsMutation
