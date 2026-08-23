@@ -419,14 +419,13 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
               .build());
     }
     var options =
-        KeysetPaginationOptions.builder()
-            .paginationOptions(
-                PaginationOptions.builder()
-                    .paginationDirection(PaginationDirection.FORWARD)
-                    .cursor(Optional.empty())
-                    .limit(1)
-                    .build())
-            .build();
+        new KeysetPaginationOptions(
+            null,
+            PaginationOptions.builder()
+                .paginationDirection(PaginationDirection.FORWARD)
+                .cursor(Optional.empty())
+                .limit(1)
+                .build());
 
     var window = shareRepository.findProfilePage(owner.profile().getId(), options);
 
