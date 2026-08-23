@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.hibernate.SessionFactory;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -35,6 +36,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -283,24 +287,20 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
     }
   }
 
-  @Test
+  @ParameterizedTest(name = "Should return an input error when {0} receives a malformed ID")
+  @MethodSource("malformedAdministrationIds")
   @DisplayName("Should return an input error when an administration mutation ID is malformed")
-  void shouldReturnInputErrorWhenAdministrationMutationIdIsMalformed() throws Exception {
-    graphql(
-            authTestSupport.freshAccountBearer(serverAdmin),
-            """
-            mutation { grantServerAdmin(input: {accountId: "not-a-uuid", reason: "new operator"}) {
-              account { id }
-              userErrors { __typename ... on InputMutationError { message inputPath } }
-            } }
-            """)
+  void shouldReturnInputErrorWhenAdministrationMutationIdIsMalformed(
+      String operation, String resource, String inputPath, String mutation) throws Exception {
+    graphql(authTestSupport.freshAccountBearer(serverAdmin), mutation)
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.grantServerAdmin.account").doesNotExist())
+        .andExpect(jsonPath("$.data.%s.%s".formatted(operation, resource)).doesNotExist())
         .andExpect(
-            jsonPath("$.data.grantServerAdmin.userErrors[0].__typename").value("InvalidIdError"))
+            jsonPath("$.data.%s.userErrors[0].__typename".formatted(operation))
+                .value("InvalidIdError"))
         .andExpect(
-            jsonPath("$.data.grantServerAdmin.userErrors[0].inputPath[0]").value("accountId"));
+            jsonPath("$.data.%s.userErrors[0].inputPath[0]".formatted(operation)).value(inputPath));
   }
 
   @Test
@@ -640,6 +640,19 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should use the default Household page when pagination arguments are omitted")
+  void shouldUseDefaultHouseholdPageWhenPaginationArgumentsAreOmitted() throws Exception {
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            query { households { edges { node { id } } } }
+            """)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.households.edges.length()").value(2));
+  }
+
+  @Test
   @DisplayName("Should continue Household pagination when the cursor Household is renamed")
   void shouldContinueHouseholdPaginationWhenCursorHouseholdIsRenamed() throws Exception {
     assertThat(householdRepository.tryRename(serverAdmin.household().getId(), "! cursor household"))
@@ -754,6 +767,46 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
             .contentType(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
             .content(objectMapper.writeValueAsString(Map.of("query", query))));
+  }
+
+  static Stream<Arguments> malformedAdministrationIds() {
+    return Stream.of(
+        malformedAccountId(
+            "grantServerAdmin",
+            "grantServerAdmin(input: {accountId: \"not-a-uuid\", reason: \"reason\"})"),
+        malformedAccountId(
+            "revokeServerAdmin",
+            "revokeServerAdmin(input: {accountId: \"not-a-uuid\", reason: \"reason\"})"),
+        malformedAccountId(
+            "grantHouseholdAdmin", "grantHouseholdAdmin(input: {accountId: \"not-a-uuid\"})"),
+        malformedAccountId(
+            "revokeHouseholdAdmin", "revokeHouseholdAdmin(input: {accountId: \"not-a-uuid\"})"),
+        malformedAccountId("disableAccount", "disableAccount(input: {accountId: \"not-a-uuid\"})"),
+        malformedAccountId("enableAccount", "enableAccount(input: {accountId: \"not-a-uuid\"})"),
+        malformedAccountId(
+            "renameAccount",
+            "renameAccount(input: {accountId: \"not-a-uuid\", displayName: \"name\"})"),
+        Arguments.of(
+            "renameHousehold",
+            "household",
+            "householdId",
+            mutation(
+                "renameHousehold(input: {householdId: \"not-a-uuid\", name: \"name\"})",
+                "household")));
+  }
+
+  private static Arguments malformedAccountId(String operation, String invocation) {
+    return Arguments.of(operation, "account", "accountId", mutation(invocation, "account"));
+  }
+
+  private static String mutation(String invocation, String resource) {
+    return """
+        mutation { %s {
+          %s { id }
+          userErrors { __typename ... on InputMutationError { message inputPath } }
+        } }
+        """
+        .formatted(invocation, resource);
   }
 
   private JsonNode householdPage(int first, String after) throws Exception {

@@ -155,6 +155,16 @@ class AccessTokenIssuerTest {
   }
 
   @Test
+  @DisplayName("Should use the account household when a session has no remembered context")
+  void shouldUseAccountHouseholdWhenSessionHasNoRememberedContext() {
+    var account = account();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
+
+    assertThat(TokenContext.of(account, session).contextHouseholdId())
+        .isEqualTo(account.getHouseholdId());
+  }
+
+  @Test
   @DisplayName("Should expire a reauthenticated token at the ceremony window end")
   void shouldExpireReauthenticatedTokenAtCeremonyWindowEnd() {
     var now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
