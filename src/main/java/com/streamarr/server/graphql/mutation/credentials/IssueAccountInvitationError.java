@@ -12,5 +12,5 @@ public sealed interface IssueAccountInvitationError extends MutationError
         ProfileNameRequiredError,
         HouseholdNotFoundError,
         RestrictedFirstAccountError,
-        LocalManagerRequiredError,
-        LocalManagerNotFoundError {}
+        EligibleProfileManagerRequiredError,
+        AccountNotFoundError {}

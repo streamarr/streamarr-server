@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.mutation.credentials;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.graphql.mutation.InputMutationError;
 import com.streamarr.server.services.identity.InvitationRejections;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -26,9 +27,17 @@ class CredentialErrorsTest {
     assertThat(CredentialErrors.toIssueError(new InvitationRejections.RestrictedFirstAccount()))
         .isInstanceOf(RestrictedFirstAccountError.class);
     assertThat(CredentialErrors.toIssueError(new InvitationRejections.LocalManagerRequired()))
-        .isInstanceOf(LocalManagerRequiredError.class);
+        .isInstanceOf(EligibleProfileManagerRequiredError.class)
+        .satisfies(
+            error ->
+                assertThat(((InputMutationError) error).inputPath())
+                    .containsExactly("profileManagerAccountId"));
     assertThat(CredentialErrors.toIssueError(new InvitationRejections.LocalManagerNotFound()))
-        .isInstanceOf(LocalManagerNotFoundError.class);
+        .isInstanceOf(AccountNotFoundError.class)
+        .satisfies(
+            error ->
+                assertThat(((InputMutationError) error).inputPath())
+                    .containsExactly("profileManagerAccountId"));
   }
 
   @Test

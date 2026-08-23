@@ -25,11 +25,11 @@ public final class CredentialErrors {
               "The first Account of an empty Household becomes HouseholdAdmin; it cannot be"
                   + " restricted.");
       case InvitationRejections.LocalManagerRequired _ ->
-          new LocalManagerRequiredError(
-              "A restricted Profile needs an eligible local manager.",
-              InputPath.of("localManagerAccountId"));
+          new EligibleProfileManagerRequiredError(
+              "A restricted Profile needs an eligible Profile manager in its Household.",
+              InputPath.of("profileManagerAccountId"));
       case InvitationRejections.LocalManagerNotFound _ ->
-          new LocalManagerNotFoundError("No such Account.", InputPath.of("localManagerAccountId"));
+          new AccountNotFoundError("No such Account.", InputPath.of("profileManagerAccountId"));
     };
   }
 
@@ -37,7 +37,7 @@ public final class CredentialErrors {
     return switch (rejection) {
       case InvitationRejections.InvitationNotPending _ ->
           new InvitationNotPendingError(
-              "That invitation is not pending.", InputPath.of("invitationId"));
+              "That invitation is unavailable.", InputPath.of("invitationId"));
     };
   }
 
@@ -49,7 +49,7 @@ public final class CredentialErrors {
       case InvitationRejections.ReasonRequired _ ->
           new ReasonRequiredError("Enter a reason for the audit record.", InputPath.of("reason"));
       case InvitationRejections.ReauthenticationRequired _ ->
-          new ReauthenticationRequiredError("Confirm your password to continue.");
+          new ReauthenticationRequiredError("Confirm your password before retrying this action.");
     };
   }
 }

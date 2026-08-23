@@ -68,9 +68,9 @@ public class CredentialAdministrationResolver {
                     .profileKind(input.profileKind())
                     .maximumAllowedRatingAge(input.maximumAllowedRatingAge())
                     .localManagerAccountId(
-                        input.localManagerAccountId() == null
+                        input.profileManagerAccountId() == null
                             ? null
-                            : Ids.parseUuid(input.localManagerAccountId()))
+                            : Ids.parseUuid(input.profileManagerAccountId()))
                     .build())
             .map(
                 issued ->

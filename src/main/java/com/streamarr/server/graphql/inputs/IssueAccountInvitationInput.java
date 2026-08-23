@@ -10,4 +10,4 @@ public record IssueAccountInvitationInput(
     String profileName,
     ProfileKind profileKind,
     Integer maximumAllowedRatingAge,
-    String localManagerAccountId) {}
+    String profileManagerAccountId) {}

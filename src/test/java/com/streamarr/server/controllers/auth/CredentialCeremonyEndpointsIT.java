@@ -633,7 +633,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(
             jsonPath("$.data.issueAccountInvitation.userErrors[0].__typename")
-                .value("LocalManagerRequiredError"));
+                .value("EligibleProfileManagerRequiredError"));
   }
 
   private String issueInvitation(String email) throws Exception {
