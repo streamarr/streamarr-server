@@ -15,6 +15,7 @@ import com.streamarr.server.services.auth.TokenClaims;
 import com.streamarr.server.services.auth.TokenContext;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -101,7 +102,7 @@ class ReauthEndpointIT extends AbstractIntegrationTest {
                     .account(identity.account())
                     .session(identity.session())
                     .contextHouseholdId(visitedHouseholdId)
-                    .profileId(identity.profile().getId())
+                    .profileId(Optional.of(identity.profile().getId()))
                     .build())
             .value();
     var sourceClaims = jwtDecoder.decode(source);

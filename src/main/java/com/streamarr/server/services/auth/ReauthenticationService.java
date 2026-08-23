@@ -3,6 +3,7 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -37,7 +38,7 @@ public class ReauthenticationService {
         .account(account)
         .session(session)
         .contextHouseholdId(identity.contextHouseholdId())
-        .profileId(identity.profileId())
+        .profileId(Optional.ofNullable(identity.profileId()))
         .build();
   }
 }

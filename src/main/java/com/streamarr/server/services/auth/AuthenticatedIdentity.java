@@ -26,13 +26,14 @@ public record AuthenticatedIdentity(
     @NonNull UUID contextHouseholdId,
     UUID profileId,
     UUID streamSessionId,
-    Optional<Instant> reauthenticatedAt) {
+    @NonNull Optional<Instant> reauthenticatedAt) {
+
+  @SuppressWarnings("java:S1068") // Lombok builder default — field is used by generated code
+  public static class AuthenticatedIdentityBuilder {
+    private Optional<Instant> reauthenticatedAt = Optional.empty();
+  }
 
   public AuthenticatedIdentity {
-    if (reauthenticatedAt == null) {
-      reauthenticatedAt = Optional.empty();
-    }
-
     if (scope == TokenScope.ACCOUNT && profileId != null) {
       throw new IllegalArgumentException("Account scope cannot carry a selected profile");
     }

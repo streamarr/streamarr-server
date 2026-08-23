@@ -18,13 +18,13 @@ public record TokenContext(
     @NonNull UserAccount account,
     @NonNull AuthSession session,
     @NonNull UUID contextHouseholdId,
-    UUID profileId,
-    Optional<Instant> reauthenticatedAt) {
+    @NonNull Optional<UUID> profileId,
+    @NonNull Optional<Instant> reauthenticatedAt) {
 
-  public TokenContext {
-    if (reauthenticatedAt == null) {
-      reauthenticatedAt = Optional.empty();
-    }
+  @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
+  public static class TokenContextBuilder {
+    private Optional<UUID> profileId = Optional.empty();
+    private Optional<Instant> reauthenticatedAt = Optional.empty();
   }
 
   /** The session's remembered context: membership Household unless the session switched. */
@@ -36,20 +36,20 @@ public record TokenContext(
             session.getContextHouseholdId() == null
                 ? account.getHouseholdId()
                 : session.getContextHouseholdId())
-        .profileId(session.getSelectedProfileId())
+        .profileId(Optional.ofNullable(session.getSelectedProfileId()))
         .build();
   }
 
   /** The same context stamped with the ceremony instant its source token carried, if any. */
-  public TokenContext withReauthenticatedAt(Instant instant) {
-    return withReauthenticatedAt(Optional.ofNullable(instant));
+  public TokenContext withReauthenticatedAt(@NonNull Instant instant) {
+    return withReauthenticatedAt(Optional.of(instant));
   }
 
-  public TokenContext withReauthenticatedAt(Optional<Instant> instant) {
+  public TokenContext withReauthenticatedAt(@NonNull Optional<Instant> instant) {
     return new TokenContext(account, session, contextHouseholdId, profileId, instant);
   }
 
   public TokenScope scope() {
-    return profileId == null ? TokenScope.ACCOUNT : TokenScope.PROFILE;
+    return profileId.isEmpty() ? TokenScope.ACCOUNT : TokenScope.PROFILE;
   }
 }

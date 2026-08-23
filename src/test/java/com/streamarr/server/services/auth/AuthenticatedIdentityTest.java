@@ -128,6 +128,14 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
+  @DisplayName("Should reject a null reauthentication value")
+  void shouldRejectNullReauthenticationValue() {
+    assertThatThrownBy(() -> accountScopedBuilder().reauthenticatedAt(null).build())
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("reauthenticatedAt");
+  }
+
+  @Test
   @DisplayName("Should reject building playback authority when the identity is Account scoped")
   void shouldRejectPlaybackAuthorityWhenIdentityIsAccountScoped() {
     var identity = accountScopedBuilder().build();

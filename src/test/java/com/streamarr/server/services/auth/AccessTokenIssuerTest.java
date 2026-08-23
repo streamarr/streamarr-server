@@ -4,6 +4,7 @@ import static com.streamarr.server.support.TokenTestSupport.TEST_SIGNING_KEY;
 import static com.streamarr.server.support.TokenTestSupport.decoder;
 import static com.streamarr.server.support.TokenTestSupport.tokenProperties;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
@@ -16,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -69,7 +71,7 @@ class AccessTokenIssuerTest {
                 .account(account)
                 .session(session)
                 .contextHouseholdId(visitedHouseholdId)
-                .profileId(profileId)
+                .profileId(Optional.of(profileId))
                 .build());
 
     assertThat(token.scope()).isEqualTo(TokenScope.PROFILE);
@@ -128,7 +130,7 @@ class AccessTokenIssuerTest {
     var context = TokenContext.of(account, session);
 
     assertThat(context.contextHouseholdId()).isEqualTo(visited);
-    assertThat(context.profileId()).isEqualTo(profileId);
+    assertThat(context.profileId()).contains(profileId);
     assertThat(context.scope()).isEqualTo(TokenScope.PROFILE);
     assertThat(TokenContext.of(account, session(account)).contextHouseholdId())
         .isEqualTo(account.getHouseholdId());
@@ -140,6 +142,16 @@ class AccessTokenIssuerTest {
     var context = TokenContext.of(account(), session(account()));
 
     assertThat(context.reauthenticatedAt()).isEmpty();
+    assertThat(context.profileId()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject a null reauthentication instant")
+  void shouldRejectNullReauthenticationInstant() {
+    var context = TokenContext.of(account(), session(account()));
+
+    assertThatThrownBy(() -> context.withReauthenticatedAt((Instant) null))
+        .isInstanceOf(NullPointerException.class);
   }
 
   @Test

@@ -78,9 +78,9 @@ public class AccessTokenIssuer {
             .claim(TokenClaims.HOUSEHOLD_ROLE, account.getHouseholdRole().name())
             .claim(TokenClaims.CONTEXT_HOUSEHOLD_ID, context.contextHouseholdId().toString());
 
-    if (scope == TokenScope.PROFILE) {
-      claims.claim(TokenClaims.PROFILE_ID, context.profileId().toString());
-    }
+    context
+        .profileId()
+        .ifPresent(profileId -> claims.claim(TokenClaims.PROFILE_ID, profileId.toString()));
     context
         .reauthenticatedAt()
         .ifPresent(

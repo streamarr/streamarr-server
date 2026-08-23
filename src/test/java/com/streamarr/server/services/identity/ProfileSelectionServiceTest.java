@@ -88,7 +88,7 @@ class ProfileSelectionServiceTest {
   void shouldRecordSelectionAndReturnProfileContextWhenAllowedWithoutPin() {
     var context = service.selectProfile(identity(), command(personal.getId(), null));
 
-    assertThat(context.profileId()).isEqualTo(personal.getId());
+    assertThat(context.profileId()).contains(personal.getId());
     assertThat(context.scope()).isEqualTo(TokenScope.PROFILE);
     assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId())
         .isEqualTo(personal.getId());
@@ -162,7 +162,7 @@ class ProfileSelectionServiceTest {
 
     var context = service.selectProfile(identity(), command(personal.getId(), "4242"));
 
-    assertThat(context.profileId()).isEqualTo(personal.getId());
+    assertThat(context.profileId()).contains(personal.getId());
     assertThat(authorization.recordedIntents())
         .containsExactly(new Intent.SelectProfile(personal.getId(), true));
   }

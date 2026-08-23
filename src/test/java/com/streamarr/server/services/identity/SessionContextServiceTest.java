@@ -65,7 +65,7 @@ class SessionContextServiceTest {
     var context = service.revalidateStoredContext(account, session);
 
     assertThat(context.contextHouseholdId()).isEqualTo(account.getHouseholdId());
-    assertThat(context.profileId()).isEqualTo(personal.getId());
+    assertThat(context.profileId()).contains(personal.getId());
     assertThat(context.scope()).isEqualTo(TokenScope.PROFILE);
   }
 
@@ -77,7 +77,7 @@ class SessionContextServiceTest {
     var context = service.revalidateStoredContext(account, session);
 
     assertThat(context.contextHouseholdId()).isEqualTo(account.getHouseholdId());
-    assertThat(context.profileId()).isNull();
+    assertThat(context.profileId()).isEmpty();
     var stored = sessions.findById(session.getId()).orElseThrow();
     assertThat(stored.getContextHouseholdId()).isEqualTo(account.getHouseholdId());
     assertThat(stored.getSelectedProfileId()).isNull();
@@ -92,7 +92,7 @@ class SessionContextServiceTest {
     var context = service.revalidateStoredContext(account, session);
 
     assertThat(context.contextHouseholdId()).isEqualTo(visitedHouseholdId);
-    assertThat(context.profileId()).isEqualTo(personal.getId());
+    assertThat(context.profileId()).contains(personal.getId());
   }
 
   @Test
@@ -103,7 +103,7 @@ class SessionContextServiceTest {
 
     var context = service.revalidateStoredContext(account, session);
 
-    assertThat(context.profileId()).isNull();
+    assertThat(context.profileId()).isEmpty();
     assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
   }
 
@@ -118,7 +118,7 @@ class SessionContextServiceTest {
 
     var context = service.revalidateStoredContext(account, session);
 
-    assertThat(context.profileId()).isNull();
+    assertThat(context.profileId()).isEmpty();
     assertThat(context.scope()).isEqualTo(TokenScope.ACCOUNT);
   }
 
@@ -131,7 +131,7 @@ class SessionContextServiceTest {
     var context = households.selectHousehold(account.getId(), session.getId(), visitedHouseholdId);
 
     assertThat(context.contextHouseholdId()).isEqualTo(visitedHouseholdId);
-    assertThat(context.profileId()).isNull();
+    assertThat(context.profileId()).isEmpty();
     assertThat(context.scope()).isEqualTo(TokenScope.ACCOUNT);
   }
 
