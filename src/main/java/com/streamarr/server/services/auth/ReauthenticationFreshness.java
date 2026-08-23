@@ -5,11 +5,7 @@ import java.time.Clock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-/**
- * Whether an identity's reauthentication ceremony is still current (ADR 0024 §Fresh
- * reauthentication): the claim exists, is not future-dated, and is inside the configured window.
- * Missing or stale claims are simply not fresh — never an error.
- */
+/** Tests whether the reauthentication instant is present, nonfuture, and inside its window. */
 @Component
 @RequiredArgsConstructor
 public class ReauthenticationFreshness {

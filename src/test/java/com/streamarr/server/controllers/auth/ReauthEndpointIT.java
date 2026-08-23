@@ -34,12 +34,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * POST /api/auth/reauth (ADR 0024 §Fresh reauthentication): an authenticated step-up ceremony that
- * returns a replacement access token only, carrying {@code reauthenticated_at}, expiring at the
- * earlier of the configured window or the source token's expiry. Login and refresh never start the
- * claim; derivation preserves it without extending it; refresh removes it.
- */
 @Tag("IntegrationTest")
 @DisplayName("Reauthentication Endpoint Integration Tests")
 class ReauthEndpointIT extends AbstractIntegrationTest {

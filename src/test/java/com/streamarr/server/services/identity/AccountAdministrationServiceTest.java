@@ -32,11 +32,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
 
-/**
- * The decision classification and audit rules of Account administration: an allowed transition
- * writes once and audits once; REAUTHENTICATION_REQUIRED reports the missing ceremony; a policy
- * denial is FORBIDDEN for a caller who may view the Account and not-found for one who may not.
- */
 @Tag("UnitTest")
 @DisplayName("Account Administration Service Tests")
 class AccountAdministrationServiceTest {

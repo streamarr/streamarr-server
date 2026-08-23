@@ -40,7 +40,6 @@ public record TokenContext(
         .build();
   }
 
-  /** The same context stamped with the ceremony instant its source token carried, if any. */
   public TokenContext withReauthenticatedAt(@NonNull Instant instant) {
     return withReauthenticatedAt(Optional.of(instant));
   }

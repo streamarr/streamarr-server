@@ -36,10 +36,6 @@ record AuthorizationCheck(Action action, EntityUID resource, Map<String, Value> 
         Map.of("pinVerified", new PrimBool(pinVerified)));
   }
 
-  /**
-   * The same check with the trusted freshness flag set — the decider stamps the real value, and
-   * repeats a denied group evaluation with {@code true} to classify it (ADR 0025).
-   */
   AuthorizationCheck withFreshReauthentication(boolean fresh) {
     var merged = new LinkedHashMap<>(context);
     merged.put(FRESH_REAUTHENTICATION, new PrimBool(fresh));

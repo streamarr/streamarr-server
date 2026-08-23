@@ -119,7 +119,6 @@ enum Action {
     return facts;
   }
 
-  /** Membership in ADR 0024's requiresFreshReauthentication action group. */
   boolean requiresFreshReauthentication() {
     return freshReauthentication == FreshReauthentication.REQUIRED;
   }

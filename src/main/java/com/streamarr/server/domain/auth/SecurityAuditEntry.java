@@ -6,10 +6,7 @@ import lombok.Builder;
 import lombok.NonNull;
 import lombok.Singular;
 
-/**
- * One security-sensitive administrative win: actor, operation, affected resources, and any required
- * reason. Only the winning transition is recorded, never secrets or hidden resource data.
- */
+/** Audit data for one successful administrative transition; never include secrets. */
 @Builder
 public record SecurityAuditEntry(
     @NonNull String operation,

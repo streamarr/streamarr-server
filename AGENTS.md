@@ -138,7 +138,12 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Google Java Format enforced via Spotless (runs on build)
 - Checkstyle also runs at `validate` and fails the build (`checkstyle.xml`)
 - No manual formatting debates — the formatter is always right
-- Concise over verbose — don't add comments for self-evident code
+- Comments explain non-obvious contracts or why an implementation must be unusual; they do not
+  narrate names, control flow, tests, or duplicate ADR and policy text
+- Use Javadoc only for caller-visible contracts; keep implementation rationale as a concise local
+  comment beside the relevant code
+- If a comment has to defend fragile code, fix or encode the invariant instead — prefer tests and
+  static enforcement over prose that can drift
 - Don't add javadoc/comments to code you didn't change
 
 ### Java Language

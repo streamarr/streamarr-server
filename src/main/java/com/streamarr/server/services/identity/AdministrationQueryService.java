@@ -22,11 +22,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-/**
- * Administration reads (ADR 0024 §Read authorization): reads are as specific as writes. A denied
- * per-resource read is indistinguishable from a missing resource; the catalogue is a whole-surface
- * ServerAdmin gate. Accounts of a Household ride the Household decision that fetched it.
- */
+/** Hides denied resource reads as not-found and gates the server catalogue as one surface. */
 @Service
 @RequiredArgsConstructor
 public class AdministrationQueryService {

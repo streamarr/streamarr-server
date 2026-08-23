@@ -116,11 +116,6 @@ public class AuthController {
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
-  /**
-   * ADR 0024 §Fresh reauthentication: an authenticated step-up ceremony. Returns a replacement
-   * access token only — no refresh token — carrying reauthenticated_at and expiring at the earlier
-   * of the configured window or the presented token's expiry.
-   */
   @PostMapping("/reauth")
   public ResponseEntity<AuthTokensResponse> reauthenticate(
       @Valid @RequestBody ReauthRequest request, HttpServletRequest httpRequest) {

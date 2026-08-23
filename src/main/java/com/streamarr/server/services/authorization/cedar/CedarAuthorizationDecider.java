@@ -84,10 +84,8 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
   }
 
   /**
-   * ADR 0024 §Fresh reauthentication: evaluate with the trusted freshness flag; when a stale caller
-   * is denied, repeat the same evaluation with only the flag set to true — an allow there means the
-   * ceremony is all that is missing (REAUTHENTICATION_REQUIRED), anything else keeps the ordinary
-   * policy denial so a hidden resource stays hidden.
+   * Retries only a clean stale-policy denial as fresh. An allow classifies the original denial as
+   * reauthentication-required; failures and other denials remain unchanged (ADR 0025).
    */
   private <T> Decision<T> decideWithFreshness(
       AuthenticatedIdentity identity,

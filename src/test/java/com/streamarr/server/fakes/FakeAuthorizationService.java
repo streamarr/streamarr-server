@@ -56,7 +56,6 @@ public final class FakeAuthorizationService implements AuthorizationService {
     return this;
   }
 
-  /** Answers each intent from the given rule — for tests that split write and read decisions. */
   public FakeAuthorizationService decideWith(Function<Intent<?>, Decision<?>> decisionRule) {
     rule = decisionRule;
     return this;

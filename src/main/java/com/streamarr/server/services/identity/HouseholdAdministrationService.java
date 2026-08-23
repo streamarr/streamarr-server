@@ -15,11 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
-/**
- * Household administration (ADR 0024 §Household): creating an empty Household is live ServerAdmin
- * work — a whole-surface gate, so its denial stays a top-level FORBIDDEN. Renaming belongs to that
- * Household's live HouseholdAdmins and ServerAdmin; a hidden Household refuses as not-found.
- */
+/** Coordinates authorized Household mutations with oracle-safe denial handling. */
 @Service
 @RequiredArgsConstructor
 public class HouseholdAdministrationService {

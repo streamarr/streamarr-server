@@ -12,8 +12,7 @@ public interface HouseholdRepositoryCustom {
   List<Household> findAdministrationPage(MediaPaginationOptions options);
 
   /**
-   * Renames only — a single-column update loses no concurrent change to other columns. True while
-   * the Household exists.
+   * @return true when the Household existed and was renamed
    */
   boolean tryRename(UUID householdId, String name);
 }

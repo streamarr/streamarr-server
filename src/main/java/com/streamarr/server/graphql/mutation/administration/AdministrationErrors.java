@@ -3,7 +3,6 @@ package com.streamarr.server.graphql.mutation.administration;
 import com.streamarr.server.graphql.mutation.InputPath;
 import com.streamarr.server.services.identity.AdministrationRejections;
 
-/** The exhaustive mappings from service rejection to schema error type, one per union. */
 public final class AdministrationErrors {
 
   private static final String ACCOUNT_ID = "accountId";

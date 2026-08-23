@@ -45,11 +45,7 @@ public class AccessTokenIssuer {
     return mint(context, now, earlier(sourceExpiresAt, freshExpiry));
   }
 
-  /**
-   * Mints the reauthentication ceremony's replacement token (ADR 0024 §Fresh reauthentication): the
-   * context is stamped {@code reauthenticated_at = now} and the token expires at the earlier of the
-   * configured reauthentication window or the source token's expiry.
-   */
+  /** Mints a reauthenticated token capped by both its source and the reauthentication window. */
   public AccessToken issueReauthenticated(TokenContext context, Instant sourceExpiresAt) {
     var now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
     var windowEnd = now.plus(properties.reauthenticationWindow());

@@ -48,12 +48,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * Household and Account administration through the GraphQL boundary against real PostgreSQL and the
- * real Cedar engine: the authority table's allow and deny rows, the oracle rule (visible →
- * FORBIDDEN, hidden → not-found), the fresh-reauthentication classification, and the deferred
- * invariants T1/T4/T5 translated into typed user errors after rollback.
- */
 @Tag("IntegrationTest")
 @DisplayName("Administration Endpoints Integration Tests")
 class AdministrationEndpointsIT extends AbstractIntegrationTest {
@@ -1008,7 +1002,6 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
         .path("accounts");
   }
 
-  /** A second Account joining the identity's Household (deleted with the Household). */
   private UserAccount joinHousehold(AuthTestSupport.TestIdentity into, HouseholdRole role) {
     return transactionTemplate.execute(
         _ -> {
@@ -1034,7 +1027,6 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
         });
   }
 
-  /** Restricts the member's Personal Profile with the admin of its Household as manager (T6). */
   private void restrictUnderSupervision(AuthTestSupport.TestIdentity admin, UserAccount member) {
     transactionTemplate.executeWithoutResult(
         _ -> {
@@ -1049,7 +1041,6 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
         });
   }
 
-  /** A token-mintable identity for an Account created outside AuthTestSupport. */
   private AuthTestSupport.TestIdentity identityFor(UserAccount account) {
     var household = householdRepository.findById(account.getHouseholdId()).orElseThrow();
     var profile = profileRepository.findById(account.getPersonalProfileId()).orElseThrow();

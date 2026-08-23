@@ -22,13 +22,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
-/**
- * Account administration (ADR 0024 §ServerAdmin): ServerAdmin authority changes are
- * fresh-reauthentication work with a reason; role changes and enable/disable are live ServerAdmin
- * work; a rename belongs to the Account itself or ServerAdmin. Cedar decides every operation, the
- * write is a single-column conditional transition, the deferred triggers judge the final state at
- * commit, and only the winning transition is audited — all inside one transaction.
- */
+/** Coordinates authorized Account mutations and audits successful authority transitions. */
 @Service
 @RequiredArgsConstructor
 public class AccountAdministrationService {
@@ -194,11 +188,7 @@ public class AccountAdministrationService {
     return Outcome.accepted(target.get());
   }
 
-  /**
-   * ADR 0026's oracle rule: an allowed intent proceeds; REAUTHENTICATION_REQUIRED (only ever raised
-   * for a caller the fresh evaluation allows) reports the missing ceremony; a policy denial is
-   * FORBIDDEN when the caller may view the Account and not-found when it may not.
-   */
+  /** Converts policy denial to forbidden only when the Account is visible; otherwise not-found. */
   private <R> Optional<R> refusalOf(
       AuthenticatedIdentity identity, Intent<?> intent, UUID accountId, TransitionPlan<R> plan) {
     return switch (authorizationService.decide(identity, intent)) {
@@ -242,7 +232,6 @@ public class AccountAdministrationService {
     return value == null || value.isBlank();
   }
 
-  /** How one authority transition runs: the conditional write, its rejections, its audit. */
   @lombok.Builder
   private record TransitionPlan<R>(
       String operation,

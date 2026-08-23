@@ -439,7 +439,6 @@ class CedarIdentityPoliciesTest {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
       var fresh = withReauthenticatedAt(atHome(), Instant.now());
 
-      // Not a ServerAdmin: stale and fresh callers get the same ordinary policy denial.
       assertThat(decide(atHome(), new Intent.GrantServerAdmin(target.getId()))).isEqualTo(DENIED);
       assertThat(decide(fresh, new Intent.GrantServerAdmin(target.getId()))).isEqualTo(DENIED);
     }
@@ -461,7 +460,6 @@ class CedarIdentityPoliciesTest {
     void shouldAllowAccountAdministrationWritesOnlyWhenCallerLiveServerAdmin() {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
 
-      // A HouseholdAdmin is not enough — role changes are ServerAdmin work.
       assertThat(decide(atHome(), new Intent.GrantHouseholdAdmin(target.getId())))
           .isEqualTo(DENIED);
       assertThat(decide(atHome(), new Intent.RevokeHouseholdAdmin(target.getId())))
@@ -506,7 +504,6 @@ class CedarIdentityPoliciesTest {
       assertThat(decide(atHome(), new Intent.RenameHousehold(visitedHouseholdId)))
           .isEqualTo(DENIED);
 
-      // The token says ADMIN, the live row says MEMBER: the live fact decides.
       account.setHouseholdRole(HouseholdRole.MEMBER);
       accounts.save(account);
       assertThat(decide(atHome(), new Intent.RenameHousehold(home))).isEqualTo(DENIED);
@@ -522,7 +519,6 @@ class CedarIdentityPoliciesTest {
     void shouldAllowAccountRenameWhenCallerSelfOrServerAdmin() {
       var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
 
-      // Self-targeted: principal and resource are one entity in the slice.
       assertThat(decide(member(), new Intent.RenameAccount(account.getId()))).isEqualTo(ALLOWED);
       assertThat(decide(member(), new Intent.RenameAccount(target.getId()))).isEqualTo(DENIED);
 

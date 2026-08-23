@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+/** Custom Account queries and transitions; {@code try*} methods report whether their update ran. */
 public interface UserAccountRepositoryCustom {
 
   void refresh(UserAccount account);
@@ -37,11 +38,6 @@ public interface UserAccountRepositoryCustom {
    */
   boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash);
 
-  // Authority transitions are single-column conditional updates: they touch nothing else on the
-  // row (no lost concurrent update), and true means this statement made the change — the audit
-  // and side effects of a transition belong to exactly one winner. False on a row already in the
-  // target state or missing; the deferred triggers judge the final state at commit.
-
   boolean tryGrantServerAdmin(UUID accountId);
 
   boolean tryRevokeServerAdmin(UUID accountId);
@@ -54,6 +50,8 @@ public interface UserAccountRepositoryCustom {
 
   boolean tryEnable(UUID accountId);
 
-  /** Unconditional rename; true while the Account exists. */
+  /**
+   * @return true when the Account existed and was renamed
+   */
   boolean tryRename(UUID accountId, String displayName);
 }

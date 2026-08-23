@@ -6,11 +6,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-/**
- * The principal's live Household role and membership Household. Household-role authority is a
- * mutable relationship, so writes it authorizes read it live — the token's role claim routes UI,
- * never a write.
- */
+/** Contributes live Household membership and role; token claims are never write authority. */
 @Component
 @RequiredArgsConstructor
 class LivePrincipalHouseholdContributor implements FactContributor {

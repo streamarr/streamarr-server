@@ -204,8 +204,6 @@ class CedarAuthorizationDeciderTest {
     var identity = identityFor(liveAccount(true, true));
     var noFacts = decider(engine, contributor(_ -> {}));
 
-    // A stale caller whose evaluation cannot be completed is Failed, never
-    // REAUTHENTICATION_REQUIRED — the step-up probe only classifies clean denials.
     assertThat(noFacts.decide(identity, new Intent.GrantServerAdmin(UUID.randomUUID())))
         .isEqualTo(new Decision.Failed<>(Decision.FailureCause.EVALUATION_ERROR));
   }

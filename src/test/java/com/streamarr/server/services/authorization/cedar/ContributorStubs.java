@@ -25,7 +25,6 @@ final class ContributorStubs {
     return contributors;
   }
 
-  /** Real freshness over the system clock; identities without the claim are simply not fresh. */
   static ReauthenticationFreshness systemClockFreshness() {
     return new ReauthenticationFreshness(
         AuthTokenProperties.builder().reauthenticationWindow(Duration.ofMinutes(5)).build(),

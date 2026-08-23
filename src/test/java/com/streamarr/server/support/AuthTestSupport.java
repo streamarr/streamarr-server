@@ -184,7 +184,6 @@ public class AuthTestSupport {
         .value();
   }
 
-  /** An Account-scoped token that just passed the reauthentication ceremony. */
   public String freshAccountBearer(TestIdentity identity) {
     return accessTokenIssuer
         .issueReauthenticated(

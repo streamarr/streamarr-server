@@ -2,7 +2,7 @@ package com.streamarr.server.controllers.auth;
 
 import jakarta.validation.constraints.NotBlank;
 
-/** The step-up ceremony's password; consumed synchronously and never echoed. */
+/** Password-bearing request whose diagnostic representation is redacted. */
 public record ReauthRequest(@NotBlank String password) {
 
   @Override
