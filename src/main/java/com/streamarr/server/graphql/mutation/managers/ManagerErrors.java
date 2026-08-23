@@ -10,7 +10,7 @@ public final class ManagerErrors {
   private static final String CODE = "code";
   private static final String ACCOUNT_ID = "accountId";
   private static final String RECIPIENT_ACCOUNT_ID = "recipientAccountId";
-  private static final String NO_SUCH_INVITATION = "No such invitation.";
+  private static final String INVITATION_UNAVAILABLE = "That invitation is unavailable.";
 
   private ManagerErrors() {}
 
@@ -26,17 +26,16 @@ public final class ManagerErrors {
   public static CancelManagerInvitationError toCancelError(ManagerRejections.Cancel rejection) {
     return switch (rejection) {
       case ManagerRejections.ManagerInvitationNotFound _ ->
-          new ManagerInvitationNotFoundError(NO_SUCH_INVITATION, InputPath.of("invitationId"));
+          new ManagerInvitationNotFoundError(INVITATION_UNAVAILABLE, InputPath.of("invitationId"));
       case ManagerRejections.InvitationNotPending _ ->
-          new InvitationNotPendingError(
-              "That invitation is not pending.", InputPath.of("invitationId"));
+          new InvitationNotPendingError(INVITATION_UNAVAILABLE, InputPath.of("invitationId"));
     };
   }
 
   public static AcceptManagerInvitationError toAcceptError(ManagerRejections.Accept rejection) {
     return switch (rejection) {
       case ManagerRejections.ManagerInvitationNotFound _ ->
-          new ManagerInvitationNotFoundError(NO_SUCH_INVITATION, InputPath.of(CODE));
+          new ManagerInvitationNotFoundError(INVITATION_UNAVAILABLE, InputPath.of(CODE));
       case ManagerRejections.RecipientNotEligible _ -> recipientNotEligible(CODE);
       case ManagerRejections.AlreadyManager _ -> alreadyManager(CODE);
     };
@@ -45,7 +44,7 @@ public final class ManagerErrors {
   public static DeclineManagerInvitationError toDeclineError(ManagerRejections.Decline rejection) {
     return switch (rejection) {
       case ManagerRejections.ManagerInvitationNotFound _ ->
-          new ManagerInvitationNotFoundError(NO_SUCH_INVITATION, InputPath.of(CODE));
+          new ManagerInvitationNotFoundError(INVITATION_UNAVAILABLE, InputPath.of(CODE));
     };
   }
 
@@ -94,21 +93,22 @@ public final class ManagerErrors {
     return new ProfileNotFoundError("No such Profile.", InputPath.of(PROFILE_ID));
   }
 
-  private static RecipientNotFoundError recipientNotFound() {
+  private static AccountNotFoundError recipientNotFound() {
     return recipientNotFound(ACCOUNT_ID);
   }
 
-  private static RecipientNotFoundError recipientNotFound(String inputPath) {
-    return new RecipientNotFoundError("No such Account.", InputPath.of(inputPath));
+  private static AccountNotFoundError recipientNotFound(String inputPath) {
+    return new AccountNotFoundError("No such Account.", InputPath.of(inputPath));
   }
 
-  private static RecipientNotEligibleError recipientNotEligible() {
+  private static ProfileManagerNotEligibleError recipientNotEligible() {
     return recipientNotEligible(ACCOUNT_ID);
   }
 
-  private static RecipientNotEligibleError recipientNotEligible(String inputPath) {
-    return new RecipientNotEligibleError(
-        "A manager's own Personal Profile must be an unrestricted Adult.", InputPath.of(inputPath));
+  private static ProfileManagerNotEligibleError recipientNotEligible(String inputPath) {
+    return new ProfileManagerNotEligibleError(
+        "That Account cannot manage Profiles because its Personal Profile is restricted.",
+        InputPath.of(inputPath));
   }
 
   private static AlreadyManagerError alreadyManager() {
@@ -125,9 +125,9 @@ public final class ManagerErrors {
         "That Account does not manage the Profile.", InputPath.of(ACCOUNT_ID));
   }
 
-  private static EligibleManagerRequiredError eligibleManagerRequired() {
-    return new EligibleManagerRequiredError(
-        "The Profile needs an eligible manager in its Household.");
+  private static ProfileRequiresEligibleManagerError eligibleManagerRequired() {
+    return new ProfileRequiresEligibleManagerError(
+        "The Profile needs an eligible Profile manager in its Household.");
   }
 
   private static ReasonRequiredError reasonRequired() {
@@ -135,6 +135,6 @@ public final class ManagerErrors {
   }
 
   private static ReauthenticationRequiredError reauthenticationRequired() {
-    return new ReauthenticationRequiredError("Confirm your password to continue.");
+    return new ReauthenticationRequiredError("Confirm your password before retrying this action.");
   }
 }

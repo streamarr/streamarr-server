@@ -10,6 +10,6 @@ public sealed interface GrantProfileManagerOverrideError extends MutationError
     permits ProfileNotFoundError,
         ReasonRequiredError,
         ReauthenticationRequiredError,
-        RecipientNotFoundError,
-        RecipientNotEligibleError,
+        AccountNotFoundError,
+        ProfileManagerNotEligibleError,
         AlreadyManagerError {}

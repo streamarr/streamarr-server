@@ -8,6 +8,6 @@ import com.streamarr.server.graphql.mutation.MutationError;
  */
 public sealed interface InviteProfileManagerError extends MutationError
     permits ProfileNotFoundError,
-        RecipientNotFoundError,
-        RecipientNotEligibleError,
+        AccountNotFoundError,
+        ProfileManagerNotEligibleError,
         AlreadyManagerError {}

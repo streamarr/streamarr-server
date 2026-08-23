@@ -244,23 +244,12 @@ type ReofferHouseholdNotSharedError implements InputMutationError & MutationErro
     inputPath: [String!]!
 }
 
-type RecipientNotFoundError implements InputMutationError & MutationError {
-    message: String!
-    inputPath: [String!]!
-}
-
-"Eligible means the Account's own Personal Profile is an unrestricted Adult."
-type RecipientNotEligibleError implements InputMutationError & MutationError {
-    message: String!
-    inputPath: [String!]!
-}
-
 type AlreadyManagerError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
 
-"The one deliberate answer for every miss: unknown, expired, decided, or hidden."
+"The invitation is unavailable when it is unknown, expired, decided, or hidden."
 type ManagerInvitationNotFoundError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!

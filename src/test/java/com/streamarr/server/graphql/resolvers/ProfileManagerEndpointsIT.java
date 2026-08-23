@@ -482,8 +482,8 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should retain an eligible manager when the sole manager relinquishes")
-  void shouldHoldHomeAnchorWhenSoleManagerRelinquishes() throws Exception {
+  @DisplayName("Should retain an eligible Profile manager when the sole manager relinquishes")
+  void shouldRetainEligibleProfileManagerWhenSoleManagerRelinquishes() throws Exception {
     var orphan = managedOrphan();
 
     graphql(
@@ -496,9 +496,9 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(
             jsonPath("$.data.relinquishProfileManagement.userErrors[0].__typename")
-                .value("EligibleManagerRequiredError"));
+                .value("ProfileRequiresEligibleManagerError"));
 
-    // With a second eligible local manager, the same relinquish succeeds.
+    // With a second eligible Profile manager in the Household, relinquishing succeeds.
     transactionTemplate.executeWithoutResult(
         _ ->
             profileManagerRepository.saveAndFlush(
@@ -753,7 +753,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
     INVITATION
   }
 
-  /** A second eligible MEMBER of the owner's Household, with its own anchored Personal Profile. */
+  /** A second eligible member of the owner's Household with its own Personal Profile. */
   private UUID secondLocalManagerId() {
     var personal =
         profileRepository.saveAndFlush(
