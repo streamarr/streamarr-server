@@ -108,6 +108,7 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
     if (entity == null) {
       return Optional.empty();
     }
+
     entityManager.refresh(entity);
     return Optional.of(entity);
   }

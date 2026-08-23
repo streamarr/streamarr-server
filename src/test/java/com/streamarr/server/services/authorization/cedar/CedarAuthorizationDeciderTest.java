@@ -245,7 +245,7 @@ class CedarAuthorizationDeciderTest {
             BUNDLE,
             new SliceAssembler(
                 ContributorStubs.allWith(new LivePrincipalAuthorityContributor(accounts))),
-            new ProfilePolicyPlanner(unavailableProfiles),
+            new IntentPlanner(new ProfilePolicyPlanner(unavailableProfiles)),
             ContributorStubs.systemClockFreshness(),
             meters);
     var identity = identityFor(liveAccount(true, true));
@@ -316,7 +316,7 @@ class CedarAuthorizationDeciderTest {
         engine,
         BUNDLE,
         new SliceAssembler(ContributorStubs.allWith(contributor)),
-        new ProfilePolicyPlanner(new FakeProfileRepository()),
+        new IntentPlanner(new ProfilePolicyPlanner(new FakeProfileRepository())),
         ContributorStubs.systemClockFreshness(),
         meters);
   }

@@ -1,7 +1,6 @@
 package com.streamarr.server.services.authorization.cedar;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.cedarpolicy.BasicAuthorizationEngine;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -9,6 +8,7 @@ import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Intent;
 import java.util.ArrayList;
@@ -75,11 +75,12 @@ class AuthorizationParityTest {
               }
             });
     var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
+    var planner = new IntentPlanner(new ProfilePolicyPlanner(new FakeProfileRepository()));
     var planned = new LinkedHashSet<String>();
     allIntents().stream()
-        .map(intent -> IntentPlanner.plan(identity, intent).check().action().cedarName())
+        .map(intent -> planner.plan(identity, intent).check().action().cedarName())
         .forEach(planned::add);
-    planned.addAll(policyChangeActions());
+    planned.addAll(policyChangeActions(identity));
 
     assertThat(planned).containsExactlyInAnyOrderElementsOf(concrete);
     assertThat(Action.values())
@@ -87,23 +88,13 @@ class AuthorizationParityTest {
         .containsExactlyInAnyOrderElementsOf(concrete);
   }
 
-  @Test
-  @DisplayName("Should refuse to plan a policy change when its transition is absent")
-  void shouldRefuseToPlanPolicyChangeWhenTransitionIsAbsent() {
-    var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
-    var change = new Intent.ChangeProfileKind(UUID.randomUUID(), ProfileKind.ADULT);
-
-    assertThatThrownBy(() -> IntentPlanner.plan(identity, change))
-        .isInstanceOf(IllegalStateException.class);
-  }
-
   /**
    * Every transition classification, planned through the real classifier over one fake so the
    * classification-to-action map stays covered here.
    */
-  private static List<String> policyChangeActions() {
+  private static List<String> policyChangeActions(AuthenticatedIdentity identity) {
     var profiles = new FakeProfileRepository();
-    var planner = new ProfilePolicyPlanner(profiles);
+    var planner = new IntentPlanner(new ProfilePolicyPlanner(profiles));
     var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
     var ceilingedKid =
         profiles.save(ProfileFixture.kidProfileBuilder().maximumAllowedRatingAge(12).build());
@@ -114,31 +105,34 @@ class AuthorizationParityTest {
     return List.of(
         // KID gaining a ceiling: still restricted, same kind — an ordinary edit.
         actionName(
-            planner.plan(new Intent.SetProfileContentCeiling(kid.getId(), 12)),
+            planner.plan(identity, new Intent.SetProfileContentCeiling(kid.getId(), 12)),
             Action.EDIT_PROFILE),
         // Ceilinged KID losing only the ceiling: still a KID — an ordinary edit.
         actionName(
-            planner.plan(new Intent.ClearProfileContentCeiling(ceilingedKid.getId())),
+            planner.plan(identity, new Intent.ClearProfileContentCeiling(ceilingedKid.getId())),
             Action.EDIT_PROFILE),
         // An UNLINKED unrestricted Adult gaining a ceiling: its managers may restrict it.
         actionName(
-            planner.plan(new Intent.SetProfileContentCeiling(unrestrictedAdult.getId(), 12)),
+            planner.plan(
+                identity, new Intent.SetProfileContentCeiling(unrestrictedAdult.getId(), 12)),
             Action.EDIT_PROFILE),
         // Clearing a ceiling that is not set: unrestricted stays unrestricted.
         actionName(
-            planner.plan(new Intent.ClearProfileContentCeiling(unrestrictedAdult.getId())),
+            planner.plan(
+                identity, new Intent.ClearProfileContentCeiling(unrestrictedAdult.getId())),
             Action.EDIT_PROFILE),
         // Ceilinged KID becoming a ceilinged ADULT: a kind change, still restricted.
         actionName(
-            planner.plan(new Intent.ChangeProfileKind(ceilingedKid.getId(), ProfileKind.ADULT)),
+            planner.plan(
+                identity, new Intent.ChangeProfileKind(ceilingedKid.getId(), ProfileKind.ADULT)),
             Action.CHANGE_PROFILE_KIND),
         // KID becoming an unrestricted ADULT: the final restriction lifts.
         actionName(
-            planner.plan(new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT)),
+            planner.plan(identity, new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT)),
             Action.LIFT_FINAL_RESTRICTION),
         // A linked unrestricted Adult gaining a ceiling: restricting a sovereign Adult.
         actionName(
-            planner.plan(new Intent.SetProfileContentCeiling(sovereign.getId(), 12)),
+            planner.plan(identity, new Intent.SetProfileContentCeiling(sovereign.getId(), 12)),
             Action.RESTRICT_SOVEREIGN_ADULT));
   }
 
@@ -157,6 +151,7 @@ class AuthorizationParityTest {
       if (action.resourceKind() != Action.ResourceKind.SERVER) {
         continue;
       }
+
       var householdGroup = action == Action.CREATE_HOUSEHOLD || action == Action.VIEW_HOUSEHOLDS;
       var group = householdGroup ? "householdAdministration" : "libraryAdministration";
       assertThat(actions.get(action.cedarName()).path("memberOf"))

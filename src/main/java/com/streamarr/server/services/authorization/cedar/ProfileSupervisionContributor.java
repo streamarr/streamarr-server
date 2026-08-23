@@ -40,10 +40,10 @@ class ProfileSupervisionContributor implements FactContributor {
   }
 
   private boolean supervises(AuthenticatedIdentity identity, UUID profileId) {
-    var restricted = profileRepository.findById(profileId).map(Profile::isRestricted).orElse(false);
-    if (!restricted) {
+    if (profileRepository.findById(profileId).filter(Profile::isRestricted).isEmpty()) {
       return false;
     }
+
     return userAccountRepository
         .findById(identity.accountId())
         .filter(account -> account.getHouseholdRole() == HouseholdRole.ADMIN)

@@ -29,6 +29,7 @@ class ProfilePolicyPlanner {
           AuthorizationCheck.onProfile(Action.EDIT_PROFILE, profileId),
           new ProfilePolicyTransition(null, null, Classification.ORDINARY_EDIT));
     }
+
     var transition = classify(current.get(), intent);
     return new IntentPlan<>(
         AuthorizationCheck.onProfile(actionFor(transition.classification()), profileId),
@@ -41,6 +42,7 @@ class ProfilePolicyPlanner {
     if (intent instanceof Intent.ChangeProfileKind change) {
       targetKind = change.kind();
     }
+
     var targetCeiling = targetCeilingOf(current, intent);
     var restrictedAfter = targetKind == ProfileKind.KID || targetCeiling != null;
     return new ProfilePolicyTransition(
@@ -52,23 +54,28 @@ class ProfilePolicyPlanner {
     if (intent instanceof Intent.SetProfileContentCeiling set) {
       return set.maximumAllowedRatingAge();
     }
+
     if (intent instanceof Intent.ClearProfileContentCeiling) {
       return null;
     }
+
     return current.maximumAllowedRatingAge();
   }
 
   private static Classification classification(
       ProfilePolicySnapshot current, ProfileKind targetKind, boolean restrictedAfter) {
+    if (current.restricted() && !restrictedAfter) {
+      return Classification.LIFT_FINAL_RESTRICTION;
+    }
+
     if (current.restricted()) {
-      if (!restrictedAfter) {
-        return Classification.LIFT_FINAL_RESTRICTION;
-      }
       return kindChangeOrOrdinary(current, targetKind);
     }
+
     if (restrictedAfter && current.linked()) {
       return Classification.RESTRICT_SOVEREIGN_ADULT;
     }
+
     return kindChangeOrOrdinary(current, targetKind);
   }
 
@@ -77,6 +84,7 @@ class ProfilePolicyPlanner {
     if (targetKind != current.kind()) {
       return Classification.KIND_CHANGE;
     }
+
     return Classification.ORDINARY_EDIT;
   }
 
