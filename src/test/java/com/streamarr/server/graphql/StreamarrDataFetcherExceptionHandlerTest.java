@@ -168,8 +168,9 @@ class StreamarrDataFetcherExceptionHandlerTest {
   }
 
   @Test
-  @DisplayName("Should classify a missing keyset anchor as an invalid cursor")
-  void shouldClassifyMissingKeysetAnchorAsInvalidCursor() {
+  @DisplayName(
+      "Should classify a pagination failure as an invalid cursor when the anchor is absent")
+  void shouldClassifyPaginationFailureAsInvalidCursorWhenAnchorIsAbsent() {
     var error =
         errorFor(new InvalidPaginationCursorException("Cursor no longer identifies an item."));
 

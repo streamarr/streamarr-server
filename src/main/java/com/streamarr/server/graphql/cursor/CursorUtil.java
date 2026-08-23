@@ -39,7 +39,7 @@ public class CursorUtil {
                   }
                 })
             .orElse(null);
-    return KeysetPaginationOptions.builder().cursorId(cursorId).paginationOptions(options).build();
+    return new KeysetPaginationOptions(cursorId, options);
   }
 
   public DefaultConnectionCursor encodeMediaCursor(

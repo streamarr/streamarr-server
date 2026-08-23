@@ -585,14 +585,13 @@ class PaginationServiceTest {
       var last = new KeyedItem(UUID.randomUUID());
       var items = List.of(new PageItem<>(first, "first"), new PageItem<>(last, "last"));
       var options =
-          KeysetPaginationOptions.builder()
-              .paginationOptions(
-                  PaginationOptions.builder()
-                      .cursor(Optional.empty())
-                      .paginationDirection(PaginationDirection.REVERSE)
-                      .limit(1)
-                      .build())
-              .build();
+          new KeysetPaginationOptions(
+              null,
+              PaginationOptions.builder()
+                  .cursor(Optional.empty())
+                  .paginationDirection(PaginationDirection.REVERSE)
+                  .limit(1)
+                  .build());
 
       var page = paginationService.buildKeysetPage(items, options, KeyedItem::id);
 
@@ -606,15 +605,13 @@ class PaginationServiceTest {
     void shouldRejectCursorWhoseAnchorIsNoLongerPresent() {
       var items = List.of(new PageItem<>(new KeyedItem(UUID.randomUUID()), "item"));
       var options =
-          KeysetPaginationOptions.builder()
-              .cursorId(UUID.randomUUID())
-              .paginationOptions(
-                  PaginationOptions.builder()
-                      .cursor(Optional.of("opaque-cursor"))
-                      .paginationDirection(PaginationDirection.FORWARD)
-                      .limit(1)
-                      .build())
-              .build();
+          new KeysetPaginationOptions(
+              UUID.randomUUID(),
+              PaginationOptions.builder()
+                  .cursor(Optional.of("opaque-cursor"))
+                  .paginationDirection(PaginationDirection.FORWARD)
+                  .limit(1)
+                  .build());
 
       assertThatExceptionOfType(InvalidPaginationCursorException.class)
           .isThrownBy(() -> paginationService.buildKeysetPage(items, options, KeyedItem::id))

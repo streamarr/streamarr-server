@@ -97,21 +97,20 @@ class IdentityQueryServiceTest {
   }
 
   @Test
-  @DisplayName("Should return the requested first page of selectable Profiles")
-  void shouldReturnRequestedFirstPageOfSelectableProfiles() {
+  @DisplayName("Should return the requested selectable Profiles when the first page is requested")
+  void shouldReturnRequestedSelectableProfilesWhenFirstPageIsRequested() {
     var kid =
         profiles.save(
             ProfileFixture.kidProfileBuilder().householdId(home.getId()).name("Kai").build());
     shares.share(kid.getId(), home.getId(), false);
     var options =
-        KeysetPaginationOptions.builder()
-            .paginationOptions(
-                PaginationOptions.builder()
-                    .paginationDirection(PaginationDirection.FORWARD)
-                    .cursor(Optional.empty())
-                    .limit(1)
-                    .build())
-            .build();
+        new KeysetPaginationOptions(
+            null,
+            PaginationOptions.builder()
+                .paginationDirection(PaginationDirection.FORWARD)
+                .cursor(Optional.empty())
+                .limit(1)
+                .build());
 
     var page = service.selectableProfiles(identity(home.getId(), null), options);
 
@@ -134,17 +133,16 @@ class IdentityQueryServiceTest {
   }
 
   @Test
-  @DisplayName("Should return the requested first page of usable Households")
-  void shouldReturnRequestedFirstPageOfUsableHouseholds() {
+  @DisplayName("Should return the requested usable Households when the first page is requested")
+  void shouldReturnRequestedUsableHouseholdsWhenFirstPageIsRequested() {
     var options =
-        KeysetPaginationOptions.builder()
-            .paginationOptions(
-                PaginationOptions.builder()
-                    .paginationDirection(PaginationDirection.FORWARD)
-                    .cursor(Optional.empty())
-                    .limit(1)
-                    .build())
-            .build();
+        new KeysetPaginationOptions(
+            null,
+            PaginationOptions.builder()
+                .paginationDirection(PaginationDirection.FORWARD)
+                .cursor(Optional.empty())
+                .limit(1)
+                .build());
 
     var page = service.usableHouseholds(identity(home.getId(), null), options);
 
@@ -169,16 +167,16 @@ class IdentityQueryServiceTest {
   void shouldFailClosedWhenPagedProfilesAreNotAllowed() {
     authorization.denyAll();
     var options =
-        KeysetPaginationOptions.builder()
-            .paginationOptions(
-                PaginationOptions.builder()
-                    .paginationDirection(PaginationDirection.FORWARD)
-                    .cursor(Optional.empty())
-                    .limit(1)
-                    .build())
-            .build();
+        new KeysetPaginationOptions(
+            null,
+            PaginationOptions.builder()
+                .paginationDirection(PaginationDirection.FORWARD)
+                .cursor(Optional.empty())
+                .limit(1)
+                .build());
+    var identity = identity(home.getId(), null);
 
-    assertThatThrownBy(() -> service.selectableProfiles(identity(home.getId(), null), options))
+    assertThatThrownBy(() -> service.selectableProfiles(identity, options))
         .isInstanceOf(AccessDeniedException.class);
   }
 

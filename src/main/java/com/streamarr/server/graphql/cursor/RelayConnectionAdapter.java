@@ -26,7 +26,7 @@ public class RelayConnectionAdapter {
       MediaPage<T> page, MediaPaginationOptions options) {
     return toConnection(
         page,
-        pageItem -> pageItem.item(),
+        PageItem::item,
         pageItem ->
             cursorUtil.encodeMediaCursor(options, pageItem.item().getId(), pageItem.sortValue()));
   }
