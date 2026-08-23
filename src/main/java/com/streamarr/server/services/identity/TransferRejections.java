@@ -1,6 +1,6 @@
 package com.streamarr.server.services.identity;
 
-/** Expected refusals of the transfer and deletion mutations (ADR 0026 shapes). */
+/** Expected refusals of the transfer and deletion mutations. */
 public final class TransferRejections {
 
   private TransferRejections() {}
@@ -13,7 +13,7 @@ public final class TransferRejections {
           LastHouseholdAdmin,
           NoEligibleAdmin,
           NameConflict,
-          AnchorRequired,
+          EligibleManagerRequired,
           RestrictedFirstAccount {}
 
   public sealed interface DeleteAccount
@@ -26,7 +26,7 @@ public final class TransferRejections {
           ReplacementManagerRequired,
           ReplacementManagerNotFound,
           ReplacementManagerNotEligible,
-          AnchorRequired,
+          EligibleManagerRequired,
           NoEligibleAdmin {}
 
   public sealed interface DeleteMyAccount
@@ -35,7 +35,7 @@ public final class TransferRejections {
           FinalAccount,
           LastHouseholdAdmin,
           LastServerAdmin,
-          AnchorRequired,
+          EligibleManagerRequired,
           NoEligibleAdmin {}
 
   public sealed interface TransferProfile
@@ -60,24 +60,20 @@ public final class TransferRejections {
 
   public record SameHousehold() implements TransferAccount, TransferProfile {}
 
-  /** The final Account of a Household moves only through teardown (ADR 0024). */
+  /** The final Account of a Household moves only through teardown. */
   public record FinalAccount() implements TransferAccount, DeleteAccount, DeleteMyAccount {}
 
-  /** T1: after its first Account, a Household always keeps a HouseholdAdmin. */
   public record LastHouseholdAdmin() implements TransferAccount, DeleteAccount, DeleteMyAccount {}
 
-  /** T4: after bootstrap, at least one enabled ServerAdmin remains. */
   public record LastServerAdmin() implements DeleteAccount, DeleteMyAccount {}
 
-  /** T7: a Household hosting a restricted Profile keeps an eligible HouseholdAdmin. */
   public record NoEligibleAdmin()
       implements TransferAccount, DeleteAccount, DeleteMyAccount, TransferProfile {}
 
-  /** T8: active Profile names stay unique within the destination Household. */
   public record NameConflict() implements TransferAccount, TransferProfile {}
 
-  /** T6: every Profile keeps its required home management anchor. */
-  public record AnchorRequired() implements TransferAccount, DeleteAccount, DeleteMyAccount {}
+  public record EligibleManagerRequired()
+      implements TransferAccount, DeleteAccount, DeleteMyAccount {}
 
   /** The first Account becomes HouseholdAdmin, and a restricted Account holds no authority. */
   public record RestrictedFirstAccount() implements TransferAccount {}
@@ -85,7 +81,7 @@ public final class TransferRejections {
   /** Self-deletion is irreversible; the caller types the confirmation word deliberately. */
   public record ConfirmationRequired() implements DeleteMyAccount {}
 
-  /** KEEP preserves the Profile only with a valid replacement anchor named up front. */
+  /** KEEP preserves the Profile only with an eligible replacement manager named up front. */
   public record ReplacementManagerRequired() implements DeleteAccount {}
 
   public record ReplacementManagerNotFound() implements DeleteAccount {}

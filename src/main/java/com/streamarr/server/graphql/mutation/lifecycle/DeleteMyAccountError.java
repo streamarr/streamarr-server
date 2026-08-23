@@ -11,5 +11,5 @@ public sealed interface DeleteMyAccountError extends MutationError
         FinalAccountError,
         LastHouseholdAdminError,
         LastServerAdminError,
-        HomeAnchorRequiredError,
+        EligibleManagerRequiredError,
         NoEligibleAdminError {}

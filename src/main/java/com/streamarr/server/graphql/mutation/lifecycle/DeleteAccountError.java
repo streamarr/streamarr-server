@@ -13,5 +13,5 @@ public sealed interface DeleteAccountError extends MutationError
         ReplacementManagerRequiredError,
         ReplacementManagerNotFoundError,
         ReplacementManagerNotEligibleError,
-        HomeAnchorRequiredError,
+        EligibleManagerRequiredError,
         NoEligibleAdminError {}

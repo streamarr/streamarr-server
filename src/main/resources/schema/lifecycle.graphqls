@@ -1,5 +1,3 @@
-# Transfers and deletion (ADR 0024 §Transfers, §Account deletion; ADR 0026 shapes).
-
 enum SourceAccess {
     "End the old Household's access: structural share, registrations, sessions."
     END
@@ -35,7 +33,7 @@ union TransferAccountError =
   | LastHouseholdAdminError
   | NoEligibleAdminError
   | ProfileNameTakenError
-  | HomeAnchorRequiredError
+  | EligibleManagerRequiredError
   | RestrictedFirstAccountError
 
 input DeleteAccountInput {
@@ -61,7 +59,7 @@ union DeleteAccountError =
   | ReplacementManagerRequiredError
   | ReplacementManagerNotFoundError
   | ReplacementManagerNotEligibleError
-  | HomeAnchorRequiredError
+  | EligibleManagerRequiredError
   | NoEligibleAdminError
 
 input DeleteMyAccountInput {
@@ -80,7 +78,7 @@ union DeleteMyAccountError =
   | FinalAccountError
   | LastHouseholdAdminError
   | LastServerAdminError
-  | HomeAnchorRequiredError
+  | EligibleManagerRequiredError
   | NoEligibleAdminError
 
 input TransferProfileInput {

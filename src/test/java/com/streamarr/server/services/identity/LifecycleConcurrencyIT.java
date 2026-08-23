@@ -251,7 +251,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                 }
 
                 return repositoryAnswer.answer(invocation);
-              })
+          })
           .when(repositorySpy)
           .tryGrantDirectManagement(any(UUID.class), eq(orphan.getId()));
 

@@ -1,4 +1,4 @@
 package com.streamarr.server.graphql.mutation.lifecycle;
 
-public record HomeAnchorRequiredError(String message)
+public record EligibleManagerRequiredError(String message)
     implements TransferAccountError, DeleteAccountError, DeleteMyAccountError {}
