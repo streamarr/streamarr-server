@@ -1,9 +1,9 @@
 package com.streamarr.server.domain.auth;
 
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 import lombok.Singular;
 
 /**
@@ -12,10 +12,7 @@ import lombok.Singular;
  */
 @Builder
 public record SecurityAuditEntry(
-    String operation, UUID actorAccountId, String reason, @Singular Map<String, UUID> resources) {
-
-  public SecurityAuditEntry {
-    Objects.requireNonNull(operation, "operation");
-    Objects.requireNonNull(actorAccountId, "actorAccountId");
-  }
-}
+    @NonNull String operation,
+    @NonNull UUID actorAccountId,
+    String reason,
+    @Singular Map<String, UUID> resources) {}

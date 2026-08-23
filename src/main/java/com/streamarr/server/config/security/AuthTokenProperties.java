@@ -25,7 +25,6 @@ public record AuthTokenProperties(
         Duration accessTokenTtl,
     @NotNull @DurationMin(seconds = 0, inclusive = false) Duration refreshTokenTtl,
     @NotNull @DurationMin Duration rotationGrace,
-    // How long one reauthentication ceremony stays fresh; also caps the replacement token.
     @DurationMin(seconds = 0, inclusive = false) @DurationMax(minutes = 15)
         Duration reauthenticationWindow) {
 
