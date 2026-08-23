@@ -38,6 +38,8 @@ import org.dataloader.DataLoader;
 @RequiredArgsConstructor
 public class HouseholdAdministrationResolver {
 
+  private static final int DEFAULT_PAGE_SIZE = 100;
+
   private final AuthorizationService authorizationService;
   private final HouseholdAdministrationService householdAdministrationService;
   private final AdministrationQueryService administrationQueryService;
@@ -91,8 +93,12 @@ public class HouseholdAdministrationResolver {
     String after = dfe.getArgument("after");
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
+    if (first == 0 && last == 0 && before != null) {
+      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
+    }
+
     return paginationService.getPaginationOptions(
-        first == 0 && last == 0 && before == null ? 100 : first, after, last, before);
+        first == 0 && last == 0 ? DEFAULT_PAGE_SIZE : first, after, last, before);
   }
 
   @DgsMutation
