@@ -177,13 +177,14 @@ class HouseholdAdministrationServiceTest {
   void shouldFailClosedWhenHouseholdRenameAuthorityCannotBeDecided() {
     var household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var identity = authorization.currentIdentity();
+    var householdId = household.getId();
     authorization.decideWith(
         intent ->
             intent instanceof Intent.RenameHousehold
                 ? new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE)
                 : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
 
-    assertThatThrownBy(() -> service.renameHousehold(identity, household.getId(), "New Name"))
+    assertThatThrownBy(() -> service.renameHousehold(identity, householdId, "New Name"))
         .isInstanceOf(AuthorizationUnavailableException.class);
     assertThat(households.findById(household.getId()).orElseThrow().getName())
         .isEqualTo(household.getName());

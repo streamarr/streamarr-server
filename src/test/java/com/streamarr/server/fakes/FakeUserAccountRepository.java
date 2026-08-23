@@ -37,7 +37,9 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
-  public void refresh(UserAccount account) {}
+  public void refresh(UserAccount account) {
+    // The fake stores and returns the same mutable instance.
+  }
 
   @Override
   public Optional<AccountAuthorityFacts> findAuthorityFacts(UUID accountId) {

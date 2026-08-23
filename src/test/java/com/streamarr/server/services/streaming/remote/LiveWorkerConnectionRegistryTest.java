@@ -42,13 +42,14 @@ class LiveWorkerConnectionRegistryTest {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var registration =
           executor.submit(() -> registry.register(WORKER_ID, registration(), observer));
-      assertThat(observer.acceptanceReached.await(5, TimeUnit.SECONDS)).isTrue();
+      try {
+        assertThat(observer.acceptanceReached.await(5, TimeUnit.SECONDS)).isTrue();
 
-      assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
-      observer.acceptanceRelease.countDown();
+        assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
+      } finally {
+        observer.acceptanceRelease.countDown();
+      }
       registration.get(5, TimeUnit.SECONDS);
-    } finally {
-      observer.acceptanceRelease.countDown();
     }
   }
 
@@ -56,9 +57,10 @@ class LiveWorkerConnectionRegistryTest {
   @DisplayName("Should remove the connection when its initial acknowledgement fails")
   void shouldRemoveConnectionWhenInitialAcknowledgementFails() {
     var registry = new LiveWorkerConnectionRegistry();
+    var workerRegistration = registration();
+    var observer = new RejectingAcceptanceObserver();
 
-    assertThatThrownBy(
-            () -> registry.register(WORKER_ID, registration(), new RejectingAcceptanceObserver()))
+    assertThatThrownBy(() -> registry.register(WORKER_ID, workerRegistration, observer))
         .isInstanceOf(RuntimeException.class);
 
     assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
@@ -71,9 +73,10 @@ class LiveWorkerConnectionRegistryTest {
     var registry = new LiveWorkerConnectionRegistry();
     var originalResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
     registry.register(WORKER_ID, registration(), collecting(originalResponses));
+    var workerRegistration = registration();
+    var observer = new RejectingAcceptanceObserver();
 
-    assertThatThrownBy(
-            () -> registry.register(WORKER_ID, registration(), new RejectingAcceptanceObserver()))
+    assertThatThrownBy(() -> registry.register(WORKER_ID, workerRegistration, observer))
         .isInstanceOf(RuntimeException.class);
 
     assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
@@ -468,10 +471,14 @@ class LiveWorkerConnectionRegistryTest {
     }
 
     @Override
-    public void onError(Throwable ignored) {}
+    public void onError(Throwable ignored) {
+      // Rejection is expressed synchronously from onNext.
+    }
 
     @Override
-    public void onCompleted() {}
+    public void onCompleted() {
+      // Rejection is expressed synchronously from onNext.
+    }
   }
 
   private record BlockingCloseObserver(CountDownLatch closing, CountDownLatch continueClosing)

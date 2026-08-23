@@ -13,7 +13,9 @@ public class FakeHouseholdRepository extends FakeJpaRepository<Household>
     implements HouseholdRepository {
 
   @Override
-  public void refresh(Household household) {}
+  public void refresh(Household household) {
+    // The fake stores and returns the same mutable instance.
+  }
 
   @Override
   public List<Household> findAdministrationPage(MediaPaginationOptions options) {
