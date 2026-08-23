@@ -79,7 +79,7 @@ public final class LifecycleErrors {
       case TransferRejections.ProfileLinked _ -> profileLinked();
       case TransferRejections.LocalManagerRequired _ ->
           new LocalManagerRequiredError(
-              "Name the eligible local manager who anchors the Profile.",
+              "Name an eligible manager in the destination Household.",
               InputPath.of(LOCAL_MANAGER));
       case TransferRejections.LocalManagerNotFound _ ->
           new LocalManagerNotFoundError(NO_SUCH_ACCOUNT, InputPath.of(LOCAL_MANAGER));
@@ -141,12 +141,12 @@ public final class LifecycleErrors {
 
   private static EligibleManagerRequiredError eligibleManagerRequired() {
     return new EligibleManagerRequiredError(
-        "Every Profile keeps its required home management anchor.");
+        "The Profile needs an eligible manager in its Household.");
   }
 
   private static ReplacementManagerNotEligibleError replacementNotEligible(String inputField) {
     return new ReplacementManagerNotEligibleError(
-        "The anchor lives in the Profile's Household and is themselves an unrestricted Adult.",
+        "The manager must belong to the Profile's Household and have an unrestricted Adult Personal Profile.",
         InputPath.of(inputField));
   }
 

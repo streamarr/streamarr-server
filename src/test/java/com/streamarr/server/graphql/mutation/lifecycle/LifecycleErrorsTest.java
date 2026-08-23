@@ -8,6 +8,7 @@ import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -16,6 +17,20 @@ import org.junit.jupiter.params.provider.MethodSource;
 @Tag("UnitTest")
 @DisplayName("Lifecycle Errors Tests")
 class LifecycleErrorsTest {
+
+  @Test
+  @DisplayName("Should describe the eligible manager requirement without implementation detail")
+  void shouldDescribeEligibleManagerRequirementWithoutImplementationDetail() {
+    var error =
+        LifecycleErrors.toTransferAccountError(new TransferRejections.EligibleManagerRequired());
+
+    assertThat(error)
+        .isInstanceOfSatisfying(
+            EligibleManagerRequiredError.class,
+            required ->
+                assertThat(required.message())
+                    .isEqualTo("The Profile needs an eligible manager in its Household."));
+  }
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("transferErrorCases")
