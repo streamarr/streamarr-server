@@ -325,15 +325,13 @@ class DeviceAdministrationServiceTest {
   }
 
   private static KeysetPaginationOptions paginationOptions(UUID cursorId, int limit) {
-    return KeysetPaginationOptions.builder()
-        .cursorId(cursorId)
-        .paginationOptions(
-            PaginationOptions.builder()
-                .paginationDirection(PaginationDirection.FORWARD)
-                .cursor(Optional.empty())
-                .limit(limit)
-                .build())
-        .build();
+    return new KeysetPaginationOptions(
+        cursorId,
+        PaginationOptions.builder()
+            .paginationDirection(PaginationDirection.FORWARD)
+            .cursor(Optional.empty())
+            .limit(limit)
+            .build());
   }
 
   private AuthenticatedIdentity identity() {
