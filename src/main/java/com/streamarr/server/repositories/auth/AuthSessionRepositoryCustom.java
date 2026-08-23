@@ -16,6 +16,11 @@ public interface AuthSessionRepositoryCustom {
   boolean revoke(UUID sessionId, SessionRevocationReason reason, Instant now);
 
   /**
+   * @return the number of live sessions revoked
+   */
+  int revokeAllForAccount(UUID accountId, SessionRevocationReason reason, Instant now);
+
+  /**
    * Persists only the remembered context Household and selected Profile when the session is still
    * live. Returns false when the session is missing or revoked; revocation fields are never written
    * from the supplied entity.

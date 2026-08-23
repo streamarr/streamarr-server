@@ -42,8 +42,18 @@ public class AccessTokenIssuer {
   public AccessToken issueDerived(TokenContext context, Instant sourceExpiresAt) {
     var now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
     var freshExpiry = now.plus(properties.accessTokenTtl());
-    var cappedExpiry = sourceExpiresAt.isBefore(freshExpiry) ? sourceExpiresAt : freshExpiry;
-    return mint(context, now, cappedExpiry);
+    return mint(context, now, earlier(sourceExpiresAt, freshExpiry));
+  }
+
+  /** Mints a reauthenticated token capped by both its source and the reauthentication window. */
+  public AccessToken issueReauthenticated(TokenContext context, Instant sourceExpiresAt) {
+    var now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
+    var windowEnd = now.plus(properties.reauthenticationWindow());
+    return mint(context.withReauthenticatedAt(now), now, earlier(sourceExpiresAt, windowEnd));
+  }
+
+  private static Instant earlier(Instant left, Instant right) {
+    return left.isBefore(right) ? left : right;
   }
 
   private AccessToken mint(TokenContext context, Instant now, Instant expiresAt) {
@@ -64,9 +74,14 @@ public class AccessTokenIssuer {
             .claim(TokenClaims.HOUSEHOLD_ROLE, account.getHouseholdRole().name())
             .claim(TokenClaims.CONTEXT_HOUSEHOLD_ID, context.contextHouseholdId().toString());
 
-    if (scope == TokenScope.PROFILE) {
-      claims.claim(TokenClaims.PROFILE_ID, context.profileId().toString());
-    }
+    context
+        .profileId()
+        .ifPresent(profileId -> claims.claim(TokenClaims.PROFILE_ID, profileId.toString()));
+    context
+        .reauthenticatedAt()
+        .ifPresent(
+            reauthenticatedAt ->
+                claims.claim(TokenClaims.REAUTHENTICATED_AT, reauthenticatedAt.getEpochSecond()));
 
     var jwt =
         jwtEncoder.encode(

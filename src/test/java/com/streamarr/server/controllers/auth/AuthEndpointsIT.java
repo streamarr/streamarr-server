@@ -39,6 +39,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
@@ -1536,7 +1537,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .account(account)
                 .session(issued.session())
                 .contextHouseholdId(household.getId())
-                .profileId(profile.getId())
+                .profileId(Optional.of(profile.getId()))
                 .build())
         .value();
   }

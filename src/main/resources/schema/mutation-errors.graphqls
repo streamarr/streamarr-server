@@ -11,6 +11,11 @@ interface InputMutationError implements MutationError {
     inputPath: [String!]!
 }
 
+type InvalidIdError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 type LibraryNameRequiredError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
@@ -37,6 +42,52 @@ type LibraryPathNotReadableError implements InputMutationError & MutationError {
 }
 
 type LibraryPathAlreadyRegisteredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type AccountNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type HouseholdNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The action is allowed except for a current reauthentication ceremony (POST /api/auth/reauth)."
+type ReauthenticationRequiredError implements MutationError {
+    message: String!
+}
+
+type ReasonRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"An Account whose Personal Profile is restricted holds no administrative authority."
+type RestrictedAccountAuthorityError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"At least one enabled ServerAdmin must remain after bootstrap."
+type LastServerAdminError implements MutationError {
+    message: String!
+}
+
+"A Household always keeps at least one HouseholdAdmin until teardown."
+type LastHouseholdAdminError implements MutationError {
+    message: String!
+}
+
+type DisplayNameRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type HouseholdNameRequiredError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }

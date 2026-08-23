@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.controllers.auth.AuthTokensResponse;
 import com.streamarr.server.controllers.auth.ChangePasswordRequest;
 import com.streamarr.server.controllers.auth.LoginRequest;
+import com.streamarr.server.controllers.auth.ReauthRequest;
 import com.streamarr.server.controllers.auth.RefreshRequest;
 import com.streamarr.server.controllers.auth.SelectProfileRequest;
 import com.streamarr.server.controllers.auth.SetupRequest;
@@ -75,6 +76,7 @@ class SensitiveAuthValueRedactionTest {
             new LoginRequest("user@example.com", SECRET_MARKER, "device", false),
             new SetupRequest("user@example.com", "User", SECRET_MARKER, "Home", "Profile", false),
             new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER),
+            new ReauthRequest(SECRET_MARKER),
             new RefreshRequest(SECRET_MARKER),
             new TokenRefreshService.RefreshedTokens(null, SECRET_MARKER),
             SelectProfileCommand.builder().profileId(UUID.randomUUID()).pin(SECRET_MARKER).build(),
@@ -182,6 +184,7 @@ class SensitiveAuthValueRedactionTest {
         new LoginRequest("user@example.com", SECRET_MARKER, "device", false),
         new SetupRequest("user@example.com", "User", SECRET_MARKER, "Home", "Profile", false),
         new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER),
+        new ReauthRequest(SECRET_MARKER),
         ChangePasswordCommand.builder()
             .accountId(UUID.randomUUID())
             .sessionId(UUID.randomUUID())

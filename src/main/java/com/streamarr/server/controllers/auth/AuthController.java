@@ -11,6 +11,7 @@ import com.streamarr.server.services.auth.DeviceAuthorizationService;
 import com.streamarr.server.services.auth.LoginCommand;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordChangeService;
+import com.streamarr.server.services.auth.ReauthenticationService;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.SetupCommand;
 import com.streamarr.server.services.auth.SetupService;
@@ -50,6 +51,7 @@ public class AuthController {
   private final AccessTokenIssuer accessTokenIssuer;
   private final AuthorizationService authorizationService;
   private final PasswordChangeService passwordChangeService;
+  private final ReauthenticationService reauthenticationService;
   private final DeviceAuthorizationService deviceAuthorizationService;
   private final AuthCookieWriter cookieWriter;
 
@@ -108,7 +110,19 @@ public class AuthController {
         householdContextService.selectHousehold(
             identity.accountId(), identity.authSessionId(), request.householdId());
     return respondAccessOnly(
-        accessTokenIssuer.issueDerived(context, authorizationService.currentTokenExpiry()),
+        accessTokenIssuer.issueDerived(
+            context.withReauthenticatedAt(identity.reauthenticatedAt()),
+            authorizationService.currentTokenExpiry()),
+        StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
+  }
+
+  @PostMapping("/reauth")
+  public ResponseEntity<AuthTokensResponse> reauthenticate(
+      @Valid @RequestBody ReauthRequest request, HttpServletRequest httpRequest) {
+    var identity = authorizationService.currentIdentity();
+    var context = reauthenticationService.reauthenticate(identity, request.password());
+    return respondAccessOnly(
+        accessTokenIssuer.issueReauthenticated(context, authorizationService.currentTokenExpiry()),
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
@@ -124,7 +138,9 @@ public class AuthController {
                 .pin(request.pin())
                 .build());
     return respondAccessOnly(
-        accessTokenIssuer.issueDerived(context, authorizationService.currentTokenExpiry()),
+        accessTokenIssuer.issueDerived(
+            context.withReauthenticatedAt(identity.reauthenticatedAt()),
+            authorizationService.currentTokenExpiry()),
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 

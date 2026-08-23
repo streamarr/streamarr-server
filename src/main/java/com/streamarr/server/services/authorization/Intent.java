@@ -37,10 +37,30 @@ public sealed interface Intent<T> {
 
   record ViewHouseholdAdministration(UUID householdId) implements Intent<AuthorizationUnit> {}
 
+  record ViewHouseholds() implements Intent<AuthorizationUnit> {}
+
   record ViewAccountAdministration(UUID accountId) implements Intent<AuthorizationUnit> {}
 
   record ViewProfileAdministration(UUID profileId) implements Intent<AuthorizationUnit> {}
 
   /** The live playback decision for the selected Profile in the context Household (ADR 0018). */
   record Playback() implements Intent<AuthorizationUnit> {}
+
+  record GrantServerAdmin(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  record RevokeServerAdmin(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  record CreateHousehold() implements Intent<AuthorizationUnit> {}
+
+  record RenameHousehold(UUID householdId) implements Intent<AuthorizationUnit> {}
+
+  record RenameAccount(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  record GrantHouseholdAdmin(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  record RevokeHouseholdAdmin(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  record DisableAccount(UUID accountId) implements Intent<AuthorizationUnit> {}
+
+  record EnableAccount(UUID accountId) implements Intent<AuthorizationUnit> {}
 }

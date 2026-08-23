@@ -24,9 +24,14 @@ public class RelayConnectionAdapter {
 
   public <T extends BaseAuditableEntity<?>> Connection<T> toConnection(
       MediaPage<T> page, MediaPaginationOptions options) {
+    return toConnection(page, options, Function.identity());
+  }
+
+  public <S extends BaseAuditableEntity<?>, T> Connection<T> toConnection(
+      MediaPage<S> page, MediaPaginationOptions options, Function<S, T> nodeOf) {
     return toConnection(
         page,
-        PageItem::item,
+        pageItem -> nodeOf.apply(pageItem.item()),
         pageItem ->
             cursorUtil.encodeMediaCursor(options, pageItem.item().getId(), pageItem.sortValue()));
   }

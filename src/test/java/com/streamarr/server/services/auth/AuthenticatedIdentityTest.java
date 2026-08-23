@@ -120,6 +120,24 @@ class AuthenticatedIdentityTest {
   }
 
   @Test
+  @DisplayName("Should return an empty Optional when the reauthentication claim is missing")
+  void shouldReturnEmptyOptionalWhenReauthenticationClaimMissing() {
+    var identity = accountScopedBuilder().build();
+
+    assertThat(identity.reauthenticatedAt()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject the reauthentication value when it is null")
+  void shouldRejectReauthenticationValueWhenNull() {
+    var builder = accountScopedBuilder();
+
+    assertThatThrownBy(() -> builder.reauthenticatedAt(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("reauthenticatedAt");
+  }
+
+  @Test
   @DisplayName("Should reject building playback authority when the identity is Account scoped")
   void shouldRejectPlaybackAuthorityWhenIdentityIsAccountScoped() {
     var identity = accountScopedBuilder().build();

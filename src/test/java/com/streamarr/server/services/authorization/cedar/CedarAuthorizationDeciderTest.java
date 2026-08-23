@@ -192,6 +192,23 @@ class CedarAuthorizationDeciderTest {
   }
 
   @Test
+  @DisplayName("Should fail closed without a step-up retry when a group evaluation errors")
+  void shouldFailClosedWithoutStepUpRetryWhenGroupEvaluationErrors() throws Exception {
+    var erroringPolicies =
+        PolicySet.parsePolicies(
+            """
+            @id("erroring-forbid")
+             forbid (principal, action, resource) when { principal.serverAdmin == false };
+             """);
+    var engine = new RewritingEngine(ENGINE, Function.identity(), erroringPolicies);
+    var identity = identityFor(liveAccount(true, true));
+    var noFacts = decider(engine, contributor(_ -> {}));
+
+    assertThat(noFacts.decide(identity, new Intent.GrantServerAdmin(UUID.randomUUID())))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.EVALUATION_ERROR));
+  }
+
+  @Test
   @DisplayName("Should fail closed when a contributor throws")
   void shouldFailClosedWhenContributorThrows() {
     var failing =
@@ -264,7 +281,11 @@ class CedarAuthorizationDeciderTest {
   private CedarAuthorizationDecider decider(
       AuthorizationEngine engine, FactContributor contributor) {
     return new CedarAuthorizationDecider(
-        engine, BUNDLE, new SliceAssembler(ContributorStubs.allWith(contributor)), meters);
+        engine,
+        BUNDLE,
+        new SliceAssembler(ContributorStubs.allWith(contributor)),
+        ContributorStubs.systemClockFreshness(),
+        meters);
   }
 
   private static FactContributor contributor(Consumer<EntitySlice> contribution) {

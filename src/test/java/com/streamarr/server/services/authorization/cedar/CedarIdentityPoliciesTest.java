@@ -25,8 +25,10 @@ import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -47,6 +49,8 @@ class CedarIdentityPoliciesTest {
       new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
   private static final Decision<AuthorizationUnit> DENIED =
       new Decision.Denied<>(Decision.DenialReason.POLICY);
+  private static final Decision<AuthorizationUnit> REAUTHENTICATION_REQUIRED =
+      new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED);
 
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
@@ -69,7 +73,9 @@ class CedarIdentityPoliciesTest {
                       new SessionLivenessContributor(sessions),
                       new ProfileAvailabilityContributor(profiles),
                       new ProfileManagementContributor(profiles, managers, shares, accounts),
-                      new AccountHouseholdContributor(accounts))),
+                      new AccountHouseholdContributor(accounts),
+                      new LivePrincipalHouseholdContributor(accounts))),
+              ContributorStubs.systemClockFreshness(),
               new SimpleMeterRegistry()));
 
   private UserAccount account;
@@ -382,6 +388,166 @@ class CedarIdentityPoliciesTest {
       assertThat(decide(member(), new Intent.ViewProfileAdministration(personal.getId())))
           .isEqualTo(DENIED);
     }
+  }
+
+  @Nested
+  @DisplayName("Administration")
+  class Administration {
+
+    @Test
+    @DisplayName(
+        "Should allow ServerAdmin authority changes when the caller is fresh, live, and enabled")
+    void shouldAllowServerAdminAuthorityChangesWhenCallerFreshLiveEnabledAdmin() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+      var fresh = withReauthenticatedAt(atHome(), Instant.now());
+
+      assertThat(decide(fresh, new Intent.GrantServerAdmin(target.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(fresh, new Intent.RevokeServerAdmin(target.getId()))).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should require reauthentication when only the ceremony is missing")
+    void shouldRequireReauthenticationWhenOnlyCeremonyIsMissing() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+
+      assertThat(decide(atHome(), new Intent.GrantServerAdmin(target.getId())))
+          .isEqualTo(REAUTHENTICATION_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("Should report not fresh when the ceremony claim is stale or future-dated")
+    void shouldReportNotFreshWhenCeremonyClaimStaleOrFutureDated() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+      var stale = withReauthenticatedAt(atHome(), Instant.now().minus(Duration.ofHours(1)));
+      var future = withReauthenticatedAt(atHome(), Instant.now().plus(Duration.ofHours(1)));
+
+      assertThat(decide(stale, new Intent.GrantServerAdmin(target.getId())))
+          .isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(future, new Intent.GrantServerAdmin(target.getId())))
+          .isEqualTo(REAUTHENTICATION_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("Should keep a policy denial when authority is missing")
+    void shouldKeepPolicyDenialWhenAuthorityMissing() {
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+      var fresh = withReauthenticatedAt(atHome(), Instant.now());
+
+      assertThat(decide(atHome(), new Intent.GrantServerAdmin(target.getId()))).isEqualTo(DENIED);
+      assertThat(decide(fresh, new Intent.GrantServerAdmin(target.getId()))).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should keep the policy denial when the admin Account is disabled")
+    void shouldKeepPolicyDenialWhenAdminAccountIsDisabled() {
+      account.setServerAdmin(true);
+      account.setEnabled(false);
+      accounts.save(account);
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+
+      assertThat(decide(atHome(), new Intent.GrantServerAdmin(target.getId()))).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should allow Account administration writes only when the caller is live ServerAdmin")
+    void shouldAllowAccountAdministrationWritesOnlyWhenCallerLiveServerAdmin() {
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+
+      assertThat(decide(atHome(), new Intent.GrantHouseholdAdmin(target.getId())))
+          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.RevokeHouseholdAdmin(target.getId())))
+          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.DisableAccount(target.getId()))).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.EnableAccount(target.getId()))).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.GrantHouseholdAdmin(target.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.RevokeHouseholdAdmin(target.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.DisableAccount(target.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.EnableAccount(target.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.CreateHousehold())).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny Household creation when the caller is not live ServerAdmin")
+    void shouldDenyHouseholdCreationWhenCallerNotLiveServerAdmin() {
+      assertThat(decide(atHome(), new Intent.CreateHousehold())).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should allow the Household catalogue only when the caller is live ServerAdmin")
+    void shouldAllowHouseholdCatalogueOnlyWhenCallerLiveServerAdmin() {
+      assertThat(decide(atHome(), new Intent.ViewHouseholds())).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.ViewHouseholds())).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should allow Household rename when the caller is its live HouseholdAdmin or ServerAdmin")
+    void shouldAllowHouseholdRenameWhenCallerLiveHouseholdAdminOrServerAdmin() {
+      var home = account.getHouseholdId();
+
+      assertThat(decide(atHome(), new Intent.RenameHousehold(home))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.RenameHousehold(visitedHouseholdId)))
+          .isEqualTo(DENIED);
+
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.RenameHousehold(home))).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.RenameHousehold(visitedHouseholdId)))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should allow Account rename when the caller is itself or ServerAdmin")
+    void shouldAllowAccountRenameWhenCallerSelfOrServerAdmin() {
+      var target = accounts.save(AccountFixture.defaultAccountBuilder().build());
+
+      assertThat(decide(member(), new Intent.RenameAccount(account.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(member(), new Intent.RenameAccount(target.getId()))).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(member(), new Intent.RenameAccount(target.getId()))).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny self rename when the Account is disabled")
+    void shouldDenySelfRenameWhenAccountDisabled() {
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(decide(member(), new Intent.RenameAccount(account.getId()))).isEqualTo(DENIED);
+    }
+  }
+
+  private AuthenticatedIdentity withReauthenticatedAt(AuthenticatedIdentity base, Instant at) {
+    return AuthenticatedIdentity.builder()
+        .accountId(base.accountId())
+        .authSessionId(base.authSessionId())
+        .scope(base.scope())
+        .householdId(base.householdId())
+        .householdRole(base.householdRole())
+        .contextHouseholdId(base.contextHouseholdId())
+        .profileId(base.profileId())
+        .reauthenticatedAt(Optional.of(at))
+        .build();
   }
 
   private AuthenticatedIdentity atHome() {

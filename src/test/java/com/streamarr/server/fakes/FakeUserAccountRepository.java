@@ -1,14 +1,24 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.PaginationDirection;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -27,9 +37,61 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
+  public void refresh(UserAccount account) {
+    // The fake stores and returns the same mutable instance.
+  }
+
+  @Override
   public Optional<AccountAuthorityFacts> findAuthorityFacts(UUID accountId) {
     return findById(accountId)
         .map(account -> new AccountAuthorityFacts(account.isEnabled(), account.isServerAdmin()));
+  }
+
+  private List<UserAccount> findAdministrationPage(
+      UUID householdId, MediaPaginationOptions options) {
+    var comparator =
+        Comparator.comparing(UserAccount::getDisplayName, String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(UserAccount::getId);
+    var reverse =
+        options.getPaginationOptions().getPaginationDirection() == PaginationDirection.REVERSE;
+    var cursorId = options.getCursorId();
+    var cursorName =
+        options.getMediaFilter().getPreviousSortFieldValue() == null
+            ? null
+            : options.getMediaFilter().getPreviousSortFieldValue().toString();
+    var extraRows = cursorId.isPresent() ? 2 : 1;
+    var limit = options.getPaginationOptions().getLimit() + extraRows;
+    var cursor =
+        cursorId
+            .flatMap(this::findById)
+            .filter(account -> householdId.equals(account.getHouseholdId()));
+    var afterCursor =
+        database.values().stream()
+            .filter(account -> householdId.equals(account.getHouseholdId()))
+            .filter(account -> cursorId.map(id -> !id.equals(account.getId())).orElse(true))
+            .filter(
+                account ->
+                    cursorName == null
+                        || compare(account, cursorName, cursorId.orElseThrow()) * (reverse ? -1 : 1)
+                            > 0)
+            .sorted(reverse ? comparator.reversed() : comparator)
+            .toList();
+    var page = Stream.concat(cursor.stream(), afterCursor.stream()).limit(limit).toList();
+    return reverse ? page.reversed() : page;
+  }
+
+  @Override
+  public Map<UUID, List<UserAccount>> findAdministrationPages(
+      Set<UUID> householdIds, MediaPaginationOptions options) {
+    var pages = new LinkedHashMap<UUID, List<UserAccount>>();
+    householdIds.forEach(
+        householdId -> pages.put(householdId, findAdministrationPage(householdId, options)));
+    return pages;
+  }
+
+  private int compare(UserAccount account, String cursorName, UUID cursorId) {
+    var nameComparison = account.getDisplayName().compareToIgnoreCase(cursorName);
+    return nameComparison != 0 ? nameComparison : account.getId().compareTo(cursorId);
   }
 
   @Override
@@ -37,6 +99,54 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     return database.values().stream()
         .filter(account -> householdId.equals(account.getHouseholdId()))
         .toList();
+  }
+
+  @Override
+  public boolean tryGrantServerAdmin(UUID accountId) {
+    return transition(accountId, account -> !account.isServerAdmin(), a -> a.setServerAdmin(true));
+  }
+
+  @Override
+  public boolean tryRevokeServerAdmin(UUID accountId) {
+    return transition(accountId, UserAccount::isServerAdmin, a -> a.setServerAdmin(false));
+  }
+
+  @Override
+  public boolean tryPromoteToHouseholdAdmin(UUID accountId) {
+    return transition(
+        accountId,
+        account -> account.getHouseholdRole() != HouseholdRole.ADMIN,
+        account -> account.setHouseholdRole(HouseholdRole.ADMIN));
+  }
+
+  @Override
+  public boolean tryDemoteToHouseholdMember(UUID accountId) {
+    return transition(
+        accountId,
+        account -> account.getHouseholdRole() != HouseholdRole.MEMBER,
+        account -> account.setHouseholdRole(HouseholdRole.MEMBER));
+  }
+
+  @Override
+  public boolean tryDisable(UUID accountId) {
+    return transition(accountId, UserAccount::isEnabled, account -> account.setEnabled(false));
+  }
+
+  @Override
+  public boolean tryEnable(UUID accountId) {
+    return transition(accountId, account -> !account.isEnabled(), a -> a.setEnabled(true));
+  }
+
+  @Override
+  public boolean tryRename(UUID accountId, String displayName) {
+    return transition(accountId, _ -> true, account -> account.setDisplayName(displayName));
+  }
+
+  private boolean transition(
+      UUID accountId, Predicate<UserAccount> transitionable, Consumer<UserAccount> change) {
+    var account = findById(accountId).filter(transitionable);
+    account.ifPresent(change);
+    return account.isPresent();
   }
 
   @Override

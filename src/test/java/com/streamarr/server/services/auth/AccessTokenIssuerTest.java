@@ -4,6 +4,7 @@ import static com.streamarr.server.support.TokenTestSupport.TEST_SIGNING_KEY;
 import static com.streamarr.server.support.TokenTestSupport.decoder;
 import static com.streamarr.server.support.TokenTestSupport.tokenProperties;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
@@ -15,6 +16,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -68,7 +71,7 @@ class AccessTokenIssuerTest {
                 .account(account)
                 .session(session)
                 .contextHouseholdId(visitedHouseholdId)
-                .profileId(profileId)
+                .profileId(Optional.of(profileId))
                 .build());
 
     assertThat(token.scope()).isEqualTo(TokenScope.PROFILE);
@@ -127,10 +130,74 @@ class AccessTokenIssuerTest {
     var context = TokenContext.of(account, session);
 
     assertThat(context.contextHouseholdId()).isEqualTo(visited);
-    assertThat(context.profileId()).isEqualTo(profileId);
+    assertThat(context.profileId()).contains(profileId);
     assertThat(context.scope()).isEqualTo(TokenScope.PROFILE);
-    assertThat(TokenContext.of(account, session(account)).contextHouseholdId())
+  }
+
+  @Test
+  @DisplayName("Should return an empty Optional when the reauthentication instant is missing")
+  void shouldReturnEmptyOptionalWhenReauthenticationInstantMissing() {
+    var context = TokenContext.of(account(), session(account()));
+
+    assertThat(context.reauthenticatedAt()).isEmpty();
+    assertThat(context.profileId()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject the reauthentication instant when its value is null")
+  void shouldRejectReauthenticationInstantWhenValueIsNull() {
+    var context = TokenContext.of(account(), session(account()));
+
+    assertThatThrownBy(() -> context.withReauthenticatedAt((Instant) null))
+        .isInstanceOf(NullPointerException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject the reauthentication Optional when its value is null")
+  void shouldRejectReauthenticationOptionalWhenValueIsNull() {
+    var context = TokenContext.of(account(), session(account()));
+
+    assertThatThrownBy(() -> context.withReauthenticatedAt((Optional<Instant>) null))
+        .isInstanceOf(NullPointerException.class);
+  }
+
+  @Test
+  @DisplayName("Should use the account household when a session has no remembered context")
+  void shouldUseAccountHouseholdWhenSessionHasNoRememberedContext() {
+    var account = account();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
+
+    assertThat(TokenContext.of(account, session).contextHouseholdId())
         .isEqualTo(account.getHouseholdId());
+  }
+
+  @Test
+  @DisplayName("Should expire at the ceremony window end when the source expires later")
+  void shouldExpireAtCeremonyWindowEndWhenSourceExpiresLater() {
+    var now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+    var fixedIssuer = issuerAt(Clock.fixed(now, ZoneOffset.UTC));
+
+    var token =
+        fixedIssuer.issueReauthenticated(
+            accountContext(account()), now.plus(Duration.ofMinutes(30)));
+
+    assertThat(token.expiresAt()).isEqualTo(now.plus(properties.reauthenticationWindow()));
+    var decoded = buildDecoder().decode(token.value());
+    assertThat(decoded.getExpiresAt()).isEqualTo(token.expiresAt());
+    assertThat(decoded.getClaimAsInstant(TokenClaims.REAUTHENTICATED_AT)).isEqualTo(now);
+  }
+
+  @Test
+  @DisplayName("Should cap a reauthenticated token when its source expires sooner")
+  void shouldCapReauthenticatedTokenWhenSourceExpiresSooner() {
+    var now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+    var fixedIssuer = issuerAt(Clock.fixed(now, ZoneOffset.UTC));
+    var sourceExpiry = now.plus(Duration.ofMinutes(3));
+
+    var token = fixedIssuer.issueReauthenticated(accountContext(account()), sourceExpiry);
+
+    assertThat(token.expiresAt()).isEqualTo(sourceExpiry);
+    assertThat(buildDecoder().decode(token.value()).getExpiresAt()).isEqualTo(sourceExpiry);
   }
 
   @Test

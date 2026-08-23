@@ -56,6 +56,11 @@ public final class FakeAuthorizationService implements AuthorizationService {
     return this;
   }
 
+  public FakeAuthorizationService decideWith(Function<Intent<?>, Decision<?>> decisionRule) {
+    rule = decisionRule;
+    return this;
+  }
+
   public List<Intent<?>> recordedIntents() {
     return List.copyOf(intents);
   }

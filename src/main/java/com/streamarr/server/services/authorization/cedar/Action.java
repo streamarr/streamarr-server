@@ -51,18 +51,54 @@ enum Action {
       ResourceKind.PROFILE,
       FactRequirement.SIGNED_PRINCIPAL_CONTEXT,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.PROFILE_MANAGEMENT);
+      FactRequirement.PROFILE_MANAGEMENT),
+  GRANT_SERVER_ADMIN(
+      "grantServerAdmin",
+      ResourceKind.ACCOUNT,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  REVOKE_SERVER_ADMIN(
+      "revokeServerAdmin",
+      ResourceKind.ACCOUNT,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  CREATE_HOUSEHOLD(
+      "createHousehold", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_HOUSEHOLDS("viewHouseholds", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  RENAME_HOUSEHOLD(
+      "renameHousehold",
+      ResourceKind.HOUSEHOLD,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.LIVE_PRINCIPAL_HOUSEHOLD),
+  RENAME_ACCOUNT("renameAccount", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  GRANT_HOUSEHOLD_ADMIN(
+      "grantHouseholdAdmin", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  REVOKE_HOUSEHOLD_ADMIN(
+      "revokeHouseholdAdmin", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  DISABLE_ACCOUNT("disableAccount", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  ENABLE_ACCOUNT("enableAccount", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 
   private final String cedarName;
   private final ResourceKind resourceKind;
+  private final FreshReauthentication freshReauthentication;
   private final Set<FactRequirement> facts;
 
   Action(
       String cedarName, ResourceKind resourceKind, FactRequirement first, FactRequirement... rest) {
+    this(cedarName, resourceKind, FreshReauthentication.NOT_REQUIRED, first, rest);
+  }
+
+  Action(
+      String cedarName,
+      ResourceKind resourceKind,
+      FreshReauthentication freshReauthentication,
+      FactRequirement first,
+      FactRequirement... rest) {
     this.cedarName = cedarName;
     this.resourceKind = resourceKind;
+    this.freshReauthentication = freshReauthentication;
     this.facts = Set.copyOf(EnumSet.of(first, rest));
   }
 
@@ -81,6 +117,15 @@ enum Action {
   /** Facts the slice must carry for this action. */
   Set<FactRequirement> facts() {
     return facts;
+  }
+
+  boolean requiresFreshReauthentication() {
+    return freshReauthentication == FreshReauthentication.REQUIRED;
+  }
+
+  enum FreshReauthentication {
+    REQUIRED,
+    NOT_REQUIRED
   }
 
   enum ResourceKind {

@@ -15,6 +15,10 @@ public final class TokenClaims {
   public static final String CONTEXT_HOUSEHOLD_ID = "ch";
 
   public static final String PROFILE_ID = "pf";
+
+  /** Set by reauthentication, preserved by derived tokens, and removed by refresh. */
+  public static final String REAUTHENTICATED_AT = "reauthenticated_at";
+
   public static final String STREAM_SESSION_ID = "stream_session_id";
 
   private TokenClaims() {}

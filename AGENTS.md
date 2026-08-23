@@ -138,7 +138,12 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Google Java Format enforced via Spotless (runs on build)
 - Checkstyle also runs at `validate` and fails the build (`checkstyle.xml`)
 - No manual formatting debates — the formatter is always right
-- Concise over verbose — don't add comments for self-evident code
+- Comments explain non-obvious contracts or why an implementation must be unusual; they do not
+  narrate names, control flow, tests, or duplicate ADR and policy text
+- Use Javadoc only for caller-visible contracts; keep implementation rationale as a concise local
+  comment beside the relevant code
+- If a comment has to defend fragile code, fix or encode the invariant instead — prefer tests and
+  static enforcement over prose that can drift
 - Don't add javadoc/comments to code you didn't change
 
 ### Java Language
@@ -174,7 +179,11 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - These rules are enforced by ArchUnit tests (`ArchitectureTest`)
 
 ## Settled Decisions (do not revisit without an ADR)
-- Architectural decisions are recorded in `docs/adr/` — read the relevant ADR before revisiting a decision, and record newly settled ones as ADRs starting from `docs/adr/template.adoc`
+- Architectural decisions are recorded in the canonical
+  [`streamarr/streamarr-adr`](https://github.com/streamarr/streamarr-adr) repository, not
+  under this repository's `docs/adr/`. Read the relevant ADR before revisiting a decision,
+  and record newly settled decisions there using its `adr/template.adoc` and next available
+  repository-wide number.
 - **Concurrency runtime**: virtual threads (Loom). Akka and Vert.x were each adopted and removed in 2022 — don't reintroduce reactive/actor frameworks.
 - **Outbound HTTP**: Methanol over JDK `HttpClient` with interceptors (retry, rate limit, cache). Don't introduce `RestTemplate`/`RestClient`/`WebClient`.
 - **Delivery protocol**: GraphQL only. A complete REST/JSON:API layer was built and deleted within 24 hours — keep transport experiments on spike branches; extract protocol-agnostic services (`MediaPage`/`PageItem` pattern) but don't merge speculative protocol surfaces.

@@ -27,6 +27,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.UnaryOperator;
 import lombok.Builder;
@@ -178,7 +179,17 @@ public class AuthTestSupport {
 
   /** An Account-scoped token: at the Profile picker of the membership Household. */
   public String accountBearer(TestIdentity identity) {
-    return accessTokenIssuer.issue(contextBuilder(identity).profileId(null).build()).value();
+    return accessTokenIssuer
+        .issue(contextBuilder(identity).profileId(Optional.empty()).build())
+        .value();
+  }
+
+  public String freshAccountBearer(TestIdentity identity) {
+    return accessTokenIssuer
+        .issueReauthenticated(
+            contextBuilder(identity).profileId(Optional.empty()).build(),
+            Instant.now().plus(Duration.ofMinutes(10)))
+        .value();
   }
 
   public String profileBearer(TestIdentity identity) {
@@ -235,7 +246,7 @@ public class AuthTestSupport {
         .account(identity.account())
         .session(identity.session())
         .contextHouseholdId(identity.household().getId())
-        .profileId(identity.profile().getId());
+        .profileId(Optional.of(identity.profile().getId()));
   }
 
   @Builder
