@@ -329,11 +329,11 @@ type AccountsRemainError implements MutationError {
     message: String!
 }
 
-type FinalAccountRequiredError implements MutationError {
+type LastAccountActionRequiredError implements MutationError {
     message: String!
 }
 
-type FinalAccountUnexpectedError implements MutationError {
+type LastAccountActionNotAllowedError implements MutationError {
     message: String!
 }
 
