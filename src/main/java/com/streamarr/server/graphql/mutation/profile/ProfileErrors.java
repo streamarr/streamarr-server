@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.mutation.profile;
 
 import com.streamarr.server.graphql.mutation.InputPath;
 import com.streamarr.server.services.identity.ProfileRejections;
+import lombok.NonNull;
 
 /** The exhaustive mappings from service rejection to schema error type, one per union. */
 public final class ProfileErrors {
@@ -13,7 +14,8 @@ public final class ProfileErrors {
 
   private ProfileErrors() {}
 
-  public static CreateProfileError toCreateProfileError(ProfileRejections.CreateProfile rejection) {
+  public static CreateProfileError toCreateProfileError(
+      @NonNull ProfileRejections.CreateProfile rejection) {
     return switch (rejection) {
       case ProfileRejections.HouseholdNotFound _ ->
           new HouseholdNotFoundError("No such Household.", InputPath.of("householdId"));
@@ -30,7 +32,8 @@ public final class ProfileErrors {
     };
   }
 
-  public static RenameProfileError toRenameProfileError(ProfileRejections.RenameProfile rejection) {
+  public static RenameProfileError toRenameProfileError(
+      @NonNull ProfileRejections.RenameProfile rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ProfileNameRequired _ -> nameRequired();
@@ -39,14 +42,14 @@ public final class ProfileErrors {
   }
 
   public static SetProfilePictureError toSetProfilePictureError(
-      ProfileRejections.SetProfilePicture rejection) {
+      @NonNull ProfileRejections.SetProfilePicture rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
     };
   }
 
   public static ChangeProfileKindError toChangeProfileKindError(
-      ProfileRejections.ChangeProfilePolicy rejection) {
+      @NonNull ProfileRejections.ChangeProfilePolicy rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
@@ -59,7 +62,7 @@ public final class ProfileErrors {
   }
 
   public static SetProfileMaximumAllowedRatingAgeError toSetProfileMaximumAllowedRatingAgeError(
-      ProfileRejections.ChangeProfilePolicy rejection) {
+      @NonNull ProfileRejections.ChangeProfilePolicy rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
@@ -71,7 +74,8 @@ public final class ProfileErrors {
   }
 
   public static RemoveProfileMaximumAllowedRatingAgeError
-      toRemoveProfileMaximumAllowedRatingAgeError(ProfileRejections.ChangeProfilePolicy rejection) {
+      toRemoveProfileMaximumAllowedRatingAgeError(
+          @NonNull ProfileRejections.ChangeProfilePolicy rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
@@ -83,7 +87,8 @@ public final class ProfileErrors {
     };
   }
 
-  public static SetProfilePinError toSetProfilePinError(ProfileRejections.SetProfilePin rejection) {
+  public static SetProfilePinError toSetProfilePinError(
+      @NonNull ProfileRejections.SetProfilePin rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.PinMalformed _ -> pinMalformed();
@@ -91,7 +96,7 @@ public final class ProfileErrors {
   }
 
   public static RemoveProfilePinError toRemoveProfilePinError(
-      ProfileRejections.RemoveProfilePin rejection) {
+      @NonNull ProfileRejections.RemoveProfilePin rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.WouldLockProfile(var householdId, var householdName) ->
@@ -104,7 +109,7 @@ public final class ProfileErrors {
   }
 
   public static AdministrativelyResetProfilePinError toAdministrativelyResetProfilePinError(
-      ProfileRejections.AdministrativelyResetProfilePin rejection) {
+      @NonNull ProfileRejections.AdministrativelyResetProfilePin rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.PinMalformed _ -> pinMalformed();
@@ -114,7 +119,8 @@ public final class ProfileErrors {
     };
   }
 
-  public static DeleteProfileError toDeleteProfileError(ProfileRejections.DeleteProfile rejection) {
+  public static DeleteProfileError toDeleteProfileError(
+      @NonNull ProfileRejections.DeleteProfile rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ProfileNotDeletable _ ->

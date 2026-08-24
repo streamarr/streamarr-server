@@ -4,6 +4,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfilePolicyTransition;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -15,12 +16,13 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 final class IntentPlanner {
 
-  private final ProfilePolicyPlanner profilePolicyPlanner;
+  @NonNull private final ProfilePolicyPlanner profilePolicyPlanner;
 
   // java:S6878: SelectProfile uses accessors, not a record pattern — the pattern's synthetic
   // deconstruction branch can never be missed and would break the 100% JaCoCo branch gate.
   @SuppressWarnings("java:S6878")
-  IntentPlan<AuthorizationUnit> plan(AuthenticatedIdentity identity, Intent.UnitIntent intent) {
+  IntentPlan<AuthorizationUnit> plan(
+      @NonNull AuthenticatedIdentity identity, @NonNull Intent.UnitIntent intent) {
     return switch (intent) {
       case Intent.AddLibrary _ -> unitPlan(AuthorizationCheck.onServer(Action.ADD_LIBRARY));
       case Intent.RemoveLibrary _ -> unitPlan(AuthorizationCheck.onServer(Action.REMOVE_LIBRARY));
@@ -84,7 +86,7 @@ final class IntentPlanner {
     };
   }
 
-  IntentPlan<ProfilePolicyTransition> plan(Intent.ProfilePolicyChange intent) {
+  IntentPlan<ProfilePolicyTransition> plan(@NonNull Intent.ProfilePolicyChange intent) {
     return profilePolicyPlanner.plan(intent);
   }
 

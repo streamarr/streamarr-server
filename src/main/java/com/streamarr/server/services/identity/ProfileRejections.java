@@ -2,6 +2,7 @@ package com.streamarr.server.services.identity;
 
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
 
 /**
  * Every expected reason a Profile administration mutation refuses (ADR 0026): one sealed union per
@@ -80,7 +81,7 @@ public final class ProfileRejections {
    * a caller who may view that Household's administration; everyone else learns just that some
    * Household's safety policy requires the PIN.
    */
-  public record WouldLockProfile(UUID householdId, Optional<String> householdName)
+  public record WouldLockProfile(@NonNull UUID householdId, @NonNull Optional<String> householdName)
       implements RemoveProfilePin {}
 
   /** Deletion needs an unlinked, unshared Profile and the caller as sole remaining manager. */
