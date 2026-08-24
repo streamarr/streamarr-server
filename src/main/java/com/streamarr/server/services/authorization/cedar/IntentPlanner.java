@@ -137,8 +137,7 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onGrant(Action.LINK_DEVICE, grantId));
       case Intent.RevokeDeviceRegistration(var registrationId) ->
           unitPlan(
-              AuthorizationCheck.onRegistration(
-                  Action.REVOKE_DEVICE_REGISTRATION, registrationId));
+              AuthorizationCheck.onRegistration(Action.REVOKE_DEVICE_REGISTRATION, registrationId));
       case Intent.BlockEsn(var householdId) ->
           unitPlan(AuthorizationCheck.onHousehold(Action.BLOCK_ESN, householdId));
       case Intent.BlockEsnServerWide _ ->

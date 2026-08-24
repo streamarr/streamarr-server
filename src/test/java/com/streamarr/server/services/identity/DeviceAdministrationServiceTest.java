@@ -192,7 +192,7 @@ class DeviceAdministrationServiceTest {
   @Test
   @DisplayName("Should allow the server-wide block when the fresh ceremony is complete")
   void shouldAllowServerWideBlockWhenFreshCeremonyComplete() {
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.BlockEsnServerWide
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
@@ -338,7 +338,7 @@ class DeviceAdministrationServiceTest {
     return authorization.currentIdentity();
   }
 
-  private static Decision<?> allowed() {
+  private static Decision<AuthorizationUnit> allowed() {
     return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
   }
 
