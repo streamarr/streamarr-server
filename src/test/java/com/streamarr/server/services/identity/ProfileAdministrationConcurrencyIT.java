@@ -39,6 +39,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import lombok.Builder;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -81,22 +82,14 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
     var actor = identity(authTestSupport.createAdminIdentity());
     identity(authTestSupport.createAdminIdentity());
     var target = identity(authTestSupport.createIdentity());
-    var targetLocked = new CountDownLatch(1);
+    var targetLock = revocationProbe();
     var releaseTarget = new CountDownLatch(1);
-    var targetLockerBackendPid = new AtomicInteger();
-    var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var targetLock =
+      var lock =
           executor.submit(
-              () ->
-                  lockTargetProfile(
-                      target.profile().getId(),
-                      targetLocked,
-                      releaseTarget,
-                      targetLockerBackendPid,
-                      lockProbe));
-      assertThat(targetLocked.await(10, TimeUnit.SECONDS)).isTrue();
+              () -> lockTargetProfile(target.profile().getId(), targetLock, releaseTarget));
+      targetLock.awaitStarted();
 
       var reset =
           executor.submit(
@@ -109,7 +102,7 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(
-              () -> assertThat(hasWaitingProfileMutation(targetLockerBackendPid.get())).isTrue());
+              () -> assertThat(hasWaitingProfileMutation(targetLock.backendPid())).isTrue());
 
       revokeServerAdmin(actor);
       releaseTarget.countDown();
@@ -121,7 +114,7 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
                   _ -> List.<ProfileRejections.AdministrativelyResetProfilePin>of(),
                   rejected -> rejected);
       assertThat(rejections).singleElement().isInstanceOf(ProfileRejections.ProfileNotFound.class);
-      targetLock.get(10, TimeUnit.SECONDS);
+      lock.get(10, TimeUnit.SECONDS);
     } finally {
       releaseTarget.countDown();
     }
@@ -136,16 +129,14 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
     var supervisor = identity(authTestSupport.createIdentity());
     var owner = identity(authTestSupport.createIdentity());
     var profile =
-        profileAdministrationService
-            .createProfile(
+        accepted(
+            profileAdministrationService.createProfile(
                 authenticatedIdentity(owner),
                 ProfileAdministrationService.CreateProfileCommand.builder()
                     .householdId(owner.household().getId())
                     .name("Shared Kid")
                     .kind(ProfileKind.KID)
-                    .build())
-            .fold(accepted -> accepted, rejected -> null);
-    assertThat(profile).isNotNull();
+                    .build()));
     var share =
         transactionTemplate.execute(
             _ ->
@@ -155,13 +146,11 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
                         .householdId(supervisor.household().getId())
                         .status(ProfileShareStatus.ACTIVE)
                         .build()));
-    var decisionReached = new CountDownLatch(1);
-    var releaseDecision = new CountDownLatch(1);
-    var revocationStarted = new CountDownLatch(1);
-    var revocationBackendPid = new AtomicInteger();
-    var gateOnce = new AtomicBoolean();
-    var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
-    gateRenameDecision(decisionReached, releaseDecision, gateOnce);
+    var decision =
+        gateDecision(
+            Intent.RenameProfile.class,
+            "Supervision revocation did not observe the authorized rename transaction");
+    var revocation = revocationProbe();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var rename =
@@ -169,26 +158,25 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
               () ->
                   profileAdministrationService.renameProfile(
                       authenticatedIdentity(supervisor), profile.getId(), "Renamed Kid"));
-      assertThat(decisionReached.await(10, TimeUnit.SECONDS)).isTrue();
+      decision.awaitReached();
 
       var revoke =
           executor.submit(
               () -> {
-                revokeSupervision(
-                    share.getId(), revocationStarted, revocationBackendPid, lockProbe);
+                revokeSupervision(share.getId(), revocation);
                 return null;
               });
-      assertThat(revocationStarted.await(10, TimeUnit.SECONDS)).isTrue();
+      revocation.awaitStarted();
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(
-              () -> assertThat(isShareRevocationWaiting(revocationBackendPid.get())).isTrue());
+              () -> assertThat(isShareRevocationWaiting(revocation.backendPid())).isTrue());
 
-      releaseDecision.countDown();
+      decision.release();
       assertThat(rename.get(10, TimeUnit.SECONDS)).isInstanceOf(Outcome.Accepted.class);
       revoke.get(10, TimeUnit.SECONDS);
     } finally {
-      releaseDecision.countDown();
+      decision.release();
     }
 
     assertThat(profileRepository.findById(profile.getId()).orElseThrow().getName())
@@ -202,15 +190,13 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
     var manager = identity(authTestSupport.createIdentity());
     var homeAnchor = createEligibleAccountIn(manager.household().getId());
     var profile =
-        profileAdministrationService
-            .createProfile(
+        accepted(
+            profileAdministrationService.createProfile(
                 authenticatedIdentity(manager),
                 ProfileAdministrationService.CreateProfileCommand.builder()
                     .householdId(manager.household().getId())
                     .name("Managed Profile")
-                    .build())
-            .fold(accepted -> accepted, rejected -> null);
-    assertThat(profile).isNotNull();
+                    .build()));
     transactionTemplate.executeWithoutResult(
         _ ->
             profileManagerRepository.saveAndFlush(
@@ -223,13 +209,11 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
             .filter(candidate -> candidate.getAccountId().equals(manager.account().getId()))
             .findFirst()
             .orElseThrow();
-    var decisionReached = new CountDownLatch(1);
-    var releaseDecision = new CountDownLatch(1);
-    var revocationStarted = new CountDownLatch(1);
-    var revocationBackendPid = new AtomicInteger();
-    var gateOnce = new AtomicBoolean();
-    var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
-    gateRenameDecision(decisionReached, releaseDecision, gateOnce);
+    var decision =
+        gateDecision(
+            Intent.RenameProfile.class,
+            "Management revocation did not observe the authorized rename transaction");
+    var revocation = revocationProbe();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var rename =
@@ -237,26 +221,25 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
               () ->
                   profileAdministrationService.renameProfile(
                       authenticatedIdentity(manager), profile.getId(), "Still Managed"));
-      assertThat(decisionReached.await(10, TimeUnit.SECONDS)).isTrue();
+      decision.awaitReached();
 
       var revoke =
           executor.submit(
               () -> {
-                revokeManagement(
-                    relationship.getId(), revocationStarted, revocationBackendPid, lockProbe);
+                revokeManagement(relationship.getId(), revocation);
                 return null;
               });
-      assertThat(revocationStarted.await(10, TimeUnit.SECONDS)).isTrue();
+      revocation.awaitStarted();
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(
-              () -> assertThat(isManagementRevocationWaiting(revocationBackendPid.get())).isTrue());
+              () -> assertThat(isManagementRevocationWaiting(revocation.backendPid())).isTrue());
 
-      releaseDecision.countDown();
+      decision.release();
       assertThat(rename.get(10, TimeUnit.SECONDS)).isInstanceOf(Outcome.Accepted.class);
       revoke.get(10, TimeUnit.SECONDS);
     } finally {
-      releaseDecision.countDown();
+      decision.release();
     }
 
     assertThat(profileRepository.findById(profile.getId()).orElseThrow().getName())
@@ -275,13 +258,11 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
           account.setHouseholdRole(HouseholdRole.ADMIN);
           userAccountRepository.saveAndFlush(account);
         });
-    var decisionReached = new CountDownLatch(1);
-    var releaseDecision = new CountDownLatch(1);
-    var revocationStarted = new CountDownLatch(1);
-    var revocationBackendPid = new AtomicInteger();
-    var gateOnce = new AtomicBoolean();
-    var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
-    gateCreateDecision(decisionReached, releaseDecision, gateOnce);
+    var decision =
+        gateDecision(
+            Intent.CreateProfile.class,
+            "HouseholdAdmin revocation did not observe the authorized creation transaction");
+    var revocation = revocationProbe();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var create =
@@ -293,28 +274,30 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
                           .householdId(actor.household().getId())
                           .name("Concurrent Profile")
                           .build()));
-      assertThat(decisionReached.await(10, TimeUnit.SECONDS)).isTrue();
+      decision.awaitReached();
 
       var revoke =
           executor.submit(
               () -> {
-                demoteHouseholdAdmin(actor, revocationStarted, revocationBackendPid, lockProbe);
+                demoteHouseholdAdmin(actor, revocation);
                 return null;
               });
-      assertThat(revocationStarted.await(10, TimeUnit.SECONDS)).isTrue();
+      revocation.awaitStarted();
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(
               () ->
-                  assertThat(lockProbe.isUserAccountUpdateWaiting(revocationBackendPid.get()))
+                  assertThat(
+                          revocation
+                              .lockProbe()
+                              .isUserAccountUpdateWaiting(revocation.backendPid()))
                       .isTrue());
 
-      releaseDecision.countDown();
-      var created = create.get(10, TimeUnit.SECONDS).fold(accepted -> accepted, rejected -> null);
-      assertThat(created).isNotNull();
+      decision.release();
+      accepted(create.get(10, TimeUnit.SECONDS));
       revoke.get(10, TimeUnit.SECONDS);
     } finally {
-      releaseDecision.countDown();
+      decision.release();
     }
 
     assertThat(
@@ -354,8 +337,16 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
         });
   }
 
-  private void gateRenameDecision(
-      CountDownLatch decisionReached, CountDownLatch releaseDecision, AtomicBoolean gateOnce) {
+  private DecisionGate gateDecision(
+      Class<? extends Intent.UnitIntent> intentType, String failureMessage) {
+    var gate =
+        DecisionGate.builder()
+            .intentType(intentType)
+            .failureMessage(failureMessage)
+            .reached(new CountDownLatch(1))
+            .releaseLatch(new CountDownLatch(1))
+            .gateOnce(new AtomicBoolean())
+            .build();
     var authorizationSpy =
         AopTestUtils.<AuthorizationService>getUltimateTargetObject(authorizationService);
     var defaultAnswer =
@@ -363,78 +354,49 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
     doAnswer(
             invocation -> {
               var decision = defaultAnswer.answer(invocation);
-              if (invocation.getArgument(1) instanceof Intent.RenameProfile
-                  && gateOnce.compareAndSet(false, true)) {
-                decisionReached.countDown();
-                awaitLatch(
-                    releaseDecision,
-                    "Supervision revocation did not observe the authorized rename transaction");
+              if (gate.shouldBlock(invocation.getArgument(1))) {
+                gate.block();
               }
 
               return decision;
             })
         .when(authorizationSpy)
         .decide(any(AuthenticatedIdentity.class), any(Intent.UnitIntent.class));
+    return gate;
   }
 
-  private void gateCreateDecision(
-      CountDownLatch decisionReached, CountDownLatch releaseDecision, AtomicBoolean gateOnce) {
-    var authorizationSpy =
-        AopTestUtils.<AuthorizationService>getUltimateTargetObject(authorizationService);
-    var defaultAnswer =
-        mockingDetails(authorizationSpy).getMockCreationSettings().getDefaultAnswer();
-    doAnswer(
-            invocation -> {
-              var decision = defaultAnswer.answer(invocation);
-              if (invocation.getArgument(1) instanceof Intent.CreateProfile
-                  && gateOnce.compareAndSet(false, true)) {
-                decisionReached.countDown();
-                awaitLatch(
-                    releaseDecision,
-                    "HouseholdAdmin revocation did not observe the authorized creation transaction");
-              }
-
-              return decision;
-            })
-        .when(authorizationSpy)
-        .decide(any(AuthenticatedIdentity.class), any(Intent.UnitIntent.class));
+  private RevocationProbe revocationProbe() {
+    return RevocationProbe.builder()
+        .started(new CountDownLatch(1))
+        .backendPidHolder(new AtomicInteger())
+        .lockProbe(new PostgresLockProbe(entityManager, jdbcTemplate))
+        .build();
   }
 
-  private void revokeSupervision(
-      UUID shareId, CountDownLatch started, AtomicInteger backendPid, PostgresLockProbe lockProbe) {
+  private void revokeSupervision(UUID shareId, RevocationProbe revocation) {
     transactionTemplate.executeWithoutResult(
         _ -> {
-          backendPid.set(lockProbe.currentBackendPid());
-          started.countDown();
+          revocation.markStarted();
           shareRepository.deleteById(shareId);
           shareRepository.flush();
         });
   }
 
-  private void revokeManagement(
-      UUID relationshipId,
-      CountDownLatch started,
-      AtomicInteger backendPid,
-      PostgresLockProbe lockProbe) {
+  private void revokeManagement(UUID relationshipId, RevocationProbe revocation) {
     transactionTemplate.executeWithoutResult(
         _ -> {
-          backendPid.set(lockProbe.currentBackendPid());
-          started.countDown();
+          revocation.markStarted();
           profileManagerRepository.deleteById(relationshipId);
           profileManagerRepository.flush();
         });
   }
 
   private void demoteHouseholdAdmin(
-      AuthTestSupport.TestIdentity actor,
-      CountDownLatch started,
-      AtomicInteger backendPid,
-      PostgresLockProbe lockProbe) {
+      AuthTestSupport.TestIdentity actor, RevocationProbe revocation) {
     transactionTemplate.executeWithoutResult(
         _ -> {
           var account = userAccountRepository.findById(actor.account().getId()).orElseThrow();
-          backendPid.set(lockProbe.currentBackendPid());
-          started.countDown();
+          revocation.markStarted();
           account.setHouseholdRole(HouseholdRole.MEMBER);
           userAccountRepository.saveAndFlush(account);
         });
@@ -473,21 +435,16 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
   }
 
   private Void lockTargetProfile(
-      UUID profileId,
-      CountDownLatch locked,
-      CountDownLatch release,
-      AtomicInteger backendPid,
-      PostgresLockProbe lockProbe) {
+      UUID profileId, RevocationProbe targetLock, CountDownLatch releaseTarget) {
     transactionTemplate.executeWithoutResult(
         _ -> {
-          backendPid.set(lockProbe.currentBackendPid());
           dsl.select(PROFILE.ID)
               .from(PROFILE)
               .where(PROFILE.ID.eq(profileId))
               .forUpdate()
               .fetchSingle();
-          locked.countDown();
-          awaitLatch(release, "Administrative PIN reset did not reach the target Profile");
+          targetLock.markStarted();
+          awaitLatch(releaseTarget, "Administrative PIN reset did not reach the target Profile");
         });
     return null;
   }
@@ -535,12 +492,64 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
         .build();
   }
 
+  private static <T, R> T accepted(Outcome<T, R> outcome) {
+    return switch (outcome) {
+      case Outcome.Accepted<T, R>(var result) -> result;
+      case Outcome.Rejected<T, R>(var rejections) ->
+          throw new AssertionError("Expected an accepted mutation but got: " + rejections);
+    };
+  }
+
   private static void awaitLatch(CountDownLatch latch, String failureMessage) {
     try {
       assertThat(latch.await(10, TimeUnit.SECONDS)).as(failureMessage).isTrue();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new AssertionError("Interrupted while coordinating Profile administration", e);
+    }
+  }
+
+  @Builder
+  private record DecisionGate(
+      Class<? extends Intent.UnitIntent> intentType,
+      String failureMessage,
+      CountDownLatch reached,
+      CountDownLatch releaseLatch,
+      AtomicBoolean gateOnce) {
+
+    private boolean shouldBlock(Intent.UnitIntent intent) {
+      return intentType.isInstance(intent) && gateOnce.compareAndSet(false, true);
+    }
+
+    private void block() {
+      reached.countDown();
+      awaitLatch(releaseLatch, failureMessage);
+    }
+
+    private void awaitReached() {
+      awaitLatch(reached, "Authorization did not reach the expected decision");
+    }
+
+    private void release() {
+      releaseLatch.countDown();
+    }
+  }
+
+  @Builder
+  private record RevocationProbe(
+      CountDownLatch started, AtomicInteger backendPidHolder, PostgresLockProbe lockProbe) {
+
+    private void markStarted() {
+      backendPidHolder.set(lockProbe.currentBackendPid());
+      started.countDown();
+    }
+
+    private void awaitStarted() {
+      awaitLatch(started, "Authority revocation did not start");
+    }
+
+    private int backendPid() {
+      return backendPidHolder.get();
     }
   }
 }
