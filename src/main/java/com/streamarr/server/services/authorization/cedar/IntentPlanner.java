@@ -75,8 +75,9 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onProfile(Action.EDIT_PROFILE, profileId));
       case Intent.ManageProfilePin(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.MANAGE_PROFILE_PIN, profileId));
-      case Intent.OverrideProfilePin(var profileId) ->
-          unitPlan(AuthorizationCheck.onProfile(Action.OVERRIDE_PROFILE_PIN, profileId));
+      case Intent.AdministrativelyResetProfilePin(var profileId) ->
+          unitPlan(
+              AuthorizationCheck.onProfile(Action.ADMINISTRATIVELY_RESET_PROFILE_PIN, profileId));
       case Intent.DeleteProfile(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.DELETE_PROFILE, profileId));
       case Intent.ProfilePolicyChange change -> (IntentPlan<T>) profilePolicyPlanner.plan(change);

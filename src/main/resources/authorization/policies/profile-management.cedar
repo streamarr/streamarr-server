@@ -87,11 +87,11 @@ when {
   context.freshReauthentication
 };
 
-// PIN break-glass: live ServerAdmin, fresh reauthentication; the reason is audited.
-@id("override-profile-pin-as-fresh-server-admin")
+// Administrative PIN reset: live ServerAdmin, fresh reauthentication; the reason is audited.
+@id("administratively-reset-profile-pin-as-fresh-server-admin")
 permit (
   principal,
-  action == Streamarr::Action::"overrideProfilePin",
+  action == Streamarr::Action::"administrativelyResetProfilePin",
   resource
 )
 when {

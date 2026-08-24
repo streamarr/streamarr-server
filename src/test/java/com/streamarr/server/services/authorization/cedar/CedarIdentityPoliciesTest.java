@@ -674,18 +674,16 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should allow the PIN override when the caller is a fresh ServerAdmin")
-    void shouldAllowPinOverrideWhenCallerIsFreshServerAdmin() {
-      var override = new Intent.OverrideProfilePin(personal.getId());
+    @DisplayName("Should allow the administrative PIN reset when the caller is a fresh ServerAdmin")
+    void shouldAllowAdministrativePinResetWhenCallerIsFreshServerAdmin() {
+      var reset = new Intent.AdministrativelyResetProfilePin(personal.getId());
 
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), override))
-          .isEqualTo(DENIED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), reset)).isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decide(atHome(), override)).isEqualTo(REAUTHENTICATION_REQUIRED);
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), override))
-          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), reset)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), reset)).isEqualTo(ALLOWED);
     }
 
     @Test

@@ -8,7 +8,7 @@ public record ProfileNotFoundError(String message, List<String> inputPath)
         RemoveProfileMaximumAllowedRatingAgeError,
         RemoveProfilePinError,
         DeleteProfileError,
-        OverrideProfilePinError,
+        AdministrativelyResetProfilePinError,
         RenameProfileError,
         SetProfileMaximumAllowedRatingAgeError,
         SetProfilePictureError,

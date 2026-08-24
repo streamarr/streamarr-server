@@ -4,5 +4,5 @@ public record ReauthenticationRequiredError(String message)
     implements ChangeProfileKindError,
         RemoveProfileMaximumAllowedRatingAgeError,
         DeleteProfileError,
-        OverrideProfilePinError,
+        AdministrativelyResetProfilePinError,
         SetProfileMaximumAllowedRatingAgeError {}

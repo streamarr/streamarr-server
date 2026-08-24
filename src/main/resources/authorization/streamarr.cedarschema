@@ -179,7 +179,7 @@ namespace Streamarr {
     resource: Profile,
     context: {},
   };
-  action overrideProfilePin in profileAdministration appliesTo {
+  action administrativelyResetProfilePin in profileAdministration appliesTo {
     principal: Account,
     resource: Profile,
     context: { freshReauthentication: Bool },

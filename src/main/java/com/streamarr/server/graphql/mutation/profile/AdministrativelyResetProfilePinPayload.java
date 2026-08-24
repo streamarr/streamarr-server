@@ -4,5 +4,6 @@ import com.streamarr.server.graphql.dto.ProfileAdministration;
 import java.util.List;
 import java.util.Optional;
 
-public record OverrideProfilePinPayload(
-    Optional<ProfileAdministration> profile, List<OverrideProfilePinError> userErrors) {}
+public record AdministrativelyResetProfilePinPayload(
+    Optional<ProfileAdministration> profile,
+    List<AdministrativelyResetProfilePinError> userErrors) {}

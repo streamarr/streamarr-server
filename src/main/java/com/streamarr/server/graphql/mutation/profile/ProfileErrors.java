@@ -103,8 +103,8 @@ public final class ProfileErrors {
     };
   }
 
-  public static OverrideProfilePinError toOverrideProfilePinError(
-      ProfileRejections.OverrideProfilePin rejection) {
+  public static AdministrativelyResetProfilePinError toAdministrativelyResetProfilePinError(
+      ProfileRejections.AdministrativelyResetProfilePin rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.PinMalformed _ -> pinMalformed();

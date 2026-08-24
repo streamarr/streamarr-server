@@ -199,22 +199,25 @@ class ProfileErrorsTest {
   }
 
   @Test
-  @DisplayName("Should map every override-PIN rejection when the service refuses the mutation")
-  void shouldMapEveryOverridePinRejectionWhenServiceRefusesMutation() {
+  @DisplayName(
+      "Should map every administrative PIN reset rejection when the service refuses the mutation")
+  void shouldMapEveryAdministrativePinResetRejectionWhenServiceRefusesMutation() {
     assertInputError(
-        ProfileErrors.toOverrideProfilePinError(new ProfileRejections.ProfileNotFound()),
+        ProfileErrors.toAdministrativelyResetProfilePinError(
+            new ProfileRejections.ProfileNotFound()),
         ProfileNotFoundError.class,
         "profileId");
     assertInputError(
-        ProfileErrors.toOverrideProfilePinError(new ProfileRejections.PinMalformed()),
+        ProfileErrors.toAdministrativelyResetProfilePinError(new ProfileRejections.PinMalformed()),
         InvalidProfilePinError.class,
         "pin");
     assertInputError(
-        ProfileErrors.toOverrideProfilePinError(new ProfileRejections.ReasonRequired()),
+        ProfileErrors.toAdministrativelyResetProfilePinError(
+            new ProfileRejections.ReasonRequired()),
         ReasonRequiredError.class,
         "reason");
     assertThat(
-            ProfileErrors.toOverrideProfilePinError(
+            ProfileErrors.toAdministrativelyResetProfilePinError(
                 new ProfileRejections.ReauthenticationRequired()))
         .isInstanceOf(ReauthenticationRequiredError.class);
   }

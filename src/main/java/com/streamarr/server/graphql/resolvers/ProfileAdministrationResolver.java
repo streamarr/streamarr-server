@@ -7,10 +7,10 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.dto.ProfileAdministration;
+import com.streamarr.server.graphql.inputs.AdministrativelyResetProfilePinInput;
 import com.streamarr.server.graphql.inputs.ChangeProfileKindInput;
 import com.streamarr.server.graphql.inputs.CreateProfileInput;
 import com.streamarr.server.graphql.inputs.DeleteProfileInput;
-import com.streamarr.server.graphql.inputs.OverrideProfilePinInput;
 import com.streamarr.server.graphql.inputs.RemoveProfileMaximumAllowedRatingAgeInput;
 import com.streamarr.server.graphql.inputs.RemoveProfilePinInput;
 import com.streamarr.server.graphql.inputs.RenameProfileInput;
@@ -18,10 +18,10 @@ import com.streamarr.server.graphql.inputs.SetProfileMaximumAllowedRatingAgeInpu
 import com.streamarr.server.graphql.inputs.SetProfilePictureInput;
 import com.streamarr.server.graphql.inputs.SetProfilePinInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
+import com.streamarr.server.graphql.mutation.profile.AdministrativelyResetProfilePinPayload;
 import com.streamarr.server.graphql.mutation.profile.ChangeProfileKindPayload;
 import com.streamarr.server.graphql.mutation.profile.CreateProfilePayload;
 import com.streamarr.server.graphql.mutation.profile.DeleteProfilePayload;
-import com.streamarr.server.graphql.mutation.profile.OverrideProfilePinPayload;
 import com.streamarr.server.graphql.mutation.profile.ProfileErrors;
 import com.streamarr.server.graphql.mutation.profile.RemoveProfileMaximumAllowedRatingAgePayload;
 import com.streamarr.server.graphql.mutation.profile.RemoveProfilePinPayload;
@@ -162,18 +162,18 @@ public class ProfileAdministrationResolver {
   }
 
   @DgsMutation
-  public OverrideProfilePinPayload overrideProfilePin(
-      @InputArgument OverrideProfilePinInput input) {
+  public AdministrativelyResetProfilePinPayload administrativelyResetProfilePin(
+      @InputArgument AdministrativelyResetProfilePinInput input) {
     return MutationPayloads.payload(
         profileAdministrationService
-            .overrideProfilePin(
+            .administrativelyResetProfilePin(
                 authorizationService.currentIdentity(),
                 Ids.parseUuid(input.profileId()),
                 input.pin(),
                 input.reason())
             .map(this::toDto),
-        ProfileErrors::toOverrideProfilePinError,
-        OverrideProfilePinPayload::new);
+        ProfileErrors::toAdministrativelyResetProfilePinError,
+        AdministrativelyResetProfilePinPayload::new);
   }
 
   @DgsMutation

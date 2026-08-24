@@ -604,22 +604,24 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should audit the PIN override once when a fresh ServerAdmin overrides it")
-  void shouldAuditPinOverrideOnceWhenFreshServerAdminOverridesIt() throws Exception {
+  @DisplayName(
+      "Should audit the administrative PIN reset once when a fresh ServerAdmin performs it")
+  void shouldAuditAdministrativePinResetOnceWhenFreshServerAdminPerformsIt() throws Exception {
     graphql(
             authTestSupport.freshAccountBearer(serverAdmin),
             """
-            mutation { overrideProfilePin(input: {profileId: "%s", pin: "4242", reason: "locked out"}) {
+            mutation { administrativelyResetProfilePin(input: {profileId: "%s", pin: "4242", reason: "locked out"}) {
               profile { pinConfigured } userErrors { __typename } } }
             """
                 .formatted(admin.profile().getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.overrideProfilePin.profile.pinConfigured").value(true));
+        .andExpect(
+            jsonPath("$.data.administrativelyResetProfilePin.profile.pinConfigured").value(true));
 
     var audits =
         dsl.selectFrom(SECURITY_AUDIT_EVENT)
-            .where(SECURITY_AUDIT_EVENT.OPERATION.eq("overrideProfilePin"))
+            .where(SECURITY_AUDIT_EVENT.OPERATION.eq("administrativelyResetProfilePin"))
             .fetch();
     assertThat(audits).hasSize(1);
     assertThat(audits.getFirst().getReason()).isEqualTo("locked out");

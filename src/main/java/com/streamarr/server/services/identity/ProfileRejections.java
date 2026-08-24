@@ -37,7 +37,7 @@ public final class ProfileRejections {
 
   public sealed interface RemoveProfilePin permits ProfileNotFound, WouldLockProfile {}
 
-  public sealed interface OverrideProfilePin
+  public sealed interface AdministrativelyResetProfilePin
       permits ProfileNotFound, PinMalformed, ReasonRequired, ReauthenticationRequired {}
 
   public sealed interface DeleteProfile
@@ -49,7 +49,7 @@ public final class ProfileRejections {
           ChangeProfilePolicy,
           SetProfilePin,
           RemoveProfilePin,
-          OverrideProfilePin,
+          AdministrativelyResetProfilePin,
           DeleteProfile {}
 
   public record HouseholdNotFound() implements CreateProfile {}
@@ -69,11 +69,11 @@ public final class ProfileRejections {
   public record LocalManagerNotFound() implements CreateProfile {}
 
   public record ReauthenticationRequired()
-      implements ChangeProfilePolicy, OverrideProfilePin, DeleteProfile {}
+      implements ChangeProfilePolicy, AdministrativelyResetProfilePin, DeleteProfile {}
 
-  public record PinMalformed() implements SetProfilePin, OverrideProfilePin {}
+  public record PinMalformed() implements SetProfilePin, AdministrativelyResetProfilePin {}
 
-  public record ReasonRequired() implements OverrideProfilePin {}
+  public record ReasonRequired() implements AdministrativelyResetProfilePin {}
 
   /**
    * Removing the PIN would lock the Profile where it is available. The Household is named only for

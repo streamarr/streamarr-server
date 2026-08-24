@@ -21,10 +21,12 @@ class ProfilePinInputTest {
   }
 
   @Test
-  @DisplayName("Should redact the raw PIN when the override input is rendered")
-  void shouldRedactRawPinWhenOverrideInputIsRendered() {
+  @DisplayName("Should redact the raw PIN when the administrative reset input is rendered")
+  void shouldRedactRawPinWhenAdministrativeResetInputIsRendered() {
     var rawPin = "487526";
-    var input = new OverrideProfilePinInput(UUID.randomUUID().toString(), rawPin, "locked out");
+    var input =
+        new AdministrativelyResetProfilePinInput(
+            UUID.randomUUID().toString(), rawPin, "locked out");
 
     assertThat(input.toString())
         .contains("pin=REDACTED", "reason=locked out")

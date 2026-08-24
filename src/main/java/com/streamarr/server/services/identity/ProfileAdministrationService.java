@@ -254,8 +254,9 @@ public class ProfileAdministrationService {
         _ -> Optional.empty());
   }
 
-  public Outcome<Profile, ProfileRejections.OverrideProfilePin> overrideProfilePin(
-      AuthenticatedIdentity identity, UUID profileId, String pin, String reason) {
+  public Outcome<Profile, ProfileRejections.AdministrativelyResetProfilePin>
+      administrativelyResetProfilePin(
+          AuthenticatedIdentity identity, UUID profileId, String pin, String reason) {
     if (isBlank(reason)) {
       return Outcome.rejected(new ProfileRejections.ReasonRequired());
     }
@@ -263,12 +264,12 @@ public class ProfileAdministrationService {
     var refusal =
         refusalOf(
             identity,
-            new Intent.OverrideProfilePin(profileId),
+            new Intent.AdministrativelyResetProfilePin(profileId),
             () -> mayViewProfile(identity, profileId),
             ProfileRejections.ProfileNotFound::new,
             Optional.of(ProfileRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
-      return Outcome.rejected((ProfileRejections.OverrideProfilePin) refusal.get());
+      return Outcome.rejected((ProfileRejections.AdministrativelyResetProfilePin) refusal.get());
     }
 
     if (!profilePinHasher.isWellFormed(pin)) {
@@ -284,7 +285,7 @@ public class ProfileAdministrationService {
 
           securityAuditEventRepository.append(
               SecurityAuditEntry.builder()
-                  .operation("overrideProfilePin")
+                  .operation("administrativelyResetProfilePin")
                   .actorAccountId(identity.accountId())
                   .reason(reason)
                   .resource("profileId", profileId)

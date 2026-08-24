@@ -4,4 +4,4 @@ import com.streamarr.server.graphql.mutation.InputMutationError;
 import java.util.List;
 
 public record InvalidProfilePinError(String message, List<String> inputPath)
-    implements OverrideProfilePinError, SetProfilePinError, InputMutationError {}
+    implements AdministrativelyResetProfilePinError, SetProfilePinError, InputMutationError {}

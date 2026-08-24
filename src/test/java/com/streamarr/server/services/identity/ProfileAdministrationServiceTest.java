@@ -818,29 +818,33 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should audit the PIN override with its reason when the mutation succeeds")
-  void shouldAuditPinOverrideWithReasonWhenMutationSucceeds() {
+  @DisplayName("Should audit the administrative PIN reset with its reason when it succeeds")
+  void shouldAuditAdministrativePinResetWithReasonWhenItSucceeds() {
     var profile =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
 
-    var outcome = service.overrideProfilePin(identity(), profile.getId(), "4242", "locked out kid");
+    var outcome =
+        service.administrativelyResetProfilePin(
+            identity(), profile.getId(), "4242", "locked out kid");
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(audit.entries()).hasSize(1);
-    assertThat(audit.entries().getFirst().operation()).isEqualTo("overrideProfilePin");
+    assertThat(audit.entries().getFirst().operation()).isEqualTo("administrativelyResetProfilePin");
     assertThat(audit.entries().getFirst().reason()).isEqualTo("locked out kid");
   }
 
   @Test
-  @DisplayName("Should refuse a malformed PIN before hashing or auditing when overriding it")
-  void shouldRefuseMalformedPinBeforeHashingOrAuditingWhenOverridingIt() {
+  @DisplayName("Should refuse a malformed PIN before hashing or auditing an administrative reset")
+  void shouldRefuseMalformedPinBeforeHashingOrAuditingAdministrativeReset() {
     var profile =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
 
     var rejection =
-        rejectionOf(service.overrideProfilePin(identity(), profile.getId(), "12a4", "locked out"));
+        rejectionOf(
+            service.administrativelyResetProfilePin(
+                identity(), profile.getId(), "12a4", "locked out"));
 
     assertThat(rejection).isInstanceOf(ProfileRejections.PinMalformed.class);
     assertThat(encoder.encodedValues()).isEmpty();
@@ -850,9 +854,12 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should return not found without auditing when overriding a missing Profile PIN")
-  void shouldReturnNotFoundWithoutAuditingWhenOverridingMissingProfilePin() {
-    var outcome = service.overrideProfilePin(identity(), UUID.randomUUID(), "4242", "locked out");
+  @DisplayName(
+      "Should return not found without auditing when administratively resetting a missing Profile PIN")
+  void shouldReturnNotFoundWithoutAuditingWhenAdministrativelyResettingMissingProfilePin() {
+    var outcome =
+        service.administrativelyResetProfilePin(
+            identity(), UUID.randomUUID(), "4242", "locked out");
 
     assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ProfileNotFound.class);
     assertThat(audit.entries()).isEmpty();
@@ -860,14 +867,15 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should hide a denied PIN override when the Profile may not be viewed")
-  void shouldHideDeniedPinOverrideWhenProfileMayNotBeViewed() {
+  @DisplayName("Should hide a denied administrative PIN reset when the Profile may not be viewed")
+  void shouldHideDeniedAdministrativePinResetWhenProfileMayNotBeViewed() {
     var profile =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
     authorization.denyAll();
 
-    var outcome = service.overrideProfilePin(identity(), profile.getId(), "4242", "locked out");
+    var outcome =
+        service.administrativelyResetProfilePin(identity(), profile.getId(), "4242", "locked out");
 
     assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ProfileNotFound.class);
     assertThat(encoder.encodedValues()).isEmpty();
@@ -875,32 +883,34 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should report reauthentication when overriding a PIN requires a fresh ceremony")
-  void shouldReportReauthenticationWhenOverridingPinRequiresFreshCeremony() {
+  @DisplayName("Should report reauthentication when an administrative PIN reset requires it")
+  void shouldReportReauthenticationWhenAdministrativePinResetRequiresIt() {
     var profile =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
     authorization.decideWith(
         intent ->
-            intent instanceof Intent.OverrideProfilePin
+            intent instanceof Intent.AdministrativelyResetProfilePin
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
                 : allowed());
 
-    var outcome = service.overrideProfilePin(identity(), profile.getId(), "4242", "locked out");
+    var outcome =
+        service.administrativelyResetProfilePin(identity(), profile.getId(), "4242", "locked out");
 
     assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ReauthenticationRequired.class);
     assertThat(audit.entries()).isEmpty();
   }
 
   @Test
-  @DisplayName("Should require a reason before deciding when the PIN override reason is blank")
-  void shouldRequireReasonBeforeDecidingWhenPinOverrideReasonIsBlank() {
+  @DisplayName("Should require a reason before deciding an administrative PIN reset")
+  void shouldRequireReasonBeforeDecidingAdministrativePinReset() {
     var profile =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
 
     var rejection =
-        rejectionOf(service.overrideProfilePin(identity(), profile.getId(), "4242", " "));
+        rejectionOf(
+            service.administrativelyResetProfilePin(identity(), profile.getId(), "4242", " "));
 
     assertThat(rejection).isInstanceOf(ProfileRejections.ReasonRequired.class);
     assertThat(authorization.recordedIntents()).isEmpty();

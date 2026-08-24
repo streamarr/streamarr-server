@@ -135,18 +135,18 @@ type RemoveProfilePinPayload {
 
 union RemoveProfilePinError = ProfileNotFoundError | ProfilePinRequiredError
 
-input OverrideProfilePinInput {
+input AdministrativelyResetProfilePinInput {
     profileId: ID!
     pin: String!
     reason: String!
 }
 
-type OverrideProfilePinPayload {
+type AdministrativelyResetProfilePinPayload {
     profile: ProfileAdministration
-    userErrors: [OverrideProfilePinError!]!
+    userErrors: [AdministrativelyResetProfilePinError!]!
 }
 
-union OverrideProfilePinError =
+union AdministrativelyResetProfilePinError =
     ProfileNotFoundError
   | InvalidProfilePinError
   | ReasonRequiredError

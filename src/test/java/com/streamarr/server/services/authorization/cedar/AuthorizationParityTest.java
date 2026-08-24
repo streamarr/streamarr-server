@@ -211,7 +211,7 @@ class AuthorizationParityTest {
         new Intent.RenameProfile(id),
         new Intent.SetProfilePicture(id),
         new Intent.ManageProfilePin(id),
-        new Intent.OverrideProfilePin(id),
+        new Intent.AdministrativelyResetProfilePin(id),
         new Intent.DeleteProfile(id));
   }
 }

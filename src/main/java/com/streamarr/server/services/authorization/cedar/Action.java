@@ -115,8 +115,8 @@ enum Action {
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.PROFILE_MANAGEMENT,
       FactRequirement.PROFILE_SUPERVISION),
-  OVERRIDE_PROFILE_PIN(
-      "overrideProfilePin",
+  ADMINISTRATIVELY_RESET_PROFILE_PIN(
+      "administrativelyResetProfilePin",
       ResourceKind.PROFILE,
       FreshReauthentication.REQUIRED,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY),

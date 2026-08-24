@@ -26,7 +26,7 @@ type Mutation {
     removeProfileMaximumAllowedRatingAge(input: RemoveProfileMaximumAllowedRatingAgeInput!): RemoveProfileMaximumAllowedRatingAgePayload
     setProfilePin(input: SetProfilePinInput!): SetProfilePinPayload
     removeProfilePin(input: RemoveProfilePinInput!): RemoveProfilePinPayload
-    overrideProfilePin(input: OverrideProfilePinInput!): OverrideProfilePinPayload
+    administrativelyResetProfilePin(input: AdministrativelyResetProfilePinInput!): AdministrativelyResetProfilePinPayload
     deleteProfile(input: DeleteProfileInput!): DeleteProfilePayload
 }
 

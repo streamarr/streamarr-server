@@ -97,8 +97,8 @@ public sealed interface Intent<T> {
   /** Set or remove a Profile's PIN: managers, supervising admins, ServerAdmin. */
   record ManageProfilePin(UUID profileId) implements Intent<AuthorizationUnit> {}
 
-  /** ServerAdmin PIN break-glass; requiresFreshReauthentication with a reason. */
-  record OverrideProfilePin(UUID profileId) implements Intent<AuthorizationUnit> {}
+  /** ServerAdmin PIN reset; requires fresh reauthentication and an audit reason. */
+  record AdministrativelyResetProfilePin(UUID profileId) implements Intent<AuthorizationUnit> {}
 
   /**
    * Ordinary standalone deletion: an unlinked, unshared Profile by its sole remaining direct
