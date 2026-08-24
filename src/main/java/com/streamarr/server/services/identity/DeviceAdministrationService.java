@@ -13,6 +13,7 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationRejection;
@@ -29,15 +30,17 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
+import lombok.Builder;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 /**
  * Device administration (ADR 0024 §Devices): revoking a registration ends its sessions with it, and
- * an ESN block first revokes every matching registration and device session in the same transaction
- * — T10 refuses any block that would leave either behind. A server-wide block is a
- * fresh-reauthenticated ServerAdmin action; every operation here writes one audit record.
+ * an ESN block first revokes every matching registration and device session in the same
+ * transaction. A server-wide block is a fresh-reauthenticated ServerAdmin action; every operation
+ * here writes one audit record.
  */
 @Service
 @RequiredArgsConstructor
@@ -57,15 +60,15 @@ public class DeviceAdministrationService {
 
   public Outcome<UUID, DeviceRejections.Revoke> revokeDeviceRegistration(
       AuthenticatedIdentity identity, UUID registrationId) {
-    var refusal =
+    Optional<DeviceRejections.Revoke> refusal =
         refusalOf(
             identity,
             new Intent.RevokeDeviceRegistration(registrationId),
             () -> mayViewRegistration(identity, registrationId),
             DeviceRejections.RegistrationNotFound::new,
-            null);
+            Optional.empty());
     if (refusal.isPresent()) {
-      return Outcome.rejected((DeviceRejections.Revoke) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     return mutationTransactions.write(
@@ -91,22 +94,30 @@ public class DeviceAdministrationService {
       return Outcome.rejected(new DeviceRejections.ReasonRequired());
     }
 
-    var refusal =
+    Optional<DeviceRejections.Block> refusal =
         refusalOf(
             identity,
             new Intent.BlockEsn(householdId),
             () -> mayViewDevices(identity, householdId),
             DeviceRejections.HouseholdNotFound::new,
-            null);
+            Optional.empty());
     if (refusal.isPresent()) {
-      return Outcome.rejected((DeviceRejections.Block) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     if (householdRepository.findById(householdId).isEmpty()) {
       return Outcome.rejected(new DeviceRejections.HouseholdNotFound());
     }
 
-    return writeBlock(identity, householdId, esn.strip(), reason, "blockEsn");
+    return writeBlock(
+        BlockWrite.builder()
+            .identity(identity)
+            .householdId(householdId)
+            .esn(esn.strip())
+            .reason(reason)
+            .operation("blockEsn")
+            .build(),
+        DeviceRejections.AlreadyBlocked::new);
   }
 
   public Outcome<EsnBlock, DeviceRejections.BlockServerWide> blockEsnServerWide(
@@ -119,7 +130,7 @@ public class DeviceAdministrationService {
       return Outcome.rejected(new DeviceRejections.ReasonRequired());
     }
 
-    var refusal =
+    Optional<DeviceRejections.BlockServerWide> refusal =
         refusalOf(
             identity,
             new Intent.BlockEsnServerWide(),
@@ -127,12 +138,19 @@ public class DeviceAdministrationService {
             () -> {
               throw new AccessDeniedException("Not allowed.");
             },
-            DeviceRejections.ReauthenticationRequired::new);
+            Optional.of(DeviceRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
-      return Outcome.rejected((DeviceRejections.BlockServerWide) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
-    return writeBlock(identity, null, esn.strip(), reason, "blockEsnServerWide");
+    return writeBlock(
+        BlockWrite.builder()
+            .identity(identity)
+            .esn(esn.strip())
+            .reason(reason)
+            .operation("blockEsnServerWide")
+            .build(),
+        DeviceRejections.AlreadyBlocked::new);
   }
 
   public Outcome<String, DeviceRejections.Unblock> unblockEsn(
@@ -141,15 +159,15 @@ public class DeviceAdministrationService {
       return Outcome.rejected(new DeviceRejections.EsnRequired());
     }
 
-    var refusal =
+    Optional<DeviceRejections.Unblock> refusal =
         refusalOf(
             identity,
             new Intent.UnblockEsn(householdId),
             () -> mayViewDevices(identity, householdId),
             DeviceRejections.HouseholdNotFound::new,
-            null);
+            Optional.empty());
     if (refusal.isPresent()) {
-      return Outcome.rejected((DeviceRejections.Unblock) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     return removeBlock(
@@ -219,32 +237,32 @@ public class DeviceAdministrationService {
   }
 
   private <R> Outcome<EsnBlock, R> writeBlock(
-      AuthenticatedIdentity identity,
-      UUID householdId,
-      String esn,
-      String reason,
-      String operation) {
+      BlockWrite command, Supplier<? extends R> alreadyBlocked) {
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
-          // The block must leave nothing behind (T10): matching registrations and their
-          // sessions fall in the same transaction the block row is written in.
           registrationLifecycle.revokeAllByEsn(
-              esn, householdId, identity.accountId(), "ESN blocked", now);
+              command.esn(),
+              command.householdId(),
+              command.identity().accountId(),
+              "ESN blocked",
+              now);
           var block =
               esnBlockRepository.saveAndFlush(
-                  EsnBlock.builder().esn(esn).householdId(householdId).reason(reason).build());
-          audit(identity, operation, "esn", null, reason);
+                  EsnBlock.builder()
+                      .esn(command.esn())
+                      .householdId(command.householdId())
+                      .reason(command.reason())
+                      .build());
+          audit(command.identity(), command.operation(), "esn", null, command.reason());
           return block;
         },
-        constraint -> alreadyBlocked(constraint));
+        constraint -> alreadyBlocked(constraint, alreadyBlocked));
   }
 
-  @SuppressWarnings("unchecked")
-  private static <R> Optional<R> alreadyBlocked(String constraint) {
-    return UQ_BLOCK_SCOPE.equals(constraint)
-        ? Optional.of((R) new DeviceRejections.AlreadyBlocked())
-        : Optional.empty();
+  private static <R> Optional<R> alreadyBlocked(
+      String constraint, Supplier<? extends R> rejection) {
+    return UQ_BLOCK_SCOPE.equals(constraint) ? Optional.of(rejection.get()) : Optional.empty();
   }
 
   private <R> Outcome<String, R> removeBlock(
@@ -269,14 +287,14 @@ public class DeviceAdministrationService {
 
   private boolean mayViewDevices(AuthenticatedIdentity identity, UUID householdId) {
     return authorizationService.decide(identity, new Intent.ViewDeviceAdministration(householdId))
-        instanceof Decision.Allowed<?>;
+        instanceof Decision.Allowed<AuthorizationUnit>;
   }
 
-  private boolean mayReadDevices(AuthenticatedIdentity identity, Intent<?> intent) {
+  private boolean mayReadDevices(AuthenticatedIdentity identity, Intent.UnitIntent intent) {
     return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<?> _ -> true;
-      case Decision.Denied<?> _ -> false;
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Allowed<AuthorizationUnit> _ -> true;
+      case Decision.Denied<AuthorizationUnit> _ -> false;
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
     };
   }
 
@@ -312,18 +330,22 @@ public class DeviceAdministrationService {
     return value == null || value.isBlank();
   }
 
-  private Optional<Object> refusalOf(
+  private <R> Optional<R> refusalOf(
       AuthenticatedIdentity identity,
-      Intent<?> intent,
+      Intent.UnitIntent intent,
       BooleanSupplier mayView,
-      Supplier<Object> denied,
-      Supplier<Object> reauthenticationRequired) {
+      Supplier<? extends R> denied,
+      Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
     return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<?> _ -> Optional.empty();
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<?>(var reason) ->
+      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Denied<AuthorizationUnit>(var reason) ->
           switch (reason) {
-            case REAUTHENTICATION_REQUIRED -> Optional.of(reauthenticationRequired.get());
+            case REAUTHENTICATION_REQUIRED ->
+                Optional.of(
+                    reauthenticationRequired
+                        .orElseThrow(AuthorizationUnavailableException::new)
+                        .get());
             case POLICY -> {
               if (mayView.getAsBoolean()) {
                 throw new AccessDeniedException("Not allowed.");
@@ -334,4 +356,12 @@ public class DeviceAdministrationService {
           };
     };
   }
+
+  @Builder
+  private record BlockWrite(
+      @NonNull AuthenticatedIdentity identity,
+      UUID householdId,
+      @NonNull String esn,
+      @NonNull String reason,
+      @NonNull String operation) {}
 }
