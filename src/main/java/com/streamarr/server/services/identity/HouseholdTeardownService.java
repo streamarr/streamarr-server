@@ -17,6 +17,7 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.identity.AccountLifecycleService.ProfileDisposition;
@@ -182,9 +183,9 @@ public class HouseholdTeardownService {
       AuthenticatedIdentity identity, UUID profileId, KeysetPaginationOptions options) {
     return switch (authorizationService.decide(
         identity, new Intent.ViewProfileActivity(profileId))) {
-      case Decision.Allowed<?> _ -> profileActivityPage(profileId, options);
-      case Decision.Denied<?> _ -> profileActivityPage(List.of(), options);
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Allowed<AuthorizationUnit> _ -> profileActivityPage(profileId, options);
+      case Decision.Denied<AuthorizationUnit> _ -> profileActivityPage(List.of(), options);
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
     };
   }
 
@@ -322,7 +323,6 @@ public class HouseholdTeardownService {
       return Optional.of(new TeardownRejections.ReplacementManagerNotFound());
     }
 
-    // T6: the anchor lives in the destination Household and is themselves unrestricted.
     var anchored =
         replacement
             .filter(anchor -> anchor.getHouseholdId().equals(disposition.destinationHouseholdId()))
@@ -346,9 +346,9 @@ public class HouseholdTeardownService {
       AuthenticatedIdentity identity, UUID householdId) {
     return switch (authorizationService.decide(
         identity, new Intent.TearDownHousehold(householdId))) {
-      case Decision.Allowed<?> _ -> Optional.empty();
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<?>(var reason) ->
+      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Denied<AuthorizationUnit>(var reason) ->
           switch (reason) {
             case REAUTHENTICATION_REQUIRED ->
                 Optional.of(new TeardownRejections.ReauthenticationRequired());
@@ -366,9 +366,9 @@ public class HouseholdTeardownService {
   private boolean mayViewHousehold(AuthenticatedIdentity identity, UUID householdId) {
     return switch (authorizationService.decide(
         identity, new Intent.ViewHouseholdAdministration(householdId))) {
-      case Decision.Allowed<?> _ -> true;
-      case Decision.Denied<?> _ -> false;
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Allowed<AuthorizationUnit> _ -> true;
+      case Decision.Denied<AuthorizationUnit> _ -> false;
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
     };
   }
 
