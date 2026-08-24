@@ -17,6 +17,7 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationRejection;
@@ -58,15 +59,15 @@ public class ProfileLifecycleService {
 
   public Outcome<Profile, TransferRejections.TransferProfile> transferProfile(
       AuthenticatedIdentity identity, TransferProfileCommand command) {
-    var refusal =
+    Optional<TransferRejections.TransferProfile> refusal =
         refusalOf(
             identity,
             new Intent.TransferProfile(command.profileId()),
             () -> mayViewProfile(identity, command.profileId()),
             TransferRejections.ProfileNotFound::new,
-            null);
+            Optional.empty());
     if (refusal.isPresent()) {
-      return Outcome.rejected((TransferRejections.TransferProfile) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     var profile = profileRepository.findById(command.profileId());
@@ -125,15 +126,15 @@ public class ProfileLifecycleService {
       return Outcome.rejected(new TransferRejections.ReasonRequired());
     }
 
-    var refusal =
+    Optional<TransferRejections.ForceDeleteProfile> refusal =
         refusalOf(
             identity,
             new Intent.ForceDeleteProfile(profileId),
             () -> mayViewProfile(identity, profileId),
             TransferRejections.ProfileNotFound::new,
-            TransferRejections.ReauthenticationRequired::new);
+            Optional.of(TransferRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
-      return Outcome.rejected((TransferRejections.ForceDeleteProfile) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     if (userAccountRepository.findByPersonalProfileId(profileId).isPresent()) {
@@ -236,7 +237,7 @@ public class ProfileLifecycleService {
 
   private boolean mayViewProfile(AuthenticatedIdentity identity, UUID profileId) {
     return authorizationService.decide(identity, new Intent.ViewProfileAdministration(profileId))
-        instanceof Decision.Allowed<?>;
+        instanceof Decision.Allowed<AuthorizationUnit>;
   }
 
   private void audit(
@@ -254,18 +255,22 @@ public class ProfileLifecycleService {
     return value == null || value.isBlank();
   }
 
-  private Optional<Object> refusalOf(
+  private <R> Optional<R> refusalOf(
       AuthenticatedIdentity identity,
-      Intent<?> intent,
+      Intent.UnitIntent intent,
       BooleanSupplier mayView,
-      Supplier<Object> denied,
-      Supplier<Object> reauthenticationRequired) {
+      Supplier<? extends R> denied,
+      Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
     return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<?> _ -> Optional.empty();
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<?>(var reason) ->
+      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Denied<AuthorizationUnit>(var reason) ->
           switch (reason) {
-            case REAUTHENTICATION_REQUIRED -> Optional.of(reauthenticationRequired.get());
+            case REAUTHENTICATION_REQUIRED ->
+                Optional.of(
+                    reauthenticationRequired
+                        .orElseThrow(AuthorizationUnavailableException::new)
+                        .get());
             case POLICY -> {
               if (mayView.getAsBoolean()) {
                 throw new AccessDeniedException("Not allowed.");
