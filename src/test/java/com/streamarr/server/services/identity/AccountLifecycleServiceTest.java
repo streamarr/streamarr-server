@@ -495,7 +495,7 @@ class AccountLifecycleServiceTest {
         .isInstanceOf(TransferRejections.ReasonRequired.class);
     assertThat(authorization.recordedIntents()).isEmpty();
 
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.DeleteAccount
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)

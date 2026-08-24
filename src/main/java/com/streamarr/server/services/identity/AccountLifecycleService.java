@@ -19,6 +19,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationRejection;
@@ -65,15 +66,15 @@ public class AccountLifecycleService {
 
   public Outcome<UserAccount, TransferRejections.TransferAccount> transferAccount(
       AuthenticatedIdentity identity, TransferAccountCommand command) {
-    var refusal =
+    Optional<TransferRejections.TransferAccount> refusal =
         refusalOf(
             identity,
             new Intent.TransferAccount(command.accountId()),
             () -> mayViewAccount(identity, command.accountId()),
             TransferRejections.AccountNotFound::new,
-            null);
+            Optional.empty());
     if (refusal.isPresent()) {
-      return Outcome.rejected((TransferRejections.TransferAccount) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     var account = userAccountRepository.findById(command.accountId());
@@ -130,15 +131,15 @@ public class AccountLifecycleService {
       return Outcome.rejected(new TransferRejections.ReasonRequired());
     }
 
-    var refusal =
+    Optional<TransferRejections.DeleteAccount> refusal =
         refusalOf(
             identity,
             new Intent.DeleteAccount(command.accountId()),
             () -> mayViewAccount(identity, command.accountId()),
             TransferRejections.AccountNotFound::new,
-            TransferRejections.ReauthenticationRequired::new);
+            Optional.of(TransferRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
-      return Outcome.rejected((TransferRejections.DeleteAccount) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     var account = userAccountRepository.findById(command.accountId());
@@ -166,16 +167,18 @@ public class AccountLifecycleService {
       return Outcome.rejected(new TransferRejections.ConfirmationRequired());
     }
 
-    var refusal =
+    Optional<TransferRejections.DeleteMyAccount> refusal =
         refusalOf(
             identity,
             new Intent.DeleteMyAccount(),
             // The caller always sees their own Account: an authority denial stays FORBIDDEN.
             () -> true,
-            () -> null,
-            TransferRejections.ReauthenticationRequired::new);
+            () -> {
+              throw new AccessDeniedException("Not allowed.");
+            },
+            Optional.of(TransferRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
-      return Outcome.rejected((TransferRejections.DeleteMyAccount) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     var account = userAccountRepository.findById(identity.accountId()).orElseThrow();
@@ -333,7 +336,7 @@ public class AccountLifecycleService {
 
   private boolean mayViewAccount(AuthenticatedIdentity identity, UUID accountId) {
     return authorizationService.decide(identity, new Intent.ViewAccountAdministration(accountId))
-        instanceof Decision.Allowed<?>;
+        instanceof Decision.Allowed<AuthorizationUnit>;
   }
 
   private void audit(
@@ -355,18 +358,22 @@ public class AccountLifecycleService {
     return value == null || value.isBlank();
   }
 
-  private Optional<Object> refusalOf(
+  private <R> Optional<R> refusalOf(
       AuthenticatedIdentity identity,
-      Intent<?> intent,
+      Intent.UnitIntent intent,
       BooleanSupplier mayView,
-      Supplier<Object> denied,
-      Supplier<Object> reauthenticationRequired) {
+      Supplier<? extends R> denied,
+      Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
     return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<?> _ -> Optional.empty();
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<?>(var reason) ->
+      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Denied<AuthorizationUnit>(var reason) ->
           switch (reason) {
-            case REAUTHENTICATION_REQUIRED -> Optional.of(reauthenticationRequired.get());
+            case REAUTHENTICATION_REQUIRED ->
+                Optional.of(
+                    reauthenticationRequired
+                        .orElseThrow(AuthorizationUnavailableException::new)
+                        .get());
             case POLICY -> {
               if (mayView.getAsBoolean()) {
                 throw new AccessDeniedException("Not allowed.");
