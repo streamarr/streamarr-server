@@ -11,13 +11,16 @@ import com.cedarpolicy.model.exception.BadRequestException;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ReauthenticationFreshness;
 import com.streamarr.server.services.authorization.AuthorizationDecider;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Decision.FailureCause;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.authorization.ProfilePolicyTransition;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -43,10 +46,21 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
   private final MeterRegistry meterRegistry;
 
   @Override
-  public <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent) {
+  public Decision<AuthorizationUnit> decide(
+      AuthenticatedIdentity identity, Intent.UnitIntent intent) {
+    return decide(identity, () -> intentPlanner.plan(identity, intent));
+  }
+
+  @Override
+  public Decision<ProfilePolicyTransition> decide(
+      AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent) {
+    return decide(identity, () -> intentPlanner.plan(intent));
+  }
+
+  private <T> Decision<T> decide(AuthenticatedIdentity identity, Supplier<IntentPlan<T>> planning) {
     var authorizationContext = "unplanned intent";
     try {
-      var plan = intentPlanner.plan(identity, intent);
+      var plan = planning.get();
       var check = plan.check();
       authorizationContext = check.action().toString();
       var slice = sliceAssembler.assemble(identity, check);

@@ -797,7 +797,13 @@ class CedarIdentityPoliciesTest {
         .build();
   }
 
-  private <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent) {
+  private Decision<AuthorizationUnit> decide(
+      AuthenticatedIdentity identity, Intent.UnitIntent intent) {
+    return authorizationService.decide(identity, intent);
+  }
+
+  private Decision<ProfilePolicyTransition> decide(
+      AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent) {
     return authorizationService.decide(identity, intent);
   }
 

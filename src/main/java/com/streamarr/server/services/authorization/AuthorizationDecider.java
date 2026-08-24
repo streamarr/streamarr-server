@@ -9,5 +9,8 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
  */
 public interface AuthorizationDecider {
 
-  <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent);
+  Decision<AuthorizationUnit> decide(AuthenticatedIdentity identity, Intent.UnitIntent intent);
+
+  Decision<ProfilePolicyTransition> decide(
+      AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent);
 }

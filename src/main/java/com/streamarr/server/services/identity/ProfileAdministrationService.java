@@ -19,6 +19,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfilePinHasher;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfilePolicyTransition;
@@ -66,7 +67,7 @@ public class ProfileAdministrationService {
         command.localManagerAccountId() == null
             ? new Intent.CreateProfile(command.householdId())
             : new Intent.CreateProfileWithLocalManager(command.householdId());
-    var refusal =
+    Optional<ProfileRejections.CreateProfile> refusal =
         refusalOf(
             identity,
             creationIntent,
@@ -74,7 +75,7 @@ public class ProfileAdministrationService {
             ProfileRejections.HouseholdNotFound::new,
             Optional.empty());
     if (refusal.isPresent()) {
-      return Outcome.rejected((ProfileRejections.CreateProfile) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     if (isBlank(command.name())) {
@@ -147,7 +148,7 @@ public class ProfileAdministrationService {
       AuthenticatedIdentity identity, UUID profileId, String name) {
     var refusal = editRefusal(identity, new Intent.RenameProfile(profileId), profileId);
     if (refusal.isPresent()) {
-      return Outcome.rejected((ProfileRejections.RenameProfile) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     if (isBlank(name)) {
@@ -172,7 +173,7 @@ public class ProfileAdministrationService {
       AuthenticatedIdentity identity, UUID profileId, String picture) {
     var refusal = editRefusal(identity, new Intent.SetProfilePicture(profileId), profileId);
     if (refusal.isPresent()) {
-      return Outcome.rejected((ProfileRejections.SetProfilePicture) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     return mutationTransactions.write(
@@ -212,7 +213,7 @@ public class ProfileAdministrationService {
       AuthenticatedIdentity identity, UUID profileId, String pin) {
     var refusal = editRefusal(identity, new Intent.ManageProfilePin(profileId), profileId);
     if (refusal.isPresent()) {
-      return Outcome.rejected((ProfileRejections.SetProfilePin) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     if (!profilePinHasher.isWellFormed(pin)) {
@@ -235,7 +236,7 @@ public class ProfileAdministrationService {
       AuthenticatedIdentity identity, UUID profileId) {
     var refusal = editRefusal(identity, new Intent.ManageProfilePin(profileId), profileId);
     if (refusal.isPresent()) {
-      return Outcome.rejected((ProfileRejections.RemoveProfilePin) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     return mutationTransactions.write(
@@ -261,7 +262,7 @@ public class ProfileAdministrationService {
       return Outcome.rejected(new ProfileRejections.ReasonRequired());
     }
 
-    var refusal =
+    Optional<ProfileRejections.AdministrativelyResetProfilePin> refusal =
         refusalOf(
             identity,
             new Intent.AdministrativelyResetProfilePin(profileId),
@@ -269,7 +270,7 @@ public class ProfileAdministrationService {
             ProfileRejections.ProfileNotFound::new,
             Optional.of(ProfileRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
-      return Outcome.rejected((ProfileRejections.AdministrativelyResetProfilePin) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     if (!profilePinHasher.isWellFormed(pin)) {
@@ -377,8 +378,8 @@ public class ProfileAdministrationService {
   }
 
   /** The shared refusal shape for ordinary edits: FORBIDDEN when visible, not-found when not. */
-  private Optional<Object> editRefusal(
-      AuthenticatedIdentity identity, Intent<?> intent, UUID profileId) {
+  private Optional<ProfileRejections.ProfileNotFound> editRefusal(
+      AuthenticatedIdentity identity, Intent.UnitIntent intent, UUID profileId) {
     return refusalOf(
         identity,
         intent,
@@ -387,16 +388,16 @@ public class ProfileAdministrationService {
         Optional.empty());
   }
 
-  private Optional<Object> refusalOf(
+  private <R> Optional<R> refusalOf(
       AuthenticatedIdentity identity,
-      Intent<?> intent,
+      Intent.UnitIntent intent,
       BooleanSupplier mayView,
-      Supplier<Object> denied,
-      Optional<Supplier<Object>> reauthenticationRequired) {
+      Supplier<? extends R> denied,
+      Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
     return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<?> _ -> Optional.empty();
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<?>(var reason) ->
+      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Denied<AuthorizationUnit>(var reason) ->
           switch (reason) {
             case REAUTHENTICATION_REQUIRED ->
                 Optional.of(

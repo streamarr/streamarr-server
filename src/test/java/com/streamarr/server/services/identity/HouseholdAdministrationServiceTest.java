@@ -117,7 +117,7 @@ class HouseholdAdministrationServiceTest {
     var householdId = household.getId();
     var originalName = household.getName();
 
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.RenameHousehold
                 ? new Decision.Denied<>(Decision.DenialReason.POLICY)
@@ -134,7 +134,7 @@ class HouseholdAdministrationServiceTest {
     var identity = authorization.currentIdentity();
     var householdId = household.getId();
     var originalName = household.getName();
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.RenameHousehold
                 ? new Decision.Denied<>(Decision.DenialReason.POLICY)
@@ -178,7 +178,7 @@ class HouseholdAdministrationServiceTest {
     var household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var identity = authorization.currentIdentity();
     var householdId = household.getId();
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.RenameHousehold
                 ? new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE)

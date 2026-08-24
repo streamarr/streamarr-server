@@ -6,9 +6,11 @@ import java.util.function.Supplier;
 
 public interface LibraryMutationTransaction {
 
-  <T> T execute(AuthenticatedIdentity identity, Intent<?> intent, Supplier<T> libraryMutation);
+  <T> T execute(
+      AuthenticatedIdentity identity, Intent.UnitIntent intent, Supplier<T> libraryMutation);
 
-  default void execute(AuthenticatedIdentity identity, Intent<?> intent, Runnable libraryMutation) {
+  default void execute(
+      AuthenticatedIdentity identity, Intent.UnitIntent intent, Runnable libraryMutation) {
     execute(
         identity,
         intent,

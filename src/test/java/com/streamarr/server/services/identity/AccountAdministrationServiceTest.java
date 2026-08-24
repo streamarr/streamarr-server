@@ -105,7 +105,7 @@ class AccountAdministrationServiceTest {
   @Test
   @DisplayName("Should report the missing ceremony when reauthentication is all that is missing")
   void shouldReportMissingCeremonyWhenReauthenticationIsAllThatIsMissing() {
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.GrantServerAdmin
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
@@ -123,7 +123,7 @@ class AccountAdministrationServiceTest {
   void shouldThrowForbiddenWhenDeniedCallerMayViewAccount() {
     var identity = identity();
     var accountId = target.getId();
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent -> intent instanceof Intent.GrantServerAdmin ? denied() : allowed());
 
     assertThatThrownBy(() -> service.grantServerAdmin(identity, accountId, "onboarding"))
@@ -156,7 +156,7 @@ class AccountAdministrationServiceTest {
   void shouldFailClosedWhenAccountVisibilityCannotBeDecided() {
     var identity = identity();
     var accountId = target.getId();
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.GrantServerAdmin
                 ? denied()
@@ -342,11 +342,11 @@ class AccountAdministrationServiceTest {
     };
   }
 
-  private static Decision<?> allowed() {
+  private static Decision<AuthorizationUnit> allowed() {
     return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
   }
 
-  private static Decision<?> denied() {
+  private static Decision<AuthorizationUnit> denied() {
     return new Decision.Denied<>(Decision.DenialReason.POLICY);
   }
 }

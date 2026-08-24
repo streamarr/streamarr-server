@@ -9,6 +9,7 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationTransactions;
@@ -156,7 +157,10 @@ public class AccountAdministrationService {
   }
 
   private <R> Outcome<UserAccount, R> transition(
-      AuthenticatedIdentity identity, Intent<?> intent, UUID accountId, TransitionPlan<R> plan) {
+      AuthenticatedIdentity identity,
+      Intent.UnitIntent intent,
+      UUID accountId,
+      TransitionPlan<R> plan) {
     var transactional =
         mutationTransactions.write(
             () -> transitionInsideTransaction(identity, intent, accountId, plan),
@@ -165,7 +169,10 @@ public class AccountAdministrationService {
   }
 
   private <R> Outcome<UserAccount, R> transitionInsideTransaction(
-      AuthenticatedIdentity identity, Intent<?> intent, UUID accountId, TransitionPlan<R> plan) {
+      AuthenticatedIdentity identity,
+      Intent.UnitIntent intent,
+      UUID accountId,
+      TransitionPlan<R> plan) {
     var refusal = refusalOf(identity, intent, accountId, plan);
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
@@ -190,11 +197,14 @@ public class AccountAdministrationService {
 
   /** Converts policy denial to forbidden only when the Account is visible; otherwise not-found. */
   private <R> Optional<R> refusalOf(
-      AuthenticatedIdentity identity, Intent<?> intent, UUID accountId, TransitionPlan<R> plan) {
+      AuthenticatedIdentity identity,
+      Intent.UnitIntent intent,
+      UUID accountId,
+      TransitionPlan<R> plan) {
     return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<?> _ -> Optional.empty();
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<?>(var reason) ->
+      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Denied<AuthorizationUnit>(var reason) ->
           switch (reason) {
             case REAUTHENTICATION_REQUIRED -> Optional.of(plan.reauthenticationRequired().get());
             case POLICY -> {

@@ -353,7 +353,7 @@ class ProfileAdministrationServiceTest {
     assertThat(rejectionOf(service.createProfile(identity, command)))
         .isInstanceOf(ProfileRejections.HouseholdNotFound.class);
 
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent -> intent instanceof Intent.CreateProfile ? denied() : allowed());
     assertThatThrownBy(() -> service.createProfile(identity, command))
         .isInstanceOf(AccessDeniedException.class);
@@ -390,13 +390,11 @@ class ProfileAdministrationServiceTest {
   void shouldWriteNormalizedTransitionWhenAuthorizationReturnsDecisionValue() {
     var profile =
         profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
-    authorization.decideWith(
-        intent ->
-            intent instanceof Intent.ProfilePolicyChange
-                ? new Decision.Allowed<>(
-                    new ProfilePolicyTransition(
-                        ProfileKind.ADULT, 16, ProfilePolicyTransition.Classification.KIND_CHANGE))
-                : allowed());
+    authorization.decidePolicyWith(
+        _ ->
+            new Decision.Allowed<>(
+                new ProfilePolicyTransition(
+                    ProfileKind.ADULT, 16, ProfilePolicyTransition.Classification.KIND_CHANGE)));
 
     var outcome = service.changeProfileKind(identity(), profile.getId(), ProfileKind.ADULT);
 
@@ -412,15 +410,11 @@ class ProfileAdministrationServiceTest {
     var profile =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    authorization.decideWith(
-        intent ->
-            intent instanceof Intent.ProfilePolicyChange
-                ? new Decision.Allowed<>(
-                    new ProfilePolicyTransition(
-                        ProfileKind.ADULT,
-                        12,
-                        ProfilePolicyTransition.Classification.ORDINARY_EDIT))
-                : allowed());
+    authorization.decidePolicyWith(
+        _ ->
+            new Decision.Allowed<>(
+                new ProfilePolicyTransition(
+                    ProfileKind.ADULT, 12, ProfilePolicyTransition.Classification.ORDINARY_EDIT)));
 
     var outcome = service.setProfileContentCeiling(identity(), profile.getId(), 12);
 
@@ -434,11 +428,8 @@ class ProfileAdministrationServiceTest {
   void shouldReportMissingCeremonyWhenPolicyChangeNeedsReauthentication() {
     var profile =
         profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
-    authorization.decideWith(
-        intent ->
-            intent instanceof Intent.ProfilePolicyChange
-                ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
-                : allowed());
+    authorization.decidePolicyWith(
+        _ -> new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED));
 
     var outcome = service.changeProfileKind(identity(), profile.getId(), ProfileKind.ADULT);
 
@@ -467,8 +458,7 @@ class ProfileAdministrationServiceTest {
         profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
     var identity = identity();
     var profileId = profile.getId();
-    authorization.decideWith(
-        intent -> intent instanceof Intent.ProfilePolicyChange ? denied() : allowed());
+    authorization.decidePolicyWith(_ -> new Decision.Denied<>(Decision.DenialReason.POLICY));
 
     assertThatThrownBy(() -> service.changeProfileKind(identity, profileId, ProfileKind.ADULT))
         .isInstanceOf(AccessDeniedException.class);
@@ -481,15 +471,11 @@ class ProfileAdministrationServiceTest {
   @Test
   @DisplayName("Should return not found when an allowed policy write loses the Profile")
   void shouldReturnNotFoundWhenAllowedPolicyWriteLosesProfile() {
-    authorization.decideWith(
-        intent ->
-            intent instanceof Intent.ProfilePolicyChange
-                ? new Decision.Allowed<>(
-                    new ProfilePolicyTransition(
-                        ProfileKind.ADULT,
-                        null,
-                        ProfilePolicyTransition.Classification.KIND_CHANGE))
-                : allowed());
+    authorization.decidePolicyWith(
+        _ ->
+            new Decision.Allowed<>(
+                new ProfilePolicyTransition(
+                    ProfileKind.ADULT, null, ProfilePolicyTransition.Classification.KIND_CHANGE)));
 
     var outcome = service.changeProfileKind(identity(), UUID.randomUUID(), ProfileKind.ADULT);
 
@@ -545,15 +531,11 @@ class ProfileAdministrationServiceTest {
                 .householdId(household.getId())
                 .maximumAllowedRatingAge(12)
                 .build());
-    authorization.decideWith(
-        intent ->
-            intent instanceof Intent.ProfilePolicyChange
-                ? new Decision.Allowed<>(
-                    new ProfilePolicyTransition(
-                        ProfileKind.KID,
-                        null,
-                        ProfilePolicyTransition.Classification.ORDINARY_EDIT))
-                : allowed());
+    authorization.decidePolicyWith(
+        _ ->
+            new Decision.Allowed<>(
+                new ProfilePolicyTransition(
+                    ProfileKind.KID, null, ProfilePolicyTransition.Classification.ORDINARY_EDIT)));
 
     var outcome = service.clearProfileContentCeiling(identity(), profile.getId());
 
@@ -647,7 +629,7 @@ class ProfileAdministrationServiceTest {
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
     var identity = identity();
     var profileId = profile.getId();
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent -> intent instanceof Intent.RenameProfile ? denied() : allowed());
 
     assertThatThrownBy(() -> service.renameProfile(identity, profileId, "Kai"))
@@ -792,7 +774,7 @@ class ProfileAdministrationServiceTest {
         profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
     shares.share(adult.getId(), household.getId(), false);
     shares.share(kid.getId(), household.getId(), false);
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent -> intent instanceof Intent.ViewHouseholdAdministration ? denied() : allowed());
 
     var rejection = rejectionOf(service.removeProfilePin(identity(), adult.getId()));
@@ -888,7 +870,7 @@ class ProfileAdministrationServiceTest {
     var profile =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.AdministrativelyResetProfilePin
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
@@ -948,7 +930,7 @@ class ProfileAdministrationServiceTest {
     var profile =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.DeleteProfile
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
@@ -968,7 +950,7 @@ class ProfileAdministrationServiceTest {
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
 
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent -> intent instanceof Intent.DeleteProfile ? denied() : allowed());
     assertThat(rejectionOf(service.deleteProfile(identity(), orphan.getId())))
         .isInstanceOf(ProfileRejections.ProfileNotDeletable.class);
@@ -984,7 +966,7 @@ class ProfileAdministrationServiceTest {
     var profile =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.RenameProfile
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
@@ -1030,15 +1012,11 @@ class ProfileAdministrationServiceTest {
   }
 
   private void allowPolicyTransition() {
-    authorization.decideWith(
-        intent ->
-            intent instanceof Intent.ProfilePolicyChange
-                ? new Decision.Allowed<>(
-                    new ProfilePolicyTransition(
-                        ProfileKind.ADULT,
-                        null,
-                        ProfilePolicyTransition.Classification.KIND_CHANGE))
-                : allowed());
+    authorization.decidePolicyWith(
+        _ ->
+            new Decision.Allowed<>(
+                new ProfilePolicyTransition(
+                    ProfileKind.ADULT, null, ProfilePolicyTransition.Classification.KIND_CHANGE)));
   }
 
   private ProfileAdministrationService serviceWith(ProfileRepository profileRepository) {
@@ -1070,11 +1048,11 @@ class ProfileAdministrationServiceTest {
     };
   }
 
-  private static Decision<?> allowed() {
+  private static Decision<AuthorizationUnit> allowed() {
     return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
   }
 
-  private static Decision<?> denied() {
+  private static Decision<AuthorizationUnit> denied() {
     return new Decision.Denied<>(Decision.DenialReason.POLICY);
   }
 
@@ -1150,12 +1128,16 @@ class ProfileAdministrationServiceTest {
     public String encode(CharSequence rawPassword) {
       encodedValues.add(rawPassword.toString());
       transactionStates.add(TransactionSynchronizationManager.isActualTransactionActive());
-      return "encoded-pin";
+      return encodedPin(rawPassword);
     }
 
     @Override
     public boolean matches(CharSequence rawPassword, String encodedPassword) {
-      return encodedPassword.equals(encode(rawPassword));
+      return encodedPassword.equals(encodedPin(rawPassword));
+    }
+
+    private static String encodedPin(CharSequence rawPassword) {
+      return "encoded-pin-" + rawPassword.length();
     }
   }
 }

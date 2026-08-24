@@ -154,6 +154,8 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Prefer `var` for local variables unless the type isn't obvious or would lead to misinterpretation
 - Use records for immutable data carriers (DTOs, value objects, embeddables)
 - Use sealed interfaces/classes when the set of subtypes is known and fixed
+- Don't widen known types to `Object` and cast them back; isolate unavoidable unchecked casts to
+  the smallest private boundary and document the invariant
 - Prefer `Optional` over nullable returns — never return null from a public method
 - Use `switch` expressions (not statements) with exhaustive pattern matching
 - Use record deconstruction patterns when switching over sealed types (see `PollingFileStabilityChecker.PollResult`)

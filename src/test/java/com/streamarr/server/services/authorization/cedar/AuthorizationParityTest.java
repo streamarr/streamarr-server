@@ -88,6 +88,19 @@ class AuthorizationParityTest {
         .containsExactlyInAnyOrderElementsOf(concrete);
   }
 
+  @Test
+  @DisplayName("Should return the unit value when any unit intent is planned")
+  void shouldReturnUnitValueWhenAnyUnitIntentIsPlanned() {
+    var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
+    var planner = new IntentPlanner(new ProfilePolicyPlanner(new FakeProfileRepository()));
+
+    assertThat(allIntents())
+        .allSatisfy(
+            intent ->
+                assertThat(planner.plan(identity, intent).value())
+                    .isSameAs(AuthorizationUnit.INSTANCE));
+  }
+
   /**
    * Every transition classification, planned through the real classifier over one fake so the
    * classification-to-action map stays covered here.
@@ -105,34 +118,31 @@ class AuthorizationParityTest {
     return List.of(
         // KID gaining a ceiling: still restricted, same kind — an ordinary edit.
         actionName(
-            planner.plan(identity, new Intent.SetProfileContentCeiling(kid.getId(), 12)),
+            planner.plan(new Intent.SetProfileContentCeiling(kid.getId(), 12)),
             Action.EDIT_PROFILE),
         // Ceilinged KID losing only the ceiling: still a KID — an ordinary edit.
         actionName(
-            planner.plan(identity, new Intent.ClearProfileContentCeiling(ceilingedKid.getId())),
+            planner.plan(new Intent.ClearProfileContentCeiling(ceilingedKid.getId())),
             Action.EDIT_PROFILE),
         // An UNLINKED unrestricted Adult gaining a ceiling: its managers may restrict it.
         actionName(
-            planner.plan(
-                identity, new Intent.SetProfileContentCeiling(unrestrictedAdult.getId(), 12)),
+            planner.plan(new Intent.SetProfileContentCeiling(unrestrictedAdult.getId(), 12)),
             Action.EDIT_PROFILE),
         // Clearing a ceiling that is not set: unrestricted stays unrestricted.
         actionName(
-            planner.plan(
-                identity, new Intent.ClearProfileContentCeiling(unrestrictedAdult.getId())),
+            planner.plan(new Intent.ClearProfileContentCeiling(unrestrictedAdult.getId())),
             Action.EDIT_PROFILE),
         // Ceilinged KID becoming a ceilinged ADULT: a kind change, still restricted.
         actionName(
-            planner.plan(
-                identity, new Intent.ChangeProfileKind(ceilingedKid.getId(), ProfileKind.ADULT)),
+            planner.plan(new Intent.ChangeProfileKind(ceilingedKid.getId(), ProfileKind.ADULT)),
             Action.CHANGE_PROFILE_KIND),
         // KID becoming an unrestricted ADULT: the final restriction lifts.
         actionName(
-            planner.plan(identity, new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT)),
+            planner.plan(new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT)),
             Action.LIFT_FINAL_RESTRICTION),
         // A linked unrestricted Adult gaining a ceiling: restricting a sovereign Adult.
         actionName(
-            planner.plan(identity, new Intent.SetProfileContentCeiling(sovereign.getId(), 12)),
+            planner.plan(new Intent.SetProfileContentCeiling(sovereign.getId(), 12)),
             Action.RESTRICT_SOVEREIGN_ADULT));
   }
 
@@ -181,7 +191,7 @@ class AuthorizationParityTest {
     return BUNDLE.schema().toJsonFormat().path("Streamarr").path("actions");
   }
 
-  private static List<Intent<AuthorizationUnit>> allIntents() {
+  private static List<Intent.UnitIntent> allIntents() {
     var libraryId = UUID.randomUUID();
     var id = UUID.randomUUID();
     return List.of(

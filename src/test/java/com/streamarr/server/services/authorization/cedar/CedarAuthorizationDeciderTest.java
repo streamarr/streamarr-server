@@ -85,7 +85,7 @@ class CedarAuthorizationDeciderTest {
   @DisplayName(
       "Should allow library administration through the facade when the live row is an enabled ServerAdmin")
   void shouldAllowLibraryAdministrationThroughFacadeWhenLiveRowIsEnabledServerAdmin(
-      Intent<AuthorizationUnit> intent) {
+      Intent.UnitIntent intent) {
     var identity = identityFor(liveAccount(true, true));
 
     assertThat(authorizationService.requireAllowed(identity, intent))
@@ -97,7 +97,7 @@ class CedarAuthorizationDeciderTest {
   @DisplayName(
       "Should deny library administration through the facade when the live row is not a ServerAdmin")
   void shouldDenyLibraryAdministrationThroughFacadeWhenLiveRowIsNotServerAdmin(
-      Intent<AuthorizationUnit> intent) {
+      Intent.UnitIntent intent) {
     var identity = identityFor(liveAccount(false, true));
 
     assertThatThrownBy(() -> authorizationService.requireAllowed(identity, intent))
@@ -188,7 +188,28 @@ class CedarAuthorizationDeciderTest {
   @DisplayName("Should fail closed when the intent is null")
   void shouldFailClosedWhenIntentIsNull() {
     var identity = identityFor(UUID.randomUUID());
-    Intent<AuthorizationUnit> intent = null;
+    Intent.UnitIntent intent = null;
+
+    assertThat(decider.decide(identity, intent))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+    assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when the authenticated identity is null")
+  void shouldFailClosedWhenAuthenticatedIdentityIsNull() {
+    AuthenticatedIdentity identity = null;
+
+    assertThat(decider.decide(identity, new Intent.AddLibrary()))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+    assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when the policy-change intent is null")
+  void shouldFailClosedWhenPolicyChangeIntentIsNull() {
+    var identity = identityFor(UUID.randomUUID());
+    Intent.ProfilePolicyChange intent = null;
 
     assertThat(decider.decide(identity, intent))
         .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));

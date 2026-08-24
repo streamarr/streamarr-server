@@ -42,7 +42,10 @@ public interface AuthorizationService {
    * errors. Callers map {@code Denied} to a typed domain rejection and {@code Failed} to a
    * sanitized {@code AUTHORIZATION_UNAVAILABLE} error.
    */
-  <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent);
+  Decision<AuthorizationUnit> decide(AuthenticatedIdentity identity, Intent.UnitIntent intent);
+
+  Decision<ProfilePolicyTransition> decide(
+      AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent);
 
   /**
    * Gates a whole surface: returns the intent's value when allowed, throws {@link
@@ -50,5 +53,5 @@ public interface AuthorizationService {
    * and {@link com.streamarr.server.exceptions.AuthorizationUnavailableException} when no decision
    * could be made.
    */
-  <T> T requireAllowed(AuthenticatedIdentity identity, Intent<T> intent);
+  AuthorizationUnit requireAllowed(AuthenticatedIdentity identity, Intent.UnitIntent intent);
 }

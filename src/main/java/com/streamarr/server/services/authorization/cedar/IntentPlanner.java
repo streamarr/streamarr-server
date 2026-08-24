@@ -3,6 +3,7 @@ package com.streamarr.server.services.authorization.cedar;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.authorization.ProfilePolicyTransition;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -18,8 +19,8 @@ final class IntentPlanner {
 
   // java:S6878: SelectProfile uses accessors, not a record pattern — the pattern's synthetic
   // deconstruction branch can never be missed and would break the 100% JaCoCo branch gate.
-  @SuppressWarnings({"unchecked", "java:S6878"})
-  <T> IntentPlan<T> plan(AuthenticatedIdentity identity, Intent<T> intent) {
+  @SuppressWarnings("java:S6878")
+  IntentPlan<AuthorizationUnit> plan(AuthenticatedIdentity identity, Intent.UnitIntent intent) {
     return switch (intent) {
       case Intent.AddLibrary _ -> unitPlan(AuthorizationCheck.onServer(Action.ADD_LIBRARY));
       case Intent.RemoveLibrary _ -> unitPlan(AuthorizationCheck.onServer(Action.REMOVE_LIBRARY));
@@ -80,12 +81,14 @@ final class IntentPlanner {
               AuthorizationCheck.onProfile(Action.ADMINISTRATIVELY_RESET_PROFILE_PIN, profileId));
       case Intent.DeleteProfile(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.DELETE_PROFILE, profileId));
-      case Intent.ProfilePolicyChange change -> (IntentPlan<T>) profilePolicyPlanner.plan(change);
     };
   }
 
-  @SuppressWarnings("unchecked")
-  private static <T> IntentPlan<T> unitPlan(AuthorizationCheck check) {
-    return (IntentPlan<T>) new IntentPlan<>(check, AuthorizationUnit.INSTANCE);
+  IntentPlan<ProfilePolicyTransition> plan(Intent.ProfilePolicyChange intent) {
+    return profilePolicyPlanner.plan(intent);
+  }
+
+  private static IntentPlan<AuthorizationUnit> unitPlan(AuthorizationCheck check) {
+    return new IntentPlan<>(check, AuthorizationUnit.INSTANCE);
   }
 }
