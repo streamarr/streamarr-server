@@ -13,6 +13,7 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfileSafetyRule;
@@ -68,16 +69,17 @@ public class ProfileSharingService {
       AuthenticatedIdentity identity, UUID profileId, UUID householdId) {
     return mutationTransactions.write(
         () -> {
-          refusalOf(
+          Optional<ShareRejections.Offer> refusal =
+              refusalOf(
                   identity,
                   new Intent.OfferProfileShare(profileId),
                   () -> mayViewProfile(identity, profileId),
                   ShareRejections.ProfileNotFound::new,
-                  null)
-              .ifPresent(
-                  rejection -> {
-                    throw new MutationRejection(rejection);
-                  });
+                  Optional.empty());
+          refusal.ifPresent(
+              rejection -> {
+                throw new MutationRejection(rejection);
+              });
           if (householdRepository.findById(householdId).isEmpty()) {
             throw new MutationRejection(new ShareRejections.HouseholdNotFound());
           }
@@ -133,17 +135,19 @@ public class ProfileSharingService {
       AuthenticatedIdentity identity, UUID shareId) {
     return endInTransaction(
         shareId,
-        () ->
-            refusalOf(
-                    identity,
-                    new Intent.EndProfileShare(shareId),
-                    () -> mayViewShare(identity, shareId),
-                    ShareRejections.ShareNotFound::new,
-                    ShareRejections.ReauthenticationRequired::new)
-                .ifPresent(
-                    rejection -> {
-                      throw new MutationRejection(rejection);
-                    }),
+        () -> {
+          Optional<ShareRejections.End> refusal =
+              refusalOf(
+                  identity,
+                  new Intent.EndProfileShare(shareId),
+                  () -> mayViewShare(identity, shareId),
+                  ShareRejections.ShareNotFound::new,
+                  Optional.of(ShareRejections.ReauthenticationRequired::new));
+          refusal.ifPresent(
+              rejection -> {
+                throw new MutationRejection(rejection);
+              });
+        },
         _ -> {});
   }
 
@@ -154,17 +158,19 @@ public class ProfileSharingService {
     }
     return endInTransaction(
         shareId,
-        () ->
-            refusalOf(
-                    identity,
-                    new Intent.ForceEndProfileShare(shareId),
-                    () -> mayViewShare(identity, shareId),
-                    ShareRejections.ShareNotFound::new,
-                    ShareRejections.ReauthenticationRequired::new)
-                .ifPresent(
-                    rejection -> {
-                      throw new MutationRejection(rejection);
-                    }),
+        () -> {
+          Optional<ShareRejections.End> refusal =
+              refusalOf(
+                  identity,
+                  new Intent.ForceEndProfileShare(shareId),
+                  () -> mayViewShare(identity, shareId),
+                  ShareRejections.ShareNotFound::new,
+                  Optional.of(ShareRejections.ReauthenticationRequired::new));
+          refusal.ifPresent(
+              rejection -> {
+                throw new MutationRejection(rejection);
+              });
+        },
         share ->
             securityAuditEventRepository.append(
                 SecurityAuditEntry.builder()
@@ -183,12 +189,14 @@ public class ProfileSharingService {
   public Optional<SharePreflight> sharePreflight(
       AuthenticatedIdentity identity, UUID profileId, UUID householdId) {
     var decision = authorizationService.decide(identity, new Intent.OfferProfileShare(profileId));
-    if (decision instanceof Decision.Failed<?>) {
+    if (decision instanceof Decision.Failed<AuthorizationUnit>) {
       throw new AuthorizationUnavailableException();
     }
-    if (!(decision instanceof Decision.Allowed<?>)) {
+
+    if (decision instanceof Decision.Denied<AuthorizationUnit>) {
       return Optional.empty();
     }
+
     var profile = profileRepository.findById(profileId);
     if (profile.isEmpty() || householdRepository.findById(householdId).isEmpty()) {
       return Optional.empty();
@@ -204,19 +212,23 @@ public class ProfileSharingService {
   }
 
   private Outcome<ProfileHouseholdShare, ShareRejections.Decide> declinePending(
-      AuthenticatedIdentity identity, Intent<?> intent, UUID shareId, ProfileShareStatus target) {
+      AuthenticatedIdentity identity,
+      Intent.UnitIntent intent,
+      UUID shareId,
+      ProfileShareStatus target) {
     return mutationTransactions.write(
         () -> {
-          refusalOf(
+          Optional<ShareRejections.Decide> refusal =
+              refusalOf(
                   identity,
                   intent,
                   () -> mayViewShare(identity, shareId),
                   ShareRejections.ShareNotFound::new,
-                  null)
-              .ifPresent(
-                  rejection -> {
-                    throw new MutationRejection(rejection);
-                  });
+                  Optional.empty());
+          refusal.ifPresent(
+              rejection -> {
+                throw new MutationRejection(rejection);
+              });
           if (!shareRepository.tryDecline(shareId, target, clock.instant())) {
             throw new MutationRejection(new ShareRejections.ShareNotPending());
           }
@@ -238,9 +250,10 @@ public class ProfileSharingService {
             && switch (authorizationService.decideForAccount(
                 offer.getOfferedByAccountId(),
                 new Intent.OfferProfileShare(offer.getProfileId()))) {
-              case Decision.Allowed<?> _ -> true;
-              case Decision.Denied<?> _ -> false;
-              case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+              case Decision.Allowed<AuthorizationUnit> _ -> true;
+              case Decision.Denied<AuthorizationUnit> _ -> false;
+              case Decision.Failed<AuthorizationUnit> _ ->
+                  throw new AuthorizationUnavailableException();
             };
     if (!stillAuthorized) {
       if (!shareRepository.tryInvalidate(
@@ -283,22 +296,27 @@ public class ProfileSharingService {
                 : Optional.empty());
   }
 
-  private Optional<Object> refusalOf(
+  private <R> Optional<R> refusalOf(
       AuthenticatedIdentity identity,
-      Intent<?> intent,
+      Intent.UnitIntent intent,
       BooleanSupplier mayView,
-      Supplier<Object> denied,
-      Supplier<Object> reauthenticationRequired) {
+      Supplier<? extends R> denied,
+      Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
     return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<?> _ -> Optional.empty();
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<?>(var reason) ->
+      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Denied<AuthorizationUnit>(var reason) ->
           switch (reason) {
-            case REAUTHENTICATION_REQUIRED -> Optional.of(reauthenticationRequired.get());
+            case REAUTHENTICATION_REQUIRED ->
+                Optional.of(
+                    reauthenticationRequired
+                        .orElseThrow(AuthorizationUnavailableException::new)
+                        .get());
             case POLICY -> {
               if (mayView.getAsBoolean()) {
                 throw new AccessDeniedException("Not allowed.");
               }
+
               yield Optional.of(denied.get());
             }
           };
@@ -306,14 +324,13 @@ public class ProfileSharingService {
   }
 
   private Optional<ShareRejections.Decide> decideRefusal(
-      AuthenticatedIdentity identity, Intent<?> intent, UUID shareId) {
+      AuthenticatedIdentity identity, Intent.UnitIntent intent, UUID shareId) {
     return refusalOf(
-            identity,
-            intent,
-            () -> mayViewShare(identity, shareId),
-            ShareRejections.ShareNotFound::new,
-            null)
-        .map(ShareRejections.Decide.class::cast);
+        identity,
+        intent,
+        () -> mayViewShare(identity, shareId),
+        ShareRejections.ShareNotFound::new,
+        Optional.empty());
   }
 
   /** A share is visible to whoever may view its Profile's or its target Household's admin view. */
@@ -337,11 +354,11 @@ public class ProfileSharingService {
         authorizationService.decide(identity, new Intent.ViewHouseholdAdministration(householdId)));
   }
 
-  private static boolean isAllowed(Decision<?> decision) {
+  private static boolean isAllowed(Decision<AuthorizationUnit> decision) {
     return switch (decision) {
-      case Decision.Allowed<?> _ -> true;
-      case Decision.Denied<?> _ -> false;
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Allowed<AuthorizationUnit> _ -> true;
+      case Decision.Denied<AuthorizationUnit> _ -> false;
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
     };
   }
 

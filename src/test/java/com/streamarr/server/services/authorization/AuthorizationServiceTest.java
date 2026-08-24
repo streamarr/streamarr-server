@@ -294,15 +294,21 @@ class AuthorizationServiceTest {
       implements AuthorizationDecider {
 
     @Override
-    @SuppressWarnings("unchecked")
-    public <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent) {
+    public Decision<AuthorizationUnit> decide(
+        AuthenticatedIdentity identity, Intent.UnitIntent intent) {
       var hasCurrentRelationships =
           expectedHouseholdId.equals(identity.householdId())
               && identity.householdRole() == HouseholdRole.MEMBER;
       if (hasCurrentRelationships) {
-        return (Decision<T>) new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
+        return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
       }
 
+      return new Decision.Denied<>(Decision.DenialReason.POLICY);
+    }
+
+    @Override
+    public Decision<ProfilePolicyTransition> decide(
+        AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent) {
       return new Decision.Denied<>(Decision.DenialReason.POLICY);
     }
   }

@@ -123,8 +123,7 @@ public final class FakeAuthorizationService implements AuthorizationService {
   }
 
   @Override
-  public Decision<AuthorizationUnit> decideForAccount(
-      UUID accountId, Intent.UnitIntent intent) {
+  public Decision<AuthorizationUnit> decideForAccount(UUID accountId, Intent.UnitIntent intent) {
     intents.add(intent);
     return unitRule.apply(intent);
   }

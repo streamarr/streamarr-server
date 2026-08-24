@@ -145,7 +145,7 @@ class ProfileSharingServiceTest {
   @DisplayName("Should authorize inside the mutation transaction when an offer is accepted")
   void shouldAuthorizeInsideMutationTransactionWhenOfferIsAccepted() {
     var offer = pendingShare();
-    authorization.decideWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
+    authorization.decideUnitWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
     assertThat(rejectionOf(service.acceptProfileShare(identity(), offer.getId())))
         .isInstanceOf(ShareRejections.ShareNotFound.class);
@@ -154,7 +154,7 @@ class ProfileSharingServiceTest {
   @Test
   @DisplayName("Should authorize inside the mutation transaction when a share is offered")
   void shouldAuthorizeInsideMutationTransactionWhenShareIsOffered() {
-    authorization.decideWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
+    authorization.decideUnitWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
     assertThat(
             rejectionOf(service.offerProfileShare(identity(), profile.getId(), household.getId())))
@@ -165,7 +165,7 @@ class ProfileSharingServiceTest {
   @DisplayName("Should authorize inside the mutation transaction when an offer is rejected")
   void shouldAuthorizeInsideMutationTransactionWhenOfferIsRejected() {
     var offer = pendingShare();
-    authorization.decideWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
+    authorization.decideUnitWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
     assertThat(rejectionOf(service.rejectProfileShare(identity(), offer.getId())))
         .isInstanceOf(ShareRejections.ShareNotFound.class);
@@ -175,7 +175,7 @@ class ProfileSharingServiceTest {
   @DisplayName("Should authorize inside the mutation transaction when an offer is canceled")
   void shouldAuthorizeInsideMutationTransactionWhenOfferIsCanceled() {
     var offer = pendingShare();
-    authorization.decideWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
+    authorization.decideUnitWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
     assertThat(rejectionOf(service.cancelProfileShare(identity(), offer.getId())))
         .isInstanceOf(ShareRejections.ShareNotFound.class);
@@ -185,7 +185,7 @@ class ProfileSharingServiceTest {
   @DisplayName("Should authorize inside the mutation transaction when a share is ended")
   void shouldAuthorizeInsideMutationTransactionWhenShareIsEnded() {
     var active = activeShare();
-    authorization.decideWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
+    authorization.decideUnitWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
     assertThat(rejectionOf(service.endProfileShare(identity(), active.getId())))
         .isInstanceOf(ShareRejections.ShareNotFound.class);
@@ -195,7 +195,7 @@ class ProfileSharingServiceTest {
   @DisplayName("Should authorize inside the mutation transaction when a share is force-ended")
   void shouldAuthorizeInsideMutationTransactionWhenShareIsForceEnded() {
     var active = activeShare();
-    authorization.decideWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
+    authorization.decideUnitWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
     assertThat(
             rejectionOf(service.forceEndProfileShare(identity(), active.getId(), "abuse report")))
@@ -289,7 +289,7 @@ class ProfileSharingServiceTest {
   @DisplayName("Should require reauthentication when the force-end ceremony is stale")
   void shouldRequireReauthenticationWhenForceEndCeremonyIsStale() {
     var active = activeShare();
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.ForceEndProfileShare
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
@@ -303,7 +303,7 @@ class ProfileSharingServiceTest {
   @DisplayName("Should report missing reauthentication when ordinary end requires it")
   void shouldReportMissingReauthenticationWhenOrdinaryEndRequiresIt() {
     var active = activeShare();
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.EndProfileShare
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
@@ -324,7 +324,7 @@ class ProfileSharingServiceTest {
     assertThat(rejectionOf(service.endProfileShare(identity, shareId)))
         .isInstanceOf(ShareRejections.ShareNotFound.class);
 
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent -> intent instanceof Intent.EndProfileShare ? denied() : allowed());
     assertThatThrownBy(() -> service.endProfileShare(identity, shareId))
         .isInstanceOf(AccessDeniedException.class);
@@ -432,15 +432,16 @@ class ProfileSharingServiceTest {
     };
   }
 
-  private static Decision<?> allowed() {
+  private static Decision<AuthorizationUnit> allowed() {
     return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
   }
 
-  private static Decision<?> denied() {
+  private static Decision<AuthorizationUnit> denied() {
     return new Decision.Denied<>(Decision.DenialReason.POLICY);
   }
 
-  private static Decision<?> denyInsideMutationTransaction(Intent<?> ignoredIntent) {
+  private static Decision<AuthorizationUnit> denyInsideMutationTransaction(
+      Intent.UnitIntent ignoredIntent) {
     return TransactionSynchronizationManager.isActualTransactionActive() ? denied() : allowed();
   }
 

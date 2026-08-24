@@ -89,11 +89,11 @@ public class SecurityContextAuthorizationService implements AuthorizationService
   }
 
   @Override
-  public Decision<AuthorizationUnit> decideForAccount(
-      UUID accountId, Intent.UnitIntent intent) {
+  public Decision<AuthorizationUnit> decideForAccount(UUID accountId, Intent.UnitIntent intent) {
     return userAccountRepository
         .findById(accountId)
-        .<Decision<AuthorizationUnit>>map(account -> decider.decide(storedIdentity(account), intent))
+        .<Decision<AuthorizationUnit>>map(
+            account -> decider.decide(storedIdentity(account), intent))
         .orElseGet(() -> new Decision.Denied<>(Decision.DenialReason.POLICY));
   }
 
