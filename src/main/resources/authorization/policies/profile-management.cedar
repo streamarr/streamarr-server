@@ -30,14 +30,12 @@ when {
   principal has serverAdmin && principal.serverAdmin
 };
 
-// Ordinary edits (name, picture, ceiling while restricted) and PIN management: managers,
-// supervising admins while the restricted Profile is shared in, ServerAdmin.
+// Ordinary edits: managers, supervising admins while the restricted Profile is shared in,
+// ServerAdmin.
 @id("edit-profile-as-manager-supervisor-or-server-admin")
 permit (
   principal,
-  action in
-    [Streamarr::Action::"editProfile",
-     Streamarr::Action::"manageProfilePin"],
+  action == Streamarr::Action::"editProfile",
   resource
 )
 when {
@@ -45,6 +43,20 @@ when {
   ((resource has managedByPrincipal && resource.managedByPrincipal) ||
    (resource has supervisedByPrincipal && resource.supervisedByPrincipal) ||
    (principal has serverAdmin && principal.serverAdmin))
+};
+
+// Ordinary PIN management: managers or supervising admins while the restricted Profile is shared
+// in. ServerAdmin uses the separately authenticated and audited administrative reset.
+@id("manage-profile-pin-as-manager-or-supervisor")
+permit (
+  principal,
+  action == Streamarr::Action::"manageProfilePin",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  ((resource has managedByPrincipal && resource.managedByPrincipal) ||
+   (resource has supervisedByPrincipal && resource.supervisedByPrincipal))
 };
 
 // Kind is a manager decision — supervision never changes what a Profile is.

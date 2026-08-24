@@ -612,6 +612,17 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName("Should deny ordinary PIN management when ServerAdmin has no Profile relationship")
+    void shouldDenyOrdinaryPinManagementWhenServerAdminHasNoProfileRelationship() {
+      var unrelated = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(decide(atHome(), new Intent.ManageProfilePin(unrelated.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should require fresh reauthentication when lifting the final restriction")
     void shouldRequireFreshReauthenticationWhenLiftingFinalRestriction() {
       var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());

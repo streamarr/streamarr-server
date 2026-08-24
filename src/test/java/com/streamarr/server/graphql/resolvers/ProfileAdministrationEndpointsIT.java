@@ -530,6 +530,22 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should forbid ordinary PIN management by an unrelated ServerAdmin")
+  void shouldForbidOrdinaryPinManagementByUnrelatedServerAdmin() throws Exception {
+    var kid = kidProfile();
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            mutation { setProfilePin(input: {profileId: "%s", pin: "4242"}) {
+              profile { pinConfigured } userErrors { __typename } } }
+            """
+                .formatted(kid.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+  }
+
+  @Test
   @DisplayName("Should refuse removing a PIN when a Household's safety policy requires it")
   void shouldRefuseRemovingPinWhenHouseholdSafetyPolicyRequiresIt() throws Exception {
     kidProfile();
