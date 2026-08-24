@@ -41,9 +41,9 @@ runs:
         build_image="index.docker.io/streamarr/streamarr-server:build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${build_arch}"
         image_revision="$(git rev-parse HEAD)"
         pack_args=(
-          --builder paketobuildpacks/ubuntu-noble-builder:0.0.171
+          --builder paketobuildpacks/ubuntu-noble-builder:0.0.172
           --buildpack paketo-buildpacks/java
-          --buildpack paketo-buildpacks/procfile@5.13.6
+          --buildpack paketo-buildpacks/procfile@5.13.7
           --buildpack ./buildpacks/ffmpeg
           --env BP_JVM_VERSION=25
           --env BP_INCLUDE_FILES=Procfile
