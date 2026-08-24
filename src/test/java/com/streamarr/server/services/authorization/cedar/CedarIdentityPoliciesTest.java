@@ -922,6 +922,22 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName("Should deny ordinary share termination by an unrelated ServerAdmin")
+    void shouldDenyOrdinaryShareTerminationByUnrelatedServerAdmin() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var hosted =
+          shares.save(
+              activeShareBuilder()
+                  .profileId(orphan.getId())
+                  .householdId(visitedHouseholdId)
+                  .build());
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(decide(atHome(), new Intent.EndProfileShare(hosted.getId()))).isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should allow force-end only when the caller is a fresh ServerAdmin")
     void shouldAllowForceEndOnlyWhenCallerIsFreshServerAdmin() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());

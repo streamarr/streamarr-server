@@ -441,6 +441,37 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should forbid an unrelated ServerAdmin from ordinarily ending a share")
+  void shouldForbidUnrelatedServerAdminFromOrdinarilyEndingShare() throws Exception {
+    var orphan = managedOrphan();
+    var shareId = offer(orphan, host.household().getId());
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { acceptProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk());
+
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    try {
+      graphql(
+              authTestSupport.accountBearer(serverAdmin),
+              """
+              mutation { endProfileShare(input: {shareId: "%s"}) {
+                share { status } userErrors { __typename } } }
+              """
+                  .formatted(shareId))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.data.endProfileShare").doesNotExist())
+          .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+    } finally {
+      authTestSupport.deleteIdentity(serverAdmin);
+    }
+  }
+
+  @Test
   @DisplayName("Should require a fresh ServerAdmin and audit when a share is force-ended")
   void shouldRequireFreshServerAdminAndAuditWhenShareIsForceEnded() throws Exception {
     var orphan = managedOrphan();

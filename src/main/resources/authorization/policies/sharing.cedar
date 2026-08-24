@@ -46,8 +46,8 @@ when {
 };
 
 // An active non-structural share ends by target HouseholdAdmin, a direct manager who belongs to
-// that Household, the sovereign Account, or ServerAdmin. Cedar and T3 both protect structural rows.
-@id("end-active-share-as-target-admin-manager-sovereign-or-server-admin")
+// that Household, or the sovereign Account. ServerAdmin uses the audited force-end path.
+@id("end-active-share-as-target-admin-manager-or-sovereign")
 permit (
   principal,
   action == Streamarr::Action::"endProfileShare",
@@ -59,8 +59,7 @@ when {
   ((resource has principalAdminOfTarget && resource.principalAdminOfTarget) ||
    (resource has directlyManagedByPrincipal && resource.directlyManagedByPrincipal &&
     resource has principalMemberOfTarget && resource.principalMemberOfTarget) ||
-   (resource has sovereignOverProfileByPrincipal && resource.sovereignOverProfileByPrincipal) ||
-   (principal has serverAdmin && principal.serverAdmin))
+   (resource has sovereignOverProfileByPrincipal && resource.sovereignOverProfileByPrincipal))
 };
 
 // Force-end is a fresh-reauthenticated ServerAdmin override with an audited reason.
