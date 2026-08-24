@@ -258,7 +258,7 @@ class ProfileManagerAdministrationServiceTest {
 
     // A different authenticated holder of the code learns nothing beyond the one answer;
     // Cedar's recipient policy is stubbed as the denial here and proven in the policy tests.
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.DeclineManagerInvitation
                 ? new Decision.Denied<>(Decision.DenialReason.POLICY)
@@ -424,7 +424,7 @@ class ProfileManagerAdministrationServiceTest {
         .isInstanceOf(ManagerRejections.ReasonRequired.class);
     assertThat(authorization.recordedIntents()).isEmpty();
 
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.OverrideProfileManager
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)

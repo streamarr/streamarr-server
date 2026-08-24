@@ -16,6 +16,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.CredentialGuessThrottle;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationRejection;
@@ -70,15 +71,15 @@ public class ProfileManagerAdministrationService {
 
   public Outcome<IssuedManagerInvitation, ManagerRejections.Invite> inviteProfileManager(
       AuthenticatedIdentity identity, UUID profileId, UUID recipientAccountId) {
-    var refusal =
+    Optional<ManagerRejections.Invite> refusal =
         refusalOf(
             identity,
             new Intent.InviteProfileManager(profileId),
             () -> mayViewProfile(identity, profileId),
             ManagerRejections.ProfileNotFound::new,
-            null);
+            Optional.empty());
     if (refusal.isPresent()) {
-      return Outcome.rejected((ManagerRejections.Invite) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     var recipient = userAccountRepository.findById(recipientAccountId);
@@ -126,15 +127,15 @@ public class ProfileManagerAdministrationService {
 
   public Outcome<ProfileManagerInvitation, ManagerRejections.Cancel> cancelManagerInvitation(
       AuthenticatedIdentity identity, UUID invitationId) {
-    var refusal =
+    Optional<ManagerRejections.Cancel> refusal =
         refusalOf(
             identity,
             new Intent.CancelManagerInvitation(invitationId),
             () -> mayViewInvitation(identity, invitationId),
             ManagerRejections.ManagerInvitationNotFound::new,
-            null);
+            Optional.empty());
     if (refusal.isPresent()) {
-      return Outcome.rejected((ManagerRejections.Cancel) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     return mutationTransactions.write(
@@ -159,7 +160,7 @@ public class ProfileManagerAdministrationService {
     var invitation = resolved.get();
     if (!(authorizationService.decide(
             identity, new Intent.AcceptManagerInvitation(invitation.getId()))
-        instanceof Decision.Allowed<?>)) {
+        instanceof Decision.Allowed<AuthorizationUnit>)) {
       // Whoever is not the named recipient learns nothing beyond the one deliberate answer.
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
@@ -217,7 +218,7 @@ public class ProfileManagerAdministrationService {
     var invitation = resolved.get();
     if (!(authorizationService.decide(
             identity, new Intent.DeclineManagerInvitation(invitation.getId()))
-        instanceof Decision.Allowed<?>)) {
+        instanceof Decision.Allowed<AuthorizationUnit>)) {
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
 
@@ -235,15 +236,15 @@ public class ProfileManagerAdministrationService {
 
   public Outcome<UUID, ManagerRejections.Relinquish> relinquishProfileManagement(
       AuthenticatedIdentity identity, UUID profileId) {
-    var refusal =
+    Optional<ManagerRejections.Relinquish> refusal =
         refusalOf(
             identity,
             new Intent.RelinquishProfileManagement(profileId),
             () -> mayViewProfile(identity, profileId),
             ManagerRejections.ProfileNotFound::new,
-            null);
+            Optional.empty());
     if (refusal.isPresent()) {
-      return Outcome.rejected((ManagerRejections.Relinquish) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     return mutationTransactions.write(
@@ -262,15 +263,15 @@ public class ProfileManagerAdministrationService {
 
   public Outcome<UUID, ManagerRejections.Remove> removeProfileManager(
       AuthenticatedIdentity identity, UUID profileId, UUID managerAccountId) {
-    var refusal =
+    Optional<ManagerRejections.Remove> refusal =
         refusalOf(
             identity,
             new Intent.RemoveProfileManager(profileId),
             () -> mayViewProfile(identity, profileId),
             ManagerRejections.ProfileNotFound::new,
-            null);
+            Optional.empty());
     if (refusal.isPresent()) {
-      return Outcome.rejected((ManagerRejections.Remove) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     return mutationTransactions.write(
@@ -289,15 +290,15 @@ public class ProfileManagerAdministrationService {
       return Outcome.rejected(new ManagerRejections.ReasonRequired());
     }
 
-    var refusal =
+    Optional<ManagerRejections.OverrideGrant> refusal =
         refusalOf(
             identity,
             new Intent.OverrideProfileManager(profileId),
             () -> mayViewProfile(identity, profileId),
             ManagerRejections.ProfileNotFound::new,
-            ManagerRejections.ReauthenticationRequired::new);
+            Optional.of(ManagerRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
-      return Outcome.rejected((ManagerRejections.OverrideGrant) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     var recipient = userAccountRepository.findById(accountId);
@@ -341,15 +342,15 @@ public class ProfileManagerAdministrationService {
       return Outcome.rejected(new ManagerRejections.ReasonRequired());
     }
 
-    var refusal =
+    Optional<ManagerRejections.OverrideRemove> refusal =
         refusalOf(
             identity,
             new Intent.OverrideProfileManager(profileId),
             () -> mayViewProfile(identity, profileId),
             ManagerRejections.ProfileNotFound::new,
-            ManagerRejections.ReauthenticationRequired::new);
+            Optional.of(ManagerRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
-      return Outcome.rejected((ManagerRejections.OverrideRemove) refusal.get());
+      return Outcome.rejected(refusal.get());
     }
 
     return mutationTransactions.write(
@@ -367,7 +368,7 @@ public class ProfileManagerAdministrationService {
   public MediaPage<ProfileManagerInvitation> managerInvitations(
       AuthenticatedIdentity identity, UUID profileId, KeysetPaginationOptions options) {
     if (!(authorizationService.decide(identity, new Intent.ViewManagerInvitations(profileId))
-        instanceof Decision.Allowed<?>)) {
+        instanceof Decision.Allowed<AuthorizationUnit>)) {
       return page(List.of(), options);
     }
 
@@ -444,7 +445,7 @@ public class ProfileManagerAdministrationService {
         profileId, leaverAccountId, "offering manager lost management", now);
   }
 
-  private void lockProfile(UUID profileId, Supplier<Object> vanished) {
+  private <R> void lockProfile(UUID profileId, Supplier<? extends R> vanished) {
     if (profileRepository.lockPolicyById(profileId).isEmpty()) {
       throw new MutationRejection(vanished.get());
     }
@@ -506,18 +507,22 @@ public class ProfileManagerAdministrationService {
         : Optional.empty();
   }
 
-  private Optional<Object> refusalOf(
+  private <R> Optional<R> refusalOf(
       AuthenticatedIdentity identity,
       Intent.UnitIntent intent,
       BooleanSupplier mayView,
-      Supplier<Object> denied,
-      Supplier<Object> reauthenticationRequired) {
+      Supplier<? extends R> denied,
+      Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
     return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<?> _ -> Optional.empty();
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<?>(var reason) ->
+      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Denied<AuthorizationUnit>(var reason) ->
           switch (reason) {
-            case REAUTHENTICATION_REQUIRED -> Optional.of(reauthenticationRequired.get());
+            case REAUTHENTICATION_REQUIRED ->
+                Optional.of(
+                    reauthenticationRequired
+                        .orElseThrow(AuthorizationUnavailableException::new)
+                        .get());
             case POLICY -> {
               if (mayView.getAsBoolean()) {
                 throw new AccessDeniedException("Not allowed.");
@@ -544,7 +549,7 @@ public class ProfileManagerAdministrationService {
 
   private boolean mayViewProfile(AuthenticatedIdentity identity, UUID profileId) {
     return authorizationService.decide(identity, new Intent.ViewProfileAdministration(profileId))
-        instanceof Decision.Allowed<?>;
+        instanceof Decision.Allowed<AuthorizationUnit>;
   }
 
   private static boolean isBlank(String value) {
