@@ -124,7 +124,7 @@ class HouseholdTeardownServiceTest {
   @DisplayName(
       "Should require reauthentication when teardown authorization requests a fresh ceremony")
   void shouldRequireReauthenticationWhenTeardownAuthorizationRequestsFreshCeremony() {
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.TearDownHousehold
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
@@ -192,7 +192,7 @@ class HouseholdTeardownServiceTest {
   @Test
   @DisplayName("Should throw access denied when policy denies a visible Household teardown")
   void shouldThrowAccessDeniedWhenPolicyDeniesVisibleHouseholdTeardown() {
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.ViewHouseholdAdministration
                 ? new Decision.Allowed<>(AuthorizationUnit.INSTANCE)
@@ -697,7 +697,7 @@ class HouseholdTeardownServiceTest {
   @Test
   @DisplayName("Should fail closed when teardown visibility authorization is unavailable")
   void shouldFailClosedWhenTeardownVisibilityAuthorizationIsUnavailable() {
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.TearDownHousehold
                 ? new Decision.Denied<>(Decision.DenialReason.POLICY)
