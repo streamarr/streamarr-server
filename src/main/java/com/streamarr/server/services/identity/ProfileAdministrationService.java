@@ -63,85 +63,125 @@ public class ProfileAdministrationService {
 
   public Outcome<Profile, ProfileRejections.CreateProfile> createProfile(
       AuthenticatedIdentity identity, CreateProfileCommand command) {
+    var inputRejection = creationInputRejection(command);
+    if (inputRejection.isPresent()) {
+      return Outcome.rejected(inputRejection.get());
+    }
+
     var creationIntent =
         command.localManagerAccountId() == null
             ? new Intent.CreateProfile(command.householdId())
             : new Intent.CreateProfileWithLocalManager(command.householdId());
+
+    return mutationTransactions.write(
+        () -> createProfileInTransaction(identity, command, creationIntent),
+        this::creationConstraintRejection);
+  }
+
+  private Profile createProfileInTransaction(
+      AuthenticatedIdentity identity, CreateProfileCommand command, Intent.UnitIntent intent) {
+    requireCreationAllowed(identity, command, intent);
+    requireHouseholdExists(command.householdId());
+    requireEligibleLocalManager(command);
+
+    var profile = persistProfile(command);
+    grantProfileManagement(identity, command, profile);
+    shareProfileWithHousehold(command, profile);
+    return profile;
+  }
+
+  private Optional<ProfileRejections.CreateProfile> creationInputRejection(
+      CreateProfileCommand command) {
     if (isBlank(command.name())) {
-      return Outcome.rejected(new ProfileRejections.ProfileNameRequired());
+      return Optional.of(new ProfileRejections.ProfileNameRequired());
     }
 
     if (isNegative(command.maximumAllowedRatingAge())) {
-      return Outcome.rejected(new ProfileRejections.MaximumAllowedRatingAgeInvalid());
+      return Optional.of(new ProfileRejections.MaximumAllowedRatingAgeInvalid());
     }
 
-    return mutationTransactions.write(
-        () -> {
-          Optional<ProfileRejections.CreateProfile> refusal =
-              refusalOf(
-                  identity,
-                  creationIntent,
-                  () -> mayViewHousehold(identity, command.householdId()),
-                  ProfileRejections.HouseholdNotFound::new,
-                  Optional.empty());
-          if (refusal.isPresent()) {
-            throw new MutationRejection(refusal.get());
-          }
+    return Optional.empty();
+  }
 
-          if (householdRepository.findById(command.householdId()).isEmpty()) {
-            throw new MutationRejection(new ProfileRejections.HouseholdNotFound());
-          }
+  private void requireCreationAllowed(
+      AuthenticatedIdentity identity, CreateProfileCommand command, Intent.UnitIntent intent) {
+    var refusal =
+        refusalOf(
+            identity,
+            intent,
+            () -> mayViewHousehold(identity, command.householdId()),
+            ProfileRejections.HouseholdNotFound::new,
+            Optional.empty());
+    if (refusal.isPresent()) {
+      throw new MutationRejection(refusal.get());
+    }
+  }
 
-          if (command.localManagerAccountId() != null) {
-            var localManager = userAccountRepository.findById(command.localManagerAccountId());
-            if (localManager.isEmpty()) {
-              throw new MutationRejection(new ProfileRejections.LocalManagerNotFound());
-            }
+  private void requireHouseholdExists(UUID householdId) {
+    if (householdRepository.findById(householdId).isEmpty()) {
+      throw new MutationRejection(new ProfileRejections.HouseholdNotFound());
+    }
+  }
 
-            if (!isEligibleLocalManager(localManager.get(), command.householdId())) {
-              throw new MutationRejection(new ProfileRejections.ManagerNotEligible());
-            }
-          }
+  private void requireEligibleLocalManager(CreateProfileCommand command) {
+    if (command.localManagerAccountId() == null) {
+      return;
+    }
 
-          var profile =
-              profileRepository.saveAndFlush(
-                  Profile.builder()
-                      .householdId(command.householdId())
-                      .name(command.name().strip())
-                      .kind(command.kind() == null ? ProfileKind.ADULT : command.kind())
-                      .maximumAllowedRatingAge(command.maximumAllowedRatingAge())
-                      .build());
-          profileManagerRepository.saveAndFlush(
-              ProfileManager.builder()
-                  .accountId(identity.accountId())
-                  .profileId(profile.getId())
-                  .build());
-          if (command.localManagerAccountId() != null
-              && !command.localManagerAccountId().equals(identity.accountId())) {
-            profileManagerRepository.saveAndFlush(
-                ProfileManager.builder()
-                    .accountId(command.localManagerAccountId())
-                    .profileId(profile.getId())
-                    .build());
-          }
+    var localManager =
+        userAccountRepository
+            .findById(command.localManagerAccountId())
+            .orElseThrow(() -> new MutationRejection(new ProfileRejections.LocalManagerNotFound()));
+    if (!isEligibleLocalManager(localManager, command.householdId())) {
+      throw new MutationRejection(new ProfileRejections.ManagerNotEligible());
+    }
+  }
 
-          shareRepository.saveAndFlush(
-              ProfileHouseholdShare.builder()
-                  .profileId(profile.getId())
-                  .householdId(command.householdId())
-                  .status(ProfileShareStatus.ACTIVE)
-                  .build());
-          return profile;
-        },
-        constraint ->
-            switch (constraint) {
-              case CHK_NAMES_UNIQUE -> Optional.of(new ProfileRejections.ProfileNameTaken());
-              case CHK_ELIGIBLE_MANAGER ->
-                  Optional.of(new ProfileRejections.EligibleManagerRequired());
-              case CHK_RESTRICTED_AUTHORITY ->
-                  Optional.of(new ProfileRejections.ManagerNotEligible());
-              default -> Optional.empty();
-            });
+  private Profile persistProfile(CreateProfileCommand command) {
+    return profileRepository.saveAndFlush(
+        Profile.builder()
+            .householdId(command.householdId())
+            .name(command.name().strip())
+            .kind(command.kind() == null ? ProfileKind.ADULT : command.kind())
+            .maximumAllowedRatingAge(command.maximumAllowedRatingAge())
+            .build());
+  }
+
+  private void grantProfileManagement(
+      AuthenticatedIdentity identity, CreateProfileCommand command, Profile profile) {
+    profileManagerRepository.saveAndFlush(
+        ProfileManager.builder()
+            .accountId(identity.accountId())
+            .profileId(profile.getId())
+            .build());
+    if (command.localManagerAccountId() == null
+        || command.localManagerAccountId().equals(identity.accountId())) {
+      return;
+    }
+
+    profileManagerRepository.saveAndFlush(
+        ProfileManager.builder()
+            .accountId(command.localManagerAccountId())
+            .profileId(profile.getId())
+            .build());
+  }
+
+  private void shareProfileWithHousehold(CreateProfileCommand command, Profile profile) {
+    shareRepository.saveAndFlush(
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(command.householdId())
+            .status(ProfileShareStatus.ACTIVE)
+            .build());
+  }
+
+  private Optional<ProfileRejections.CreateProfile> creationConstraintRejection(String constraint) {
+    return switch (constraint) {
+      case CHK_NAMES_UNIQUE -> Optional.of(new ProfileRejections.ProfileNameTaken());
+      case CHK_ELIGIBLE_MANAGER -> Optional.of(new ProfileRejections.EligibleManagerRequired());
+      case CHK_RESTRICTED_AUTHORITY -> Optional.of(new ProfileRejections.ManagerNotEligible());
+      default -> Optional.empty();
+    };
   }
 
   public Outcome<Profile, ProfileRejections.RenameProfile> renameProfile(

@@ -9,6 +9,7 @@ import static org.mockito.Mockito.mockingDetails;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
@@ -302,7 +303,7 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
 
     assertThat(
             profileRepository.findByHouseholdId(actor.household().getId()).stream()
-                .map(profile -> profile.getName()))
+                .map(Profile::getName))
         .contains("Concurrent Profile");
     assertThat(userAccountRepository.findById(actor.account().getId()).orElseThrow())
         .extracting(UserAccount::getHouseholdRole)
