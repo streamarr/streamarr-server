@@ -228,7 +228,7 @@ class CredentialIssuanceServiceTest {
                 service.issuePasswordReset(authorization.currentIdentity(), resident.getId(), " ")))
         .isInstanceOf(InvitationRejections.ReasonRequired.class);
 
-    authorization.decideWith(
+    authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.IssuePasswordReset
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
@@ -283,7 +283,7 @@ class CredentialIssuanceServiceTest {
     };
   }
 
-  private static Decision<?> allowed() {
+  private static Decision<AuthorizationUnit> allowed() {
     return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
   }
 }
