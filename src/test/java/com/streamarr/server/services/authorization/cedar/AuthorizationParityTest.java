@@ -8,7 +8,6 @@ import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
-import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Intent;
 import java.util.ArrayList;
@@ -80,7 +79,7 @@ class AuthorizationParityTest {
     allIntents().stream()
         .map(intent -> planner.plan(identity, intent).check().action().cedarName())
         .forEach(planned::add);
-    planned.addAll(policyChangeActions(identity));
+    planned.addAll(policyChangeActions());
 
     assertThat(planned).containsExactlyInAnyOrderElementsOf(concrete);
     assertThat(Action.values())
@@ -105,7 +104,7 @@ class AuthorizationParityTest {
    * Every transition classification, planned through the real classifier over one fake so the
    * classification-to-action map stays covered here.
    */
-  private static List<String> policyChangeActions(AuthenticatedIdentity identity) {
+  private static List<String> policyChangeActions() {
     var profiles = new FakeProfileRepository();
     var planner = new IntentPlanner(new ProfilePolicyPlanner(profiles));
     var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
