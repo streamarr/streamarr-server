@@ -97,7 +97,7 @@ class ProfileErrorsTest {
         ProfileErrors.toChangeProfileKindError(
             new ProfileRejections.MaximumAllowedRatingAgeInvalid()),
         MaximumAllowedRatingAgeInvalidError.class,
-        "maximumAllowedRatingAge");
+        "kind");
   }
 
   @Test
@@ -148,12 +148,12 @@ class ProfileErrorsTest {
         ProfileErrors.toRemoveProfileMaximumAllowedRatingAgeError(
             new ProfileRejections.RestrictedAccountAuthority()),
         RestrictedAccountCannotAdministerError.class,
-        "maximumAllowedRatingAge");
+        "profileId");
     assertInputError(
         ProfileErrors.toRemoveProfileMaximumAllowedRatingAgeError(
             new ProfileRejections.MaximumAllowedRatingAgeInvalid()),
         MaximumAllowedRatingAgeInvalidError.class,
-        "maximumAllowedRatingAge");
+        "profileId");
   }
 
   @Test

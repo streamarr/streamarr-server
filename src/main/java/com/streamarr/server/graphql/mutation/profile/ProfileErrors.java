@@ -53,7 +53,8 @@ public final class ProfileErrors {
       case ProfileRejections.EligibleManagerRequired _ -> profileRequiresEligibleManager();
       case ProfileRejections.RestrictedAccountAuthority _ ->
           restrictedAccountCannotAdminister("kind");
-      case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
+      case ProfileRejections.MaximumAllowedRatingAgeInvalid _ ->
+          maximumAllowedRatingAgeInvalid("kind");
     };
   }
 
@@ -76,8 +77,9 @@ public final class ProfileErrors {
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
       case ProfileRejections.EligibleManagerRequired _ -> profileRequiresEligibleManager();
       case ProfileRejections.RestrictedAccountAuthority _ ->
-          restrictedAccountCannotAdminister(MAXIMUM_ALLOWED_RATING_AGE);
-      case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
+          restrictedAccountCannotAdminister(PROFILE_ID);
+      case ProfileRejections.MaximumAllowedRatingAgeInvalid _ ->
+          maximumAllowedRatingAgeInvalid(PROFILE_ID);
     };
   }
 
@@ -148,8 +150,13 @@ public final class ProfileErrors {
   }
 
   private static MaximumAllowedRatingAgeInvalidError maximumAllowedRatingAgeInvalid() {
+    return maximumAllowedRatingAgeInvalid(MAXIMUM_ALLOWED_RATING_AGE);
+  }
+
+  private static MaximumAllowedRatingAgeInvalidError maximumAllowedRatingAgeInvalid(
+      String inputPath) {
     return new MaximumAllowedRatingAgeInvalidError(
-        "Maximum allowed rating age cannot be negative.", InputPath.of(MAXIMUM_ALLOWED_RATING_AGE));
+        "Maximum allowed rating age cannot be negative.", InputPath.of(inputPath));
   }
 
   private static String removalWouldLockMessage(String householdName) {
