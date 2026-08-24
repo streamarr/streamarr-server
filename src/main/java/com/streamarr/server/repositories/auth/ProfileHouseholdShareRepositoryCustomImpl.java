@@ -33,4 +33,16 @@ public class ProfileHouseholdShareRepositoryCustomImpl
             .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
             .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE)));
   }
+
+  @Override
+  public boolean lockActiveShare(UUID profileId, UUID householdId) {
+    return dsl.select(PROFILE_HOUSEHOLD_SHARE.ID)
+        .from(PROFILE_HOUSEHOLD_SHARE)
+        .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
+        .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
+        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE))
+        .forShare()
+        .fetchOptional()
+        .isPresent();
+  }
 }

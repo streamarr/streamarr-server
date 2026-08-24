@@ -67,17 +67,6 @@ public class ProfileAdministrationService {
         command.localManagerAccountId() == null
             ? new Intent.CreateProfile(command.householdId())
             : new Intent.CreateProfileWithLocalManager(command.householdId());
-    Optional<ProfileRejections.CreateProfile> refusal =
-        refusalOf(
-            identity,
-            creationIntent,
-            () -> mayViewHousehold(identity, command.householdId()),
-            ProfileRejections.HouseholdNotFound::new,
-            Optional.empty());
-    if (refusal.isPresent()) {
-      return Outcome.rejected(refusal.get());
-    }
-
     if (isBlank(command.name())) {
       return Outcome.rejected(new ProfileRejections.ProfileNameRequired());
     }
@@ -86,23 +75,34 @@ public class ProfileAdministrationService {
       return Outcome.rejected(new ProfileRejections.MaximumAllowedRatingAgeInvalid());
     }
 
-    if (householdRepository.findById(command.householdId()).isEmpty()) {
-      return Outcome.rejected(new ProfileRejections.HouseholdNotFound());
-    }
-
-    if (command.localManagerAccountId() != null) {
-      var localManager = userAccountRepository.findById(command.localManagerAccountId());
-      if (localManager.isEmpty()) {
-        return Outcome.rejected(new ProfileRejections.LocalManagerNotFound());
-      }
-
-      if (!isEligibleLocalManager(localManager.get(), command.householdId())) {
-        return Outcome.rejected(new ProfileRejections.ManagerNotEligible());
-      }
-    }
-
     return mutationTransactions.write(
         () -> {
+          Optional<ProfileRejections.CreateProfile> refusal =
+              refusalOf(
+                  identity,
+                  creationIntent,
+                  () -> mayViewHousehold(identity, command.householdId()),
+                  ProfileRejections.HouseholdNotFound::new,
+                  Optional.empty());
+          if (refusal.isPresent()) {
+            throw new MutationRejection(refusal.get());
+          }
+
+          if (householdRepository.findById(command.householdId()).isEmpty()) {
+            throw new MutationRejection(new ProfileRejections.HouseholdNotFound());
+          }
+
+          if (command.localManagerAccountId() != null) {
+            var localManager = userAccountRepository.findById(command.localManagerAccountId());
+            if (localManager.isEmpty()) {
+              throw new MutationRejection(new ProfileRejections.LocalManagerNotFound());
+            }
+
+            if (!isEligibleLocalManager(localManager.get(), command.householdId())) {
+              throw new MutationRejection(new ProfileRejections.ManagerNotEligible());
+            }
+          }
+
           var profile =
               profileRepository.saveAndFlush(
                   Profile.builder()
@@ -146,22 +146,26 @@ public class ProfileAdministrationService {
 
   public Outcome<Profile, ProfileRejections.RenameProfile> renameProfile(
       AuthenticatedIdentity identity, UUID profileId, String name) {
-    var refusal = editRefusal(identity, new Intent.RenameProfile(profileId), profileId);
-    if (refusal.isPresent()) {
-      return Outcome.rejected(refusal.get());
-    }
-
     if (isBlank(name)) {
       return Outcome.rejected(new ProfileRejections.ProfileNameRequired());
     }
 
     return mutationTransactions.write(
         () -> {
+          if (!profileRepository.lockById(profileId)) {
+            throw new MutationRejection(new ProfileRejections.ProfileNotFound());
+          }
+
+          var refusal = editRefusal(identity, new Intent.RenameProfile(profileId), profileId);
+          if (refusal.isPresent()) {
+            throw new MutationRejection(refusal.get());
+          }
+
           if (!profileRepository.tryRename(profileId, name.strip())) {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
 
-          return profileRepository.findById(profileId).orElseThrow();
+          return profileRepository.findRefreshedById(profileId).orElseThrow();
         },
         constraint ->
             CHK_NAMES_UNIQUE.equals(constraint)
@@ -171,18 +175,22 @@ public class ProfileAdministrationService {
 
   public Outcome<Profile, ProfileRejections.SetProfilePicture> setProfilePicture(
       AuthenticatedIdentity identity, UUID profileId, String picture) {
-    var refusal = editRefusal(identity, new Intent.SetProfilePicture(profileId), profileId);
-    if (refusal.isPresent()) {
-      return Outcome.rejected(refusal.get());
-    }
-
     return mutationTransactions.write(
         () -> {
+          if (!profileRepository.lockById(profileId)) {
+            throw new MutationRejection(new ProfileRejections.ProfileNotFound());
+          }
+
+          var refusal = editRefusal(identity, new Intent.SetProfilePicture(profileId), profileId);
+          if (refusal.isPresent()) {
+            throw new MutationRejection(refusal.get());
+          }
+
           if (!profileRepository.trySetPicture(profileId, picture)) {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
 
-          return profileRepository.findById(profileId).orElseThrow();
+          return profileRepository.findRefreshedById(profileId).orElseThrow();
         },
         _ -> Optional.empty());
   }
@@ -223,24 +231,38 @@ public class ProfileAdministrationService {
     var pinHash = profilePinHasher.hash(pin);
     return mutationTransactions.write(
         () -> {
+          if (!profileRepository.lockById(profileId)) {
+            throw new MutationRejection(new ProfileRejections.ProfileNotFound());
+          }
+
+          var authoritativeRefusal =
+              editRefusal(identity, new Intent.ManageProfilePin(profileId), profileId);
+          if (authoritativeRefusal.isPresent()) {
+            throw new MutationRejection(authoritativeRefusal.get());
+          }
+
           if (!profileRepository.trySetPinHash(profileId, pinHash)) {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
 
-          return profileRepository.findById(profileId).orElseThrow();
+          return profileRepository.findRefreshedById(profileId).orElseThrow();
         },
         _ -> Optional.empty());
   }
 
   public Outcome<Profile, ProfileRejections.RemoveProfilePin> removeProfilePin(
       AuthenticatedIdentity identity, UUID profileId) {
-    var refusal = editRefusal(identity, new Intent.ManageProfilePin(profileId), profileId);
-    if (refusal.isPresent()) {
-      return Outcome.rejected(refusal.get());
-    }
-
     return mutationTransactions.write(
         () -> {
+          if (!profileRepository.lockById(profileId)) {
+            throw new MutationRejection(new ProfileRejections.ProfileNotFound());
+          }
+
+          var refusal = editRefusal(identity, new Intent.ManageProfilePin(profileId), profileId);
+          if (refusal.isPresent()) {
+            throw new MutationRejection(refusal.get());
+          }
+
           var wouldLockIn = wouldLockIn(identity, profileId);
           if (wouldLockIn.isPresent()) {
             throw new MutationRejection(wouldLockIn.get());
@@ -262,10 +284,11 @@ public class ProfileAdministrationService {
       return Outcome.rejected(new ProfileRejections.ReasonRequired());
     }
 
+    var intent = new Intent.AdministrativelyResetProfilePin(profileId);
     Optional<ProfileRejections.AdministrativelyResetProfilePin> refusal =
         refusalOf(
             identity,
-            new Intent.AdministrativelyResetProfilePin(profileId),
+            intent,
             () -> mayViewProfile(identity, profileId),
             ProfileRejections.ProfileNotFound::new,
             Optional.of(ProfileRejections.ReauthenticationRequired::new));
@@ -280,6 +303,21 @@ public class ProfileAdministrationService {
     var pinHash = profilePinHasher.hash(pin);
     return mutationTransactions.write(
         () -> {
+          if (!profileRepository.lockById(profileId)) {
+            throw new MutationRejection(new ProfileRejections.ProfileNotFound());
+          }
+
+          Optional<ProfileRejections.AdministrativelyResetProfilePin> authoritativeRefusal =
+              refusalOf(
+                  identity,
+                  intent,
+                  () -> mayViewProfile(identity, profileId),
+                  ProfileRejections.ProfileNotFound::new,
+                  Optional.of(ProfileRejections.ReauthenticationRequired::new));
+          if (authoritativeRefusal.isPresent()) {
+            throw new MutationRejection(authoritativeRefusal.get());
+          }
+
           if (!profileRepository.trySetPinHash(profileId, pinHash)) {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
@@ -291,7 +329,7 @@ public class ProfileAdministrationService {
                   .reason(reason)
                   .resource("profileId", profileId)
                   .build());
-          return profileRepository.findById(profileId).orElseThrow();
+          return profileRepository.findRefreshedById(profileId).orElseThrow();
         },
         _ -> Optional.empty());
   }

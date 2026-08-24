@@ -53,7 +53,7 @@ class ProfileSupervisionContributor implements FactContributor {
                     .findById(account.getPersonalProfileId())
                     .map(personal -> !personal.isRestricted())
                     .orElse(false))
-        .map(account -> shareRepository.isActivelyShared(profileId, account.getHouseholdId()))
+        .map(account -> shareRepository.lockActiveShare(profileId, account.getHouseholdId()))
         .orElse(false);
   }
 }

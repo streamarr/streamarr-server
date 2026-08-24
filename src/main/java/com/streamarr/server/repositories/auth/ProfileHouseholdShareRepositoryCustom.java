@@ -7,6 +7,9 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /** Whether the Profile is available in the Household right now, read as a scalar. */
   boolean isActivelyShared(UUID profileId, UUID householdId);
 
+  /** Locks and reports the active share used as authorization authority. */
+  boolean lockActiveShare(UUID profileId, UUID householdId);
+
   /** Whether any share of the Profile is still ACTIVE or PENDING, read as a scalar. */
   boolean hasLiveOrPendingShares(UUID profileId);
 }

@@ -64,4 +64,9 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
     return findByProfileIdAndHouseholdIdAndStatus(profileId, householdId, ProfileShareStatus.ACTIVE)
         .isPresent();
   }
+
+  @Override
+  public boolean lockActiveShare(UUID profileId, UUID householdId) {
+    return isActivelyShared(profileId, householdId);
+  }
 }

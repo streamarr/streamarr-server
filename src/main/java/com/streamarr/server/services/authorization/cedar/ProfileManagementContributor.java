@@ -48,7 +48,9 @@ class ProfileManagementContributor implements FactContributor {
                 .map(account -> profileId.equals(account.getPersonalProfileId()))
                 .orElse(false);
     var directManager =
-        profileManagerRepository.existsByAccountIdAndProfileId(identity.accountId(), profileId);
+        profileManagerRepository
+            .findByAccountIdAndProfileId(identity.accountId(), profileId)
+            .isPresent();
     slice.resourceAttribute(MANAGED_BY_PRINCIPAL, new PrimBool(selfManaged || directManager));
     slice.resourceAttribute(
         AVAILABLE_IN_PRINCIPAL_HOUSEHOLD,
