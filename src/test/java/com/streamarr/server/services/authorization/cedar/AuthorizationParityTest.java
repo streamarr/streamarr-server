@@ -211,7 +211,7 @@ class AuthorizationParityTest {
           LIFT_FINAL_RESTRICTION,
           RESTRICT_SOVEREIGN_ADULT,
           MANAGE_PROFILE_PIN,
-          OVERRIDE_PROFILE_PIN,
+          ADMINISTRATIVELY_RESET_PROFILE_PIN,
           DELETE_PROFILE,
           ISSUE_PASSWORD_RESET ->
           throw new AssertionError("not a Server-resource action: " + action);
