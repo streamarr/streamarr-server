@@ -1060,15 +1060,13 @@ class ProfileAdministrationServiceTest {
                 .secretDigest(new byte[] {1})
                 .build());
 
-    authorization.decideWith(
-        intent ->
-            intent instanceof Intent.ProfilePolicyChange
-                ? new Decision.Allowed<>(
-                    new ProfilePolicyTransition(
-                        ProfileKind.ADULT,
-                        12,
-                        ProfilePolicyTransition.Classification.RESTRICT_SOVEREIGN_ADULT))
-                : allowed());
+    authorization.decidePolicyWith(
+        _ ->
+            new Decision.Allowed<>(
+                new ProfilePolicyTransition(
+                    ProfileKind.ADULT,
+                    12,
+                    ProfilePolicyTransition.Classification.RESTRICT_SOVEREIGN_ADULT)));
     service.setProfileContentCeiling(identity(), personal.getId(), 12);
 
     // Eligibility ends with the restriction: no pending proposal may outlive it.
