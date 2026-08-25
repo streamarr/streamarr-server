@@ -68,19 +68,21 @@ public class ProfileAdministrationService {
       return Outcome.rejected(inputRejection.get());
     }
 
-    var creationIntent =
-        command.localManagerAccountId() == null
-            ? new Intent.CreateProfile(command.householdId())
-            : new Intent.CreateProfileWithLocalManager(command.householdId());
-
+    var intent = creationIntentFor(command);
     return mutationTransactions.write(
-        () -> createProfileInTransaction(identity, command, creationIntent),
+        () -> createProfileInsideTransaction(identity, command, intent),
         this::creationConstraintRejection);
   }
 
-  private Profile createProfileInTransaction(
+  private Intent.UnitIntent creationIntentFor(CreateProfileCommand command) {
+    return command.localManagerAccountId() == null
+        ? new Intent.CreateProfile(command.householdId())
+        : new Intent.CreateProfileWithLocalManager(command.householdId());
+  }
+
+  private Profile createProfileInsideTransaction(
       AuthenticatedIdentity identity, CreateProfileCommand command, Intent.UnitIntent intent) {
-    requireCreationAllowed(identity, command, intent);
+    enforceProfileCreationAuthorization(identity, command, intent);
     requireHouseholdExists(command.householdId());
     requireEligibleLocalManager(command);
 
@@ -103,7 +105,7 @@ public class ProfileAdministrationService {
     return Optional.empty();
   }
 
-  private void requireCreationAllowed(
+  private void enforceProfileCreationAuthorization(
       AuthenticatedIdentity identity, CreateProfileCommand command, Intent.UnitIntent intent) {
     var refusal =
         refusalOf(
