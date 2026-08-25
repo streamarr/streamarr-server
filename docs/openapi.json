@@ -1,0 +1,1424 @@
+{
+  "components": {
+    "schemas": {
+      "AcceptInvitationRequest": {
+        "properties": {
+          "code": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "cookieMode": {
+            "type": "boolean"
+          },
+          "displayName": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "displayName",
+          "password"
+        ],
+        "type": "object"
+      },
+      "AuthErrorResponse": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AuthTokensResponse": {
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "accessTokenExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ChangePasswordRequest": {
+        "properties": {
+          "currentPassword": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "newPassword": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ],
+        "type": "object"
+      },
+      "DeviceAuthorizationResponse": {
+        "properties": {
+          "deviceName": {
+            "type": "string"
+          },
+          "households": {
+            "items": {
+              "$ref": "#/components/schemas/EligibleHousehold"
+            },
+            "type": "array"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "userCode": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DeviceCodeRequest": {
+        "properties": {
+          "deviceName": {
+            "type": "string"
+          },
+          "esn": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DeviceCodeResponse": {
+        "properties": {
+          "deviceCode": {
+            "type": "string"
+          },
+          "expiresIn": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "interval": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "userCode": {
+            "type": "string"
+          },
+          "verificationUri": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DeviceDecisionRequest": {
+        "properties": {
+          "decision": {
+            "type": "string"
+          },
+          "householdId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "userCode": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DeviceDecisionResponse": {
+        "properties": {
+          "deviceName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DeviceLookupRequest": {
+        "properties": {
+          "userCode": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DeviceTokenRequest": {
+        "properties": {
+          "deviceCode": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "EligibleHousehold": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "InvitationCodeRequest": {
+        "properties": {
+          "code": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "InvitationPreview": {
+        "properties": {
+          "endingHouseholds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "householdName": {
+            "type": "string"
+          },
+          "householdRole": {
+            "enum": [
+              "ADMIN",
+              "MEMBER"
+            ],
+            "type": "string"
+          },
+          "maximumAllowedRatingAge": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "CREATE",
+              "CONNECT"
+            ],
+            "type": "string"
+          },
+          "profileKind": {
+            "enum": [
+              "KID",
+              "ADULT"
+            ],
+            "type": "string"
+          },
+          "profileName": {
+            "type": "string"
+          },
+          "recipientEmail": {
+            "type": "string"
+          },
+          "remainingManagers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reofferHouseholds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "cookieMode": {
+            "type": "boolean"
+          },
+          "deviceName": {
+            "type": "string"
+          },
+          "email": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
+      "ReauthRequest": {
+        "properties": {
+          "password": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "type": "object"
+      },
+      "RedeemPasswordResetRequest": {
+        "properties": {
+          "code": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "newPassword": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "newPassword"
+        ],
+        "type": "object"
+      },
+      "RefreshRequest": {
+        "properties": {
+          "refreshToken": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SelectHouseholdRequest": {
+        "properties": {
+          "householdId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "householdId"
+        ],
+        "type": "object"
+      },
+      "SelectProfileRequest": {
+        "properties": {
+          "pin": {
+            "type": "string"
+          },
+          "profileId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profileId"
+        ],
+        "type": "object"
+      },
+      "SetupRequest": {
+        "properties": {
+          "cookieMode": {
+            "type": "boolean"
+          },
+          "displayName": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "email": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "householdName": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "profileName": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "displayName",
+          "email",
+          "householdName",
+          "password",
+          "profileName"
+        ],
+        "type": "object"
+      },
+      "StatusResponse": {
+        "properties": {
+          "devicePairingEnabled": {
+            "type": "boolean"
+          },
+          "setupComplete": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Streamarr",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/auth/change-password": {
+      "post": {
+        "operationId": "changePassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokensResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/auth/device/authorizations/decision": {
+      "post": {
+        "operationId": "decide",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceDecisionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "device-auth-controller"
+        ]
+      }
+    },
+    "/api/auth/device/authorizations/lookup": {
+      "post": {
+        "operationId": "lookupDeviceAuthorization",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceLookupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceAuthorizationResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "device-auth-controller"
+        ]
+      }
+    },
+    "/api/auth/device/code": {
+      "post": {
+        "operationId": "issue",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceCodeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCodeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "device-auth-controller"
+        ]
+      }
+    },
+    "/api/auth/device/token": {
+      "post": {
+        "operationId": "poll",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokensResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "device-auth-controller"
+        ]
+      }
+    },
+    "/api/auth/invitation/accept": {
+      "post": {
+        "operationId": "accept",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptInvitationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokensResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "invitation-controller"
+        ]
+      }
+    },
+    "/api/auth/invitation/decline": {
+      "post": {
+        "operationId": "decline",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "invitation-controller"
+        ]
+      }
+    },
+    "/api/auth/invitation/lookup": {
+      "post": {
+        "operationId": "lookup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationPreview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "invitation-controller"
+        ]
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokensResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/auth/password-reset/redeem": {
+      "post": {
+        "operationId": "redeem",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedeemPasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "password-reset-controller"
+        ]
+      }
+    },
+    "/api/auth/reauth": {
+      "post": {
+        "operationId": "reauthenticate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReauthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokensResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "operationId": "refresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokensResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/auth/refresh/revoke": {
+      "post": {
+        "operationId": "logout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/auth/select-household": {
+      "post": {
+        "operationId": "selectHousehold",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectHouseholdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokensResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/auth/select-profile": {
+      "post": {
+        "operationId": "selectProfile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokensResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/auth/setup": {
+      "post": {
+        "operationId": "setup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokensResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/auth/status": {
+      "get": {
+        "operationId": "status",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/images/{imageId}": {
+      "get": {
+        "operationId": "getImage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "imageId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "image-controller"
+        ]
+      }
+    },
+    "/api/stream/{sessionId}/init.mp4": {
+      "get": {
+        "operationId": "getInitSegment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "stream-controller"
+        ]
+      }
+    },
+    "/api/stream/{sessionId}/multivariant.m3u8": {
+      "get": {
+        "operationId": "getMultivariantPlaylist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "stream-controller"
+        ]
+      }
+    },
+    "/api/stream/{sessionId}/stream.m3u8": {
+      "get": {
+        "operationId": "getMediaPlaylist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "stream-controller"
+        ]
+      }
+    },
+    "/api/stream/{sessionId}/{segmentName}": {
+      "get": {
+        "operationId": "getSegment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "segmentName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "stream-controller"
+        ]
+      }
+    },
+    "/api/stream/{sessionId}/{variantLabel}/init.mp4": {
+      "get": {
+        "operationId": "getVariantInitSegment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "variantLabel",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "stream-controller"
+        ]
+      }
+    },
+    "/api/stream/{sessionId}/{variantLabel}/stream.m3u8": {
+      "get": {
+        "operationId": "getVariantMediaPlaylist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "variantLabel",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "stream-controller"
+        ]
+      }
+    },
+    "/api/stream/{sessionId}/{variantLabel}/{segmentName}": {
+      "get": {
+        "operationId": "getVariantSegment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "variantLabel",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "segmentName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "tags": [
+          "stream-controller"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ]
+}
