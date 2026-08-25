@@ -9,6 +9,10 @@ import com.streamarr.server.services.auth.DeviceDecision;
 import com.streamarr.server.services.auth.DevicePollResult;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.DevicePairingService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import java.util.Arrays;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
@@ -56,6 +60,9 @@ public class DeviceAuthController {
    * networking layer can never mistake "not approved yet" for an authentication failure and log the
    * user out.
    */
+  @ApiResponse(
+      responseCode = "200",
+      content = @Content(schema = @Schema(implementation = AuthTokensResponse.class)))
   @PostMapping("/token")
   public ResponseEntity<Object> poll(@RequestBody DeviceTokenRequest request) {
     return switch (deviceAuthorizationService.redeem(request.deviceCode())) {
@@ -79,6 +86,7 @@ public class DeviceAuthController {
     };
   }
 
+  @Operation(operationId = "lookupDeviceAuthorization")
   @PostMapping("/authorizations/lookup")
   public ResponseEntity<DeviceAuthorizationResponse> lookup(
       @RequestBody DeviceLookupRequest request) {
