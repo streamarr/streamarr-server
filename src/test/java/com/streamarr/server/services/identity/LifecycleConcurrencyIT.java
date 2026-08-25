@@ -340,8 +340,8 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return ProfileLinked when CONNECT wins a force-delete race")
-  void shouldReturnProfileLinkedWhenConnectWinsForceDeleteRace() throws Exception {
+  @DisplayName("Should return ProfileLinked when CONNECT wins an administrative deletion race")
+  void shouldReturnProfileLinkedWhenConnectWinsAdministrativeDeletionRace() throws Exception {
     var actor = authTestSupport.createAdminIdentity();
     var home = authTestSupport.createIdentity();
     var orphan = orphanOf(home);
@@ -371,7 +371,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                 () ->
                     outcomeOf(
                         () ->
-                            profileLifecycleService.forceDeleteProfile(
+                            profileLifecycleService.administrativelyDeleteProfile(
                                 authenticated(actor), orphan.getId(), "cleanup")));
         if (!deletionReached.await(10, TimeUnit.SECONDS)) {
           throw new AssertionError(

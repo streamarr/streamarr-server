@@ -376,7 +376,7 @@ namespace Streamarr {
     resource: Profile,
     context: {},
   };
-  action forceDeleteProfile in profileAdministration appliesTo {
+  action administrativelyDeleteProfile in profileAdministration appliesTo {
     principal: Account,
     resource: Profile,
     context: { freshReauthentication: Bool },

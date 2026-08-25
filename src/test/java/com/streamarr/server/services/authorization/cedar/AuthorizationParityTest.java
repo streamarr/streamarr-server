@@ -246,7 +246,7 @@ class AuthorizationParityTest {
           DELETE_ACCOUNT,
           DELETE_MY_ACCOUNT,
           TRANSFER_PROFILE,
-          FORCE_DELETE_PROFILE ->
+          ADMINISTRATIVELY_DELETE_PROFILE ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
@@ -330,6 +330,6 @@ class AuthorizationParityTest {
         new Intent.DeleteAccount(id),
         new Intent.DeleteMyAccount(),
         new Intent.TransferProfile(id),
-        new Intent.ForceDeleteProfile(id));
+        new Intent.AdministrativelyDeleteProfile(id));
   }
 }

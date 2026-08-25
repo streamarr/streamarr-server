@@ -196,21 +196,22 @@ class ProfileLifecycleServiceTest {
         .isInstanceOf(TransferRejections.ProfileLinked.class);
     assertThat(
             rejectionOf(
-                service.forceDeleteProfile(identity(), linked.getPersonalProfileId(), "cleanup")))
+                service.administrativelyDeleteProfile(
+                    identity(), linked.getPersonalProfileId(), "cleanup")))
         .isInstanceOf(TransferRejections.ProfileLinked.class);
   }
 
   @Test
-  @DisplayName("Should require a reason before force-deleting a Profile")
-  void shouldRequireReasonBeforeForceDeletingProfile() {
-    assertThat(rejectionOf(service.forceDeleteProfile(identity(), orphan.getId(), " ")))
+  @DisplayName("Should require a reason before administratively deleting a Profile")
+  void shouldRequireReasonBeforeAdministrativelyDeletingProfile() {
+    assertThat(rejectionOf(service.administrativelyDeleteProfile(identity(), orphan.getId(), " ")))
         .isInstanceOf(TransferRejections.ReasonRequired.class);
     assertThat(profiles.findById(orphan.getId())).isPresent();
   }
 
   @Test
-  @DisplayName("Should force-delete a Profile clearing every selection and pending proposal")
-  void shouldForceDeleteProfileClearingEverySelectionAndPendingProposal() {
+  @DisplayName("Should administratively delete a Profile and clear its dependent state")
+  void shouldAdministrativelyDeleteProfileAndClearItsDependentState() {
     var otherHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     shares.share(orphan.getId(), otherHousehold.getId(), false);
     var homeViewer =
@@ -240,7 +241,7 @@ class ProfileLifecycleServiceTest {
     var connectInvitation = accountInvitations.save(pendingAccountInvitation(orphan.getId()));
     var managerInvitation = managerInvitations.save(pendingManagerInvitation(orphan.getId()));
 
-    var deleted = service.forceDeleteProfile(identity(), orphan.getId(), "abuse report");
+    var deleted = service.administrativelyDeleteProfile(identity(), orphan.getId(), "abuse report");
 
     assertThat(deleted).isInstanceOf(Outcome.Accepted.class);
     assertThat(profiles.findById(orphan.getId())).isEmpty();
@@ -254,15 +255,16 @@ class ProfileLifecycleServiceTest {
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(audit.entries())
         .extracting(entry -> entry.operation())
-        .containsExactly("forceDeleteProfile");
+        .containsExactly("administrativelyDeleteProfile");
   }
 
   @Test
-  @DisplayName("Should report a Profile as missing after it was force-deleted")
-  void shouldReportProfileAsMissingAfterItWasForceDeleted() {
-    assertThat(service.forceDeleteProfile(identity(), orphan.getId(), "cleanup"))
+  @DisplayName("Should report a Profile as missing after it was administratively deleted")
+  void shouldReportProfileAsMissingAfterItWasAdministrativelyDeleted() {
+    assertThat(service.administrativelyDeleteProfile(identity(), orphan.getId(), "cleanup"))
         .isInstanceOf(Outcome.Accepted.class);
-    assertThat(rejectionOf(service.forceDeleteProfile(identity(), orphan.getId(), "again")))
+    assertThat(
+            rejectionOf(service.administrativelyDeleteProfile(identity(), orphan.getId(), "again")))
         .isInstanceOf(TransferRejections.ProfileNotFound.class);
   }
 

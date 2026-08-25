@@ -120,16 +120,16 @@ public class ProfileLifecycleService {
             });
   }
 
-  public Outcome<UUID, TransferRejections.ForceDeleteProfile> forceDeleteProfile(
-      AuthenticatedIdentity identity, UUID profileId, String reason) {
+  public Outcome<UUID, TransferRejections.AdministrativelyDeleteProfile>
+      administrativelyDeleteProfile(AuthenticatedIdentity identity, UUID profileId, String reason) {
     if (isBlank(reason)) {
       return Outcome.rejected(new TransferRejections.ReasonRequired());
     }
 
-    Optional<TransferRejections.ForceDeleteProfile> refusal =
+    Optional<TransferRejections.AdministrativelyDeleteProfile> refusal =
         refusalOf(
             identity,
-            new Intent.ForceDeleteProfile(profileId),
+            new Intent.AdministrativelyDeleteProfile(profileId),
             () -> mayViewProfile(identity, profileId),
             TransferRejections.ProfileNotFound::new,
             Optional.of(TransferRejections.ReauthenticationRequired::new));
@@ -164,7 +164,7 @@ public class ProfileLifecycleService {
             throw new MutationRejection(new TransferRejections.ProfileNotFound());
           }
 
-          audit(identity, "forceDeleteProfile", profileId, reason);
+          audit(identity, "administrativelyDeleteProfile", profileId, reason);
           return profileId;
         },
         _ -> Optional.empty());

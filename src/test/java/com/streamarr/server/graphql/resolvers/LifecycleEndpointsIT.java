@@ -414,19 +414,19 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should force-delete an unlinked Profile after fresh reauthentication")
-  void shouldForceDeleteUnlinkedProfileAfterFreshReauthentication() throws Exception {
+  @DisplayName("Should administratively delete an unlinked Profile after fresh reauthentication")
+  void shouldAdministrativelyDeleteUnlinkedProfileAfterFreshReauthentication() throws Exception {
     var orphan = managedOrphan();
     graphql(
             authTestSupport.freshAccountBearer(admin),
             """
-            mutation { forceDeleteProfile(input: {profileId: "%s", reason: "abuse report"}) {
+            mutation { administrativelyDeleteProfile(input: {profileId: "%s", reason: "abuse report"}) {
               profileId userErrors { __typename } } }
             """
                 .formatted(orphan.getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.forceDeleteProfile.userErrors").isEmpty());
+        .andExpect(jsonPath("$.data.administrativelyDeleteProfile.userErrors").isEmpty());
     assertThat(profileRepository.findById(orphan.getId())).isEmpty();
   }
 
