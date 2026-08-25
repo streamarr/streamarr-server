@@ -193,6 +193,6 @@ public sealed interface Intent {
   /** Move an unlinked Profile to another Household, anchoring it there first. */
   record TransferProfile(UUID profileId) implements UnitIntent {}
 
-  /** ServerAdmin force-deletion of an unlinked Profile; fresh, with an audited reason. */
-  record ForceDeleteProfile(UUID profileId) implements UnitIntent {}
+  /** ServerAdmin deletion of an unlinked Profile; fresh, with an audited reason. */
+  record AdministrativelyDeleteProfile(UUID profileId) implements UnitIntent {}
 }

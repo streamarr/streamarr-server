@@ -89,8 +89,8 @@ public final class LifecycleErrors {
     };
   }
 
-  public static ForceDeleteProfileError toForceDeleteProfileError(
-      TransferRejections.ForceDeleteProfile rejection) {
+  public static AdministrativelyDeleteProfileError toAdministrativelyDeleteProfileError(
+      TransferRejections.AdministrativelyDeleteProfile rejection) {
     return switch (rejection) {
       case TransferRejections.ProfileNotFound _ -> profileNotFound();
       case TransferRejections.ReasonRequired _ -> reasonRequired();

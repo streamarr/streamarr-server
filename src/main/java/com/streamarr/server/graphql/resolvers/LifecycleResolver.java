@@ -6,15 +6,15 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.dto.AccountAdministration;
 import com.streamarr.server.graphql.dto.ProfileAdministration;
+import com.streamarr.server.graphql.inputs.AdministrativelyDeleteProfileInput;
 import com.streamarr.server.graphql.inputs.DeleteAccountInput;
 import com.streamarr.server.graphql.inputs.DeleteMyAccountInput;
-import com.streamarr.server.graphql.inputs.ForceDeleteProfileInput;
 import com.streamarr.server.graphql.inputs.TransferAccountInput;
 import com.streamarr.server.graphql.inputs.TransferProfileInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
+import com.streamarr.server.graphql.mutation.lifecycle.AdministrativelyDeleteProfilePayload;
 import com.streamarr.server.graphql.mutation.lifecycle.DeleteAccountPayload;
 import com.streamarr.server.graphql.mutation.lifecycle.DeleteMyAccountPayload;
-import com.streamarr.server.graphql.mutation.lifecycle.ForceDeleteProfilePayload;
 import com.streamarr.server.graphql.mutation.lifecycle.LifecycleErrors;
 import com.streamarr.server.graphql.mutation.lifecycle.TransferAccountPayload;
 import com.streamarr.server.graphql.mutation.lifecycle.TransferProfilePayload;
@@ -106,16 +106,16 @@ public class LifecycleResolver {
   }
 
   @DgsMutation
-  public ForceDeleteProfilePayload forceDeleteProfile(
-      @InputArgument ForceDeleteProfileInput input) {
+  public AdministrativelyDeleteProfilePayload administrativelyDeleteProfile(
+      @InputArgument AdministrativelyDeleteProfileInput input) {
     return MutationPayloads.payload(
         profileLifecycleService
-            .forceDeleteProfile(
+            .administrativelyDeleteProfile(
                 authorizationService.currentIdentity(),
                 Ids.parseUuid(input.profileId()),
                 input.reason())
             .map(UUID::toString),
-        LifecycleErrors::toForceDeleteProfileError,
-        ForceDeleteProfilePayload::new);
+        LifecycleErrors::toAdministrativelyDeleteProfileError,
+        AdministrativelyDeleteProfilePayload::new);
   }
 }

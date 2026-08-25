@@ -268,8 +268,8 @@ enum Action {
       FactRequirement.PRINCIPAL_ELIGIBILITY),
   TRANSFER_PROFILE(
       "transferProfile", ResourceKind.PROFILE, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
-  FORCE_DELETE_PROFILE(
-      "forceDeleteProfile",
+  ADMINISTRATIVELY_DELETE_PROFILE(
+      "administrativelyDeleteProfile",
       ResourceKind.PROFILE,
       FreshReauthentication.REQUIRED,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY);

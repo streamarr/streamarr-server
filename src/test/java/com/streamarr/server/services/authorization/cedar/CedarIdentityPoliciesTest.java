@@ -1313,7 +1313,7 @@ class CedarIdentityPoliciesTest {
     void shouldReserveDeletionsForFreshServerAdmin() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var deleteAccount = new Intent.DeleteAccount(UUID.randomUUID());
-      var forceDelete = new Intent.ForceDeleteProfile(orphan.getId());
+      var administrativeDeletion = new Intent.AdministrativelyDeleteProfile(orphan.getId());
 
       assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deleteAccount))
           .isEqualTo(DENIED);
@@ -1321,10 +1321,10 @@ class CedarIdentityPoliciesTest {
       account.setServerAdmin(true);
       accounts.save(account);
       assertThat(decide(atHome(), deleteAccount)).isEqualTo(REAUTHENTICATION_REQUIRED);
-      assertThat(decide(atHome(), forceDelete)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(atHome(), administrativeDeletion)).isEqualTo(REAUTHENTICATION_REQUIRED);
       assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deleteAccount))
           .isEqualTo(ALLOWED);
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), forceDelete))
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), administrativeDeletion))
           .isEqualTo(ALLOWED);
     }
 
@@ -1338,7 +1338,8 @@ class CedarIdentityPoliciesTest {
       var fresh = withReauthenticatedAt(atHome(), Instant.now());
 
       assertThat(decide(fresh, new Intent.DeleteAccount(UUID.randomUUID()))).isEqualTo(DENIED);
-      assertThat(decide(fresh, new Intent.ForceDeleteProfile(orphan.getId()))).isEqualTo(DENIED);
+      assertThat(decide(fresh, new Intent.AdministrativelyDeleteProfile(orphan.getId())))
+          .isEqualTo(DENIED);
     }
 
     @Test

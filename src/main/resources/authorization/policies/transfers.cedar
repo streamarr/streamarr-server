@@ -17,13 +17,14 @@ when {
   principal has serverAdmin && principal.serverAdmin
 };
 
-// Deleting an Account or force-deleting a Profile is fresh-reauthenticated ServerAdmin work.
+// Deleting an Account or administratively deleting a Profile is fresh-reauthenticated
+// ServerAdmin work.
 @id("delete-as-fresh-server-admin")
 permit (
   principal,
   action in
     [Streamarr::Action::"deleteAccount",
-     Streamarr::Action::"forceDeleteProfile"],
+     Streamarr::Action::"administrativelyDeleteProfile"],
   resource
 )
 when {

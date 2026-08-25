@@ -113,8 +113,8 @@ when {
 };
 
 // Ordinary standalone deletion: the sole remaining direct manager of an unlinked, unshared
-// Profile, freshly reauthenticated. ServerAdmin has no shortcut here — force-delete is its own
-// audited override and arrives with transfers and deletion.
+// Profile, freshly reauthenticated. ServerAdmin has no shortcut here — administrative deletion is
+// its own audited override.
 @id("delete-profile-as-fresh-sole-manager")
 permit (
   principal,

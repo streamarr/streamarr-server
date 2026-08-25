@@ -104,17 +104,17 @@ union TransferProfileError =
   | ProfileNameTakenError
   | RestrictedProfileRequiresHouseholdAdminError
 
-input ForceDeleteProfileInput {
+input AdministrativelyDeleteProfileInput {
     profileId: ID!
     reason: String!
 }
 
-type ForceDeleteProfilePayload {
+type AdministrativelyDeleteProfilePayload {
     profileId: ID
-    userErrors: [ForceDeleteProfileError!]!
+    userErrors: [AdministrativelyDeleteProfileError!]!
 }
 
-union ForceDeleteProfileError =
+union AdministrativelyDeleteProfileError =
     ProfileNotFoundError
   | ReasonRequiredError
   | ReauthenticationRequiredError

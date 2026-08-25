@@ -49,12 +49,12 @@ public final class TransferRejections {
           NameConflict,
           NoEligibleAdmin {}
 
-  public sealed interface ForceDeleteProfile
+  public sealed interface AdministrativelyDeleteProfile
       permits ProfileNotFound, ReasonRequired, ReauthenticationRequired, ProfileLinked {}
 
   public record AccountNotFound() implements TransferAccount, DeleteAccount {}
 
-  public record ProfileNotFound() implements TransferProfile, ForceDeleteProfile {}
+  public record ProfileNotFound() implements TransferProfile, AdministrativelyDeleteProfile {}
 
   public record HouseholdNotFound() implements TransferAccount, TransferProfile {}
 
@@ -92,10 +92,10 @@ public final class TransferRejections {
 
   public record LocalManagerNotFound() implements TransferProfile {}
 
-  public record ProfileLinked() implements TransferProfile, ForceDeleteProfile {}
+  public record ProfileLinked() implements TransferProfile, AdministrativelyDeleteProfile {}
 
-  public record ReasonRequired() implements DeleteAccount, ForceDeleteProfile {}
+  public record ReasonRequired() implements DeleteAccount, AdministrativelyDeleteProfile {}
 
   public record ReauthenticationRequired()
-      implements DeleteAccount, DeleteMyAccount, ForceDeleteProfile {}
+      implements DeleteAccount, DeleteMyAccount, AdministrativelyDeleteProfile {}
 }

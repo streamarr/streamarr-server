@@ -230,24 +230,28 @@ class LifecycleErrorsTest {
             () -> LifecycleErrors.toDeleteMyAccountError(new TransferRejections.NoEligibleAdmin()),
             RestrictedProfileRequiresHouseholdAdminError.class),
         errorCase(
-            "Force-delete Profile not found",
+            "Administrative Profile deletion not found",
             () ->
-                LifecycleErrors.toForceDeleteProfileError(new TransferRejections.ProfileNotFound()),
+                LifecycleErrors.toAdministrativelyDeleteProfileError(
+                    new TransferRejections.ProfileNotFound()),
             ProfileNotFoundError.class),
         errorCase(
-            "Force-delete reason required",
+            "Administrative Profile deletion reason required",
             () ->
-                LifecycleErrors.toForceDeleteProfileError(new TransferRejections.ReasonRequired()),
+                LifecycleErrors.toAdministrativelyDeleteProfileError(
+                    new TransferRejections.ReasonRequired()),
             ReasonRequiredError.class),
         errorCase(
-            "Force-delete reauthentication required",
+            "Administrative Profile deletion reauthentication required",
             () ->
-                LifecycleErrors.toForceDeleteProfileError(
+                LifecycleErrors.toAdministrativelyDeleteProfileError(
                     new TransferRejections.ReauthenticationRequired()),
             ReauthenticationRequiredError.class),
         errorCase(
-            "Force-delete linked Profile",
-            () -> LifecycleErrors.toForceDeleteProfileError(new TransferRejections.ProfileLinked()),
+            "Administrative deletion of a linked Profile",
+            () ->
+                LifecycleErrors.toAdministrativelyDeleteProfileError(
+                    new TransferRejections.ProfileLinked()),
             ProfileBelongsToAccountError.class));
   }
 
