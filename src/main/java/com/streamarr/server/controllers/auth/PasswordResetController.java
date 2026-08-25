@@ -1,6 +1,7 @@
 package com.streamarr.server.controllers.auth;
 
 import com.streamarr.server.services.auth.PasswordResetService;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +22,7 @@ public class PasswordResetController {
 
   private final PasswordResetService passwordResetService;
 
+  @ApiResponse(responseCode = "204")
   @PostMapping("/redeem")
   public ResponseEntity<Void> redeem(@Valid @RequestBody RedeemPasswordResetRequest request) {
     passwordResetService.redeem(request.code(), request.newPassword());

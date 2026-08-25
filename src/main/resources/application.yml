@@ -22,6 +22,15 @@ dgs:
     introspection:
       enabled: false
 
+# The REST contract is published as OpenAPI under the dev and test profiles only; the pinned
+# copy for client codegen is docs/openapi.json (OpenApiContractIT keeps it current).
+springdoc:
+  api-docs:
+    enabled: false
+    version: openapi_3_1
+  paths-to-match: /api/**
+  writer-with-order-by-keys: true
+
 # Web-exposed actuator endpoints are an explicit allowlist: health only. Heap dumps and other
 # diagnostics stay off the wire — ADR 0016's in-memory secret handling depends on it.
 management:
