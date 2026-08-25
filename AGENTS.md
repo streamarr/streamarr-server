@@ -4,6 +4,8 @@
 - `./mvnw verify` — full build: unit tests (Surefire, `*Test`) + integration tests (Failsafe, `*IT`) + Checkstyle + Spotless
 - `./mvnw test` — unit tests only
 - `./mvnw spotless:apply` — format before committing
+- `./mvnw -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false -Djacoco.skip=true -Dit.test=OpenApiContractIT -Dopenapi.update=true verify` — refresh `docs/openapi.json`, the REST contract as OpenAPI 3.1 that clients generate types from; springdoc serves it at `/v3/api-docs` under the dev and test profiles only, and `OpenApiContractIT` fails the build when the pin drifts
+- `docs/openapi.json` is generated — never hand-edit it; change the controller or its records and refresh
 - `./mvnw generate-sources -Pgenerate-jooq-code` — regenerate jOOQ classes after adding a migration. Requires the local Postgres from `docker compose up -d`; migrates it, then generates into `src/main/java/com/streamarr/server/jooq/generated` (checked in — commit regenerated files with the migration)
 - Smoke tests (`@Tag("SmokeTest")`, e.g. `HlsStreamingSmokeTest`) are excluded from all normal builds; run with `./mvnw test -Dsurefire.excludedGroups=`
 - Local run: `docker compose up -d` (PostgreSQL), then `./mvnw spring-boot:run`. Every config value has an env-var default except `TMDB_API_TOKEN` (required for metadata enrichment); `IMAGE_STORAGE_PATH` and `STREAMING_SEGMENT_BASE_PATH` default to empty
