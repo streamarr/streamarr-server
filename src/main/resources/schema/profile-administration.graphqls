@@ -1,0 +1,167 @@
+# Profile administration (ADR 0024 §ProfileManager, §Profile creation, §PIN safety; ADR 0026).
+
+type ProfileAdministration {
+    id: ID!
+    name: String!
+    kind: ProfileKind!
+    maximumAllowedRatingAge: Int
+    picture: String
+    pinConfigured: Boolean!
+    restricted: Boolean!
+    householdId: ID!
+    linked: Boolean!
+}
+
+input CreateProfileInput {
+    householdId: ID!
+    name: String!
+    kind: ProfileKind!
+    maximumAllowedRatingAge: Int
+    "Required when a remote ServerAdmin creates a restricted Profile."
+    profileManagerAccountId: ID
+}
+
+type CreateProfilePayload {
+    profile: ProfileAdministration
+    userErrors: [CreateProfileError!]!
+}
+
+union CreateProfileError =
+    HouseholdNotFoundError
+  | ProfileNameRequiredError
+  | ProfileNameTakenError
+  | ProfileRequiresEligibleManagerError
+  | ProfileManagerNotEligibleError
+  | AccountNotFoundError
+  | MaximumAllowedRatingAgeInvalidError
+
+input RenameProfileInput {
+    profileId: ID!
+    name: String!
+}
+
+type RenameProfilePayload {
+    profile: ProfileAdministration
+    userErrors: [RenameProfileError!]!
+}
+
+union RenameProfileError =
+    ProfileNotFoundError
+  | ProfileNameRequiredError
+  | ProfileNameTakenError
+
+input SetProfilePictureInput {
+    profileId: ID!
+    picture: String!
+}
+
+type SetProfilePicturePayload {
+    profile: ProfileAdministration
+    userErrors: [SetProfilePictureError!]!
+}
+
+union SetProfilePictureError = ProfileNotFoundError
+
+input ChangeProfileKindInput {
+    profileId: ID!
+    kind: ProfileKind!
+}
+
+type ChangeProfileKindPayload {
+    profile: ProfileAdministration
+    userErrors: [ChangeProfileKindError!]!
+}
+
+union ChangeProfileKindError =
+    ProfileNotFoundError
+  | ReauthenticationRequiredError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedAccountCannotAdministerError
+  | MaximumAllowedRatingAgeInvalidError
+
+input SetProfileMaximumAllowedRatingAgeInput {
+    profileId: ID!
+    maximumAllowedRatingAge: Int!
+}
+
+type SetProfileMaximumAllowedRatingAgePayload {
+    profile: ProfileAdministration
+    userErrors: [SetProfileMaximumAllowedRatingAgeError!]!
+}
+
+union SetProfileMaximumAllowedRatingAgeError =
+    ProfileNotFoundError
+  | ReauthenticationRequiredError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedAccountCannotAdministerError
+  | MaximumAllowedRatingAgeInvalidError
+
+input RemoveProfileMaximumAllowedRatingAgeInput {
+    profileId: ID!
+}
+
+type RemoveProfileMaximumAllowedRatingAgePayload {
+    profile: ProfileAdministration
+    userErrors: [RemoveProfileMaximumAllowedRatingAgeError!]!
+}
+
+union RemoveProfileMaximumAllowedRatingAgeError =
+    ProfileNotFoundError
+  | ReauthenticationRequiredError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedAccountCannotAdministerError
+  | MaximumAllowedRatingAgeInvalidError
+
+input SetProfilePinInput {
+    profileId: ID!
+    pin: String!
+}
+
+type SetProfilePinPayload {
+    profile: ProfileAdministration
+    userErrors: [SetProfilePinError!]!
+}
+
+union SetProfilePinError = ProfileNotFoundError | InvalidProfilePinError
+
+input RemoveProfilePinInput {
+    profileId: ID!
+}
+
+type RemoveProfilePinPayload {
+    profile: ProfileAdministration
+    userErrors: [RemoveProfilePinError!]!
+}
+
+union RemoveProfilePinError = ProfileNotFoundError | ProfilePinRequiredError
+
+input AdministrativelyResetProfilePinInput {
+    profileId: ID!
+    pin: String!
+    reason: String!
+}
+
+type AdministrativelyResetProfilePinPayload {
+    profile: ProfileAdministration
+    userErrors: [AdministrativelyResetProfilePinError!]!
+}
+
+union AdministrativelyResetProfilePinError =
+    ProfileNotFoundError
+  | InvalidProfilePinError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+
+input DeleteProfileInput {
+    profileId: ID!
+}
+
+type DeleteProfilePayload {
+    deletedProfileId: ID
+    userErrors: [DeleteProfileError!]!
+}
+
+union DeleteProfileError =
+    ProfileNotFoundError
+  | ProfileNotDeletableError
+  | ReauthenticationRequiredError

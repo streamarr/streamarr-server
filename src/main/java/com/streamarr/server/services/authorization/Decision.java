@@ -6,8 +6,8 @@ package com.streamarr.server.services.authorization;
  * no decision could be made — the caller fails closed with a sanitized top-level error while the
  * diagnostics are logged and metered inside the authorization module.
  */
-// java:S2326: T is the value an allowed decision carries; it binds Intent<T> to decide()'s
-// return so a caller cannot read a value out of the wrong intent's decision.
+// java:S2326: T is the value an allowed decision carries; result-family-specific decide()
+// overloads prevent callers from reading a value from the wrong family.
 @SuppressWarnings("java:S2326")
 public sealed interface Decision<T> {
 

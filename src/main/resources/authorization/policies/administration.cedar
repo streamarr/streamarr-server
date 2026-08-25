@@ -17,9 +17,8 @@ when {
   context.freshReauthentication
 };
 
-// Household role changes, enable/disable, and Household creation are live ServerAdmin work with an
-// audit record, not reauthentication (ADR 0024 line "Transfer, disable, re-enable, and role
-// changes need live ServerAdmin authority and an audit record").
+// Household role changes, enable/disable, and Household creation require live ServerAdmin
+// authority, but not fresh reauthentication.
 @id("account-administration-writes-require-live-enabled-server-admin")
 permit (
   principal,

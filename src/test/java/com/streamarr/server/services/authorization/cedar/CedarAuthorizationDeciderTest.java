@@ -25,6 +25,9 @@ import com.cedarpolicy.model.exception.AuthException;
 import com.cedarpolicy.model.policy.PolicySet;
 import com.cedarpolicy.value.PrimBool;
 import com.cedarpolicy.value.PrimString;
+import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
+import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
@@ -37,6 +40,7 @@ import com.streamarr.server.services.authorization.SecurityContextAuthorizationS
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -81,7 +85,7 @@ class CedarAuthorizationDeciderTest {
   @DisplayName(
       "Should allow library administration through the facade when the live row is an enabled ServerAdmin")
   void shouldAllowLibraryAdministrationThroughFacadeWhenLiveRowIsEnabledServerAdmin(
-      Intent<AuthorizationUnit> intent) {
+      Intent.UnitIntent intent) {
     var identity = identityFor(liveAccount(true, true));
 
     assertThat(authorizationService.requireAllowed(identity, intent))
@@ -93,7 +97,7 @@ class CedarAuthorizationDeciderTest {
   @DisplayName(
       "Should deny library administration through the facade when the live row is not a ServerAdmin")
   void shouldDenyLibraryAdministrationThroughFacadeWhenLiveRowIsNotServerAdmin(
-      Intent<AuthorizationUnit> intent) {
+      Intent.UnitIntent intent) {
     var identity = identityFor(liveAccount(false, true));
 
     assertThatThrownBy(() -> authorizationService.requireAllowed(identity, intent))
@@ -184,7 +188,28 @@ class CedarAuthorizationDeciderTest {
   @DisplayName("Should fail closed when the intent is null")
   void shouldFailClosedWhenIntentIsNull() {
     var identity = identityFor(UUID.randomUUID());
-    Intent<AuthorizationUnit> intent = null;
+    Intent.UnitIntent intent = null;
+
+    assertThat(decider.decide(identity, intent))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+    assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when the authenticated identity is null")
+  void shouldFailClosedWhenAuthenticatedIdentityIsNull() {
+    AuthenticatedIdentity identity = null;
+
+    assertThat(decider.decide(identity, new Intent.AddLibrary()))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+    assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when the policy-change intent is null")
+  void shouldFailClosedWhenPolicyChangeIntentIsNull() {
+    var identity = identityFor(UUID.randomUUID());
+    Intent.ProfilePolicyChange intent = null;
 
     assertThat(decider.decide(identity, intent))
         .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
@@ -221,6 +246,34 @@ class CedarAuthorizationDeciderTest {
     var identity = identityFor(liveAccount(true, true));
 
     assertThat(failing.decide(identity, new Intent.AddLibrary()))
+        .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+    assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when policy-change planning throws")
+  void shouldFailClosedWhenPolicyChangePlanningThrows() {
+    var unavailableProfiles =
+        new FakeProfileRepository() {
+          @Override
+          public Optional<ProfilePolicySnapshot> lockPolicyById(UUID profileId) {
+            throw new IllegalStateException("database unavailable");
+          }
+        };
+    var failing =
+        new CedarAuthorizationDecider(
+            ENGINE,
+            BUNDLE,
+            new SliceAssembler(
+                ContributorStubs.allWith(new LivePrincipalAuthorityContributor(accounts))),
+            new IntentPlanner(new ProfilePolicyPlanner(unavailableProfiles)),
+            ContributorStubs.systemClockFreshness(),
+            meters);
+    var identity = identityFor(liveAccount(true, true));
+
+    assertThat(
+            failing.decide(
+                identity, new Intent.ChangeProfileKind(UUID.randomUUID(), ProfileKind.ADULT)))
         .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
     assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
   }
@@ -284,6 +337,7 @@ class CedarAuthorizationDeciderTest {
         engine,
         BUNDLE,
         new SliceAssembler(ContributorStubs.allWith(contributor)),
+        new IntentPlanner(new ProfilePolicyPlanner(new FakeProfileRepository())),
         ContributorStubs.systemClockFreshness(),
         meters);
   }

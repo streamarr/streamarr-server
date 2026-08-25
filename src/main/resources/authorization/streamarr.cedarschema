@@ -16,6 +16,7 @@ namespace Streamarr {
     sessionLive?: Bool,
     liveHouseholdRole?: String,
     liveMembershipHousehold?: Household,
+    eligible?: Bool,
   };
 
   entity Household;
@@ -27,6 +28,10 @@ namespace Streamarr {
     pinRequired?: Bool,
     managedByPrincipal?: Bool,
     availableInPrincipalHousehold?: Bool,
+    supervisedByPrincipal?: Bool,
+    unlinked?: Bool,
+    shareFree?: Bool,
+    principalSoleManager?: Bool,
   };
 
   // The singleton root resource server-wide authority is granted on.
@@ -138,6 +143,51 @@ namespace Streamarr {
     principal: Account,
     resource: Household,
     context: {},
+  };
+  action createProfile in profileAdministration appliesTo {
+    principal: Account,
+    resource: Household,
+    context: {},
+  };
+  action createProfileWithLocalManager in profileAdministration appliesTo {
+    principal: Account,
+    resource: Household,
+    context: {},
+  };
+  action editProfile in profileAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
+  action changeProfileKind in profileAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
+  action liftFinalRestriction in profileAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: { freshReauthentication: Bool },
+  };
+  action restrictSovereignAdult in profileAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: { freshReauthentication: Bool },
+  };
+  action manageProfilePin in profileAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
+  action administrativelyResetProfilePin in profileAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: { freshReauthentication: Bool },
+  };
+  action deleteProfile in profileAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: { freshReauthentication: Bool },
   };
   action viewProfileAdministration in profileAdministration appliesTo {
     principal: Account,

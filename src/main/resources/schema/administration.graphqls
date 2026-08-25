@@ -52,7 +52,7 @@ union GrantServerAdminError =
   | InvalidIdError
   | ReauthenticationRequiredError
   | ReasonRequiredError
-  | RestrictedAccountAuthorityError
+  | RestrictedAccountCannotAdministerError
 
 input RevokeServerAdminInput {
     accountId: ID!
@@ -80,7 +80,7 @@ type GrantHouseholdAdminPayload {
     userErrors: [GrantHouseholdAdminError!]!
 }
 
-union GrantHouseholdAdminError = AccountNotFoundError | InvalidIdError | RestrictedAccountAuthorityError
+union GrantHouseholdAdminError = AccountNotFoundError | InvalidIdError | RestrictedAccountCannotAdministerError
 
 input RevokeHouseholdAdminInput {
     accountId: ID!

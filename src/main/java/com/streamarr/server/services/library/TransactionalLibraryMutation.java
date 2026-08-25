@@ -17,7 +17,7 @@ class TransactionalLibraryMutation implements LibraryMutationTransaction {
 
   @Override
   public <T> T execute(
-      AuthenticatedIdentity identity, Intent<?> intent, Supplier<T> libraryMutation) {
+      AuthenticatedIdentity identity, Intent.UnitIntent intent, Supplier<T> libraryMutation) {
     return transactionTemplate.execute(
         _ -> {
           authorizationService.requireAllowed(identity, intent);

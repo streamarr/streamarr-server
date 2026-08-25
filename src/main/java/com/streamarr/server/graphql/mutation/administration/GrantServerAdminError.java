@@ -7,4 +7,4 @@ public sealed interface GrantServerAdminError extends MutationError
         InvalidIdError,
         ReauthenticationRequiredError,
         ReasonRequiredError,
-        RestrictedAccountAuthorityError {}
+        RestrictedAccountCannotAdministerError {}

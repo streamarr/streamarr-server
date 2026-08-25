@@ -14,4 +14,6 @@ public interface UserAccountRepository
   Optional<UserAccount> findByEmailIgnoreCase(String email);
 
   List<UserAccount> findByHouseholdId(UUID householdId);
+
+  Optional<UserAccount> findByPersonalProfileId(UUID profileId);
 }

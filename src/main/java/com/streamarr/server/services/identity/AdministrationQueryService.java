@@ -1,9 +1,11 @@
 package com.streamarr.server.services.identity;
 
 import com.streamarr.server.domain.auth.Household;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -31,6 +33,7 @@ public class AdministrationQueryService {
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
   private final PaginationService paginationService;
+  private final ProfileRepository profileRepository;
 
   public Optional<Household> householdAdministration(
       AuthenticatedIdentity identity, UUID householdId) {
@@ -51,6 +54,25 @@ public class AdministrationQueryService {
       case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
     };
   }
+
+  public Optional<ProfileAdministrationView> profileAdministration(
+      AuthenticatedIdentity identity, UUID profileId) {
+    return switch (authorizationService.decide(
+        identity, new Intent.ViewProfileAdministration(profileId))) {
+      case Decision.Allowed<?> _ ->
+          profileRepository.findById(profileId).map(this::profileAdministrationView);
+      case Decision.Denied<?> _ -> Optional.empty();
+      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+    };
+  }
+
+  /** The view carries the live Account linkage the entity alone cannot answer. */
+  public ProfileAdministrationView profileAdministrationView(Profile profile) {
+    var linked = userAccountRepository.findByPersonalProfileId(profile.getId()).isPresent();
+    return new ProfileAdministrationView(profile, linked);
+  }
+
+  public record ProfileAdministrationView(Profile profile, boolean linked) {}
 
   /** A bounded page of Households on the server, in stable name-then-id order. */
   public MediaPage<Household> households(

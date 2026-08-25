@@ -76,7 +76,56 @@ enum Action {
   REVOKE_HOUSEHOLD_ADMIN(
       "revokeHouseholdAdmin", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   DISABLE_ACCOUNT("disableAccount", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
-  ENABLE_ACCOUNT("enableAccount", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
+  ENABLE_ACCOUNT("enableAccount", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  CREATE_PROFILE(
+      "createProfile",
+      ResourceKind.HOUSEHOLD,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.LIVE_PRINCIPAL_HOUSEHOLD,
+      FactRequirement.PRINCIPAL_ELIGIBILITY),
+  CREATE_PROFILE_WITH_LOCAL_MANAGER(
+      "createProfileWithLocalManager",
+      ResourceKind.HOUSEHOLD,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  EDIT_PROFILE(
+      "editProfile",
+      ResourceKind.PROFILE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_MANAGEMENT,
+      FactRequirement.PROFILE_SUPERVISION),
+  CHANGE_PROFILE_KIND(
+      "changeProfileKind",
+      ResourceKind.PROFILE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_MANAGEMENT),
+  LIFT_FINAL_RESTRICTION(
+      "liftFinalRestriction",
+      ResourceKind.PROFILE,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_MANAGEMENT),
+  RESTRICT_SOVEREIGN_ADULT(
+      "restrictSovereignAdult",
+      ResourceKind.PROFILE,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  MANAGE_PROFILE_PIN(
+      "manageProfilePin",
+      ResourceKind.PROFILE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_MANAGEMENT,
+      FactRequirement.PROFILE_SUPERVISION),
+  ADMINISTRATIVELY_RESET_PROFILE_PIN(
+      "administrativelyResetProfilePin",
+      ResourceKind.PROFILE,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  DELETE_PROFILE(
+      "deleteProfile",
+      ResourceKind.PROFILE,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_DELETION);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 

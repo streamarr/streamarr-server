@@ -13,7 +13,7 @@ public class FakeLibraryMutationTransaction implements LibraryMutationTransactio
 
   @Override
   public <T> T execute(
-      AuthenticatedIdentity identity, Intent<?> intent, Supplier<T> libraryMutation) {
+      AuthenticatedIdentity identity, Intent.UnitIntent intent, Supplier<T> libraryMutation) {
     executions.add(new Execution(identity, intent));
     return libraryMutation.get();
   }
@@ -22,5 +22,5 @@ public class FakeLibraryMutationTransaction implements LibraryMutationTransactio
     return List.copyOf(executions);
   }
 
-  public record Execution(AuthenticatedIdentity identity, Intent<?> intent) {}
+  public record Execution(AuthenticatedIdentity identity, Intent.UnitIntent intent) {}
 }

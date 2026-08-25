@@ -20,12 +20,12 @@ class AdministrationErrorsTest {
   private static final AccountNotFoundError ACCOUNT_NOT_FOUND =
       new AccountNotFoundError("No such Account.", List.of("accountId"));
   private static final ReauthenticationRequiredError REAUTHENTICATION_REQUIRED =
-      new ReauthenticationRequiredError("Confirm your password to continue.");
+      new ReauthenticationRequiredError("Confirm your password before retrying this action.");
   private static final ReasonRequiredError REASON_REQUIRED =
       new ReasonRequiredError("Enter a reason for the audit record.", List.of("reason"));
-  private static final RestrictedAccountAuthorityError RESTRICTED_ACCOUNT =
-      new RestrictedAccountAuthorityError(
-          "An Account with a restricted Personal Profile cannot hold authority.",
+  private static final RestrictedAccountCannotAdministerError RESTRICTED_ACCOUNT =
+      new RestrictedAccountCannotAdministerError(
+          "An Account with a restricted Personal Profile cannot be a ServerAdmin, HouseholdAdmin, or Profile manager.",
           List.of("accountId"));
   private static final LastServerAdminError LAST_SERVER_ADMIN =
       new LastServerAdminError("At least one enabled ServerAdmin must remain.");

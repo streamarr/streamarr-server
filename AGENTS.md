@@ -154,6 +154,8 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Prefer `var` for local variables unless the type isn't obvious or would lead to misinterpretation
 - Use records for immutable data carriers (DTOs, value objects, embeddables)
 - Use sealed interfaces/classes when the set of subtypes is known and fixed
+- Don't widen known types to `Object` and cast them back; isolate unavoidable unchecked casts to
+  the smallest private boundary and document the invariant
 - Prefer `Optional` over nullable returns — never return null from a public method
 - Use `switch` expressions (not statements) with exhaustive pattern matching
 - Use record deconstruction patterns when switching over sealed types (see `PollingFileStabilityChecker.PollResult`)
@@ -172,6 +174,9 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
   use case is enforced in the service layer.
 - Identity stack direction: `services.identity` (Profile selection, Household switching, playback gate, Me, refresh composition) → `services.authorization` (Cedar) → `services.auth` (authentication, sessions, token minting, password/PIN verification, throttles); dependencies point one way only (ArchUnit). Profile and Household facts come from ADR 0024's relationships (`UserAccount.householdId/householdRole/personalProfileId`, `profile_household_share`, `profile_manager`); the PIN safety rule is `ProfileSafetyRule`, evaluated at selection, refresh, and the picker — never stored
 - Authorization: every point decision goes through `AuthorizationService.decide(identity, intent)` (resource operation whose denial is a typed payload error) or `requireAllowed(identity, intent)` (whole-surface gate → top-level FORBIDDEN) with a typed `Intent`; callers never name a Cedar action, assemble entities, or pass their own reading of authority. Only `services.authorization.cedar` imports Cedar/JNE, only the facade knows `AuthorizationDecider`, and the engine's actions/checks/contributors are package-private. Live ServerAdmin authority is a PostgreSQL fact contributed for the actions that need it; ServerAdmin is never carried in tokens. `Failed` decisions surface as `AUTHORIZATION_UNAVAILABLE`; diagnostics are logged and metered (`streamarr.authorization.fail_closed`), never returned. The module is held at 100% line/branch coverage by a JaCoCo check (ADR 0025)
+- Administrative overrides are distinct mutations, service methods, typed intents, and Cedar actions;
+  never widen the ordinary path with ServerAdmin authority. Resolver classes remain organized by
+  domain.
 - Authorization fact requirements and contributors name the semantic fact family without a
   redundant `Fact` or `Facts` suffix — for example, `PROFILE_MANAGEMENT` and
   `ProfileManagementContributor`. Reserve the `Facts` suffix for data carriers containing multiple

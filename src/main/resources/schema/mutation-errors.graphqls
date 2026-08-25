@@ -56,7 +56,7 @@ type HouseholdNotFoundError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"The action is allowed except for a current reauthentication ceremony (POST /api/auth/reauth)."
+"The action requires recent password confirmation."
 type ReauthenticationRequiredError implements MutationError {
     message: String!
 }
@@ -66,13 +66,18 @@ type ReasonRequiredError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"An Account whose Personal Profile is restricted holds no administrative authority."
-type RestrictedAccountAuthorityError implements InputMutationError & MutationError {
+"An Account whose Personal Profile is restricted cannot administer the server, Household, or Profiles."
+type RestrictedAccountCannotAdministerError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
 
-"At least one enabled ServerAdmin must remain after bootstrap."
+type MaximumAllowedRatingAgeInvalidError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"At least one enabled ServerAdmin must remain."
 type LastServerAdminError implements MutationError {
     message: String!
 }
@@ -90,4 +95,47 @@ type DisplayNameRequiredError implements InputMutationError & MutationError {
 type HouseholdNameRequiredError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
+}
+
+type ProfileNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ProfileNameRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"Active Profile names are unique, ignoring case, within each Household."
+type ProfileNameTakenError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The Profile needs an eligible Profile manager in its Household."
+type ProfileRequiresEligibleManagerError implements MutationError {
+    message: String!
+}
+
+"The Account cannot manage Profiles because its Personal Profile is restricted."
+type ProfileManagerNotEligibleError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type InvalidProfilePinError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The Profile must keep a PIN under its Household's safety policy."
+type ProfilePinRequiredError implements MutationError {
+    message: String!
+    householdId: ID!
+}
+
+"Deletion needs an unlinked, unshared Profile and the caller as its sole remaining manager."
+type ProfileNotDeletableError implements MutationError {
+    message: String!
 }

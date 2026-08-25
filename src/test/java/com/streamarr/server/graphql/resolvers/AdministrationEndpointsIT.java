@@ -448,7 +448,7 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(
             jsonPath("$.data.grantHouseholdAdmin.userErrors[0].__typename")
-                .value("RestrictedAccountAuthorityError"));
+                .value("RestrictedAccountCannotAdministerError"));
 
     assertThat(userAccountRepository.findById(member.getId()).orElseThrow().getHouseholdRole())
         .isEqualTo(HouseholdRole.MEMBER);
@@ -472,7 +472,7 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(
             jsonPath("$.data.grantServerAdmin.userErrors[0].__typename")
-                .value("RestrictedAccountAuthorityError"));
+                .value("RestrictedAccountCannotAdministerError"));
 
     assertThat(userAccountRepository.findById(member.getId()).orElseThrow().isServerAdmin())
         .isFalse();

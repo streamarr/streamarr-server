@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
+import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.services.authorization.Decision;
@@ -25,7 +26,8 @@ class AdministrationQueryServiceTest {
           authorization,
           new FakeHouseholdRepository(),
           new FakeUserAccountRepository(),
-          new PaginationService());
+          new PaginationService(),
+          new FakeProfileRepository());
 
   @Test
   @DisplayName("Should fail closed when Household administration visibility cannot be decided")
@@ -46,6 +48,17 @@ class AdministrationQueryServiceTest {
     var accountId = UUID.randomUUID();
 
     assertThatThrownBy(() -> service.accountAdministration(identity, accountId))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when Profile administration visibility cannot be decided")
+  void shouldFailClosedWhenProfileAdministrationVisibilityCannotBeDecided() {
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var identity = authorization.currentIdentity();
+    var profileId = UUID.randomUUID();
+
+    assertThatThrownBy(() -> service.profileAdministration(identity, profileId))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 }

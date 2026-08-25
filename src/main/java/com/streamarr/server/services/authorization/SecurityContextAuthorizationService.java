@@ -73,16 +73,24 @@ public class SecurityContextAuthorizationService implements AuthorizationService
   }
 
   @Override
-  public <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent) {
+  public Decision<AuthorizationUnit> decide(
+      AuthenticatedIdentity identity, Intent.UnitIntent intent) {
     return decider.decide(identity, intent);
   }
 
   @Override
-  public <T> T requireAllowed(AuthenticatedIdentity identity, Intent<T> intent) {
+  public Decision<ProfilePolicyTransition> decide(
+      AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent) {
+    return decider.decide(identity, intent);
+  }
+
+  @Override
+  public AuthorizationUnit requireAllowed(
+      AuthenticatedIdentity identity, Intent.UnitIntent intent) {
     return switch (decide(identity, intent)) {
-      case Decision.Allowed<T>(var value) -> value;
-      case Decision.Denied<T> _ -> throw new AccessDeniedException("Not allowed.");
-      case Decision.Failed<T> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Allowed<AuthorizationUnit>(var value) -> value;
+      case Decision.Denied<AuthorizationUnit> _ -> throw new AccessDeniedException("Not allowed.");
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
     };
   }
 }

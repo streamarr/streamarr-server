@@ -6,6 +6,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.authorization.ProfilePolicyTransition;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,16 +16,18 @@ import java.util.function.Supplier;
 import org.springframework.security.access.AccessDeniedException;
 
 /**
- * Records the intents callers submit and answers them from a configurable rule (allow everything by
- * default). It never exposes Cedar actions, entities, or policy ids — only the public {@link
- * Decision} contract.
+ * Records the intents callers submit and answers them from result-family-specific rules. Unit
+ * intents are allowed by default; Profile policy decisions must be configured explicitly. It never
+ * exposes Cedar actions, entities, or policy ids — only the public {@link Decision} contract.
  */
 public final class FakeAuthorizationService implements AuthorizationService {
 
   private final Supplier<AuthenticatedIdentity> identity;
   private final String tokenValue;
-  private final List<Intent<?>> intents = new ArrayList<>();
-  private Function<Intent<?>, Decision<?>> rule = FakeAuthorizationService::allow;
+  private final List<Intent> intents = new ArrayList<>();
+  private Function<Intent.UnitIntent, Decision<AuthorizationUnit>> unitRule = _ -> allowedUnit();
+  private Function<Intent.ProfilePolicyChange, Decision<ProfilePolicyTransition>> policyRule =
+      _ -> unavailablePolicy();
 
   public FakeAuthorizationService(AuthenticatedIdentity identity) {
     this(() -> identity);
@@ -39,29 +42,39 @@ public final class FakeAuthorizationService implements AuthorizationService {
     this.tokenValue = tokenValue;
   }
 
-  /** Every intent is denied by policy until {@link #allowAll()}. */
+  /** Every intent is denied by policy until reconfigured. */
   public FakeAuthorizationService denyAll() {
-    rule = _ -> new Decision.Denied<>(Decision.DenialReason.POLICY);
+    unitRule = _ -> new Decision.Denied<>(Decision.DenialReason.POLICY);
+    policyRule = _ -> new Decision.Denied<>(Decision.DenialReason.POLICY);
     return this;
   }
 
   public FakeAuthorizationService allowAll() {
-    rule = FakeAuthorizationService::allow;
+    unitRule = _ -> allowedUnit();
+    policyRule = _ -> unavailablePolicy();
     return this;
   }
 
   /** Every intent fails closed with the given cause. */
   public FakeAuthorizationService failWith(Decision.FailureCause cause) {
-    rule = _ -> new Decision.Failed<>(cause);
+    unitRule = _ -> new Decision.Failed<>(cause);
+    policyRule = _ -> new Decision.Failed<>(cause);
     return this;
   }
 
-  public FakeAuthorizationService decideWith(Function<Intent<?>, Decision<?>> decisionRule) {
-    rule = decisionRule;
+  public FakeAuthorizationService decideUnitWith(
+      Function<Intent.UnitIntent, Decision<AuthorizationUnit>> decisionRule) {
+    unitRule = decisionRule;
     return this;
   }
 
-  public List<Intent<?>> recordedIntents() {
+  public FakeAuthorizationService decidePolicyWith(
+      Function<Intent.ProfilePolicyChange, Decision<ProfilePolicyTransition>> decisionRule) {
+    policyRule = decisionRule;
+    return this;
+  }
+
+  public List<Intent> recordedIntents() {
     return List.copyOf(intents);
   }
 
@@ -96,22 +109,34 @@ public final class FakeAuthorizationService implements AuthorizationService {
   }
 
   @Override
-  @SuppressWarnings("unchecked")
-  public <T> Decision<T> decide(AuthenticatedIdentity identity, Intent<T> intent) {
+  public Decision<AuthorizationUnit> decide(
+      AuthenticatedIdentity identity, Intent.UnitIntent intent) {
     intents.add(intent);
-    return (Decision<T>) rule.apply(intent);
+    return unitRule.apply(intent);
   }
 
   @Override
-  public <T> T requireAllowed(AuthenticatedIdentity identity, Intent<T> intent) {
+  public Decision<ProfilePolicyTransition> decide(
+      AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent) {
+    intents.add(intent);
+    return policyRule.apply(intent);
+  }
+
+  @Override
+  public AuthorizationUnit requireAllowed(
+      AuthenticatedIdentity identity, Intent.UnitIntent intent) {
     return switch (decide(identity, intent)) {
-      case Decision.Allowed<T>(var value) -> value;
-      case Decision.Denied<T> _ -> throw new AccessDeniedException("Not allowed.");
-      case Decision.Failed<T> _ -> throw new AuthorizationUnavailableException();
+      case Decision.Allowed<AuthorizationUnit>(var value) -> value;
+      case Decision.Denied<AuthorizationUnit> _ -> throw new AccessDeniedException("Not allowed.");
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
     };
   }
 
-  private static Decision<?> allow(Intent<?> intent) {
+  private static Decision<AuthorizationUnit> allowedUnit() {
     return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
+  }
+
+  private static Decision<ProfilePolicyTransition> unavailablePolicy() {
+    return new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE);
   }
 }

@@ -4,10 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.cedarpolicy.BasicAuthorizationEngine;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Intent;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -57,7 +61,7 @@ class AuthorizationParityTest {
 
   @Test
   @DisplayName(
-      "Should plan every concrete schema action from exactly one intent when intent parity is checked")
+      "Should plan every concrete schema action from at least one intent when intent parity is checked")
   void shouldPlanEveryConcreteSchemaActionWhenIntentParityIsChecked() throws Exception {
     var concrete = new ArrayList<String>();
     schemaActions()
@@ -70,15 +74,80 @@ class AuthorizationParityTest {
               }
             });
     var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
-    var planned =
-        allIntents().stream()
-            .map(intent -> IntentPlanner.plan(identity, intent).check().action().cedarName())
-            .toList();
+    var planner = new IntentPlanner(new ProfilePolicyPlanner(new FakeProfileRepository()));
+    var planned = new LinkedHashSet<String>();
+    allIntents().stream()
+        .map(intent -> planner.plan(identity, intent).check().action().cedarName())
+        .forEach(planned::add);
+    planned.addAll(policyChangeActions());
 
     assertThat(planned).containsExactlyInAnyOrderElementsOf(concrete);
     assertThat(Action.values())
         .extracting(Action::cedarName)
         .containsExactlyInAnyOrderElementsOf(concrete);
+  }
+
+  @Test
+  @DisplayName("Should return the unit value when any unit intent is planned")
+  void shouldReturnUnitValueWhenAnyUnitIntentIsPlanned() {
+    var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
+    var planner = new IntentPlanner(new ProfilePolicyPlanner(new FakeProfileRepository()));
+
+    assertThat(allIntents())
+        .allSatisfy(
+            intent ->
+                assertThat(planner.plan(identity, intent).value())
+                    .isSameAs(AuthorizationUnit.INSTANCE));
+  }
+
+  /**
+   * Every transition classification, planned through the real classifier over one fake so the
+   * classification-to-action map stays covered here.
+   */
+  private static List<String> policyChangeActions() {
+    var profiles = new FakeProfileRepository();
+    var planner = new IntentPlanner(new ProfilePolicyPlanner(profiles));
+    var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+    var ceilingedKid =
+        profiles.save(ProfileFixture.kidProfileBuilder().maximumAllowedRatingAge(12).build());
+    var unrestrictedAdult = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+    var sovereign = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+    profiles.linkTo(sovereign.getId(), UUID.randomUUID());
+
+    return List.of(
+        // KID gaining a ceiling: still restricted, same kind — an ordinary edit.
+        actionName(
+            planner.plan(new Intent.SetProfileContentCeiling(kid.getId(), 12)),
+            Action.EDIT_PROFILE),
+        // Ceilinged KID losing only the ceiling: still a KID — an ordinary edit.
+        actionName(
+            planner.plan(new Intent.ClearProfileContentCeiling(ceilingedKid.getId())),
+            Action.EDIT_PROFILE),
+        // An UNLINKED unrestricted Adult gaining a ceiling: its managers may restrict it.
+        actionName(
+            planner.plan(new Intent.SetProfileContentCeiling(unrestrictedAdult.getId(), 12)),
+            Action.EDIT_PROFILE),
+        // Clearing a ceiling that is not set: unrestricted stays unrestricted.
+        actionName(
+            planner.plan(new Intent.ClearProfileContentCeiling(unrestrictedAdult.getId())),
+            Action.EDIT_PROFILE),
+        // Ceilinged KID becoming a ceilinged ADULT: a kind change, still restricted.
+        actionName(
+            planner.plan(new Intent.ChangeProfileKind(ceilingedKid.getId(), ProfileKind.ADULT)),
+            Action.CHANGE_PROFILE_KIND),
+        // KID becoming an unrestricted ADULT: the final restriction lifts.
+        actionName(
+            planner.plan(new Intent.ChangeProfileKind(kid.getId(), ProfileKind.ADULT)),
+            Action.LIFT_FINAL_RESTRICTION),
+        // A linked unrestricted Adult gaining a ceiling: restricting a sovereign Adult.
+        actionName(
+            planner.plan(new Intent.SetProfileContentCeiling(sovereign.getId(), 12)),
+            Action.RESTRICT_SOVEREIGN_ADULT));
+  }
+
+  private static String actionName(IntentPlan<?> plan, Action expected) {
+    assertThat(plan.check().action()).isEqualTo(expected);
+    return plan.check().action().cedarName();
   }
 
   @Test
@@ -91,6 +160,7 @@ class AuthorizationParityTest {
       if (action.resourceKind() != Action.ResourceKind.SERVER) {
         continue;
       }
+
       var householdGroup = action == Action.CREATE_HOUSEHOLD || action == Action.VIEW_HOUSEHOLDS;
       var group = householdGroup ? "householdAdministration" : "libraryAdministration";
       assertThat(actions.get(action.cedarName()).path("memberOf"))
@@ -120,7 +190,7 @@ class AuthorizationParityTest {
     return BUNDLE.schema().toJsonFormat().path("Streamarr").path("actions");
   }
 
-  private static List<Intent<AuthorizationUnit>> allIntents() {
+  private static List<Intent.UnitIntent> allIntents() {
     var libraryId = UUID.randomUUID();
     var id = UUID.randomUUID();
     return List.of(
@@ -144,6 +214,13 @@ class AuthorizationParityTest {
         new Intent.RevokeHouseholdAdmin(id),
         new Intent.DisableAccount(id),
         new Intent.EnableAccount(id),
-        new Intent.ViewHouseholds());
+        new Intent.ViewHouseholds(),
+        new Intent.CreateProfile(id),
+        new Intent.CreateProfileWithLocalManager(id),
+        new Intent.RenameProfile(id),
+        new Intent.SetProfilePicture(id),
+        new Intent.ManageProfilePin(id),
+        new Intent.AdministrativelyResetProfilePin(id),
+        new Intent.DeleteProfile(id));
   }
 }
