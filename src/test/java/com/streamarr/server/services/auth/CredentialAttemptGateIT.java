@@ -21,13 +21,19 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class CredentialAttemptGateIT extends AbstractIntegrationTest {
 
   private static final String IP_ADDRESS = "192.0.2.15";
+  private static final String IPV6_ADDRESS = "fe80:0:0:0:0:0:0:1";
+  // PostgreSQL renders inet text in its compressed form.
+  private static final String IPV6_ADDRESS_AS_STORED = "fe80::1";
 
   @Autowired private CredentialAttemptGate gate;
   @Autowired private JdbcTemplate jdbcTemplate;
 
   @AfterEach
   void deleteAttempts() {
-    jdbcTemplate.update("DELETE FROM credential_attempt WHERE host(ip_address) = ?", IP_ADDRESS);
+    jdbcTemplate.update(
+        "DELETE FROM credential_attempt WHERE host(ip_address) IN (?, ?)",
+        IP_ADDRESS,
+        IPV6_ADDRESS_AS_STORED);
   }
 
   @Test
@@ -65,5 +71,26 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
     assertThat(((Timestamp) row.get("completed_at")).toInstant())
         .isAfterOrEqualTo(((Timestamp) row.get("attempted_at")).toInstant());
     assertThat(row.get("result")).isEqualTo("FAILED");
+  }
+
+  @Test
+  @DisplayName("Should persist an IPv6 client address")
+  void shouldPersistAnIpv6ClientAddress() {
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.ACCOUNT_LOGIN)
+            .accountId(UUID.randomUUID())
+            .ipAddress(IPV6_ADDRESS)
+            .build();
+
+    var reservation = gate.reserve(target);
+    gate.complete(reservation, CredentialAttemptResult.FAILED);
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT host(ip_address) FROM credential_attempt WHERE id = ?",
+                String.class,
+                reservation.id()))
+        .isEqualTo(IPV6_ADDRESS_AS_STORED);
   }
 }

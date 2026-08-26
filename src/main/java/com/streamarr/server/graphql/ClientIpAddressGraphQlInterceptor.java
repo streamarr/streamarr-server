@@ -28,6 +28,12 @@ public class ClientIpAddressGraphQlInterceptor implements WebGraphQlInterceptor 
   }
 
   public static String resolve(DataFetchingEnvironment environment) {
-    return environment.getGraphQlContext().get(CONTEXT_KEY);
+    String ipAddress = environment.getGraphQlContext().get(CONTEXT_KEY);
+    if (ipAddress == null) {
+      throw new IllegalStateException(
+          "The client address was not captured for this GraphQL request.");
+    }
+
+    return ipAddress;
   }
 }
