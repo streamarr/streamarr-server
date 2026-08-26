@@ -217,6 +217,57 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should issue a restricted invitation when the local manager is an eligible HouseholdAdmin")
+  void shouldIssueRestrictedInvitationWhenLocalManagerIsEligibleHouseholdAdmin() {
+    var manager = eligibleManager();
+
+    var issued =
+        issued(
+            service.issueAccountInvitation(
+                authorization.currentIdentity(),
+                command().toBuilder()
+                    .profileKind(ProfileKind.KID)
+                    .localManagerAccountId(manager.getId())
+                    .build()));
+
+    assertThat(issued.invitation().getLocalManagerAccountId()).isEqualTo(manager.getId());
+    assertThat(issued.invitation().getProfileKind()).isEqualTo(ProfileKind.KID);
+    assertThat(issued.invitation().getStatus()).isEqualTo(AccountInvitationStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName(
+      "Should issue a ceiling-bearing invitation when the local manager is an eligible HouseholdAdmin")
+  void shouldIssueCeilingBearingInvitationWhenLocalManagerIsEligibleHouseholdAdmin() {
+    var manager = eligibleManager();
+
+    var issued =
+        issued(
+            service.issueAccountInvitation(
+                authorization.currentIdentity(),
+                command().toBuilder()
+                    .maximumAllowedRatingAge(12)
+                    .localManagerAccountId(manager.getId())
+                    .build()));
+
+    assertThat(issued.invitation().getMaximumAllowedRatingAge()).isEqualTo(12);
+    assertThat(issued.invitation().getLocalManagerAccountId()).isEqualTo(manager.getId());
+  }
+
+  @Test
+  @DisplayName("Should require a local manager when an adult invitation carries a content ceiling")
+  void shouldRequireLocalManagerWhenAdultInvitationCarriesContentCeiling() {
+    var outcome =
+        service.issueAccountInvitation(
+            authorization.currentIdentity(),
+            command().toBuilder().maximumAllowedRatingAge(12).build());
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.LocalManagerRequired.class);
+    assertThat(invitations.findAll()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should reject a restricted Profile as HouseholdAdmin when an invitation is issued")
   void shouldRejectRestrictedProfileAsHouseholdAdminWhenInvitationIsIssued() {
     var manager = eligibleManager();
