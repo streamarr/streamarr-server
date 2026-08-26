@@ -32,7 +32,6 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
-import tools.jackson.databind.ObjectMapper;
 
 @Tag("IntegrationTest")
 @ResourceLock("server-bootstrap")
@@ -41,6 +40,7 @@ import tools.jackson.databind.ObjectMapper;
 class DeviceThrottleIT extends AbstractIntegrationTest {
 
   private static final int MAXIMUM_FAILURES = 5;
+  private static final String UNKNOWN_USER_CODE = "BCDF-GHJK";
 
   @Autowired private MockMvc mockMvc;
 
@@ -55,8 +55,6 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   @Autowired private DeviceAuthProperties properties;
 
   @Autowired private JdbcTemplate jdbcTemplate;
-
-  @Autowired private ObjectMapper objectMapper;
 
   private final List<UUID> accountIds = new ArrayList<>();
 
@@ -75,63 +73,57 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   }
 
   private void deleteSeededRows() {
-    jdbcTemplate.update("DELETE FROM credential_attempt");
+    accountIds.forEach(this::deleteJournaledAttempts);
     authorizationRepository.deleteAll();
     accountIds.forEach(authTestSupport::deleteAccount);
     accountIds.clear();
   }
 
   @Test
-  @DisplayName("Should share one expired pairing-code limit across approvers and operations")
-  void shouldThrottleDecisionWhenLookupHasExhaustedSharedAttemptLimit() throws Exception {
-    var exhausted = bearerFor(seedAccount());
-    var otherApprover = bearerFor(seedAccount());
-    var userCode = issueUserCode();
-    expireOutstandingCodes();
+  @DisplayName("Should throttle a decision when lookup has spent the approver's guessing budget")
+  void shouldThrottleDecisionWhenLookupHasSpentApproversGuessingBudget() throws Exception {
+    var bearer = bearerFor(seedAccount());
 
-    // Lookup and decision verify the same credential target and therefore share one limit.
+    // Lookup is the enumeration oracle, so its attempts and decision's come from one budget —
+    // two budgets would hand an attacker twice the tries against the same code.
     for (var attempt = 0; attempt < MAXIMUM_FAILURES; attempt++) {
-      mockMvc.perform(lookup(exhausted, userCode)).andExpect(status().isNotFound());
+      mockMvc.perform(lookup(bearer, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
     }
 
     mockMvc
-        .perform(lookup(otherApprover, userCode))
+        .perform(lookup(bearer, UNKNOWN_USER_CODE))
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"))
         .andExpect(header().exists(HttpHeaders.RETRY_AFTER));
 
     mockMvc
-        .perform(
-            authenticated(otherApprover, post("/api/auth/device/authorizations/decision"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"userCode\": \"%s\", \"decision\": \"APPROVE\"}".formatted(userCode)))
+        .perform(decision(bearer, UNKNOWN_USER_CODE, "APPROVE"))
         .andExpect(status().isTooManyRequests())
         .andExpect(header().exists(HttpHeaders.RETRY_AFTER));
   }
 
   @Test
-  @DisplayName("Should preserve the attempt limit when the decision value is invalid")
-  void shouldPreserveAttemptLimitWhenDecisionValueInvalid() throws Exception {
-    var bearer = bearerFor(seedAccount());
+  @DisplayName("Should use a separate guessing budget when the approver changes")
+  void shouldUseSeparateGuessingBudgetWhenApproverChanges() throws Exception {
+    var exhausted = bearerFor(seedAccount());
+    var untouched = bearerFor(seedAccount());
 
     for (var attempt = 0; attempt < MAXIMUM_FAILURES; attempt++) {
-      mockMvc
-          .perform(decision(bearer, "BCDF-GHJK", "MAYBE"))
-          .andExpect(status().isBadRequest())
-          .andExpect(jsonPath("$.code").value("INVALID_DECISION"));
+      mockMvc.perform(lookup(exhausted, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
     }
 
-    mockMvc.perform(lookup(bearer, "BCDF-GHJK")).andExpect(status().isNotFound());
+    mockMvc.perform(lookup(exhausted, UNKNOWN_USER_CODE)).andExpect(status().isTooManyRequests());
+    mockMvc.perform(lookup(untouched, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
   }
 
   @Test
-  @DisplayName("Should journal unknown pairing codes without subject throttling")
-  void shouldJournalUnknownPairingCodesWithoutSubjectThrottling() throws Exception {
-    var bearer = bearerFor(seedAccount());
+  @DisplayName("Should journal an unknown pairing code against the approver's Account")
+  void shouldJournalUnknownPairingCodeAgainstApproversAccount() throws Exception {
+    var approver = seedAccount();
 
-    for (var attempt = 0; attempt < MAXIMUM_FAILURES * 2; attempt++) {
-      mockMvc.perform(lookup(bearer, "BCDF-GHJK")).andExpect(status().isNotFound());
-    }
+    mockMvc
+        .perform(lookup(bearerFor(approver), UNKNOWN_USER_CODE))
+        .andExpect(status().isNotFound());
 
     assertThat(
             jdbcTemplate.queryForObject(
@@ -139,13 +131,31 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
                 SELECT count(*)
                   FROM credential_attempt
                  WHERE credential_kind = 'DEVICE_PAIRING_CODE'
-                   AND account_id IS NULL
+                   AND account_id = ?
                    AND profile_id IS NULL
                    AND credential_id IS NULL
                    AND result = 'FAILED'
                 """,
-                Integer.class))
-        .isEqualTo(MAXIMUM_FAILURES * 2);
+                Integer.class,
+                approver.getId()))
+        .isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should preserve the guessing budget when the decision value is invalid")
+  void shouldPreserveGuessingBudgetWhenDecisionValueInvalid() throws Exception {
+    var approver = seedAccount();
+    var bearer = bearerFor(approver);
+
+    for (var attempt = 0; attempt < MAXIMUM_FAILURES; attempt++) {
+      mockMvc
+          .perform(decision(bearer, UNKNOWN_USER_CODE, "MAYBE"))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.code").value("INVALID_DECISION"));
+    }
+
+    assertThat(journaledAttempts(approver.getId())).isZero();
+    mockMvc.perform(lookup(bearer, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
   }
 
   @Test
@@ -179,16 +189,6 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
         .content("{\"deviceName\": \"Apple TV\", \"esn\": \"esn-1\"}");
   }
 
-  private String issueUserCode() throws Exception {
-    var response =
-        mockMvc.perform(issueCode()).andExpect(status().isOk()).andReturn().getResponse();
-    return objectMapper.readTree(response.getContentAsString()).get("userCode").asString();
-  }
-
-  private void expireOutstandingCodes() {
-    jdbcTemplate.update("UPDATE device_authorization SET expires_at = now() - interval '1 second'");
-  }
-
   private MockHttpServletRequestBuilder lookup(String bearer, String userCode) {
     return authenticated(bearer, post("/api/auth/device/authorizations/lookup"))
         .contentType(MediaType.APPLICATION_JSON)
@@ -219,5 +219,14 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
     var account = authTestSupport.createAccount();
     accountIds.add(account.getId());
     return account;
+  }
+
+  private int journaledAttempts(UUID accountId) {
+    return jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM credential_attempt WHERE account_id = ?", Integer.class, accountId);
+  }
+
+  private void deleteJournaledAttempts(UUID accountId) {
+    jdbcTemplate.update("DELETE FROM credential_attempt WHERE account_id = ?", accountId);
   }
 }

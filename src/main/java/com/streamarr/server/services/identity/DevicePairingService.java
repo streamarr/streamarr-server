@@ -10,6 +10,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceAuthorizationDetails;
 import com.streamarr.server.services.auth.DeviceAuthorizationService;
+import com.streamarr.server.services.auth.DeviceCodePresentation;
 import com.streamarr.server.services.auth.DeviceDecision;
 import com.streamarr.server.services.auth.DeviceDecisionCommand;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -40,14 +41,17 @@ public class DevicePairingService {
 
   /** What the approver is shown: the device and the Households they could bind it to. */
   public PairingLookupDetails lookup(AuthenticatedIdentity identity, PairingLookupCommand command) {
-    var details = deviceAuthorizationService.lookup(command.userCode(), command.ipAddress());
+    var details =
+        deviceAuthorizationService.lookup(
+            presentation(identity, command.userCode(), command.ipAddress()));
     return new PairingLookupDetails(details, eligibleHouseholds(identity));
   }
 
   public DeviceAuthorizationDetails decide(
       AuthenticatedIdentity identity, PairingDecisionCommand command) {
     var grant =
-        deviceAuthorizationService.resolveForDecision(command.userCode(), command.ipAddress());
+        deviceAuthorizationService.resolveForDecision(
+            presentation(identity, command.userCode(), command.ipAddress()));
     authorizationService.requireAllowed(identity, new Intent.LinkDevice(grant.grantId()));
     if (command.decision() == DeviceDecision.APPROVE) {
       validateBinding(identity, command.householdId(), grant.esn());
@@ -61,6 +65,15 @@ public class DevicePairingService {
             .chosenHouseholdId(
                 command.decision() == DeviceDecision.APPROVE ? command.householdId() : null)
             .build());
+  }
+
+  private static DeviceCodePresentation presentation(
+      AuthenticatedIdentity identity, String userCode, String ipAddress) {
+    return DeviceCodePresentation.builder()
+        .userCode(userCode)
+        .approverAccountId(identity.accountId())
+        .ipAddress(ipAddress)
+        .build();
   }
 
   private void validateBinding(AuthenticatedIdentity identity, UUID householdId, String esn) {

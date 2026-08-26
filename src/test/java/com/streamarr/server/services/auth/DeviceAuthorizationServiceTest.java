@@ -214,7 +214,7 @@ class DeviceAuthorizationServiceTest {
 
     // Only new issuance is gated; a code already shown to a person must never be stranded.
     var unconfigured = serviceWith(CanonicalBaseUrl.absent());
-    assertThat(unconfigured.lookup(issued.userCode(), "192.0.2.30").status())
+    assertThat(unconfigured.lookup(presented(issued.userCode())).status())
         .isEqualTo(DeviceAuthorizationStatus.PENDING);
     unconfigured.decide(decisionCommand(issued.userCode()));
 
@@ -469,7 +469,7 @@ class DeviceAuthorizationServiceTest {
             .orElseThrow()
             .getId();
 
-    var view = service.lookup(issued.userCode(), "192.0.2.30");
+    var view = service.lookup(presented(issued.userCode()));
 
     assertThat(view.deviceName()).isEqualTo("Living Room Apple TV");
     assertThat(view.status()).isEqualTo(DeviceAuthorizationStatus.PENDING);
@@ -480,8 +480,8 @@ class DeviceAuthorizationServiceTest {
         .satisfies(
             attempt -> {
               assertThat(attempt.target().kind()).isEqualTo(CredentialKind.DEVICE_PAIRING_CODE);
-              assertThat(attempt.target().credentialId()).isEqualTo(credentialId);
-              assertThat(attempt.target().accountId()).isNull();
+              assertThat(attempt.target().accountId()).isEqualTo(approver.getId());
+              assertThat(attempt.target().credentialId()).isNull();
               assertThat(attempt.target().ipAddress()).isEqualTo("192.0.2.30");
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
             });
@@ -492,7 +492,7 @@ class DeviceAuthorizationServiceTest {
   void shouldPreserveRetryDelayWhenPairingCodeAttemptThrottled() {
     credentialAttempts.rejectReservations(Duration.ofSeconds(42));
 
-    assertThatThrownBy(() -> service.lookup("BCDF-GHJK", "192.0.2.30"))
+    assertThatThrownBy(() -> service.lookup(presented("BCDF-GHJK")))
         .isInstanceOf(TooManyDeviceAttemptsException.class)
         .satisfies(
             failure ->
@@ -505,9 +505,8 @@ class DeviceAuthorizationServiceTest {
   void shouldAcceptTypedCodeWhenCaseAndSeparatorFormattingVary() {
     var issued = service.issue("Apple TV", "esn-1");
 
-    assertThat(service.lookup(issued.userCode().toLowerCase(Locale.ROOT), "192.0.2.30"))
-        .isNotNull();
-    assertThat(service.lookup(issued.userCode().replace("-", ""), "192.0.2.30")).isNotNull();
+    assertThat(service.lookup(presented(issued.userCode().toLowerCase(Locale.ROOT)))).isNotNull();
+    assertThat(service.lookup(presented(issued.userCode().replace("-", "")))).isNotNull();
   }
 
   @Test
@@ -519,7 +518,7 @@ class DeviceAuthorizationServiceTest {
 
     var userCode = issued.userCode();
     // A probe deserves no oracle detail; the poll answers expired_token for the same state.
-    assertThatThrownBy(() -> service.lookup(userCode, "192.0.2.30"))
+    assertThatThrownBy(() -> service.lookup(presented(userCode)))
         .isInstanceOf(DeviceCodeNotFoundException.class);
   }
 
@@ -551,7 +550,7 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should reject before lookup when the user code is malformed")
   void shouldRejectBeforeLookupWhenUserCodeMalformed() {
-    assertThatThrownBy(() -> service.lookup("NOPE", "192.0.2.30"))
+    assertThatThrownBy(() -> service.lookup(presented("NOPE")))
         .isInstanceOf(InvalidUserCodeException.class);
   }
 
@@ -987,5 +986,13 @@ class DeviceAuthorizationServiceTest {
 
   private void advanceClock(Duration duration) {
     currentTime.updateAndGet(instant -> instant.plus(duration));
+  }
+
+  private DeviceCodePresentation presented(String userCode) {
+    return DeviceCodePresentation.builder()
+        .userCode(userCode)
+        .approverAccountId(approver.getId())
+        .ipAddress("192.0.2.30")
+        .build();
   }
 }

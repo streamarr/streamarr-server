@@ -151,10 +151,10 @@ public class DeviceAuthorizationService {
     };
   }
 
-  public DeviceAuthorizationDetails lookup(String typedUserCode, String ipAddress) {
-    var userCode = UserCode.normalize(typedUserCode);
+  public DeviceAuthorizationDetails lookup(DeviceCodePresentation presentation) {
+    var userCode = UserCode.normalize(presentation.userCode());
     var authorization = authorizationRepository.findByUserCode(userCode).orElse(null);
-    var attempt = reserveCodeAttempt(authorization, ipAddress);
+    var attempt = reserveCodeAttempt(presentation);
     requireUnexpired(authorization, attempt);
     credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
     return detailsOf(authorization, authorization.getStatus());
@@ -164,10 +164,10 @@ public class DeviceAuthorizationService {
    * Resolves a typed code to its pairing grant for the approval ceremony, recording one attempt
    * before Cedar or any validation sees the request.
    */
-  public ResolvedGrant resolveForDecision(String typedUserCode, String ipAddress) {
-    var userCode = UserCode.normalize(typedUserCode);
+  public ResolvedGrant resolveForDecision(DeviceCodePresentation presentation) {
+    var userCode = UserCode.normalize(presentation.userCode());
     var authorization = authorizationRepository.findByUserCode(userCode).orElse(null);
-    var attempt = reserveCodeAttempt(authorization, ipAddress);
+    var attempt = reserveCodeAttempt(presentation);
     requirePresent(authorization, attempt);
 
     // The approver is mid-flow on a code they demonstrably saw, so expiry earns its own answer
@@ -357,13 +357,12 @@ public class DeviceAuthorizationService {
     }
   }
 
-  private CredentialAttemptReservation reserveCodeAttempt(
-      DeviceAuthorization authorization, String ipAddress) {
+  private CredentialAttemptReservation reserveCodeAttempt(DeviceCodePresentation presentation) {
     var target =
         CredentialAttemptTarget.builder()
             .kind(CredentialKind.DEVICE_PAIRING_CODE)
-            .credentialId(authorization == null ? null : authorization.getId())
-            .ipAddress(ipAddress)
+            .accountId(presentation.approverAccountId())
+            .ipAddress(presentation.ipAddress())
             .build();
     try {
       return credentialAttempts.reserve(target);
