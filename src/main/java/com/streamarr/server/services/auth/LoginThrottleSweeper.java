@@ -7,9 +7,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Periodically evicts throttle entries whose window has passed; {@link LoginThrottle#sweepExpired}
- * documents why sprayed keys need a sweep. Credential budgets are keyed by Account and Profile, so
- * they cannot be sprayed, but entries for deleted Accounts would otherwise linger for the JVM's
- * lifetime.
+ * documents why sprayed keys need a sweep. Account and Profile credential budgets cannot be sprayed
+ * but would linger for deleted Accounts; the opaque-code budget is keyed by presented publicId and
+ * capped, so the sweep also returns its key slots.
  */
 @Slf4j
 @Component

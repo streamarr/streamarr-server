@@ -231,17 +231,52 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should preserve a valid invitation when opaque-code budget keys are exhausted")
-  void shouldPreserveValidInvitationWhenOpaqueCodeBudgetKeysAreExhausted() {
+  @DisplayName("Should not spend an opaque-code budget slot when unknown public ids are sprayed")
+  void shouldNotSpendOpaqueCodeBudgetSlotWhenUnknownPublicIdsAreSprayed() {
+    // A single slot: any key taken by the spray would refuse the valid code below.
+    var service = serviceUsing(accounts, throttleTracking(1));
     var issued = pendingInvitation(pendingInvitationBuilder().build());
-    for (var key = 0; key < AuthThrottleProperties.DEFAULT_MAX_OPAQUE_CODE_BUDGETS; key++) {
-      presentInvalidCode("sprayed-public-id-" + key + ".secret");
+    for (var key = 0; key < 3; key++) {
+      var sprayed = "sprayed-public-id-" + key + ".secret";
+      assertThatThrownBy(() -> service.lookup(sprayed))
+          .isInstanceOf(InvalidOneTimeCodeException.class);
     }
 
     assertThatCode(() -> service.lookup(issued.code())).doesNotThrowAnyException();
   }
 
+  @Test
+  @DisplayName("Should refuse a valid code when every opaque-code budget slot is held")
+  void shouldRefuseValidCodeWhenEveryOpaqueCodeBudgetSlotIsHeld() {
+    // Slots belong to publicIds that exist, so only issued codes can fill them; the budget then
+    // fails closed rather than growing without bound.
+    var service = serviceUsing(accounts, throttleTracking(1));
+    var occupied = pendingInvitation(pendingInvitationBuilder().build());
+    var refused = pendingInvitation(pendingInvitationBuilder().build());
+    var wrongGuess = occupied.publicId() + ".not-the-secret";
+    assertThatThrownBy(() -> service.lookup(wrongGuess))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+
+    assertThatThrownBy(() -> service.lookup(refused.code()))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  private CredentialGuessThrottle throttleTracking(int maximumOpaqueCodeBudgets) {
+    return new CredentialGuessThrottle(
+        AuthThrottleProperties.builder()
+            .maxAttempts(5)
+            .window(Duration.ofMinutes(15))
+            .maxOpaqueCodeBudgets(maximumOpaqueCodeBudgets)
+            .build(),
+        clock);
+  }
+
   private AccountInvitationService serviceUsing(FakeUserAccountRepository accountRepository) {
+    return serviceUsing(accountRepository, throttle);
+  }
+
+  private AccountInvitationService serviceUsing(
+      FakeUserAccountRepository accountRepository, CredentialGuessThrottle guessThrottle) {
     return new AccountInvitationService(
         invitations,
         accountRepository,
@@ -259,7 +294,7 @@ class AccountInvitationServiceTest {
             clock,
             new TokenReuseRevoker(new TokenReuseRevocationWriter(sessions, refreshTokens))),
         opaqueCodes,
-        throttle,
+        guessThrottle,
         new PlainEncoder(),
         new TransactionTemplate(new FakeTransactionManager()),
         new ConstraintViolationTranslator(),
@@ -296,10 +331,6 @@ class AccountInvitationServiceTest {
             .secretDigest(issued.digest())
             .build());
     return issued;
-  }
-
-  private void presentInvalidCode(String code) {
-    assertThatThrownBy(() -> service.lookup(code)).isInstanceOf(InvalidOneTimeCodeException.class);
   }
 
   @Builder

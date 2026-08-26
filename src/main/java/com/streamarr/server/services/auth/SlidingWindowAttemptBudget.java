@@ -8,19 +8,22 @@ import java.util.Deque;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.Builder;
 
 /**
  * An in-memory sliding-window attempt counter per key. {@link #reserve} takes a slot atomically
  * before any expensive work so a concurrent burst cannot overrun the budget; a blocked attempt
- * reserves nothing, so hostile traffic cannot extend a lockout. Single-JVM, like {@link
- * LoginThrottle}.
+ * reserves nothing, so hostile traffic cannot extend a lockout. The budget tracks at most {@code
+ * maximumTrackedKeys} keys at once: when every slot is held, a key not yet tracked is refused
+ * outright until a reset or sweep frees a slot. Single-JVM, like {@link LoginThrottle}.
  */
 final class SlidingWindowAttemptBudget<K> {
 
   private final int maximumAttempts;
   private final Duration window;
   private final Clock clock;
+  private final int maximumTrackedKeys;
   private final Semaphore availableKeySlots;
   private final ConcurrentHashMap<K, Deque<Instant>> attempts = new ConcurrentHashMap<>();
 
@@ -28,6 +31,7 @@ final class SlidingWindowAttemptBudget<K> {
     this.maximumAttempts = limits.maximumAttempts();
     this.window = limits.window();
     this.clock = clock;
+    this.maximumTrackedKeys = limits.maximumTrackedKeys();
     availableKeySlots = new Semaphore(limits.maximumTrackedKeys());
   }
 
@@ -46,13 +50,14 @@ final class SlidingWindowAttemptBudget<K> {
     }
   }
 
-  boolean reserve(K key) {
-    var reserved = new AtomicBoolean();
+  Reservation reserve(K key) {
+    var reservation = new AtomicReference<>(Reservation.KEY_EXHAUSTED);
     attempts.compute(
         key,
         (_, timestamps) -> {
           var current = timestamps;
           if (current == null && !availableKeySlots.tryAcquire()) {
+            reservation.set(Reservation.CAPACITY_EXHAUSTED);
             return null;
           }
 
@@ -63,12 +68,23 @@ final class SlidingWindowAttemptBudget<K> {
           prune(current);
           if (current.size() < maximumAttempts) {
             current.addLast(clock.instant());
-            reserved.set(true);
+            reservation.set(Reservation.RESERVED);
           }
 
           return current;
         });
-    return reserved.get();
+    return reservation.get();
+  }
+
+  int maximumTrackedKeys() {
+    return maximumTrackedKeys;
+  }
+
+  /** Why an attempt was or was not admitted: the key's window is full, or no key slot is free. */
+  enum Reservation {
+    RESERVED,
+    KEY_EXHAUSTED,
+    CAPACITY_EXHAUSTED
   }
 
   void reset(K key) {

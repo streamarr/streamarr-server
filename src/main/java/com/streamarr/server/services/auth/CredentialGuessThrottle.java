@@ -2,25 +2,25 @@ package com.streamarr.server.services.auth;
 
 import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Guessing budgets for credentials an already-authenticated Account presents: its own password
- * (reauthentication, password change) and a Profile PIN. The two budgets are independent — a PIN
- * guess must not spend password attempts or vice versa — and both are keyed by Account, never by
- * source address, for the reason {@link LoginThrottle} records. Account and Profile keys are
- * naturally bounded; the separate unauthenticated opaque-code budget has an explicit key cap.
+ * Guessing budgets for the credentials a request presents beyond login. Authenticated: an Account's
+ * own password (reauthentication, password change) and a Profile PIN, independent of each other and
+ * keyed by Account, never by source address, for the reason {@link LoginThrottle} records; those
+ * keys are naturally bounded. Principal-less: opaque one-time codes, keyed by the presented
+ * publicId (which must already exist, so only issued codes take a slot) and capped at {@code
+ * maxOpaqueCodeBudgets} tracked keys, refusing new keys at capacity rather than growing.
  */
 @Slf4j
 @Component
 public class CredentialGuessThrottle {
 
   private final SlidingWindowAttemptBudget<CredentialKey> credentialBudget;
-  private final SlidingWindowAttemptBudget<UUID> opaqueCodeBudget;
+  private final SlidingWindowAttemptBudget<String> opaqueCodeBudget;
 
   public CredentialGuessThrottle(AuthThrottleProperties properties, Clock clock) {
     credentialBudget =
@@ -48,12 +48,11 @@ public class CredentialGuessThrottle {
 
   /** One budget per presented publicId: rotating endpoints or sources must not multiply tries. */
   public void registerCodeGuess(String publicId) {
-    var key = opaqueCodeKey(publicId);
-    requireAvailable(opaqueCodeBudget.reserve(key), CredentialType.OPAQUE_CODE, key);
+    requireAvailable(opaqueCodeBudget.reserve(publicId), CredentialType.OPAQUE_CODE, publicId);
   }
 
   public void resetCodeGuesses(String publicId) {
-    opaqueCodeBudget.reset(opaqueCodeKey(publicId));
+    opaqueCodeBudget.reset(publicId);
   }
 
   public void registerAccountPasswordAttempt(UUID accountId) {
@@ -72,17 +71,23 @@ public class CredentialGuessThrottle {
     requireAvailable(credentialBudget.reserve(key), key.type(), key.accountId());
   }
 
-  private void requireAvailable(boolean available, CredentialType type, UUID key) {
-    if (available) {
-      return;
+  private void requireAvailable(
+      SlidingWindowAttemptBudget.Reservation reservation, CredentialType type, Object key) {
+    switch (reservation) {
+      case RESERVED -> {
+        return;
+      }
+      case KEY_EXHAUSTED ->
+          log.warn("Credential verification throttled: {} budget exhausted for key {}", type, key);
+      case CAPACITY_EXHAUSTED ->
+          log.warn(
+              "Credential verification refused: {} throttle at capacity ({} keys tracked); new"
+                  + " codes wait for a reset or the sweep",
+              type,
+              opaqueCodeBudget.maximumTrackedKeys());
     }
 
-    log.warn("Credential verification throttled: {} budget exhausted for key {}", type, key);
     throw new TooManyCredentialAttemptsException();
-  }
-
-  private static UUID opaqueCodeKey(String publicId) {
-    return UUID.nameUUIDFromBytes(publicId.getBytes(StandardCharsets.UTF_8));
   }
 
   private enum CredentialType {
