@@ -292,7 +292,16 @@ class CredentialIssuanceServiceTest {
 
   @ParameterizedTest(name = "Should reject \"{0}\" as a recipient email")
   @ValueSource(
-      strings = {"kai@", "@example.com", "kai example.com", "kai@example", "kai@@example.com"})
+      strings = {
+        "kai@",
+        "@example.com",
+        "kai example.com",
+        "kai@example",
+        "kai@@example.com",
+        "kai@example..com",
+        "kai@.example.com",
+        "kai@example.com."
+      })
   @DisplayName("Should reject an implausible recipient email when an invitation is issued")
   void shouldRejectImplausibleRecipientEmailWhenInvitationIsIssued(String recipientEmail) {
     var outcome =

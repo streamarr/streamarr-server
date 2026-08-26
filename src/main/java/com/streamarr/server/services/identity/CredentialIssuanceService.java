@@ -46,8 +46,12 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class CredentialIssuanceService {
 
-  /** One local part, one @, a dotted domain, no whitespace: the shape, not deliverability. */
-  private static final Pattern PLAUSIBLE_EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+  /**
+   * One local part, one @, a domain of dot-separated non-empty labels, no whitespace: the shape,
+   * not deliverability. Labels exclude the dot, so the match never backtracks.
+   */
+  private static final Pattern PLAUSIBLE_EMAIL =
+      Pattern.compile("^[^\\s@]+@[^\\s@.]+(?:\\.[^\\s@.]+)+$");
 
   private final AuthorizationService authorizationService;
   private final AccountInvitationRepository invitationRepository;
