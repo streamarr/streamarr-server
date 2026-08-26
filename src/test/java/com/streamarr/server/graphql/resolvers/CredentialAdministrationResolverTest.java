@@ -15,7 +15,7 @@ import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.AdministrationQueryService;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
-import com.streamarr.server.services.identity.InvitationRejections;
+import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
@@ -134,7 +134,7 @@ class CredentialAdministrationResolverTest {
       "Should expose InvitationNotPending through the cancellation payload union when the service rejects")
   void shouldExposeInvitationNotPendingThroughCancellationPayloadUnionWhenServiceRejects() {
     when(credentialIssuanceService.cancelAccountInvitation(any(), any()))
-        .thenReturn(Outcome.rejected(new InvitationRejections.InvitationNotPending()));
+        .thenReturn(Outcome.rejected(new CredentialRejections.InvitationNotPending()));
 
     String type =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -161,45 +161,45 @@ class CredentialAdministrationResolverTest {
 
   private static Stream<IssuanceErrorCase> issuanceErrorCases() {
     return Stream.of(
-        new IssuanceErrorCase(new InvitationRejections.EmailRequired(), "EmailRequiredError", null),
+        new IssuanceErrorCase(new CredentialRejections.EmailRequired(), "EmailRequiredError", null),
         new IssuanceErrorCase(
-            new InvitationRejections.EmailAlreadyUsed(), "EmailAlreadyUsedError", null),
+            new CredentialRejections.EmailAlreadyUsed(), "EmailAlreadyUsedError", null),
         new IssuanceErrorCase(
-            new InvitationRejections.ProfileNameRequired(), "ProfileNameRequiredError", null),
+            new CredentialRejections.ProfileNameRequired(), "ProfileNameRequiredError", null),
         new IssuanceErrorCase(
-            new InvitationRejections.ProfileNameTaken(), "ProfileNameTakenError", null),
+            new CredentialRejections.ProfileNameTaken(), "ProfileNameTakenError", null),
         new IssuanceErrorCase(
-            new InvitationRejections.HouseholdNotFound(), "HouseholdNotFoundError", null),
+            new CredentialRejections.HouseholdNotFound(), "HouseholdNotFoundError", null),
         new IssuanceErrorCase(
-            new InvitationRejections.RestrictedFirstAccount(), "RestrictedFirstAccountError", null),
+            new CredentialRejections.RestrictedFirstAccount(), "RestrictedFirstAccountError", null),
         new IssuanceErrorCase(
-            new InvitationRejections.RestrictedHouseholdAdmin(),
+            new CredentialRejections.RestrictedHouseholdAdmin(),
             "RestrictedHouseholdAdminError",
             List.of("householdRole")),
         new IssuanceErrorCase(
-            new InvitationRejections.LocalManagerRequired(),
+            new CredentialRejections.LocalManagerRequired(),
             "EligibleProfileManagerRequiredError",
             List.of("profileManagerAccountId")),
         new IssuanceErrorCase(
-            new InvitationRejections.LocalManagerNotFound(),
+            new CredentialRejections.LocalManagerNotFound(),
             "AccountNotFoundError",
             List.of("profileManagerAccountId")),
         new IssuanceErrorCase(
-            new InvitationRejections.MaximumAllowedRatingAgeInvalid(),
+            new CredentialRejections.MaximumAllowedRatingAgeInvalid(),
             "MaximumAllowedRatingAgeInvalidError",
             null));
   }
 
   private static Stream<ResetErrorCase> resetErrorCases() {
     return Stream.of(
-        new ResetErrorCase(new InvitationRejections.AccountNotFound(), "AccountNotFoundError"),
-        new ResetErrorCase(new InvitationRejections.ReasonRequired(), "ReasonRequiredError"),
+        new ResetErrorCase(new CredentialRejections.AccountNotFound(), "AccountNotFoundError"),
+        new ResetErrorCase(new CredentialRejections.ReasonRequired(), "ReasonRequiredError"),
         new ResetErrorCase(
-            new InvitationRejections.ReauthenticationRequired(), "ReauthenticationRequiredError"));
+            new CredentialRejections.ReauthenticationRequired(), "ReauthenticationRequiredError"));
   }
 
   private record IssuanceErrorCase(
-      InvitationRejections.Issue rejection, String expectedType, List<String> expectedInputPath) {
+      CredentialRejections.Issue rejection, String expectedType, List<String> expectedInputPath) {
 
     @Override
     public String toString() {
@@ -207,7 +207,7 @@ class CredentialAdministrationResolverTest {
     }
   }
 
-  private record ResetErrorCase(InvitationRejections.IssueReset rejection, String expectedType) {
+  private record ResetErrorCase(CredentialRejections.IssueReset rejection, String expectedType) {
 
     @Override
     public String toString() {

@@ -134,31 +134,31 @@ class CredentialIssuanceServiceTest {
                 service.issueAccountInvitation(
                     authorization.currentIdentity(),
                     command().toBuilder().recipientEmail(" ").build())))
-        .isInstanceOf(InvitationRejections.EmailRequired.class);
+        .isInstanceOf(CredentialRejections.EmailRequired.class);
     assertThat(
             rejectionOf(
                 service.issueAccountInvitation(
                     authorization.currentIdentity(),
                     command().toBuilder().profileName(" ").build())))
-        .isInstanceOf(InvitationRejections.ProfileNameRequired.class);
+        .isInstanceOf(CredentialRejections.ProfileNameRequired.class);
     assertThat(
             rejectionOf(
                 service.issueAccountInvitation(
                     authorization.currentIdentity(),
                     command().toBuilder().recipientEmail(resident.getEmail()).build())))
-        .isInstanceOf(InvitationRejections.EmailAlreadyUsed.class);
+        .isInstanceOf(CredentialRejections.EmailAlreadyUsed.class);
     assertThat(
             rejectionOf(
                 service.issueAccountInvitation(
                     authorization.currentIdentity(),
                     command().toBuilder().householdId(UUID.randomUUID()).build())))
-        .isInstanceOf(InvitationRejections.HouseholdNotFound.class);
+        .isInstanceOf(CredentialRejections.HouseholdNotFound.class);
     assertThat(
             rejectionOf(
                 service.issueAccountInvitation(
                     authorization.currentIdentity(),
                     command().toBuilder().profileKind(ProfileKind.KID).build())))
-        .isInstanceOf(InvitationRejections.LocalManagerRequired.class);
+        .isInstanceOf(CredentialRejections.LocalManagerRequired.class);
     var emptyHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     assertThat(
             rejectionOf(
@@ -169,7 +169,7 @@ class CredentialIssuanceServiceTest {
                         .profileKind(ProfileKind.KID)
                         .localManagerAccountId(resident.getId())
                         .build())))
-        .isInstanceOf(InvitationRejections.RestrictedFirstAccount.class);
+        .isInstanceOf(CredentialRejections.RestrictedFirstAccount.class);
     assertThat(invitations.findAll()).isEmpty();
   }
 
@@ -188,7 +188,7 @@ class CredentialIssuanceServiceTest {
                 .localManagerAccountId(outsideManager.getId())
                 .build());
 
-    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.LocalManagerNotFound.class);
+    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.LocalManagerNotFound.class);
   }
 
   @Test
@@ -212,7 +212,7 @@ class CredentialIssuanceServiceTest {
                 .localManagerAccountId(restrictedManager.getId())
                 .build());
 
-    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.LocalManagerNotFound.class);
+    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.LocalManagerNotFound.class);
     assertThat(invitations.findAll()).isEmpty();
   }
 
@@ -263,7 +263,7 @@ class CredentialIssuanceServiceTest {
             authorization.currentIdentity(),
             command().toBuilder().maximumAllowedRatingAge(12).build());
 
-    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.LocalManagerRequired.class);
+    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.LocalManagerRequired.class);
     assertThat(invitations.findAll()).isEmpty();
   }
 
@@ -282,7 +282,7 @@ class CredentialIssuanceServiceTest {
                 .build());
 
     assertThat(rejectionOf(outcome))
-        .isInstanceOf(InvitationRejections.RestrictedHouseholdAdmin.class);
+        .isInstanceOf(CredentialRejections.RestrictedHouseholdAdmin.class);
     assertThat(invitations.findAll()).isEmpty();
   }
 
@@ -295,7 +295,7 @@ class CredentialIssuanceServiceTest {
             command().toBuilder().maximumAllowedRatingAge(-1).build());
 
     assertThat(rejectionOf(outcome))
-        .isInstanceOf(InvitationRejections.MaximumAllowedRatingAgeInvalid.class);
+        .isInstanceOf(CredentialRejections.MaximumAllowedRatingAgeInvalid.class);
     assertThat(invitations.findAll()).isEmpty();
   }
 
@@ -312,7 +312,7 @@ class CredentialIssuanceServiceTest {
 
     var outcome = service.issueAccountInvitation(authorization.currentIdentity(), command());
 
-    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.ProfileNameTaken.class);
+    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.ProfileNameTaken.class);
     assertThat(invitations.findAll()).isEmpty();
   }
 
@@ -351,7 +351,7 @@ class CredentialIssuanceServiceTest {
 
     var again =
         service.cancelAccountInvitation(authorization.currentIdentity(), invitation.getId());
-    assertThat(rejectionOf(again)).isInstanceOf(InvitationRejections.InvitationNotPending.class);
+    assertThat(rejectionOf(again)).isInstanceOf(CredentialRejections.InvitationNotPending.class);
   }
 
   @Test
@@ -399,7 +399,7 @@ class CredentialIssuanceServiceTest {
     assertThat(
             rejectionOf(
                 service.issuePasswordReset(authorization.currentIdentity(), resident.getId(), " ")))
-        .isInstanceOf(InvitationRejections.ReasonRequired.class);
+        .isInstanceOf(CredentialRejections.ReasonRequired.class);
     assertThat(resetCodes.findAll()).isEmpty();
   }
 
@@ -415,7 +415,7 @@ class CredentialIssuanceServiceTest {
             rejectionOf(
                 service.issuePasswordReset(
                     authorization.currentIdentity(), resident.getId(), "locked out")))
-        .isInstanceOf(InvitationRejections.ReauthenticationRequired.class);
+        .isInstanceOf(CredentialRejections.ReauthenticationRequired.class);
     assertThat(resetCodes.findAll()).isEmpty();
   }
 
@@ -428,7 +428,7 @@ class CredentialIssuanceServiceTest {
             rejectionOf(
                 service.issuePasswordReset(
                     authorization.currentIdentity(), resident.getId(), "locked out")))
-        .isInstanceOf(InvitationRejections.AccountNotFound.class);
+        .isInstanceOf(CredentialRejections.AccountNotFound.class);
     assertThat(resetCodes.findAll()).isEmpty();
   }
 
@@ -456,7 +456,7 @@ class CredentialIssuanceServiceTest {
         service.issuePasswordReset(
             authorization.currentIdentity(), UUID.randomUUID(), "locked out");
 
-    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.AccountNotFound.class);
+    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.AccountNotFound.class);
     assertThat(resetCodes.findAll()).isEmpty();
     assertThat(audit.entries()).isEmpty();
   }
@@ -471,7 +471,7 @@ class CredentialIssuanceServiceTest {
         serviceWithVanishingTarget.issuePasswordReset(
             authorization.currentIdentity(), resident.getId(), "locked out");
 
-    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.AccountNotFound.class);
+    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.AccountNotFound.class);
     assertThat(resetCodes.findAll()).isEmpty();
     assertThat(audit.entries()).isEmpty();
   }

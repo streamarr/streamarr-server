@@ -56,7 +56,7 @@ public class CredentialIssuanceService {
   private final MutationTransactions mutationTransactions;
   private final Clock clock;
 
-  public Outcome<IssuedInvitation, InvitationRejections.Issue> issueAccountInvitation(
+  public Outcome<IssuedInvitation, CredentialRejections.Issue> issueAccountInvitation(
       AuthenticatedIdentity identity, IssueInvitationCommand command) {
     authorizationService.requireAllowed(identity, new Intent.IssueAccountInvitation());
     var inputRejection = inputRejection(command);
@@ -66,7 +66,7 @@ public class CredentialIssuanceService {
 
     var household = householdRepository.findById(command.householdId());
     if (household.isEmpty()) {
-      return Outcome.rejected(new InvitationRejections.HouseholdNotFound());
+      return Outcome.rejected(new CredentialRejections.HouseholdNotFound());
     }
 
     var shapeRejection = profileShapeRejection(command);
@@ -80,61 +80,61 @@ public class CredentialIssuanceService {
   /**
    * Field-level refusals that need no Household: blank fields, an invalid ceiling, a used email.
    */
-  private Optional<InvitationRejections.Issue> inputRejection(IssueInvitationCommand command) {
+  private Optional<CredentialRejections.Issue> inputRejection(IssueInvitationCommand command) {
     if (isBlank(command.recipientEmail())) {
-      return Optional.of(new InvitationRejections.EmailRequired());
+      return Optional.of(new CredentialRejections.EmailRequired());
     }
 
     if (isBlank(command.profileName())) {
-      return Optional.of(new InvitationRejections.ProfileNameRequired());
+      return Optional.of(new CredentialRejections.ProfileNameRequired());
     }
 
     if (command.maximumAllowedRatingAge() != null && command.maximumAllowedRatingAge() < 0) {
-      return Optional.of(new InvitationRejections.MaximumAllowedRatingAgeInvalid());
+      return Optional.of(new CredentialRejections.MaximumAllowedRatingAgeInvalid());
     }
 
     if (userAccountRepository.findByEmailIgnoreCase(command.recipientEmail().strip()).isPresent()) {
       // An existing email cannot be invited or reassigned; ServerAdmin transfers instead.
-      return Optional.of(new InvitationRejections.EmailAlreadyUsed());
+      return Optional.of(new CredentialRejections.EmailAlreadyUsed());
     }
 
     return Optional.empty();
   }
 
   /** The new Profile's shape against its Household: name, restriction, and required manager. */
-  private Optional<InvitationRejections.Issue> profileShapeRejection(
+  private Optional<CredentialRejections.Issue> profileShapeRejection(
       IssueInvitationCommand command) {
     if (profileRepository.existsAvailableInHouseholdWithNameIgnoreCase(
         command.householdId(), command.profileName().strip())) {
-      return Optional.of(new InvitationRejections.ProfileNameTaken());
+      return Optional.of(new CredentialRejections.ProfileNameTaken());
     }
 
     var restricted = command.restricted();
     var emptyHousehold = userAccountRepository.findByHouseholdId(command.householdId()).isEmpty();
     if (restricted && emptyHousehold) {
       // The first Account becomes HouseholdAdmin, and a restricted Account holds no authority.
-      return Optional.of(new InvitationRejections.RestrictedFirstAccount());
+      return Optional.of(new CredentialRejections.RestrictedFirstAccount());
     }
 
     if (restricted && command.householdRole() == HouseholdRole.ADMIN) {
       // Otherwise acceptance would fail at commit (chk_restricted_account_holds_no_authority).
-      return Optional.of(new InvitationRejections.RestrictedHouseholdAdmin());
+      return Optional.of(new CredentialRejections.RestrictedHouseholdAdmin());
     }
 
     if (restricted && command.localManagerAccountId() == null) {
-      return Optional.of(new InvitationRejections.LocalManagerRequired());
+      return Optional.of(new CredentialRejections.LocalManagerRequired());
     }
 
     if (command.localManagerAccountId() != null
         && !userAccountRepository.isEligibleProfileManager(
             command.localManagerAccountId(), command.householdId(), restricted)) {
-      return Optional.of(new InvitationRejections.LocalManagerNotFound());
+      return Optional.of(new CredentialRejections.LocalManagerNotFound());
     }
 
     return Optional.empty();
   }
 
-  private Outcome<IssuedInvitation, InvitationRejections.Issue> issueInvitation(
+  private Outcome<IssuedInvitation, CredentialRejections.Issue> issueInvitation(
       AuthenticatedIdentity identity, IssueInvitationCommand command, Household household) {
     var recipientEmail = command.recipientEmail().strip();
     var profileName = command.profileName().strip();
@@ -169,14 +169,14 @@ public class CredentialIssuanceService {
         _ -> Optional.empty());
   }
 
-  public Outcome<AccountInvitation, InvitationRejections.Cancel> cancelAccountInvitation(
+  public Outcome<AccountInvitation, CredentialRejections.Cancel> cancelAccountInvitation(
       AuthenticatedIdentity identity, UUID invitationId) {
     authorizationService.requireAllowed(identity, new Intent.CancelAccountInvitation());
     return mutationTransactions.write(
         () -> {
           if (!invitationRepository.markCanceledIfPendingAndUnexpired(
               invitationId, clock.instant())) {
-            throw new MutationRejection(new InvitationRejections.InvitationNotPending());
+            throw new MutationRejection(new CredentialRejections.InvitationNotPending());
           }
 
           return invitationRepository.findById(invitationId).orElseThrow();
@@ -184,10 +184,10 @@ public class CredentialIssuanceService {
         _ -> Optional.empty());
   }
 
-  public Outcome<IssuedResetCode, InvitationRejections.IssueReset> issuePasswordReset(
+  public Outcome<IssuedResetCode, CredentialRejections.IssueReset> issuePasswordReset(
       AuthenticatedIdentity identity, UUID accountId, String reason) {
     if (isBlank(reason)) {
-      return Outcome.rejected(new InvitationRejections.ReasonRequired());
+      return Outcome.rejected(new CredentialRejections.ReasonRequired());
     }
 
     var refusal = resetRefusal(identity, accountId);
@@ -196,7 +196,7 @@ public class CredentialIssuanceService {
     }
 
     if (userAccountRepository.findById(accountId).isEmpty()) {
-      return Outcome.rejected(new InvitationRejections.AccountNotFound());
+      return Outcome.rejected(new CredentialRejections.AccountNotFound());
     }
 
     var issued = opaqueCodes.issue();
@@ -234,7 +234,7 @@ public class CredentialIssuanceService {
     var lockedIds =
         userAccountRepository.lockByIds(participantIds, properties.replacementLockTimeout());
     if (!lockedIds.contains(accountId)) {
-      throw new MutationRejection(new InvitationRejections.AccountNotFound());
+      throw new MutationRejection(new CredentialRejections.AccountNotFound());
     }
 
     if (!lockedIds.contains(identity.accountId())) {
@@ -242,7 +242,7 @@ public class CredentialIssuanceService {
     }
   }
 
-  private Optional<InvitationRejections.IssueReset> resetRefusal(
+  private Optional<CredentialRejections.IssueReset> resetRefusal(
       AuthenticatedIdentity identity, UUID accountId) {
     return switch (authorizationService.decide(
         identity, new Intent.IssuePasswordReset(accountId))) {
@@ -251,13 +251,13 @@ public class CredentialIssuanceService {
       case Decision.Denied<?>(var reason) ->
           switch (reason) {
             case REAUTHENTICATION_REQUIRED ->
-                Optional.of(new InvitationRejections.ReauthenticationRequired());
+                Optional.of(new CredentialRejections.ReauthenticationRequired());
             case POLICY -> {
               if (mayViewAccount(identity, accountId)) {
                 throw new AccessDeniedException("Not allowed.");
               }
 
-              yield Optional.of(new InvitationRejections.AccountNotFound());
+              yield Optional.of(new CredentialRejections.AccountNotFound());
             }
           };
     };

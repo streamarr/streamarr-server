@@ -1,9 +1,12 @@
 package com.streamarr.server.services.identity;
 
-/** Expected refusals of the credential-issuance mutations (ADR 0026). */
-public final class InvitationRejections {
+/**
+ * Expected refusals of the credential mutations: invitation issue and cancel, reset issue (ADR
+ * 0026).
+ */
+public final class CredentialRejections {
 
-  private InvitationRejections() {}
+  private CredentialRejections() {}
 
   public sealed interface Issue
       permits EmailRequired,

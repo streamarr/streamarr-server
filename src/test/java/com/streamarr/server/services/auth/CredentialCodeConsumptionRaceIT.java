@@ -21,7 +21,7 @@ import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
-import com.streamarr.server.services.identity.InvitationRejections;
+import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
@@ -129,7 +129,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
       assertThat(acceptanceAttempt.successful()).isNotEqualTo(cancellationSucceeded);
       if (acceptanceAttempt.successful()) {
         assertThat(rejectionOf(cancellationOutcome))
-            .isInstanceOf(InvitationRejections.InvitationNotPending.class);
+            .isInstanceOf(CredentialRejections.InvitationNotPending.class);
       } else {
         assertThat(acceptanceAttempt.failure()).isInstanceOf(InvalidOneTimeCodeException.class);
       }
