@@ -91,8 +91,12 @@ public class FakeAccountInvitationRepository extends FakeJpaRepository<AccountIn
   }
 
   @Override
-  public boolean markCanceledIfPendingAndUnexpired(UUID invitationId, Instant now) {
-    return markIfPendingAndUnexpired(invitationId, AccountInvitationStatus.CANCELED, now);
+  public Optional<AccountInvitation> cancelIfPendingAndUnexpired(UUID invitationId, Instant now) {
+    if (!markIfPendingAndUnexpired(invitationId, AccountInvitationStatus.CANCELED, now)) {
+      return Optional.empty();
+    }
+
+    return findById(invitationId);
   }
 
   private boolean markIfPendingAndUnexpired(

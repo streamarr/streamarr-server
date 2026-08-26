@@ -237,10 +237,10 @@ public class AccountAdministrationService {
    * deleted issuer is handled by the V058 triggers in the same statement as the SET NULL.
    */
   private void invalidateIssuedCredentials(UUID issuerAccountId, String reason) {
-    accountInvitationRepository.invalidatePendingInvitationsIssuedBy(
-        issuerAccountId, reason, clock.instant());
+    var now = clock.instant();
+    accountInvitationRepository.invalidatePendingInvitationsIssuedBy(issuerAccountId, reason, now);
     passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
-        issuerAccountId, reason, clock.instant());
+        issuerAccountId, reason, now);
   }
 
   private boolean mayViewAccount(AuthenticatedIdentity identity, UUID accountId) {

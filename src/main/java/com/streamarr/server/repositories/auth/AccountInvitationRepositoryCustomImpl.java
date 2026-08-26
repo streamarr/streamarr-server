@@ -6,8 +6,8 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.auth.AccountInvitation;
-import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.exceptions.InvalidPaginationCursorException;
+import com.streamarr.server.jooq.generated.enums.AccountInvitationStatus;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
@@ -18,6 +18,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
@@ -25,9 +26,6 @@ import org.jooq.DSLContext;
 import org.jooq.SortOrder;
 import org.springframework.data.domain.AuditorAware;
 
-// checkstyle:fullyQualifiedName suppressed for the class: the domain and generated jOOQ status
-// enums share a simple name, an unavoidable collision.
-@SuppressWarnings("checkstyle:fullyQualifiedName")
 @RequiredArgsConstructor
 public class AccountInvitationRepositoryCustomImpl implements AccountInvitationRepositoryCustom {
 
@@ -123,14 +121,22 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
   }
 
   @Override
-  public boolean markCanceledIfPendingAndUnexpired(UUID invitationId, Instant now) {
-    return markIfPendingAndUnexpired(invitationId, AccountInvitationStatus.CANCELED, now);
+  public Optional<AccountInvitation> cancelIfPendingAndUnexpired(UUID invitationId, Instant now) {
+    if (!markIfPendingAndUnexpired(invitationId, AccountInvitationStatus.CANCELED, now)) {
+      return Optional.empty();
+    }
+
+    // The update above bypassed the persistence context; refresh so a caller that already loaded
+    // this row does not get its stale managed copy back.
+    var invitation = entityManager.find(AccountInvitation.class, invitationId);
+    entityManager.refresh(invitation);
+    return Optional.of(invitation);
   }
 
   private boolean markIfPendingAndUnexpired(
       UUID invitationId, AccountInvitationStatus target, Instant now) {
     return dsl.update(ACCOUNT_INVITATION)
-            .set(ACCOUNT_INVITATION.STATUS, jooqStatus(target))
+            .set(ACCOUNT_INVITATION.STATUS, target)
             .set(ACCOUNT_INVITATION.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
             .set(ACCOUNT_INVITATION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
             .set(ACCOUNT_INVITATION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
@@ -168,9 +174,7 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
   @Override
   public int expirePendingInvitationsForRecipientEmail(String recipientEmail, Instant now) {
     return dsl.update(ACCOUNT_INVITATION)
-        .set(
-            ACCOUNT_INVITATION.STATUS,
-            com.streamarr.server.jooq.generated.enums.AccountInvitationStatus.EXPIRED)
+        .set(ACCOUNT_INVITATION.STATUS, AccountInvitationStatus.EXPIRED)
         .set(ACCOUNT_INVITATION.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
         .set(ACCOUNT_INVITATION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
         .set(ACCOUNT_INVITATION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
@@ -182,9 +186,7 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
 
   private int invalidate(Condition scope, String reason, Instant now) {
     return dsl.update(ACCOUNT_INVITATION)
-        .set(
-            ACCOUNT_INVITATION.STATUS,
-            com.streamarr.server.jooq.generated.enums.AccountInvitationStatus.INVALIDATED)
+        .set(ACCOUNT_INVITATION.STATUS, AccountInvitationStatus.INVALIDATED)
         .set(ACCOUNT_INVITATION.INVALIDATION_REASON, reason)
         .set(ACCOUNT_INVITATION.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
         .set(ACCOUNT_INVITATION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
@@ -195,12 +197,6 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
   }
 
   private static Condition pending() {
-    return ACCOUNT_INVITATION.STATUS.eq(
-        com.streamarr.server.jooq.generated.enums.AccountInvitationStatus.PENDING);
-  }
-
-  private static com.streamarr.server.jooq.generated.enums.AccountInvitationStatus jooqStatus(
-      AccountInvitationStatus status) {
-    return com.streamarr.server.jooq.generated.enums.AccountInvitationStatus.valueOf(status.name());
+    return ACCOUNT_INVITATION.STATUS.eq(AccountInvitationStatus.PENDING);
   }
 }

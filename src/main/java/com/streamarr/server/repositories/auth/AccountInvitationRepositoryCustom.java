@@ -4,6 +4,7 @@ import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface AccountInvitationRepositoryCustom {
@@ -21,7 +22,11 @@ public interface AccountInvitationRepositoryCustom {
 
   boolean markDeclinedIfPendingAndUnexpired(UUID invitationId, Instant now);
 
-  boolean markCanceledIfPendingAndUnexpired(UUID invitationId, Instant now);
+  /**
+   * Cancels one PENDING, unexpired invitation and returns it as it now stands, read past
+   * Hibernate's first-level cache; empty when nothing was pending.
+   */
+  Optional<AccountInvitation> cancelIfPendingAndUnexpired(UUID invitationId, Instant now);
 
   /**
    * Invalidates the PENDING, unexpired invitation for the email, ignoring case (replacement rule);

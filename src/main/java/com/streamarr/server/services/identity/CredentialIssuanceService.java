@@ -184,14 +184,11 @@ public class CredentialIssuanceService {
       AuthenticatedIdentity identity, UUID invitationId) {
     authorizationService.requireAllowed(identity, new Intent.CancelAccountInvitation());
     return mutationTransactions.write(
-        () -> {
-          if (!invitationRepository.markCanceledIfPendingAndUnexpired(
-              invitationId, clock.instant())) {
-            throw new MutationRejection(new CredentialRejections.InvitationNotPending());
-          }
-
-          return invitationRepository.findById(invitationId).orElseThrow();
-        },
+        () ->
+            invitationRepository
+                .cancelIfPendingAndUnexpired(invitationId, clock.instant())
+                .orElseThrow(
+                    () -> new MutationRejection(new CredentialRejections.InvitationNotPending())),
         _ -> Optional.empty());
   }
 
