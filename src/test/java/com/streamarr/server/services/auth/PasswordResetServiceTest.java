@@ -15,6 +15,7 @@ import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
+import com.streamarr.server.fakes.PlainPasswordEncoder;
 import com.streamarr.server.fixtures.AccountFixture;
 import java.time.Clock;
 import java.time.Duration;
@@ -25,7 +26,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -189,7 +189,7 @@ class PasswordResetServiceTest {
                     .build(),
                 clock),
             clock),
-        new PlainEncoder(),
+        new PlainPasswordEncoder(),
         new TransactionTemplate(new FakeTransactionManager()),
         CredentialCodeProperties.builder()
             .invitationTtl(Duration.ofDays(7))
@@ -222,18 +222,6 @@ class PasswordResetServiceTest {
     @Override
     public boolean trySetPasswordHash(UUID accountId, String passwordHash) {
       return false;
-    }
-  }
-
-  private static final class PlainEncoder implements PasswordEncoder {
-    @Override
-    public String encode(CharSequence rawPassword) {
-      return "hashed:" + rawPassword;
-    }
-
-    @Override
-    public boolean matches(CharSequence rawPassword, String encodedPassword) {
-      return encodedPassword.equals(encode(rawPassword));
     }
   }
 }

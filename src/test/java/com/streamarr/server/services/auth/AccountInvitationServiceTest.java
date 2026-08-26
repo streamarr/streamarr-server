@@ -22,6 +22,7 @@ import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
+import com.streamarr.server.fakes.PlainPasswordEncoder;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
@@ -41,7 +42,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -343,7 +343,7 @@ class AccountInvitationServiceTest {
             clock,
             new TokenReuseRevoker(new TokenReuseRevocationWriter(sessions, refreshTokens))),
         new OpaqueCodeResolver(opaqueCodes, guessThrottle, clock),
-        new PlainEncoder(),
+        new PlainPasswordEncoder(),
         new TransactionTemplate(new FakeTransactionManager()),
         new ConstraintViolationTranslator(),
         clock);
@@ -417,18 +417,6 @@ class AccountInvitationServiceTest {
           "could not execute statement",
           new ConstraintViolationException(
               "violates " + constraint, new SQLException("23514"), constraint));
-    }
-  }
-
-  private static final class PlainEncoder implements PasswordEncoder {
-    @Override
-    public String encode(CharSequence rawPassword) {
-      return "hashed:" + rawPassword;
-    }
-
-    @Override
-    public boolean matches(CharSequence rawPassword, String encodedPassword) {
-      return encodedPassword.equals(encode(rawPassword));
     }
   }
 }
