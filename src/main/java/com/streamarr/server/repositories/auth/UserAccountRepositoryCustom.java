@@ -56,9 +56,10 @@ public interface UserAccountRepositoryCustom {
   boolean tryLockEnabledServerAdmin(UUID accountId);
 
   /**
-   * Locks the Household's coordination row and chooses the role for a newly accepted Account. The
-   * first Account becomes HouseholdAdmin; later Accounts keep the invitation's requested role.
-   * Empty means the Household no longer exists.
+   * Locks the Household's {@code household_guard} row (one per Household, created by V056's
+   * trigger) and chooses the role for a newly accepted Account under that lock. The first Account
+   * becomes HouseholdAdmin; later Accounts keep the invitation's requested role. Empty means the
+   * Household no longer exists.
    */
   Optional<HouseholdRole> roleForNewAccount(UUID householdId, HouseholdRole requestedRole);
 
@@ -86,6 +87,9 @@ public interface UserAccountRepositoryCustom {
    */
   boolean tryRename(UUID accountId, String displayName);
 
-  /** Writes only the password hash; a reset must not overwrite unrelated concurrent changes. */
+  /**
+   * Writes the password hash and the audit columns, nothing else; a reset must not overwrite
+   * unrelated concurrent changes.
+   */
   boolean trySetPasswordHash(UUID accountId, String passwordHash);
 }

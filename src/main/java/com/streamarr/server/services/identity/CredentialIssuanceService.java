@@ -38,8 +38,8 @@ import org.springframework.stereotype.Service;
 /**
  * Issuing and canceling the opaque one-time credentials (ADR 0024 §Invitations, §Account):
  * ServerAdmin work, decided by Cedar. The raw code exists only in the returned value — the row
- * stores its digest, the audit row stores neither. Replacement atomically invalidates the older
- * pending artifact for the same target.
+ * stores its digest, and the audit row a reset issuance writes stores neither. Replacement
+ * atomically invalidates the older pending artifact for the same target.
  */
 @Service
 @RequiredArgsConstructor

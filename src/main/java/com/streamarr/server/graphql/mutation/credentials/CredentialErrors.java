@@ -34,7 +34,8 @@ public final class CredentialErrors {
               InputPath.of("householdRole"));
       case CredentialRejections.LocalManagerRequired _ ->
           new EligibleProfileManagerRequiredError(
-              "A restricted Profile needs an eligible Profile manager in its Household.",
+              "A restricted Profile needs a HouseholdAdmin of its Household, with an unrestricted"
+                  + " Personal Profile, as its manager.",
               InputPath.of("profileManagerAccountId"));
       case CredentialRejections.LocalManagerNotFound _ ->
           new AccountNotFoundError("No such Account.", InputPath.of("profileManagerAccountId"));

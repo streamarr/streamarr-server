@@ -34,6 +34,7 @@ public class AuthTokenResponseWriter {
         .body(body.build());
   }
 
+  /** Writes only the access credential, for scope changes or a superseded refresh replay. */
   public ResponseEntity<AuthTokensResponse> accessOnly(
       AccessToken accessToken, boolean cookieMode) {
     var body = bodyOf(accessToken);

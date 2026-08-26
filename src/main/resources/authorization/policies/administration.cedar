@@ -76,7 +76,8 @@ when {
   principal has serverAdmin && principal.serverAdmin
 };
 
-// Issuing a password-reset code is a break-glass member of the fresh-reauthentication group.
+// Issuing a password-reset code is ServerAdmin work in the requiresFreshReauthentication group
+// (ADR 0024 §Account): a stolen ServerAdmin session must not be enough to mint a code.
 @id("issue-password-reset-as-fresh-server-admin")
 permit (
   principal,

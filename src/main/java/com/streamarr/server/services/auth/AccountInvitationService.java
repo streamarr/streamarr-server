@@ -31,7 +31,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Presents and consumes principal-less Account invitation codes.
  *
  * @see <a
- *     href="https://github.com/streamarr/streamarr-adr/blob/main/adr/0024-identity-authority-by-relationship.adoc#invitations">ADR
+ *     href="https://github.com/streamarr/streamarr-adr/blob/main/adr/0024-identity-authority-by-relationship.adoc#_invitations">ADR
  *     0024 §Invitations</a>
  */
 @Service

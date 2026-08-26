@@ -162,7 +162,7 @@ type RestrictedHouseholdAdminError implements InputMutationError & MutationError
     inputPath: [String!]!
 }
 
-"A restricted Profile needs an eligible Profile manager in its Household."
+"A restricted Profile needs a HouseholdAdmin with an unrestricted Personal Profile as its manager."
 type EligibleProfileManagerRequiredError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!

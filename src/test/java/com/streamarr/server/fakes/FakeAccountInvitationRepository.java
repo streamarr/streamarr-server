@@ -69,7 +69,8 @@ public class FakeAccountInvitationRepository extends FakeJpaRepository<AccountIn
 
   @Override
   public void lockInvitationIssuanceForRecipientEmail(String recipientEmail) {
-    // Unit tests are single-threaded; PostgreSQL integration tests prove cross-instance locking.
+    // Unit tests are single-threaded; CredentialIssuanceReplacementRaceIT and
+    // CredentialIssuanceLockTimeoutIT prove the cross-instance lock against PostgreSQL.
   }
 
   @Override

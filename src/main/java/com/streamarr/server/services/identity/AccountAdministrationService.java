@@ -232,7 +232,10 @@ public class AccountAdministrationService {
     };
   }
 
-  /** A removed or compromised issuer leaves no codes behind that could take effect later. */
+  /**
+   * A disabled or demoted issuer leaves no unexpired codes behind that could take effect later; a
+   * deleted issuer is handled by the V058 triggers in the same statement as the SET NULL.
+   */
   private void invalidateIssuedCredentials(UUID issuerAccountId, String reason) {
     accountInvitationRepository.invalidatePendingInvitationsIssuedBy(
         issuerAccountId, reason, clock.instant());

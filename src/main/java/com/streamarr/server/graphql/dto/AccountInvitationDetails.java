@@ -8,7 +8,10 @@ import java.time.Instant;
 import java.util.UUID;
 import lombok.Builder;
 
-/** Everything about an invitation except its secret, which is never queryable. */
+/**
+ * The ServerAdmin-facing projection of an invitation: target, Profile shape, projected status, and
+ * expiry. The public id and secret digest are never exposed.
+ */
 @Builder
 public record AccountInvitationDetails(
     UUID id,

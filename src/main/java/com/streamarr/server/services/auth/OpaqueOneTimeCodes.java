@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
  * Generates and verifies digest-at-rest {@code publicId.secret} one-time codes.
  *
  * @see <a
- *     href="https://github.com/streamarr/streamarr-adr/blob/main/adr/0024-identity-authority-by-relationship.adoc#invitations">ADR
+ *     href="https://github.com/streamarr/streamarr-adr/blob/main/adr/0024-identity-authority-by-relationship.adoc#_invitations">ADR
  *     0024 §Invitations</a>
  */
 @Component

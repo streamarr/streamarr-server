@@ -23,12 +23,23 @@ public interface AccountInvitationRepositoryCustom {
 
   boolean markCanceledIfPendingAndUnexpired(UUID invitationId, Instant now);
 
-  /** Invalidates the PENDING invitation for the email, ignoring case (replacement rule). */
+  /**
+   * Invalidates the PENDING, unexpired invitation for the email, ignoring case (replacement rule);
+   * an expired one is materialized as EXPIRED first, see below.
+   */
   int invalidatePendingInvitationsForRecipientEmail(
       String recipientEmail, String reason, Instant now);
 
-  /** Invalidates every PENDING invitation the issuer left behind (disable, revocation). */
+  /**
+   * Invalidates every PENDING, unexpired invitation the issuer left behind (disable, revocation);
+   * expired ones keep projecting EXPIRED.
+   */
   int invalidatePendingInvitationsIssuedBy(UUID issuerAccountId, String reason, Instant now);
 
+  /**
+   * Materializes EXPIRED for the recipient's stale PENDING invitation, recording when, so the
+   * one-PENDING-per-email index slot is free for a replacement. Expiry is otherwise a read-time
+   * projection.
+   */
   int expirePendingInvitationsForRecipientEmail(String recipientEmail, Instant now);
 }
