@@ -229,14 +229,16 @@ public class AccountInvitationService {
       @Override
       public String toString() {
         return "AcceptInvitationCommandBuilder[code=REDACTED, displayName=%s, password=REDACTED,"
-            + " deviceName=%s]".formatted(displayName, deviceName);
+                .formatted(displayName)
+            + " deviceName=%s]".formatted(deviceName);
       }
     }
 
     @Override
     public String toString() {
       return "AcceptInvitationCommand[code=REDACTED, displayName=%s, password=REDACTED,"
-          + " deviceName=%s]".formatted(displayName, deviceName);
+              .formatted(displayName)
+          + " deviceName=%s]".formatted(deviceName);
     }
   }
 

@@ -16,7 +16,8 @@ public record AcceptInvitationRequest(
     @Override
     public String toString() {
       return "AcceptInvitationRequestBuilder[code=REDACTED, displayName=%s, password=REDACTED,"
-          + " cookieMode=%s]".formatted(displayName, cookieMode);
+              .formatted(displayName)
+          + " cookieMode=%s]".formatted(cookieMode);
     }
   }
 

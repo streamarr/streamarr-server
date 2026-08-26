@@ -16,6 +16,7 @@ import com.streamarr.server.graphql.dto.IssuedPasswordReset;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +40,16 @@ class CredentialSecretRedactionTest {
     assertThat(redactionCase.rendered())
         .contains(redactionCase.redactionMarker())
         .doesNotContain(redactionCase.secret());
+  }
+
+  @ParameterizedTest(name = "Should keep the plain fields of {0} readable when rendered as text")
+  @MethodSource("plainFieldRenderings")
+  @DisplayName("Should keep plain fields readable when a secret-bearing value is rendered as text")
+  void shouldKeepPlainFieldsReadableWhenSecretBearingValueIsRenderedAsText(
+      PlainFieldCase plainFieldCase) {
+    assertThat(plainFieldCase.rendered())
+        .contains(plainFieldCase.plainFields())
+        .doesNotContain("%s");
   }
 
   private static Stream<RedactionCase> secretBearingValues() {
@@ -194,6 +205,41 @@ class CredentialSecretRedactionTest {
     return new RedactedSecret(marker, value);
   }
 
+  private static Stream<PlainFieldCase> plainFieldRenderings() {
+    var acceptRequest =
+        AcceptInvitationRequest.builder()
+            .code(CODE)
+            .displayName("Invitee")
+            .password(PASSWORD)
+            .cookieMode(true);
+    var acceptCommand =
+        AccountInvitationService.AcceptInvitationCommand.builder()
+            .code(CODE)
+            .displayName("Invitee")
+            .password(PASSWORD)
+            .deviceName("living room");
+
+    return Stream.of(
+        plain(
+            "invitation request", acceptRequest.build(), "displayName=Invitee", "cookieMode=true"),
+        plain(
+            "invitation request builder", acceptRequest, "displayName=Invitee", "cookieMode=true"),
+        plain(
+            "invitation acceptance command",
+            acceptCommand.build(),
+            "displayName=Invitee",
+            "deviceName=living room"),
+        plain(
+            "invitation acceptance command builder",
+            acceptCommand,
+            "displayName=Invitee",
+            "deviceName=living room"));
+  }
+
+  private static PlainFieldCase plain(String description, Object value, String... plainFields) {
+    return new PlainFieldCase(description, value.toString(), List.of(plainFields));
+  }
+
   @lombok.Builder
   private record RedactionCase(
       String description, String rendered, String redactionMarker, String secret) {
@@ -204,4 +250,11 @@ class CredentialSecretRedactionTest {
   }
 
   private record RedactedSecret(String marker, String value) {}
+
+  private record PlainFieldCase(String description, String rendered, List<String> plainFields) {
+    @Override
+    public String toString() {
+      return description;
+    }
+  }
 }
