@@ -39,6 +39,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import jakarta.persistence.EntityManagerFactory;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -560,6 +561,40 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
             .getResponse();
     assertThat(response.getCookie("streamarr_access")).isNotNull();
     assertThat(response.getCookie("streamarr_refresh")).isNotNull();
+  }
+
+  @Test
+  @DisplayName("Should refuse a blank reset code or password before any attempt is journaled")
+  void shouldRefuseBlankResetCodeOrPasswordBeforeAnyAttemptIsJournaled() throws Exception {
+    var before = Timestamp.from(Instant.now());
+
+    mockMvc
+        .perform(
+            post("/api/auth/password-reset/redeem")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"code": "", "newPassword": "a brand new passphrase"}
+                    """))
+        .andExpect(status().isBadRequest());
+    mockMvc
+        .perform(
+            post("/api/auth/password-reset/redeem")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"code": "public.secret", "newPassword": " "}
+                    """))
+        .andExpect(status().isBadRequest());
+
+    // Transport validation answers before the command exists, so the journal never sees them.
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM credential_attempt"
+                    + " WHERE credential_kind = 'PASSWORD_RESET_CODE' AND attempted_at >= ?",
+                Integer.class,
+                before))
+        .isZero();
   }
 
   @Test
