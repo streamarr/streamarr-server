@@ -3,6 +3,7 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.controllers.auth.AcceptInvitationRequest;
+import com.streamarr.server.controllers.auth.AuthTokenResponseWriter;
 import com.streamarr.server.controllers.auth.InvitationCodeRequest;
 import com.streamarr.server.controllers.auth.RedeemPasswordResetRequest;
 import com.streamarr.server.domain.auth.AccountInvitation;
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.http.HttpStatus;
 
 @Tag("UnitTest")
 @DisplayName("Credential Secret Redaction Tests")
@@ -66,8 +68,48 @@ class CredentialSecretRedactionTest {
             .cookieMode(false)
             .build();
     var redeemRequest = new RedeemPasswordResetRequest(CODE, PASSWORD);
+    var accessToken = new AccessToken("access-token-secret", Instant.now(), TokenScope.ACCOUNT);
+    var refreshResponse =
+        AuthTokenResponseWriter.RefreshResponse.builder()
+            .status(HttpStatus.OK)
+            .accessToken(accessToken)
+            .rawRefreshToken(REFRESH_TOKEN)
+            .cookieMode(false)
+            .build();
 
     return Stream.of(
+        redaction(
+            "token response refresh token",
+            refreshResponse,
+            secret("rawRefreshToken=REDACTED", REFRESH_TOKEN)),
+        redaction(
+            "token response builder",
+            AuthTokenResponseWriter.RefreshResponse.builder().rawRefreshToken(REFRESH_TOKEN),
+            secret("rawRefreshToken=REDACTED", REFRESH_TOKEN)),
+        redaction(
+            "invitation request builder code",
+            AcceptInvitationRequest.builder().code(CODE).password(PASSWORD),
+            secret("code=REDACTED", CODE)),
+        redaction(
+            "invitation request builder password",
+            AcceptInvitationRequest.builder().code(CODE).password(PASSWORD),
+            secret("password=REDACTED", PASSWORD)),
+        redaction(
+            "invitation acceptance command builder code",
+            AccountInvitationService.AcceptInvitationCommand.builder()
+                .code(CODE)
+                .password(PASSWORD),
+            secret("code=REDACTED", CODE)),
+        redaction(
+            "invitation acceptance command builder password",
+            AccountInvitationService.AcceptInvitationCommand.builder()
+                .code(CODE)
+                .password(PASSWORD),
+            secret("password=REDACTED", PASSWORD)),
+        redaction(
+            "accepted invitation builder",
+            AccountInvitationService.AcceptedInvitation.builder().rawRefreshToken(REFRESH_TOKEN),
+            secret("rawRefreshToken=REDACTED", REFRESH_TOKEN)),
         redaction("invitation request code", acceptRequest, secret("code=REDACTED", CODE)),
         redaction(
             "invitation request password", acceptRequest, secret("password=REDACTED", PASSWORD)),

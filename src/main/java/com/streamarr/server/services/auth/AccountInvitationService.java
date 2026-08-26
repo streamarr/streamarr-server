@@ -215,11 +215,19 @@ public class AccountInvitationService {
   public record AcceptInvitationCommand(
       String code, String displayName, String password, String deviceName) {
 
+    public static class AcceptInvitationCommandBuilder {
+
+      @Override
+      public String toString() {
+        return "AcceptInvitationCommandBuilder[code=REDACTED, displayName=%s, password=REDACTED,"
+            + " deviceName=%s]".formatted(displayName, deviceName);
+      }
+    }
+
     @Override
     public String toString() {
       return "AcceptInvitationCommand[code=REDACTED, displayName=%s, password=REDACTED,"
-              .formatted(displayName)
-          + " deviceName=%s]".formatted(deviceName);
+          + " deviceName=%s]".formatted(displayName, deviceName);
     }
   }
 
@@ -236,6 +244,14 @@ public class AccountInvitationService {
   @Builder
   public record AcceptedInvitation(
       UserAccount account, AuthSession session, String rawRefreshToken) {
+
+    public static class AcceptedInvitationBuilder {
+
+      @Override
+      public String toString() {
+        return "AcceptedInvitationBuilder[rawRefreshToken=REDACTED]";
+      }
+    }
 
     @Override
     public String toString() {

@@ -11,10 +11,18 @@ public record AcceptInvitationRequest(
     @NotBlank String password,
     Boolean cookieMode) {
 
+  public static class AcceptInvitationRequestBuilder {
+
+    @Override
+    public String toString() {
+      return "AcceptInvitationRequestBuilder[code=REDACTED, displayName=%s, password=REDACTED,"
+          + " cookieMode=%s]".formatted(displayName, cookieMode);
+    }
+  }
+
   @Override
   public String toString() {
-    return "AcceptInvitationRequest[code=REDACTED, displayName=%s, password=REDACTED,"
-            .formatted(displayName)
-        + " cookieMode=%s]".formatted(cookieMode);
+    return "AcceptInvitationRequest[code=REDACTED, displayName=%s, password=REDACTED, cookieMode=%s]"
+        .formatted(displayName, cookieMode);
   }
 }

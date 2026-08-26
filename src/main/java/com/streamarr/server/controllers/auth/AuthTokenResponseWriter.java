@@ -52,7 +52,24 @@ public class AuthTokenResponseWriter {
         .scope(accessToken.scope().claimValue());
   }
 
+  /** Carries the raw refresh token to the writer once; neither string form renders it. */
   @Builder
   public record RefreshResponse(
-      HttpStatus status, AccessToken accessToken, String rawRefreshToken, boolean cookieMode) {}
+      HttpStatus status, AccessToken accessToken, String rawRefreshToken, boolean cookieMode) {
+
+    public static class RefreshResponseBuilder {
+
+      @Override
+      public String toString() {
+        return "RefreshResponseBuilder[status=%s, rawRefreshToken=REDACTED, cookieMode=%s]"
+            .formatted(status, cookieMode);
+      }
+    }
+
+    @Override
+    public String toString() {
+      return "RefreshResponse[status=%s, accessToken=%s, rawRefreshToken=REDACTED, cookieMode=%s]"
+          .formatted(status, accessToken, cookieMode);
+    }
+  }
 }
