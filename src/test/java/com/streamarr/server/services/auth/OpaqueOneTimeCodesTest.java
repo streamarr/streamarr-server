@@ -48,6 +48,17 @@ class OpaqueOneTimeCodesTest {
   }
 
   @Test
+  @DisplayName("Should keep the issued digest intact when a caller mutates the array it received")
+  void shouldKeepIssuedDigestIntactWhenCallerMutatesReceivedArray() {
+    var issued = codes.issue();
+    var handedOut = issued.digest();
+    handedOut[0] ^= (byte) 0xFF;
+
+    var presented = codes.parse(issued.code()).orElseThrow();
+    assertThat(codes.matches(presented, issued.digest())).isTrue();
+  }
+
+  @Test
   @DisplayName("Should refuse malformed shapes when an opaque code is parsed")
   void shouldRefuseMalformedShapesWhenOpaqueCodeIsParsed() {
     assertThat(codes.parse(null)).isEmpty();

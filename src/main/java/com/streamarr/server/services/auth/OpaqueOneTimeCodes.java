@@ -67,6 +67,16 @@ public class OpaqueOneTimeCodes {
   /** The issued triple; {@code code} goes to the caller once, {@code digest} to the row. */
   public record IssuedCode(String publicId, String code, byte[] digest) {
 
+    /** The digest is copied in and out so no caller can change what will be stored or compared. */
+    public IssuedCode {
+      digest = digest.clone();
+    }
+
+    @Override
+    public byte[] digest() {
+      return digest.clone();
+    }
+
     @Override
     public boolean equals(Object other) {
       return other instanceof IssuedCode(var otherPublicId, var otherCode, var otherDigest)
