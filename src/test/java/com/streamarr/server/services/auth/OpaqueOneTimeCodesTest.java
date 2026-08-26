@@ -21,8 +21,24 @@ class OpaqueOneTimeCodesTest {
     assertThat(issued.code()).startsWith(issued.publicId() + ".");
     assertThat(Base64.getUrlDecoder().decode(issued.code().split("\\.")[1])).hasSize(32);
     assertThat(issued.digest()).hasSize(32);
+  }
+
+  @Test
+  @DisplayName("Should recover the public identifier when an issued code is parsed")
+  void shouldRecoverPublicIdentifierWhenIssuedCodeIsParsed() {
+    var issued = codes.issue();
+
     var presented = codes.parse(issued.code()).orElseThrow();
+
     assertThat(presented.publicId()).isEqualTo(issued.publicId());
+  }
+
+  @Test
+  @DisplayName("Should match only the issued secret when an opaque-code digest is checked")
+  void shouldMatchOnlyIssuedSecretWhenOpaqueCodeDigestIsChecked() {
+    var issued = codes.issue();
+    var presented = codes.parse(issued.code()).orElseThrow();
+
     assertThat(codes.matches(presented, issued.digest())).isTrue();
     assertThat(
             codes.matches(

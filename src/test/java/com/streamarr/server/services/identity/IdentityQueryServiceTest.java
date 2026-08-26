@@ -75,8 +75,8 @@ class IdentityQueryServiceTest {
   }
 
   @Test
-  @DisplayName("Should describe the Account and Household context when Me view is requested")
-  void shouldDescribeAccountAndHouseholdContextWhenMeViewIsRequested() {
+  @DisplayName("Should describe the Account and Household context when Me details are requested")
+  void shouldDescribeAccountAndHouseholdContextWhenMeDetailsAreRequested() {
     var me = service.meDetails(identity(home.getId(), personal.getId()));
 
     assertThat(me.account().getId()).isEqualTo(account.getId());
@@ -181,8 +181,8 @@ class IdentityQueryServiceTest {
   }
 
   @Test
-  @DisplayName("Should read as unauthenticated when the Account or Household is unknown")
-  void shouldReadAsUnauthenticatedWhenAccountOrHouseholdIsUnknown() {
+  @DisplayName("Should read as unauthenticated when the Account is unknown")
+  void shouldReadAsUnauthenticatedWhenAccountIsUnknown() {
     var ghost =
         AuthenticatedIdentity.builder()
             .accountId(UUID.randomUUID())
@@ -192,10 +192,16 @@ class IdentityQueryServiceTest {
             .householdRole(HouseholdRole.MEMBER)
             .contextHouseholdId(home.getId())
             .build();
-    var strangeContext = identity(UUID.randomUUID(), null);
 
     assertThatThrownBy(() -> service.meDetails(ghost))
         .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should read as unauthenticated when the context Household is unknown")
+  void shouldReadAsUnauthenticatedWhenContextHouseholdIsUnknown() {
+    var strangeContext = identity(UUID.randomUUID(), null);
+
     assertThatThrownBy(() -> service.meDetails(strangeContext))
         .isInstanceOf(AuthenticationRequiredException.class);
   }

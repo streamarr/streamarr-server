@@ -58,7 +58,13 @@ class CredentialSecretRedactionTest {
             .secretDigest(digest)
             .build();
     var invitationDetails = AccountInvitationDetails.builder().id(invitationId).build();
-    var acceptRequest = new AcceptInvitationRequest(CODE, "Invitee", PASSWORD, false);
+    var acceptRequest =
+        AcceptInvitationRequest.builder()
+            .code(CODE)
+            .displayName("Invitee")
+            .password(PASSWORD)
+            .cookieMode(false)
+            .build();
     var redeemRequest = new RedeemPasswordResetRequest(CODE, PASSWORD);
 
     return Stream.of(

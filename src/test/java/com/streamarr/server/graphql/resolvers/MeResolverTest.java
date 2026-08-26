@@ -108,27 +108,35 @@ class MeResolverTest {
     var home = new HouseholdSummaryDetails(householdId, "Home");
     var visited = new HouseholdSummaryDetails(visitedHouseholdId, "Grandma");
     var personal =
-        new SelectableProfileDetails(
-            UUID.randomUUID(),
-            "Andrew",
-            Optional.empty(),
-            ProfileKind.ADULT,
-            true,
-            false,
-            false,
-            false);
+        SelectableProfileDetails.builder()
+            .id(UUID.randomUUID())
+            .name("Andrew")
+            .picture(Optional.empty())
+            .kind(ProfileKind.ADULT)
+            .personal(true)
+            .pinConfigured(false)
+            .locked(false)
+            .selected(false)
+            .build();
     var kid =
-        new SelectableProfileDetails(
-            UUID.randomUUID(),
-            "Kai",
-            Optional.of("kai.png"),
-            ProfileKind.KID,
-            false,
-            true,
-            false,
-            false);
+        SelectableProfileDetails.builder()
+            .id(UUID.randomUUID())
+            .name("Kai")
+            .picture(Optional.of("kai.png"))
+            .kind(ProfileKind.KID)
+            .personal(false)
+            .pinConfigured(true)
+            .locked(false)
+            .selected(false)
+            .build();
     var details =
-        new IdentityQueryService.MeDetails(account, TokenScope.ACCOUNT, home, home, false);
+        IdentityQueryService.MeDetails.builder()
+            .account(account)
+            .scope(TokenScope.ACCOUNT)
+            .household(home)
+            .contextHousehold(home)
+            .deviceBound(false)
+            .build();
     when(identityQueryService.meDetails(any())).thenReturn(details);
     stubPages(
         List.of(new UsableHouseholdDetails(home, true), new UsableHouseholdDetails(visited, false)),
@@ -243,20 +251,35 @@ class MeResolverTest {
         AccountFixture.defaultAccountBuilder().id(accountId).householdId(householdId).build();
     var home = new HouseholdSummaryDetails(householdId, "Home");
     var first =
-        new SelectableProfileDetails(
-            UUID.randomUUID(),
-            "Andrew",
-            Optional.empty(),
-            ProfileKind.ADULT,
-            true,
-            false,
-            false,
-            true);
+        SelectableProfileDetails.builder()
+            .id(UUID.randomUUID())
+            .name("Andrew")
+            .picture(Optional.empty())
+            .kind(ProfileKind.ADULT)
+            .personal(true)
+            .pinConfigured(false)
+            .locked(false)
+            .selected(true)
+            .build();
     var second =
-        new SelectableProfileDetails(
-            UUID.randomUUID(), "Kai", Optional.empty(), ProfileKind.KID, false, true, false, false);
+        SelectableProfileDetails.builder()
+            .id(UUID.randomUUID())
+            .name("Kai")
+            .picture(Optional.empty())
+            .kind(ProfileKind.KID)
+            .personal(false)
+            .pinConfigured(true)
+            .locked(false)
+            .selected(false)
+            .build();
     var details =
-        new IdentityQueryService.MeDetails(account, TokenScope.PROFILE, home, home, false);
+        IdentityQueryService.MeDetails.builder()
+            .account(account)
+            .scope(TokenScope.PROFILE)
+            .household(home)
+            .contextHousehold(home)
+            .deviceBound(false)
+            .build();
     when(identityQueryService.meDetails(any())).thenReturn(details);
     stubPages(List.of(new UsableHouseholdDetails(home, true)), List.of(first, second), first);
   }

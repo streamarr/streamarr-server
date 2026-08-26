@@ -42,9 +42,13 @@ class AuthTokenResponseWriterTest {
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     assertThat(response.getHeaders().get(HttpHeaders.SET_COOKIE)).isNull();
     assertThat(response.getBody())
-        .isEqualTo(
-            new AuthTokensResponse(
-                "access-token", EXPIRES_AT, TokenScope.ACCOUNT.claimValue(), "refresh-token"));
+        .extracting(
+            AuthTokensResponse::accessToken,
+            AuthTokensResponse::accessTokenExpiresAt,
+            AuthTokensResponse::scope,
+            AuthTokensResponse::refreshToken)
+        .containsExactly(
+            "access-token", EXPIRES_AT, TokenScope.ACCOUNT.claimValue(), "refresh-token");
   }
 
   @Test
@@ -65,7 +69,12 @@ class AuthTokenResponseWriterTest {
         .anySatisfy(cookie -> assertThat(cookie).startsWith("streamarr_access=access-token"))
         .anySatisfy(cookie -> assertThat(cookie).startsWith("streamarr_refresh=refresh-token"));
     assertThat(response.getBody())
-        .isEqualTo(new AuthTokensResponse(null, EXPIRES_AT, TokenScope.ACCOUNT.claimValue(), null));
+        .extracting(
+            AuthTokensResponse::accessToken,
+            AuthTokensResponse::accessTokenExpiresAt,
+            AuthTokensResponse::scope,
+            AuthTokensResponse::refreshToken)
+        .containsExactly(null, EXPIRES_AT, TokenScope.ACCOUNT.claimValue(), null);
   }
 
   @Test
@@ -76,9 +85,12 @@ class AuthTokenResponseWriterTest {
 
     assertThat(response.getHeaders().get(HttpHeaders.SET_COOKIE)).isNull();
     assertThat(response.getBody())
-        .isEqualTo(
-            new AuthTokensResponse(
-                "access-token", EXPIRES_AT, TokenScope.ACCOUNT.claimValue(), null));
+        .extracting(
+            AuthTokensResponse::accessToken,
+            AuthTokensResponse::accessTokenExpiresAt,
+            AuthTokensResponse::scope,
+            AuthTokensResponse::refreshToken)
+        .containsExactly("access-token", EXPIRES_AT, TokenScope.ACCOUNT.claimValue(), null);
   }
 
   @Test
@@ -92,7 +104,12 @@ class AuthTokenResponseWriterTest {
         .asString()
         .startsWith("streamarr_access=access-token");
     assertThat(response.getBody())
-        .isEqualTo(new AuthTokensResponse(null, EXPIRES_AT, TokenScope.ACCOUNT.claimValue(), null));
+        .extracting(
+            AuthTokensResponse::accessToken,
+            AuthTokensResponse::accessTokenExpiresAt,
+            AuthTokensResponse::scope,
+            AuthTokensResponse::refreshToken)
+        .containsExactly(null, EXPIRES_AT, TokenScope.ACCOUNT.claimValue(), null);
   }
 
   private static AuthCookieWriter cookieWriter() {

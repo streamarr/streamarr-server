@@ -41,7 +41,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Account of an empty Household becoming HouseholdAdmin.
  */
 @Tag("UnitTest")
-@DisplayName("Account Invitation Ceremony Service Tests")
+@DisplayName("Account Invitation Service Tests")
 class AccountInvitationServiceTest {
 
   private static final Instant NOW = Instant.parse("2026-08-19T12:00:00Z");

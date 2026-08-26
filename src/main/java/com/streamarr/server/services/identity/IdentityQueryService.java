@@ -24,6 +24,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,7 +48,13 @@ public class IdentityQueryService {
 
     var membership = summary(account.getHouseholdId());
     var context = summary(identity.contextHouseholdId());
-    return new MeDetails(account, identity.scope(), membership, context, false);
+    return MeDetails.builder()
+        .account(account)
+        .scope(identity.scope())
+        .household(membership)
+        .contextHousehold(context)
+        .deviceBound(false)
+        .build();
   }
 
   @Transactional(readOnly = true)
@@ -118,15 +125,16 @@ public class IdentityQueryService {
     return available.stream()
         .map(
             profile ->
-                new SelectableProfileDetails(
-                    profile.getId(),
-                    profile.getName(),
-                    Optional.ofNullable(profile.getPicture()),
-                    profile.getKind(),
-                    profile.getId().equals(account.getPersonalProfileId()),
-                    profile.hasEffectivePin(),
-                    locked.contains(profile.getId()),
-                    profile.getId().equals(identity.profileId())))
+                SelectableProfileDetails.builder()
+                    .id(profile.getId())
+                    .name(profile.getName())
+                    .picture(Optional.ofNullable(profile.getPicture()))
+                    .kind(profile.getKind())
+                    .personal(profile.getId().equals(account.getPersonalProfileId()))
+                    .pinConfigured(profile.hasEffectivePin())
+                    .locked(locked.contains(profile.getId()))
+                    .selected(profile.getId().equals(identity.profileId()))
+                    .build())
         .toList();
   }
 
@@ -141,6 +149,7 @@ public class IdentityQueryService {
     return new HouseholdSummaryDetails(household.getId(), household.getName());
   }
 
+  @Builder
   public record MeDetails(
       UserAccount account,
       TokenScope scope,
@@ -157,6 +166,7 @@ public class IdentityQueryService {
 
   public record UsableHouseholdDetails(HouseholdSummaryDetails household, boolean membership) {}
 
+  @Builder
   public record SelectableProfileDetails(
       UUID id,
       String name,

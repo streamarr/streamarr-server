@@ -30,7 +30,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * disabled Account may redeem, and no session is created — a reset never bypasses a disable.
  */
 @Tag("UnitTest")
-@DisplayName("Password Reset Redemption Service Tests")
+@DisplayName("Password Reset Service Tests")
 class PasswordResetServiceTest {
 
   private static final Instant NOW = Instant.parse("2026-08-19T12:00:00Z");

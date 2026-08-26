@@ -1,8 +1,10 @@
 package com.streamarr.server.controllers.auth;
 
 import jakarta.validation.constraints.NotBlank;
+import lombok.Builder;
 
 /** Code and new password are secrets; consumed synchronously, never echoed. */
+@Builder
 public record AcceptInvitationRequest(
     @NotBlank String code,
     @NotBlank String displayName,
