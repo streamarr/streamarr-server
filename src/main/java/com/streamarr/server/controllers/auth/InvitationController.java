@@ -3,7 +3,6 @@ package com.streamarr.server.controllers.auth;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
-import com.streamarr.server.services.auth.AccountInvitationService.InvitationPreview;
 import com.streamarr.server.services.auth.DeviceName;
 import com.streamarr.server.services.auth.TokenContext;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,8 +30,8 @@ public class InvitationController {
   private final AuthTokenResponseWriter tokenResponseWriter;
 
   @PostMapping("/lookup")
-  public InvitationPreview lookup(@Valid @RequestBody InvitationCodeRequest request) {
-    return invitationService.lookup(request.code());
+  public InvitationLookupResponse lookup(@Valid @RequestBody InvitationCodeRequest request) {
+    return InvitationLookupResponse.from(invitationService.lookup(request.code()));
   }
 
   @PostMapping("/accept")

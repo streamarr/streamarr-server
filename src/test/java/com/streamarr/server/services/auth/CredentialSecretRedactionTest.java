@@ -134,7 +134,15 @@ class CredentialSecretRedactionTest {
             secret("code=REDACTED", CODE)),
         redaction(
             "issued GraphQL password reset",
-            new IssuedPasswordReset(accountId, CODE, Instant.now().toString()),
+            IssuedPasswordReset.builder()
+                .accountId(accountId)
+                .code(CODE)
+                .expiresAt(Instant.now().toString())
+                .build(),
+            secret("code=REDACTED", CODE)),
+        redaction(
+            "issued GraphQL password reset builder",
+            IssuedPasswordReset.builder().accountId(accountId).code(CODE),
             secret("code=REDACTED", CODE)),
         redaction(
             "invitation acceptance command",

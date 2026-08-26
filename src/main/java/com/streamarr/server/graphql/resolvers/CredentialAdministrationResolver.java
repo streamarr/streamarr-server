@@ -110,10 +110,11 @@ public class CredentialAdministrationResolver {
                 input.reason())
             .map(
                 issued ->
-                    new IssuedPasswordReset(
-                        issued.resetCode().getAccountId(),
-                        issued.code(),
-                        issued.resetCode().getExpiresAt().toString())),
+                    IssuedPasswordReset.builder()
+                        .accountId(issued.resetCode().getAccountId())
+                        .code(issued.code())
+                        .expiresAt(issued.resetCode().getExpiresAt().toString())
+                        .build()),
         CredentialErrors::toIssueResetError,
         IssuePasswordResetPayload::new);
   }
