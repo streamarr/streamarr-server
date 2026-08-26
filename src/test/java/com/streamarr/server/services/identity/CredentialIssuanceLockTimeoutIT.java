@@ -18,6 +18,7 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
@@ -202,6 +203,8 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
         var contender = executor.submit(replacement::get);
         assertThatThrownBy(() -> contender.get(3, TimeUnit.SECONDS))
             .isInstanceOf(ExecutionException.class)
+            .cause()
+            .isInstanceOf(ResourceBusyException.class)
             .hasStackTraceContaining("canceling statement due to lock timeout");
       } finally {
         releaseLock.countDown();
@@ -225,6 +228,8 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
       try {
         assertThatThrownBy(() -> contender.get(3, TimeUnit.SECONDS))
             .isInstanceOf(ExecutionException.class)
+            .cause()
+            .isInstanceOf(ResourceBusyException.class)
             .hasStackTraceContaining("canceling statement due to lock timeout");
       } finally {
         lockConnection.rollback();
