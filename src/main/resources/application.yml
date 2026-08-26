@@ -87,8 +87,9 @@ dev:
   admin-password: ${DEV_ADMIN_PASSWORD:streamarr-dev}
 
 server:
-  # Opt-in for reverse-proxied deployments: NATIVE/FRAMEWORK make the login throttle's
-  # per-source signal reflect real client addresses instead of the proxy's.
+  # Opt-in for reverse-proxied deployments: NATIVE/FRAMEWORK make getRemoteAddr() — the address
+  # ClientIpAddressResolver journals with every credential attempt, observational only — reflect
+  # real client addresses instead of the proxy's. Forwarded headers are never parsed by hand.
   forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:none}
 
 auth:

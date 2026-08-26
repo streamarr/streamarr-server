@@ -9,6 +9,10 @@ import org.springframework.graphql.server.WebGraphQlResponse;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
+/**
+ * Captures the client address once per request into the GraphQL context: data fetchers may run off
+ * the servlet thread, where the request-backed resolver has no request to read.
+ */
 @Component
 @RequiredArgsConstructor
 public class ClientIpAddressGraphQlInterceptor implements WebGraphQlInterceptor {
