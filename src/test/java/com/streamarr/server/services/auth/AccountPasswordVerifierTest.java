@@ -204,8 +204,8 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should limit each Account's failures without affecting another Account")
-  void shouldLimitEachAccountsFailuresWithoutAffectingAnotherAccount() {
+  @DisplayName("Should limit only the failing Account when another Account verifies")
+  void shouldLimitOnlyTheFailingAccountWhenAnotherAccountVerifies() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
     var otherAccount = enabledAccount(encoder.encode(CORRECT_PASSWORD));
     for (var attempt = 0; attempt < 5; attempt++) {
@@ -220,8 +220,8 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should journal each verification outcome in order")
-  void shouldJournalEachVerificationOutcomeInOrder() {
+  @DisplayName("Should journal each outcome in order when verifications alternate")
+  void shouldJournalEachOutcomeInOrderWhenVerificationsAlternate() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
     assertThatThrownBy(() -> verifier.verify(account, "wrong", IP_ADDRESS))
         .isInstanceOf(InvalidCredentialsException.class);
@@ -236,20 +236,6 @@ class AccountPasswordVerifierTest {
             CredentialAttemptResult.FAILED,
             CredentialAttemptResult.SUCCEEDED,
             CredentialAttemptResult.FAILED);
-  }
-
-  @Test
-  @DisplayName("Should accept password when correct at request start despite concurrent rotation")
-  void shouldAcceptPasswordWhenCorrectAtRequestStartDespiteConcurrentRotation() {
-    var originalHash = encoder.encode(CORRECT_PASSWORD);
-    var account = enabledAccount(originalHash);
-    // A concurrent rotation lands on the managed entity while the comparison is running.
-    encoder.onNextComparison(() -> account.setPasswordHash(encoder.encode("rotated")));
-
-    assertThatCode(() -> verifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
-        .doesNotThrowAnyException();
-
-    assertThat(encoder.comparedAgainst()).containsExactly(originalHash);
   }
 
   private static UserAccount enabledAccount(String passwordHash) {

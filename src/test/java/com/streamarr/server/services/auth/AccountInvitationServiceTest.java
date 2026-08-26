@@ -257,8 +257,8 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse the code after five wrong secrets for the same invitation")
-  void shouldRefuseCodeAfterFiveWrongSecretsForSameInvitation() {
+  @DisplayName("Should refuse the code when five wrong secrets hit the same invitation")
+  void shouldRefuseCodeWhenFiveWrongSecretsHitSameInvitation() {
     var issued = pendingInvitation(pendingInvitationBuilder().build());
     var publicId = invitations.findAll().getFirst().getPublicId();
     for (var attempt = 0; attempt < 5; attempt++) {
@@ -272,8 +272,9 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should journal each correct presentation as a success against the invitation")
-  void shouldJournalEachCorrectPresentationAsSuccessAgainstInvitation() {
+  @DisplayName(
+      "Should journal a success against the invitation when the correct code is presented repeatedly")
+  void shouldJournalSuccessAgainstInvitationWhenCorrectCodeIsPresentedRepeatedly() {
     var issued = pendingInvitation(pendingInvitationBuilder().build());
     var invitationId = invitations.findAll().getFirst().getId();
 
@@ -296,8 +297,8 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should journal an unknown public id as a failure with no target")
-  void shouldJournalUnknownPublicIdAsFailureWithNoTarget() {
+  @DisplayName("Should journal a failure with no target when the public id is unknown")
+  void shouldJournalFailureWithNoTargetWhenPublicIdIsUnknown() {
     assertThatThrownBy(() -> lookup("unknown.secret"))
         .isInstanceOf(InvalidOneTimeCodeException.class);
 

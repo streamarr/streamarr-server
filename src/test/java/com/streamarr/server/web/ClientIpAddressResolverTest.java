@@ -26,8 +26,8 @@ class ClientIpAddressResolverTest {
   }
 
   @Test
-  @DisplayName("Should unwrap an IPv4-mapped IPv6 remote address")
-  void shouldUnwrapIpv4MappedIpv6RemoteAddress() {
+  @DisplayName("Should unwrap the IPv4 address when the remote address is IPv4-mapped IPv6")
+  void shouldUnwrapIpv4WhenRemoteAddressIsIpv4MappedIpv6() {
     assertThat(resolve("::ffff:192.0.2.30")).isEqualTo("192.0.2.30");
   }
 

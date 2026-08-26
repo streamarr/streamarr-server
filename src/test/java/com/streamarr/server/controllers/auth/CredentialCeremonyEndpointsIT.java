@@ -564,8 +564,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse a blank reset code or password before any attempt is journaled")
-  void shouldRefuseBlankResetCodeOrPasswordBeforeAnyAttemptIsJournaled() throws Exception {
+  @DisplayName("Should journal no attempt when the reset code or password is blank")
+  void shouldJournalNoAttemptWhenResetCodeOrPasswordIsBlank() throws Exception {
     var before = Timestamp.from(Instant.now());
 
     mockMvc

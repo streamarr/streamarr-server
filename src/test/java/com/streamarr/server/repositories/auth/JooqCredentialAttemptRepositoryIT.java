@@ -107,8 +107,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should count fresh pending reservations and ignore abandoned reservations")
-  void shouldCountFreshPendingReservationsAndIgnoreAbandonedReservations() {
+  @DisplayName("Should hold a slot for a pending reservation when it is fresh")
+  void shouldHoldSlotForPendingReservationWhenItIsFresh() {
     var target = resolvedTarget();
     for (var pending = 0; pending < 5; pending++) {
       reserve(target, NOW);
@@ -120,6 +120,16 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
             repository.reserve(
                 target, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(5)).minusSeconds(1)))
         .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
+  }
+
+  @Test
+  @DisplayName("Should free the slot when a pending reservation is five minutes old")
+  void shouldFreeSlotWhenPendingReservationIsFiveMinutesOld() {
+    var target = resolvedTarget();
+    for (var pending = 0; pending < 5; pending++) {
+      reserve(target, NOW);
+    }
+
     assertThat(repository.reserve(target, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(5))))
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
   }
@@ -155,8 +165,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should measure the lockout from the fifth failure's completion, not its reservation")
-  void shouldMeasureLockoutFromFifthFailuresCompletionNotItsReservation() {
+      "Should measure the lockout from the fifth failure's completion when completion lags its reservation")
+  void shouldMeasureLockoutFromFifthFailuresCompletionWhenCompletionLagsReservation() {
     var target = resolvedTarget();
     var reservations = IntStream.range(0, 5).mapToObj(_ -> reserve(target, NOW)).toList();
     var completedAt = NOW.plusSeconds(30);
@@ -172,8 +182,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep every target's failure sequence separate")
-  void shouldKeepEveryTargetsFailureSequenceSeparate() {
+  @DisplayName("Should keep PIN failure sequences separate when Profiles share an Account")
+  void shouldKeepPinFailureSequencesSeparateWhenProfilesShareAnAccount() {
     var accountId = UUID.randomUUID();
     var firstProfile = pinTarget(accountId, UUID.randomUUID());
     var secondProfile = pinTarget(accountId, UUID.randomUUID());
@@ -183,14 +193,27 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
         .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
     assertThat(repository.reserve(secondProfile, LIMITED_POLICY, NOW.plusSeconds(5)))
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
+  }
 
-    // A success on the sibling Profile forgives nothing for the locked one.
-    var siblingSuccess = reserve(secondProfile, NOW.plusSeconds(6));
+  @Test
+  @DisplayName("Should forgive nothing for a locked Profile when a sibling Profile succeeds")
+  void shouldForgiveNothingForLockedProfileWhenSiblingProfileSucceeds() {
+    var accountId = UUID.randomUUID();
+    var lockedProfile = pinTarget(accountId, UUID.randomUUID());
+    var siblingProfile = pinTarget(accountId, UUID.randomUUID());
+    completeFailures(lockedProfile, NOW, 5);
+
+    var siblingSuccess = reserve(siblingProfile, NOW.plusSeconds(6));
     repository.complete(siblingSuccess, CredentialAttemptResult.SUCCEEDED, NOW.plusSeconds(6));
-    assertThat(repository.reserve(firstProfile, LIMITED_POLICY, NOW.plusSeconds(7)))
-        .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
 
-    // Nor do the Account's login failures spill into its password verification.
+    assertThat(repository.reserve(lockedProfile, LIMITED_POLICY, NOW.plusSeconds(7)))
+        .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
+  }
+
+  @Test
+  @DisplayName("Should keep login failures out of password verification when they share an Account")
+  void shouldKeepLoginFailuresOutOfPasswordVerificationWhenTheyShareAnAccount() {
+    var accountId = UUID.randomUUID();
     completeFailures(loginTarget(accountId), NOW, 5);
     var passwordVerification =
         CredentialAttemptTarget.builder()
@@ -198,6 +221,7 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
             .accountId(accountId)
             .ipAddress(IP_ADDRESS)
             .build();
+
     assertThat(repository.reserve(passwordVerification, LIMITED_POLICY, NOW.plusSeconds(8)))
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
   }
@@ -217,8 +241,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should record unlimited attempts without rejecting them")
-  void shouldRecordUnlimitedAttemptsWithoutRejectingThem() {
+  @DisplayName("Should record every attempt without rejecting when the policy is unlimited")
+  void shouldRecordEveryAttemptWithoutRejectingWhenPolicyIsUnlimited() {
     var target = resolvedTarget();
     var policy = new CredentialAttemptPolicy.Unlimited();
 
@@ -231,8 +255,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should record unresolved credentials without subject throttling")
-  void shouldRecordUnresolvedCredentialsWithoutSubjectThrottling() {
+  @DisplayName("Should record every attempt without throttling when the target is unresolved")
+  void shouldRecordEveryAttemptWithoutThrottlingWhenTargetIsUnresolved() {
     var target =
         CredentialAttemptTarget.builder()
             .kind(CredentialKind.PASSWORD_RESET_CODE)
@@ -248,8 +272,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should admit no more than five parallel reservations across service instances")
-  void shouldAdmitNoMoreThanFiveParallelReservationsAcrossServiceInstances() throws Exception {
+  @DisplayName("Should admit no more than five reservations when instances reserve in parallel")
+  void shouldAdmitNoMoreThanFiveReservationsWhenInstancesReserveInParallel() throws Exception {
     var target = resolvedTarget();
     var admissions = new ArrayList<CredentialAttemptAdmission>();
 
@@ -273,8 +297,9 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should serve every admission query from the target indexes")
-  void shouldServeEveryAdmissionQueryFromTheTargetIndexes() {
+  @DisplayName(
+      "Should serve every admission query from the target indexes when sequential scans are disabled")
+  void shouldServeEveryAdmissionQueryFromTheTargetIndexesWhenSequentialScansAreDisabled() {
     var statements = new ArrayList<String>();
     var recordingListener =
         new ExecuteListener() {
@@ -343,8 +368,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should remove only attempts older than thirty days")
-  void shouldRemoveOnlyAttemptsOlderThanThirtyDays() {
+  @DisplayName("Should remove only older attempts when the cutoff is thirty days")
+  void shouldRemoveOnlyOlderAttemptsWhenCutoffIsThirtyDays() {
     var target = resolvedTarget();
     reserve(target, NOW.minus(Duration.ofDays(30)).minusSeconds(1));
     reserve(target, NOW.minus(Duration.ofDays(30)));

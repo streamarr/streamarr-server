@@ -63,16 +63,16 @@ class AuthEnumParityTest {
   }
 
   @Test
-  @DisplayName("Should keep credential kind literals in sync")
-  void shouldKeepCredentialKindInSync() {
+  @DisplayName("Should keep credential kind literals in sync when parity is checked")
+  void shouldKeepCredentialKindLiteralsInSyncWhenParityIsChecked() {
     assertParity(
         names(CredentialKind.values()),
         literals(com.streamarr.server.jooq.generated.enums.CredentialKind.values()));
   }
 
   @Test
-  @DisplayName("Should keep credential attempt result literals in sync")
-  void shouldKeepCredentialAttemptResultInSync() {
+  @DisplayName("Should keep credential attempt result literals in sync when parity is checked")
+  void shouldKeepCredentialAttemptResultLiteralsInSyncWhenParityIsChecked() {
     assertParity(
         names(CredentialAttemptResult.values()),
         literals(com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.values()));

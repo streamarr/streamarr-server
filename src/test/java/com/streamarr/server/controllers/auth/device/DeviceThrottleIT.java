@@ -117,8 +117,8 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should journal an unknown pairing code against the approver's Account")
-  void shouldJournalUnknownPairingCodeAgainstApproversAccount() throws Exception {
+  @DisplayName("Should journal a failure against the approver when the pairing code is unknown")
+  void shouldJournalFailureAgainstApproverWhenPairingCodeIsUnknown() throws Exception {
     var approver = seedAccount();
 
     mockMvc

@@ -16,23 +16,22 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Credential Attempt Policy Tests")
 class CredentialAttemptPolicyTest {
 
-  @Test
-  @DisplayName("Should provide the standard limited policy for every credential kind")
-  void shouldProvideTheStandardLimitedPolicyForEveryCredentialKind() {
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(CredentialKind.class)
+  @DisplayName("Should provide the standard limited policy when any credential kind is requested")
+  void shouldProvideStandardLimitedPolicyWhenAnyCredentialKindIsRequested(CredentialKind kind) {
     var provider = new StandardCredentialAttemptPolicyProvider();
 
-    for (var kind : CredentialKind.values()) {
-      assertThat(provider.policyFor(kind))
-          .isEqualTo(
-              new CredentialAttemptPolicy.Limited(
-                  5, Duration.ofMinutes(15), Duration.ofMinutes(15)));
-    }
+    assertThat(provider.policyFor(kind))
+        .isEqualTo(
+            new CredentialAttemptPolicy.Limited(5, Duration.ofMinutes(15), Duration.ofMinutes(15)));
   }
 
   @ParameterizedTest(name = "{3}")
@@ -79,8 +78,8 @@ class CredentialAttemptPolicyTest {
   }
 
   @Test
-  @DisplayName("Should lock out for the throttle duration from the fifth failure's completion")
-  void shouldLockOutForThrottleDurationFromFifthFailuresCompletion() {
+  @DisplayName("Should lock out for the throttle duration when the fifth failure completes")
+  void shouldLockOutForThrottleDurationWhenFifthFailureCompletes() {
     var history = new CredentialAttemptHistory(failuresAt(NOW, 5), List.of());
 
     assertThat(STANDARD.retryAfter(history, NOW.plusSeconds(4).plusSeconds(1)))

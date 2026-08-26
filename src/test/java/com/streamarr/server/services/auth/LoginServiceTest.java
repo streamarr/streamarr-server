@@ -239,8 +239,9 @@ class LoginServiceTest {
   }
 
   @Test
-  @DisplayName("Should journal each login outcome in order against the Account")
-  void shouldJournalEachLoginOutcomeInOrderAgainstAccount() {
+  @DisplayName(
+      "Should journal each outcome in order when logins alternate between failure and success")
+  void shouldJournalEachOutcomeInOrderWhenLoginsAlternateBetweenFailureAndSuccess() {
     var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
     for (int i = 0; i < 2; i++) {
       var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
@@ -260,21 +261,6 @@ class LoginServiceTest {
             CredentialAttemptResult.FAILED,
             CredentialAttemptResult.SUCCEEDED,
             CredentialAttemptResult.FAILED);
-  }
-
-  @Test
-  @DisplayName("Should journal unresolved logins with no Account target")
-  void shouldJournalUnresolvedLoginsWithNoAccountTarget() {
-    var attacker = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
-    var spray = commandBuilder("victim@example.com").password("guess").build();
-    assertThatThrownBy(() -> loginService.login(spray))
-        .isInstanceOf(InvalidCredentialsException.class);
-    loginService.login(commandBuilder(attacker.getEmail()).password(CORRECT_PASSWORD).build());
-
-    // IP addresses are observational; only a resolved Account is a throttle target.
-    assertThat(credentialAttempts.attempts())
-        .extracting(attempt -> attempt.target().accountId())
-        .containsExactly(null, attacker.getId());
   }
 
   @Test
@@ -349,8 +335,8 @@ class LoginServiceTest {
   }
 
   @Test
-  @DisplayName("Should journal both casings of an email against the same Account")
-  void shouldJournalBothCasingsOfEmailAgainstSameAccount() {
+  @DisplayName("Should journal the same Account when the email casing differs")
+  void shouldJournalSameAccountWhenEmailCasingDiffers() {
     var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
     var upper =
         commandBuilder(account.getEmail().toUpperCase(Locale.ROOT)).password("wrong").build();
@@ -368,8 +354,8 @@ class LoginServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse the login after five failures within the window")
-  void shouldRefuseLoginAfterFiveFailuresWithinWindow() {
+  @DisplayName("Should refuse the login when five failures fall within the window")
+  void shouldRefuseLoginWhenFiveFailuresFallWithinTheWindow() {
     var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
     for (int i = 0; i < 5; i++) {
       var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();

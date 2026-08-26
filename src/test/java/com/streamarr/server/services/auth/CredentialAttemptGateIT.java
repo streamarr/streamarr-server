@@ -41,8 +41,8 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should persist a failed login attempt with its Account and IP address")
-  void shouldPersistAFailedLoginAttemptWithItsAccountAndIpAddress() {
+  @DisplayName("Should persist the Account and IP address when a login attempt fails")
+  void shouldPersistAccountAndIpAddressWhenLoginAttemptFails() {
     var before = Instant.now();
     var accountId = UUID.randomUUID();
     var target =
@@ -78,8 +78,8 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should persist an IPv6 client address")
-  void shouldPersistAnIpv6ClientAddress() {
+  @DisplayName("Should persist the client address when it is IPv6")
+  void shouldPersistClientAddressWhenItIsIpv6() {
     var target =
         CredentialAttemptTarget.builder()
             .kind(CredentialKind.ACCOUNT_LOGIN)

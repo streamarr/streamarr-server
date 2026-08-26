@@ -17,8 +17,8 @@ import org.junit.jupiter.api.Test;
 class SecretRecordToStringTest {
 
   @Test
-  @DisplayName("Should not expose plaintext secrets in builder string representations")
-  void shouldNotExposePlaintextSecretsInBuilderStringRepresentations() {
+  @DisplayName("Should not expose plaintext secrets when builders are rendered")
+  void shouldNotExposePlaintextSecretsWhenBuildersAreRendered() {
     var secret = UUID.randomUUID().toString();
     var renderedValues =
         List.of(
