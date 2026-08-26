@@ -2,6 +2,7 @@ package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.ProfileManagerEligibility;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import java.time.Duration;
@@ -62,11 +63,11 @@ public interface UserAccountRepositoryCustom {
   Optional<HouseholdRole> roleForNewAccount(UUID householdId, HouseholdRole requestedRole);
 
   /**
-   * Whether the Account is an eligible direct ProfileManager in the Profile's home Household.
-   * Restricted Profiles additionally require a HouseholdAdmin manager.
+   * Whether the Account may be named a direct ProfileManager in the Household: a member whose own
+   * Personal Profile is unrestricted, holding the Household role the eligibility demands.
    */
   boolean isEligibleProfileManager(
-      UUID accountId, UUID householdId, boolean householdAdminRequired);
+      UUID accountId, UUID householdId, ProfileManagerEligibility eligibility);
 
   boolean tryGrantServerAdmin(UUID accountId);
 

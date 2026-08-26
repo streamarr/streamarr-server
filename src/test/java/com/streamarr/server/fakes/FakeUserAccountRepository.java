@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.ProfileManagerEligibility;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -238,13 +239,17 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
 
   @Override
   public boolean isEligibleProfileManager(
-      UUID accountId, UUID householdId, boolean householdAdminRequired) {
+      UUID accountId, UUID householdId, ProfileManagerEligibility eligibility) {
     return findById(accountId)
         .filter(account -> householdId.equals(account.getHouseholdId()))
         .filter(account -> unrestrictedPersonalProfile.test(account.getPersonalProfileId()))
-        .filter(
-            account -> !householdAdminRequired || account.getHouseholdRole() == HouseholdRole.ADMIN)
+        .filter(account -> holdsRoleFor(account, eligibility))
         .isPresent();
+  }
+
+  private static boolean holdsRoleFor(UserAccount account, ProfileManagerEligibility eligibility) {
+    return eligibility == ProfileManagerEligibility.HOUSEHOLD_MEMBER
+        || account.getHouseholdRole() == HouseholdRole.ADMIN;
   }
 
   @Override

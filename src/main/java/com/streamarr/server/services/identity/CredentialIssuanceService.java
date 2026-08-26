@@ -7,6 +7,7 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfileManagerEligibility;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
@@ -127,7 +128,9 @@ public class CredentialIssuanceService {
 
     if (command.localManagerAccountId() != null
         && !userAccountRepository.isEligibleProfileManager(
-            command.localManagerAccountId(), command.householdId(), restricted)) {
+            command.localManagerAccountId(),
+            command.householdId(),
+            ProfileManagerEligibility.forRestricted(restricted))) {
       return Optional.of(new CredentialRejections.LocalManagerNotFound());
     }
 

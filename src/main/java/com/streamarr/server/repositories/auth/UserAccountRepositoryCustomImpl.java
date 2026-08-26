@@ -12,6 +12,7 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
+import com.streamarr.server.domain.auth.ProfileManagerEligibility;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
@@ -296,15 +297,15 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
 
   @Override
   public boolean isEligibleProfileManager(
-      UUID accountId, UUID householdId, boolean householdAdminRequired) {
-    var eligibility =
+      UUID accountId, UUID householdId, ProfileManagerEligibility eligibility) {
+    var eligible =
         USER_ACCOUNT
             .ID
             .eq(accountId)
             .and(USER_ACCOUNT.HOUSEHOLD_ID.eq(householdId))
             .and(PROFILE.RESTRICTED.isFalse());
-    if (householdAdminRequired) {
-      eligibility = eligibility.and(USER_ACCOUNT.HOUSEHOLD_ROLE.eq(HouseholdRole.ADMIN));
+    if (eligibility == ProfileManagerEligibility.HOUSEHOLD_ADMIN) {
+      eligible = eligible.and(USER_ACCOUNT.HOUSEHOLD_ROLE.eq(HouseholdRole.ADMIN));
     }
 
     return dsl.fetchExists(
@@ -312,6 +313,6 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
             .from(USER_ACCOUNT)
             .join(PROFILE)
             .on(PROFILE.ID.eq(USER_ACCOUNT.PERSONAL_PROFILE_ID))
-            .where(eligibility));
+            .where(eligible));
   }
 }
