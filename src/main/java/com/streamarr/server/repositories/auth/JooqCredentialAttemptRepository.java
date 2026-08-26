@@ -8,6 +8,7 @@ import com.streamarr.server.domain.auth.CredentialAttemptPolicy;
 import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.exceptions.CredentialAttemptNotPendingException;
 import com.streamarr.server.jooq.generated.tables.records.CredentialAttemptRecord;
 import java.time.Duration;
 import java.time.Instant;
@@ -80,7 +81,7 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
             .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.isNull())
             .execute();
     if (completed != 1) {
-      throw new IllegalStateException("Credential attempt reservation is not pending");
+      throw new CredentialAttemptNotPendingException();
     }
   }
 

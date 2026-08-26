@@ -5,6 +5,7 @@ import com.streamarr.server.domain.auth.CredentialAttemptPolicy;
 import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.exceptions.CredentialAttemptNotPendingException;
 import com.streamarr.server.repositories.auth.CredentialAttemptRepository;
 import com.streamarr.server.services.auth.CredentialAttemptGate;
 import java.time.Clock;
@@ -48,7 +49,7 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
     failIfArmed();
     var pending = attempts.get(reservation.id());
     if (pending == null || pending.completedAt() != null) {
-      throw new IllegalStateException("Credential attempt reservation is not pending");
+      throw new CredentialAttemptNotPendingException();
     }
 
     attempts.put(
