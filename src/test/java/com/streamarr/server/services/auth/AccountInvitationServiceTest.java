@@ -795,4 +795,13 @@ class AccountInvitationServiceTest {
               "violates " + constraint, new SQLException("23514"), constraint));
     }
   }
+
+  @Test
+  @DisplayName("Should journal no attempt when the invitation code is malformed")
+  void shouldJournalNoAttemptWhenInvitationCodeIsMalformed() {
+    assertThatThrownBy(() -> lookup("not-even-a-code"))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+
+    assertThat(credentialAttempts.attempts()).isEmpty();
+  }
 }

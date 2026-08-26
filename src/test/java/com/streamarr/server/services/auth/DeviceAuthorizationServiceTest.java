@@ -552,9 +552,13 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should reject before lookup when the user code is malformed")
   void shouldRejectBeforeLookupWhenUserCodeMalformed() {
+    // A blocked journal would refuse first if the malformed code reached the attempt.
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
     var presentation = presented("NOPE");
+
     assertThatThrownBy(() -> service.lookup(presentation))
         .isInstanceOf(InvalidUserCodeException.class);
+    assertThat(credentialAttempts.attempts()).isEmpty();
   }
 
   @Test
@@ -997,5 +1001,41 @@ class DeviceAuthorizationServiceTest {
         .approverAccountId(approver.getId())
         .ipAddress("192.0.2.30")
         .build();
+  }
+
+  @Test
+  @DisplayName("Should journal a failure against the approver when the decision code is expired")
+  void shouldJournalFailureAgainstApproverWhenDecisionCodeIsExpired() {
+    var issued = service.issue("Apple TV", "esn-1");
+    advanceClock(Duration.ofMinutes(11));
+    var presentation = presented(issued.userCode());
+
+    assertThatThrownBy(() -> service.resolveForDecision(presentation))
+        .isInstanceOf(DeviceCodeExpiredException.class);
+
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target().accountId()).isEqualTo(approver.getId());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
+            });
+  }
+
+  @Test
+  @DisplayName("Should journal a success against the approver when the decision code resolves")
+  void shouldJournalSuccessAgainstApproverWhenDecisionCodeResolves() {
+    var issued = service.issue("Apple TV", "esn-1");
+
+    var grant = service.resolveForDecision(presented(issued.userCode()));
+
+    assertThat(grant.deviceName()).isEqualTo("Apple TV");
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target().accountId()).isEqualTo(approver.getId());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
+            });
   }
 }

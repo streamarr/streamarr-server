@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.DeviceBoundSessionException;
@@ -206,5 +208,41 @@ class PasswordChangeServiceTest {
     public boolean matches(CharSequence rawPassword, String encodedPassword) {
       return encode(rawPassword).equals(encodedPassword);
     }
+  }
+
+  @Test
+  @DisplayName("Should refuse the correct password when five wrong current passwords precede it")
+  void shouldRefuseCorrectPasswordWhenFiveWrongCurrentPasswordsPrecedeIt() {
+    var currentPassword = UUID.randomUUID().toString();
+    var originalPasswordHash = passwordEncoder.encode(currentPassword);
+    var account =
+        accountRepository.save(
+            AccountFixture.defaultAccountBuilder().passwordHash(originalPasswordHash).build());
+    var caller =
+        sessionRepository.save(
+            AuthSession.builder().accountId(account.getId()).deviceName("caller").build());
+    var identity = identity(account.getId(), caller.getId());
+    for (var attempt = 0; attempt < 5; attempt++) {
+      var wrongCommand = commandBuilder().build();
+      assertThatThrownBy(() -> service.changePassword(identity, wrongCommand))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+    var correctCommand = commandBuilder().currentPassword(currentPassword).build();
+
+    assertThatThrownBy(() -> service.changePassword(identity, correctCommand))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(accountRepository.findById(account.getId()).orElseThrow().getPasswordHash())
+        .isEqualTo(originalPasswordHash);
+    assertThat(credentialAttempts.attempts())
+        .hasSize(5)
+        .allSatisfy(
+            attempt ->
+                assertThat(attempt.target())
+                    .isEqualTo(
+                        CredentialAttemptTarget.builder()
+                            .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
+                            .accountId(account.getId())
+                            .ipAddress("192.0.2.22")
+                            .build()));
   }
 }

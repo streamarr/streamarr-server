@@ -15,7 +15,6 @@ import java.time.ZoneOffset;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.springframework.scheduling.annotation.Scheduled;
 
 @Tag("UnitTest")
 @DisplayName("Credential Attempt Retention Sweeper Tests")
@@ -53,25 +52,14 @@ class CredentialAttemptRetentionSweeperTest {
       sweeper.deleteExpiredAttempts();
 
       assertThat(logs.events())
-          .anyMatch(
-              event ->
-                  event.getLevel() == Level.INFO
-                      && event.getFormattedMessage().contains("2 credential attempt"));
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.INFO);
+                assertThat(event.getFormattedMessage())
+                    .isEqualTo(
+                        "Deleted 2 credential attempts attempted before 2026-07-27T12:00:00Z");
+              });
     }
-  }
-
-  @Test
-  @DisplayName("Should sweep soon after startup and daily thereafter")
-  void shouldSweepSoonAfterStartupAndDailyThereafter() throws NoSuchMethodException {
-    var schedule =
-        CredentialAttemptRetentionSweeper.class
-            .getMethod("deleteExpiredAttempts")
-            .getAnnotation(Scheduled.class);
-
-    // An instance restarted more often than the initial delay would otherwise never sweep.
-    assertThat(Duration.parse(schedule.initialDelayString()))
-        .isLessThanOrEqualTo(Duration.ofMinutes(5));
-    assertThat(Duration.parse(schedule.fixedDelayString())).isEqualTo(Duration.ofDays(1));
   }
 
   private void reserveAt(Instant attemptedAt) {

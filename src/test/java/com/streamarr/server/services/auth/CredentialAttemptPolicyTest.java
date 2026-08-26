@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.CredentialAttemptHistory;
@@ -70,8 +71,8 @@ class CredentialAttemptPolicyTest {
       new CredentialAttemptPolicy.Limited(5, Duration.ofMinutes(15), Duration.ofMinutes(15));
 
   @Test
-  @DisplayName("Should admit when fewer than five failures and pending reservations hold slots")
-  void shouldAdmitWhenFewerThanFiveFailuresAndPendingReservationsHoldSlots() {
+  @DisplayName("Should admit when held slots are fewer than five")
+  void shouldAdmitWhenHeldSlotsAreFewerThanFive() {
     var history = new CredentialAttemptHistory(failuresAt(NOW, 3), List.of(NOW.plusSeconds(290)));
 
     assertThat(STANDARD.retryAfter(history, NOW.plusSeconds(10))).isEmpty();
@@ -132,5 +133,21 @@ class CredentialAttemptPolicyTest {
 
   private static List<Instant> failuresAt(Instant first, int count) {
     return IntStream.range(0, count).mapToObj(first::plusSeconds).toList();
+  }
+
+  @Test
+  @DisplayName("Should block when failures and pending reservations together fill capacity")
+  void shouldBlockWhenFailuresAndPendingReservationsTogetherFillCapacity() {
+    var history = new CredentialAttemptHistory(failuresAt(NOW, 4), List.of(NOW.plusSeconds(290)));
+
+    assertThat(STANDARD.retryAfter(history, NOW.plusSeconds(10))).contains(Duration.ofSeconds(280));
+  }
+
+  @Test
+  @DisplayName("Should accept a limited policy when its bounds sit exactly on the limits")
+  void shouldAcceptLimitedPolicyWhenBoundsSitExactlyOnTheLimits() {
+    assertThatCode(
+            () -> new CredentialAttemptPolicy.Limited(1, Duration.ofDays(1), Duration.ofDays(1)))
+        .doesNotThrowAnyException();
   }
 }
