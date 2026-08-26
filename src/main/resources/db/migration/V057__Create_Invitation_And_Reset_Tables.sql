@@ -1,12 +1,13 @@
--- Account invitations and password recovery (ADR 0024 §Invitations, §Account; server PR #9).
+-- Account invitations and password recovery (ADR 0024 §Invitations, §Account).
 -- Invitation records are retained for reporting; deleted targets go SET NULL while snapshot
 -- columns keep what the historical row meant. Codes are opaque publicId.secret pairs; only the
 -- SHA-256 digest of the secret is stored.
 
 CREATE TYPE account_invitation_status AS ENUM
     ('PENDING', 'ACCEPTED', 'DECLINED', 'CANCELED', 'EXPIRED', 'INVALIDATED');
+-- Reset codes have no cancellation operation; replacement and issuer loss invalidate them.
 CREATE TYPE password_reset_code_status AS ENUM
-    ('PENDING', 'REDEEMED', 'CANCELED', 'EXPIRED', 'INVALIDATED');
+    ('PENDING', 'REDEEMED', 'EXPIRED', 'INVALIDATED');
 
 CREATE TABLE account_invitation
 (
