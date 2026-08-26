@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.InvitationNotAcceptableException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
@@ -109,6 +110,17 @@ class AuthExceptionHandlerTest {
         .isEqualTo(
             new AuthErrorResponse(
                 "RESOURCE_BUSY", "Another change is in progress; try again shortly."));
+  }
+
+  @Test
+  @DisplayName("Should respond 503 resource busy when a mutation reports contention")
+  void shouldRespond503ResourceBusyWhenMutationReportsContention() {
+    var response =
+        handler.handleLockContention(
+            new ResourceBusyException(new CannotAcquireLockException("lock timeout")));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    assertThat(response.getBody().code()).isEqualTo("RESOURCE_BUSY");
   }
 
   @Test

@@ -12,6 +12,7 @@ import com.streamarr.server.exceptions.InvitationEmailAlreadyUsedException;
 import com.streamarr.server.exceptions.InvitationNotAcceptableException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.ProfileLockedException;
+import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
@@ -116,9 +117,8 @@ public class AuthExceptionHandler {
   /**
    * A bounded row-lock wait that ran out is contention, not a defect: retry, and no stack trace.
    */
-  @ExceptionHandler(PessimisticLockingFailureException.class)
-  public ResponseEntity<AuthErrorResponse> handleLockContention(
-      PessimisticLockingFailureException e) {
+  @ExceptionHandler({PessimisticLockingFailureException.class, ResourceBusyException.class})
+  public ResponseEntity<AuthErrorResponse> handleLockContention(RuntimeException e) {
     log.warn("Auth request gave up waiting for a row lock: {}", e.getMessage());
     return respond(HttpStatus.SERVICE_UNAVAILABLE, "RESOURCE_BUSY", RESOURCE_BUSY);
   }
