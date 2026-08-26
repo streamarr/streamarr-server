@@ -14,7 +14,8 @@ import org.springframework.validation.annotation.Validated;
 public record AuthThrottleProperties(
     @Positive int maxAttempts,
     @NotNull @DurationMin(seconds = 0, inclusive = false) Duration window,
-    @NotNull @Positive Integer maxOpaqueCodeBudgets) {
+    // Boxed so an unset key can default below; Lombok's @Builder.Default does not reach records.
+    @Positive Integer maxOpaqueCodeBudgets) {
 
   public static final int DEFAULT_MAX_OPAQUE_CODE_BUDGETS = 10_000;
 
