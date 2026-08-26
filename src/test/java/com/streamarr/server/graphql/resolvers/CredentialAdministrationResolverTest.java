@@ -173,6 +173,10 @@ class CredentialAdministrationResolverTest {
         new IssuanceErrorCase(
             new InvitationRejections.RestrictedFirstAccount(), "RestrictedFirstAccountError", null),
         new IssuanceErrorCase(
+            new InvitationRejections.RestrictedHouseholdAdmin(),
+            "RestrictedHouseholdAdminError",
+            List.of("householdRole")),
+        new IssuanceErrorCase(
             new InvitationRejections.LocalManagerRequired(),
             "EligibleProfileManagerRequiredError",
             List.of("profileManagerAccountId")),

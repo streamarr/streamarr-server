@@ -28,6 +28,10 @@ public final class CredentialErrors {
           new RestrictedFirstAccountError(
               "The first Account of an empty Household becomes HouseholdAdmin; it cannot be"
                   + " restricted.");
+      case InvitationRejections.RestrictedHouseholdAdmin _ ->
+          new RestrictedHouseholdAdminError(
+              "A restricted Profile cannot be invited as HouseholdAdmin.",
+              InputPath.of("householdRole"));
       case InvitationRejections.LocalManagerRequired _ ->
           new EligibleProfileManagerRequiredError(
               "A restricted Profile needs an eligible Profile manager in its Household.",

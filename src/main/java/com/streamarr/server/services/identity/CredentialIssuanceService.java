@@ -116,6 +116,11 @@ public class CredentialIssuanceService {
       return Optional.of(new InvitationRejections.RestrictedFirstAccount());
     }
 
+    if (restricted && command.householdRole() == HouseholdRole.ADMIN) {
+      // Otherwise acceptance would fail at commit (chk_restricted_account_holds_no_authority).
+      return Optional.of(new InvitationRejections.RestrictedHouseholdAdmin());
+    }
+
     if (restricted && command.localManagerAccountId() == null) {
       return Optional.of(new InvitationRejections.LocalManagerRequired());
     }

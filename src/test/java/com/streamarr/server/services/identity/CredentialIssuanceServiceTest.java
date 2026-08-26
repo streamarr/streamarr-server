@@ -217,6 +217,25 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject a restricted Profile as HouseholdAdmin when an invitation is issued")
+  void shouldRejectRestrictedProfileAsHouseholdAdminWhenInvitationIsIssued() {
+    var manager = eligibleManager();
+
+    var outcome =
+        service.issueAccountInvitation(
+            authorization.currentIdentity(),
+            command().toBuilder()
+                .profileKind(ProfileKind.KID)
+                .householdRole(HouseholdRole.ADMIN)
+                .localManagerAccountId(manager.getId())
+                .build());
+
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(InvitationRejections.RestrictedHouseholdAdmin.class);
+    assertThat(invitations.findAll()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should reject a negative maximum allowed rating age when an invitation is issued")
   void shouldRejectNegativeMaximumAllowedRatingAgeWhenInvitationIsIssued() {
     var outcome =
@@ -453,6 +472,22 @@ class CredentialIssuanceServiceTest {
         .profileName("Kai")
         .profileKind(ProfileKind.ADULT)
         .build();
+  }
+
+  /** A HouseholdAdmin of the Household whose own Personal Profile is unrestricted. */
+  private UserAccount eligibleManager() {
+    var personalProfile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder()
+                .householdId(household.getId())
+                .name("Manager")
+                .build());
+    return accounts.save(
+        AccountFixture.defaultAccountBuilder()
+            .householdId(household.getId())
+            .householdRole(HouseholdRole.ADMIN)
+            .personalProfileId(personalProfile.getId())
+            .build());
   }
 
   private LockOmittingUserAccountRepository accountsMissingLockFor(UUID missingAccountId) {

@@ -156,6 +156,12 @@ type RestrictedFirstAccountError implements MutationError {
     message: String!
 }
 
+"A restricted Account holds no authority, so it cannot be invited as HouseholdAdmin."
+type RestrictedHouseholdAdminError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 "A restricted Profile needs an eligible Profile manager in its Household."
 type EligibleProfileManagerRequiredError implements InputMutationError & MutationError {
     message: String!

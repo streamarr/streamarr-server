@@ -13,6 +13,7 @@ public sealed interface IssueAccountInvitationError extends MutationError
         ProfileNameTakenError,
         HouseholdNotFoundError,
         RestrictedFirstAccountError,
+        RestrictedHouseholdAdminError,
         EligibleProfileManagerRequiredError,
         MaximumAllowedRatingAgeInvalidError,
         AccountNotFoundError {}

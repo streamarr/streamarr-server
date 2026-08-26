@@ -12,6 +12,7 @@ public final class InvitationRejections {
           ProfileNameTaken,
           HouseholdNotFound,
           RestrictedFirstAccount,
+          RestrictedHouseholdAdmin,
           LocalManagerRequired,
           LocalManagerNotFound,
           MaximumAllowedRatingAgeInvalid {}
@@ -34,6 +35,9 @@ public final class InvitationRejections {
 
   /** The first Account becomes HouseholdAdmin, and a restricted Account holds no authority. */
   public record RestrictedFirstAccount() implements Issue {}
+
+  /** A restricted Account holds no authority, so it cannot be invited as HouseholdAdmin. */
+  public record RestrictedHouseholdAdmin() implements Issue {}
 
   /** A restricted Profile needs an eligible local HouseholdAdmin manager named up front. */
   public record LocalManagerRequired() implements Issue {}
