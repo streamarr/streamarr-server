@@ -53,6 +53,7 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
   public CredentialAttemptAdmission reserve(
       CredentialAttemptTarget target, CredentialAttemptPolicy policy, Instant attemptedAt) {
     if (!(policy instanceof CredentialAttemptPolicy.Limited limited) || !target.isResolved()) {
+      transactionLocks.limitLockWait(LOCK_TIMEOUT);
       return insert(target, attemptedAt);
     }
 
@@ -69,9 +70,7 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
       CredentialAttemptReservation reservation,
       CredentialAttemptResult result,
       Instant completedAt) {
-    if (reservation.target().isResolved()) {
-      lockTarget(reservation.target());
-    }
+    lockTargetOrLimitWait(reservation.target());
 
     var completed =
         dsl.update(CREDENTIAL_ATTEMPT)
@@ -206,6 +205,17 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
    * The key names exactly the identifiers {@link #targetCondition} matches, so the lock covers the
    * read set of the admission it serializes; a hash collision only adds serialization.
    */
+  // A target that names no row has nothing to serialize on, but its journal write still stops
+  // waiting at LOCK_TIMEOUT: a journal outage fails closed (ADR 0028) instead of parking the
+  // request on a pooled connection until the lock clears.
+  private void lockTargetOrLimitWait(CredentialAttemptTarget target) {
+    if (!target.isResolved()) {
+      transactionLocks.limitLockWait(LOCK_TIMEOUT);
+      return;
+    }
+    lockTarget(target);
+  }
+
   private void lockTarget(CredentialAttemptTarget target) {
     var key =
         "%s:%s:%s:%s"
