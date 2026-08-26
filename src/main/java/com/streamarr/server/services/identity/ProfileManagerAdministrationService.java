@@ -502,6 +502,14 @@ public class ProfileManagerAdministrationService {
     public String toString() {
       return "ManagerInvitationCodeCommand[code=REDACTED, ipAddress=%s]".formatted(ipAddress);
     }
+
+    public static class ManagerInvitationCodeCommandBuilder {
+
+      @Override
+      public String toString() {
+        return "ManagerInvitationCodeCommandBuilder[REDACTED]";
+      }
+    }
   }
 
   /** The invitation stands only while its inviter could still propose it (ADR 0024). */

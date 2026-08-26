@@ -2,6 +2,8 @@ package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.services.identity.DevicePairingService;
+import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -24,10 +26,24 @@ class SecretRecordToStringTest {
             LoginCompletionCommand.builder().expectedPasswordHash(secret).toString(),
             SetupCommand.builder().password(secret).toString(),
             LoginResult.builder().rawRefreshToken(secret).toString(),
-            AccessToken.builder().value(secret).toString());
+            AccessToken.builder().value(secret).toString(),
+            RedeemPasswordResetCommand.builder().code(secret).newPassword(secret).toString(),
+            AccountInvitationCeremonyService.AcceptInvitationCommand.builder()
+                .code(secret)
+                .password(secret)
+                .toString(),
+            AccountInvitationCeremonyService.InvitationCodeCommand.builder()
+                .code(secret)
+                .toString(),
+            ProfileManagerAdministrationService.ManagerInvitationCodeCommand.builder()
+                .code(secret)
+                .toString(),
+            DevicePairingService.PairingLookupCommand.builder().userCode(secret).toString(),
+            DevicePairingService.PairingDecisionCommand.builder().userCode(secret).toString(),
+            DeviceCodePresentation.builder().userCode(secret).toString());
 
     assertThat(renderedValues)
-        .hasSize(5)
+        .hasSize(12)
         .allSatisfy(rendered -> assertThat(rendered).doesNotContain(secret));
   }
 

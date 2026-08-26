@@ -461,6 +461,14 @@ public class AccountInvitationService {
               .formatted(displayName)
           + " deviceName=%s, ipAddress=%s]".formatted(deviceName, ipAddress);
     }
+
+    public static class AcceptInvitationCommandBuilder {
+
+      @Override
+      public String toString() {
+        return "AcceptInvitationCommandBuilder[REDACTED]";
+      }
+    }
   }
 
   @Builder
@@ -469,6 +477,14 @@ public class AccountInvitationService {
     @Override
     public String toString() {
       return "InvitationCodeCommand[code=REDACTED, ipAddress=%s]".formatted(ipAddress);
+    }
+
+    public static class InvitationCodeCommandBuilder {
+
+      @Override
+      public String toString() {
+        return "InvitationCodeCommandBuilder[REDACTED]";
+      }
     }
   }
 
