@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
@@ -81,9 +82,13 @@ class PasswordResetServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target().kind()).isEqualTo(CredentialKind.PASSWORD_RESET_CODE);
-              assertThat(attempt.target().credentialId())
-                  .isEqualTo(resetCodes.findAll().getFirst().getId());
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.PASSWORD_RESET_CODE)
+                          .credentialId(resetCodes.findAll().getFirst().getId())
+                          .ipAddress("192.0.2.26")
+                          .build());
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
             });
   }

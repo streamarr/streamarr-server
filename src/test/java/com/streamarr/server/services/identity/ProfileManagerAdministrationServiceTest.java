@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
@@ -181,10 +182,13 @@ class ProfileManagerAdministrationServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target().kind())
-                  .isEqualTo(CredentialKind.PROFILE_MANAGER_INVITATION_CODE);
-              assertThat(attempt.target().credentialId()).isEqualTo(issued.invitation().getId());
-              assertThat(attempt.target().ipAddress()).isEqualTo("192.0.2.30");
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.PROFILE_MANAGER_INVITATION_CODE)
+                          .credentialId(issued.invitation().getId())
+                          .ipAddress("192.0.2.30")
+                          .build());
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
             });
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isTrue();
@@ -209,8 +213,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should return a uniform miss and throttle when acceptance codes are invalid")
-  void shouldReturnUniformMissAndThrottleWhenAcceptanceCodesAreInvalid() {
+  @DisplayName("Should return a uniform miss for invalid codes and refuse when the journal blocks")
+  void shouldReturnUniformMissForInvalidCodesAndRefuseWhenJournalBlocks() {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
 
@@ -225,16 +229,20 @@ class ProfileManagerAdministrationServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target().credentialId()).isNull();
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.PROFILE_MANAGER_INVITATION_CODE)
+                          .ipAddress("192.0.2.30")
+                          .build());
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
             });
 
-    var publicId = issued.invitation().getPublicId();
-    for (var attempt = 0; attempt < 5; attempt++) {
-      var guess = publicId + ".guess-" + attempt;
-      assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(guess))))
-          .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
-    }
+    var guess = issued.invitation().getPublicId() + ".guess";
+    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(guess))))
+        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    assertThat(credentialAttempts.attempts().getLast().target().credentialId())
+        .isEqualTo(issued.invitation().getId());
 
     credentialAttempts.rejectReservations(Duration.ofMinutes(15));
     var throttled = issued.code();

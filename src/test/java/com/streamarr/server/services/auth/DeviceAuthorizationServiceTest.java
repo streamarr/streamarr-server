@@ -8,6 +8,7 @@ import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
@@ -479,10 +480,13 @@ class DeviceAuthorizationServiceTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target().kind()).isEqualTo(CredentialKind.DEVICE_PAIRING_CODE);
-              assertThat(attempt.target().accountId()).isEqualTo(approver.getId());
-              assertThat(attempt.target().credentialId()).isNull();
-              assertThat(attempt.target().ipAddress()).isEqualTo("192.0.2.30");
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.DEVICE_PAIRING_CODE)
+                          .accountId(approver.getId())
+                          .ipAddress("192.0.2.30")
+                          .build());
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
             });
   }

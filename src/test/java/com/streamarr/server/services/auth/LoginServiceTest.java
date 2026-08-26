@@ -7,6 +7,7 @@ import com.streamarr.server.config.security.Argon2Properties;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
@@ -72,15 +73,9 @@ class LoginServiceTest {
           timingEqualizer);
 
   @Test
-  @DisplayName("Should throttle when failures exceed limit")
-  void shouldThrottleWhenFailuresExceedLimit() {
+  @DisplayName("Should refuse the login when the journal blocks the attempt")
+  void shouldRefuseLoginWhenJournalBlocksAttempt() {
     var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
-
-    for (int i = 0; i < 5; i++) {
-      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
-      assertThatThrownBy(() -> loginService.login(wrongAttempt))
-          .isInstanceOf(InvalidCredentialsException.class);
-    }
     credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
     var correctAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
@@ -93,12 +88,6 @@ class LoginServiceTest {
   @DisplayName("Should not burn password verification cost when throttled")
   void shouldNotBurnPasswordVerificationCostWhenThrottled() {
     var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
-
-    for (int i = 0; i < 5; i++) {
-      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
-      assertThatThrownBy(() -> loginService.login(wrongAttempt))
-          .isInstanceOf(InvalidCredentialsException.class);
-    }
     credentialAttempts.rejectReservations(Duration.ofMinutes(15));
     var burnsBeforeThrottle = countingEncoder.completedVerifications();
 
@@ -181,9 +170,12 @@ class LoginServiceTest {
         .singleElement()
         .satisfies(
             recorded -> {
-              assertThat(recorded.target().kind()).isEqualTo(CredentialKind.ACCOUNT_LOGIN);
-              assertThat(recorded.target().accountId()).isNull();
-              assertThat(recorded.target().ipAddress()).isEqualTo("127.0.0.1");
+              assertThat(recorded.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.ACCOUNT_LOGIN)
+                          .ipAddress("127.0.0.1")
+                          .build());
               assertThat(recorded.result()).isEqualTo(CredentialAttemptResult.FAILED);
             });
   }
@@ -246,59 +238,42 @@ class LoginServiceTest {
   }
 
   @Test
-  @DisplayName("Should reset the failure sequence when login succeeds")
-  void shouldResetFailureSequenceWhenLoginSucceeds() {
+  @DisplayName("Should journal each login outcome in order against the Account")
+  void shouldJournalEachLoginOutcomeInOrderAgainstAccount() {
     var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
-
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 2; i++) {
       var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
       assertThatThrownBy(() -> loginService.login(wrongAttempt))
           .isInstanceOf(InvalidCredentialsException.class);
     }
-
     loginService.login(commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build());
+    var wrongAgain = commandBuilder(account.getEmail()).password("wrong-again").build();
+    assertThatThrownBy(() -> loginService.login(wrongAgain))
+        .isInstanceOf(InvalidCredentialsException.class);
 
-    for (int i = 0; i < 5; i++) {
-      var wrongAttempt =
-          commandBuilder(account.getEmail())
-              .password("wrong-again-" + i)
-              .ipAddress("192.0.2." + i)
-              .build();
-      assertThatThrownBy(() -> loginService.login(wrongAttempt))
-          .isInstanceOf(InvalidCredentialsException.class);
-    }
-
-    var blockedAttempt =
-        commandBuilder(account.getEmail())
-            .password(CORRECT_PASSWORD)
-            .ipAddress("192.0.2.100")
-            .build();
-    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
-    assertThatThrownBy(() -> loginService.login(blockedAttempt))
-        .isInstanceOf(TooManyLoginAttemptsException.class);
+    assertThat(credentialAttempts.attempts())
+        .allSatisfy(attempt -> assertThat(attempt.target().accountId()).isEqualTo(account.getId()))
+        .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
+        .containsExactly(
+            CredentialAttemptResult.FAILED,
+            CredentialAttemptResult.FAILED,
+            CredentialAttemptResult.SUCCEEDED,
+            CredentialAttemptResult.FAILED);
   }
 
   @Test
-  @DisplayName("Should not subject-throttle unresolved Accounts that share a source address")
-  void shouldNotSubjectThrottleUnresolvedAccountsThatShareSourceAddress() {
+  @DisplayName("Should journal unresolved logins with no Account target")
+  void shouldJournalUnresolvedLoginsWithNoAccountTarget() {
     var attacker = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
-
-    for (int i = 0; i < 4; i++) {
-      var spray = commandBuilder("victim-" + i + "@example.com").password("guess").build();
-      assertThatThrownBy(() -> loginService.login(spray))
-          .isInstanceOf(InvalidCredentialsException.class);
-    }
-
+    var spray = commandBuilder("victim@example.com").password("guess").build();
+    assertThatThrownBy(() -> loginService.login(spray))
+        .isInstanceOf(InvalidCredentialsException.class);
     loginService.login(commandBuilder(attacker.getEmail()).password(CORRECT_PASSWORD).build());
 
-    // IP addresses are observational; unresolved emails have no target to throttle.
-    var fifthSpray = commandBuilder("victim-4@example.com").password("guess").build();
-    assertThatThrownBy(() -> loginService.login(fifthSpray))
-        .isInstanceOf(InvalidCredentialsException.class);
-
-    var sixthSpray = commandBuilder("victim-5@example.com").password("guess").build();
-    assertThatThrownBy(() -> loginService.login(sixthSpray))
-        .isInstanceOf(InvalidCredentialsException.class);
+    // IP addresses are observational; only a resolved Account is a throttle target.
+    assertThat(credentialAttempts.attempts())
+        .extracting(attempt -> attempt.target().accountId())
+        .containsExactly(null, attacker.getId());
   }
 
   @Test

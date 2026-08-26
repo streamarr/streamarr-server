@@ -1,7 +1,6 @@
 package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
@@ -11,6 +10,9 @@ import com.streamarr.server.domain.auth.AccountInvitationMode;
 import com.streamarr.server.domain.auth.AccountInvitationReoffer;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
@@ -242,57 +244,60 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should throttle guesses when one public id is presented repeatedly")
-  void shouldThrottleGuessesWhenOnePublicIdIsPresentedRepeatedly() {
+  @DisplayName("Should refuse the code when the journal blocks the invitation's attempts")
+  void shouldRefuseCodeWhenJournalBlocksInvitationAttempts() {
     var issued = pendingInvitation(pendingInvitationBuilder().build());
-    var publicId = invitations.findAll().getFirst().getPublicId();
-    for (var attempt = 0; attempt < 5; attempt++) {
-      var guess = publicId + ".guess-" + attempt;
-      assertThatThrownBy(() -> lookup(guess)).isInstanceOf(InvalidOneTimeCodeException.class);
-    }
     credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
     // The right code no longer helps once this invitation's attempt limit is exhausted.
     var throttled = issued.code();
     assertThatThrownBy(() -> lookup(throttled))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(credentialAttempts.attempts()).isEmpty();
   }
 
   @Test
-  @DisplayName(
-      "Should release the verification budget when the secret matches an expired invitation")
-  void shouldReleaseVerificationBudgetWhenSecretMatchesExpiredInvitation() {
+  @DisplayName("Should journal each correct presentation as a success against the invitation")
+  void shouldJournalEachCorrectPresentationAsSuccessAgainstInvitation() {
     var issued = pendingInvitation(pendingInvitationBuilder().build());
-    var invitation = invitations.findAll().getFirst();
-    invitation.setExpiresAt(NOW.minusSeconds(1));
-    for (var attempt = 0; attempt < 4; attempt++) {
-      var guess = invitation.getPublicId() + ".guess-" + attempt;
-      assertThatThrownBy(() -> lookup(guess))
-          .isInstanceOf(InvalidOneTimeCodeException.class);
-    }
+    var invitationId = invitations.findAll().getFirst().getId();
 
-    // Possession of the secret is proven; the code's state is not a guess to be budgeted.
-    var expiredCode = issued.code();
-    assertThatThrownBy(() -> lookup(expiredCode))
-        .isInstanceOf(InvalidOneTimeCodeException.class);
+    lookup(issued.code());
+    lookup(issued.code());
 
-    var laterGuess = invitation.getPublicId() + ".guess-later";
-    assertThatThrownBy(() -> lookup(laterGuess))
-        .isInstanceOf(InvalidOneTimeCodeException.class);
+    assertThat(credentialAttempts.attempts())
+        .hasSize(2)
+        .allSatisfy(
+            attempt -> {
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.ACCOUNT_INVITATION_CODE)
+                          .credentialId(invitationId)
+                          .ipAddress("192.0.2.25")
+                          .build());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
+            });
   }
 
   @Test
-  @DisplayName("Should not throttle when the correct invitation code is presented repeatedly")
-  void shouldNotThrottleWhenCorrectInvitationCodeIsPresentedRepeatedly() {
-    var issued = pendingInvitation(pendingInvitationBuilder().build());
+  @DisplayName("Should journal an unknown public id as a failure with no target")
+  void shouldJournalUnknownPublicIdAsFailureWithNoTarget() {
+    assertThatThrownBy(() -> lookup("unknown.secret"))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
 
-    assertThatCode(
-            () -> {
-              for (var presentation = 0; presentation <= 5; presentation++) {
-                lookup(issued.code());
-              }
-            })
-        .doesNotThrowAnyException();
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.ACCOUNT_INVITATION_CODE)
+                          .ipAddress("192.0.2.25")
+                          .build());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
+            });
   }
 
   private AccountInvitationService serviceUsing(FakeUserAccountRepository accountRepository) {

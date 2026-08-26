@@ -160,8 +160,8 @@ class PasswordChangeServiceTest {
   }
 
   @Test
-  @DisplayName("Should throttle password changes when current password repeatedly wrong")
-  void shouldThrottlePasswordChangesWhenCurrentPasswordRepeatedlyWrong() {
+  @DisplayName("Should refuse the password change when the journal blocks the attempt")
+  void shouldRefusePasswordChangeWhenJournalBlocksAttempt() {
     var currentPassword = UUID.randomUUID().toString();
     var account =
         accountRepository.save(
@@ -172,11 +172,6 @@ class PasswordChangeServiceTest {
         sessionRepository.save(
             AuthSession.builder().accountId(account.getId()).deviceName("caller").build());
     var identity = identity(account.getId(), caller.getId());
-    var wrongCommand = commandBuilder().build();
-    for (var attempt = 0; attempt < 2; attempt++) {
-      assertThatThrownBy(() -> service.changePassword(identity, wrongCommand))
-          .isInstanceOf(InvalidCredentialsException.class);
-    }
     credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
     var correctCommand = commandBuilder().currentPassword(currentPassword).build();

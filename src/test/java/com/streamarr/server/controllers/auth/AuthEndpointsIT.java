@@ -2,6 +2,7 @@ package com.streamarr.server.controllers.auth;
 
 import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDENTIAL_ATTEMPT;
 import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
+import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -141,11 +142,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         mockMvc
             .perform(
                 post("/api/auth/login")
-                    .with(
-                        request -> {
-                          request.setRemoteAddr("198.51.100.41");
-                          return request;
-                        })
+                    .with(remoteAddr("198.51.100.41"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         """
@@ -281,11 +278,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
               post("/api/auth/login")
                   .contentType(MediaType.APPLICATION_JSON)
                   .content(loginBody(account.getEmail(), "wrong-password-" + i))
-                  .with(
-                      request -> {
-                        request.setRemoteAddr(throttledSource);
-                        return request;
-                      }))
+                  .with(remoteAddr(throttledSource)))
           .andExpect(status().isUnauthorized())
           .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
     }
@@ -295,11 +288,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginBody(account.getEmail(), password))
-                .with(
-                    request -> {
-                      request.setRemoteAddr(throttledSource);
-                      return request;
-                    }))
+                .with(remoteAddr(throttledSource)))
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"))
         .andExpect(header().exists(HttpHeaders.RETRY_AFTER));
@@ -1476,11 +1465,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         loginBody("absent-" + UUID.randomUUID() + "@example.com", SETUP_PASSWORD))
-                    .with(
-                        request -> {
-                          request.setRemoteAddr(unthrottledSource);
-                          return request;
-                        }))
+                    .with(remoteAddr(unthrottledSource)))
             .andExpect(status().isUnauthorized())
             .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
             .andReturn()

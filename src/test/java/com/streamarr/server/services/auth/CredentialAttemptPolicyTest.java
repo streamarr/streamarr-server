@@ -10,9 +10,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Credential Attempt Policy Tests")
@@ -31,48 +35,35 @@ class CredentialAttemptPolicyTest {
     }
   }
 
-  @Test
-  @DisplayName("Should support an unlimited credential policy")
-  void shouldSupportAnUnlimitedCredentialPolicy() {
-    CredentialAttemptPolicy policy = new CredentialAttemptPolicy.Unlimited();
-
-    assertThat(policy).isInstanceOf(CredentialAttemptPolicy.Unlimited.class);
+  @ParameterizedTest(name = "{3}")
+  @MethodSource("invalidLimitedPolicies")
+  @DisplayName("Should reject a limited policy when a bound is not positive or exceeds one day")
+  void shouldRejectLimitedPolicyWhenBoundIsNotPositiveOrExceedsOneDay(
+      int maximumFailures, Duration failureWindow, Duration throttleDuration, String message) {
+    assertThatThrownBy(
+            () ->
+                new CredentialAttemptPolicy.Limited(
+                    maximumFailures, failureWindow, throttleDuration))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(message);
   }
 
-  @Test
-  @DisplayName("Should reject non-positive limited policy values")
-  void shouldRejectNonPositiveLimitedPolicyValues() {
-    assertThatThrownBy(
-            () ->
-                new CredentialAttemptPolicy.Limited(
-                    0, Duration.ofMinutes(15), Duration.ofMinutes(15)))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("maximumFailures must be positive");
-    assertThatThrownBy(
-            () -> new CredentialAttemptPolicy.Limited(5, Duration.ZERO, Duration.ofMinutes(15)))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("failureWindow must be positive and no longer than 24 hours");
-    assertThatThrownBy(
-            () -> new CredentialAttemptPolicy.Limited(5, Duration.ofMinutes(15), Duration.ZERO))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("throttleDuration must be positive and no longer than 24 hours");
-  }
-
-  @Test
-  @DisplayName("Should reject limited policy durations longer than one day")
-  void shouldRejectLimitedPolicyDurationsLongerThanOneDay() {
-    assertThatThrownBy(
-            () ->
-                new CredentialAttemptPolicy.Limited(
-                    5, Duration.ofDays(1).plusNanos(1), Duration.ofMinutes(15)))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("failureWindow must be positive and no longer than 24 hours");
-    assertThatThrownBy(
-            () ->
-                new CredentialAttemptPolicy.Limited(
-                    5, Duration.ofMinutes(15), Duration.ofDays(1).plusNanos(1)))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("throttleDuration must be positive and no longer than 24 hours");
+  private static Stream<Arguments> invalidLimitedPolicies() {
+    var window = Duration.ofMinutes(15);
+    var tooLong = Duration.ofDays(1).plusNanos(1);
+    return Stream.of(
+        Arguments.of(0, window, window, "maximumFailures must be positive"),
+        Arguments.of(
+            5, Duration.ZERO, window, "failureWindow must be positive and no longer than 24 hours"),
+        Arguments.of(
+            5,
+            window,
+            Duration.ZERO,
+            "throttleDuration must be positive and no longer than 24 hours"),
+        Arguments.of(
+            5, tooLong, window, "failureWindow must be positive and no longer than 24 hours"),
+        Arguments.of(
+            5, window, tooLong, "throttleDuration must be positive and no longer than 24 hours"));
   }
 
   private static final Instant NOW = Instant.parse("2026-08-26T12:00:00Z");
