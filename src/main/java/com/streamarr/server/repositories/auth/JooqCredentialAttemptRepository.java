@@ -7,6 +7,7 @@ import com.streamarr.server.domain.auth.CredentialAttemptPolicy;
 import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.jooq.generated.tables.records.CredentialAttemptRecord;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -17,6 +18,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.TableField;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.springframework.stereotype.Repository;
@@ -127,6 +129,8 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
         dsl.select(DSL.max(CREDENTIAL_ATTEMPT.COMPLETED_AT))
             .from(CREDENTIAL_ATTEMPT)
             .where(targetCondition(target))
+            // Stated explicitly: the partial index on completed rows is only provable from it.
+            .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.isNotNull())
             .and(
                 CREDENTIAL_ATTEMPT.RESULT.eq(
                     com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.SUCCEEDED))
@@ -208,18 +212,24 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
   }
 
   private Condition targetCondition(CredentialAttemptTarget target) {
-    return CREDENTIAL_ATTEMPT
-        .CREDENTIAL_KIND
-        .eq(generatedKind(target))
-        .and(
-            CREDENTIAL_ATTEMPT.ACCOUNT_ID.isNotDistinctFrom(
-                DSL.val(target.accountId(), CREDENTIAL_ATTEMPT.ACCOUNT_ID.getDataType())))
-        .and(
-            CREDENTIAL_ATTEMPT.PROFILE_ID.isNotDistinctFrom(
-                DSL.val(target.profileId(), CREDENTIAL_ATTEMPT.PROFILE_ID.getDataType())))
-        .and(
-            CREDENTIAL_ATTEMPT.CREDENTIAL_ID.isNotDistinctFrom(
-                DSL.val(target.credentialId(), CREDENTIAL_ATTEMPT.CREDENTIAL_ID.getDataType())));
+    return DSL.and(
+        CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(generatedKind(target)),
+        identifierCondition(CREDENTIAL_ATTEMPT.ACCOUNT_ID, target.accountId()),
+        identifierCondition(CREDENTIAL_ATTEMPT.PROFILE_ID, target.profileId()),
+        identifierCondition(CREDENTIAL_ATTEMPT.CREDENTIAL_ID, target.credentialId()));
+  }
+
+  /**
+   * Renders {@code =} or {@code IS NULL}: PostgreSQL never uses {@code IS NOT DISTINCT FROM} as a
+   * btree index condition, so the null-safe form would scan every row of the kind.
+   */
+  private static Condition identifierCondition(
+      TableField<CredentialAttemptRecord, UUID> column, UUID id) {
+    if (id == null) {
+      return column.isNull();
+    }
+
+    return column.eq(id);
   }
 
   private void lockTarget(CredentialAttemptTarget target) {

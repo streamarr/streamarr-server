@@ -12,15 +12,22 @@ import com.streamarr.server.domain.auth.CredentialKind;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.stream.IntStream;
+import org.jooq.DSLContext;
+import org.jooq.ExecuteContext;
+import org.jooq.ExecuteListener;
+import org.jooq.impl.DSL;
+import org.jooq.impl.DefaultExecuteListenerProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("jOOQ Credential Attempt Repository Integration Tests")
@@ -33,6 +40,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
 
   @Autowired private CredentialAttemptRepository repository;
   @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private DSLContext dsl;
+  @Autowired private TransactionTemplate transactionTemplate;
 
   @AfterEach
   void deleteAttempts() {
@@ -150,6 +159,46 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
         .filteredOn(CredentialAttemptAdmission.Blocked.class::isInstance)
         .hasSize(15);
     assertThat(attemptCount()).isEqualTo(5);
+  }
+
+  @Test
+  @DisplayName("Should serve every admission query from the target indexes")
+  void shouldServeEveryAdmissionQueryFromTheTargetIndexes() {
+    var statements = new ArrayList<String>();
+    var recordingListener =
+        new ExecuteListener() {
+          @Override
+          public void executeStart(ExecuteContext context) {
+            if (context.query() != null) {
+              statements.add(context.dsl().renderInlined(context.query()));
+            }
+          }
+        };
+    var recording =
+        DSL.using(
+            dsl.configuration().derive(new DefaultExecuteListenerProvider(recordingListener)));
+    var target = resolvedTarget();
+    transactionTemplate.executeWithoutResult(
+        _ -> new JooqCredentialAttemptRepository(recording).reserve(target, LIMITED_POLICY, NOW));
+
+    var admissionQueries =
+        statements.stream()
+            .filter(sql -> sql.toLowerCase(Locale.ROOT).startsWith("select"))
+            .filter(sql -> sql.contains("credential_attempt"))
+            .toList();
+    assertThat(admissionQueries).isNotEmpty();
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          // A tiny table would otherwise be scanned on cost alone; the index must be usable.
+          jdbcTemplate.execute("SET LOCAL enable_seqscan = off");
+          for (var sql : admissionQueries) {
+            var plan = String.join("\n", jdbcTemplate.queryForList("EXPLAIN " + sql, String.class));
+            assertThat(plan)
+                .as(sql)
+                .doesNotContain("Seq Scan")
+                .containsPattern("Index Cond: \\(.*account_id = ");
+          }
+        });
   }
 
   @Test
