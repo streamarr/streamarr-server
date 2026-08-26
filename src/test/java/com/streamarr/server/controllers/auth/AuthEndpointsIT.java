@@ -195,6 +195,49 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should journal no attempt when the login email or password is blank")
+  void shouldJournalNoAttemptWhenLoginEmailOrPasswordIsBlank() throws Exception {
+    seedSingleProfileIdentity();
+    var source = remoteAddr("198.51.100.43");
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .with(source)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(loginBody(" ", password)))
+        .andExpect(status().isBadRequest());
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .with(source)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(loginBody(account.getEmail(), " ")))
+        .andExpect(status().isBadRequest());
+
+    // Transport validation answers before the command exists, so the journal never sees them.
+    assertThat(journaledAttemptsFrom("198.51.100.43")).isZero();
+  }
+
+  @Test
+  @DisplayName("Should keep answering unauthorized when an unknown email fails beyond the limit")
+  void shouldKeepAnsweringUnauthorizedWhenUnknownEmailFailsBeyondLimit() throws Exception {
+    var email = "absent-" + UUID.randomUUID() + "@example.com";
+
+    // ADR 0028 keys the login budget by Account, so an email that names none never throttles;
+    // the 429-versus-401 split after five failures is the accepted existence signal.
+    for (int i = 0; i <= 5; i++) {
+      mockMvc
+          .perform(
+              post("/api/auth/login")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(loginBody(email, "wrong-password-" + i)))
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+    }
+  }
+
+  @Test
   @DisplayName("Should create identity when setup is first")
   void shouldCreateIdentityWhenSetupIsFirst() throws Exception {
     var suffix = UUID.randomUUID();
@@ -1568,6 +1611,12 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .profileId(Optional.of(profile.getId()))
                 .build())
         .value();
+  }
+
+  private int journaledAttemptsFrom(String ipAddress) {
+    return dsl.fetchCount(
+        CREDENTIAL_ATTEMPT,
+        DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS).eq(ipAddress));
   }
 
   private List<String> journaledLoginAddresses() {
