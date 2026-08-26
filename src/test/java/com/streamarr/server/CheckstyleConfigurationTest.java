@@ -19,6 +19,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Checkstyle Configuration Tests")
@@ -155,6 +158,23 @@ class CheckstyleConfigurationTest {
     assertThat(violations).isZero();
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("unseparatedControlFlowBlocks")
+  @DisplayName(
+      "Should reject missing blank line when a completed control-flow block precedes a statement")
+  void shouldRejectMissingBlankLineWhenCompletedControlFlowBlockPrecedesStatement(
+      String blockKind, String runMethod) throws Exception {
+    assertThat(controlFlowViolationsOf(exampleClassWith(runMethod))).as(blockKind).isOne();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("separatedOrTerminalControlFlowBlocks")
+  @DisplayName("Should allow control-flow block when a blank line follows it or its body ends")
+  void shouldAllowControlFlowBlockWhenBlankLineFollowsItOrItsBodyEnds(
+      String blockKind, String runMethod) throws Exception {
+    assertThat(controlFlowViolationsOf(exampleClassWith(runMethod))).as(blockKind).isZero();
+  }
+
   @Test
   @DisplayName("Should keep control-flow separation violations at or below the legacy baseline")
   void shouldKeepControlFlowSeparationViolationsAtOrBelowLegacyBaseline() throws Exception {
@@ -207,6 +227,189 @@ class CheckstyleConfigurationTest {
         .singleElement()
         .asString()
         .contains("src/main/java/Unlisted.java");
+  }
+
+  private static Stream<Arguments> unseparatedControlFlowBlocks() {
+    return Stream.of(
+        Arguments.of(
+            "comment line in place of the blank line",
+            """
+            void run(boolean enabled) {
+              if (enabled) {
+                start();
+              }
+              // finish once the conditional completes
+              finish();
+            }
+            """),
+        Arguments.of(
+            "trailing comment on the closing brace",
+            """
+            void run(boolean enabled) {
+              if (enabled) {
+                start();
+              } // conditional completes here
+              finish();
+            }
+            """),
+        Arguments.of(
+            "multi-line statement anchored on a later line",
+            """
+            void run(String name) {
+              if (name.isEmpty()) {
+                start();
+              }
+              name
+                  .lines()
+                  .count();
+            }
+            """),
+        Arguments.of(
+            "blank line inside the following statement's inner lambda",
+            """
+            void run(String name) {
+              if (name.isEmpty()) {
+                start();
+              }
+              name
+                  .lines()
+                  .map(line -> {
+                    start();
+
+                    return line;
+                  })
+                  .count();
+            }
+            """),
+        Arguments.of(
+            "for loop",
+            """
+            void run(int count) {
+              for (var i = 0; i < count; i++) {
+                start();
+              }
+              finish();
+            }
+            """),
+        Arguments.of(
+            "while loop",
+            """
+            void run(int count) {
+              while (count > 0) {
+                count--;
+              }
+              finish();
+            }
+            """),
+        Arguments.of(
+            "do-while loop",
+            """
+            void run(int count) {
+              do {
+                count--;
+              } while (count > 0);
+              finish();
+            }
+            """),
+        Arguments.of(
+            "switch statement",
+            """
+            void run(int count) {
+              switch (count) {
+                case 0 -> start();
+                default -> finish();
+              }
+              finish();
+            }
+            """),
+        Arguments.of(
+            "try-finally",
+            """
+            void run() {
+              try {
+                start();
+              } finally {
+                start();
+              }
+              finish();
+            }
+            """),
+        Arguments.of(
+            "synchronized block",
+            """
+            void run() {
+              synchronized (this) {
+                start();
+              }
+              finish();
+            }
+            """));
+  }
+
+  private static Stream<Arguments> separatedOrTerminalControlFlowBlocks() {
+    return Stream.of(
+        Arguments.of(
+            "blank line then a comment before the statement",
+            """
+            void run(boolean enabled) {
+              if (enabled) {
+                start();
+              }
+
+              // finish once the conditional completes
+              finish();
+            }
+            """),
+        Arguments.of(
+            "block ends the method body",
+            """
+            void run(boolean enabled) {
+              start();
+              if (enabled) {
+                finish();
+              }
+            }
+            """),
+        Arguments.of(
+            "block ends the enclosing loop body",
+            """
+            void run(int count) {
+              for (var i = 0; i < count; i++) {
+                if (i == 0) {
+                  start();
+                }
+              }
+
+              finish();
+            }
+            """),
+        Arguments.of(
+            "else continues the conditional",
+            """
+            void run(boolean enabled) {
+              if (enabled) {
+                start();
+              } else {
+                start();
+              }
+
+              finish();
+            }
+            """));
+  }
+
+  private static String exampleClassWith(String runMethod) {
+    return """
+        package example;
+
+        final class Example {
+        %s
+          private void start() {}
+
+          private void finish() {}
+        }
+        """
+        .formatted(runMethod.indent(2));
   }
 
   private int violationsOf(String source) throws Exception {
