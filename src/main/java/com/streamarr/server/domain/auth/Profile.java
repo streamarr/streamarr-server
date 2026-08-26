@@ -48,6 +48,11 @@ public class Profile extends BaseAuditableEntity<Profile> {
 
   /** A restriction means supervision: Kid kind or any Content Ceiling. */
   public boolean isRestricted() {
+    return isRestricted(kind, maximumAllowedRatingAge);
+  }
+
+  /** The one definition of "restricted" for every shape that carries a kind and a ceiling. */
+  public static boolean isRestricted(ProfileKind kind, Integer maximumAllowedRatingAge) {
     return kind == ProfileKind.KID || maximumAllowedRatingAge != null;
   }
 

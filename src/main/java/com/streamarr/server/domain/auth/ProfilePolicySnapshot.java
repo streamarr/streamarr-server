@@ -7,7 +7,7 @@ public record ProfilePolicySnapshot(
     ProfileKind kind, Integer maximumAllowedRatingAge, UUID linkedAccountId) {
 
   public boolean restricted() {
-    return kind == ProfileKind.KID || maximumAllowedRatingAge != null;
+    return Profile.isRestricted(kind, maximumAllowedRatingAge);
   }
 
   public boolean linked() {

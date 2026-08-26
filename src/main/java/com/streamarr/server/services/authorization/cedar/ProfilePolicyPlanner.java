@@ -1,5 +1,6 @@
 package com.streamarr.server.services.authorization.cedar;
 
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -44,7 +45,7 @@ class ProfilePolicyPlanner {
     }
 
     var targetCeiling = targetCeilingOf(current, intent);
-    var restrictedAfter = targetKind == ProfileKind.KID || targetCeiling != null;
+    var restrictedAfter = Profile.isRestricted(targetKind, targetCeiling);
     return new ProfilePolicyTransition(
         targetKind, targetCeiling, classification(current, targetKind, restrictedAfter));
   }

@@ -4,6 +4,7 @@ import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCode;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
@@ -83,8 +84,7 @@ public class CredentialIssuanceService {
       return Outcome.rejected(new InvitationRejections.ProfileNameTaken());
     }
 
-    var restricted =
-        command.profileKind() == ProfileKind.KID || command.maximumAllowedRatingAge() != null;
+    var restricted = command.restricted();
     var emptyHousehold = userAccountRepository.findByHouseholdId(command.householdId()).isEmpty();
     if (restricted && emptyHousehold) {
       // The first Account becomes HouseholdAdmin, and a restricted Account holds no authority.
@@ -271,5 +271,11 @@ public class CredentialIssuanceService {
       String profileName,
       ProfileKind profileKind,
       Integer maximumAllowedRatingAge,
-      UUID localManagerAccountId) {}
+      UUID localManagerAccountId) {
+
+    /** A restriction means supervision: Kid kind or any Content Ceiling. */
+    public boolean restricted() {
+      return Profile.isRestricted(profileKind, maximumAllowedRatingAge);
+    }
+  }
 }
