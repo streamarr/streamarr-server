@@ -147,9 +147,10 @@ class StreamarrDataFetcherExceptionHandlerTest {
     assertThat(codeFor(credentialUnavailable)).isEqualTo("CREDENTIAL_VERIFICATION_UNAVAILABLE");
     assertThat(errorTypeFor(new SessionNotFoundException(UUID.randomUUID())))
         .isEqualTo("NOT_FOUND");
-    assertThat(errorTypeFor(new TooManyCredentialAttemptsException())).isEqualTo("UNAVAILABLE");
-    assertThat(codeFor(new TooManyCredentialAttemptsException()))
-        .isEqualTo("TOO_MANY_CREDENTIAL_ATTEMPTS");
+    var credentialThrottle = new TooManyCredentialAttemptsException(Duration.ofSeconds(7));
+    assertThat(errorTypeFor(credentialThrottle)).isEqualTo("UNAVAILABLE");
+    assertThat(codeFor(credentialThrottle)).isEqualTo("TOO_MANY_CREDENTIAL_ATTEMPTS");
+    assertThat(errorFor(credentialThrottle).getExtensions()).containsEntry("retryAfterSeconds", 7L);
     var busy = new ResourceBusyException(new CannotAcquireLockException("lock timeout"));
     assertThat(errorTypeFor(busy)).isEqualTo("UNAVAILABLE");
     assertThat(codeFor(busy)).isEqualTo("RESOURCE_BUSY");
@@ -218,10 +219,18 @@ class StreamarrDataFetcherExceptionHandlerTest {
   @DisplayName("Should add retryAfterSeconds only when the exception knows when to retry")
   void shouldAddRetryAfterSecondsOnlyWhenExceptionKnowsWhenToRetry() {
     var throttled = errorFor(new TooManyDeviceAttemptsException(Duration.ofSeconds(42)));
-    var plain = errorFor(new TooManyCredentialAttemptsException());
+    var plain = errorFor(new SessionNotFoundException(UUID.randomUUID()));
 
     assertThat(throttled.getExtensions()).containsEntry("retryAfterSeconds", 42L);
     assertThat(plain.getExtensions()).doesNotContainKey("retryAfterSeconds");
+  }
+
+  @Test
+  @DisplayName("Should report at least one second when the retry delay is not positive")
+  void shouldReportAtLeastOneSecondWhenRetryDelayIsNotPositive() {
+    var error = errorFor(new TooManyDeviceAttemptsException(Duration.ZERO));
+
+    assertThat(error.getExtensions()).containsEntry("retryAfterSeconds", 1L);
   }
 
   @Test

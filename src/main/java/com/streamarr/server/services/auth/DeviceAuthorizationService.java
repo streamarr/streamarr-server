@@ -10,7 +10,6 @@ import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.exceptions.CredentialAttemptRejectedException;
 import com.streamarr.server.exceptions.DeviceCodeExpiredException;
 import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
@@ -364,11 +363,7 @@ public class DeviceAuthorizationService {
             .accountId(presentation.approverAccountId())
             .ipAddress(presentation.ipAddress())
             .build();
-    try {
-      return credentialAttempts.reserve(target);
-    } catch (CredentialAttemptRejectedException rejected) {
-      throw new TooManyDeviceAttemptsException(rejected.getRetryAfter());
-    }
+    return credentialAttempts.reserve(target);
   }
 
   private static DeviceAuthorizationDetails detailsOf(

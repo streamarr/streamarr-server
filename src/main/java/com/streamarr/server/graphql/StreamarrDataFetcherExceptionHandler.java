@@ -83,7 +83,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
 
     var extensions = extensions(classification.errorType(), classification.code(), requestId);
     if (exception instanceof RetryAfterAware throttled) {
-      extensions.put(RETRY_AFTER_SECONDS, retryAfterSeconds(throttled));
+      extensions.put(RETRY_AFTER_SECONDS, throttled.retryAfterSeconds());
     }
 
     var error =
@@ -152,19 +152,6 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     }
 
     return exception;
-  }
-
-  private static long retryAfterSeconds(RetryAfterAware throttled) {
-    var retryAfter = throttled.retryAfter();
-    if (retryAfter.isNegative() || retryAfter.isZero()) {
-      return 0;
-    }
-
-    if (retryAfter.getNano() == 0 || retryAfter.getSeconds() == Long.MAX_VALUE) {
-      return retryAfter.getSeconds();
-    }
-
-    return retryAfter.getSeconds() + 1;
   }
 
   private static Classification classify(Throwable exception) {

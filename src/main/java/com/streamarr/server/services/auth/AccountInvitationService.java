@@ -17,11 +17,9 @@ import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.exceptions.CredentialAttemptRejectedException;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.exceptions.InvitationEmailAlreadyUsedException;
 import com.streamarr.server.exceptions.InvitationNotAcceptableException;
-import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.repositories.auth.AccountInvitationReofferRepository;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -430,11 +428,7 @@ public class AccountInvitationService {
             .credentialId(invitation == null ? null : invitation.getId())
             .ipAddress(ipAddress)
             .build();
-    try {
-      return credentialAttempts.reserve(target);
-    } catch (CredentialAttemptRejectedException _) {
-      throw new TooManyCredentialAttemptsException();
-    }
+    return credentialAttempts.reserve(target);
   }
 
   @Builder

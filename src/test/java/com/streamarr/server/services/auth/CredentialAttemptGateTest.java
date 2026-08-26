@@ -8,6 +8,10 @@ import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
+import com.streamarr.server.exceptions.RetryAfterAware;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
+import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
+import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.support.LogCapture;
 import java.time.Clock;
@@ -93,7 +97,8 @@ class CredentialAttemptGateTest {
     repository.rejectReservations(Duration.ofSeconds(42));
 
     try (var logs = LogCapture.forClass(CredentialAttemptGate.class)) {
-      assertThatThrownBy(() -> gate.reserve(LOGIN_TARGET)).isInstanceOf(RuntimeException.class);
+      assertThatThrownBy(() -> gate.reserve(LOGIN_TARGET))
+          .isInstanceOf(TooManyLoginAttemptsException.class);
 
       assertThat(logs.events())
           .anyMatch(
@@ -103,5 +108,51 @@ class CredentialAttemptGateTest {
                       && event.getFormattedMessage().contains(ACCOUNT_ID.toString())
                       && event.getFormattedMessage().contains("PT42S"));
     }
+  }
+
+  @Test
+  @DisplayName("Should refuse a login with its retry delay when the Account is blocked")
+  void shouldRefuseLoginWithRetryDelayWhenAccountIsBlocked() {
+    repository.rejectReservations(Duration.ofSeconds(42));
+
+    assertThatThrownBy(() -> gate.reserve(LOGIN_TARGET))
+        .isInstanceOf(TooManyLoginAttemptsException.class)
+        .extracting(failure -> ((RetryAfterAware) failure).retryAfter())
+        .isEqualTo(Duration.ofSeconds(42));
+  }
+
+  @Test
+  @DisplayName("Should refuse a Profile PIN with its retry delay when the Profile is blocked")
+  void shouldRefuseProfilePinWithRetryDelayWhenProfileIsBlocked() {
+    repository.rejectReservations(Duration.ofSeconds(42));
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.PROFILE_PIN)
+            .accountId(ACCOUNT_ID)
+            .profileId(UUID.fromString("20000000-0000-0000-0000-000000000001"))
+            .ipAddress("192.0.2.30")
+            .build();
+
+    assertThatThrownBy(() -> gate.reserve(target))
+        .isInstanceOf(TooManyCredentialAttemptsException.class)
+        .extracting(failure -> ((RetryAfterAware) failure).retryAfter())
+        .isEqualTo(Duration.ofSeconds(42));
+  }
+
+  @Test
+  @DisplayName("Should refuse a pairing code with its retry delay when the approver is blocked")
+  void shouldRefusePairingCodeWithRetryDelayWhenApproverIsBlocked() {
+    repository.rejectReservations(Duration.ofSeconds(42));
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.DEVICE_PAIRING_CODE)
+            .accountId(ACCOUNT_ID)
+            .ipAddress("192.0.2.30")
+            .build();
+
+    assertThatThrownBy(() -> gate.reserve(target))
+        .isInstanceOf(TooManyDeviceAttemptsException.class)
+        .extracting(failure -> ((RetryAfterAware) failure).retryAfter())
+        .isEqualTo(Duration.ofSeconds(42));
   }
 }

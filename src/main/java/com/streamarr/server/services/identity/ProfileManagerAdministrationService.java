@@ -10,8 +10,6 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
-import com.streamarr.server.exceptions.CredentialAttemptRejectedException;
-import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -488,11 +486,7 @@ public class ProfileManagerAdministrationService {
             .credentialId(invitation == null ? null : invitation.getId())
             .ipAddress(ipAddress)
             .build();
-    try {
-      return credentialAttempts.reserve(target);
-    } catch (CredentialAttemptRejectedException _) {
-      throw new TooManyCredentialAttemptsException();
-    }
+    return credentialAttempts.reserve(target);
   }
 
   @Builder

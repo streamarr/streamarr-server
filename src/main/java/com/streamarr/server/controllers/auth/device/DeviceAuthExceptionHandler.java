@@ -14,7 +14,6 @@ import com.streamarr.server.exceptions.InvalidDecisionException;
 import com.streamarr.server.exceptions.InvalidUserCodeException;
 import com.streamarr.server.exceptions.SetupIncompleteException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
-import java.time.Duration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -102,17 +101,8 @@ public class DeviceAuthExceptionHandler {
   @ExceptionHandler(TooManyDeviceAttemptsException.class)
   public ResponseEntity<AuthErrorResponse> handleTooManyAttempts(TooManyDeviceAttemptsException e) {
     return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-        .header(HttpHeaders.RETRY_AFTER, Long.toString(retryAfterSeconds(e.getRetryAfter())))
+        .header(HttpHeaders.RETRY_AFTER, Long.toString(e.retryAfterSeconds()))
         .body(new AuthErrorResponse("TOO_MANY_ATTEMPTS", e.getMessage()));
-  }
-
-  /** Delta-seconds, rounded up: a client that retries a fraction early would just be refused. */
-  private static long retryAfterSeconds(Duration retryAfter) {
-    if (retryAfter == null || retryAfter.isNegative() || retryAfter.isZero()) {
-      return 1;
-    }
-
-    return retryAfter.plusNanos(999_999_999L).toSeconds();
   }
 
   private static ResponseEntity<AuthErrorResponse> respond(
