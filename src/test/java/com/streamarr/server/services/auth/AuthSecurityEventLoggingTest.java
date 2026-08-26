@@ -4,24 +4,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.support.LogCapture;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 @Tag("UnitTest")
@@ -85,28 +81,6 @@ class AuthSecurityEventLoggingTest {
                   assertThat(event.getFormattedMessage())
                       .contains(accountId.toString())
                       .doesNotContain("sensitive-token"));
-    }
-  }
-
-  private record LogCapture(Logger logger, ListAppender<ILoggingEvent> appender)
-      implements AutoCloseable {
-
-    private static LogCapture forClass(Class<?> type) {
-      var logger = (Logger) LoggerFactory.getLogger(type);
-      var appender = new ListAppender<ILoggingEvent>();
-      appender.start();
-      logger.addAppender(appender);
-      return new LogCapture(logger, appender);
-    }
-
-    private List<ILoggingEvent> events() {
-      return appender.list;
-    }
-
-    @Override
-    public void close() {
-      logger.detachAppender(appender);
-      appender.stop();
     }
   }
 }
