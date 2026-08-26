@@ -11,8 +11,20 @@ public class StandardCredentialAttemptPolicyProvider implements CredentialAttemp
   private static final CredentialAttemptPolicy STANDARD_POLICY =
       new CredentialAttemptPolicy.Limited(5, Duration.ofMinutes(15), Duration.ofMinutes(15));
 
+  /**
+   * ADR 0028: one limit for every kind in this increment; the switch keeps that choice explicit.
+   */
   @Override
   public CredentialAttemptPolicy policyFor(CredentialKind kind) {
-    return STANDARD_POLICY;
+    return switch (kind) {
+      case ACCOUNT_LOGIN,
+          ACCOUNT_PASSWORD_VERIFICATION,
+          PROFILE_PIN,
+          ACCOUNT_INVITATION_CODE,
+          PASSWORD_RESET_CODE,
+          PROFILE_MANAGER_INVITATION_CODE,
+          DEVICE_PAIRING_CODE ->
+          STANDARD_POLICY;
+    };
   }
 }

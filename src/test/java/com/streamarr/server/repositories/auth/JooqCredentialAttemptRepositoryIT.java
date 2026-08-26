@@ -9,6 +9,7 @@ import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
+import com.streamarr.server.services.auth.StandardCredentialAttemptPolicyProvider;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -35,12 +36,13 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
 
   private static final Instant NOW = Instant.parse("2026-08-26T12:00:00Z");
   private static final String IP_ADDRESS = "192.0.2.16";
-  private static final CredentialAttemptPolicy.Limited LIMITED_POLICY =
-      new CredentialAttemptPolicy.Limited(5, Duration.ofMinutes(15), Duration.ofMinutes(15));
+  private static final CredentialAttemptPolicy LIMITED_POLICY =
+      new StandardCredentialAttemptPolicyProvider().policyFor(CredentialKind.ACCOUNT_LOGIN);
 
   @Autowired private CredentialAttemptRepository repository;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private PostgresTransactionLocks transactionLocks;
   @Autowired private TransactionTemplate transactionTemplate;
 
   @AfterEach
@@ -179,7 +181,9 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
             dsl.configuration().derive(new DefaultExecuteListenerProvider(recordingListener)));
     var target = resolvedTarget();
     transactionTemplate.executeWithoutResult(
-        _ -> new JooqCredentialAttemptRepository(recording).reserve(target, LIMITED_POLICY, NOW));
+        _ ->
+            new JooqCredentialAttemptRepository(recording, transactionLocks)
+                .reserve(target, LIMITED_POLICY, NOW));
 
     var admissionQueries =
         statements.stream()

@@ -2,6 +2,8 @@ package com.streamarr.server.repositories.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
@@ -58,6 +60,22 @@ class AuthEnumParityTest {
     assertParity(
         names(HouseholdRole.values()),
         literals(com.streamarr.server.jooq.generated.enums.HouseholdRole.values()));
+  }
+
+  @Test
+  @DisplayName("Should keep credential kind literals in sync")
+  void shouldKeepCredentialKindInSync() {
+    assertParity(
+        names(CredentialKind.values()),
+        literals(com.streamarr.server.jooq.generated.enums.CredentialKind.values()));
+  }
+
+  @Test
+  @DisplayName("Should keep credential attempt result literals in sync")
+  void shouldKeepCredentialAttemptResultInSync() {
+    assertParity(
+        names(CredentialAttemptResult.values()),
+        literals(com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.values()));
   }
 
   private static void assertParity(List<String> javaNames, List<String> databaseLiterals) {

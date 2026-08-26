@@ -3,6 +3,7 @@ package com.streamarr.server.repositories.auth;
 import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDENTIAL_ATTEMPT;
 
 import com.streamarr.server.domain.auth.CredentialAttemptAdmission;
+import com.streamarr.server.domain.auth.CredentialAttemptHistory;
 import com.streamarr.server.domain.auth.CredentialAttemptPolicy;
 import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
@@ -12,68 +13,53 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.Field;
 import org.jooq.TableField;
 import org.jooq.impl.DSL;
-import org.jooq.impl.SQLDataType;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * The credential attempt journal and its admission decisions (ADR 0028). Reservation and completion
+ * each run in their own REQUIRES_NEW transaction, so a reservation is committed and visible to
+ * every instance before the verifier runs and a completion survives the caller's exception path. A
+ * transaction-scoped advisory lock keyed by the target serializes admissions across instances;
+ * completion takes the same lock so no row can complete between the failure and pending reads of a
+ * concurrent admission and be counted by neither.
+ */
 @Repository
 @RequiredArgsConstructor
 @SuppressWarnings("checkstyle:fullyQualifiedName")
 public class JooqCredentialAttemptRepository implements CredentialAttemptRepository {
 
+  /** ADR 0028: a reservation nobody completed stops consuming capacity after five minutes. */
   private static final Duration ABANDONED_RESERVATION_TIMEOUT = Duration.ofMinutes(5);
+
   private static final Duration LOCK_TIMEOUT = Duration.ofSeconds(2);
+  private static final String LOCK_NAMESPACE = "credential-attempt";
 
   private final DSLContext dsl;
+  private final PostgresTransactionLocks transactionLocks;
 
   @Override
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public CredentialAttemptAdmission reserve(
       CredentialAttemptTarget target, CredentialAttemptPolicy policy, Instant attemptedAt) {
-    if (policy instanceof CredentialAttemptPolicy.Limited limited && target.isResolved()) {
-      lockTarget(target);
-      var admission = admissionFor(target, limited, attemptedAt);
-      if (admission.isPresent()) {
-        return admission.orElseThrow();
-      }
+    if (!(policy instanceof CredentialAttemptPolicy.Limited limited) || !target.isResolved()) {
+      return insert(target, attemptedAt);
     }
 
-    return insert(target, attemptedAt);
-  }
-
-  private CredentialAttemptAdmission insert(CredentialAttemptTarget target, Instant attemptedAt) {
-    var id = UUID.randomUUID();
-    var ipAddress = DSL.val(target.ipAddress()).cast(CREDENTIAL_ATTEMPT.IP_ADDRESS.getDataType());
-    dsl.insertInto(
-            CREDENTIAL_ATTEMPT,
-            CREDENTIAL_ATTEMPT.ID,
-            CREDENTIAL_ATTEMPT.CREDENTIAL_KIND,
-            CREDENTIAL_ATTEMPT.ACCOUNT_ID,
-            CREDENTIAL_ATTEMPT.PROFILE_ID,
-            CREDENTIAL_ATTEMPT.CREDENTIAL_ID,
-            CREDENTIAL_ATTEMPT.IP_ADDRESS,
-            CREDENTIAL_ATTEMPT.ATTEMPTED_AT)
-        .select(
-            dsl.select(
-                DSL.val(id),
-                DSL.val(generatedKind(target)),
-                DSL.val(target.accountId(), CREDENTIAL_ATTEMPT.ACCOUNT_ID.getDataType()),
-                DSL.val(target.profileId(), CREDENTIAL_ATTEMPT.PROFILE_ID.getDataType()),
-                DSL.val(target.credentialId(), CREDENTIAL_ATTEMPT.CREDENTIAL_ID.getDataType()),
-                ipAddress,
-                DSL.val(offsetOf(attemptedAt))))
-        .execute();
-
-    return new CredentialAttemptAdmission.Reserved(new CredentialAttemptReservation(id, target));
+    lockTarget(target);
+    return limited
+        .retryAfter(history(target, limited, attemptedAt), attemptedAt)
+        .<CredentialAttemptAdmission>map(CredentialAttemptAdmission.Blocked::new)
+        .orElseGet(() -> insert(target, attemptedAt));
   }
 
   @Override
@@ -106,22 +92,71 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
         .execute();
   }
 
-  private Optional<CredentialAttemptAdmission> admissionFor(
-      CredentialAttemptTarget target, CredentialAttemptPolicy.Limited policy, Instant attemptedAt) {
-    var now = offsetOf(attemptedAt);
+  private CredentialAttemptAdmission insert(CredentialAttemptTarget target, Instant attemptedAt) {
+    var id = UUID.randomUUID();
+    var ipAddress = DSL.val(target.ipAddress()).cast(CREDENTIAL_ATTEMPT.IP_ADDRESS.getDataType());
+    dsl.insertInto(
+            CREDENTIAL_ATTEMPT,
+            CREDENTIAL_ATTEMPT.ID,
+            CREDENTIAL_ATTEMPT.CREDENTIAL_KIND,
+            CREDENTIAL_ATTEMPT.ACCOUNT_ID,
+            CREDENTIAL_ATTEMPT.PROFILE_ID,
+            CREDENTIAL_ATTEMPT.CREDENTIAL_ID,
+            CREDENTIAL_ATTEMPT.IP_ADDRESS,
+            CREDENTIAL_ATTEMPT.ATTEMPTED_AT)
+        .select(
+            dsl.select(
+                DSL.val(id),
+                DSL.val(generatedKind(target)),
+                DSL.val(target.accountId(), CREDENTIAL_ATTEMPT.ACCOUNT_ID.getDataType()),
+                DSL.val(target.profileId(), CREDENTIAL_ATTEMPT.PROFILE_ID.getDataType()),
+                DSL.val(target.credentialId(), CREDENTIAL_ATTEMPT.CREDENTIAL_ID.getDataType()),
+                ipAddress,
+                DSL.val(offsetOf(attemptedAt))))
+        .execute();
+
+    return new CredentialAttemptAdmission.Reserved(new CredentialAttemptReservation(id, target));
+  }
+
+  /**
+   * The failures fetched reach back one window plus one throttle: that is the oldest failure that
+   * can still anchor a lockout running at {@code now}.
+   */
+  private CredentialAttemptHistory history(
+      CredentialAttemptTarget target, CredentialAttemptPolicy.Limited policy, Instant now) {
     var latestSuccess = latestSuccess(target);
-    var lockout = activeLockout(target, policy, latestSuccess, now);
-    if (lockout.isPresent()) {
-      return Optional.of(
-          new CredentialAttemptAdmission.Blocked(Duration.between(now, lockout.orElseThrow())));
-    }
-
-    var recent = recentAttempts(target, policy, latestSuccess, now);
-    if (recent.size() < policy.maximumFailures()) {
-      return Optional.empty();
-    }
-
-    return Optional.of(new CredentialAttemptAdmission.Blocked(recent.retryAfter(now, policy)));
+    var earliestRelevant =
+        offsetOf(now.minus(policy.failureWindow()).minus(policy.throttleDuration()));
+    var failures =
+        dsl
+            .select(CREDENTIAL_ATTEMPT.COMPLETED_AT)
+            .from(CREDENTIAL_ATTEMPT)
+            .where(targetCondition(target))
+            .and(
+                CREDENTIAL_ATTEMPT.RESULT.eq(
+                    com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.FAILED))
+            .and(after(CREDENTIAL_ATTEMPT.COMPLETED_AT, latestSuccess))
+            .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.ge(earliestRelevant))
+            .orderBy(CREDENTIAL_ATTEMPT.COMPLETED_AT.asc())
+            .fetch(CREDENTIAL_ATTEMPT.COMPLETED_AT)
+            .stream()
+            .map(OffsetDateTime::toInstant)
+            .toList();
+    var pendingExpiries =
+        dsl
+            .select(CREDENTIAL_ATTEMPT.ATTEMPTED_AT)
+            .from(CREDENTIAL_ATTEMPT)
+            .where(targetCondition(target))
+            .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.isNull())
+            .and(
+                CREDENTIAL_ATTEMPT.ATTEMPTED_AT.gt(
+                    offsetOf(now.minus(ABANDONED_RESERVATION_TIMEOUT))))
+            .and(after(CREDENTIAL_ATTEMPT.ATTEMPTED_AT, latestSuccess))
+            .fetch(CREDENTIAL_ATTEMPT.ATTEMPTED_AT)
+            .stream()
+            .map(attemptedAt -> attemptedAt.toInstant().plus(ABANDONED_RESERVATION_TIMEOUT))
+            .toList();
+    return new CredentialAttemptHistory(failures, pendingExpiries);
   }
 
   private Optional<OffsetDateTime> latestSuccess(CredentialAttemptTarget target) {
@@ -137,78 +172,9 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
             .fetchOne(DSL.max(CREDENTIAL_ATTEMPT.COMPLETED_AT)));
   }
 
-  private Optional<OffsetDateTime> activeLockout(
-      CredentialAttemptTarget target,
-      CredentialAttemptPolicy.Limited policy,
-      Optional<OffsetDateTime> latestSuccess,
-      OffsetDateTime now) {
-    var earliestRelevant = now.minus(policy.failureWindow()).minus(policy.throttleDuration());
-    var condition =
-        completedFailureCondition(target, latestSuccess)
-            .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.ge(earliestRelevant));
-    var failures =
-        dsl.select(CREDENTIAL_ATTEMPT.COMPLETED_AT)
-            .from(CREDENTIAL_ATTEMPT)
-            .where(condition)
-            .orderBy(CREDENTIAL_ATTEMPT.COMPLETED_AT.asc())
-            .fetch(CREDENTIAL_ATTEMPT.COMPLETED_AT);
-
-    for (var last = failures.size() - 1; last >= policy.maximumFailures() - 1; last--) {
-      var first = failures.get(last - policy.maximumFailures() + 1);
-      var threshold = failures.get(last);
-      if (Duration.between(first, threshold).compareTo(policy.failureWindow()) > 0) {
-        continue;
-      }
-
-      var lockoutEnds = threshold.plus(policy.throttleDuration());
-      if (lockoutEnds.isAfter(now)) {
-        return Optional.of(lockoutEnds);
-      }
-    }
-
-    return Optional.empty();
-  }
-
-  private RecentAttempts recentAttempts(
-      CredentialAttemptTarget target,
-      CredentialAttemptPolicy.Limited policy,
-      Optional<OffsetDateTime> latestSuccess,
-      OffsetDateTime now) {
-    var failures =
-        dsl.select(CREDENTIAL_ATTEMPT.COMPLETED_AT)
-            .from(CREDENTIAL_ATTEMPT)
-            .where(completedFailureCondition(target, latestSuccess))
-            .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.ge(now.minus(policy.failureWindow())))
-            .fetch(CREDENTIAL_ATTEMPT.COMPLETED_AT);
-    var pendingCondition =
-        targetCondition(target)
-            .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.isNull())
-            .and(CREDENTIAL_ATTEMPT.ATTEMPTED_AT.gt(now.minus(ABANDONED_RESERVATION_TIMEOUT)));
-    if (latestSuccess.isPresent()) {
-      pendingCondition =
-          pendingCondition.and(CREDENTIAL_ATTEMPT.ATTEMPTED_AT.gt(latestSuccess.orElseThrow()));
-    }
-    var pending =
-        dsl.select(CREDENTIAL_ATTEMPT.ATTEMPTED_AT)
-            .from(CREDENTIAL_ATTEMPT)
-            .where(pendingCondition)
-            .fetch(CREDENTIAL_ATTEMPT.ATTEMPTED_AT);
-
-    return new RecentAttempts(failures, pending);
-  }
-
-  private Condition completedFailureCondition(
-      CredentialAttemptTarget target, Optional<OffsetDateTime> latestSuccess) {
-    var condition =
-        targetCondition(target)
-            .and(
-                CREDENTIAL_ATTEMPT.RESULT.eq(
-                    com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.FAILED));
-    if (latestSuccess.isPresent()) {
-      return condition.and(CREDENTIAL_ATTEMPT.COMPLETED_AT.gt(latestSuccess.orElseThrow()));
-    }
-
-    return condition;
+  private static Condition after(
+      Field<OffsetDateTime> column, Optional<OffsetDateTime> exclusiveBound) {
+    return exclusiveBound.map(column::gt).orElseGet(DSL::noCondition);
   }
 
   private Condition targetCondition(CredentialAttemptTarget target) {
@@ -232,48 +198,45 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
     return column.eq(id);
   }
 
+  /**
+   * The key names exactly the identifiers {@link #targetCondition} matches, so the lock covers the
+   * read set of the admission it serializes; a hash collision only adds serialization.
+   */
   private void lockTarget(CredentialAttemptTarget target) {
     var key =
         "%s:%s:%s:%s"
             .formatted(
                 target.kind(), target.accountId(), target.profileId(), target.credentialId());
-    var keyHash =
-        DSL.function(
-            DSL.name("hashtextextended"), SQLDataType.BIGINT, DSL.val(key), DSL.inline(0L));
-    var lock = DSL.function(DSL.name("pg_advisory_xact_lock"), SQLDataType.OTHER, keyHash);
-    dsl.setLocal(DSL.name("lock_timeout"), DSL.inline(LOCK_TIMEOUT.toMillis() + "ms")).execute();
-    dsl.select(lock).execute();
+    transactionLocks.lockNormalizedKey(LOCK_NAMESPACE, key, LOCK_TIMEOUT);
   }
 
   private static com.streamarr.server.jooq.generated.enums.CredentialKind generatedKind(
       CredentialAttemptTarget target) {
-    return com.streamarr.server.jooq.generated.enums.CredentialKind.valueOf(target.kind().name());
+    return switch (target.kind()) {
+      case ACCOUNT_LOGIN -> com.streamarr.server.jooq.generated.enums.CredentialKind.ACCOUNT_LOGIN;
+      case ACCOUNT_PASSWORD_VERIFICATION ->
+          com.streamarr.server.jooq.generated.enums.CredentialKind.ACCOUNT_PASSWORD_VERIFICATION;
+      case PROFILE_PIN -> com.streamarr.server.jooq.generated.enums.CredentialKind.PROFILE_PIN;
+      case ACCOUNT_INVITATION_CODE ->
+          com.streamarr.server.jooq.generated.enums.CredentialKind.ACCOUNT_INVITATION_CODE;
+      case PASSWORD_RESET_CODE ->
+          com.streamarr.server.jooq.generated.enums.CredentialKind.PASSWORD_RESET_CODE;
+      case PROFILE_MANAGER_INVITATION_CODE ->
+          com.streamarr.server.jooq.generated.enums.CredentialKind.PROFILE_MANAGER_INVITATION_CODE;
+      case DEVICE_PAIRING_CODE ->
+          com.streamarr.server.jooq.generated.enums.CredentialKind.DEVICE_PAIRING_CODE;
+    };
   }
 
   private static com.streamarr.server.jooq.generated.enums.CredentialAttemptResult generatedResult(
       CredentialAttemptResult result) {
-    return com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.valueOf(result.name());
+    return switch (result) {
+      case FAILED -> com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.FAILED;
+      case SUCCEEDED -> com.streamarr.server.jooq.generated.enums.CredentialAttemptResult.SUCCEEDED;
+    };
   }
 
   private static OffsetDateTime offsetOf(Instant instant) {
     return instant.atOffset(ZoneOffset.UTC);
-  }
-
-  private record RecentAttempts(List<OffsetDateTime> failures, List<OffsetDateTime> pending) {
-
-    int size() {
-      return failures.size() + pending.size();
-    }
-
-    Duration retryAfter(OffsetDateTime now, CredentialAttemptPolicy.Limited policy) {
-      var failureExpiry = failures.stream().map(failure -> failure.plus(policy.failureWindow()));
-      var pendingExpiry =
-          pending.stream().map(attempt -> attempt.plus(ABANDONED_RESERVATION_TIMEOUT));
-      var availableAt =
-          java.util.stream.Stream.concat(failureExpiry, pendingExpiry)
-              .min(OffsetDateTime::compareTo)
-              .orElseThrow();
-      return Duration.between(now, availableAt);
-    }
   }
 }
