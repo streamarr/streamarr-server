@@ -12,8 +12,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 /**
- * Shared checkpoint for authenticated Account-password verification. It reserves before Argon2,
- * equalizes disabled or unreadable Accounts, and must be called outside a transaction.
+ * Shared checkpoint for authenticated Account-password verification. It journals the attempt before
+ * Argon2 and equalizes disabled or unreadable Accounts. Never call it inside a transaction: Argon2
+ * would pin a pooled connection for its whole run, and the journal's REQUIRES_NEW reservation and
+ * completion would each need a second connection while the caller's sat suspended.
  */
 @Component
 @Slf4j

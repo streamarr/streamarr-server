@@ -10,6 +10,8 @@ CREATE TYPE credential_kind AS ENUM (
 
 CREATE TYPE credential_attempt_result AS ENUM ('FAILED', 'SUCCEEDED');
 
+-- Security history must survive deletion of its subjects: no foreign keys to accounts,
+-- profiles, or credential rows (ADR 0028).
 CREATE TABLE credential_attempt
 (
     id              UUID                      NOT NULL DEFAULT gen_random_uuid(),
@@ -17,6 +19,7 @@ CREATE TABLE credential_attempt
     account_id      UUID,
     profile_id      UUID,
     credential_id   UUID,
+    -- Observational only: no index and no admission policy (ADR 0028).
     ip_address      INET                      NOT NULL,
     attempted_at    TIMESTAMP WITH TIME ZONE  NOT NULL,
     completed_at    TIMESTAMP WITH TIME ZONE,

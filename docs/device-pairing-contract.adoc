@@ -179,7 +179,7 @@ Request `{"userCode": "BCDF-GHJK", "decision": "APPROVE"}`. `decision` is requir
 Errors: `400 INVALID_DECISION` (missing or unknown value — validated *before* any code lookup, so a malformed request never spends guessing budget or reveals whether a code exists) · `400 INVALID_USER_CODE` · `404 DEVICE_CODE_NOT_FOUND` · `400 DEVICE_CODE_EXPIRED` · `409 DEVICE_CODE_NOT_PENDING` (already decided or consumed) · `429 TOO_MANY_ATTEMPTS`.
 
 The asymmetry with lookup is deliberate: lookup collapses expired into `404` because a probe deserves no detail, but the decision caller is a signed-in person mid-flow on a code they demonstrably saw, and "it expired, get a fresh one on the TV" is actionable where a bare not-found reads as a typo.
-No enumeration value leaks — both endpoints share one account-keyed guessing budget, and reaching a decision implies a prior successful lookup in the normal flow.
+No enumeration value leaks — both endpoints share one account-keyed attempt limit, journaled in PostgreSQL across instances (ADR 0028), and reaching a decision implies a prior successful lookup in the normal flow.
 
 == Domain states are not failures
 
