@@ -122,6 +122,14 @@ public class DevicePairingService {
     public String toString() {
       return "PairingLookupCommand[userCode=REDACTED, ipAddress=%s]".formatted(ipAddress);
     }
+
+    public static class PairingLookupCommandBuilder {
+
+      @Override
+      public String toString() {
+        return "PairingLookupCommandBuilder[REDACTED]";
+      }
+    }
   }
 
   @Builder
@@ -133,6 +141,14 @@ public class DevicePairingService {
       return "PairingDecisionCommand[userCode=REDACTED, decision=%s, householdId=%s,"
               .formatted(decision, householdId)
           + " ipAddress=%s]".formatted(ipAddress);
+    }
+
+    public static class PairingDecisionCommandBuilder {
+
+      @Override
+      public String toString() {
+        return "PairingDecisionCommandBuilder[REDACTED]";
+      }
     }
   }
 }

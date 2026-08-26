@@ -12,4 +12,12 @@ public record RedeemPasswordResetCommand(
     return "RedeemPasswordResetCommand[code=REDACTED, newPassword=REDACTED, ipAddress=%s]"
         .formatted(ipAddress);
   }
+
+  public static class RedeemPasswordResetCommandBuilder {
+
+    @Override
+    public String toString() {
+      return "RedeemPasswordResetCommandBuilder[REDACTED]";
+    }
+  }
 }
