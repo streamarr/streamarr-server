@@ -92,6 +92,19 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should admit an attempt exactly when the failure window closes")
+  void shouldAdmitAnAttemptExactlyWhenTheFailureWindowCloses() {
+    var target = resolvedTarget();
+    for (var failure = 0; failure < 5; failure++) {
+      repository.complete(reserve(target, NOW), CredentialAttemptResult.FAILED, NOW);
+    }
+
+    // The lockout and the window both end here; a client retrying at Retry-After is admitted.
+    assertThat(repository.reserve(target, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(15))))
+        .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
+  }
+
+  @Test
   @DisplayName("Should count fresh pending reservations and ignore abandoned reservations")
   void shouldCountFreshPendingReservationsAndIgnoreAbandonedReservations() {
     var target = resolvedTarget();
