@@ -71,9 +71,10 @@ class AdministrationQueryServiceTest {
   @DisplayName("Should forbid the invitation catalogue when the caller is denied")
   void shouldForbidInvitationCatalogueWhenCallerIsDenied() {
     authorization.denyAll();
+    var identity = authorization.currentIdentity();
     var options = PaginationFixture.buildForwardOptions(10, MediaFilter.builder().build());
 
-    assertThatThrownBy(() -> service.accountInvitations(authorization.currentIdentity(), options))
+    assertThatThrownBy(() -> service.accountInvitations(identity, options))
         .isInstanceOf(AccessDeniedException.class);
   }
 }

@@ -129,11 +129,12 @@ class AccountInvitationServiceTest {
   @DisplayName("Should refuse acceptance with a typed conflict when a Household invariant fails")
   void shouldRefuseAcceptanceWithTypedConflictWhenHouseholdInvariantFails(
       InvariantFailure failure) {
-    var service = serviceUsing(new ConstraintViolatingUserAccountRepository(failure.constraint()));
+    var serviceWithViolatedInvariant =
+        serviceUsing(new ConstraintViolatingUserAccountRepository(failure.constraint()));
     var issued = pendingInvitation(pendingInvitationBuilder().build());
     var command = acceptCommand(issued.code());
 
-    assertThatThrownBy(() -> service.accept(command))
+    assertThatThrownBy(() -> serviceWithViolatedInvariant.accept(command))
         .isInstanceOf(InvitationNotAcceptableException.class)
         .hasMessage(failure.message());
   }
@@ -166,11 +167,11 @@ class AccountInvitationServiceTest {
   @Test
   @DisplayName("Should fail loudly when the Household guard row is missing at acceptance")
   void shouldFailLoudlyWhenHouseholdGuardRowIsMissingAtAcceptance() {
-    var service = serviceUsing(new GuardlessUserAccountRepository());
+    var serviceWithoutGuardRow = serviceUsing(new GuardlessUserAccountRepository());
     var issued = pendingInvitation(pendingInvitationBuilder().build());
     var command = acceptCommand(issued.code());
 
-    assertThatThrownBy(() -> service.accept(command))
+    assertThatThrownBy(() -> serviceWithoutGuardRow.accept(command))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("household_guard");
   }
@@ -284,15 +285,15 @@ class AccountInvitationServiceTest {
   @DisplayName("Should not spend an opaque-code budget slot when unknown public ids are sprayed")
   void shouldNotSpendOpaqueCodeBudgetSlotWhenUnknownPublicIdsAreSprayed() {
     // A single slot: any key taken by the spray would refuse the valid code below.
-    var service = serviceUsing(accounts, throttleTracking(1));
+    var singleSlotService = serviceUsing(accounts, throttleTracking(1));
     var issued = pendingInvitation(pendingInvitationBuilder().build());
     for (var key = 0; key < 3; key++) {
       var sprayed = "sprayed-public-id-" + key + ".secret";
-      assertThatThrownBy(() -> service.lookup(sprayed))
+      assertThatThrownBy(() -> singleSlotService.lookup(sprayed))
           .isInstanceOf(InvalidOneTimeCodeException.class);
     }
 
-    assertThatCode(() -> service.lookup(issued.code())).doesNotThrowAnyException();
+    assertThatCode(() -> singleSlotService.lookup(issued.code())).doesNotThrowAnyException();
   }
 
   @Test
@@ -300,14 +301,14 @@ class AccountInvitationServiceTest {
   void shouldRefuseValidCodeWhenEveryOpaqueCodeBudgetSlotIsHeld() {
     // Slots belong to publicIds that exist, so only issued codes can fill them; the budget then
     // fails closed rather than growing without bound.
-    var service = serviceUsing(accounts, throttleTracking(1));
+    var singleSlotService = serviceUsing(accounts, throttleTracking(1));
     var occupied = pendingInvitation(pendingInvitationBuilder().build());
-    var refused = pendingInvitation(pendingInvitationBuilder().build());
+    var refusedCode = pendingInvitation(pendingInvitationBuilder().build()).code();
     var wrongGuess = occupied.publicId() + ".not-the-secret";
-    assertThatThrownBy(() -> service.lookup(wrongGuess))
+    assertThatThrownBy(() -> singleSlotService.lookup(wrongGuess))
         .isInstanceOf(InvalidOneTimeCodeException.class);
 
-    assertThatThrownBy(() -> service.lookup(refused.code()))
+    assertThatThrownBy(() -> singleSlotService.lookup(refusedCode))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
   }
 

@@ -78,10 +78,11 @@ class PasswordResetServiceTest {
   @Test
   @DisplayName("Should fail loudly when the locked Account rejects the password write")
   void shouldFailLoudlyWhenLockedAccountRejectsPasswordWrite() {
-    var service = serviceUsing(new PasswordWriteRefusingUserAccountRepository());
-    var issued = pendingCode();
+    var serviceRefusingPasswordWrite =
+        serviceUsing(new PasswordWriteRefusingUserAccountRepository());
+    var code = pendingCode().code();
 
-    assertThatThrownBy(() -> service.redeem(issued.code(), "new password"))
+    assertThatThrownBy(() -> serviceRefusingPasswordWrite.redeem(code, "new password"))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining(account.getId().toString());
   }
@@ -164,12 +165,13 @@ class PasswordResetServiceTest {
   void shouldThrottleValidResetCodeWhenVerificationBudgetIsExhausted() {
     var issued = pendingCode();
     var wrongCode = issued.publicId() + ".wrong-secret";
+    var validCode = issued.code();
     for (var attempt = 0; attempt < 5; attempt++) {
       assertThatThrownBy(() -> service.redeem(wrongCode, "new passphrase"))
           .isInstanceOf(InvalidOneTimeCodeException.class);
     }
 
-    assertThatThrownBy(() -> service.redeem(issued.code(), "new passphrase"))
+    assertThatThrownBy(() -> service.redeem(validCode, "new passphrase"))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
     assertThat(accounts.findById(account.getId()).orElseThrow().getPasswordHash()).isEqualTo("old");
   }

@@ -137,11 +137,9 @@ class AccountInvitationPaginationIT extends AbstractIntegrationTest {
   @DisplayName("Should reject an invitation cursor when its creation time is missing")
   void shouldRejectInvitationCursorWhenCreationTimeIsMissing() {
     var invitation = issue("missing-sort@example.com");
+    var cursor = continuation(invitation.getId(), null);
 
-    assertThatThrownBy(
-            () ->
-                administrationQueryService.accountInvitations(
-                    identity, continuation(invitation.getId(), null)))
+    assertThatThrownBy(() -> administrationQueryService.accountInvitations(identity, cursor))
         .isInstanceOf(InvalidPaginationCursorException.class)
         .hasMessage("Cursor sort value is required.");
   }
@@ -150,11 +148,9 @@ class AccountInvitationPaginationIT extends AbstractIntegrationTest {
   @DisplayName("Should reject an invitation cursor when its creation time is invalid")
   void shouldRejectInvitationCursorWhenCreationTimeIsInvalid() {
     var invitation = issue("invalid-sort@example.com");
+    var cursor = continuation(invitation.getId(), "not-an-instant");
 
-    assertThatThrownBy(
-            () ->
-                administrationQueryService.accountInvitations(
-                    identity, continuation(invitation.getId(), "not-an-instant")))
+    assertThatThrownBy(() -> administrationQueryService.accountInvitations(identity, cursor))
         .isInstanceOf(InvalidPaginationCursorException.class)
         .hasMessage("Cursor sort value is invalid.");
   }

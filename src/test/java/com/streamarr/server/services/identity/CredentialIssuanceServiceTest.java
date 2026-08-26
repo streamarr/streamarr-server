@@ -349,9 +349,10 @@ class CredentialIssuanceServiceTest {
   @DisplayName("Should forbid invitation cancellation when the caller is denied")
   void shouldForbidInvitationCancellationWhenCallerIsDenied() {
     var identity = authorization.currentIdentity();
+    var invitationId = UUID.randomUUID();
     authorization.denyAll();
 
-    assertThatThrownBy(() -> service.cancelAccountInvitation(identity, UUID.randomUUID()))
+    assertThatThrownBy(() -> service.cancelAccountInvitation(identity, invitationId))
         .isInstanceOf(AccessDeniedException.class);
     assertThat(invitations.findAll()).isEmpty();
   }
@@ -458,11 +459,10 @@ class CredentialIssuanceServiceTest {
             intent instanceof Intent.IssuePasswordReset
                 ? new Decision.Denied<>(Decision.DenialReason.POLICY)
                 : allowed());
+    var identity = authorization.currentIdentity();
+    var residentId = resident.getId();
 
-    assertThatThrownBy(
-            () ->
-                service.issuePasswordReset(
-                    authorization.currentIdentity(), resident.getId(), "locked out"))
+    assertThatThrownBy(() -> service.issuePasswordReset(identity, residentId, "locked out"))
         .isInstanceOf(AccessDeniedException.class);
     assertThat(resetCodes.findAll()).isEmpty();
   }
@@ -500,11 +500,11 @@ class CredentialIssuanceServiceTest {
     var issuerId = authorization.currentIdentity().accountId();
     var vanishingAccounts = accountsMissingLockFor(issuerId);
     var serviceWithVanishingIssuer = serviceUsing(vanishingAccounts);
+    var identity = authorization.currentIdentity();
+    var residentId = resident.getId();
 
     assertThatThrownBy(
-            () ->
-                serviceWithVanishingIssuer.issuePasswordReset(
-                    authorization.currentIdentity(), resident.getId(), "locked out"))
+            () -> serviceWithVanishingIssuer.issuePasswordReset(identity, residentId, "locked out"))
         .isInstanceOf(AccessDeniedException.class);
     assertThat(resetCodes.findAll()).isEmpty();
     assertThat(audit.entries()).isEmpty();
@@ -525,11 +525,10 @@ class CredentialIssuanceServiceTest {
 
           return allowed();
         });
+    var identity = authorization.currentIdentity();
+    var residentId = resident.getId();
 
-    assertThatThrownBy(
-            () ->
-                service.issuePasswordReset(
-                    authorization.currentIdentity(), resident.getId(), "locked out"))
+    assertThatThrownBy(() -> service.issuePasswordReset(identity, residentId, "locked out"))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 

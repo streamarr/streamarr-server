@@ -65,8 +65,9 @@ class OpaqueCodeResolverTest {
     var issued = opaqueCodes.issue();
     var invitation = pendingInvitation(issued);
     var wrongSecret = issued.publicId() + ".not-the-secret";
+    var lookup = byPublicId(invitation);
 
-    assertThatThrownBy(() -> resolver.resolvePending(wrongSecret, byPublicId(invitation)))
+    assertThatThrownBy(() -> resolver.resolvePending(wrongSecret, lookup))
         .isInstanceOf(InvalidOneTimeCodeException.class);
 
     assertThat(events.list)
@@ -100,8 +101,10 @@ class OpaqueCodeResolverTest {
     var issued = opaqueCodes.issue();
     var invitation = pendingInvitation(issued);
     invitation.setExpiresAt(NOW.minusSeconds(1));
+    var code = issued.code();
+    var lookup = byPublicId(invitation);
 
-    assertThatThrownBy(() -> resolver.resolvePending(issued.code(), byPublicId(invitation)))
+    assertThatThrownBy(() -> resolver.resolvePending(code, lookup))
         .isInstanceOf(InvalidOneTimeCodeException.class);
 
     assertThat(events.list)
