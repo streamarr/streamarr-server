@@ -107,6 +107,16 @@ class ArchitectureTest {
           .as("Services must not depend on graphql");
 
   @ArchTest
+  static final ArchRule servicesMustNotDependOnDrivingAdapterTypes =
+      noClasses()
+          .that()
+          .resideInAPackage("..services..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage("jakarta.servlet..", "com.netflix.graphql.dgs..", "graphql..")
+          .as("Services receive protocol data explicitly and must not depend on HTTP or DGS types");
+
+  @ArchTest
   static final ArchRule authServicesMustNotDependOnJooq =
       noClasses()
           .that()
@@ -205,10 +215,8 @@ class ArchitectureTest {
   static final ArchRule repositoryMethodsMustNotUseQueryAnnotations =
       repositoryMethodsMustNotUseQueryAnnotations();
 
-  // Every authenticated Account-password check must get the shared budget, the disabled-Account
-  // rule, and the one-full-cost-operation timing rule; a direct encoder comparison gets none of
-  // them. Login is the allow-listed exception (no authenticated Account yet, email+source key),
-  // and the equalizer is the burn itself.
+  // Authenticated Account-password checks share one throttle and timing contract. Login is exempt
+  // because no authenticated Account exists yet.
   @ArchTest
   static final ArchRule accountPasswordMatchesMustUseVerifier =
       accountPasswordMatchesMustUseVerifier();
@@ -420,8 +428,8 @@ class ArchitectureTest {
                 .and(target(rawParameterTypes(CharSequence.class, String.class))))
         .as(
             "Authenticated Account password checks must go through AccountPasswordVerifier; only"
-                + " login (distinct email+source throttle), password-encoder composition, the"
-                + " timing equalizer, and the Profile PIN verifier (distinct PROFILE_PIN budget)"
+                + " login, password-encoder composition, the timing equalizer, and the Profile"
+                + " PIN verifier (distinct PROFILE_PIN target)"
                 + " compare directly");
   }
 

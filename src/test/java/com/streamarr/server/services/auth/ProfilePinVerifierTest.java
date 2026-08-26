@@ -8,9 +8,11 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.ThrowableProxyUtil;
 import ch.qos.logback.core.read.ListAppender;
-import com.streamarr.server.config.security.AuthThrottleProperties;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.exceptions.InvalidProfilePinException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ProfileFixture;
 import java.time.Duration;
@@ -25,25 +27,37 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 @DisplayName("Profile Pin Verifier Tests")
 class ProfilePinVerifierTest {
 
-  private final CredentialGuessThrottle throttle =
-      new CredentialGuessThrottle(
-          AuthThrottleProperties.builder().maxAttempts(2).window(Duration.ofMinutes(15)).build(),
-          new MutableClock());
-  private final ProfilePinVerifier verifier = new ProfilePinVerifier(new TestEncoder(), throttle);
+  private static final String IP_ADDRESS = "192.0.2.21";
+
+  private final MutableClock clock = new MutableClock();
+  private final FakeCredentialAttemptRepository credentialAttempts =
+      new FakeCredentialAttemptRepository();
+  private final ProfilePinVerifier verifier =
+      new ProfilePinVerifier(new TestEncoder(), credentialAttempts.gate(clock));
   private final UUID accountId = UUID.randomUUID();
 
   @Test
-  @DisplayName("Should accept the PIN and reset the budget when the PIN is correct")
-  void shouldAcceptPinAndResetBudgetWhenPinIsCorrect() {
+  @DisplayName("Should accept the PIN and reset the failure sequence when the PIN is correct")
+  void shouldAcceptPinAndResetFailureSequenceWhenPinIsCorrect() {
     var profile =
         ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash("pin:4242").build();
 
-    assertThatThrownBy(() -> verifier.verify(accountId, profile, "0000"))
+    assertThatThrownBy(() -> verifier.verify(accountId, profile, "0000", IP_ADDRESS))
         .isInstanceOf(InvalidProfilePinException.class);
-    assertThatCode(() -> verifier.verify(accountId, profile, "4242")).doesNotThrowAnyException();
-    assertThatThrownBy(() -> verifier.verify(accountId, profile, "0000"))
+    assertThatCode(() -> verifier.verify(accountId, profile, "4242", IP_ADDRESS))
+        .doesNotThrowAnyException();
+    assertThatThrownBy(() -> verifier.verify(accountId, profile, "0000", IP_ADDRESS))
         .isInstanceOf(InvalidProfilePinException.class);
-    assertThatCode(() -> verifier.verify(accountId, profile, "4242")).doesNotThrowAnyException();
+    assertThatCode(() -> verifier.verify(accountId, profile, "4242", IP_ADDRESS))
+        .doesNotThrowAnyException();
+
+    assertThat(credentialAttempts.attempts().getFirst().target().kind())
+        .isEqualTo(CredentialKind.PROFILE_PIN);
+    assertThat(credentialAttempts.attempts().getFirst().target().profileId())
+        .isEqualTo(profile.getId());
+    assertThat(credentialAttempts.attempts().getFirst().target().ipAddress()).isEqualTo(IP_ADDRESS);
+    assertThat(credentialAttempts.attempts().getFirst().result())
+        .isEqualTo(CredentialAttemptResult.FAILED);
   }
 
   @Test
@@ -52,26 +66,28 @@ class ProfilePinVerifierTest {
     var profile =
         ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash("pin:4242").build();
 
-    assertThatThrownBy(() -> verifier.verify(accountId, profile, null))
+    assertThatThrownBy(() -> verifier.verify(accountId, profile, null, IP_ADDRESS))
         .isInstanceOf(InvalidProfilePinException.class);
-    assertThatThrownBy(() -> verifier.verify(accountId, profile, " "))
+    assertThatThrownBy(() -> verifier.verify(accountId, profile, " ", IP_ADDRESS))
         .isInstanceOf(InvalidProfilePinException.class);
   }
 
   @Test
-  @DisplayName("Should throttle before hashing when the Account and Profile budget is exhausted")
-  void shouldThrottleBeforeHashingWhenAccountAndProfileBudgetIsExhausted() {
+  @DisplayName("Should throttle before hashing when the Account and Profile limit is exhausted")
+  void shouldThrottleBeforeHashingWhenAccountAndProfileLimitIsExhausted() {
     var profile =
         ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash("pin:4242").build();
     for (var attempt = 0; attempt < 2; attempt++) {
-      assertThatThrownBy(() -> verifier.verify(accountId, profile, "0000"))
+      assertThatThrownBy(() -> verifier.verify(accountId, profile, "0000", IP_ADDRESS))
           .isInstanceOf(InvalidProfilePinException.class);
     }
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
-    assertThatThrownBy(() -> verifier.verify(accountId, profile, "4242"))
+    assertThatThrownBy(() -> verifier.verify(accountId, profile, "4242", IP_ADDRESS))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
-    // Another Account guessing the same Profile has its own budget.
-    assertThatCode(() -> verifier.verify(UUID.randomUUID(), profile, "4242"))
+    // Another Account guessing the same Profile has its own target.
+    credentialAttempts.allowReservations();
+    assertThatCode(() -> verifier.verify(UUID.randomUUID(), profile, "4242", IP_ADDRESS))
         .doesNotThrowAnyException();
   }
 
@@ -81,7 +97,7 @@ class ProfilePinVerifierTest {
     var profile =
         ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash("unreadable").build();
 
-    assertThatThrownBy(() -> verifier.verify(accountId, profile, "4242"))
+    assertThatThrownBy(() -> verifier.verify(accountId, profile, "4242", IP_ADDRESS))
         .isInstanceOf(InvalidProfilePinException.class);
   }
 
@@ -97,7 +113,7 @@ class ProfilePinVerifierTest {
     logger.addAppender(appender);
 
     try {
-      assertThatThrownBy(() -> verifier.verify(accountId, profile, "4242"))
+      assertThatThrownBy(() -> verifier.verify(accountId, profile, "4242", IP_ADDRESS))
           .isInstanceOf(InvalidProfilePinException.class);
 
       assertThat(appender.list)

@@ -9,6 +9,7 @@ import com.streamarr.server.jooq.generated.tables.AccountInvitationReoffer;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
+import com.streamarr.server.jooq.generated.tables.CredentialAttempt;
 import com.streamarr.server.jooq.generated.tables.DeviceAuthorization;
 import com.streamarr.server.jooq.generated.tables.DeviceRegistration;
 import com.streamarr.server.jooq.generated.tables.Episode;
@@ -53,6 +54,7 @@ import com.streamarr.server.jooq.generated.tables.records.AccountInvitationReoff
 import com.streamarr.server.jooq.generated.tables.records.AuthSessionRecord;
 import com.streamarr.server.jooq.generated.tables.records.BaseCollectableRecord;
 import com.streamarr.server.jooq.generated.tables.records.CompanyRecord;
+import com.streamarr.server.jooq.generated.tables.records.CredentialAttemptRecord;
 import com.streamarr.server.jooq.generated.tables.records.DeviceAuthorizationRecord;
 import com.streamarr.server.jooq.generated.tables.records.DeviceRegistrationRecord;
 import com.streamarr.server.jooq.generated.tables.records.EpisodeRecord;
@@ -120,6 +122,7 @@ public class Keys {
     public static final UniqueKey<BaseCollectableRecord> BASE_COLLECTABLE_PKEY = Internal.createUniqueKey(BaseCollectable.BASE_COLLECTABLE, DSL.name("base_collectable_pkey"), new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true);
     public static final UniqueKey<CompanyRecord> COMPANY_PKEY = Internal.createUniqueKey(Company.COMPANY, DSL.name("company_pkey"), new TableField[] { Company.COMPANY.ID }, true);
     public static final UniqueKey<CompanyRecord> COMPANY_SOURCE_ID_UNIQUE = Internal.createUniqueKey(Company.COMPANY, DSL.name("company_source_id_unique"), new TableField[] { Company.COMPANY.SOURCE_ID }, true);
+    public static final UniqueKey<CredentialAttemptRecord> CREDENTIAL_ATTEMPT_PKEY = Internal.createUniqueKey(CredentialAttempt.CREDENTIAL_ATTEMPT, DSL.name("credential_attempt_pkey"), new TableField[] { CredentialAttempt.CREDENTIAL_ATTEMPT.ID }, true);
     public static final UniqueKey<DeviceAuthorizationRecord> DEVICE_AUTHORIZATION_PKEY = Internal.createUniqueKey(DeviceAuthorization.DEVICE_AUTHORIZATION, DSL.name("device_authorization_pkey"), new TableField[] { DeviceAuthorization.DEVICE_AUTHORIZATION.ID }, true);
     public static final UniqueKey<DeviceAuthorizationRecord> UQ_DEVICE_AUTHORIZATION_DEVICE_CODE_DIGEST = Internal.createUniqueKey(DeviceAuthorization.DEVICE_AUTHORIZATION, DSL.name("uq_device_authorization_device_code_digest"), new TableField[] { DeviceAuthorization.DEVICE_AUTHORIZATION.DEVICE_CODE_DIGEST }, true);
     public static final UniqueKey<DeviceAuthorizationRecord> UQ_DEVICE_AUTHORIZATION_USER_CODE = Internal.createUniqueKey(DeviceAuthorization.DEVICE_AUTHORIZATION, DSL.name("uq_device_authorization_user_code"), new TableField[] { DeviceAuthorization.DEVICE_AUTHORIZATION.USER_CODE }, true);

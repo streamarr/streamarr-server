@@ -7,10 +7,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
-import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.MutableClock;
@@ -59,24 +57,6 @@ class AuthSecurityEventLoggingTest {
     try (var logs = LogCapture.forClass(RefreshTokenService.class)) {
       assertThatThrownBy(() -> service.redeem(replayedToken))
           .isInstanceOf(TokenReuseDetectedException.class);
-
-      assertThat(logs.events()).anyMatch(event -> event.getLevel().isGreaterOrEqual(Level.WARN));
-    }
-  }
-
-  @Test
-  @DisplayName("Should log warning when login attempt is throttled")
-  void shouldLogWarningWhenLoginAttemptIsThrottled() {
-    var currentTime = new AtomicReference<>(Instant.parse("2026-01-01T00:00:00Z"));
-    var throttle =
-        new LoginThrottle(
-            AuthThrottleProperties.builder().maxAttempts(1).window(Duration.ofMinutes(15)).build(),
-            new MutableClock(currentTime));
-    throttle.registerAttempt("account@example.com", "127.0.0.1");
-
-    try (var logs = LogCapture.forClass(LoginThrottle.class)) {
-      assertThatThrownBy(() -> throttle.registerAttempt("account@example.com", "127.0.0.1"))
-          .isInstanceOf(TooManyLoginAttemptsException.class);
 
       assertThat(logs.events()).anyMatch(event -> event.getLevel().isGreaterOrEqual(Level.WARN));
     }

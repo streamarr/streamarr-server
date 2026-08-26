@@ -27,6 +27,7 @@ import com.streamarr.server.services.auth.DeviceAuthorizationServiceHarness;
 import com.streamarr.server.services.auth.DeviceDecision;
 import com.streamarr.server.services.identity.DevicePairingService.EligibleHouseholdDetails;
 import com.streamarr.server.services.identity.DevicePairingService.PairingDecisionCommand;
+import com.streamarr.server.services.identity.DevicePairingService.PairingLookupCommand;
 import java.time.Clock;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -95,7 +96,13 @@ class DevicePairingServiceTest {
   void shouldShowDeviceAndHouseholdsWhenApproverLooksUpCode() {
     var issued = deviceAuthorizationService.issue("Living Room TV", "esn-1");
 
-    var lookup = service.lookup(identity(), issued.userCode());
+    var lookup =
+        service.lookup(
+            identity(),
+            PairingLookupCommand.builder()
+                .userCode(issued.userCode())
+                .ipAddress("192.0.2.30")
+                .build());
 
     assertThat(lookup.authorization().deviceName()).isEqualTo("Living Room TV");
     assertThat(lookup.households())
@@ -153,6 +160,7 @@ class DevicePairingServiceTest {
             PairingDecisionCommand.builder()
                 .userCode(denied)
                 .decision(DeviceDecision.DENY)
+                .ipAddress("192.0.2.30")
                 .build());
     assertThat(view.status()).isEqualTo(DeviceAuthorizationStatus.DENIED);
 
@@ -170,6 +178,7 @@ class DevicePairingServiceTest {
         .userCode(userCode)
         .decision(DeviceDecision.APPROVE)
         .householdId(householdId)
+        .ipAddress("192.0.2.30")
         .build();
   }
 

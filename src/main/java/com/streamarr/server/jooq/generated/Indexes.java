@@ -7,6 +7,7 @@ package com.streamarr.server.jooq.generated;
 import com.streamarr.server.jooq.generated.tables.AccountInvitation;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
+import com.streamarr.server.jooq.generated.tables.CredentialAttempt;
 import com.streamarr.server.jooq.generated.tables.DeviceAuthorization;
 import com.streamarr.server.jooq.generated.tables.DeviceRegistration;
 import com.streamarr.server.jooq.generated.tables.Episode;
@@ -66,6 +67,9 @@ public class Indexes {
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_CREATED_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_created_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.CREATED_ON, BaseCollectable.BASE_COLLECTABLE.ID }, false);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID }, false);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_TITLE_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_title_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.TITLE, BaseCollectable.BASE_COLLECTABLE.ID }, false);
+    public static final Index IDX_CREDENTIAL_ATTEMPT_ATTEMPTED_AT = Internal.createIndex(DSL.name("idx_credential_attempt_attempted_at"), CredentialAttempt.CREDENTIAL_ATTEMPT, new OrderField[] { CredentialAttempt.CREDENTIAL_ATTEMPT.ATTEMPTED_AT }, false);
+    public static final Index IDX_CREDENTIAL_ATTEMPT_TARGET_COMPLETED = Internal.createIndex(DSL.name("idx_credential_attempt_target_completed"), CredentialAttempt.CREDENTIAL_ATTEMPT, new OrderField[] { CredentialAttempt.CREDENTIAL_ATTEMPT.CREDENTIAL_KIND, CredentialAttempt.CREDENTIAL_ATTEMPT.ACCOUNT_ID, CredentialAttempt.CREDENTIAL_ATTEMPT.PROFILE_ID, CredentialAttempt.CREDENTIAL_ATTEMPT.CREDENTIAL_ID, CredentialAttempt.CREDENTIAL_ATTEMPT.COMPLETED_AT.desc() }, false);
+    public static final Index IDX_CREDENTIAL_ATTEMPT_TARGET_PENDING = Internal.createIndex(DSL.name("idx_credential_attempt_target_pending"), CredentialAttempt.CREDENTIAL_ATTEMPT, new OrderField[] { CredentialAttempt.CREDENTIAL_ATTEMPT.CREDENTIAL_KIND, CredentialAttempt.CREDENTIAL_ATTEMPT.ACCOUNT_ID, CredentialAttempt.CREDENTIAL_ATTEMPT.PROFILE_ID, CredentialAttempt.CREDENTIAL_ATTEMPT.CREDENTIAL_ID, CredentialAttempt.CREDENTIAL_ATTEMPT.ATTEMPTED_AT.desc() }, false);
     public static final Index IDX_DEVICE_AUTHORIZATION_EXPIRES_AT = Internal.createIndex(DSL.name("idx_device_authorization_expires_at"), DeviceAuthorization.DEVICE_AUTHORIZATION, new OrderField[] { DeviceAuthorization.DEVICE_AUTHORIZATION.EXPIRES_AT }, false);
     public static final Index IDX_DEVICE_REGISTRATION_ACCOUNT = Internal.createIndex(DSL.name("idx_device_registration_account"), DeviceRegistration.DEVICE_REGISTRATION, new OrderField[] { DeviceRegistration.DEVICE_REGISTRATION.AUTHORIZING_ACCOUNT_ID }, false);
     public static final Index IDX_DEVICE_REGISTRATION_HOUSEHOLD = Internal.createIndex(DSL.name("idx_device_registration_household"), DeviceRegistration.DEVICE_REGISTRATION, new OrderField[] { DeviceRegistration.DEVICE_REGISTRATION.HOUSEHOLD_ID }, false);

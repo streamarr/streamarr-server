@@ -46,7 +46,7 @@ public class ProfileSelectionService {
 
     var pinVerified = false;
     if (profile.hasEffectivePin()) {
-      pinVerifier.verify(identity.accountId(), profile, command.pin());
+      pinVerifier.verify(identity.accountId(), profile, command.pin(), command.ipAddress());
       pinVerified = true;
     }
 

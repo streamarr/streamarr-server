@@ -1,8 +1,16 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
+import com.streamarr.server.domain.auth.CredentialAttemptReservation;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.PasswordResetCode;
+import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.exceptions.CredentialAttemptRejectedException;
+import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -26,15 +34,16 @@ public class PasswordResetService {
   private final PasswordResetCodeRepository resetCodeRepository;
   private final UserAccountRepository userAccountRepository;
   private final AuthSessionRepository authSessionRepository;
-  private final OpaqueCodeResolver codeResolver;
+  private final OpaqueOneTimeCodes opaqueCodes;
+  private final CredentialAttemptGate credentialAttempts;
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactionTemplate;
   private final CredentialCodeProperties properties;
   private final Clock clock;
 
-  public void redeem(String rawCode, String newPassword) {
-    var code = resolvePending(rawCode);
-    var newPasswordHash = passwordEncoder.encode(newPassword);
+  public void redeem(RedeemPasswordResetCommand command) {
+    var code = resolvePending(command.code(), command.ipAddress());
+    var newPasswordHash = passwordEncoder.encode(command.newPassword());
 
     transactionTemplate.executeWithoutResult(
         _ -> {
@@ -65,7 +74,41 @@ public class PasswordResetService {
         });
   }
 
-  private PasswordResetCode resolvePending(String rawCode) {
-    return codeResolver.resolvePending(rawCode, resetCodeRepository::findByPublicId);
+  private PasswordResetCode resolvePending(String rawCode, String ipAddress) {
+    var presented = opaqueCodes.parse(rawCode).orElseThrow(InvalidOneTimeCodeException::new);
+    var code = resetCodeRepository.findByPublicId(presented.publicId()).orElse(null);
+    var attempt = reserveCodeAttempt(code, ipAddress);
+    if (code == null) {
+      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
+      throw new InvalidOneTimeCodeException();
+    }
+
+    if (!opaqueCodes.matches(presented, code.getSecretDigest())) {
+      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
+      throw new InvalidOneTimeCodeException();
+    }
+    if (code.getStatus() != PasswordResetCodeStatus.PENDING
+        || !code.getExpiresAt().isAfter(clock.instant())) {
+      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
+      throw new InvalidOneTimeCodeException();
+    }
+
+    credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
+    return code;
+  }
+
+  private CredentialAttemptReservation reserveCodeAttempt(
+      PasswordResetCode code, String ipAddress) {
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.PASSWORD_RESET_CODE)
+            .credentialId(code == null ? null : code.getId())
+            .ipAddress(ipAddress)
+            .build();
+    try {
+      return credentialAttempts.reserve(target);
+    } catch (CredentialAttemptRejectedException _) {
+      throw new TooManyCredentialAttemptsException();
+    }
   }
 }

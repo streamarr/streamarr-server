@@ -6,8 +6,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Mints user codes in the {@link UserCode} grammar. Roughly 34.6 bits — far too little to be a
- * secret, which is why a code is single-use, short-lived, and behind the guessing budget. Entropy
- * here only has to make collisions between concurrently outstanding codes negligible.
+ * durable secret — so codes are single-use and short-lived, while the firewall owns volumetric
+ * protection for unresolved guesses.
  */
 @Component
 public class UserCodeGenerator {
