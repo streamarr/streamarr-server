@@ -8,6 +8,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -18,6 +19,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -26,14 +28,29 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     implements UserAccountRepository {
 
   private final FakeProfileHouseholdShareRepository shares;
+  private final Predicate<UUID> unrestrictedPersonalProfile;
 
   public FakeUserAccountRepository() {
-    this(new FakeProfileHouseholdShareRepository());
+    this(new FakeProfileHouseholdShareRepository(), _ -> false);
   }
 
   /** Pair with the share fake so "may use a Household" follows the Personal Profile's shares. */
   public FakeUserAccountRepository(FakeProfileHouseholdShareRepository shares) {
+    this(shares, _ -> false);
+  }
+
+  /** Pair with the Profile fake when tests exercise Profile-manager eligibility. */
+  public FakeUserAccountRepository(FakeProfileRepository profiles) {
+    this(
+        profiles.shares(),
+        profileId ->
+            profiles.findById(profileId).filter(profile -> !profile.isRestricted()).isPresent());
+  }
+
+  private FakeUserAccountRepository(
+      FakeProfileHouseholdShareRepository shares, Predicate<UUID> unrestrictedPersonalProfile) {
     this.shares = shares;
+    this.unrestrictedPersonalProfile = unrestrictedPersonalProfile;
   }
 
   @Override
@@ -193,6 +210,16 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
+  public boolean lockById(UUID accountId) {
+    return findById(accountId).isPresent();
+  }
+
+  @Override
+  public Set<UUID> lockByIds(Set<UUID> accountIds, Duration timeout) {
+    return accountIds.stream().filter(this::existsById).collect(Collectors.toUnmodifiableSet());
+  }
+
+  @Override
   public boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash) {
     return findById(accountId)
         .filter(UserAccount::isEnabled)
@@ -219,6 +246,7 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
       UUID accountId, UUID householdId, boolean householdAdminRequired) {
     return findById(accountId)
         .filter(account -> householdId.equals(account.getHouseholdId()))
+        .filter(account -> unrestrictedPersonalProfile.test(account.getPersonalProfileId()))
         .filter(
             account -> !householdAdminRequired || account.getHouseholdRole() == HouseholdRole.ADMIN)
         .isPresent();

@@ -4,7 +4,6 @@ import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
 
 import com.streamarr.server.config.security.StreamarrBearerTokenResolver;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
-import com.streamarr.server.services.auth.AccessToken;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.ChangePasswordCommand;
 import com.streamarr.server.services.auth.DeviceAuthorizationService;
@@ -54,6 +53,7 @@ public class AuthController {
   private final ReauthenticationService reauthenticationService;
   private final DeviceAuthorizationService deviceAuthorizationService;
   private final AuthCookieWriter cookieWriter;
+  private final AuthTokenResponseWriter tokenResponseWriter;
 
   /**
    * The bootstrap a client reads before it can do anything else. Both flags are required in v1: a
@@ -95,11 +95,13 @@ public class AuthController {
     var context = sessionContextService.revalidateStoredContext(result.account(), result.session());
     var accessToken = accessTokenIssuer.issue(context);
 
-    return respond(
-        HttpStatus.OK,
-        accessToken,
-        result.rawRefreshToken(),
-        StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
+    return tokenResponseWriter.withRefreshToken(
+        AuthTokenResponseWriter.RefreshResponse.builder()
+            .status(HttpStatus.OK)
+            .accessToken(accessToken)
+            .rawRefreshToken(result.rawRefreshToken())
+            .cookieMode(StreamarrBearerTokenResolver.usedAccessCookie(httpRequest))
+            .build());
   }
 
   @PostMapping("/select-household")
@@ -109,7 +111,7 @@ public class AuthController {
     var context =
         householdContextService.selectHousehold(
             identity.accountId(), identity.authSessionId(), request.householdId());
-    return respondAccessOnly(
+    return tokenResponseWriter.accessOnly(
         accessTokenIssuer.issueDerived(
             context.withReauthenticatedAt(identity.reauthenticatedAt()),
             authorizationService.currentTokenExpiry()),
@@ -121,7 +123,7 @@ public class AuthController {
       @Valid @RequestBody ReauthRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
     var context = reauthenticationService.reauthenticate(identity, request.password());
-    return respondAccessOnly(
+    return tokenResponseWriter.accessOnly(
         accessTokenIssuer.issueReauthenticated(context, authorizationService.currentTokenExpiry()),
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
@@ -137,7 +139,7 @@ public class AuthController {
                 .profileId(request.profileId())
                 .pin(request.pin())
                 .build());
-    return respondAccessOnly(
+    return tokenResponseWriter.accessOnly(
         accessTokenIssuer.issueDerived(
             context.withReauthenticatedAt(identity.reauthenticatedAt()),
             authorizationService.currentTokenExpiry()),
@@ -160,7 +162,13 @@ public class AuthController {
     var issued = refreshTokenService.createSession(result.admin(), deviceNameOf(httpRequest));
     var accessToken = accessTokenIssuer.issue(TokenContext.of(result.admin(), issued.session()));
 
-    return respond(HttpStatus.CREATED, accessToken, issued.rawToken(), request.cookieMode());
+    return tokenResponseWriter.withRefreshToken(
+        AuthTokenResponseWriter.RefreshResponse.builder()
+            .status(HttpStatus.CREATED)
+            .accessToken(accessToken)
+            .rawRefreshToken(issued.rawToken())
+            .cookieMode(request.cookieMode())
+            .build());
   }
 
   @PostMapping(value = "/login", consumes = APPLICATION_JSON_VALUE)
@@ -178,7 +186,13 @@ public class AuthController {
     // A new session starts in the membership Household at the Profile picker (Account scope).
     var accessToken = accessTokenIssuer.issue(TokenContext.of(result.account(), result.session()));
 
-    return respond(HttpStatus.OK, accessToken, result.rawRefreshToken(), request.cookieMode());
+    return tokenResponseWriter.withRefreshToken(
+        AuthTokenResponseWriter.RefreshResponse.builder()
+            .status(HttpStatus.OK)
+            .accessToken(accessToken)
+            .rawRefreshToken(result.rawRefreshToken())
+            .cookieMode(request.cookieMode())
+            .build());
   }
 
   @PostMapping(value = "/refresh", consumes = APPLICATION_JSON_VALUE)
@@ -189,14 +203,16 @@ public class AuthController {
     var refreshed = tokenRefreshService.refresh(carrier.refreshToken());
 
     if (refreshed.carriesRefreshToken()) {
-      return respond(
-          HttpStatus.OK,
-          refreshed.accessToken(),
-          refreshed.rawRefreshToken(),
-          carrier.cookieMode());
+      return tokenResponseWriter.withRefreshToken(
+          AuthTokenResponseWriter.RefreshResponse.builder()
+              .status(HttpStatus.OK)
+              .accessToken(refreshed.accessToken())
+              .rawRefreshToken(refreshed.rawRefreshToken())
+              .cookieMode(carrier.cookieMode())
+              .build());
     }
 
-    return respondAccessOnly(refreshed.accessToken(), carrier.cookieMode());
+    return tokenResponseWriter.accessOnly(refreshed.accessToken(), carrier.cookieMode());
   }
 
   private RefreshCarrier resolveRefreshCarrier(
@@ -222,40 +238,5 @@ public class AuthController {
 
   private static String deviceNameOf(HttpServletRequest httpRequest) {
     return httpRequest.getHeader(HttpHeaders.USER_AGENT);
-  }
-
-  private ResponseEntity<AuthTokensResponse> respond(
-      HttpStatus status, AccessToken accessToken, String rawRefreshToken, boolean cookieMode) {
-    var body =
-        AuthTokensResponse.builder()
-            .accessTokenExpiresAt(accessToken.expiresAt())
-            .scope(accessToken.scope().claimValue());
-
-    if (!cookieMode) {
-      return ResponseEntity.status(status)
-          .body(body.accessToken(accessToken.value()).refreshToken(rawRefreshToken).build());
-    }
-
-    return ResponseEntity.status(status)
-        .header(HttpHeaders.SET_COOKIE, cookieWriter.accessCookie(accessToken.value()).toString())
-        .header(HttpHeaders.SET_COOKIE, cookieWriter.refreshCookie(rawRefreshToken).toString())
-        .body(body.build());
-  }
-
-  /** Writes only the access credential for scope changes or a superseded refresh replay. */
-  private ResponseEntity<AuthTokensResponse> respondAccessOnly(
-      AccessToken accessToken, boolean cookieMode) {
-    var body =
-        AuthTokensResponse.builder()
-            .accessTokenExpiresAt(accessToken.expiresAt())
-            .scope(accessToken.scope().claimValue());
-
-    if (!cookieMode) {
-      return ResponseEntity.ok(body.accessToken(accessToken.value()).build());
-    }
-
-    return ResponseEntity.ok()
-        .header(HttpHeaders.SET_COOKIE, cookieWriter.accessCookie(accessToken.value()).toString())
-        .body(body.build());
   }
 }

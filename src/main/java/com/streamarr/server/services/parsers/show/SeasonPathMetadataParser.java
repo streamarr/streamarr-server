@@ -136,15 +136,24 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
       var ch = path.charAt(i);
 
       if (Character.isDigit(ch) && !hasOpenParenthesis) {
-        if (numericStart == -1) numericStart = i;
+        numericStart = numericStart == -1 ? i : numericStart;
         length++;
-      } else if (numericStart != -1) {
+        continue;
+      }
+
+      if (numericStart != -1) {
         isSeasonFolder = false;
         break;
       }
 
-      if (ch == '(') hasOpenParenthesis = true;
-      else if (ch == ')') hasOpenParenthesis = false;
+      if (ch == '(') {
+        hasOpenParenthesis = true;
+        continue;
+      }
+
+      if (ch == ')') {
+        hasOpenParenthesis = false;
+      }
     }
 
     if (numericStart == -1) {

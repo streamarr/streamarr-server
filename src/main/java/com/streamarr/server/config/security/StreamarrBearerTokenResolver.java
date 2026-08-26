@@ -87,6 +87,7 @@ public final class StreamarrBearerTokenResolver implements BearerTokenResolver {
     if (UNAUTHENTICATED_PATHS.contains(path) || isHealthPath(path)) {
       return CredentialRoute.NONE;
     }
+
     return SecurityRequestMatchers.STREAM_PATHS.matches(request)
         ? CredentialRoute.PLAYBACK_QUERY
         : CredentialRoute.HEADER_OR_COOKIE;
@@ -110,6 +111,7 @@ public final class StreamarrBearerTokenResolver implements BearerTokenResolver {
     if (cookieToken != null) {
       request.setAttribute(CARRIER_ATTRIBUTE, CredentialCarrier.COOKIE);
     }
+
     return cookieToken;
   }
 

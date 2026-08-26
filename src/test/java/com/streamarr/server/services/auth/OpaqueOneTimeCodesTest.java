@@ -8,10 +8,10 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
-@DisplayName("Opaque Codes Tests")
-class OpaqueCodesTest {
+@DisplayName("Opaque One-Time Codes Tests")
+class OpaqueOneTimeCodesTest {
 
-  private final OpaqueCodes codes = new OpaqueCodes();
+  private final OpaqueOneTimeCodes codes = new OpaqueOneTimeCodes();
 
   @Test
   @DisplayName("Should issue a publicId.secret pair when an opaque code is generated")
@@ -26,7 +26,7 @@ class OpaqueCodesTest {
     assertThat(codes.matches(presented, issued.digest())).isTrue();
     assertThat(
             codes.matches(
-                new OpaqueCodes.PresentedCode(issued.publicId(), "not-the-secret"),
+                new OpaqueOneTimeCodes.PresentedCode(issued.publicId(), "not-the-secret"),
                 issued.digest()))
         .isFalse();
   }

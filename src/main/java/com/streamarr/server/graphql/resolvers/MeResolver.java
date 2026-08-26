@@ -32,18 +32,18 @@ public class MeResolver {
   @DgsQuery
   public Me me() {
     var identity = authorizationService.currentIdentity();
-    var view = identityQueryService.meView(identity);
+    var details = identityQueryService.meDetails(identity);
 
     return Me.builder()
-        .accountId(view.account().getId())
-        .email(view.account().getEmail())
-        .displayName(view.account().getDisplayName())
-        .serverAdmin(view.account().isServerAdmin())
-        .scope(view.scope().claimValue())
-        .household(toSummary(view.household()))
-        .householdRole(view.householdRole())
-        .contextHousehold(toSummary(view.contextHousehold()))
-        .deviceBound(view.deviceBound())
+        .accountId(details.account().getId())
+        .email(details.account().getEmail())
+        .displayName(details.account().getDisplayName())
+        .serverAdmin(details.account().isServerAdmin())
+        .scope(details.scope().claimValue())
+        .household(toSummary(details.household()))
+        .householdRole(details.householdRole())
+        .contextHousehold(toSummary(details.contextHousehold()))
+        .deviceBound(details.deviceBound())
         .build();
   }
 
@@ -102,24 +102,25 @@ public class MeResolver {
     return first;
   }
 
-  private static HouseholdSummary toSummary(IdentityQueryService.HouseholdSummaryView view) {
-    return new HouseholdSummary(view.id(), view.name());
+  private static HouseholdSummary toSummary(IdentityQueryService.HouseholdSummaryDetails details) {
+    return new HouseholdSummary(details.id(), details.name());
   }
 
-  private static UsableHousehold toUsable(IdentityQueryService.UsableHouseholdView view) {
-    return new UsableHousehold(toSummary(view.household()), view.membership());
+  private static UsableHousehold toUsable(IdentityQueryService.UsableHouseholdDetails details) {
+    return new UsableHousehold(toSummary(details.household()), details.membership());
   }
 
-  private static SelectableProfile toSelectable(IdentityQueryService.SelectableProfileView view) {
+  private static SelectableProfile toSelectable(
+      IdentityQueryService.SelectableProfileDetails details) {
     return SelectableProfile.builder()
-        .id(view.id())
-        .name(view.name())
-        .picture(view.picture().orElse(null))
-        .kind(view.kind())
-        .personal(view.personal())
-        .pinConfigured(view.pinConfigured())
-        .locked(view.locked())
-        .selected(view.selected())
+        .id(details.id())
+        .name(details.name())
+        .picture(details.picture().orElse(null))
+        .kind(details.kind())
+        .personal(details.personal())
+        .pinConfigured(details.pinConfigured())
+        .locked(details.locked())
+        .selected(details.selected())
         .build();
   }
 }

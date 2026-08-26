@@ -18,6 +18,10 @@ public final class CredentialErrors {
               InputPath.of("recipientEmail"));
       case InvitationRejections.ProfileNameRequired _ ->
           new ProfileNameRequiredError("Enter a profile name.", InputPath.of("profileName"));
+      case InvitationRejections.ProfileNameTaken _ ->
+          new ProfileNameTakenError(
+              "A Profile with that name is already available in the Household.",
+              InputPath.of("profileName"));
       case InvitationRejections.HouseholdNotFound _ ->
           new HouseholdNotFoundError("No such Household.", InputPath.of("householdId"));
       case InvitationRejections.RestrictedFirstAccount _ ->
@@ -30,6 +34,10 @@ public final class CredentialErrors {
               InputPath.of("profileManagerAccountId"));
       case InvitationRejections.LocalManagerNotFound _ ->
           new AccountNotFoundError("No such Account.", InputPath.of("profileManagerAccountId"));
+      case InvitationRejections.MaximumAllowedRatingAgeInvalid _ ->
+          new MaximumAllowedRatingAgeInvalidError(
+              "Enter a non-negative maximum allowed rating age.",
+              InputPath.of("maximumAllowedRatingAge"));
     };
   }
 

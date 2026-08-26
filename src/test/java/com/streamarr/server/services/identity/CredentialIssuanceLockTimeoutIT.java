@@ -1,7 +1,10 @@
 package com.streamarr.server.services.identity;
 
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
-import static com.streamarr.server.support.PostgresLockTestSupport.lockNormalizedKey;
+import static com.streamarr.server.support.PostgresLockTestSupport.activeQuery;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitBlockedBackendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockAccountRow;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -17,9 +20,12 @@ import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
 import com.streamarr.server.support.AuthTestSupport;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -32,11 +38,14 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Credential Issuance Lock Timeout Integration Tests")
-@SpringBootTest(properties = "auth.credential-codes.replacement-lock-timeout=200ms")
+@SpringBootTest(properties = "auth.credential-codes.replacement-lock-timeout=2s")
 class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
 
   @Autowired private CredentialIssuanceService credentialIssuanceService;
@@ -46,6 +55,7 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
   @Autowired private JwtDecoder jwtDecoder;
   @Autowired private DataSource dataSource;
   @Autowired private DSLContext dsl;
+  @Autowired private PlatformTransactionManager transactionManager;
 
   private AuthTestSupport.TestIdentity issuer;
   private AuthTestSupport.TestIdentity resetTarget;
@@ -58,6 +68,7 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
     if (issuer != null) {
       authTestSupport.deleteIdentity(issuer);
     }
+
     if (resetTarget != null) {
       authTestSupport.deleteIdentity(resetTarget);
     }
@@ -70,9 +81,8 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
     var recipientEmail = "replacement-timeout@example.com";
     var existing = savePendingInvitation(recipientEmail);
 
-    assertReplacementTimesOut(
-        "account-invitation",
-        recipientEmail,
+    assertInvitationReplacementTimesOut(
+        "  Replacement-Timeout@Example.COM ",
         () ->
             credentialIssuanceService.issueAccountInvitation(
                 identityOf(issuer), invitationCommand(recipientEmail)));
@@ -87,6 +97,18 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject an invitation issuance lock outside a transaction")
+  void shouldRejectInvitationIssuanceLockOutsideTransaction() {
+    assertThatThrownBy(
+            () ->
+                invitationRepository.lockInvitationIssuanceForRecipientEmail(
+                    "outside-transaction@example.com"))
+        .isInstanceOf(InvalidDataAccessApiUsageException.class)
+        .hasRootCauseInstanceOf(IllegalStateException.class)
+        .hasRootCauseMessage("Invitation issuance lock requires an active transaction.");
+  }
+
+  @Test
   @DisplayName("Should preserve existing reset code when replacement exceeds lock timeout")
   void shouldPreserveExistingResetCodeWhenReplacementExceedsLockTimeout() throws Exception {
     issuer = authTestSupport.createAdminIdentity();
@@ -95,8 +117,8 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
     var existing = savePendingResetCode();
 
     assertReplacementTimesOut(
-        "password-reset",
-        accountId.toString(),
+        connection -> lockAccountRow(connection, accountId),
+        "\"user_account\"",
         () ->
             credentialIssuanceService.issuePasswordReset(
                 freshIdentityOf(issuer), accountId, "recover access"));
@@ -157,21 +179,81 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
         jwtDecoder.decode(authTestSupport.freshAccountBearer(identity)));
   }
 
-  private void assertReplacementTimesOut(String namespace, String value, Supplier<?> replacement)
+  private void assertInvitationReplacementTimesOut(String recipientEmail, Supplier<?> replacement)
+      throws Exception {
+    var lockAcquired = new CountDownLatch(1);
+    var releaseLock = new CountDownLatch(1);
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var blocker =
+          executor.submit(
+              () -> {
+                new TransactionTemplate(transactionManager)
+                    .executeWithoutResult(
+                        _ -> {
+                          invitationRepository.lockInvitationIssuanceForRecipientEmail(
+                              recipientEmail);
+                          lockAcquired.countDown();
+                          awaitLatch(releaseLock);
+                        });
+                return null;
+              });
+      try {
+        assertThat(lockAcquired.await(10, TimeUnit.SECONDS)).isTrue();
+        var contender = executor.submit(replacement::get);
+        assertThatThrownBy(() -> contender.get(3, TimeUnit.SECONDS))
+            .isInstanceOf(ExecutionException.class)
+            .hasStackTraceContaining("canceling statement due to lock timeout");
+      } finally {
+        releaseLock.countDown();
+      }
+
+      blocker.get(10, TimeUnit.SECONDS);
+    }
+  }
+
+  private void assertReplacementTimesOut(
+      LockOperation lockOperation, String expectedBlockedQuery, Supplier<?> replacement)
       throws Exception {
     try (var lockConnection = dataSource.getConnection();
+        var observer = dataSource.getConnection();
         var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       lockConnection.setAutoCommit(false);
-      lockNormalizedKey(lockConnection, namespace, value);
+      lockOperation.lock(lockConnection);
 
       var contender = executor.submit(replacement::get);
+      assertBlockedQueryWhenExpected(observer, backendPid(lockConnection), expectedBlockedQuery);
       try {
-        assertThatThrownBy(() -> contender.get(2, TimeUnit.SECONDS))
+        assertThatThrownBy(() -> contender.get(3, TimeUnit.SECONDS))
             .isInstanceOf(ExecutionException.class)
             .hasStackTraceContaining("canceling statement due to lock timeout");
       } finally {
         lockConnection.rollback();
       }
+    }
+  }
+
+  private void assertBlockedQueryWhenExpected(
+      Connection observer, int blockerPid, String expectedBlockedQuery) throws SQLException {
+    if (expectedBlockedQuery == null) {
+      return;
+    }
+
+    var blockedPid = awaitBlockedBackendPid(observer, blockerPid, null);
+    assertThat(activeQuery(observer, blockedPid)).contains(expectedBlockedQuery, "for update");
+  }
+
+  @FunctionalInterface
+  private interface LockOperation {
+
+    void lock(Connection connection) throws SQLException;
+  }
+
+  private static void awaitLatch(CountDownLatch latch) {
+    try {
+      assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Interrupted while holding a test lock.", exception);
     }
   }
 }

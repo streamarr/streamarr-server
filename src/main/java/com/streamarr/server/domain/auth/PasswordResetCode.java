@@ -49,6 +49,14 @@ public class PasswordResetCode extends BaseAuditableEntity<PasswordResetCode> {
 
   private byte[] secretDigest;
 
+  public PasswordResetCodeStatus statusAt(Instant now) {
+    if (status == PasswordResetCodeStatus.PENDING && !expiresAt.isAfter(now)) {
+      return PasswordResetCodeStatus.EXPIRED;
+    }
+
+    return status;
+  }
+
   @Override
   public String toString() {
     return "PasswordResetCode[id=%s, status=%s, publicId=%s, secretDigest=REDACTED]"

@@ -21,8 +21,6 @@ public enum PasswordResetCodeStatus implements EnumType {
 
     REDEEMED("REDEEMED"),
 
-    CANCELED("CANCELED"),
-
     EXPIRED("EXPIRED"),
 
     INVALIDATED("INVALIDATED");

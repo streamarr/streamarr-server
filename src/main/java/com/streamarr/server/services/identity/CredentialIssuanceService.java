@@ -2,7 +2,6 @@ package com.streamarr.server.services.identity;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AccountInvitation;
-import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.ProfileKind;
@@ -11,10 +10,11 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.OpaqueCodes;
+import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -22,7 +22,9 @@ import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
@@ -44,8 +46,9 @@ public class CredentialIssuanceService {
   private final PasswordResetCodeRepository resetCodeRepository;
   private final UserAccountRepository userAccountRepository;
   private final HouseholdRepository householdRepository;
+  private final ProfileRepository profileRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
-  private final OpaqueCodes opaqueCodes;
+  private final OpaqueOneTimeCodes opaqueCodes;
   private final CredentialCodeProperties properties;
   private final MutationTransactions mutationTransactions;
   private final Clock clock;
@@ -56,17 +59,30 @@ public class CredentialIssuanceService {
     if (isBlank(command.recipientEmail())) {
       return Outcome.rejected(new InvitationRejections.EmailRequired());
     }
+
     if (isBlank(command.profileName())) {
       return Outcome.rejected(new InvitationRejections.ProfileNameRequired());
     }
+
+    if (command.maximumAllowedRatingAge() != null && command.maximumAllowedRatingAge() < 0) {
+      return Outcome.rejected(new InvitationRejections.MaximumAllowedRatingAgeInvalid());
+    }
+
     if (userAccountRepository.findByEmailIgnoreCase(command.recipientEmail().strip()).isPresent()) {
       // An existing email cannot be invited or reassigned; ServerAdmin transfers instead.
       return Outcome.rejected(new InvitationRejections.EmailAlreadyUsed());
     }
+
     var household = householdRepository.findById(command.householdId());
     if (household.isEmpty()) {
       return Outcome.rejected(new InvitationRejections.HouseholdNotFound());
     }
+
+    if (profileRepository.existsAvailableInHouseholdWithNameIgnoreCase(
+        command.householdId(), command.profileName().strip())) {
+      return Outcome.rejected(new InvitationRejections.ProfileNameTaken());
+    }
+
     var restricted =
         command.profileKind() == ProfileKind.KID || command.maximumAllowedRatingAge() != null;
     var emptyHousehold = userAccountRepository.findByHouseholdId(command.householdId()).isEmpty();
@@ -74,9 +90,11 @@ public class CredentialIssuanceService {
       // The first Account becomes HouseholdAdmin, and a restricted Account holds no authority.
       return Outcome.rejected(new InvitationRejections.RestrictedFirstAccount());
     }
+
     if (restricted && command.localManagerAccountId() == null) {
       return Outcome.rejected(new InvitationRejections.LocalManagerRequired());
     }
+
     if (command.localManagerAccountId() != null
         && !userAccountRepository.isEligibleProfileManager(
             command.localManagerAccountId(), command.householdId(), restricted)) {
@@ -87,9 +105,11 @@ public class CredentialIssuanceService {
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
-          invitationRepository.lockRecipientForReplacement(command.recipientEmail());
+          invitationRepository.lockInvitationIssuanceForRecipientEmail(command.recipientEmail());
           requireIssuerStillAllowed(identity);
-          invitationRepository.invalidatePendingForEmail(
+          invitationRepository.expirePendingInvitationsForRecipientEmail(
+              command.recipientEmail().strip(), now);
+          invitationRepository.invalidatePendingInvitationsForRecipientEmail(
               command.recipientEmail().strip(), "replaced by a newer invitation", now);
           var invitation =
               invitationRepository.saveAndFlush(
@@ -118,10 +138,11 @@ public class CredentialIssuanceService {
     authorizationService.requireAllowed(identity, new Intent.CancelAccountInvitation());
     return mutationTransactions.write(
         () -> {
-          if (!invitationRepository.tryDecide(
-              invitationId, AccountInvitationStatus.CANCELED, clock.instant())) {
+          if (!invitationRepository.markCanceledIfPendingAndUnexpired(
+              invitationId, clock.instant())) {
             throw new MutationRejection(new InvitationRejections.InvitationNotPending());
           }
+
           return invitationRepository.findById(invitationId).orElseThrow();
         },
         _ -> Optional.empty());
@@ -132,10 +153,12 @@ public class CredentialIssuanceService {
     if (isBlank(reason)) {
       return Outcome.rejected(new InvitationRejections.ReasonRequired());
     }
+
     var refusal = resetRefusal(identity, accountId);
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
+
     if (userAccountRepository.findById(accountId).isEmpty()) {
       return Outcome.rejected(new InvitationRejections.AccountNotFound());
     }
@@ -144,9 +167,10 @@ public class CredentialIssuanceService {
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
-          resetCodeRepository.lockAccountForReplacement(accountId);
+          lockResetParticipants(identity, accountId);
           requireIssuerStillAllowed(identity);
-          resetCodeRepository.invalidatePendingForAccount(
+          resetCodeRepository.expirePendingPasswordResetCodesForAccount(accountId, now);
+          resetCodeRepository.invalidatePendingPasswordResetCodesForAccount(
               accountId, "replaced by a newer code", now);
           var code =
               resetCodeRepository.saveAndFlush(
@@ -169,6 +193,19 @@ public class CredentialIssuanceService {
         _ -> Optional.empty());
   }
 
+  private void lockResetParticipants(AuthenticatedIdentity identity, UUID accountId) {
+    var participantIds = Set.copyOf(List.of(identity.accountId(), accountId));
+    var lockedIds =
+        userAccountRepository.lockByIds(participantIds, properties.replacementLockTimeout());
+    if (!lockedIds.contains(accountId)) {
+      throw new MutationRejection(new InvitationRejections.AccountNotFound());
+    }
+
+    if (!lockedIds.contains(identity.accountId())) {
+      throw new AccessDeniedException("Not allowed.");
+    }
+  }
+
   private Optional<InvitationRejections.IssueReset> resetRefusal(
       AuthenticatedIdentity identity, UUID accountId) {
     return switch (authorizationService.decide(
@@ -183,6 +220,7 @@ public class CredentialIssuanceService {
               if (mayViewAccount(identity, accountId)) {
                 throw new AccessDeniedException("Not allowed.");
               }
+
               yield Optional.of(new InvitationRejections.AccountNotFound());
             }
           };
@@ -190,8 +228,12 @@ public class CredentialIssuanceService {
   }
 
   private boolean mayViewAccount(AuthenticatedIdentity identity, UUID accountId) {
-    return authorizationService.decide(identity, new Intent.ViewAccountAdministration(accountId))
-        instanceof Decision.Allowed<?>;
+    return switch (authorizationService.decide(
+        identity, new Intent.ViewAccountAdministration(accountId))) {
+      case Decision.Allowed<?> _ -> true;
+      case Decision.Denied<?> _ -> false;
+      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
+    };
   }
 
   private void requireIssuerStillAllowed(AuthenticatedIdentity identity) {

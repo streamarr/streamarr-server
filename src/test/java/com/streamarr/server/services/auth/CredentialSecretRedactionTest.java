@@ -9,7 +9,7 @@ import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.graphql.dto.AccountInvitationView;
+import com.streamarr.server.graphql.dto.AccountInvitationDetails;
 import com.streamarr.server.graphql.dto.IssuedAccountInvitation;
 import com.streamarr.server.graphql.dto.IssuedPasswordReset;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
@@ -57,7 +57,7 @@ class CredentialSecretRedactionTest {
             .publicId("reset-public-id")
             .secretDigest(digest)
             .build();
-    var invitationView = AccountInvitationView.builder().id(invitationId).build();
+    var invitationDetails = AccountInvitationDetails.builder().id(invitationId).build();
     var acceptRequest = new AcceptInvitationRequest(CODE, "Invitee", PASSWORD, false);
     var redeemRequest = new RedeemPasswordResetRequest(CODE, PASSWORD);
 
@@ -82,7 +82,7 @@ class CredentialSecretRedactionTest {
             secret("secretDigest=REDACTED", Arrays.toString(digest))),
         redaction(
             "issued GraphQL invitation",
-            new IssuedAccountInvitation(invitationView, CODE),
+            new IssuedAccountInvitation(invitationDetails, CODE),
             secret("code=REDACTED", CODE)),
         redaction(
             "issued GraphQL password reset",
@@ -90,7 +90,7 @@ class CredentialSecretRedactionTest {
             secret("code=REDACTED", CODE)),
         redaction(
             "invitation acceptance command",
-            AccountInvitationCeremonyService.AcceptInvitationCommand.builder()
+            AccountInvitationService.AcceptInvitationCommand.builder()
                 .code(CODE)
                 .displayName("Invitee")
                 .password(PASSWORD)
@@ -99,7 +99,7 @@ class CredentialSecretRedactionTest {
             secret("code=REDACTED", CODE)),
         redaction(
             "invitation acceptance password",
-            AccountInvitationCeremonyService.AcceptInvitationCommand.builder()
+            AccountInvitationService.AcceptInvitationCommand.builder()
                 .code(CODE)
                 .displayName("Invitee")
                 .password(PASSWORD)
@@ -108,7 +108,7 @@ class CredentialSecretRedactionTest {
             secret("password=REDACTED", PASSWORD)),
         redaction(
             "accepted invitation refresh token",
-            AccountInvitationCeremonyService.AcceptedInvitation.builder()
+            AccountInvitationService.AcceptedInvitation.builder()
                 .account(UserAccount.builder().id(accountId).build())
                 .session(AuthSession.builder().id(sessionId).build())
                 .rawRefreshToken(REFRESH_TOKEN)

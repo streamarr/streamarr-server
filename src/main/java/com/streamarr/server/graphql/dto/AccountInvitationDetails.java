@@ -4,12 +4,13 @@ import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileKind;
+import java.time.Instant;
 import java.util.UUID;
 import lombok.Builder;
 
 /** Everything about an invitation except its secret, which is never queryable. */
 @Builder
-public record AccountInvitationView(
+public record AccountInvitationDetails(
     UUID id,
     String recipientEmail,
     UUID householdId,
@@ -21,8 +22,8 @@ public record AccountInvitationView(
     AccountInvitationStatus status,
     String expiresAt) {
 
-  public static AccountInvitationView from(AccountInvitation invitation) {
-    return AccountInvitationView.builder()
+  public static AccountInvitationDetails from(AccountInvitation invitation, Instant now) {
+    return AccountInvitationDetails.builder()
         .id(invitation.getId())
         .recipientEmail(invitation.getRecipientEmail())
         .householdId(invitation.getHouseholdId())
@@ -31,7 +32,7 @@ public record AccountInvitationView(
         .profileName(invitation.getProfileName())
         .profileKind(invitation.getProfileKind())
         .maximumAllowedRatingAge(invitation.getMaximumAllowedRatingAge())
-        .status(invitation.getStatus())
+        .status(invitation.statusAt(now))
         .expiresAt(invitation.getExpiresAt().toString())
         .build();
   }

@@ -9,10 +9,12 @@ public final class InvitationRejections {
       permits EmailRequired,
           EmailAlreadyUsed,
           ProfileNameRequired,
+          ProfileNameTaken,
           HouseholdNotFound,
           RestrictedFirstAccount,
           LocalManagerRequired,
-          LocalManagerNotFound {}
+          LocalManagerNotFound,
+          MaximumAllowedRatingAgeInvalid {}
 
   public sealed interface Cancel permits InvitationNotPending {}
 
@@ -26,6 +28,8 @@ public final class InvitationRejections {
 
   public record ProfileNameRequired() implements Issue {}
 
+  public record ProfileNameTaken() implements Issue {}
+
   public record HouseholdNotFound() implements Issue {}
 
   /** The first Account becomes HouseholdAdmin, and a restricted Account holds no authority. */
@@ -35,6 +39,8 @@ public final class InvitationRejections {
   public record LocalManagerRequired() implements Issue {}
 
   public record LocalManagerNotFound() implements Issue {}
+
+  public record MaximumAllowedRatingAgeInvalid() implements Issue {}
 
   public record InvitationNotPending() implements Cancel {}
 

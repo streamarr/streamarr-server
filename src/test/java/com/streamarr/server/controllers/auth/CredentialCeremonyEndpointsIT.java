@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.fixtures.HouseholdFixture;
@@ -17,6 +18,7 @@ import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import jakarta.persistence.EntityManagerFactory;
 import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
@@ -25,6 +27,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import lombok.Builder;
+import org.hibernate.SessionFactory;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,6 +63,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @Autowired private DSLContext dsl;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private EntityManagerFactory entityManagerFactory;
 
   private AuthTestSupport.TestIdentity serverAdmin;
 
@@ -321,6 +325,36 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.accountInvitations.edges[0].node.recipientEmail")
                 .value("newest@example.com"));
+  }
+
+  @Test
+  @DisplayName("Should load only a bounded number of invitations for a small page")
+  void shouldLoadOnlyBoundedNumberOfInvitationsForSmallPage() throws Exception {
+    issueInvitation("bounded-one@example.com");
+    issueInvitation("bounded-two@example.com");
+    issueInvitation("bounded-three@example.com");
+    issueInvitation("bounded-four@example.com");
+    var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+    var previouslyEnabled = statistics.isStatisticsEnabled();
+    statistics.setStatisticsEnabled(true);
+    statistics.clear();
+
+    try {
+      graphql(
+              authTestSupport.accountBearer(serverAdmin),
+              """
+              query { accountInvitations(first: 1) { edges { node { recipientEmail } } } }
+              """)
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.accountInvitations.edges.length()").value(1));
+
+      assertThat(statistics.getEntityStatistics(AccountInvitation.class.getName()).getLoadCount())
+          .isLessThanOrEqualTo(2);
+    } finally {
+      statistics.clear();
+      statistics.setStatisticsEnabled(previouslyEnabled);
+    }
   }
 
   @Test
@@ -698,6 +732,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     if (!acceptance.start().await(10, TimeUnit.SECONDS)) {
       throw new AssertionError("concurrent invitation acceptance did not start");
     }
+
     return mockMvc
         .perform(
             post("/api/auth/invitation/accept")
@@ -726,6 +761,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
       if (!releaseGuard.await(10, TimeUnit.SECONDS)) {
         throw new AssertionError("test did not release the Household guard lock");
       }
+
       connection.rollback();
     } catch (Exception exception) {
       throw new AssertionError("could not coordinate the Household guard lock", exception);

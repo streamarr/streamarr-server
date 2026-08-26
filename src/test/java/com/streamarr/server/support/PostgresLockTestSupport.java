@@ -24,18 +24,19 @@ public final class PostgresLockTestSupport {
         while (rows.next()) {
           lockedRows++;
         }
+
         assertThat(lockedRows).isEqualTo(ImageSize.values().length);
       }
     }
   }
 
-  public static void lockNormalizedKey(Connection connection, String namespace, String value)
-      throws SQLException {
+  public static void lockAccountRow(Connection connection, UUID accountId) throws SQLException {
     try (var statement =
-        connection.prepareStatement(
-            "SELECT pg_advisory_xact_lock(hashtextextended(lower(?), 0))")) {
-      statement.setString(1, namespace + ":" + value.strip());
-      statement.execute();
+        connection.prepareStatement("SELECT id FROM user_account WHERE id = ? FOR UPDATE")) {
+      statement.setObject(1, accountId);
+      try (var rows = statement.executeQuery()) {
+        assertThat(rows.next()).isTrue();
+      }
     }
   }
 
@@ -44,6 +45,17 @@ public final class PostgresLockTestSupport {
         var result = statement.executeQuery("SELECT pg_backend_pid()")) {
       result.next();
       return result.getInt(1);
+    }
+  }
+
+  public static String activeQuery(Connection observer, int backendPid) throws SQLException {
+    try (var statement =
+        observer.prepareStatement("SELECT query FROM pg_stat_activity WHERE pid = ?")) {
+      statement.setInt(1, backendPid);
+      try (var result = statement.executeQuery()) {
+        assertThat(result.next()).isTrue();
+        return result.getString(1);
+      }
     }
   }
 

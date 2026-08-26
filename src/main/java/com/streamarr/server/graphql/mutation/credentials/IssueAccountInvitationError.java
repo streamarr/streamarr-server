@@ -10,7 +10,9 @@ public sealed interface IssueAccountInvitationError extends MutationError
     permits EmailRequiredError,
         EmailAlreadyUsedError,
         ProfileNameRequiredError,
+        ProfileNameTakenError,
         HouseholdNotFoundError,
         RestrictedFirstAccountError,
         EligibleProfileManagerRequiredError,
+        MaximumAllowedRatingAgeInvalidError,
         AccountNotFoundError {}

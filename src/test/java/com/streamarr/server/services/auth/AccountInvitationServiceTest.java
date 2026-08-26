@@ -21,7 +21,7 @@ import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
-import com.streamarr.server.services.auth.AccountInvitationCeremonyService.AcceptInvitationCommand;
+import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import java.time.Clock;
 import java.time.Duration;
@@ -42,7 +42,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Tag("UnitTest")
 @DisplayName("Account Invitation Ceremony Service Tests")
-class AccountInvitationCeremonyServiceTest {
+class AccountInvitationServiceTest {
 
   private static final Instant NOW = Instant.parse("2026-08-19T12:00:00Z");
 
@@ -54,15 +54,15 @@ class AccountInvitationCeremonyServiceTest {
       new FakeProfileHouseholdShareRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
   private final FakeRefreshTokenRepository refreshTokens = new FakeRefreshTokenRepository();
-  private final OpaqueCodes opaqueCodes = new OpaqueCodes();
+  private final OpaqueOneTimeCodes opaqueCodes = new OpaqueOneTimeCodes();
   private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
   private final CredentialGuessThrottle throttle =
       new CredentialGuessThrottle(
           AuthThrottleProperties.builder().maxAttempts(5).window(Duration.ofMinutes(15)).build(),
           clock);
 
-  private final AccountInvitationCeremonyService service =
-      new AccountInvitationCeremonyService(
+  private final AccountInvitationService service =
+      new AccountInvitationService(
           invitations,
           accounts,
           profiles,
@@ -218,11 +218,22 @@ class AccountInvitationCeremonyServiceTest {
         .doesNotThrowAnyException();
   }
 
+  @Test
+  @DisplayName("Should preserve a valid invitation when opaque-code budget keys are exhausted")
+  void shouldPreserveValidInvitationWhenOpaqueCodeBudgetKeysAreExhausted() {
+    var issued = pendingInvitation(pendingInvitationBuilder().build());
+    for (var key = 0; key < AuthThrottleProperties.DEFAULT_MAX_OPAQUE_CODE_BUDGETS; key++) {
+      presentInvalidCode("sprayed-public-id-" + key + ".secret");
+    }
+
+    assertThatCode(() -> service.lookup(issued.code())).doesNotThrowAnyException();
+  }
+
   private PendingInvitation.PendingInvitationBuilder pendingInvitationBuilder() {
     return PendingInvitation.builder().role(HouseholdRole.MEMBER).householdId(UUID.randomUUID());
   }
 
-  private OpaqueCodes.IssuedCode pendingInvitation(PendingInvitation invitation) {
+  private OpaqueOneTimeCodes.IssuedCode pendingInvitation(PendingInvitation invitation) {
     var issued = opaqueCodes.issue();
     invitations.save(
         AccountInvitation.builder()
@@ -239,6 +250,10 @@ class AccountInvitationCeremonyServiceTest {
             .secretDigest(issued.digest())
             .build());
     return issued;
+  }
+
+  private void presentInvalidCode(String code) {
+    assertThatThrownBy(() -> service.lookup(code)).isInstanceOf(InvalidOneTimeCodeException.class);
   }
 
   @Builder

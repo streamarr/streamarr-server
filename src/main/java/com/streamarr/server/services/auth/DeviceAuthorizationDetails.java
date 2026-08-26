@@ -9,21 +9,21 @@ import lombok.Builder;
  * surface never needs it, and a leaked one would let the page's viewer redeem the pairing itself.
  */
 @Builder
-public record DeviceAuthorizationView(
+public record DeviceAuthorizationDetails(
     String userCode, String deviceName, DeviceAuthorizationStatus status, Instant requestedAt) {
 
-  public static class DeviceAuthorizationViewBuilder {
+  public static class DeviceAuthorizationDetailsBuilder {
 
     @Override
     public String toString() {
-      return "DeviceAuthorizationViewBuilder[userCode=REDACTED, deviceName=%s]"
+      return "DeviceAuthorizationDetailsBuilder[userCode=REDACTED, deviceName=%s]"
           .formatted(deviceName);
     }
   }
 
   @Override
   public String toString() {
-    return "DeviceAuthorizationView[userCode=REDACTED, deviceName=%s, status=%s]"
+    return "DeviceAuthorizationDetails[userCode=REDACTED, deviceName=%s, status=%s]"
         .formatted(deviceName, status);
   }
 }

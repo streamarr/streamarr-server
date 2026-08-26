@@ -12,11 +12,6 @@ public class FakePasswordResetCodeRepository extends FakeJpaRepository<PasswordR
     implements PasswordResetCodeRepository {
 
   @Override
-  public void lockAccountForReplacement(UUID accountId) {
-    // The fake runs synchronously; the PostgreSQL integration test proves cross-instance locking.
-  }
-
-  @Override
   public Optional<PasswordResetCode> findByPublicId(String publicId) {
     return database.values().stream()
         .filter(code -> publicId.equals(code.getPublicId()))
@@ -24,7 +19,7 @@ public class FakePasswordResetCodeRepository extends FakeJpaRepository<PasswordR
   }
 
   @Override
-  public boolean tryRedeem(UUID codeId, Instant now) {
+  public boolean markRedeemedIfPendingAndUnexpired(UUID codeId, Instant now) {
     var redeemed =
         findById(codeId)
             .filter(code -> code.getStatus() == PasswordResetCodeStatus.PENDING)
@@ -38,20 +33,24 @@ public class FakePasswordResetCodeRepository extends FakeJpaRepository<PasswordR
   }
 
   @Override
-  public int invalidatePendingForAccount(UUID accountId, String reason, Instant now) {
-    return invalidate(code -> accountId.equals(code.getAccountId()), reason);
+  public int invalidatePendingPasswordResetCodesForAccount(
+      UUID accountId, String reason, Instant now) {
+    return invalidate(
+        code -> accountId.equals(code.getAccountId()) && code.getExpiresAt().isAfter(now), reason);
   }
 
   @Override
-  public int invalidateIssuedBy(UUID issuerAccountId, String reason, Instant now) {
+  public int invalidatePendingPasswordResetCodesIssuedBy(
+      UUID issuerAccountId, String reason, Instant now) {
     return invalidate(code -> issuerAccountId.equals(code.getIssuerAccountId()), reason);
   }
 
   @Override
-  public int sweepExpired(Instant now) {
+  public int expirePendingPasswordResetCodesForAccount(UUID accountId, Instant now) {
     var expired =
         database.values().stream()
             .filter(code -> code.getStatus() == PasswordResetCodeStatus.PENDING)
+            .filter(code -> accountId.equals(code.getAccountId()))
             .filter(code -> !code.getExpiresAt().isAfter(now))
             .toList();
     expired.forEach(code -> code.setStatus(PasswordResetCodeStatus.EXPIRED));

@@ -162,6 +162,7 @@ class AuthorizationParityTest {
       if (action.resourceKind() != Action.ResourceKind.SERVER) {
         continue;
       }
+
       var group = administrationGroup(action);
       assertThat(actions.get(action.cedarName()).path("memberOf"))
           .as("group of %s", action)

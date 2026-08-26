@@ -1,9 +1,9 @@
 package com.streamarr.server.controllers.auth;
 
 import com.streamarr.server.services.auth.AccessTokenIssuer;
-import com.streamarr.server.services.auth.AccountInvitationCeremonyService;
-import com.streamarr.server.services.auth.AccountInvitationCeremonyService.AcceptInvitationCommand;
-import com.streamarr.server.services.auth.AccountInvitationCeremonyService.InvitationPreview;
+import com.streamarr.server.services.auth.AccountInvitationService;
+import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
+import com.streamarr.server.services.auth.AccountInvitationService.InvitationPreview;
 import com.streamarr.server.services.auth.DeviceName;
 import com.streamarr.server.services.auth.TokenContext;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,20 +26,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class InvitationController {
 
-  private final AccountInvitationCeremonyService ceremonyService;
+  private final AccountInvitationService invitationService;
   private final AccessTokenIssuer accessTokenIssuer;
-  private final AuthCookieWriter cookieWriter;
+  private final AuthTokenResponseWriter tokenResponseWriter;
 
   @PostMapping("/lookup")
   public InvitationPreview lookup(@Valid @RequestBody InvitationCodeRequest request) {
-    return ceremonyService.lookup(request.code());
+    return invitationService.lookup(request.code());
   }
 
   @PostMapping("/accept")
   public ResponseEntity<AuthTokensResponse> accept(
       @Valid @RequestBody AcceptInvitationRequest request, HttpServletRequest httpRequest) {
     var accepted =
-        ceremonyService.accept(
+        invitationService.accept(
             AcceptInvitationCommand.builder()
                 .code(request.code())
                 .displayName(request.displayName())
@@ -49,26 +49,18 @@ public class InvitationController {
     var accessToken =
         accessTokenIssuer.issue(TokenContext.of(accepted.account(), accepted.session()));
 
-    var body =
-        AuthTokensResponse.builder()
-            .accessTokenExpiresAt(accessToken.expiresAt())
-            .scope(accessToken.scope().claimValue());
-    if (Boolean.TRUE.equals(request.cookieMode())) {
-      return ResponseEntity.status(HttpStatus.CREATED)
-          .header(HttpHeaders.SET_COOKIE, cookieWriter.accessCookie(accessToken.value()).toString())
-          .header(
-              HttpHeaders.SET_COOKIE,
-              cookieWriter.refreshCookie(accepted.rawRefreshToken()).toString())
-          .body(body.build());
-    }
-    return ResponseEntity.status(HttpStatus.CREATED)
-        .body(
-            body.accessToken(accessToken.value()).refreshToken(accepted.rawRefreshToken()).build());
+    return tokenResponseWriter.withRefreshToken(
+        AuthTokenResponseWriter.RefreshResponse.builder()
+            .status(HttpStatus.CREATED)
+            .accessToken(accessToken)
+            .rawRefreshToken(accepted.rawRefreshToken())
+            .cookieMode(Boolean.TRUE.equals(request.cookieMode()))
+            .build());
   }
 
   @PostMapping("/decline")
   public ResponseEntity<Void> decline(@Valid @RequestBody InvitationCodeRequest request) {
-    ceremonyService.decline(request.code());
+    invitationService.decline(request.code());
     return ResponseEntity.noContent().build();
   }
 }

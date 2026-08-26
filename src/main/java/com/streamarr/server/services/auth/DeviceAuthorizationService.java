@@ -124,16 +124,16 @@ public class DeviceAuthorizationService {
   }
 
   @Transactional(readOnly = true)
-  public DeviceAuthorizationView lookup(String typedUserCode, UUID callerAccountId) {
+  public DeviceAuthorizationDetails lookup(String typedUserCode, UUID callerAccountId) {
     guessThrottle.registerAttempt(callerAccountId);
 
     var authorization = findUnexpired(UserCode.normalize(typedUserCode));
 
-    return viewOf(authorization, authorization.getStatus());
+    return detailsOf(authorization, authorization.getStatus());
   }
 
   @Transactional
-  public DeviceAuthorizationView decide(DeviceDecisionCommand command) {
+  public DeviceAuthorizationDetails decide(DeviceDecisionCommand command) {
     guessThrottle.registerAttempt(command.decidedByAccountId());
 
     var userCode = UserCode.normalize(command.userCode());
@@ -156,7 +156,7 @@ public class DeviceAuthorizationService {
     // Everything the response needs is read before the write: re-reading a row this transaction
     // mutated through jOOQ would hand back Hibernate's stale managed copy.
     var decidedStatus = command.decision().resultingStatus();
-    var view = viewOf(authorization, decidedStatus);
+    var details = detailsOf(authorization, decidedStatus);
 
     var decided =
         authorizationRepository.decide(
@@ -171,7 +171,7 @@ public class DeviceAuthorizationService {
       throw classifyLostDecision(userCode);
     }
 
-    return view;
+    return details;
   }
 
   private DevicePollResult consume(DeviceAuthorization authorization, Instant now) {
@@ -241,9 +241,9 @@ public class DeviceAuthorizationService {
     return authorization;
   }
 
-  private static DeviceAuthorizationView viewOf(
+  private static DeviceAuthorizationDetails detailsOf(
       DeviceAuthorization authorization, DeviceAuthorizationStatus status) {
-    return DeviceAuthorizationView.builder()
+    return DeviceAuthorizationDetails.builder()
         .userCode(UserCode.forDisplay(authorization.getUserCode()))
         .deviceName(authorization.getDeviceName())
         .status(status)

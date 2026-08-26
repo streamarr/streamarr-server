@@ -106,4 +106,11 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
         .sorted(Comparator.comparing(Profile::getName).thenComparing(Profile::getId))
         .toList();
   }
+
+  @Override
+  public boolean existsAvailableInHouseholdWithNameIgnoreCase(UUID householdId, String name) {
+    return findAvailableInHousehold(householdId).stream()
+        .map(Profile::getName)
+        .anyMatch(name::equalsIgnoreCase);
+  }
 }

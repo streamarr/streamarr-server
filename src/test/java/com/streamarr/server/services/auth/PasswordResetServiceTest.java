@@ -31,18 +31,18 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Tag("UnitTest")
 @DisplayName("Password Reset Redemption Service Tests")
-class PasswordResetRedemptionServiceTest {
+class PasswordResetServiceTest {
 
   private static final Instant NOW = Instant.parse("2026-08-19T12:00:00Z");
 
   private final FakePasswordResetCodeRepository resetCodes = new FakePasswordResetCodeRepository();
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
-  private final OpaqueCodes opaqueCodes = new OpaqueCodes();
+  private final OpaqueOneTimeCodes opaqueCodes = new OpaqueOneTimeCodes();
   private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 
-  private final PasswordResetRedemptionService service =
-      new PasswordResetRedemptionService(
+  private final PasswordResetService service =
+      new PasswordResetService(
           resetCodes,
           accounts,
           sessions,
@@ -125,7 +125,7 @@ class PasswordResetRedemptionServiceTest {
         .isInstanceOf(InvalidOneTimeCodeException.class);
   }
 
-  private OpaqueCodes.IssuedCode pendingCode() {
+  private OpaqueOneTimeCodes.IssuedCode pendingCode() {
     var issued = opaqueCodes.issue();
     resetCodes.save(
         PasswordResetCode.builder()

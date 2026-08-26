@@ -4,10 +4,12 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
+import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.CursorValidator;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
-import com.streamarr.server.graphql.dto.AccountInvitationView;
+import com.streamarr.server.graphql.dto.AccountInvitationDetails;
 import com.streamarr.server.graphql.dto.IssuedAccountInvitation;
 import com.streamarr.server.graphql.dto.IssuedPasswordReset;
 import com.streamarr.server.graphql.inputs.CancelAccountInvitationInput;
@@ -22,11 +24,17 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.AdministrationQueryService;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
+import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
+import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
+import java.time.Clock;
 import lombok.RequiredArgsConstructor;
+import org.jooq.SortOrder;
 
 @DgsComponent
 @RequiredArgsConstructor
@@ -39,18 +47,17 @@ public class CredentialAdministrationResolver {
   private final AdministrationQueryService administrationQueryService;
   private final PaginationService paginationService;
   private final CursorUtil cursorUtil;
+  private final CursorValidator cursorValidator;
   private final RelayConnectionAdapter relayConnectionAdapter;
+  private final Clock clock;
 
   @DgsQuery
-  public Connection<AccountInvitationView> accountInvitations(DataFetchingEnvironment dfe) {
-    var options = options(dfe);
+  public Connection<AccountInvitationDetails> accountInvitations(DataFetchingEnvironment dfe) {
+    var options = mediaOptions(dfe);
     var page =
         administrationQueryService.accountInvitations(
-            authorizationService.currentIdentity(), cursorUtil.decodeKeysetCursor(options));
-    return relayConnectionAdapter.toConnection(
-        page,
-        item -> AccountInvitationView.from(item.item()),
-        item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
+            authorizationService.currentIdentity(), options);
+    return relayConnectionAdapter.toConnection(page, options, this::invitationDetails);
   }
 
   @DgsMutation
@@ -75,7 +82,7 @@ public class CredentialAdministrationResolver {
             .map(
                 issued ->
                     new IssuedAccountInvitation(
-                        AccountInvitationView.from(issued.invitation()), issued.code())),
+                        invitationDetails(issued.invitation()), issued.code())),
         CredentialErrors::toIssueError,
         IssueAccountInvitationPayload::new);
   }
@@ -87,7 +94,7 @@ public class CredentialAdministrationResolver {
         credentialIssuanceService
             .cancelAccountInvitation(
                 authorizationService.currentIdentity(), Ids.parseUuid(input.invitationId()))
-            .map(AccountInvitationView::from),
+            .map(this::invitationDetails),
         CredentialErrors::toCancelError,
         CancelAccountInvitationPayload::new);
   }
@@ -111,7 +118,22 @@ public class CredentialAdministrationResolver {
         IssuePasswordResetPayload::new);
   }
 
-  private PaginationOptions options(DataFetchingEnvironment dfe) {
+  private AccountInvitationDetails invitationDetails(AccountInvitation invitation) {
+    return AccountInvitationDetails.from(invitation, clock.instant());
+  }
+
+  private MediaPaginationOptions mediaOptions(DataFetchingEnvironment dfe) {
+    var paginationOptions = paginationOptions(dfe);
+    var filter =
+        MediaFilter.builder().sortBy(OrderMediaBy.ADDED).sortDirection(SortOrder.DESC).build();
+    return MediaPaginationOptionsResolver.resolve(
+        paginationOptions,
+        filter,
+        cursorUtil::decodeMediaCursor,
+        cursorValidator::validateCursorAgainstFilter);
+  }
+
+  private PaginationOptions paginationOptions(DataFetchingEnvironment dfe) {
     int first = dfe.getArgumentOrDefault("first", 0);
     String after = dfe.getArgument("after");
     int last = dfe.getArgumentOrDefault("last", 0);

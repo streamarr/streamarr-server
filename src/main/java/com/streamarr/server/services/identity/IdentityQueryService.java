@@ -42,34 +42,34 @@ public class IdentityQueryService {
   private final PaginationService paginationService;
 
   @Transactional(readOnly = true)
-  public MeView meView(AuthenticatedIdentity identity) {
+  public MeDetails meDetails(AuthenticatedIdentity identity) {
     var account = requireAuthorizedAccount(identity);
 
     var membership = summary(account.getHouseholdId());
     var context = summary(identity.contextHouseholdId());
-    return new MeView(account, identity.scope(), membership, context, false);
+    return new MeDetails(account, identity.scope(), membership, context, false);
   }
 
   @Transactional(readOnly = true)
-  public MediaPage<SelectableProfileView> selectableProfiles(
+  public MediaPage<SelectableProfileDetails> selectableProfiles(
       AuthenticatedIdentity identity, KeysetPaginationOptions options) {
     var account = requireAuthorizedAccount(identity);
     var items =
         selectableProfiles(identity, account).stream()
             .map(profile -> new PageItem<>(profile, profile.name()))
             .toList();
-    return paginationService.buildKeysetPage(items, options, SelectableProfileView::id);
+    return paginationService.buildKeysetPage(items, options, SelectableProfileDetails::id);
   }
 
   @Transactional(readOnly = true)
-  public MediaPage<UsableHouseholdView> usableHouseholds(
+  public MediaPage<UsableHouseholdDetails> usableHouseholds(
       AuthenticatedIdentity identity, KeysetPaginationOptions options) {
     var account = requireAuthorizedAccount(identity);
     var items =
         usableHouseholds(account).values().stream()
             .map(
                 household ->
-                    new UsableHouseholdView(
+                    new UsableHouseholdDetails(
                         summaryOf(household), household.getId().equals(account.getHouseholdId())))
             .map(household -> new PageItem<>(household, household.membership() ? 0 : 1))
             .toList();
@@ -78,10 +78,10 @@ public class IdentityQueryService {
   }
 
   @Transactional(readOnly = true)
-  public Optional<SelectableProfileView> selectedProfile(AuthenticatedIdentity identity) {
+  public Optional<SelectableProfileDetails> selectedProfile(AuthenticatedIdentity identity) {
     var account = requireAuthorizedAccount(identity);
     return selectableProfiles(identity, account).stream()
-        .filter(SelectableProfileView::selected)
+        .filter(SelectableProfileDetails::selected)
         .findFirst();
   }
 
@@ -111,14 +111,14 @@ public class IdentityQueryService {
     return ordered;
   }
 
-  private List<SelectableProfileView> selectableProfiles(
+  private List<SelectableProfileDetails> selectableProfiles(
       AuthenticatedIdentity identity, UserAccount account) {
     var available = profileRepository.findAvailableInHousehold(identity.contextHouseholdId());
     var locked = ProfileSafetyRule.lockedProfiles(available);
     return available.stream()
         .map(
             profile ->
-                new SelectableProfileView(
+                new SelectableProfileDetails(
                     profile.getId(),
                     profile.getName(),
                     Optional.ofNullable(profile.getPicture()),
@@ -130,22 +130,22 @@ public class IdentityQueryService {
         .toList();
   }
 
-  private HouseholdSummaryView summary(UUID householdId) {
+  private HouseholdSummaryDetails summary(UUID householdId) {
     return householdRepository
         .findById(householdId)
         .map(IdentityQueryService::summaryOf)
         .orElseThrow(AuthenticationRequiredException::new);
   }
 
-  private static HouseholdSummaryView summaryOf(Household household) {
-    return new HouseholdSummaryView(household.getId(), household.getName());
+  private static HouseholdSummaryDetails summaryOf(Household household) {
+    return new HouseholdSummaryDetails(household.getId(), household.getName());
   }
 
-  public record MeView(
+  public record MeDetails(
       UserAccount account,
       TokenScope scope,
-      HouseholdSummaryView household,
-      HouseholdSummaryView contextHousehold,
+      HouseholdSummaryDetails household,
+      HouseholdSummaryDetails contextHousehold,
       boolean deviceBound) {
 
     public HouseholdRole householdRole() {
@@ -153,11 +153,11 @@ public class IdentityQueryService {
     }
   }
 
-  public record HouseholdSummaryView(UUID id, String name) {}
+  public record HouseholdSummaryDetails(UUID id, String name) {}
 
-  public record UsableHouseholdView(HouseholdSummaryView household, boolean membership) {}
+  public record UsableHouseholdDetails(HouseholdSummaryDetails household, boolean membership) {}
 
-  public record SelectableProfileView(
+  public record SelectableProfileDetails(
       UUID id,
       String name,
       Optional<String> picture,

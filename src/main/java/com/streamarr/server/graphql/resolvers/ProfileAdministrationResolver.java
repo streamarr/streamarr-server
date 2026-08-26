@@ -47,7 +47,7 @@ public class ProfileAdministrationResolver {
   public ProfileAdministration profileAdministration(@InputArgument String profileId) {
     return administrationQueryService
         .profileAdministration(authorizationService.currentIdentity(), Ids.parseUuid(profileId))
-        .map(view -> ProfileAdministration.from(view.profile(), view.linked()))
+        .map(details -> ProfileAdministration.from(details.profile(), details.linked()))
         .orElse(null);
   }
 
@@ -186,7 +186,7 @@ public class ProfileAdministrationResolver {
   }
 
   private ProfileAdministration toDto(Profile profile) {
-    var view = administrationQueryService.profileAdministrationView(profile);
-    return ProfileAdministration.from(view.profile(), view.linked());
+    var details = administrationQueryService.profileAdministrationDetails(profile);
+    return ProfileAdministration.from(details.profile(), details.linked());
   }
 }

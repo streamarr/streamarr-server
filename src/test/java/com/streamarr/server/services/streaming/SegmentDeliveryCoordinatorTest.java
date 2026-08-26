@@ -604,6 +604,7 @@ class SegmentDeliveryCoordinatorTest {
           } catch (Exception e) {
             throw new AssertionError("Planned replacement did not become observable", e);
           }
+
           executor.acceptTarget(TARGET_A);
           plannedRestartObserved.countDown();
         });
@@ -672,6 +673,7 @@ class SegmentDeliveryCoordinatorTest {
           } catch (Exception e) {
             throw new AssertionError("Planned restart did not become observable", e);
           }
+
           livenessChecksAfterRestart.set(executor.livenessChecks());
           plannedRestartObserved.countDown();
         });
@@ -1106,15 +1108,20 @@ class SegmentDeliveryCoordinatorTest {
           && trapCondition.getAsBoolean()
           && tripped.compareAndSet(false, true)) {
         reachedTrap.countDown();
-        try {
-          if (!releaseTrap.await(5, TimeUnit.SECONDS)) {
-            throw new AssertionError("Timed out waiting to release trapped segment lookup");
-          }
-        } catch (InterruptedException _) {
-          Thread.currentThread().interrupt();
-        }
+        awaitTrapRelease();
       }
+
       return super.segmentExists(sessionId, segmentName);
+    }
+
+    private void awaitTrapRelease() {
+      try {
+        if (!releaseTrap.await(5, TimeUnit.SECONDS)) {
+          throw new AssertionError("Timed out waiting to release trapped segment lookup");
+        }
+      } catch (InterruptedException _) {
+        Thread.currentThread().interrupt();
+      }
     }
   }
 
@@ -1137,6 +1144,7 @@ class SegmentDeliveryCoordinatorTest {
         destroyAction = null;
         action.run();
       }
+
       return result;
     }
   }
@@ -1182,6 +1190,7 @@ class SegmentDeliveryCoordinatorTest {
         entered.countDown();
         awaitQuietly(targetedStartGate);
       }
+
       return super.start(request, target);
     }
 
@@ -1192,6 +1201,7 @@ class SegmentDeliveryCoordinatorTest {
         recoveryEntryEntered.countDown();
         awaitQuietly(gate);
       }
+
       return super.executionTargets();
     }
 

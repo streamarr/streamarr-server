@@ -3,30 +3,33 @@ package com.streamarr.server.services.auth;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Objects;
 import java.util.Optional;
+import org.springframework.security.crypto.keygen.Base64StringKeyGenerator;
+import org.springframework.security.crypto.keygen.StringKeyGenerator;
 import org.springframework.stereotype.Component;
 
 /**
- * Opaque one-time codes (ADR 0024 §Invitations): {@code publicId.secret}, where the secret is 256
- * random bits and only its SHA-256 digest is stored. The stable publicId resolves the row (and keys
- * the guessing budget); the digest comparison is constant-time. The full code is returned once at
- * issuance and never again.
+ * Generates and verifies digest-at-rest {@code publicId.secret} one-time codes.
+ *
+ * @see <a
+ *     href="https://github.com/streamarr/streamarr-adr/blob/main/adr/0024-identity-authority-by-relationship.adoc#invitations">ADR
+ *     0024 §Invitations</a>
  */
 @Component
-public class OpaqueCodes {
+public class OpaqueOneTimeCodes {
 
   private static final int SECRET_BYTES = 32;
   private static final int PUBLIC_ID_BYTES = 9;
 
-  private final SecureRandom random = new SecureRandom();
+  private final StringKeyGenerator publicIds = keyGenerator(PUBLIC_ID_BYTES);
+  private final StringKeyGenerator secrets = keyGenerator(SECRET_BYTES);
 
   public IssuedCode issue() {
-    var publicId = randomToken(PUBLIC_ID_BYTES);
-    var secret = randomToken(SECRET_BYTES);
+    var publicId = publicIds.generateKey();
+    var secret = secrets.generateKey();
     return new IssuedCode(publicId, publicId + "." + secret, digestOf(secret));
   }
 
@@ -35,10 +38,12 @@ public class OpaqueCodes {
     if (code == null) {
       return Optional.empty();
     }
+
     var separator = code.indexOf('.');
     if (separator <= 0 || separator == code.length() - 1) {
       return Optional.empty();
     }
+
     return Optional.of(
         new PresentedCode(code.substring(0, separator), code.substring(separator + 1)));
   }
@@ -47,10 +52,8 @@ public class OpaqueCodes {
     return MessageDigest.isEqual(digestOf(presented.secret()), storedDigest);
   }
 
-  private String randomToken(int bytes) {
-    var buffer = new byte[bytes];
-    random.nextBytes(buffer);
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(buffer);
+  private static StringKeyGenerator keyGenerator(int bytes) {
+    return new Base64StringKeyGenerator(Base64.getUrlEncoder().withoutPadding(), bytes);
   }
 
   private static byte[] digestOf(String secret) {

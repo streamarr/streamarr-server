@@ -28,16 +28,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * The principal-less invitation ceremonies (ADR 0024 §Invitations): the recipient has no Account
- * yet, so lookup, accept, and decline authenticate by code alone — throttled per publicId, one
- * deliberate failure answer, expiry decided by predicate at presentation. Acceptance atomically
- * consumes the PENDING invitation and creates the Account, its Personal Profile, the structural
- * share, any required manager rows, and the first session; the deferred invariants judge the whole
- * shape at commit. Password hashing runs before the transaction opens.
+ * Presents and consumes principal-less Account invitation codes.
+ *
+ * @see <a
+ *     href="https://github.com/streamarr/streamarr-adr/blob/main/adr/0024-identity-authority-by-relationship.adoc#invitations">ADR
+ *     0024 §Invitations</a>
  */
 @Service
 @RequiredArgsConstructor
-public class AccountInvitationCeremonyService {
+public class AccountInvitationService {
 
   private static final String EMAIL_UNIQUE_INDEX = "uq_user_account_email";
 
@@ -47,7 +46,7 @@ public class AccountInvitationCeremonyService {
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileHouseholdShareRepository shareRepository;
   private final RefreshTokenService refreshTokenService;
-  private final OpaqueCodes opaqueCodes;
+  private final OpaqueOneTimeCodes opaqueCodes;
   private final CredentialGuessThrottle throttle;
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactionTemplate;
@@ -73,45 +72,63 @@ public class AccountInvitationCeremonyService {
     var passwordHash = passwordEncoder.encode(command.password());
 
     try {
-      return transactionTemplate.execute(
-          _ -> {
-            if (!invitationRepository.tryDecide(
-                invitation.getId(), AccountInvitationStatus.ACCEPTED, clock.instant())) {
-              throw new InvalidOneTimeCodeException();
-            }
-            var householdId = invitation.getHouseholdId();
-            if (householdId == null) {
-              // The target Household disappeared after issuance; invalidation should have caught
-              // it, and a late code must fail exactly like an unknown one.
-              throw new InvalidOneTimeCodeException();
-            }
-            var account = createAccount(command, invitation, passwordHash);
-            var issued = refreshTokenService.createSession(account, command.deviceName());
-            return AcceptedInvitation.builder()
-                .account(account)
-                .session(issued.session())
-                .rawRefreshToken(issued.rawToken())
-                .build();
-          });
+      return acceptInTransaction(command, invitation, passwordHash);
     } catch (DataIntegrityViolationException exception) {
-      var duplicateEmail =
-          constraintViolationTranslator
-              .constraintName(exception)
-              .filter(EMAIL_UNIQUE_INDEX::equals)
-              .isPresent();
-      if (!duplicateEmail) {
-        throw exception;
-      }
-      throw new InvitationEmailAlreadyUsedException(exception);
+      throw translateAcceptanceFailure(exception);
     }
   }
 
   public void decline(String rawCode) {
     var invitation = resolvePending(rawCode);
-    if (!invitationRepository.tryDecide(
-        invitation.getId(), AccountInvitationStatus.DECLINED, clock.instant())) {
+    if (!invitationRepository.markDeclinedIfPendingAndUnexpired(
+        invitation.getId(), clock.instant())) {
       throw new InvalidOneTimeCodeException();
     }
+  }
+
+  private AcceptedInvitation acceptInTransaction(
+      AcceptInvitationCommand command, AccountInvitation invitation, String passwordHash) {
+    return transactionTemplate.execute(
+        _ -> acceptPendingInvitation(command, invitation, passwordHash));
+  }
+
+  private AcceptedInvitation acceptPendingInvitation(
+      AcceptInvitationCommand command, AccountInvitation invitation, String passwordHash) {
+    consumeInvitation(invitation);
+    requireTargetHousehold(invitation);
+    var account = createAccount(command, invitation, passwordHash);
+    var issued = refreshTokenService.createSession(account, command.deviceName());
+    return AcceptedInvitation.builder()
+        .account(account)
+        .session(issued.session())
+        .rawRefreshToken(issued.rawToken())
+        .build();
+  }
+
+  private void consumeInvitation(AccountInvitation invitation) {
+    if (!invitationRepository.markAcceptedIfPendingAndUnexpired(
+        invitation.getId(), clock.instant())) {
+      throw new InvalidOneTimeCodeException();
+    }
+  }
+
+  private static void requireTargetHousehold(AccountInvitation invitation) {
+    if (invitation.getHouseholdId() == null) {
+      throw new InvalidOneTimeCodeException();
+    }
+  }
+
+  private RuntimeException translateAcceptanceFailure(DataIntegrityViolationException exception) {
+    var duplicateEmail =
+        constraintViolationTranslator
+            .constraintName(exception)
+            .filter(EMAIL_UNIQUE_INDEX::equals)
+            .isPresent();
+    if (duplicateEmail) {
+      return new InvitationEmailAlreadyUsedException(exception);
+    }
+
+    return exception;
   }
 
   private UserAccount createAccount(
@@ -146,6 +163,7 @@ public class AccountInvitationCeremonyService {
               .profileId(profile.getId())
               .build());
     }
+
     shareRepository.saveAndFlush(
         ProfileHouseholdShare.builder()
             .profileId(profile.getId())
@@ -157,23 +175,25 @@ public class AccountInvitationCeremonyService {
   }
 
   /**
-   * Resolves a presented code to its PENDING, unexpired row: throttled per publicId before any
-   * lookup, constant-time digest comparison, one deliberate failure answer for every miss.
+   * Resolves a presented code to its PENDING, unexpired row: known public IDs are throttled before
+   * constant-time digest comparison, with one deliberate failure answer for every miss.
    */
   private AccountInvitation resolvePending(String rawCode) {
     var presented = opaqueCodes.parse(rawCode).orElseThrow(InvalidOneTimeCodeException::new);
-    throttle.registerCodeGuess(presented.publicId());
     var invitation =
         invitationRepository
             .findByPublicId(presented.publicId())
             .orElseThrow(InvalidOneTimeCodeException::new);
+    throttle.registerCodeGuess(presented.publicId());
     if (!opaqueCodes.matches(presented, invitation.getSecretDigest())) {
       throw new InvalidOneTimeCodeException();
     }
+
     if (invitation.getStatus() != AccountInvitationStatus.PENDING
         || !invitation.getExpiresAt().isAfter(clock.instant())) {
       throw new InvalidOneTimeCodeException();
     }
+
     throttle.resetCodeGuesses(presented.publicId());
     return invitation;
   }

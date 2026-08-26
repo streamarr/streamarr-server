@@ -11,17 +11,19 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
+import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
-import com.streamarr.server.services.auth.OpaqueCodes;
+import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -57,6 +59,7 @@ class CredentialIssuanceServiceTest {
   private final FakePasswordResetCodeRepository resetCodes = new FakePasswordResetCodeRepository();
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
+  private final FakeProfileRepository profiles = new FakeProfileRepository();
   private final FakeSecurityAuditEventRepository audit = new FakeSecurityAuditEventRepository();
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
@@ -68,8 +71,9 @@ class CredentialIssuanceServiceTest {
           resetCodes,
           accounts,
           households,
+          profiles,
           audit,
-          new OpaqueCodes(),
+          new OpaqueOneTimeCodes(),
           new CredentialCodeProperties(INVITATION_TTL, PASSWORD_RESET_TTL),
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
@@ -104,6 +108,19 @@ class CredentialIssuanceServiceTest {
     assertThat(statuses)
         .containsExactlyInAnyOrder(
             AccountInvitationStatus.INVALIDATED, AccountInvitationStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName("Should expire an older stale invitation when a new invitation is issued")
+  void shouldExpireOlderStaleInvitationWhenNewInvitationIsIssued() {
+    var stale =
+        issued(service.issueAccountInvitation(authorization.currentIdentity(), command()))
+            .invitation();
+    stale.setExpiresAt(NOW.minusSeconds(1));
+
+    issued(service.issueAccountInvitation(authorization.currentIdentity(), command()));
+
+    assertThat(stale.getStatus()).isEqualTo(AccountInvitationStatus.EXPIRED);
   }
 
   @Test
@@ -221,6 +238,23 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
+  @DisplayName("Should expire an older stale reset code when a new reset code is issued")
+  void shouldExpireOlderStaleResetCodeWhenNewResetCodeIsIssued() {
+    var stale =
+        issuedReset(
+                service.issuePasswordReset(
+                    authorization.currentIdentity(), resident.getId(), "locked out"))
+            .resetCode();
+    stale.setExpiresAt(NOW.minusSeconds(1));
+
+    issuedReset(
+        service.issuePasswordReset(
+            authorization.currentIdentity(), resident.getId(), "locked out again"));
+
+    assertThat(stale.getStatus()).isEqualTo(PasswordResetCodeStatus.EXPIRED);
+  }
+
+  @Test
   @DisplayName("Should classify refusals under the oracle rule when reset issuance is denied")
   void shouldClassifyRefusalsUnderOracleRuleWhenResetIssuanceIsDenied() {
     assertThat(
@@ -245,6 +279,29 @@ class CredentialIssuanceServiceTest {
                 service.issuePasswordReset(
                     authorization.currentIdentity(), resident.getId(), "locked out")))
         .isInstanceOf(InvitationRejections.AccountNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when Account visibility cannot be decided for reset issuance")
+  void shouldFailClosedWhenAccountVisibilityCannotBeDecidedForResetIssuance() {
+    authorization.decideUnitWith(
+        intent -> {
+          if (intent instanceof Intent.IssuePasswordReset) {
+            return new Decision.Denied<>(Decision.DenialReason.POLICY);
+          }
+
+          if (intent instanceof Intent.ViewAccountAdministration) {
+            return new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE);
+          }
+
+          return allowed();
+        });
+
+    assertThatThrownBy(
+            () ->
+                service.issuePasswordReset(
+                    authorization.currentIdentity(), resident.getId(), "locked out"))
+        .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
   private IssueInvitationCommand command() {

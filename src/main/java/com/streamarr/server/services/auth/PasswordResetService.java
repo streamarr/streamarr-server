@@ -21,12 +21,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Service
 @RequiredArgsConstructor
-public class PasswordResetRedemptionService {
+public class PasswordResetService {
 
   private final PasswordResetCodeRepository resetCodeRepository;
   private final UserAccountRepository userAccountRepository;
   private final AuthSessionRepository authSessionRepository;
-  private final OpaqueCodes opaqueCodes;
+  private final OpaqueOneTimeCodes opaqueCodes;
   private final CredentialGuessThrottle throttle;
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactionTemplate;
@@ -39,12 +39,18 @@ public class PasswordResetRedemptionService {
     transactionTemplate.executeWithoutResult(
         _ -> {
           var now = clock.instant();
-          if (!resetCodeRepository.tryRedeem(code.getId(), now)) {
+          if (!userAccountRepository.lockById(code.getAccountId())) {
             throw new InvalidOneTimeCodeException();
           }
+
+          if (!resetCodeRepository.markRedeemedIfPendingAndUnexpired(code.getId(), now)) {
+            throw new InvalidOneTimeCodeException();
+          }
+
           if (!userAccountRepository.trySetPasswordHash(code.getAccountId(), newPasswordHash)) {
             throw new InvalidOneTimeCodeException();
           }
+
           authSessionRepository.revokeAllForAccount(
               code.getAccountId(), SessionRevocationReason.PASSWORD_CHANGE, now);
         });
@@ -52,18 +58,20 @@ public class PasswordResetRedemptionService {
 
   private PasswordResetCode resolvePending(String rawCode) {
     var presented = opaqueCodes.parse(rawCode).orElseThrow(InvalidOneTimeCodeException::new);
-    throttle.registerCodeGuess(presented.publicId());
     var code =
         resetCodeRepository
             .findByPublicId(presented.publicId())
             .orElseThrow(InvalidOneTimeCodeException::new);
+    throttle.registerCodeGuess(presented.publicId());
     if (!opaqueCodes.matches(presented, code.getSecretDigest())) {
       throw new InvalidOneTimeCodeException();
     }
+
     if (code.getStatus() != PasswordResetCodeStatus.PENDING
         || !code.getExpiresAt().isAfter(clock.instant())) {
       throw new InvalidOneTimeCodeException();
     }
+
     return code;
   }
 }

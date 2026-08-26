@@ -19,9 +19,9 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.identity.IdentityQueryService;
-import com.streamarr.server.services.identity.IdentityQueryService.HouseholdSummaryView;
-import com.streamarr.server.services.identity.IdentityQueryService.SelectableProfileView;
-import com.streamarr.server.services.identity.IdentityQueryService.UsableHouseholdView;
+import com.streamarr.server.services.identity.IdentityQueryService.HouseholdSummaryDetails;
+import com.streamarr.server.services.identity.IdentityQueryService.SelectableProfileDetails;
+import com.streamarr.server.services.identity.IdentityQueryService.UsableHouseholdDetails;
 import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
@@ -105,10 +105,10 @@ class MeResolverTest {
             .householdId(householdId)
             .householdRole(HouseholdRole.ADMIN)
             .build();
-    var home = new HouseholdSummaryView(householdId, "Home");
-    var visited = new HouseholdSummaryView(visitedHouseholdId, "Grandma");
+    var home = new HouseholdSummaryDetails(householdId, "Home");
+    var visited = new HouseholdSummaryDetails(visitedHouseholdId, "Grandma");
     var personal =
-        new SelectableProfileView(
+        new SelectableProfileDetails(
             UUID.randomUUID(),
             "Andrew",
             Optional.empty(),
@@ -118,7 +118,7 @@ class MeResolverTest {
             false,
             false);
     var kid =
-        new SelectableProfileView(
+        new SelectableProfileDetails(
             UUID.randomUUID(),
             "Kai",
             Optional.of("kai.png"),
@@ -127,10 +127,11 @@ class MeResolverTest {
             true,
             false,
             false);
-    var view = new IdentityQueryService.MeView(account, TokenScope.ACCOUNT, home, home, false);
-    when(identityQueryService.meView(any())).thenReturn(view);
+    var details =
+        new IdentityQueryService.MeDetails(account, TokenScope.ACCOUNT, home, home, false);
+    when(identityQueryService.meDetails(any())).thenReturn(details);
     stubPages(
-        List.of(new UsableHouseholdView(home, true), new UsableHouseholdView(visited, false)),
+        List.of(new UsableHouseholdDetails(home, true), new UsableHouseholdDetails(visited, false)),
         List.of(personal, kid),
         null);
 
@@ -227,7 +228,7 @@ class MeResolverTest {
   @DisplayName("Should return profile required code when the query service demands a profile")
   void shouldReturnProfileRequiredCodeWhenQueryServiceDemandsProfile() {
     authenticateAtAccountScope();
-    when(identityQueryService.meView(any())).thenThrow(new ProfileRequiredException());
+    when(identityQueryService.meDetails(any())).thenThrow(new ProfileRequiredException());
 
     var result = dgsQueryExecutor.execute("{ me { email } }");
 
@@ -240,9 +241,9 @@ class MeResolverTest {
     authenticateAtAccountScope();
     var account =
         AccountFixture.defaultAccountBuilder().id(accountId).householdId(householdId).build();
-    var home = new HouseholdSummaryView(householdId, "Home");
+    var home = new HouseholdSummaryDetails(householdId, "Home");
     var first =
-        new SelectableProfileView(
+        new SelectableProfileDetails(
             UUID.randomUUID(),
             "Andrew",
             Optional.empty(),
@@ -252,17 +253,18 @@ class MeResolverTest {
             false,
             true);
     var second =
-        new SelectableProfileView(
+        new SelectableProfileDetails(
             UUID.randomUUID(), "Kai", Optional.empty(), ProfileKind.KID, false, true, false, false);
-    var view = new IdentityQueryService.MeView(account, TokenScope.PROFILE, home, home, false);
-    when(identityQueryService.meView(any())).thenReturn(view);
-    stubPages(List.of(new UsableHouseholdView(home, true)), List.of(first, second), first);
+    var details =
+        new IdentityQueryService.MeDetails(account, TokenScope.PROFILE, home, home, false);
+    when(identityQueryService.meDetails(any())).thenReturn(details);
+    stubPages(List.of(new UsableHouseholdDetails(home, true)), List.of(first, second), first);
   }
 
   private void stubPages(
-      List<UsableHouseholdView> households,
-      List<SelectableProfileView> profiles,
-      SelectableProfileView selected) {
+      List<UsableHouseholdDetails> households,
+      List<SelectableProfileDetails> profiles,
+      SelectableProfileDetails selected) {
     when(identityQueryService.usableHouseholds(any(), any()))
         .thenAnswer(
             invocation -> {
@@ -282,7 +284,8 @@ class MeResolverTest {
                   profiles.stream()
                       .map(profile -> new PageItem<>(profile, profile.name()))
                       .toList();
-              return paginationService.buildKeysetPage(items, options, SelectableProfileView::id);
+              return paginationService.buildKeysetPage(
+                  items, options, SelectableProfileDetails::id);
             });
     when(identityQueryService.selectedProfile(any())).thenReturn(Optional.ofNullable(selected));
   }

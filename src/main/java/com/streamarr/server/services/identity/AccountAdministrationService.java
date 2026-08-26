@@ -191,16 +191,22 @@ public class AccountAdministrationService {
       return Outcome.rejected(plan.notFound().get());
     }
 
+    var targetAccount = target.orElseThrow();
     if (plan.transition().getAsBoolean()) {
-      plan.runAfterTransition();
-      if (plan.isAudited()) {
-        securityAuditEventRepository.append(auditEntry(identity, plan, target.get()));
-      }
-
-      userAccountRepository.refresh(target.get());
+      applySuccessfulTransition(identity, plan, targetAccount);
     }
 
-    return Outcome.accepted(target.get());
+    return Outcome.accepted(targetAccount);
+  }
+
+  private <R> void applySuccessfulTransition(
+      AuthenticatedIdentity identity, TransitionPlan<R> plan, UserAccount target) {
+    plan.runAfterTransition();
+    if (plan.isAudited()) {
+      securityAuditEventRepository.append(auditEntry(identity, plan, target));
+    }
+
+    userAccountRepository.refresh(target);
   }
 
   /** Converts policy denial to forbidden only when the Account is visible; otherwise not-found. */
@@ -228,8 +234,10 @@ public class AccountAdministrationService {
 
   /** A removed or compromised issuer leaves no codes behind that could take effect later. */
   private void invalidateIssuedCredentials(UUID issuerAccountId, String reason) {
-    accountInvitationRepository.invalidateIssuedBy(issuerAccountId, reason, clock.instant());
-    passwordResetCodeRepository.invalidateIssuedBy(issuerAccountId, reason, clock.instant());
+    accountInvitationRepository.invalidatePendingInvitationsIssuedBy(
+        issuerAccountId, reason, clock.instant());
+    passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
+        issuerAccountId, reason, clock.instant());
   }
 
   private boolean mayViewAccount(AuthenticatedIdentity identity, UUID accountId) {

@@ -126,4 +126,16 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
             .orderBy(PROFILE.NAME.asc(), PROFILE.ID.asc());
     return JooqQueryHelper.nativeQuery(entityManager, query, Profile.class);
   }
+
+  @Override
+  public boolean existsAvailableInHouseholdWithNameIgnoreCase(UUID householdId, String name) {
+    return dsl.fetchExists(
+        dsl.selectOne()
+            .from(PROFILE)
+            .join(PROFILE_HOUSEHOLD_SHARE)
+            .on(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(PROFILE.ID))
+            .where(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
+            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(DSL.inline(ProfileShareStatus.ACTIVE)))
+            .and(PROFILE.NAME.equalIgnoreCase(name)));
+  }
 }

@@ -22,6 +22,8 @@ class CredentialErrorsTest {
         .isInstanceOf(EmailAlreadyUsedError.class);
     assertThat(CredentialErrors.toIssueError(new InvitationRejections.ProfileNameRequired()))
         .isInstanceOf(ProfileNameRequiredError.class);
+    assertThat(CredentialErrors.toIssueError(new InvitationRejections.ProfileNameTaken()))
+        .isInstanceOf(ProfileNameTakenError.class);
     assertThat(CredentialErrors.toIssueError(new InvitationRejections.HouseholdNotFound()))
         .isInstanceOf(HouseholdNotFoundError.class);
     assertThat(CredentialErrors.toIssueError(new InvitationRejections.RestrictedFirstAccount()))
@@ -38,6 +40,10 @@ class CredentialErrorsTest {
             error ->
                 assertThat(((InputMutationError) error).inputPath())
                     .containsExactly("profileManagerAccountId"));
+    assertThat(
+            CredentialErrors.toIssueError(
+                new InvitationRejections.MaximumAllowedRatingAgeInvalid()))
+        .isInstanceOf(MaximumAllowedRatingAgeInvalidError.class);
   }
 
   @Test

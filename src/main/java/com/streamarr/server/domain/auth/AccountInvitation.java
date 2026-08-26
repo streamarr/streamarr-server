@@ -67,6 +67,14 @@ public class AccountInvitation extends BaseAuditableEntity<AccountInvitation> {
 
   private byte[] secretDigest;
 
+  public AccountInvitationStatus statusAt(Instant now) {
+    if (status == AccountInvitationStatus.PENDING && !expiresAt.isAfter(now)) {
+      return AccountInvitationStatus.EXPIRED;
+    }
+
+    return status;
+  }
+
   @Override
   public String toString() {
     return "AccountInvitation[id=%s, status=%s, publicId=%s, secretDigest=REDACTED]"

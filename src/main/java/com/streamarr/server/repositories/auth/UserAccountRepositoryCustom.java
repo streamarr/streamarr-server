@@ -4,6 +4,7 @@ import com.streamarr.server.domain.auth.AccountAuthorityFacts;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -32,6 +33,12 @@ public interface UserAccountRepositoryCustom {
 
   /** Every Household the Account may use right now: its membership Household first, then visits. */
   List<UUID> findUsableHouseholdIds(UUID accountId);
+
+  /** Locks the Account row so credential transitions follow Account-before-credential order. */
+  boolean lockById(UUID accountId);
+
+  /** Locks every requested Account in UUID order, bounded by the transaction-local timeout. */
+  Set<UUID> lockByIds(Set<UUID> accountIds, Duration timeout);
 
   /**
    * Locks an enabled account only while its password hash still matches the caller's snapshot. This

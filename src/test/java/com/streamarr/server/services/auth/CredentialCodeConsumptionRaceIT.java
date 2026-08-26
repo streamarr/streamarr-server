@@ -36,13 +36,13 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 @DisplayName("Credential Code Consumption Race Integration Tests")
 class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
-  @Autowired private AccountInvitationCeremonyService invitationCeremonyService;
-  @Autowired private PasswordResetRedemptionService resetRedemptionService;
+  @Autowired private AccountInvitationService invitationService;
+  @Autowired private PasswordResetService passwordResetService;
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private PasswordResetCodeRepository resetCodeRepository;
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private AuthSessionRepository authSessionRepository;
-  @Autowired private OpaqueCodes opaqueCodes;
+  @Autowired private OpaqueOneTimeCodes opaqueCodes;
   @Autowired private PasswordEncoder passwordEncoder;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private DataSource dataSource;
@@ -78,19 +78,18 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
               () ->
                   attempt(
                       () ->
-                          invitationCeremonyService.accept(
-                              AccountInvitationCeremonyService.AcceptInvitationCommand.builder()
+                          invitationService.accept(
+                              AccountInvitationService.AcceptInvitationCommand.builder()
                                   .code(issued.code())
                                   .displayName("Invitee")
                                   .password("a strong passphrase")
                                   .deviceName("test")
                                   .build())));
-      var decline =
-          executor.submit(() -> attempt(() -> invitationCeremonyService.decline(issued.code())));
+      var decline = executor.submit(() -> attempt(() -> invitationService.decline(issued.code())));
 
       await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(waitingUpdates("account_invitation")).isEqualTo(2));
+          .untilAsserted(() -> assertThat(waitingLockRequests("account_invitation")).isEqualTo(2));
       releaseRow.countDown();
 
       assertOneWinner(acceptance.get(10, TimeUnit.SECONDS), decline.get(10, TimeUnit.SECONDS));
@@ -128,19 +127,23 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
               () ->
                   attempt(
                       () ->
-                          resetRedemptionService.redeem(
+                          passwordResetService.redeem(
                               issued.code(), "the replacement passphrase")));
       var second =
           executor.submit(
               () ->
                   attempt(
                       () ->
-                          resetRedemptionService.redeem(
+                          passwordResetService.redeem(
                               issued.code(), "the replacement passphrase")));
 
       await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(waitingUpdates("password_reset_code")).isEqualTo(2));
+          .untilAsserted(
+              () -> {
+                assertThat(waitingLockRequests("password_reset_code")).isOne();
+                assertThat(waitingLockRequests("user_account")).isOne();
+              });
       releaseRow.countDown();
 
       assertOneWinner(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS));
@@ -190,11 +193,11 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
               () ->
                   attempt(
                       () ->
-                          resetRedemptionService.redeem(
+                          passwordResetService.redeem(
                               issued.code(), "the concurrent replacement passphrase")));
       await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(waitingUpdates("user_account")).isOne());
+          .untilAsserted(() -> assertThat(waitingLockRequests("user_account")).isOne());
       releaseRow.countDown();
 
       assertThat(redemption.get(10, TimeUnit.SECONDS).successful()).isTrue();
@@ -211,7 +214,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
         .isTrue();
   }
 
-  private AccountInvitation saveInvitation(OpaqueCodes.IssuedCode issued) {
+  private AccountInvitation saveInvitation(OpaqueOneTimeCodes.IssuedCode issued) {
     return invitationRepository.saveAndFlush(
         AccountInvitation.builder()
             .recipientEmail("race-invitee@example.com")
@@ -227,7 +230,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
             .build());
   }
 
-  private PasswordResetCode saveResetCode(OpaqueCodes.IssuedCode issued) {
+  private PasswordResetCode saveResetCode(OpaqueOneTimeCodes.IssuedCode issued) {
     return resetCodeRepository.saveAndFlush(
         PasswordResetCode.builder()
             .accountId(identity.account().getId())
@@ -270,6 +273,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
       if (!rowLock.releaseRow().await(10, TimeUnit.SECONDS)) {
         throw new AssertionError("test did not release the credential-code row lock");
       }
+
       connection.rollback();
     } catch (Exception exception) {
       throw new AssertionError("could not coordinate the credential-code row lock", exception);
@@ -289,13 +293,14 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
       if (!releaseRow.await(10, TimeUnit.SECONDS)) {
         throw new AssertionError("test did not release the Account row lock");
       }
+
       connection.commit();
     } catch (Exception exception) {
       throw new AssertionError("could not coordinate the Account row lock", exception);
     }
   }
 
-  private int waitingUpdates(String tableName) {
+  private int waitingLockRequests(String tableName) {
     return jdbcTemplate.queryForObject(
         """
         SELECT count(*)
@@ -304,7 +309,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
           AND query ILIKE ?
         """,
         Integer.class,
-        "%update%" + tableName + "%");
+        "%" + tableName + "%");
   }
 
   private static Attempt attempt(ThrowingRunnable action) {

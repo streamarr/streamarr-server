@@ -21,6 +21,7 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -161,6 +162,27 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   }
 
   @Override
+  public boolean lockById(UUID accountId) {
+    return dsl.select(USER_ACCOUNT.ID)
+        .from(USER_ACCOUNT)
+        .where(USER_ACCOUNT.ID.eq(accountId))
+        .forUpdate()
+        .fetchOptional()
+        .isPresent();
+  }
+
+  @Override
+  public Set<UUID> lockByIds(Set<UUID> accountIds, Duration timeout) {
+    dsl.setLocal(DSL.name("lock_timeout"), DSL.inline(timeout.toMillis() + "ms")).execute();
+    return dsl.select(USER_ACCOUNT.ID)
+        .from(USER_ACCOUNT)
+        .where(USER_ACCOUNT.ID.in(accountIds))
+        .orderBy(USER_ACCOUNT.ID)
+        .forUpdate()
+        .fetchSet(USER_ACCOUNT.ID);
+  }
+
+  @Override
   public boolean tryGrantServerAdmin(UUID accountId) {
     return transition(
         accountId, USER_ACCOUNT.SERVER_ADMIN, true, USER_ACCOUNT.SERVER_ADMIN.isFalse());
@@ -259,6 +281,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     if (!locked) {
       return Optional.empty();
     }
+
     var householdHasAccount =
         dsl.fetchExists(
             dsl.selectOne().from(USER_ACCOUNT).where(USER_ACCOUNT.HOUSEHOLD_ID.eq(householdId)));
@@ -278,6 +301,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     if (householdAdminRequired) {
       eligibility = eligibility.and(USER_ACCOUNT.HOUSEHOLD_ROLE.eq(HouseholdRole.ADMIN));
     }
+
     return dsl.fetchExists(
         dsl.selectOne()
             .from(USER_ACCOUNT)
