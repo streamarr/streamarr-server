@@ -210,11 +210,6 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
-  public boolean lockById(UUID accountId) {
-    return findById(accountId).isPresent();
-  }
-
-  @Override
   public Set<UUID> lockByIds(Set<UUID> accountIds, Duration timeout) {
     return accountIds.stream().filter(this::existsById).collect(Collectors.toUnmodifiableSet());
   }

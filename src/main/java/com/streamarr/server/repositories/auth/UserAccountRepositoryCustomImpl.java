@@ -40,6 +40,7 @@ import org.jooq.SortOrder;
 import org.jooq.TableField;
 import org.jooq.impl.DSL;
 import org.springframework.data.domain.AuditorAware;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 // checkstyle:fullyQualifiedName suppressed for the class: the domain and generated jOOQ role
 // enums share a simple name, an unavoidable collision.
@@ -162,17 +163,8 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   }
 
   @Override
-  public boolean lockById(UUID accountId) {
-    return dsl.select(USER_ACCOUNT.ID)
-        .from(USER_ACCOUNT)
-        .where(USER_ACCOUNT.ID.eq(accountId))
-        .forUpdate()
-        .fetchOptional()
-        .isPresent();
-  }
-
-  @Override
   public Set<UUID> lockByIds(Set<UUID> accountIds, Duration timeout) {
+    requireActiveTransaction();
     dsl.setLocal(DSL.name("lock_timeout"), DSL.inline(timeout.toMillis() + "ms")).execute();
     return dsl.select(USER_ACCOUNT.ID)
         .from(USER_ACCOUNT)
@@ -180,6 +172,13 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
         .orderBy(USER_ACCOUNT.ID)
         .forUpdate()
         .fetchSet(USER_ACCOUNT.ID);
+  }
+
+  /** Outside a transaction, SET LOCAL only warns and the timeout would silently not apply. */
+  private static void requireActiveTransaction() {
+    if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+      throw new IllegalStateException("Account row locks require an active transaction.");
+    }
   }
 
   @Override

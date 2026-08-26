@@ -99,6 +99,18 @@ class AuthExceptionHandlerTest {
   }
 
   @Test
+  @DisplayName("Should respond 503 resource busy when a row lock wait runs out")
+  void shouldRespond503ResourceBusyWhenRowLockWaitRunsOut() {
+    var response = handler.handleLockContention(new CannotAcquireLockException("lock timeout"));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    assertThat(response.getBody())
+        .isEqualTo(
+            new AuthErrorResponse(
+                "RESOURCE_BUSY", "Another change is in progress; try again shortly."));
+  }
+
+  @Test
   @DisplayName("Should respond 500 internal error when persistence fails")
   void shouldRespond500InternalErrorWhenPersistenceFails() {
     var response = handler.handlePersistenceFailure(new CannotAcquireLockException("lock timeout"));

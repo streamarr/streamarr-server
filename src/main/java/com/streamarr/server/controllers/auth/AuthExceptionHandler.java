@@ -18,6 +18,7 @@ import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -35,6 +36,7 @@ public class AuthExceptionHandler {
   // Do not reveal whether a rejected refresh token was ever valid.
   private static final String REFRESH_TOKEN_REJECTED = "The refresh token is unknown or expired.";
   private static final String REQUEST_NOT_COMPLETED = "The request could not be completed.";
+  private static final String RESOURCE_BUSY = "Another change is in progress; try again shortly.";
 
   @ExceptionHandler(SetupAlreadyCompletedException.class)
   public ResponseEntity<AuthErrorResponse> handleSetupAlreadyCompleted(
@@ -109,6 +111,16 @@ public class AuthExceptionHandler {
   public ResponseEntity<AuthErrorResponse> handleAuthorizationUnavailable(
       AuthorizationUnavailableException e) {
     return respond(HttpStatus.SERVICE_UNAVAILABLE, "AUTHORIZATION_UNAVAILABLE", e);
+  }
+
+  /**
+   * A bounded row-lock wait that ran out is contention, not a defect: retry, and no stack trace.
+   */
+  @ExceptionHandler(PessimisticLockingFailureException.class)
+  public ResponseEntity<AuthErrorResponse> handleLockContention(
+      PessimisticLockingFailureException e) {
+    log.warn("Auth request gave up waiting for a row lock: {}", e.getMessage());
+    return respond(HttpStatus.SERVICE_UNAVAILABLE, "RESOURCE_BUSY", RESOURCE_BUSY);
   }
 
   /** Persistence failures never masquerade as a wrong code or a bodyless default page. */

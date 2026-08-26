@@ -34,10 +34,12 @@ public interface UserAccountRepositoryCustom {
   /** Every Household the Account may use right now: its membership Household first, then visits. */
   List<UUID> findUsableHouseholdIds(UUID accountId);
 
-  /** Locks the Account row so credential transitions follow Account-before-credential order. */
-  boolean lockById(UUID accountId);
-
-  /** Locks every requested Account in UUID order, bounded by the transaction-local timeout. */
+  /**
+   * Locks every requested Account so credential transitions follow Account-before-credential order.
+   * Rows are taken in PostgreSQL {@code uuid} order (not Java {@code UUID.compareTo}), the wait is
+   * bounded by a transaction-local {@code lock_timeout}, and an active transaction is required.
+   * Returns the ids that exist and are now locked.
+   */
   Set<UUID> lockByIds(Set<UUID> accountIds, Duration timeout);
 
   /**

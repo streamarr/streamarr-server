@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.AuthThrottleProperties;
+import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
@@ -190,6 +191,7 @@ class PasswordResetServiceTest {
             clock),
         new PlainEncoder(),
         new TransactionTemplate(new FakeTransactionManager()),
+        new CredentialCodeProperties(Duration.ofDays(7), Duration.ofHours(1)),
         clock);
   }
 
