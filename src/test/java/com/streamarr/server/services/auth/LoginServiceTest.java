@@ -367,6 +367,44 @@ class LoginServiceTest {
         .containsExactly(account.getId(), account.getId());
   }
 
+  @Test
+  @DisplayName("Should refuse the login after five failures within the window")
+  void shouldRefuseLoginAfterFiveFailuresWithinWindow() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+    for (int i = 0; i < 5; i++) {
+      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAttempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+    var correctAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(correctAttempt))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should forgive earlier failures when a login succeeds")
+  void shouldForgiveEarlierFailuresWhenLoginSucceeds() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+    for (int i = 0; i < 4; i++) {
+      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAttempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+    loginService.login(commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build());
+    currentTime.updateAndGet(instant -> instant.plusSeconds(1));
+
+    // Five fresh failures are admitted after the success; the sixth attempt is not.
+    for (int i = 0; i < 5; i++) {
+      var wrongAgain = commandBuilder(account.getEmail()).password("wrong-again-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAgain))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+    var blocked = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+    assertThatThrownBy(() -> loginService.login(blocked))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
   private UserAccount seedAccount(String passwordHash) {
     return userAccountRepository.save(
         AccountFixture.defaultAccountBuilder().passwordHash(passwordHash).build());

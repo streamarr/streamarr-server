@@ -257,6 +257,21 @@ class AccountInvitationServiceTest {
   }
 
   @Test
+  @DisplayName("Should refuse the code after five wrong secrets for the same invitation")
+  void shouldRefuseCodeAfterFiveWrongSecretsForSameInvitation() {
+    var issued = pendingInvitation(pendingInvitationBuilder().build());
+    var publicId = invitations.findAll().getFirst().getPublicId();
+    for (var attempt = 0; attempt < 5; attempt++) {
+      var guess = publicId + ".guess-" + attempt;
+      assertThatThrownBy(() -> lookup(guess)).isInstanceOf(InvalidOneTimeCodeException.class);
+    }
+
+    var correct = issued.code();
+    assertThatThrownBy(() -> lookup(correct))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
   @DisplayName("Should journal each correct presentation as a success against the invitation")
   void shouldJournalEachCorrectPresentationAsSuccessAgainstInvitation() {
     var issued = pendingInvitation(pendingInvitationBuilder().build());
