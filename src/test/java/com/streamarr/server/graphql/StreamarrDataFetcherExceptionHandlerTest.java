@@ -30,6 +30,8 @@ import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.security.access.AccessDeniedException;
 
@@ -247,10 +249,11 @@ class StreamarrDataFetcherExceptionHandlerTest {
     assertThat(plain.getExtensions()).doesNotContainKey("retryAfterSeconds");
   }
 
-  @Test
+  @ParameterizedTest(name = "{0} seconds")
+  @ValueSource(longs = {0, -1})
   @DisplayName("Should report at least one second when the retry delay is not positive")
-  void shouldReportAtLeastOneSecondWhenRetryDelayIsNotPositive() {
-    var error = errorFor(new TooManyDeviceAttemptsException(Duration.ZERO));
+  void shouldReportAtLeastOneSecondWhenRetryDelayIsNotPositive(long seconds) {
+    var error = errorFor(new TooManyDeviceAttemptsException(Duration.ofSeconds(seconds)));
 
     assertThat(error.getExtensions()).containsEntry("retryAfterSeconds", 1L);
   }

@@ -594,6 +594,40 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should journal no attempt when the invitation code is blank")
+  void shouldJournalNoAttemptWhenInvitationCodeIsBlank() throws Exception {
+    var source = remoteAddr("198.51.100.72");
+
+    mockMvc
+        .perform(
+            post("/api/auth/invitation/lookup")
+                .with(source)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"code\": \" \"}"))
+        .andExpect(status().isBadRequest());
+    mockMvc
+        .perform(
+            post("/api/auth/invitation/accept")
+                .with(source)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"code": " ", "displayName": "Invitee", \
+                    "password": "a brand new passphrase", "cookieMode": false}
+                    """))
+        .andExpect(status().isBadRequest());
+    mockMvc
+        .perform(
+            post("/api/auth/invitation/decline")
+                .with(source)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"code\": \" \"}"))
+        .andExpect(status().isBadRequest());
+
+    assertThat(journaledAttemptsFrom("198.51.100.72")).isZero();
+  }
+
+  @Test
   @DisplayName(
       "Should revoke refresh and create no session when a reset is redeemed while disabled")
   void shouldRevokeRefreshAndCreateNoSessionWhenResetIsRedeemedWhileDisabled() throws Exception {

@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.domain.auth.UserAccount;
@@ -159,6 +160,50 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should spend one budget when unknown lookups and decisions are mixed")
+  void shouldSpendOneBudgetWhenUnknownLookupsAndDecisionsAreMixed() throws Exception {
+    var bearer = bearerFor(seedAccount());
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      mockMvc.perform(lookup(bearer, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
+    }
+    for (var attempt = 0; attempt < MAXIMUM_FAILURES - 3; attempt++) {
+      mockMvc.perform(decision(bearer, UNKNOWN_USER_CODE, "DENY")).andExpect(status().isNotFound());
+    }
+
+    mockMvc.perform(lookup(bearer, UNKNOWN_USER_CODE)).andExpect(status().isTooManyRequests());
+  }
+
+  @Test
+  @DisplayName("Should journal no attempt when the user code is malformed")
+  void shouldJournalNoAttemptWhenUserCodeIsMalformed() throws Exception {
+    var approver = seedAccount();
+    var bearer = bearerFor(approver);
+
+    mockMvc
+        .perform(lookup(bearer, "not a code"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("INVALID_USER_CODE"));
+    mockMvc
+        .perform(decision(bearer, "not a code", "DENY"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("INVALID_USER_CODE"));
+
+    assertThat(journaledAttempts(approver.getId())).isZero();
+  }
+
+  @Test
+  @DisplayName("Should journal exactly one attempt when a real pairing code is decided")
+  void shouldJournalExactlyOneAttemptWhenRealPairingCodeIsDecided() throws Exception {
+    var approver = seedAccount();
+    var userCode = issueUserCode();
+
+    mockMvc.perform(decision(bearerFor(approver), userCode, "DENY")).andExpect(status().isOk());
+
+    assertThat(journaledAttempts(approver.getId())).isEqualTo(1);
+  }
+
+  @Test
   @DisplayName("Should refuse issuance with a retry hint when the outstanding cap is reached")
   void shouldRefuseIssuanceWithRetryHintWhenOutstandingCapReached() throws Exception {
     for (var issued = 0; issued < properties.maxOutstandingCodes(); issued++) {
@@ -187,6 +232,17 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
     return post("/api/auth/device/code")
         .contentType(MediaType.APPLICATION_JSON)
         .content("{\"deviceName\": \"Apple TV\", \"esn\": \"esn-1\"}");
+  }
+
+  private String issueUserCode() throws Exception {
+    var response =
+        mockMvc
+            .perform(issueCode())
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return JsonPath.read(response, "$.userCode");
   }
 
   private MockHttpServletRequestBuilder lookup(String bearer, String userCode) {

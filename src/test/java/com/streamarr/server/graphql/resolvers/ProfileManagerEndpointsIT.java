@@ -161,6 +161,32 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should throttle a GraphQL acceptance with a retry hint when wrong secrets exceed the limit")
+  void shouldThrottleGraphQlAcceptanceWithRetryHintWhenWrongSecretsExceedLimit() throws Exception {
+    var issued = issueManagerInvitation(managedOrphan());
+    var bearer = authTestSupport.accountBearer(recipient);
+    var publicId = issued.code().substring(0, issued.code().indexOf('.'));
+
+    for (var attempt = 0; attempt < 5; attempt++) {
+      graphql(bearer, acceptManagerInvitation(publicId + ".wrong-secret-" + attempt))
+          .andExpect(status().isOk())
+          .andExpect(
+              jsonPath("$.data.acceptManagerInvitation.userErrors[0].__typename")
+                  .value("ManagerInvitationNotFoundError"));
+    }
+
+    graphql(bearer, acceptManagerInvitation(issued.code()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.errorType").value("UNAVAILABLE"))
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("TOO_MANY_CREDENTIAL_ATTEMPTS"))
+        .andExpect(jsonPath("$.errors[0].extensions.retryAfterSeconds").isNumber());
+    assertThat(invitationRepository.findById(UUID.fromString(issued.invitationId())).orElseThrow())
+        .extracting(invitation -> invitation.getStatus().name())
+        .isEqualTo("PENDING");
+  }
+
+  @Test
   @DisplayName("Should hide manager invitations when the caller only supervises by share")
   void shouldHideManagerInvitationsWhenCallerOnlySupervisesByShare() throws Exception {
     var namedRecipientId = transactionTemplate.execute(_ -> secondLocalManagerId());
