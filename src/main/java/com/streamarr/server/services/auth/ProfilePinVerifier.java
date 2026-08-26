@@ -29,10 +29,15 @@ public class ProfilePinVerifier {
    * @throws InvalidProfilePinException when the PIN is missing or does not match
    */
   public void verify(UUID accountId, Profile profile, String pin, String ipAddress) {
+    // A missing PIN is transport-invalid input, not a guess: it spends no journal slot (ADR 0028).
+    if (pin == null || pin.isBlank()) {
+      throw new InvalidProfilePinException();
+    }
+
     credentialAttempts.attempt(
         pinTarget(accountId, profile.getId(), ipAddress),
         () -> {
-          if (pin == null || pin.isBlank() || !matches(profile, pin)) {
+          if (!matches(profile, pin)) {
             throw new InvalidProfilePinException();
           }
         });
