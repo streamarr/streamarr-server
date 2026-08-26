@@ -60,8 +60,10 @@ public sealed interface CredentialAttemptPolicy {
 
     private Optional<Instant> capacityFreesAt(CredentialAttemptHistory history, Instant now) {
       var windowStart = now.minus(failureWindow);
+      // Strictly after: a failure exactly one window old frees its slot at that instant, which is
+      // the moment a blocked client was told to retry.
       var recentFailures =
-          history.failures().stream().filter(failure -> !failure.isBefore(windowStart)).toList();
+          history.failures().stream().filter(failure -> failure.isAfter(windowStart)).toList();
       if (recentFailures.size() + history.pendingExpiries().size() < maximumFailures) {
         return Optional.empty();
       }

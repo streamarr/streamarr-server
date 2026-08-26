@@ -131,6 +131,15 @@ class CredentialAttemptPolicyTest {
         .isEmpty();
   }
 
+  @Test
+  @DisplayName("Should admit exactly when the window closes on failures that filled it")
+  void shouldAdmitExactlyWhenWindowClosesOnFailuresThatFilledIt() {
+    var sameInstant = List.of(NOW, NOW, NOW, NOW, NOW);
+    var history = new CredentialAttemptHistory(sameInstant, List.of());
+
+    assertThat(STANDARD.retryAfter(history, NOW.plus(Duration.ofMinutes(15)))).isEmpty();
+  }
+
   private static List<Instant> failuresAt(Instant first, int count) {
     return IntStream.range(0, count).mapToObj(first::plusSeconds).toList();
   }
