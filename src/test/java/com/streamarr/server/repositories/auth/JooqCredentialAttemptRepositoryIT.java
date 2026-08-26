@@ -250,6 +250,22 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should complete at the reservation instant when the clock stepped backwards")
+  void shouldCompleteAtTheReservationInstantWhenTheClockSteppedBackwards() {
+    var target = resolvedTarget();
+    var reservation = reserve(target, NOW);
+
+    repository.complete(reservation, CredentialAttemptResult.FAILED, NOW.minusSeconds(1));
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT completed_at = attempted_at FROM credential_attempt WHERE id = ?",
+                Boolean.class,
+                reservation.id()))
+        .isTrue();
+  }
+
+  @Test
   @DisplayName("Should remove only attempts older than thirty days")
   void shouldRemoveOnlyAttemptsOlderThanThirtyDays() {
     var target = resolvedTarget();

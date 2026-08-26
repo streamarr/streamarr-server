@@ -52,10 +52,12 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
       throw new CredentialAttemptNotPendingException();
     }
 
+    var completion =
+        completedAt.isBefore(pending.attemptedAt()) ? pending.attemptedAt() : completedAt;
     attempts.put(
         reservation.id(),
         new AttemptSnapshot(
-            pending.id(), pending.target(), pending.attemptedAt(), completedAt, result));
+            pending.id(), pending.target(), pending.attemptedAt(), completion, result));
   }
 
   @Override
