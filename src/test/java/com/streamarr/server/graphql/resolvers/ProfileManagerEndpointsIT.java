@@ -96,27 +96,9 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should grant management when the named recipient accepts an invitation")
   void shouldGrantManagementWhenNamedRecipientAcceptsInvitation() throws Exception {
     var orphan = managedOrphan();
-
-    var response =
-        graphql(
-                authTestSupport.accountBearer(owner),
-                """
-                mutation { inviteProfileManager(input: {profileId: "%s",
-                  recipientAccountId: "%s"}) {
-                  issued { code invitation { id profileName status } }
-                  userErrors { __typename } } }
-                """
-                    .formatted(orphan.getId(), recipient.account().getId()))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.errors").doesNotExist())
-            .andExpect(
-                jsonPath("$.data.inviteProfileManager.issued.invitation.status").value("PENDING"))
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    var issued = objectMapper.readTree(response).path("data").path("inviteProfileManager");
-    var code = issued.path("issued").path("code").asString();
-    var invitationId = issued.path("issued").path("invitation").path("id").asString();
+    var issued = issueManagerInvitation(orphan);
+    var code = issued.code();
+    var invitationId = issued.invitationId();
 
     graphql(
             authTestSupport.accountBearer(recipient),
@@ -135,19 +117,6 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.acceptManagerInvitation.invitation.status").value("ACCEPTED"));
-
-    var host = DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS);
-    assertThat(
-            dsl.select(host)
-                .from(CREDENTIAL_ATTEMPT)
-                .where(CREDENTIAL_ATTEMPT.CREDENTIAL_ID.eq(UUID.fromString(invitationId)))
-                .and(
-                    CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(
-                        CredentialKind.PROFILE_MANAGER_INVITATION_CODE))
-                .orderBy(CREDENTIAL_ATTEMPT.ATTEMPTED_AT.desc())
-                .limit(1)
-                .fetchOne(host))
-        .isEqualTo("198.51.100.42");
 
     assertThat(
             profileManagerRepository.existsByAccountIdAndProfileId(
@@ -177,6 +146,18 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.cancelManagerInvitation.userErrors[0].__typename")
                 .value("InvitationNotPendingError"));
+  }
+
+  @Test
+  @DisplayName("Should journal the client address when a manager invitation code is accepted")
+  void shouldJournalClientAddressWhenManagerInvitationCodeIsAccepted() throws Exception {
+    var issued = issueManagerInvitation(managedOrphan());
+
+    graphql(authTestSupport.accountBearer(recipient), acceptManagerInvitation(issued.code()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist());
+
+    assertThat(journaledAddresses(issued.invitationId())).containsExactly("198.51.100.42");
   }
 
   @Test
@@ -816,6 +797,49 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                   .build());
           return profile;
         });
+  }
+
+  private IssuedManagerInvitation issueManagerInvitation(Profile profile) throws Exception {
+    var response =
+        graphql(
+                authTestSupport.accountBearer(owner),
+                """
+                mutation { inviteProfileManager(input: {profileId: "%s",
+                  recipientAccountId: "%s"}) {
+                  issued { code invitation { id profileName status } }
+                  userErrors { __typename } } }
+                """
+                    .formatted(profile.getId(), recipient.account().getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(
+                jsonPath("$.data.inviteProfileManager.issued.invitation.status").value("PENDING"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var issued = objectMapper.readTree(response).path("data").path("inviteProfileManager");
+    return new IssuedManagerInvitation(
+        issued.path("issued").path("code").asString(),
+        issued.path("issued").path("invitation").path("id").asString());
+  }
+
+  private record IssuedManagerInvitation(String code, String invitationId) {}
+
+  private static String acceptManagerInvitation(String code) {
+    return """
+        mutation { acceptManagerInvitation(input: {code: "%s"}) {
+          invitation { status } userErrors { __typename } } }
+        """
+        .formatted(code);
+  }
+
+  private List<String> journaledAddresses(String invitationId) {
+    var host = DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS);
+    return dsl.select(host)
+        .from(CREDENTIAL_ATTEMPT)
+        .where(CREDENTIAL_ATTEMPT.CREDENTIAL_ID.eq(UUID.fromString(invitationId)))
+        .and(CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(CredentialKind.PROFILE_MANAGER_INVITATION_CODE))
+        .fetch(host);
   }
 
   private ResultActions graphql(String bearer, String query) throws Exception {

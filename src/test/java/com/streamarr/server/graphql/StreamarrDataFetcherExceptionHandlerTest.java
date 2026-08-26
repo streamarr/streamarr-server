@@ -141,21 +141,43 @@ class StreamarrDataFetcherExceptionHandlerTest {
     assertThat(errorTypeFor(new ProfileRequiredException())).isEqualTo("FAILED_PRECONDITION");
     assertThat(errorTypeFor(new HouseholdRequiredException())).isEqualTo("FAILED_PRECONDITION");
     assertThat(errorTypeFor(new AuthorizationUnavailableException())).isEqualTo("UNAVAILABLE");
-    var credentialUnavailable =
-        new CredentialAttemptUnavailableException(new IllegalStateException("offline"));
-    assertThat(errorTypeFor(credentialUnavailable)).isEqualTo("UNAVAILABLE");
-    assertThat(codeFor(credentialUnavailable)).isEqualTo("CREDENTIAL_VERIFICATION_UNAVAILABLE");
     assertThat(errorTypeFor(new SessionNotFoundException(UUID.randomUUID())))
         .isEqualTo("NOT_FOUND");
-    var credentialThrottle = new TooManyCredentialAttemptsException(Duration.ofSeconds(7));
-    assertThat(errorTypeFor(credentialThrottle)).isEqualTo("UNAVAILABLE");
-    assertThat(codeFor(credentialThrottle)).isEqualTo("TOO_MANY_CREDENTIAL_ATTEMPTS");
-    assertThat(errorFor(credentialThrottle).getExtensions()).containsEntry("retryAfterSeconds", 7L);
-    var busy = new ResourceBusyException(new CannotAcquireLockException("lock timeout"));
-    assertThat(errorTypeFor(busy)).isEqualTo("UNAVAILABLE");
-    assertThat(codeFor(busy)).isEqualTo("RESOURCE_BUSY");
-    assertThat(errorFor(busy).getMessage())
-        .isEqualTo("Another change is in progress; try again shortly.");
+  }
+
+  @Test
+  @DisplayName("Should map a journal outage to unavailable when credential verification cannot run")
+  void shouldMapJournalOutageToUnavailableWhenCredentialVerificationCannotRun() {
+    var error =
+        errorFor(new CredentialAttemptUnavailableException(new IllegalStateException("offline")));
+
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "UNAVAILABLE")
+        .containsEntry("code", "CREDENTIAL_VERIFICATION_UNAVAILABLE")
+        .doesNotContainKey("retryAfterSeconds");
+  }
+
+  @Test
+  @DisplayName(
+      "Should map a credential throttle with its retry hint when attempts exceed the limit")
+  void shouldMapCredentialThrottleWithRetryHintWhenAttemptsExceedLimit() {
+    var error = errorFor(new TooManyCredentialAttemptsException(Duration.ofSeconds(7)));
+
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "UNAVAILABLE")
+        .containsEntry("code", "TOO_MANY_CREDENTIAL_ATTEMPTS")
+        .containsEntry("retryAfterSeconds", 7L);
+  }
+
+  @Test
+  @DisplayName("Should map a busy resource to unavailable when its lock cannot be acquired")
+  void shouldMapBusyResourceToUnavailableWhenItsLockCannotBeAcquired() {
+    var error = errorFor(new ResourceBusyException(new CannotAcquireLockException("lock timeout")));
+
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "UNAVAILABLE")
+        .containsEntry("code", "RESOURCE_BUSY");
+    assertThat(error.getMessage()).isEqualTo("Another change is in progress; try again shortly.");
   }
 
   @Test

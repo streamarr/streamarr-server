@@ -25,7 +25,12 @@ final class PostgresTransactionLocks {
         DSL.function(
             DSL.name("hashtextextended"), SQLDataType.BIGINT, normalizedKey, DSL.inline(0L));
     var lock = DSL.function(DSL.name("pg_advisory_xact_lock"), SQLDataType.OTHER, keyHash);
-    dsl.setLocal(DSL.name("lock_timeout"), DSL.inline(lockTimeout.toMillis() + "ms")).execute();
+    limitLockWait(lockTimeout);
     dsl.select(lock).execute();
+  }
+
+  /** Bounds every lock wait in the current transaction, not just the advisory lock's. */
+  void limitLockWait(Duration lockTimeout) {
+    dsl.setLocal(DSL.name("lock_timeout"), DSL.inline(lockTimeout.toMillis() + "ms")).execute();
   }
 }
