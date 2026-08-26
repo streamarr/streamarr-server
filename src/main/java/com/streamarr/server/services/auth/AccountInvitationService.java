@@ -5,8 +5,6 @@ import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationMode;
 import com.streamarr.server.domain.auth.AccountInvitationReoffer;
 import com.streamarr.server.domain.auth.AuthSession;
-import com.streamarr.server.domain.auth.CredentialAttemptReservation;
-import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Household;
@@ -387,48 +385,42 @@ public class AccountInvitationService {
   }
 
   /**
-   * Resolves a presented code to its PENDING, unexpired row: reserved per invitation before any
-   * lookup, constant-time digest comparison, one deliberate failure answer for every miss.
+   * Resolves a presented code to its PENDING, unexpired row: the publicId finds the row, the
+   * attempt is journaled against that row's id around the constant-time digest comparison (an
+   * unknown publicId is journaled with no target), and every miss gets one deliberate answer.
    */
   private AccountInvitation resolvePending(String rawCode, String ipAddress) {
     var presented = opaqueCodes.parse(rawCode).orElseThrow(InvalidOneTimeCodeException::new);
     var invitation = invitationRepository.findByPublicId(presented.publicId()).orElse(null);
-    var attempt = reserveCodeAttempt(invitation, ipAddress);
-    if (invitation == null) {
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
-      throw new InvalidOneTimeCodeException();
-    }
-
-    if (!opaqueCodes.matches(presented, invitation.getSecretDigest())) {
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
-      throw new InvalidOneTimeCodeException();
-    }
-
-    if (!invitation.isRedeemableAt(clock.instant())) {
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
-      throw new InvalidOneTimeCodeException();
-    }
-    if (invitation.getMode() == AccountInvitationMode.CONNECT
-        && invitation.getProfileId() == null) {
-      // The connectable Profile was deleted; invalidation should have flipped the row, and the
-      // SET NULL is the backstop. A dead code fails exactly like an unknown one.
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
-      throw new InvalidOneTimeCodeException();
-    }
-
-    credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
-    return invitation;
+    return credentialAttempts.attempt(
+        codeTarget(invitation, ipAddress),
+        () -> {
+          if (invitation == null) {
+            throw new InvalidOneTimeCodeException();
+          }
+          if (!opaqueCodes.matches(presented, invitation.getSecretDigest())) {
+            throw new InvalidOneTimeCodeException();
+          }
+          if (!invitation.isRedeemableAt(clock.instant())) {
+            throw new InvalidOneTimeCodeException();
+          }
+          if (invitation.getMode() == AccountInvitationMode.CONNECT
+              && invitation.getProfileId() == null) {
+            // The connectable Profile was deleted; invalidation should have flipped the row, and
+            // the SET NULL is the backstop. A dead code fails exactly like an unknown one.
+            throw new InvalidOneTimeCodeException();
+          }
+          return invitation;
+        });
   }
 
-  private CredentialAttemptReservation reserveCodeAttempt(
+  private static CredentialAttemptTarget codeTarget(
       AccountInvitation invitation, String ipAddress) {
-    var target =
-        CredentialAttemptTarget.builder()
-            .kind(CredentialKind.ACCOUNT_INVITATION_CODE)
-            .credentialId(invitation == null ? null : invitation.getId())
-            .ipAddress(ipAddress)
-            .build();
-    return credentialAttempts.reserve(target);
+    return CredentialAttemptTarget.builder()
+        .kind(CredentialKind.ACCOUNT_INVITATION_CODE)
+        .credentialId(invitation == null ? null : invitation.getId())
+        .ipAddress(ipAddress)
+        .build();
   }
 
   @Builder

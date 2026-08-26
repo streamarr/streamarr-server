@@ -1,8 +1,6 @@
 package com.streamarr.server.services.identity;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
-import com.streamarr.server.domain.auth.CredentialAttemptReservation;
-import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
@@ -10,6 +8,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -465,28 +464,32 @@ public class ProfileManagerAdministrationService {
     }
 
     var invitation = invitationRepository.findByPublicId(presented.get().publicId()).orElse(null);
-    var attempt = reserveCodeAttempt(invitation, command.ipAddress());
-    if (invitation == null
-        || !opaqueCodes.matches(presented.get(), invitation.getSecretDigest())
-        || invitation.getStatus() != ProfileManagerInvitationStatus.PENDING
-        || !invitation.getExpiresAt().isAfter(clock.instant())) {
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
+    try {
+      return Optional.of(
+          credentialAttempts.attempt(
+              codeTarget(invitation, command.ipAddress()),
+              () -> {
+                if (invitation == null
+                    || !opaqueCodes.matches(presented.get(), invitation.getSecretDigest())
+                    || invitation.getStatus() != ProfileManagerInvitationStatus.PENDING
+                    || !invitation.getExpiresAt().isAfter(clock.instant())) {
+                  throw new InvalidOneTimeCodeException();
+                }
+
+                return invitation;
+              }));
+    } catch (InvalidOneTimeCodeException _) {
       return Optional.empty();
     }
-
-    credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
-    return Optional.of(invitation);
   }
 
-  private CredentialAttemptReservation reserveCodeAttempt(
+  private static CredentialAttemptTarget codeTarget(
       ProfileManagerInvitation invitation, String ipAddress) {
-    var target =
-        CredentialAttemptTarget.builder()
-            .kind(CredentialKind.PROFILE_MANAGER_INVITATION_CODE)
-            .credentialId(invitation == null ? null : invitation.getId())
-            .ipAddress(ipAddress)
-            .build();
-    return credentialAttempts.reserve(target);
+    return CredentialAttemptTarget.builder()
+        .kind(CredentialKind.PROFILE_MANAGER_INVITATION_CODE)
+        .credentialId(invitation == null ? null : invitation.getId())
+        .ipAddress(ipAddress)
+        .build();
   }
 
   @Builder

@@ -2,8 +2,6 @@ package com.streamarr.server.services.auth;
 
 import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.config.security.DeviceAuthProperties;
-import com.streamarr.server.domain.auth.CredentialAttemptReservation;
-import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
@@ -151,34 +149,35 @@ public class DeviceAuthorizationService {
   }
 
   public DeviceAuthorizationDetails lookup(DeviceCodePresentation presentation) {
-    var userCode = UserCode.normalize(presentation.userCode());
-    var authorization = authorizationRepository.findByUserCode(userCode).orElse(null);
-    var attempt = reserveCodeAttempt(presentation);
-    requireUnexpired(authorization, attempt);
-    credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
-    return detailsOf(authorization, authorization.getStatus());
+    var authorization = findPresented(presentation);
+    return credentialAttempts.attempt(
+        approverTarget(presentation),
+        () -> {
+          requireUnexpired(authorization);
+          return detailsOf(authorization, authorization.getStatus());
+        });
   }
 
   /**
-   * Resolves a typed code to its pairing grant for the approval ceremony, recording one attempt
-   * before Cedar or any validation sees the request.
+   * Resolves a typed code to its pairing grant for the approval ceremony, journaling one attempt
+   * against the approver before Cedar or the existence and expiry checks see the request.
    */
   public ResolvedGrant resolveForDecision(DeviceCodePresentation presentation) {
-    var userCode = UserCode.normalize(presentation.userCode());
-    var authorization = authorizationRepository.findByUserCode(userCode).orElse(null);
-    var attempt = reserveCodeAttempt(presentation);
-    requirePresent(authorization, attempt);
+    var authorization = findPresented(presentation);
+    return credentialAttempts.attempt(
+        approverTarget(presentation),
+        () -> {
+          requirePresent(authorization);
+          // The approver is mid-flow on a code they demonstrably saw, so expiry earns its own
+          // answer here; a bare not-found would read as a typo. Lookup collapses it to 404 on
+          // purpose.
+          if (authorization.hasExpiredAt(clock.instant())) {
+            throw new DeviceCodeExpiredException();
+          }
 
-    // The approver is mid-flow on a code they demonstrably saw, so expiry earns its own answer
-    // here; a bare not-found would read as a typo. Lookup collapses it to 404 on purpose.
-    if (authorization.hasExpiredAt(clock.instant())) {
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
-      throw new DeviceCodeExpiredException();
-    }
-
-    credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
-    return new ResolvedGrant(
-        authorization.getId(), authorization.getEsn(), authorization.getDeviceName());
+          return new ResolvedGrant(
+              authorization.getId(), authorization.getEsn(), authorization.getDeviceName());
+        });
   }
 
   /**
@@ -336,34 +335,34 @@ public class DeviceAuthorizationService {
         id, intervalSeconds, now.plusSeconds(intervalSeconds), now);
   }
 
-  private void requireUnexpired(
-      DeviceAuthorization authorization, CredentialAttemptReservation attempt) {
-    requirePresent(authorization, attempt);
+  /** Format validation happens here, before any attempt is journaled. */
+  private DeviceAuthorization findPresented(DeviceCodePresentation presentation) {
+    var userCode = UserCode.normalize(presentation.userCode());
+    return authorizationRepository.findByUserCode(userCode).orElse(null);
+  }
+
+  private void requireUnexpired(DeviceAuthorization authorization) {
+    requirePresent(authorization);
 
     // A probe deserves no oracle: expired collapses into not-found, matching the poll's
     // expired_token.
     if (authorization.hasExpiredAt(clock.instant())) {
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
       throw new DeviceCodeNotFoundException();
     }
   }
 
-  private void requirePresent(
-      DeviceAuthorization authorization, CredentialAttemptReservation attempt) {
+  private static void requirePresent(DeviceAuthorization authorization) {
     if (authorization == null) {
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
       throw new DeviceCodeNotFoundException();
     }
   }
 
-  private CredentialAttemptReservation reserveCodeAttempt(DeviceCodePresentation presentation) {
-    var target =
-        CredentialAttemptTarget.builder()
-            .kind(CredentialKind.DEVICE_PAIRING_CODE)
-            .accountId(presentation.approverAccountId())
-            .ipAddress(presentation.ipAddress())
-            .build();
-    return credentialAttempts.reserve(target);
+  private static CredentialAttemptTarget approverTarget(DeviceCodePresentation presentation) {
+    return CredentialAttemptTarget.builder()
+        .kind(CredentialKind.DEVICE_PAIRING_CODE)
+        .accountId(presentation.approverAccountId())
+        .ipAddress(presentation.ipAddress())
+        .build();
   }
 
   private static DeviceAuthorizationDetails detailsOf(

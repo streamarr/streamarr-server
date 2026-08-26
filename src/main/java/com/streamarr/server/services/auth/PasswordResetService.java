@@ -1,8 +1,6 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
-import com.streamarr.server.domain.auth.CredentialAttemptReservation;
-import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.PasswordResetCode;
@@ -75,34 +73,29 @@ public class PasswordResetService {
   private PasswordResetCode resolvePending(String rawCode, String ipAddress) {
     var presented = opaqueCodes.parse(rawCode).orElseThrow(InvalidOneTimeCodeException::new);
     var code = resetCodeRepository.findByPublicId(presented.publicId()).orElse(null);
-    var attempt = reserveCodeAttempt(code, ipAddress);
-    if (code == null) {
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
-      throw new InvalidOneTimeCodeException();
-    }
+    return credentialAttempts.attempt(
+        codeTarget(code, ipAddress),
+        () -> {
+          if (code == null) {
+            throw new InvalidOneTimeCodeException();
+          }
+          if (!opaqueCodes.matches(presented, code.getSecretDigest())) {
+            throw new InvalidOneTimeCodeException();
+          }
+          if (code.getStatus() != PasswordResetCodeStatus.PENDING
+              || !code.getExpiresAt().isAfter(clock.instant())) {
+            throw new InvalidOneTimeCodeException();
+          }
 
-    if (!opaqueCodes.matches(presented, code.getSecretDigest())) {
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
-      throw new InvalidOneTimeCodeException();
-    }
-    if (code.getStatus() != PasswordResetCodeStatus.PENDING
-        || !code.getExpiresAt().isAfter(clock.instant())) {
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
-      throw new InvalidOneTimeCodeException();
-    }
-
-    credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
-    return code;
+          return code;
+        });
   }
 
-  private CredentialAttemptReservation reserveCodeAttempt(
-      PasswordResetCode code, String ipAddress) {
-    var target =
-        CredentialAttemptTarget.builder()
-            .kind(CredentialKind.PASSWORD_RESET_CODE)
-            .credentialId(code == null ? null : code.getId())
-            .ipAddress(ipAddress)
-            .build();
-    return credentialAttempts.reserve(target);
+  private static CredentialAttemptTarget codeTarget(PasswordResetCode code, String ipAddress) {
+    return CredentialAttemptTarget.builder()
+        .kind(CredentialKind.PASSWORD_RESET_CODE)
+        .credentialId(code == null ? null : code.getId())
+        .ipAddress(ipAddress)
+        .build();
   }
 }
