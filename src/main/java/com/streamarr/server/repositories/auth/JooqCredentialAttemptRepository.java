@@ -75,7 +75,11 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
 
     var completed =
         dsl.update(CREDENTIAL_ATTEMPT)
-            .set(CREDENTIAL_ATTEMPT.COMPLETED_AT, offsetOf(completedAt))
+            // Never before the reservation: the CHECK constraint would otherwise refuse a correct
+            // verification after a backwards clock step and leave the row pending.
+            .set(
+                CREDENTIAL_ATTEMPT.COMPLETED_AT,
+                DSL.greatest(CREDENTIAL_ATTEMPT.ATTEMPTED_AT, DSL.val(offsetOf(completedAt))))
             .set(CREDENTIAL_ATTEMPT.RESULT, generatedResult(result))
             .where(CREDENTIAL_ATTEMPT.ID.eq(reservation.id()))
             .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.isNull())
