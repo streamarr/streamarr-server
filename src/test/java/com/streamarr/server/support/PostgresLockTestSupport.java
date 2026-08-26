@@ -7,9 +7,15 @@ import com.streamarr.server.domain.media.ImageSize;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.sql.DataSource;
+import lombok.Builder;
+import lombok.NonNull;
 
 public final class PostgresLockTestSupport {
 
@@ -37,6 +43,35 @@ public final class PostgresLockTestSupport {
       try (var rows = statement.executeQuery()) {
         assertThat(rows.next()).isTrue();
       }
+    }
+  }
+
+  /**
+   * Takes one row's FOR UPDATE lock on a dedicated connection. Contenders block until the returned
+   * hold is released or closed; closing rolls the holding transaction back.
+   */
+  public static HeldRowLock lockRow(RowLockTarget target) throws SQLException {
+    var connection = target.dataSource().getConnection();
+    connection.setAutoCommit(false);
+    try (var statement = connection.prepareStatement(target.lockSql())) {
+      statement.setObject(1, target.rowId());
+      try (var rows = statement.executeQuery()) {
+        assertThat(rows.next()).as("%s row %s exists", target.table(), target.rowId()).isTrue();
+      }
+    } catch (SQLException | AssertionError failure) {
+      connection.close();
+      throw failure;
+    }
+
+    return new HeldRowLock(connection);
+  }
+
+  public static void awaitLatch(CountDownLatch latch) {
+    try {
+      assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Interrupted while holding a test lock.", exception);
     }
   }
 
@@ -91,6 +126,49 @@ public final class PostgresLockTestSupport {
       statement.setString(3, expectedWaitEvent);
       try (var result = statement.executeQuery()) {
         return result.next() ? OptionalInt.of(result.getInt(1)) : OptionalInt.empty();
+      }
+    }
+  }
+
+  /** The row to lock; rows are addressed by {@code id} unless {@code keyColumn} says otherwise. */
+  @Builder
+  public record RowLockTarget(
+      @NonNull DataSource dataSource,
+      @NonNull String table,
+      String keyColumn,
+      @NonNull UUID rowId) {
+
+    String lockSql() {
+      var column = Objects.requireNonNullElse(keyColumn, "id");
+      return "SELECT " + column + " FROM " + table + " WHERE " + column + " = ? FOR UPDATE";
+    }
+  }
+
+  public static final class HeldRowLock implements AutoCloseable {
+
+    private final Connection connection;
+    private boolean released;
+
+    private HeldRowLock(Connection connection) {
+      this.connection = connection;
+    }
+
+    /** Rolls the holding transaction back so blocked contenders proceed; idempotent. */
+    public void release() throws SQLException {
+      if (released) {
+        return;
+      }
+
+      released = true;
+      connection.rollback();
+    }
+
+    @Override
+    public void close() throws SQLException {
+      try {
+        release();
+      } finally {
+        connection.close();
       }
     }
   }

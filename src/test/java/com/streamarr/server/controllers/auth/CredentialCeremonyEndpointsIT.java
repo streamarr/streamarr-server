@@ -1,6 +1,8 @@
 package com.streamarr.server.controllers.auth;
 
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
+import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -18,10 +20,10 @@ import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import jakarta.persistence.EntityManagerFactory;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -206,44 +208,34 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                   .build());
       var ready = new CountDownLatch(2);
       var start = new CountDownLatch(1);
-      var guardLocked = new CountDownLatch(1);
-      var releaseGuard = new CountDownLatch(1);
 
-      try {
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-          var guard =
-              executor.submit(
-                  () -> holdHouseholdGuard(household.getId(), guardLocked, releaseGuard));
-          assertThat(guardLocked.await(10, TimeUnit.SECONDS)).isTrue();
-          var first =
-              executor.submit(
-                  () ->
-                      acceptWhenStarted(
-                          concurrentAcceptanceBuilder(firstCode, "Concurrent One")
-                              .ready(ready)
-                              .start(start)
-                              .build()));
-          var second =
-              executor.submit(
-                  () ->
-                      acceptWhenStarted(
-                          concurrentAcceptanceBuilder(secondCode, "Concurrent Two")
-                              .ready(ready)
-                              .start(start)
-                              .build()));
-          assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
-          start.countDown();
-          await()
-              .atMost(Duration.ofSeconds(10))
-              .untilAsserted(() -> assertThat(waitingHouseholdGuardLocks()).isEqualTo(2));
-          releaseGuard.countDown();
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+          var guard = lockRow(householdGuardLock(household.getId()))) {
+        var first =
+            executor.submit(
+                () ->
+                    acceptWhenStarted(
+                        concurrentAcceptanceBuilder(firstCode, "Concurrent One")
+                            .ready(ready)
+                            .start(start)
+                            .build()));
+        var second =
+            executor.submit(
+                () ->
+                    acceptWhenStarted(
+                        concurrentAcceptanceBuilder(secondCode, "Concurrent Two")
+                            .ready(ready)
+                            .start(start)
+                            .build()));
+        assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+        start.countDown();
+        await()
+            .atMost(Duration.ofSeconds(10))
+            .untilAsserted(() -> assertThat(waitingHouseholdGuardLocks()).isEqualTo(2));
+        guard.release();
 
-          assertThat(first.get(20, TimeUnit.SECONDS)).isEqualTo(201);
-          assertThat(second.get(20, TimeUnit.SECONDS)).isEqualTo(201);
-          guard.get(10, TimeUnit.SECONDS);
-        }
-      } finally {
-        releaseGuard.countDown();
+        assertThat(first.get(20, TimeUnit.SECONDS)).isEqualTo(201);
+        assertThat(second.get(20, TimeUnit.SECONDS)).isEqualTo(201);
       }
 
       assertThat(userAccountRepository.findByHouseholdId(household.getId()))
@@ -807,24 +799,13 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .getStatus();
   }
 
-  private void holdHouseholdGuard(
-      UUID householdId, CountDownLatch guardLocked, CountDownLatch releaseGuard) {
-    try (var connection = dataSource.getConnection();
-        var statement =
-            connection.prepareStatement(
-                "SELECT household_id FROM household_guard WHERE household_id = ? FOR UPDATE")) {
-      connection.setAutoCommit(false);
-      statement.setObject(1, householdId);
-      statement.executeQuery();
-      guardLocked.countDown();
-      if (!releaseGuard.await(10, TimeUnit.SECONDS)) {
-        throw new AssertionError("test did not release the Household guard lock");
-      }
-
-      connection.rollback();
-    } catch (Exception exception) {
-      throw new AssertionError("could not coordinate the Household guard lock", exception);
-    }
+  private RowLockTarget householdGuardLock(UUID householdId) {
+    return RowLockTarget.builder()
+        .dataSource(dataSource)
+        .table("household_guard")
+        .keyColumn("household_id")
+        .rowId(householdId)
+        .build();
   }
 
   private int waitingHouseholdGuardLocks() {
@@ -862,11 +843,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   private ResultActions graphql(String bearer, String query) throws Exception {
-    return mockMvc.perform(
-        post("/graphql")
-            .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
-            .content(objectMapper.writeValueAsString(Map.of("query", query))));
+    return mockMvc.perform(graphqlRequest(bearer, query));
   }
 
   @Builder

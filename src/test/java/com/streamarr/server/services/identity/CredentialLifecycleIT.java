@@ -1,5 +1,7 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.fixtures.AccountInvitationFixture.pendingInvitationBuilder;
+import static com.streamarr.server.fixtures.PasswordResetCodeFixture.pendingResetCodeBuilder;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.field;
@@ -15,19 +17,16 @@ import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
-import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
-import java.util.UUID;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 @Tag("IntegrationTest")
 @DisplayName("Credential Lifecycle Integration Tests")
@@ -38,7 +37,6 @@ class CredentialLifecycleIT extends AbstractIntegrationTest {
   @Autowired private HouseholdRepository householdRepository;
   @Autowired private PasswordResetCodeRepository resetCodeRepository;
   @Autowired private AuthTestSupport authTestSupport;
-  @Autowired private JwtDecoder jwtDecoder;
   @Autowired private DSLContext dsl;
 
   private AuthTestSupport.TestIdentity issuer;
@@ -64,22 +62,16 @@ class CredentialLifecycleIT extends AbstractIntegrationTest {
     issuer = authTestSupport.createAdminIdentity();
     var email = "stale-invitation@example.com";
     invitationRepository.saveAndFlush(
-        AccountInvitation.builder()
+        issuedInvitationBuilder()
             .recipientEmail(email)
             .householdId(issuer.household().getId())
             .householdName(issuer.household().getName())
-            .householdRole(HouseholdRole.MEMBER)
-            .profileName("Stale")
-            .profileKind(ProfileKind.ADULT)
-            .issuerAccountId(issuer.account().getId())
             .expiresAt(Instant.now().minusSeconds(1))
-            .publicId(UUID.randomUUID().toString())
-            .secretDigest(new byte[32])
             .build());
 
     var outcome =
         credentialIssuanceService.issueAccountInvitation(
-            identityOf(issuer),
+            authTestSupport.identityOf(issuer),
             IssueInvitationCommand.builder()
                 .recipientEmail(email)
                 .householdId(issuer.household().getId())
@@ -101,17 +93,17 @@ class CredentialLifecycleIT extends AbstractIntegrationTest {
     issuer = authTestSupport.createAdminIdentity();
     resetTarget = authTestSupport.createIdentity();
     resetCodeRepository.saveAndFlush(
-        PasswordResetCode.builder()
+        pendingResetCodeBuilder()
             .accountId(resetTarget.account().getId())
             .issuerAccountId(issuer.account().getId())
             .expiresAt(Instant.now().minusSeconds(1))
-            .publicId(UUID.randomUUID().toString())
-            .secretDigest(new byte[32])
             .build());
 
     var outcome =
         credentialIssuanceService.issuePasswordReset(
-            freshIdentityOf(issuer), resetTarget.account().getId(), "recover access");
+            authTestSupport.freshIdentityOf(issuer),
+            resetTarget.account().getId(),
+            "recover access");
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(resetCodeRepository.findAll())
@@ -138,7 +130,7 @@ class CredentialLifecycleIT extends AbstractIntegrationTest {
         householdRepository.saveAndFlush(Household.builder().name("Target").build());
     var invitation =
         invitationRepository.saveAndFlush(
-            pendingInvitationBuilder()
+            issuedInvitationBuilder()
                 .householdId(targetHousehold.getId())
                 .householdName(targetHousehold.getName())
                 .build());
@@ -161,7 +153,7 @@ class CredentialLifecycleIT extends AbstractIntegrationTest {
     resetTarget = authTestSupport.createIdentity();
     var invitation =
         invitationRepository.saveAndFlush(
-            pendingInvitationBuilder()
+            issuedInvitationBuilder()
                 .householdId(issuer.household().getId())
                 .householdName(issuer.household().getName())
                 .profileKind(ProfileKind.KID)
@@ -178,25 +170,7 @@ class CredentialLifecycleIT extends AbstractIntegrationTest {
             });
   }
 
-  private AccountInvitation.AccountInvitationBuilder<?, ?> pendingInvitationBuilder() {
-    return AccountInvitation.builder()
-        .recipientEmail(UUID.randomUUID() + "@example.com")
-        .householdRole(HouseholdRole.MEMBER)
-        .profileName("Invited")
-        .profileKind(ProfileKind.ADULT)
-        .issuerAccountId(issuer.account().getId())
-        .expiresAt(Instant.now().plusSeconds(3600))
-        .publicId(UUID.randomUUID().toString())
-        .secretDigest(new byte[32]);
-  }
-
-  private AuthenticatedIdentity identityOf(AuthTestSupport.TestIdentity identity) {
-    return AuthenticatedIdentity.fromJwt(
-        jwtDecoder.decode(authTestSupport.accountBearer(identity)));
-  }
-
-  private AuthenticatedIdentity freshIdentityOf(AuthTestSupport.TestIdentity identity) {
-    return AuthenticatedIdentity.fromJwt(
-        jwtDecoder.decode(authTestSupport.freshAccountBearer(identity)));
+  private AccountInvitation.AccountInvitationBuilder<?, ?> issuedInvitationBuilder() {
+    return pendingInvitationBuilder().issuerAccountId(issuer.account().getId());
   }
 }

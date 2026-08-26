@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.support.OutcomeTestSupport.rejectionOf;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -15,9 +16,7 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
-import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -25,7 +24,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
@@ -39,7 +37,6 @@ class CredentialIssuanceValidationIT extends AbstractIntegrationTest {
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private ProfileManagerRepository managerRepository;
   @Autowired private AuthTestSupport authTestSupport;
-  @Autowired private JwtDecoder jwtDecoder;
   @Autowired private TransactionTemplate transactionTemplate;
 
   private AuthTestSupport.TestIdentity issuer;
@@ -60,7 +57,7 @@ class CredentialIssuanceValidationIT extends AbstractIntegrationTest {
 
     var outcome =
         credentialIssuanceService.issueAccountInvitation(
-            identityOf(issuer),
+            authTestSupport.identityOf(issuer),
             IssueInvitationCommand.builder()
                 .recipientEmail("supervised@example.com")
                 .householdId(issuer.household().getId())
@@ -103,18 +100,5 @@ class CredentialIssuanceValidationIT extends AbstractIntegrationTest {
                   .build());
           return account.getId();
         });
-  }
-
-  private AuthenticatedIdentity identityOf(AuthTestSupport.TestIdentity identity) {
-    return AuthenticatedIdentity.fromJwt(
-        jwtDecoder.decode(authTestSupport.accountBearer(identity)));
-  }
-
-  private static Object rejectionOf(Outcome<?, ?> outcome) {
-    return switch (outcome) {
-      case Outcome.Rejected<?, ?>(var rejections) -> rejections.getFirst();
-      case Outcome.Accepted<?, ?> accepted ->
-          throw new AssertionError("expected a rejection but got " + accepted);
-    };
   }
 }

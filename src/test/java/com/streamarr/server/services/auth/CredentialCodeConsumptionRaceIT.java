@@ -1,32 +1,34 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.AccountInvitationFixture.pendingInvitationBuilder;
+import static com.streamarr.server.fixtures.PasswordResetCodeFixture.pendingResetCodeBuilder;
+import static com.streamarr.server.support.OutcomeTestSupport.rejectionOf;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
-import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.InvitationRejections;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
-import lombok.Builder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -69,37 +71,20 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
     identity = authTestSupport.createAdminIdentity();
     var issued = opaqueCodes.issue();
     var invitation = saveInvitation(issued);
-    var rowLocked = new CountDownLatch(1);
-    var releaseRow = new CountDownLatch(1);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var lock =
-          executor.submit(() -> holdInvitationRowLock(invitation.getId(), rowLocked, releaseRow));
-      assertThat(rowLocked.await(10, TimeUnit.SECONDS)).isTrue();
-
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var lock = lockRow(rowLock("account_invitation", invitation.getId()))) {
       var acceptance =
           executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          invitationService.accept(
-                              AccountInvitationService.AcceptInvitationCommand.builder()
-                                  .code(issued.code())
-                                  .displayName("Invitee")
-                                  .password("a strong passphrase")
-                                  .deviceName("test")
-                                  .build())));
+              () -> attempt(() -> invitationService.accept(acceptCommand(issued.code()))));
       var decline = executor.submit(() -> attempt(() -> invitationService.decline(issued.code())));
 
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(() -> assertThat(waitingLockRequests("account_invitation")).isEqualTo(2));
-      releaseRow.countDown();
+      lock.release();
 
       assertOneWinner(acceptance.get(10, TimeUnit.SECONDS), decline.get(10, TimeUnit.SECONDS));
-      lock.get(10, TimeUnit.SECONDS);
-    } finally {
-      releaseRow.countDown();
     }
 
     var status = invitationRepository.findById(invitation.getId()).orElseThrow().getStatus();
@@ -114,36 +99,22 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
     identity = authTestSupport.createAdminIdentity();
     var issued = opaqueCodes.issue();
     var invitation = saveInvitation(issued);
-    var rowLocked = new CountDownLatch(1);
-    var releaseRow = new CountDownLatch(1);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var lock =
-          executor.submit(() -> holdInvitationRowLock(invitation.getId(), rowLocked, releaseRow));
-      assertThat(rowLocked.await(10, TimeUnit.SECONDS)).isTrue();
-
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var lock = lockRow(rowLock("account_invitation", invitation.getId()))) {
       var acceptance =
           executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          invitationService.accept(
-                              AccountInvitationService.AcceptInvitationCommand.builder()
-                                  .code(issued.code())
-                                  .displayName("Invitee")
-                                  .password("a strong passphrase")
-                                  .deviceName("test")
-                                  .build())));
+              () -> attempt(() -> invitationService.accept(acceptCommand(issued.code()))));
       var cancellation =
           executor.submit(
               () ->
                   credentialIssuanceService.cancelAccountInvitation(
-                      administrativeIdentity(), invitation.getId()));
+                      authTestSupport.identityOf(identity), invitation.getId()));
 
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(() -> assertThat(waitingLockRequests("account_invitation")).isEqualTo(2));
-      releaseRow.countDown();
+      lock.release();
 
       var acceptanceAttempt = acceptance.get(10, TimeUnit.SECONDS);
       var cancellationOutcome = cancellation.get(10, TimeUnit.SECONDS);
@@ -155,10 +126,6 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
       } else {
         assertThat(acceptanceAttempt.failure()).isInstanceOf(InvalidOneTimeCodeException.class);
       }
-
-      lock.get(10, TimeUnit.SECONDS);
-    } finally {
-      releaseRow.countDown();
     }
 
     var status = invitationRepository.findById(invitation.getId()).orElseThrow().getStatus();
@@ -177,14 +144,9 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
         authSessionRepository.findByAccountId(identity.account().getId()).stream()
             .map(session -> session.getId())
             .toList();
-    var rowLocked = new CountDownLatch(1);
-    var releaseRow = new CountDownLatch(1);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var lock =
-          executor.submit(() -> holdResetCodeRowLock(resetCode.getId(), rowLocked, releaseRow));
-      assertThat(rowLocked.await(10, TimeUnit.SECONDS)).isTrue();
-
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var lock = lockRow(rowLock("password_reset_code", resetCode.getId()))) {
       var first =
           executor.submit(
               () ->
@@ -207,12 +169,9 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
                 assertThat(waitingLockRequests("password_reset_code")).isOne();
                 assertThat(waitingLockRequests("user_account")).isOne();
               });
-      releaseRow.countDown();
+      lock.release();
 
       assertOneWinner(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS));
-      lock.get(10, TimeUnit.SECONDS);
-    } finally {
-      releaseRow.countDown();
     }
 
     assertThat(resetCodeRepository.findById(resetCode.getId()).orElseThrow().getStatus())
@@ -279,15 +238,11 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
   private AccountInvitation saveInvitation(OpaqueOneTimeCodes.IssuedCode issued) {
     return invitationRepository.saveAndFlush(
-        AccountInvitation.builder()
+        pendingInvitationBuilder()
             .recipientEmail("race-invitee@example.com")
             .householdId(identity.household().getId())
             .householdName(identity.household().getName())
-            .householdRole(HouseholdRole.MEMBER)
-            .profileName("Invitee")
-            .profileKind(ProfileKind.ADULT)
             .issuerAccountId(identity.account().getId())
-            .expiresAt(Instant.now().plus(Duration.ofHours(1)))
             .publicId(issued.publicId())
             .secretDigest(issued.digest())
             .build());
@@ -295,52 +250,25 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
   private PasswordResetCode saveResetCode(OpaqueOneTimeCodes.IssuedCode issued) {
     return resetCodeRepository.saveAndFlush(
-        PasswordResetCode.builder()
+        pendingResetCodeBuilder()
             .accountId(identity.account().getId())
             .issuerAccountId(identity.account().getId())
-            .expiresAt(Instant.now().plus(Duration.ofHours(1)))
             .publicId(issued.publicId())
             .secretDigest(issued.digest())
             .build());
   }
 
-  private void holdInvitationRowLock(
-      UUID invitationId, CountDownLatch rowLocked, CountDownLatch releaseRow) {
-    holdRowLock(
-        RowLock.builder()
-            .sql("SELECT id FROM account_invitation WHERE id = ? FOR UPDATE")
-            .rowId(invitationId)
-            .rowLocked(rowLocked)
-            .releaseRow(releaseRow)
-            .build());
+  private static AcceptInvitationCommand acceptCommand(String code) {
+    return AcceptInvitationCommand.builder()
+        .code(code)
+        .displayName("Invitee")
+        .password("a strong passphrase")
+        .deviceName("test")
+        .build();
   }
 
-  private void holdResetCodeRowLock(
-      UUID resetCodeId, CountDownLatch rowLocked, CountDownLatch releaseRow) {
-    holdRowLock(
-        RowLock.builder()
-            .sql("SELECT id FROM password_reset_code WHERE id = ? FOR UPDATE")
-            .rowId(resetCodeId)
-            .rowLocked(rowLocked)
-            .releaseRow(releaseRow)
-            .build());
-  }
-
-  private void holdRowLock(RowLock rowLock) {
-    try (var connection = dataSource.getConnection();
-        var statement = connection.prepareStatement(rowLock.sql())) {
-      connection.setAutoCommit(false);
-      statement.setObject(1, rowLock.rowId());
-      statement.executeQuery();
-      rowLock.rowLocked().countDown();
-      if (!rowLock.releaseRow().await(10, TimeUnit.SECONDS)) {
-        throw new AssertionError("test did not release the credential-code row lock");
-      }
-
-      connection.rollback();
-    } catch (Exception exception) {
-      throw new AssertionError("could not coordinate the credential-code row lock", exception);
-    }
+  private RowLockTarget rowLock(String table, UUID rowId) {
+    return RowLockTarget.builder().dataSource(dataSource).table(table).rowId(rowId).build();
   }
 
   private void holdAccountRowAndChangeDisplayName(
@@ -375,25 +303,6 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
         "%" + tableName + "%");
   }
 
-  private AuthenticatedIdentity administrativeIdentity() {
-    return AuthenticatedIdentity.builder()
-        .accountId(identity.account().getId())
-        .authSessionId(identity.session().getId())
-        .scope(TokenScope.ACCOUNT)
-        .householdId(identity.household().getId())
-        .householdRole(identity.account().getHouseholdRole())
-        .contextHouseholdId(identity.household().getId())
-        .build();
-  }
-
-  private static Object rejectionOf(Outcome<?, ?> outcome) {
-    return switch (outcome) {
-      case Outcome.Rejected<?, ?>(var rejections) -> rejections.getFirst();
-      case Outcome.Accepted<?, ?> accepted ->
-          throw new AssertionError("expected a rejection but got " + accepted);
-    };
-  }
-
   private static Attempt attempt(ThrowingRunnable action) {
     try {
       action.run();
@@ -414,10 +323,6 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
   private interface ThrowingRunnable {
     void run() throws Exception;
   }
-
-  @Builder
-  private record RowLock(
-      String sql, UUID rowId, CountDownLatch rowLocked, CountDownLatch releaseRow) {}
 
   private record Attempt(boolean successful, Throwable failure) {}
 }

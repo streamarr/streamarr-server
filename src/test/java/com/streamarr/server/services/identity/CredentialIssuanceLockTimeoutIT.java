@@ -1,8 +1,11 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.fixtures.AccountInvitationFixture.pendingInvitationBuilder;
+import static com.streamarr.server.fixtures.PasswordResetCodeFixture.pendingResetCodeBuilder;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static com.streamarr.server.support.PostgresLockTestSupport.activeQuery;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitBlockedBackendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockAccountRow;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,14 +20,10 @@ import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
-import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
 import com.streamarr.server.support.AuthTestSupport;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -39,7 +38,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -52,7 +50,6 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private PasswordResetCodeRepository resetCodeRepository;
   @Autowired private AuthTestSupport authTestSupport;
-  @Autowired private JwtDecoder jwtDecoder;
   @Autowired private DataSource dataSource;
   @Autowired private DSLContext dsl;
   @Autowired private PlatformTransactionManager transactionManager;
@@ -85,7 +82,7 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
         "  Replacement-Timeout@Example.COM ",
         () ->
             credentialIssuanceService.issueAccountInvitation(
-                identityOf(issuer), invitationCommand(recipientEmail)));
+                authTestSupport.identityOf(issuer), invitationCommand(recipientEmail)));
 
     assertThat(invitationRepository.findAll())
         .singleElement()
@@ -121,7 +118,7 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
         "\"user_account\"",
         () ->
             credentialIssuanceService.issuePasswordReset(
-                freshIdentityOf(issuer), accountId, "recover access"));
+                authTestSupport.freshIdentityOf(issuer), accountId, "recover access"));
 
     assertThat(resetCodeRepository.findAll())
         .singleElement()
@@ -134,28 +131,19 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
 
   private AccountInvitation savePendingInvitation(String recipientEmail) {
     return invitationRepository.saveAndFlush(
-        AccountInvitation.builder()
+        pendingInvitationBuilder()
             .recipientEmail(recipientEmail)
             .householdId(issuer.household().getId())
             .householdName(issuer.household().getName())
-            .householdRole(HouseholdRole.MEMBER)
-            .profileName("Earlier")
-            .profileKind(ProfileKind.ADULT)
             .issuerAccountId(issuer.account().getId())
-            .expiresAt(Instant.now().plus(Duration.ofDays(1)))
-            .publicId(UUID.randomUUID().toString())
-            .secretDigest(new byte[] {1})
             .build());
   }
 
   private PasswordResetCode savePendingResetCode() {
     return resetCodeRepository.saveAndFlush(
-        PasswordResetCode.builder()
+        pendingResetCodeBuilder()
             .accountId(resetTarget.account().getId())
             .issuerAccountId(issuer.account().getId())
-            .expiresAt(Instant.now().plus(Duration.ofDays(1)))
-            .publicId(UUID.randomUUID().toString())
-            .secretDigest(new byte[] {1})
             .build());
   }
 
@@ -167,16 +155,6 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
         .profileName("Replacement")
         .profileKind(ProfileKind.ADULT)
         .build();
-  }
-
-  private AuthenticatedIdentity identityOf(AuthTestSupport.TestIdentity identity) {
-    return AuthenticatedIdentity.fromJwt(
-        jwtDecoder.decode(authTestSupport.accountBearer(identity)));
-  }
-
-  private AuthenticatedIdentity freshIdentityOf(AuthTestSupport.TestIdentity identity) {
-    return AuthenticatedIdentity.fromJwt(
-        jwtDecoder.decode(authTestSupport.freshAccountBearer(identity)));
   }
 
   private void assertInvitationReplacementTimesOut(String recipientEmail, Supplier<?> replacement)
@@ -221,7 +199,7 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
       lockOperation.lock(lockConnection);
 
       var contender = executor.submit(replacement::get);
-      assertBlockedQueryWhenExpected(observer, backendPid(lockConnection), expectedBlockedQuery);
+      assertBlockedQuery(observer, backendPid(lockConnection), expectedBlockedQuery);
       try {
         assertThatThrownBy(() -> contender.get(3, TimeUnit.SECONDS))
             .isInstanceOf(ExecutionException.class)
@@ -232,12 +210,8 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
     }
   }
 
-  private void assertBlockedQueryWhenExpected(
+  private static void assertBlockedQuery(
       Connection observer, int blockerPid, String expectedBlockedQuery) throws SQLException {
-    if (expectedBlockedQuery == null) {
-      return;
-    }
-
     var blockedPid = awaitBlockedBackendPid(observer, blockerPid, null);
     assertThat(activeQuery(observer, blockedPid)).contains(expectedBlockedQuery, "for update");
   }
@@ -246,14 +220,5 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
   private interface LockOperation {
 
     void lock(Connection connection) throws SQLException;
-  }
-
-  private static void awaitLatch(CountDownLatch latch) {
-    try {
-      assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException("Interrupted while holding a test lock.", exception);
-    }
   }
 }

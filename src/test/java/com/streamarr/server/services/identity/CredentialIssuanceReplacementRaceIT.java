@@ -1,6 +1,10 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.fixtures.AccountInvitationFixture.pendingInvitationBuilder;
+import static com.streamarr.server.fixtures.PasswordResetCodeFixture.pendingResetCodeBuilder;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
+import static com.streamarr.server.support.OutcomeTestSupport.accepted;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -13,14 +17,11 @@ import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
-import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
-import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
@@ -31,7 +32,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 @Tag("IntegrationTest")
 @DisplayName("Credential Issuance Replacement Race Integration Tests")
@@ -41,7 +41,6 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private PasswordResetCodeRepository resetCodeRepository;
   @Autowired private AuthTestSupport authTestSupport;
-  @Autowired private JwtDecoder jwtDecoder;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private DSLContext dsl;
@@ -77,24 +76,19 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
     secondIssuer = authTestSupport.createAdminIdentity();
     var recipientEmail = "replacement-race@example.com";
     var blocker = saveBlockingInvitation(recipientEmail);
-    var rowLocked = new CountDownLatch(1);
-    var releaseRow = new CountDownLatch(1);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var lock =
-          executor.submit(() -> holdInvitationRowLock(blocker.getId(), rowLocked, releaseRow));
-      assertThat(rowLocked.await(10, TimeUnit.SECONDS)).isTrue();
-
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var lock = lockRow(rowLock("account_invitation", blocker.getId()))) {
       var first =
           executor.submit(
               () ->
                   credentialIssuanceService.issueAccountInvitation(
-                      identityOf(firstIssuer), invitationCommand(recipientEmail)));
+                      authTestSupport.identityOf(firstIssuer), invitationCommand(recipientEmail)));
       var second =
           executor.submit(
               () ->
                   credentialIssuanceService.issueAccountInvitation(
-                      identityOf(secondIssuer), invitationCommand(recipientEmail)));
+                      authTestSupport.identityOf(secondIssuer), invitationCommand(recipientEmail)));
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(
@@ -102,13 +96,10 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
                 assertThat(waitingInvitationUpdates()).isOne();
                 assertThat(waitingRecipientLocks()).isOne();
               });
-      releaseRow.countDown();
+      lock.release();
 
-      acceptedInvitation(first.get(10, TimeUnit.SECONDS));
-      acceptedInvitation(second.get(10, TimeUnit.SECONDS));
-      lock.get(10, TimeUnit.SECONDS);
-    } finally {
-      releaseRow.countDown();
+      accepted(first.get(10, TimeUnit.SECONDS));
+      accepted(second.get(10, TimeUnit.SECONDS));
     }
 
     assertThat(invitationRepository.findAll())
@@ -128,26 +119,21 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
     secondIssuer = authTestSupport.createAdminIdentity();
     resetTarget = authTestSupport.createIdentity();
     var blocker = saveBlockingResetCode();
-    var rowLocked = new CountDownLatch(1);
-    var releaseRow = new CountDownLatch(1);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var lock =
-          executor.submit(() -> holdResetCodeRowLock(blocker.getId(), rowLocked, releaseRow));
-      assertThat(rowLocked.await(10, TimeUnit.SECONDS)).isTrue();
-
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var lock = lockRow(rowLock("password_reset_code", blocker.getId()))) {
       var first =
           executor.submit(
               () ->
                   credentialIssuanceService.issuePasswordReset(
-                      freshIdentityOf(firstIssuer),
+                      authTestSupport.freshIdentityOf(firstIssuer),
                       resetTarget.account().getId(),
                       "recover access"));
       var second =
           executor.submit(
               () ->
                   credentialIssuanceService.issuePasswordReset(
-                      freshIdentityOf(secondIssuer),
+                      authTestSupport.freshIdentityOf(secondIssuer),
                       resetTarget.account().getId(),
                       "recover access"));
       await()
@@ -157,13 +143,10 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
                 assertThat(waitingResetCodeUpdates()).isOne();
                 assertThat(waitingAccountLocks()).isOne();
               });
-      releaseRow.countDown();
+      lock.release();
 
-      acceptedResetCode(first.get(10, TimeUnit.SECONDS));
-      acceptedResetCode(second.get(10, TimeUnit.SECONDS));
-      lock.get(10, TimeUnit.SECONDS);
-    } finally {
-      releaseRow.countDown();
+      accepted(first.get(10, TimeUnit.SECONDS));
+      accepted(second.get(10, TimeUnit.SECONDS));
     }
 
     assertThat(resetCodeRepository.findAll())
@@ -176,28 +159,19 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
 
   private AccountInvitation saveBlockingInvitation(String recipientEmail) {
     return invitationRepository.saveAndFlush(
-        AccountInvitation.builder()
+        pendingInvitationBuilder()
             .recipientEmail(recipientEmail)
             .householdId(firstIssuer.household().getId())
             .householdName(firstIssuer.household().getName())
-            .householdRole(HouseholdRole.MEMBER)
-            .profileName("Earlier")
-            .profileKind(ProfileKind.ADULT)
             .issuerAccountId(firstIssuer.account().getId())
-            .expiresAt(Instant.now().plus(Duration.ofDays(1)))
-            .publicId(UUID.randomUUID().toString())
-            .secretDigest(new byte[] {1})
             .build());
   }
 
   private PasswordResetCode saveBlockingResetCode() {
     return resetCodeRepository.saveAndFlush(
-        PasswordResetCode.builder()
+        pendingResetCodeBuilder()
             .accountId(resetTarget.account().getId())
             .issuerAccountId(firstIssuer.account().getId())
-            .expiresAt(Instant.now().plus(Duration.ofDays(1)))
-            .publicId(UUID.randomUUID().toString())
-            .secretDigest(new byte[] {1})
             .build());
   }
 
@@ -211,54 +185,8 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
         .build();
   }
 
-  private AuthenticatedIdentity identityOf(AuthTestSupport.TestIdentity identity) {
-    return AuthenticatedIdentity.fromJwt(
-        jwtDecoder.decode(authTestSupport.accountBearer(identity)));
-  }
-
-  private AuthenticatedIdentity freshIdentityOf(AuthTestSupport.TestIdentity identity) {
-    return AuthenticatedIdentity.fromJwt(
-        jwtDecoder.decode(authTestSupport.freshAccountBearer(identity)));
-  }
-
-  private void holdInvitationRowLock(
-      UUID invitationId, CountDownLatch rowLocked, CountDownLatch releaseRow) {
-    try (var connection = dataSource.getConnection();
-        var statement =
-            connection.prepareStatement(
-                "SELECT id FROM account_invitation WHERE id = ? FOR UPDATE")) {
-      connection.setAutoCommit(false);
-      statement.setObject(1, invitationId);
-      statement.executeQuery();
-      rowLocked.countDown();
-      if (!releaseRow.await(10, TimeUnit.SECONDS)) {
-        throw new AssertionError("test did not release the invitation row lock");
-      }
-
-      connection.rollback();
-    } catch (Exception exception) {
-      throw new AssertionError("could not coordinate the invitation row lock", exception);
-    }
-  }
-
-  private void holdResetCodeRowLock(
-      UUID resetCodeId, CountDownLatch rowLocked, CountDownLatch releaseRow) {
-    try (var connection = dataSource.getConnection();
-        var statement =
-            connection.prepareStatement(
-                "SELECT id FROM password_reset_code WHERE id = ? FOR UPDATE")) {
-      connection.setAutoCommit(false);
-      statement.setObject(1, resetCodeId);
-      statement.executeQuery();
-      rowLocked.countDown();
-      if (!releaseRow.await(10, TimeUnit.SECONDS)) {
-        throw new AssertionError("test did not release the reset-code row lock");
-      }
-
-      connection.rollback();
-    } catch (Exception exception) {
-      throw new AssertionError("could not coordinate the reset-code row lock", exception);
-    }
+  private RowLockTarget rowLock(String table, UUID rowId) {
+    return RowLockTarget.builder().dataSource(dataSource).table(table).rowId(rowId).build();
   }
 
   private int waitingInvitationUpdates() {
@@ -306,23 +234,5 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
           AND query ILIKE '%for update%'
         """,
         Integer.class);
-  }
-
-  private static CredentialIssuanceService.IssuedInvitation acceptedInvitation(
-      Outcome<CredentialIssuanceService.IssuedInvitation, ?> outcome) {
-    return outcome.fold(
-        value -> value,
-        rejections -> {
-          throw new AssertionError("expected acceptance but got " + rejections);
-        });
-  }
-
-  private static CredentialIssuanceService.IssuedResetCode acceptedResetCode(
-      Outcome<CredentialIssuanceService.IssuedResetCode, ?> outcome) {
-    return outcome.fold(
-        value -> value,
-        rejections -> {
-          throw new AssertionError("expected acceptance but got " + rejections);
-        });
   }
 }
