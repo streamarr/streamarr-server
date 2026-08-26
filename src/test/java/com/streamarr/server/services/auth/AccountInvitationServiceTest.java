@@ -61,29 +61,7 @@ class AccountInvitationServiceTest {
           AuthThrottleProperties.builder().maxAttempts(5).window(Duration.ofMinutes(15)).build(),
           clock);
 
-  private final AccountInvitationService service =
-      new AccountInvitationService(
-          invitations,
-          accounts,
-          profiles,
-          managers,
-          shares,
-          new RefreshTokenService(
-              sessions,
-              refreshTokens,
-              AuthTokenProperties.builder()
-                  .accessTokenTtl(Duration.ofMinutes(10))
-                  .refreshTokenTtl(Duration.ofDays(30))
-                  .rotationGrace(Duration.ofSeconds(30))
-                  .build(),
-              clock,
-              new TokenReuseRevoker(new TokenReuseRevocationWriter(sessions, refreshTokens))),
-          opaqueCodes,
-          throttle,
-          new PlainEncoder(),
-          new TransactionTemplate(new FakeTransactionManager()),
-          new ConstraintViolationTranslator(),
-          clock);
+  private final AccountInvitationService service = serviceUsing(accounts);
 
   @Test
   @DisplayName("Should preview the decision details when an invitation code is presented")
@@ -227,6 +205,31 @@ class AccountInvitationServiceTest {
     }
 
     assertThatCode(() -> service.lookup(issued.code())).doesNotThrowAnyException();
+  }
+
+  private AccountInvitationService serviceUsing(FakeUserAccountRepository accountRepository) {
+    return new AccountInvitationService(
+        invitations,
+        accountRepository,
+        profiles,
+        managers,
+        shares,
+        new RefreshTokenService(
+            sessions,
+            refreshTokens,
+            AuthTokenProperties.builder()
+                .accessTokenTtl(Duration.ofMinutes(10))
+                .refreshTokenTtl(Duration.ofDays(30))
+                .rotationGrace(Duration.ofSeconds(30))
+                .build(),
+            clock,
+            new TokenReuseRevoker(new TokenReuseRevocationWriter(sessions, refreshTokens))),
+        opaqueCodes,
+        throttle,
+        new PlainEncoder(),
+        new TransactionTemplate(new FakeTransactionManager()),
+        new ConstraintViolationTranslator(),
+        clock);
   }
 
   private PendingInvitation.PendingInvitationBuilder pendingInvitationBuilder() {
