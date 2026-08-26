@@ -1,9 +1,12 @@
 package com.streamarr.server.services.mutation;
 
+import com.streamarr.server.exceptions.ResourceBusyException;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -16,8 +19,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * inside the transaction would commit, so the write unit throws and the conversion happens here,
  * outside it. Events published inside the unit reach AFTER_COMMIT listeners only when the unit
  * commits. This module owns that transaction and refuses an ambient one rather than joining it and
- * returning before the caller's rollback completes.
+ * returning before the caller's rollback completes. A bounded row-lock wait that runs out becomes
+ * {@link ResourceBusyException} so the client is told to retry instead of receiving a 500.
  */
+@Slf4j
 @Component
 public class MutationTransactions {
 
@@ -54,6 +59,10 @@ public class MutationTransactions {
       }
 
       return Outcome.rejected(rejection.get());
+    } catch (PessimisticLockingFailureException e) {
+      // A bounded lock wait ran out: contention the caller may retry, not a defect to trace.
+      log.warn("Mutation gave up waiting for a row lock: {}", e.getMessage());
+      throw new ResourceBusyException(e);
     }
   }
 }
