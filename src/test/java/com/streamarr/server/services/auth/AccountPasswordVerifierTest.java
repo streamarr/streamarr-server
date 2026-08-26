@@ -204,6 +204,22 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
+  @DisplayName("Should limit each Account's failures without affecting another Account")
+  void shouldLimitEachAccountsFailuresWithoutAffectingAnotherAccount() {
+    var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
+    var otherAccount = enabledAccount(encoder.encode(CORRECT_PASSWORD));
+    for (var attempt = 0; attempt < 5; attempt++) {
+      assertThatThrownBy(() -> verifier.verify(account, "wrong", IP_ADDRESS))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThatCode(() -> verifier.verify(otherAccount, CORRECT_PASSWORD, IP_ADDRESS))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
   @DisplayName("Should journal each verification outcome in order")
   void shouldJournalEachVerificationOutcomeInOrder() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
