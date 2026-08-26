@@ -21,6 +21,9 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -71,16 +74,19 @@ class ProfilePinVerifierTest {
             CredentialAttemptResult.SUCCEEDED);
   }
 
-  @Test
-  @DisplayName("Should reject the PIN when it is missing or blank")
-  void shouldRejectPinWhenMissingOrBlank() {
+  @ParameterizedTest(name = "pin={0}")
+  @NullSource
+  @ValueSource(strings = {"", " "})
+  @DisplayName("Should reject without journaling an attempt when the PIN is missing or blank")
+  void shouldRejectWithoutJournalingAttemptWhenPinIsMissingOrBlank(String pin) {
     var profile =
         ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash("pin:4242").build();
 
-    assertThatThrownBy(() -> verifier.verify(accountId, profile, null, IP_ADDRESS))
+    assertThatThrownBy(() -> verifier.verify(accountId, profile, pin, IP_ADDRESS))
         .isInstanceOf(InvalidProfilePinException.class);
-    assertThatThrownBy(() -> verifier.verify(accountId, profile, " ", IP_ADDRESS))
-        .isInstanceOf(InvalidProfilePinException.class);
+
+    // A missing PIN is not a guess: transport-invalid input journals nothing (ADR 0028).
+    assertThat(credentialAttempts.attempts()).isEmpty();
   }
 
   @Test

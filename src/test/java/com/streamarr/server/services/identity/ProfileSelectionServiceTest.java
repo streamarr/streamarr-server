@@ -97,6 +97,7 @@ class ProfileSelectionServiceTest {
         .isEqualTo(personal.getId());
     assertThat(authorization.recordedIntents())
         .containsExactly(new Intent.SelectProfile(personal.getId(), false));
+    assertThat(credentialAttempts.attempts()).isEmpty();
   }
 
   @Test
@@ -136,6 +137,7 @@ class ProfileSelectionServiceTest {
     assertThatThrownBy(() -> service.selectProfile(identity, command))
         .isInstanceOf(InvalidProfilePinException.class);
     assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    assertThat(credentialAttempts.attempts()).isEmpty();
   }
 
   @Test
