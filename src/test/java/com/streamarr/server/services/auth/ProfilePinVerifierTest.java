@@ -38,8 +38,8 @@ class ProfilePinVerifierTest {
   private final UUID accountId = UUID.randomUUID();
 
   @Test
-  @DisplayName("Should journal each PIN outcome in order against the Account and Profile")
-  void shouldJournalEachPinOutcomeInOrderAgainstAccountAndProfile() {
+  @DisplayName("Should journal each outcome against the Account and Profile when PINs alternate")
+  void shouldJournalEachOutcomeAgainstAccountAndProfileWhenPinsAlternate() {
     var profile =
         ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash("pin:4242").build();
 

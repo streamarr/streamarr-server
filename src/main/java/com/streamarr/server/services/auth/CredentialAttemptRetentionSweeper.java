@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class CredentialAttemptRetentionSweeper {
 
-  static final Duration RETENTION = Duration.ofDays(30);
+  private static final Duration RETENTION = Duration.ofDays(30);
 
   private final CredentialAttemptRepository repository;
   private final Clock clock;

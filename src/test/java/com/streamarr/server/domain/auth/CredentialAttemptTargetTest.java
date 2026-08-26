@@ -4,11 +4,14 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Credential Attempt Target Tests")
@@ -102,56 +105,77 @@ class CredentialAttemptTargetTest {
   }
 
   @Test
-  @DisplayName("Should accept an unresolved login and an unresolved opaque code")
-  void shouldAcceptUnresolvedLoginAndUnresolvedOpaqueCode() {
-    assertThatCode(
-            () ->
-                CredentialAttemptTarget.builder()
-                    .kind(CredentialKind.ACCOUNT_LOGIN)
-                    .ipAddress(IP_ADDRESS)
-                    .build())
-        .doesNotThrowAnyException();
-    assertThatCode(
-            () ->
-                CredentialAttemptTarget.builder()
-                    .kind(CredentialKind.PASSWORD_RESET_CODE)
-                    .ipAddress(IP_ADDRESS)
-                    .build())
-        .doesNotThrowAnyException();
+  @DisplayName("Should accept a login target when the Account is unresolved")
+  void shouldAcceptLoginTargetWhenAccountIsUnresolved() {
+    var target =
+        CredentialAttemptTarget.builder().kind(CredentialKind.ACCOUNT_LOGIN).ipAddress(IP_ADDRESS);
+
+    assertThatCode(target::build).doesNotThrowAnyException();
   }
 
   @Test
-  @DisplayName("Should accept every resolved shape when the identifiers match the kind")
-  void shouldAcceptEveryResolvedShapeWhenIdentifiersMatchKind() {
-    assertThatCode(
-            () -> {
-              CredentialAttemptTarget.builder()
-                  .kind(CredentialKind.ACCOUNT_LOGIN)
-                  .accountId(ACCOUNT_ID)
-                  .ipAddress(IP_ADDRESS)
-                  .build();
-              CredentialAttemptTarget.builder()
-                  .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
-                  .accountId(ACCOUNT_ID)
-                  .ipAddress(IP_ADDRESS)
-                  .build();
-              CredentialAttemptTarget.builder()
-                  .kind(CredentialKind.PROFILE_PIN)
-                  .accountId(ACCOUNT_ID)
-                  .profileId(PROFILE_ID)
-                  .ipAddress(IP_ADDRESS)
-                  .build();
-              CredentialAttemptTarget.builder()
-                  .kind(CredentialKind.ACCOUNT_INVITATION_CODE)
-                  .credentialId(CREDENTIAL_ID)
-                  .ipAddress(IP_ADDRESS)
-                  .build();
-              CredentialAttemptTarget.builder()
-                  .kind(CredentialKind.DEVICE_PAIRING_CODE)
-                  .accountId(ACCOUNT_ID)
-                  .ipAddress(IP_ADDRESS)
-                  .build();
-            })
-        .doesNotThrowAnyException();
+  @DisplayName("Should accept an opaque code target when the credential is unresolved")
+  void shouldAcceptOpaqueCodeTargetWhenCredentialIsUnresolved() {
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.PASSWORD_RESET_CODE)
+            .ipAddress(IP_ADDRESS);
+
+    assertThatCode(target::build).doesNotThrowAnyException();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("resolvedShapes")
+  @DisplayName("Should accept a resolved target when its identifiers match the kind")
+  void shouldAcceptResolvedTargetWhenIdentifiersMatchKind(
+      CredentialKind kind, CredentialAttemptTarget.CredentialAttemptTargetBuilder target) {
+    assertThatCode(target::build).doesNotThrowAnyException();
+  }
+
+  private static Stream<Arguments> resolvedShapes() {
+    return Stream.of(
+        Arguments.of(
+            CredentialKind.ACCOUNT_LOGIN,
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.ACCOUNT_LOGIN)
+                .accountId(ACCOUNT_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.ACCOUNT_PASSWORD_VERIFICATION,
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
+                .accountId(ACCOUNT_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.PROFILE_PIN,
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.PROFILE_PIN)
+                .accountId(ACCOUNT_ID)
+                .profileId(PROFILE_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.ACCOUNT_INVITATION_CODE,
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.ACCOUNT_INVITATION_CODE)
+                .credentialId(CREDENTIAL_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.PASSWORD_RESET_CODE,
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.PASSWORD_RESET_CODE)
+                .credentialId(CREDENTIAL_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.PROFILE_MANAGER_INVITATION_CODE,
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.PROFILE_MANAGER_INVITATION_CODE)
+                .credentialId(CREDENTIAL_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.DEVICE_PAIRING_CODE,
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.DEVICE_PAIRING_CODE)
+                .accountId(ACCOUNT_ID)
+                .ipAddress(IP_ADDRESS)));
   }
 }

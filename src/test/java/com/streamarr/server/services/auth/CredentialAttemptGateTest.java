@@ -76,8 +76,9 @@ class CredentialAttemptGateTest {
   }
 
   @Test
-  @DisplayName("Should refuse to complete a reservation twice")
-  void shouldRefuseToCompleteReservationTwice() {
+  @DisplayName(
+      "Should pass the not-pending failure through when the reservation is already completed")
+  void shouldPassNotPendingFailureThroughWhenReservationIsAlreadyCompleted() {
     var reservation = gate.reserve(LOGIN_TARGET);
     gate.complete(reservation, CredentialAttemptResult.FAILED);
 
