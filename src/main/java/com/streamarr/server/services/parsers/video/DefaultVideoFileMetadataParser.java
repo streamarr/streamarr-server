@@ -36,13 +36,13 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
     var extractedMetadata = extractTitleAndYear(filename);
 
     if (extractedMetadata.isPresent()) {
-      return resultOf(extractedMetadata.orElseThrow());
+      return resultFromTitleAndYear(extractedMetadata.orElseThrow());
     }
 
-    return resultOfCleanedTitle(filename);
+    return resultFromFilenameAsTitle(filename);
   }
 
-  private Optional<VideoFileParserResult> resultOf(ExtractedMetadata metadata) {
+  private Optional<VideoFileParserResult> resultFromTitleAndYear(ExtractedMetadata metadata) {
     if (StringUtils.isBlank(metadata.rawTitle())) {
       return Optional.empty();
     }
@@ -54,7 +54,7 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
             .build());
   }
 
-  private Optional<VideoFileParserResult> resultOfCleanedTitle(String filename) {
+  private Optional<VideoFileParserResult> resultFromFilenameAsTitle(String filename) {
     var cleanedInput = cleanTitle(filename);
 
     if (StringUtils.isBlank(cleanedInput)) {

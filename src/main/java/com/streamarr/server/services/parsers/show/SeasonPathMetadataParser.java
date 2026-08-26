@@ -135,8 +135,12 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
     for (var i = 0; i < path.length(); i++) {
       var ch = path.charAt(i);
 
-      if (Character.isDigit(ch) && !hasOpenParenthesis) {
-        numericStart = numericStart == -1 ? i : numericStart;
+      var numericOutsideParentheses = Character.isDigit(ch) && !hasOpenParenthesis;
+      if (numericOutsideParentheses && numericStart == -1) {
+        numericStart = i;
+      }
+
+      if (numericOutsideParentheses) {
         length++;
         continue;
       }
