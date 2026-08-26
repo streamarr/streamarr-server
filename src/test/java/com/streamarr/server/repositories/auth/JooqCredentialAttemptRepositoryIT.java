@@ -118,7 +118,9 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
         .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
     assertThat(
             repository.reserve(
-                target, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(5)).plusNanos(1)))
+                target, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(5)).minusSeconds(1)))
+        .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
+    assertThat(repository.reserve(target, LIMITED_POLICY, NOW.plus(Duration.ofMinutes(5))))
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
   }
 
@@ -137,6 +139,81 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
     assertThat(repository.reserve(target, LIMITED_POLICY, NOW.plusSeconds(2)))
         .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
+  }
+
+  @Test
+  @DisplayName("Should not lock out when five failures span more than the window")
+  void shouldNotLockOutWhenFiveFailuresSpanMoreThanTheWindow() {
+    var target = resolvedTarget();
+    completeFailures(target, NOW, 4);
+    var late = NOW.plus(Duration.ofMinutes(16));
+    repository.complete(reserve(target, late), CredentialAttemptResult.FAILED, late);
+
+    assertThat(repository.reserve(target, LIMITED_POLICY, late.plusSeconds(1)))
+        .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should measure the lockout from the fifth failure's completion, not its reservation")
+  void shouldMeasureLockoutFromFifthFailuresCompletionNotItsReservation() {
+    var target = resolvedTarget();
+    var reservations = IntStream.range(0, 5).mapToObj(_ -> reserve(target, NOW)).toList();
+    var completedAt = NOW.plusSeconds(30);
+    reservations.forEach(
+        reservation ->
+            repository.complete(reservation, CredentialAttemptResult.FAILED, completedAt));
+    var lockoutEnd = completedAt.plus(Duration.ofMinutes(15));
+
+    assertThat(repository.reserve(target, LIMITED_POLICY, lockoutEnd.minusSeconds(1)))
+        .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
+    assertThat(repository.reserve(target, LIMITED_POLICY, lockoutEnd))
+        .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
+  }
+
+  @Test
+  @DisplayName("Should keep every target's failure sequence separate")
+  void shouldKeepEveryTargetsFailureSequenceSeparate() {
+    var accountId = UUID.randomUUID();
+    var firstProfile = pinTarget(accountId, UUID.randomUUID());
+    var secondProfile = pinTarget(accountId, UUID.randomUUID());
+    completeFailures(firstProfile, NOW, 5);
+
+    assertThat(repository.reserve(firstProfile, LIMITED_POLICY, NOW.plusSeconds(5)))
+        .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
+    assertThat(repository.reserve(secondProfile, LIMITED_POLICY, NOW.plusSeconds(5)))
+        .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
+
+    // A success on the sibling Profile forgives nothing for the locked one.
+    var siblingSuccess = reserve(secondProfile, NOW.plusSeconds(6));
+    repository.complete(siblingSuccess, CredentialAttemptResult.SUCCEEDED, NOW.plusSeconds(6));
+    assertThat(repository.reserve(firstProfile, LIMITED_POLICY, NOW.plusSeconds(7)))
+        .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
+
+    // Nor do the Account's login failures spill into its password verification.
+    completeFailures(loginTarget(accountId), NOW, 5);
+    var passwordVerification =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
+            .accountId(accountId)
+            .ipAddress(IP_ADDRESS)
+            .build();
+    assertThat(repository.reserve(passwordVerification, LIMITED_POLICY, NOW.plusSeconds(8)))
+        .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
+  }
+
+  @Test
+  @DisplayName("Should keep the journal row when the caller's transaction rolls back")
+  void shouldKeepTheJournalRowWhenTheCallersTransactionRollsBack() {
+    var target = resolvedTarget();
+
+    transactionTemplate.executeWithoutResult(
+        status -> {
+          reserve(target, NOW);
+          status.setRollbackOnly();
+        });
+
+    assertThat(attemptCount()).isEqualTo(1);
   }
 
   @Test
@@ -277,9 +354,22 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   private static CredentialAttemptTarget resolvedTarget() {
+    return loginTarget(UUID.randomUUID());
+  }
+
+  private static CredentialAttemptTarget loginTarget(UUID accountId) {
     return CredentialAttemptTarget.builder()
         .kind(CredentialKind.ACCOUNT_LOGIN)
-        .accountId(UUID.randomUUID())
+        .accountId(accountId)
+        .ipAddress(IP_ADDRESS)
+        .build();
+  }
+
+  private static CredentialAttemptTarget pinTarget(UUID accountId, UUID profileId) {
+    return CredentialAttemptTarget.builder()
+        .kind(CredentialKind.PROFILE_PIN)
+        .accountId(accountId)
+        .profileId(profileId)
         .ipAddress(IP_ADDRESS)
         .build();
   }

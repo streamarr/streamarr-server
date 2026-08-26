@@ -20,6 +20,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
@@ -345,6 +346,25 @@ class LoginServiceTest {
         .singleElement()
         .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
         .isEqualTo(CredentialAttemptResult.FAILED);
+  }
+
+  @Test
+  @DisplayName("Should journal both casings of an email against the same Account")
+  void shouldJournalBothCasingsOfEmailAgainstSameAccount() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+    var upper =
+        commandBuilder(account.getEmail().toUpperCase(Locale.ROOT)).password("wrong").build();
+    var lower =
+        commandBuilder(account.getEmail().toLowerCase(Locale.ROOT)).password("wrong").build();
+
+    assertThatThrownBy(() -> loginService.login(upper))
+        .isInstanceOf(InvalidCredentialsException.class);
+    assertThatThrownBy(() -> loginService.login(lower))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(credentialAttempts.attempts())
+        .extracting(attempt -> attempt.target().accountId())
+        .containsExactly(account.getId(), account.getId());
   }
 
   private UserAccount seedAccount(String passwordHash) {
