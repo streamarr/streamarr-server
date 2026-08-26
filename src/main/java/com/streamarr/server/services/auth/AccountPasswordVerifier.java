@@ -1,7 +1,5 @@
 package com.streamarr.server.services.auth;
 
-import com.streamarr.server.domain.auth.CredentialAttemptReservation;
-import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
@@ -32,32 +30,28 @@ public class AccountPasswordVerifier {
    *     unreadable, or the password does not match
    */
   public void verify(UserAccount account, String password, String ipAddress) {
-    var attempt = reserveAttempt(account, ipAddress);
-    // Snapshot before the slow comparison: a password correct when verification begins is
-    // sufficient, even if a concurrent change lands on the managed entity meanwhile.
-    var expectedPasswordHash = account.getPasswordHash();
-    if (!account.isEnabled()) {
-      timingEqualizer.burn(password);
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
-      throw new InvalidCredentialsException();
-    }
-
-    if (!passwordMatches(account.getId(), expectedPasswordHash, password)) {
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
-      throw new InvalidCredentialsException();
-    }
-
-    credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
+    credentialAttempts.attempt(
+        passwordTarget(account, ipAddress),
+        () -> {
+          // Snapshot before the slow comparison: a password correct when verification begins is
+          // sufficient, even if a concurrent change lands on the managed entity meanwhile.
+          var expectedPasswordHash = account.getPasswordHash();
+          if (!account.isEnabled()) {
+            timingEqualizer.burn(password);
+            throw new InvalidCredentialsException();
+          }
+          if (!passwordMatches(account.getId(), expectedPasswordHash, password)) {
+            throw new InvalidCredentialsException();
+          }
+        });
   }
 
-  private CredentialAttemptReservation reserveAttempt(UserAccount account, String ipAddress) {
-    var target =
-        CredentialAttemptTarget.builder()
-            .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
-            .accountId(account.getId())
-            .ipAddress(ipAddress)
-            .build();
-    return credentialAttempts.reserve(target);
+  private static CredentialAttemptTarget passwordTarget(UserAccount account, String ipAddress) {
+    return CredentialAttemptTarget.builder()
+        .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
+        .accountId(account.getId())
+        .ipAddress(ipAddress)
+        .build();
   }
 
   private boolean passwordMatches(UUID accountId, String expectedPasswordHash, String password) {

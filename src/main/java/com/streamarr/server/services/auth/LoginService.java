@@ -1,7 +1,5 @@
 package com.streamarr.server.services.auth;
 
-import com.streamarr.server.domain.auth.CredentialAttemptReservation;
-import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
@@ -30,30 +28,33 @@ public class LoginService {
   public LoginResult login(LoginCommand command) {
     var email = lookupEmail(command.email());
     var account = userAccountRepository.findByEmailIgnoreCase(email).orElse(null);
-    var attempt = reserveAttempt(command, account);
-    if (account == null) {
-      timingEqualizer.burn(command.password());
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
-      throw new InvalidCredentialsException();
-    }
+    credentialAttempts.attempt(
+        loginTarget(command, account),
+        () -> {
+          if (account == null) {
+            timingEqualizer.burn(command.password());
+            throw new InvalidCredentialsException();
+          }
+          if (!credentialsValid(account, command.password())) {
+            throw new InvalidCredentialsException();
+          }
+        });
 
-    if (!credentialsValid(account, command.password())) {
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
-      throw new InvalidCredentialsException();
-    }
+    return loginCompletionService.complete(
+        LoginCompletionCommand.builder()
+            .accountId(account.getId())
+            .expectedPasswordHash(account.getPasswordHash())
+            .upgradedPasswordHash(upgradedPasswordHash(account, command.password()))
+            .deviceName(command.deviceName())
+            .build());
+  }
 
-    credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
-
-    var result =
-        loginCompletionService.complete(
-            LoginCompletionCommand.builder()
-                .accountId(account.getId())
-                .expectedPasswordHash(account.getPasswordHash())
-                .upgradedPasswordHash(upgradedPasswordHash(account, command.password()))
-                .deviceName(command.deviceName())
-                .build());
-
-    return result;
+  private static CredentialAttemptTarget loginTarget(LoginCommand command, UserAccount account) {
+    return CredentialAttemptTarget.builder()
+        .kind(CredentialKind.ACCOUNT_LOGIN)
+        .accountId(account == null ? null : account.getId())
+        .ipAddress(command.ipAddress())
+        .build();
   }
 
   /**
@@ -65,16 +66,6 @@ public class LoginService {
       case EmailAddressValidator.Valid(var address) -> address;
       case EmailAddressValidator.Blank _, EmailAddressValidator.Malformed _ -> typed;
     };
-  }
-
-  private CredentialAttemptReservation reserveAttempt(LoginCommand command, UserAccount account) {
-    var target =
-        CredentialAttemptTarget.builder()
-            .kind(CredentialKind.ACCOUNT_LOGIN)
-            .accountId(account == null ? null : account.getId())
-            .ipAddress(command.ipAddress())
-            .build();
-    return credentialAttempts.reserve(target);
   }
 
   private boolean credentialsValid(UserAccount account, String password) {

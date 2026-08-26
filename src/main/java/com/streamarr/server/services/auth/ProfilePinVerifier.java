@@ -1,7 +1,5 @@
 package com.streamarr.server.services.auth;
 
-import com.streamarr.server.domain.auth.CredentialAttemptReservation;
-import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Profile;
@@ -31,25 +29,23 @@ public class ProfilePinVerifier {
    * @throws InvalidProfilePinException when the PIN is missing or does not match
    */
   public void verify(UUID accountId, Profile profile, String pin, String ipAddress) {
-    var attempt = reserveAttempt(accountId, profile.getId(), ipAddress);
-    if (pin == null || pin.isBlank() || !matches(profile, pin)) {
-      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
-      throw new InvalidProfilePinException();
-    }
-
-    credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
+    credentialAttempts.attempt(
+        pinTarget(accountId, profile.getId(), ipAddress),
+        () -> {
+          if (pin == null || pin.isBlank() || !matches(profile, pin)) {
+            throw new InvalidProfilePinException();
+          }
+        });
   }
 
-  private CredentialAttemptReservation reserveAttempt(
+  private static CredentialAttemptTarget pinTarget(
       UUID accountId, UUID profileId, String ipAddress) {
-    var target =
-        CredentialAttemptTarget.builder()
-            .kind(CredentialKind.PROFILE_PIN)
-            .accountId(accountId)
-            .profileId(profileId)
-            .ipAddress(ipAddress)
-            .build();
-    return credentialAttempts.reserve(target);
+    return CredentialAttemptTarget.builder()
+        .kind(CredentialKind.PROFILE_PIN)
+        .accountId(accountId)
+        .profileId(profileId)
+        .ipAddress(ipAddress)
+        .build();
   }
 
   private boolean matches(Profile profile, String pin) {
