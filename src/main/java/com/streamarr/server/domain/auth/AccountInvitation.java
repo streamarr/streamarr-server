@@ -28,7 +28,8 @@ import org.hibernate.type.SqlTypes;
 @SuperBuilder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-public class AccountInvitation extends BaseAuditableEntity<AccountInvitation> {
+public class AccountInvitation extends BaseAuditableEntity<AccountInvitation>
+    implements OneTimeCredential {
 
   private String recipientEmail;
 
@@ -67,8 +68,14 @@ public class AccountInvitation extends BaseAuditableEntity<AccountInvitation> {
 
   private byte[] secretDigest;
 
+  @Override
+  public boolean isRedeemableAt(Instant now) {
+    return status == AccountInvitationStatus.PENDING && expiresAt.isAfter(now);
+  }
+
+  /** Expiry is a predicate at read time: a stale PENDING row projects as EXPIRED. */
   public AccountInvitationStatus statusAt(Instant now) {
-    if (status == AccountInvitationStatus.PENDING && !expiresAt.isAfter(now)) {
+    if (status == AccountInvitationStatus.PENDING && !isRedeemableAt(now)) {
       return AccountInvitationStatus.EXPIRED;
     }
 

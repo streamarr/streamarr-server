@@ -28,7 +28,8 @@ import org.hibernate.type.SqlTypes;
 @SuperBuilder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-public class PasswordResetCode extends BaseAuditableEntity<PasswordResetCode> {
+public class PasswordResetCode extends BaseAuditableEntity<PasswordResetCode>
+    implements OneTimeCredential {
 
   private UUID accountId;
 
@@ -49,8 +50,14 @@ public class PasswordResetCode extends BaseAuditableEntity<PasswordResetCode> {
 
   private byte[] secretDigest;
 
+  @Override
+  public boolean isRedeemableAt(Instant now) {
+    return status == PasswordResetCodeStatus.PENDING && expiresAt.isAfter(now);
+  }
+
+  /** Expiry is a predicate at read time: a stale PENDING row projects as EXPIRED. */
   public PasswordResetCodeStatus statusAt(Instant now) {
-    if (status == PasswordResetCodeStatus.PENDING && !expiresAt.isAfter(now)) {
+    if (status == PasswordResetCodeStatus.PENDING && !isRedeemableAt(now)) {
       return PasswordResetCodeStatus.EXPIRED;
     }
 

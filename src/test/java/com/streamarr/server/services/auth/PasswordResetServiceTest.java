@@ -47,13 +47,15 @@ class PasswordResetServiceTest {
           resetCodes,
           accounts,
           sessions,
-          opaqueCodes,
-          new CredentialGuessThrottle(
-              AuthThrottleProperties.builder()
-                  .maxAttempts(5)
-                  .window(Duration.ofMinutes(15))
-                  .maxOpaqueCodeBudgets(1)
-                  .build(),
+          new OpaqueCodeResolver(
+              opaqueCodes,
+              new CredentialGuessThrottle(
+                  AuthThrottleProperties.builder()
+                      .maxAttempts(5)
+                      .window(Duration.ofMinutes(15))
+                      .maxOpaqueCodeBudgets(1)
+                      .build(),
+                  clock),
               clock),
           new PlainEncoder(),
           new TransactionTemplate(new FakeTransactionManager()),

@@ -1,7 +1,6 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.PasswordResetCode;
-import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -26,8 +25,7 @@ public class PasswordResetService {
   private final PasswordResetCodeRepository resetCodeRepository;
   private final UserAccountRepository userAccountRepository;
   private final AuthSessionRepository authSessionRepository;
-  private final OpaqueOneTimeCodes opaqueCodes;
-  private final CredentialGuessThrottle throttle;
+  private final OpaqueCodeResolver codeResolver;
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactionTemplate;
   private final Clock clock;
@@ -57,22 +55,6 @@ public class PasswordResetService {
   }
 
   private PasswordResetCode resolvePending(String rawCode) {
-    var presented = opaqueCodes.parse(rawCode).orElseThrow(InvalidOneTimeCodeException::new);
-    var code =
-        resetCodeRepository
-            .findByPublicId(presented.publicId())
-            .orElseThrow(InvalidOneTimeCodeException::new);
-    throttle.registerCodeGuess(presented.publicId());
-    if (!opaqueCodes.matches(presented, code.getSecretDigest())) {
-      throw new InvalidOneTimeCodeException();
-    }
-
-    throttle.resetCodeGuesses(presented.publicId());
-    if (code.getStatus() != PasswordResetCodeStatus.PENDING
-        || !code.getExpiresAt().isAfter(clock.instant())) {
-      throw new InvalidOneTimeCodeException();
-    }
-
-    return code;
+    return codeResolver.resolvePending(rawCode, resetCodeRepository::findByPublicId);
   }
 }

@@ -1,7 +1,6 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.AccountInvitation;
-import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
@@ -51,8 +50,7 @@ public class AccountInvitationService {
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileHouseholdShareRepository shareRepository;
   private final RefreshTokenService refreshTokenService;
-  private final OpaqueOneTimeCodes opaqueCodes;
-  private final CredentialGuessThrottle throttle;
+  private final OpaqueCodeResolver codeResolver;
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactionTemplate;
   private final ConstraintViolationTranslator constraintViolationTranslator;
@@ -187,28 +185,8 @@ public class AccountInvitationService {
     return account;
   }
 
-  /**
-   * Resolves a presented code to its PENDING, unexpired row: known public IDs are throttled before
-   * constant-time digest comparison, with one deliberate failure answer for every miss.
-   */
   private AccountInvitation resolvePending(String rawCode) {
-    var presented = opaqueCodes.parse(rawCode).orElseThrow(InvalidOneTimeCodeException::new);
-    var invitation =
-        invitationRepository
-            .findByPublicId(presented.publicId())
-            .orElseThrow(InvalidOneTimeCodeException::new);
-    throttle.registerCodeGuess(presented.publicId());
-    if (!opaqueCodes.matches(presented, invitation.getSecretDigest())) {
-      throw new InvalidOneTimeCodeException();
-    }
-
-    throttle.resetCodeGuesses(presented.publicId());
-    if (invitation.getStatus() != AccountInvitationStatus.PENDING
-        || !invitation.getExpiresAt().isAfter(clock.instant())) {
-      throw new InvalidOneTimeCodeException();
-    }
-
-    return invitation;
+    return codeResolver.resolvePending(rawCode, invitationRepository::findByPublicId);
   }
 
   @Builder
