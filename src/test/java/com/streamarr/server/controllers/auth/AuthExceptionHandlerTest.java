@@ -6,6 +6,7 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.exceptions.InvitationNotAcceptableException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
@@ -77,6 +78,23 @@ class AuthExceptionHandlerTest {
         .isEqualTo(
             new AuthErrorResponse(
                 "INVALID_REFRESH_TOKEN", "The refresh token is unknown or expired."));
+  }
+
+  @Test
+  @DisplayName(
+      "Should respond 409 invitation not acceptable when the Household no longer admits it")
+  void shouldRespond409InvitationNotAcceptableWhenHouseholdNoLongerAdmitsIt() {
+    var response =
+        handler.handleInvitationNotAcceptable(
+            new InvitationNotAcceptableException(
+                "The required Profile manager is no longer eligible.", new RuntimeException()));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(response.getBody())
+        .isEqualTo(
+            new AuthErrorResponse(
+                "INVITATION_NOT_ACCEPTABLE",
+                "The required Profile manager is no longer eligible."));
   }
 
   @Test

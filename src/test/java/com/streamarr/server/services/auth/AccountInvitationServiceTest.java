@@ -10,7 +10,9 @@ import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
+import com.streamarr.server.exceptions.InvitationNotAcceptableException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
@@ -23,15 +25,21 @@ import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.stream.Stream;
 import lombok.Builder;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -112,6 +120,32 @@ class AccountInvitationServiceTest {
     var consumed = issued.code();
     assertThatThrownBy(() -> service.lookup(consumed))
         .isInstanceOf(InvalidOneTimeCodeException.class);
+  }
+
+  @ParameterizedTest(name = "Should refuse acceptance when {0} fails at commit")
+  @MethodSource("householdInvariantFailures")
+  @DisplayName("Should refuse acceptance with a typed conflict when a Household invariant fails")
+  void shouldRefuseAcceptanceWithTypedConflictWhenHouseholdInvariantFails(
+      InvariantFailure failure) {
+    var service = serviceUsing(new ConstraintViolatingUserAccountRepository(failure.constraint()));
+    var issued = pendingInvitation(pendingInvitationBuilder().build());
+    var command = acceptCommand(issued.code());
+
+    assertThatThrownBy(() -> service.accept(command))
+        .isInstanceOf(InvitationNotAcceptableException.class)
+        .hasMessage(failure.message());
+  }
+
+  private static Stream<InvariantFailure> householdInvariantFailures() {
+    return Stream.of(
+        new InvariantFailure(
+            "chk_household_profile_names_unique",
+            "The Profile name is no longer available in the Household."),
+        new InvariantFailure(
+            "chk_profile_home_anchor", "The required Profile manager is no longer eligible."),
+        new InvariantFailure(
+            "chk_restricted_account_holds_no_authority",
+            "A restricted Profile cannot hold Household authority."));
   }
 
   @Test
@@ -232,6 +266,15 @@ class AccountInvitationServiceTest {
         clock);
   }
 
+  private static AcceptInvitationCommand acceptCommand(String code) {
+    return AcceptInvitationCommand.builder()
+        .code(code)
+        .displayName("Kai H")
+        .password("a strong passphrase")
+        .deviceName("web")
+        .build();
+  }
+
   private PendingInvitation.PendingInvitationBuilder pendingInvitationBuilder() {
     return PendingInvitation.builder().role(HouseholdRole.MEMBER).householdId(UUID.randomUUID());
   }
@@ -261,6 +304,32 @@ class AccountInvitationServiceTest {
 
   @Builder
   private record PendingInvitation(HouseholdRole role, UUID localManagerId, UUID householdId) {}
+
+  private record InvariantFailure(String constraint, String message) {
+    @Override
+    public String toString() {
+      return constraint;
+    }
+  }
+
+  /** Fails the Account write the way a deferred constraint trigger fails at commit. */
+  private static final class ConstraintViolatingUserAccountRepository
+      extends FakeUserAccountRepository {
+
+    private final String constraint;
+
+    private ConstraintViolatingUserAccountRepository(String constraint) {
+      this.constraint = constraint;
+    }
+
+    @Override
+    public <S extends UserAccount> S saveAndFlush(S entity) {
+      throw new DataIntegrityViolationException(
+          "could not execute statement",
+          new ConstraintViolationException(
+              "violates " + constraint, new SQLException("23514"), constraint));
+    }
+  }
 
   private static final class PlainEncoder implements PasswordEncoder {
     @Override

@@ -12,6 +12,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.exceptions.InvitationEmailAlreadyUsedException;
+import com.streamarr.server.exceptions.InvitationNotAcceptableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -39,6 +40,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class AccountInvitationService {
 
   private static final String EMAIL_UNIQUE_INDEX = "uq_user_account_email";
+  private static final String CHK_NAMES_UNIQUE = "chk_household_profile_names_unique";
+  private static final String CHK_ELIGIBLE_MANAGER = "chk_profile_home_anchor";
+  private static final String CHK_RESTRICTED_AUTHORITY =
+      "chk_restricted_account_holds_no_authority";
 
   private final AccountInvitationRepository invitationRepository;
   private final UserAccountRepository userAccountRepository;
@@ -118,17 +123,25 @@ public class AccountInvitationService {
     }
   }
 
+  /**
+   * The deferred Household invariants judge the accepted shape at commit; each one the issuance
+   * pre-checks can be raced is answered with a typed conflict instead of a bare 500.
+   */
   private RuntimeException translateAcceptanceFailure(DataIntegrityViolationException exception) {
-    var duplicateEmail =
-        constraintViolationTranslator
-            .constraintName(exception)
-            .filter(EMAIL_UNIQUE_INDEX::equals)
-            .isPresent();
-    if (duplicateEmail) {
-      return new InvitationEmailAlreadyUsedException(exception);
-    }
-
-    return exception;
+    var constraint = constraintViolationTranslator.constraintName(exception).orElse("");
+    return switch (constraint) {
+      case EMAIL_UNIQUE_INDEX -> new InvitationEmailAlreadyUsedException(exception);
+      case CHK_NAMES_UNIQUE ->
+          new InvitationNotAcceptableException(
+              "The Profile name is no longer available in the Household.", exception);
+      case CHK_ELIGIBLE_MANAGER ->
+          new InvitationNotAcceptableException(
+              "The required Profile manager is no longer eligible.", exception);
+      case CHK_RESTRICTED_AUTHORITY ->
+          new InvitationNotAcceptableException(
+              "A restricted Profile cannot hold Household authority.", exception);
+      default -> exception;
+    };
   }
 
   private UserAccount createAccount(

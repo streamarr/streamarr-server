@@ -9,6 +9,7 @@ import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.exceptions.InvalidProfilePinException;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.InvitationEmailAlreadyUsedException;
+import com.streamarr.server.exceptions.InvitationNotAcceptableException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.ProfileLockedException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
@@ -61,6 +62,12 @@ public class AuthExceptionHandler {
   public ResponseEntity<AuthErrorResponse> handleInvitationEmailAlreadyUsed(
       InvitationEmailAlreadyUsedException e) {
     return respond(HttpStatus.CONFLICT, "INVITATION_EMAIL_ALREADY_USED", e);
+  }
+
+  @ExceptionHandler(InvitationNotAcceptableException.class)
+  public ResponseEntity<AuthErrorResponse> handleInvitationNotAcceptable(
+      InvitationNotAcceptableException e) {
+    return respond(HttpStatus.CONFLICT, "INVITATION_NOT_ACCEPTABLE", e);
   }
 
   @ExceptionHandler(AuthenticationRequiredException.class)
