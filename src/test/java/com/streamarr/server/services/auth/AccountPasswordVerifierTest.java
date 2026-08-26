@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.config.security.Argon2Properties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
@@ -58,10 +59,13 @@ class AccountPasswordVerifierTest {
         .singleElement()
         .satisfies(
             attempt -> {
-              assertThat(attempt.target().kind())
-                  .isEqualTo(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION);
-              assertThat(attempt.target().accountId()).isEqualTo(account.getId());
-              assertThat(attempt.target().ipAddress()).isEqualTo(IP_ADDRESS);
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
+                          .accountId(account.getId())
+                          .ipAddress(IP_ADDRESS)
+                          .build());
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
             });
   }
@@ -186,13 +190,9 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should throttle before any Argon2 work when the limit is exhausted")
-  void shouldThrottleBeforeAnyArgon2WorkWhenLimitIsExhausted() {
+  @DisplayName("Should refuse before any Argon2 work when the journal blocks the attempt")
+  void shouldRefuseBeforeAnyArgon2WorkWhenJournalBlocksAttempt() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
-    for (var attempt = 0; attempt < 2; attempt++) {
-      assertThatThrownBy(() -> verifier.verify(account, "wrong", IP_ADDRESS))
-          .isInstanceOf(InvalidCredentialsException.class);
-    }
     var comparisonsBeforeThrottle = encoder.completedComparisons();
     credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
@@ -204,18 +204,22 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should reset the failure sequence when verification succeeds")
-  void shouldResetFailureSequenceWhenVerificationSucceeds() {
+  @DisplayName("Should journal each verification outcome in order")
+  void shouldJournalEachVerificationOutcomeInOrder() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
+    assertThatThrownBy(() -> verifier.verify(account, "wrong", IP_ADDRESS))
+        .isInstanceOf(InvalidCredentialsException.class);
+    assertThatCode(() -> verifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
+        .doesNotThrowAnyException();
+    assertThatThrownBy(() -> verifier.verify(account, "wrong", IP_ADDRESS))
+        .isInstanceOf(InvalidCredentialsException.class);
 
-    assertThatThrownBy(() -> verifier.verify(account, "wrong", IP_ADDRESS))
-        .isInstanceOf(InvalidCredentialsException.class);
-    assertThatCode(() -> verifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
-        .doesNotThrowAnyException();
-    assertThatThrownBy(() -> verifier.verify(account, "wrong", IP_ADDRESS))
-        .isInstanceOf(InvalidCredentialsException.class);
-    assertThatCode(() -> verifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
-        .doesNotThrowAnyException();
+    assertThat(credentialAttempts.attempts())
+        .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
+        .containsExactly(
+            CredentialAttemptResult.FAILED,
+            CredentialAttemptResult.SUCCEEDED,
+            CredentialAttemptResult.FAILED);
   }
 
   @Test

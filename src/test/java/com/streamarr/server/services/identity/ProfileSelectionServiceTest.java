@@ -139,17 +139,9 @@ class ProfileSelectionServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject and throttle when the Profile PIN is wrong")
-  void shouldRejectAndThrottleWhenProfilePinIsWrong() {
+  @DisplayName("Should refuse the selection when the journal blocks the PIN attempt")
+  void shouldRefuseSelectionWhenJournalBlocksPinAttempt() {
     pin(personal, "4242");
-
-    for (var attempt = 0; attempt < 2; attempt++) {
-      var identity = identity();
-      var command = command(personal.getId(), "0000");
-
-      assertThatThrownBy(() -> service.selectProfile(identity, command))
-          .isInstanceOf(InvalidProfilePinException.class);
-    }
     credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
     var identity = identity();

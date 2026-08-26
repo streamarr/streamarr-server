@@ -4,6 +4,7 @@ import static com.streamarr.server.jooq.generated.enums.ProfileManagerInvitation
 import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDENTIAL_ATTEMPT;
 import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
+import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -1049,11 +1050,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   private ResultActions graphql(String bearer, String query) throws Exception {
     return mockMvc.perform(
         post("/graphql")
-            .with(
-                request -> {
-                  request.setRemoteAddr("198.51.100.42");
-                  return request;
-                })
+            .with(remoteAddr("198.51.100.42"))
             .contentType(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
             .content(objectMapper.writeValueAsString(Map.of("query", query))));

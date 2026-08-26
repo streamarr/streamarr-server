@@ -9,6 +9,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.ThrowableProxyUtil;
 import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.exceptions.InvalidProfilePinException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
@@ -37,8 +38,8 @@ class ProfilePinVerifierTest {
   private final UUID accountId = UUID.randomUUID();
 
   @Test
-  @DisplayName("Should accept the PIN and reset the failure sequence when the PIN is correct")
-  void shouldAcceptPinAndResetFailureSequenceWhenPinIsCorrect() {
+  @DisplayName("Should journal each PIN outcome in order against the Account and Profile")
+  void shouldJournalEachPinOutcomeInOrderAgainstAccountAndProfile() {
     var profile =
         ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash("pin:4242").build();
 
@@ -51,13 +52,23 @@ class ProfilePinVerifierTest {
     assertThatCode(() -> verifier.verify(accountId, profile, "4242", IP_ADDRESS))
         .doesNotThrowAnyException();
 
-    assertThat(credentialAttempts.attempts().getFirst().target().kind())
-        .isEqualTo(CredentialKind.PROFILE_PIN);
-    assertThat(credentialAttempts.attempts().getFirst().target().profileId())
-        .isEqualTo(profile.getId());
-    assertThat(credentialAttempts.attempts().getFirst().target().ipAddress()).isEqualTo(IP_ADDRESS);
-    assertThat(credentialAttempts.attempts().getFirst().result())
-        .isEqualTo(CredentialAttemptResult.FAILED);
+    assertThat(credentialAttempts.attempts())
+        .allSatisfy(
+            attempt ->
+                assertThat(attempt.target())
+                    .isEqualTo(
+                        CredentialAttemptTarget.builder()
+                            .kind(CredentialKind.PROFILE_PIN)
+                            .accountId(accountId)
+                            .profileId(profile.getId())
+                            .ipAddress(IP_ADDRESS)
+                            .build()))
+        .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
+        .containsExactly(
+            CredentialAttemptResult.FAILED,
+            CredentialAttemptResult.SUCCEEDED,
+            CredentialAttemptResult.FAILED,
+            CredentialAttemptResult.SUCCEEDED);
   }
 
   @Test
@@ -73,22 +84,30 @@ class ProfilePinVerifierTest {
   }
 
   @Test
-  @DisplayName("Should throttle before hashing when the Account and Profile limit is exhausted")
-  void shouldThrottleBeforeHashingWhenAccountAndProfileLimitIsExhausted() {
+  @DisplayName("Should refuse before hashing when the journal blocks the attempt")
+  void shouldRefuseBeforeHashingWhenJournalBlocksAttempt() {
     var profile =
         ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash("pin:4242").build();
-    for (var attempt = 0; attempt < 2; attempt++) {
-      assertThatThrownBy(() -> verifier.verify(accountId, profile, "0000", IP_ADDRESS))
-          .isInstanceOf(InvalidProfilePinException.class);
-    }
     credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
     assertThatThrownBy(() -> verifier.verify(accountId, profile, "4242", IP_ADDRESS))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
-    // Another Account guessing the same Profile has its own target.
-    credentialAttempts.allowReservations();
-    assertThatCode(() -> verifier.verify(UUID.randomUUID(), profile, "4242", IP_ADDRESS))
-        .doesNotThrowAnyException();
+    assertThat(credentialAttempts.attempts()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should journal another Account guessing the same Profile as its own target")
+  void shouldJournalAnotherAccountGuessingSameProfileAsItsOwnTarget() {
+    var profile =
+        ProfileFixture.defaultProfileBuilder().id(UUID.randomUUID()).pinHash("pin:4242").build();
+    var otherAccountId = UUID.randomUUID();
+
+    verifier.verify(accountId, profile, "4242", IP_ADDRESS);
+    verifier.verify(otherAccountId, profile, "4242", IP_ADDRESS);
+
+    assertThat(credentialAttempts.attempts())
+        .extracting(attempt -> attempt.target().accountId())
+        .containsExactly(accountId, otherAccountId);
   }
 
   @Test
