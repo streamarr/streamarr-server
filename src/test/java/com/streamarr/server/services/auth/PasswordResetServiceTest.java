@@ -42,24 +42,7 @@ class PasswordResetServiceTest {
   private final OpaqueOneTimeCodes opaqueCodes = new OpaqueOneTimeCodes();
   private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 
-  private final PasswordResetService service =
-      new PasswordResetService(
-          resetCodes,
-          accounts,
-          sessions,
-          new OpaqueCodeResolver(
-              opaqueCodes,
-              new CredentialGuessThrottle(
-                  AuthThrottleProperties.builder()
-                      .maxAttempts(5)
-                      .window(Duration.ofMinutes(15))
-                      .maxOpaqueCodeBudgets(1)
-                      .build(),
-                  clock),
-              clock),
-          new PlainEncoder(),
-          new TransactionTemplate(new FakeTransactionManager()),
-          clock);
+  private final PasswordResetService service = serviceUsing(accounts);
 
   private UserAccount account;
 
@@ -176,6 +159,26 @@ class PasswordResetServiceTest {
     assertThatThrownBy(() -> service.redeem(issued.code(), "new passphrase"))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
     assertThat(accounts.findById(account.getId()).orElseThrow().getPasswordHash()).isEqualTo("old");
+  }
+
+  private PasswordResetService serviceUsing(FakeUserAccountRepository accountRepository) {
+    return new PasswordResetService(
+        resetCodes,
+        accountRepository,
+        sessions,
+        new OpaqueCodeResolver(
+            opaqueCodes,
+            new CredentialGuessThrottle(
+                AuthThrottleProperties.builder()
+                    .maxAttempts(5)
+                    .window(Duration.ofMinutes(15))
+                    .maxOpaqueCodeBudgets(1)
+                    .build(),
+                clock),
+            clock),
+        new PlainEncoder(),
+        new TransactionTemplate(new FakeTransactionManager()),
+        clock);
   }
 
   private OpaqueOneTimeCodes.IssuedCode pendingCode() {
