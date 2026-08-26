@@ -84,13 +84,7 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
             credentialIssuanceService.issueAccountInvitation(
                 authTestSupport.identityOf(issuer), invitationCommand(recipientEmail)));
 
-    assertThat(invitationRepository.findAll())
-        .singleElement()
-        .satisfies(
-            invitation -> {
-              assertThat(invitation.getId()).isEqualTo(existing.getId());
-              assertThat(invitation.getStatus()).isEqualTo(AccountInvitationStatus.PENDING);
-            });
+    assertOnlyPendingInvitation(existing);
   }
 
   @Test
@@ -126,6 +120,16 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
             resetCode -> {
               assertThat(resetCode.getId()).isEqualTo(existing.getId());
               assertThat(resetCode.getStatus()).isEqualTo(PasswordResetCodeStatus.PENDING);
+            });
+  }
+
+  private void assertOnlyPendingInvitation(AccountInvitation existing) {
+    assertThat(invitationRepository.findAll())
+        .singleElement()
+        .satisfies(
+            invitation -> {
+              assertThat(invitation.getId()).isEqualTo(existing.getId());
+              assertThat(invitation.getStatus()).isEqualTo(AccountInvitationStatus.PENDING);
             });
   }
 
