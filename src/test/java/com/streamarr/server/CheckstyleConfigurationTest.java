@@ -10,10 +10,10 @@ import com.puppycrawl.tools.checkstyle.api.AuditListener;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.TreeMap;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -156,8 +156,8 @@ class CheckstyleConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should introduce no control-flow separation beyond legacy baseline")
-  void shouldIntroduceNoControlFlowSeparationBeyondLegacyBaseline() throws Exception {
+  @DisplayName("Should keep control-flow separation violations at or below the legacy baseline")
+  void shouldKeepControlFlowSeparationViolationsAtOrBelowLegacyBaseline() throws Exception {
     try (var mainSource = Files.walk(Path.of("src/main/java"));
         var testSource = Files.walk(Path.of("src/test/java"))) {
       var sourceFiles =
@@ -166,8 +166,47 @@ class CheckstyleConfigurationTest {
               .map(Path::toFile)
               .toList();
 
-      assertThat(controlFlowViolationCountsOf(sourceFiles)).isEqualTo(legacyControlFlowBaseline());
+      assertThat(
+              filesExceedingBaseline(
+                  controlFlowViolationCountsOf(sourceFiles), legacyControlFlowBaseline()))
+          .as(
+              "control-flow separation violations may only go down: insert the blank line, or"
+                  + " keep a legacy file's baseline entry at its current count")
+          .isEmpty();
     }
+  }
+
+  @Test
+  @DisplayName("Should accept lowered control-flow counts when files fall below the baseline")
+  void shouldAcceptLoweredControlFlowCountsWhenFilesFallBelowBaseline() {
+    var violationCounts = Map.of("src/main/java/Legacy.java", 1);
+    var baseline = Map.of("src/main/java/Legacy.java", 2, "src/main/java/Deleted.java", 3);
+
+    assertThat(filesExceedingBaseline(violationCounts, baseline)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject raised control-flow count when a file exceeds its baseline")
+  void shouldRejectRaisedControlFlowCountWhenFileExceedsItsBaseline() {
+    var violationCounts = Map.of("src/main/java/Legacy.java", 3);
+    var baseline = Map.of("src/main/java/Legacy.java", 2);
+
+    assertThat(filesExceedingBaseline(violationCounts, baseline))
+        .singleElement()
+        .asString()
+        .contains("src/main/java/Legacy.java", "3", "2");
+  }
+
+  @Test
+  @DisplayName("Should reject control-flow violation when the file is absent from the baseline")
+  void shouldRejectControlFlowViolationWhenFileIsAbsentFromBaseline() {
+    var violationCounts = Map.of("src/main/java/Unlisted.java", 1);
+    var baseline = Map.of("src/main/java/Legacy.java", 2);
+
+    assertThat(filesExceedingBaseline(violationCounts, baseline))
+        .singleElement()
+        .asString()
+        .contains("src/main/java/Unlisted.java");
   }
 
   private int violationsOf(String source) throws Exception {
@@ -199,11 +238,24 @@ class CheckstyleConfigurationTest {
       baselineProperties.load(input);
     }
 
-    Map<String, Integer> baseline = new TreeMap<>();
+    Map<String, Integer> baseline = new HashMap<>();
     baselineProperties
         .stringPropertyNames()
         .forEach(name -> baseline.put(name, Integer.valueOf(baselineProperties.getProperty(name))));
     return baseline;
+  }
+
+  private static List<String> filesExceedingBaseline(
+      Map<String, Integer> violationCounts, Map<String, Integer> baseline) {
+    return violationCounts.entrySet().stream()
+        .filter(entry -> entry.getValue() > baseline.getOrDefault(entry.getKey(), 0))
+        .sorted(Map.Entry.comparingByKey())
+        .map(
+            entry ->
+                "%s: %d violations, baseline allows %d"
+                    .formatted(
+                        entry.getKey(), entry.getValue(), baseline.getOrDefault(entry.getKey(), 0)))
+        .toList();
   }
 
   private int violationsOf(String source, Path configurationPath) throws Exception {
@@ -243,7 +295,7 @@ class CheckstyleConfigurationTest {
 
   private static final class ViolationCounts implements AuditListener {
 
-    private final Map<String, Integer> counts = new TreeMap<>();
+    private final Map<String, Integer> counts = new HashMap<>();
 
     @Override
     public void auditStarted(AuditEvent event) {
