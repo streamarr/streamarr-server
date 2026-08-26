@@ -26,9 +26,9 @@ import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Tag("IntegrationTest")
-@DisplayName("Login Service Transaction Integration Tests")
-@Import({LoginServiceTransactionIT.ProbeConfiguration.class, AuthTestSupportConfig.class})
-class LoginServiceTransactionIT extends AbstractIntegrationTest {
+@DisplayName("Credential Verification Transaction Integration Tests")
+@Import({CredentialVerificationTransactionIT.ProbeConfiguration.class, AuthTestSupportConfig.class})
+class CredentialVerificationTransactionIT extends AbstractIntegrationTest {
 
   private static final String PASSWORD = UUID.randomUUID().toString();
 
@@ -82,15 +82,43 @@ class LoginServiceTransactionIT extends AbstractIntegrationTest {
     }
   }
 
-  static final class TransactionProbePasswordEncoder implements PasswordEncoder {
+  /** Records whether the calling thread holds a transaction-bound connection when observed. */
+  static final class ConnectionProbe {
 
-    private final PasswordEncoder delegate;
     private final DataSource dataSource;
     private final AtomicBoolean transactionBoundConnection = new AtomicBoolean();
 
+    ConnectionProbe(DataSource dataSource) {
+      this.dataSource = dataSource;
+    }
+
+    void observe() {
+      Connection connection = DataSourceUtils.getConnection(dataSource);
+      try {
+        transactionBoundConnection.set(
+            DataSourceUtils.isConnectionTransactional(connection, dataSource));
+      } finally {
+        DataSourceUtils.releaseConnection(connection, dataSource);
+      }
+    }
+
+    void reset() {
+      transactionBoundConnection.set(false);
+    }
+
+    boolean sawTransactionBoundConnection() {
+      return transactionBoundConnection.get();
+    }
+  }
+
+  static final class TransactionProbePasswordEncoder implements PasswordEncoder {
+
+    private final PasswordEncoder delegate;
+    private final ConnectionProbe probe;
+
     TransactionProbePasswordEncoder(PasswordEncoder delegate, DataSource dataSource) {
       this.delegate = delegate;
-      this.dataSource = dataSource;
+      this.probe = new ConnectionProbe(dataSource);
     }
 
     @Override
@@ -100,13 +128,7 @@ class LoginServiceTransactionIT extends AbstractIntegrationTest {
 
     @Override
     public boolean matches(CharSequence rawPassword, String encodedPassword) {
-      Connection connection = DataSourceUtils.getConnection(dataSource);
-      try {
-        transactionBoundConnection.set(
-            DataSourceUtils.isConnectionTransactional(connection, dataSource));
-      } finally {
-        DataSourceUtils.releaseConnection(connection, dataSource);
-      }
+      probe.observe();
       return delegate.matches(rawPassword, encodedPassword);
     }
 
@@ -116,11 +138,11 @@ class LoginServiceTransactionIT extends AbstractIntegrationTest {
     }
 
     void resetProbe() {
-      transactionBoundConnection.set(false);
+      probe.reset();
     }
 
     boolean sawTransactionBoundConnection() {
-      return transactionBoundConnection.get();
+      return probe.sawTransactionBoundConnection();
     }
   }
 }
