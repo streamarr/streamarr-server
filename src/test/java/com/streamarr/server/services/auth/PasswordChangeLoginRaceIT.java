@@ -65,8 +65,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should verify and hash passwords when no transaction-bound connection is held")
-  void shouldVerifyAndHashPasswordsWhenNoTransactionBoundConnectionIsHeld() {
+  @DisplayName("Should hold no transaction-bound connection when verifying and hashing passwords")
+  void shouldHoldNoTransactionBoundConnectionWhenVerifyingAndHashingPasswords() {
     var oldPassword = UUID.randomUUID().toString();
     account =
         authTestSupport.createAccount(
@@ -370,6 +370,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
           WHERE relation.relname = 'auth_session'
             AND lock.mode = 'RowExclusiveLock'
             AND NOT lock.granted
+            AND lock.pid <> pg_backend_pid()
         )
         """);
   }
@@ -380,7 +381,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
         SELECT EXISTS (
           SELECT 1
           FROM pg_stat_activity
-          WHERE wait_event_type = 'Lock'
+          WHERE pid <> pg_backend_pid()
+            AND wait_event_type = 'Lock'
             AND wait_event = 'transactionid'
             AND query ILIKE '%user_account%'
             AND query ILIKE '%for update%'

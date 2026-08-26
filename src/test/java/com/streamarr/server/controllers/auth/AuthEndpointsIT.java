@@ -45,7 +45,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
@@ -142,7 +141,6 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         mockMvc
             .perform(
                 post("/api/auth/login")
-                    .with(remoteAddr("198.51.100.41"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         """
@@ -177,17 +175,23 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(refreshCookie.getValue()).isNotBlank();
     assertThat(refreshCookie.getMaxAge())
         .isEqualTo(Math.toIntExact(tokenProperties.refreshTokenTtl().toSeconds()));
-    var ipAddressText = DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS);
-    assertThat(
-            dsl.select(ipAddressText)
-                .from(CREDENTIAL_ATTEMPT)
-                .where(CREDENTIAL_ATTEMPT.ACCOUNT_ID.eq(account.getId()))
-                .and(CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(CredentialKind.ACCOUNT_LOGIN))
-                .orderBy(CREDENTIAL_ATTEMPT.ATTEMPTED_AT.desc())
-                .limit(1)
-                .fetchOne(ipAddressText))
-        .isEqualTo("198.51.100.41");
     assertUncacheable(response);
+  }
+
+  @Test
+  @DisplayName("Should journal the client address when a login is attempted")
+  void shouldJournalClientAddressWhenLoginIsAttempted() throws Exception {
+    seedSingleProfileIdentity();
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .with(remoteAddr("198.51.100.41"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(loginBody(account.getEmail(), password)))
+        .andExpect(status().isOk());
+
+    assertThat(journaledLoginAddresses()).containsExactly("198.51.100.41");
   }
 
   @Test
@@ -266,19 +270,13 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should throttle login when failures exceed limit")
   void shouldThrottleLoginWhenFailuresExceedLimit() throws Exception {
     seedSingleProfileIdentity();
-    var throttledSource =
-        "10.99."
-            + ThreadLocalRandom.current().nextInt(250)
-            + "."
-            + ThreadLocalRandom.current().nextInt(250);
 
     for (int i = 0; i < 5; i++) {
       mockMvc
           .perform(
               post("/api/auth/login")
                   .contentType(MediaType.APPLICATION_JSON)
-                  .content(loginBody(account.getEmail(), "wrong-password-" + i))
-                  .with(remoteAddr(throttledSource)))
+                  .content(loginBody(account.getEmail(), "wrong-password-" + i)))
           .andExpect(status().isUnauthorized())
           .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
     }
@@ -287,8 +285,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .perform(
             post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(loginBody(account.getEmail(), password))
-                .with(remoteAddr(throttledSource)))
+                .content(loginBody(account.getEmail(), password)))
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"))
         .andExpect(header().exists(HttpHeaders.RETRY_AFTER));
@@ -1452,20 +1449,13 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should refuse caching when an auth request is rejected")
   void shouldRefuseCachingWhenAuthRequestRejected() throws Exception {
-    var unthrottledSource =
-        "10.98."
-            + ThreadLocalRandom.current().nextInt(250)
-            + "."
-            + ThreadLocalRandom.current().nextInt(250);
-
     var response =
         mockMvc
             .perform(
                 post("/api/auth/login")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
-                        loginBody("absent-" + UUID.randomUUID() + "@example.com", SETUP_PASSWORD))
-                    .with(remoteAddr(unthrottledSource)))
+                        loginBody("absent-" + UUID.randomUUID() + "@example.com", SETUP_PASSWORD)))
             .andExpect(status().isUnauthorized())
             .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
             .andReturn()
@@ -1578,6 +1568,15 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .profileId(Optional.of(profile.getId()))
                 .build())
         .value();
+  }
+
+  private List<String> journaledLoginAddresses() {
+    var ipAddressText = DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS);
+    return dsl.select(ipAddressText)
+        .from(CREDENTIAL_ATTEMPT)
+        .where(CREDENTIAL_ATTEMPT.ACCOUNT_ID.eq(account.getId()))
+        .and(CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(CredentialKind.ACCOUNT_LOGIN))
+        .fetch(ipAddressText);
   }
 
   private String loginBody(String email, String password) {

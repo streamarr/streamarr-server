@@ -1,6 +1,7 @@
 package com.streamarr.server.controllers.auth;
 
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
+import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
@@ -50,7 +51,6 @@ import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import jakarta.persistence.EntityManagerFactory;
-import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -625,11 +625,12 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should journal no attempt when the reset code or password is blank")
   void shouldJournalNoAttemptWhenResetCodeOrPasswordIsBlank() throws Exception {
-    var before = Timestamp.from(Instant.now());
+    var source = remoteAddr("198.51.100.71");
 
     mockMvc
         .perform(
             post("/api/auth/password-reset/redeem")
+                .with(source)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
@@ -639,6 +640,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     mockMvc
         .perform(
             post("/api/auth/password-reset/redeem")
+                .with(source)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
@@ -647,13 +649,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isBadRequest());
 
     // Transport validation answers before the command exists, so the journal never sees them.
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM credential_attempt"
-                    + " WHERE credential_kind = 'PASSWORD_RESET_CODE' AND attempted_at >= ?",
-                Integer.class,
-                before))
-        .isZero();
+    assertThat(journaledAttemptsFrom("198.51.100.71")).isZero();
   }
 
   @Test
@@ -1434,6 +1430,13 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .path("issued")
         .path("code")
         .asString();
+  }
+
+  private int journaledAttemptsFrom(String ipAddress) {
+    return jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM credential_attempt WHERE host(ip_address) = ?",
+        Integer.class,
+        ipAddress);
   }
 
   private ResultActions graphql(String bearer, String query) throws Exception {

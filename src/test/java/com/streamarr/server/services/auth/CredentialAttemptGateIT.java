@@ -68,16 +68,17 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
              WHERE host(ip_address) = ?
             """,
             IP_ADDRESS);
-    assertThat(row).containsEntry("id", reservation.id());
-    assertThat(row).containsEntry("credential_kind", "ACCOUNT_LOGIN");
-    assertThat(row).containsEntry("account_id", accountId);
-    assertThat(row.get("profile_id")).isNull();
-    assertThat(row.get("credential_id")).isNull();
-    assertThat(row).containsEntry("ip_address", IP_ADDRESS);
-    assertThat(((Timestamp) row.get("attempted_at")).toInstant()).isAfterOrEqualTo(before);
-    assertThat(((Timestamp) row.get("completed_at")).toInstant())
-        .isAfterOrEqualTo(((Timestamp) row.get("attempted_at")).toInstant());
-    assertThat(row).containsEntry("result", "FAILED");
+    assertThat(row)
+        .containsEntry("id", reservation.id())
+        .containsEntry("credential_kind", "ACCOUNT_LOGIN")
+        .containsEntry("account_id", accountId)
+        .containsEntry("profile_id", null)
+        .containsEntry("credential_id", null)
+        .containsEntry("ip_address", IP_ADDRESS)
+        .containsEntry("result", "FAILED");
+    var attemptedAt = ((Timestamp) row.get("attempted_at")).toInstant();
+    assertThat(attemptedAt).isAfterOrEqualTo(before);
+    assertThat(((Timestamp) row.get("completed_at")).toInstant()).isAfterOrEqualTo(attemptedAt);
   }
 
   @Test

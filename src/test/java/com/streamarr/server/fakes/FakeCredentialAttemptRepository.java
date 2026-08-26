@@ -39,7 +39,7 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
   public CredentialAttemptAdmission reserve(
       CredentialAttemptTarget target, CredentialAttemptPolicy policy, Instant attemptedAt) {
     failIfArmed();
-    return blockedBy(policy, target, attemptedAt).orElseGet(() -> record(target, attemptedAt));
+    return blockedBy(policy, target, attemptedAt).orElseGet(() -> journal(target, attemptedAt));
   }
 
   @Override
@@ -104,7 +104,7 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
         .map(CredentialAttemptAdmission.Blocked::new);
   }
 
-  private CredentialAttemptAdmission record(CredentialAttemptTarget target, Instant attemptedAt) {
+  private CredentialAttemptAdmission journal(CredentialAttemptTarget target, Instant attemptedAt) {
     var reservation = new CredentialAttemptReservation(UUID.randomUUID(), target);
     attempts.put(
         reservation.id(), new AttemptSnapshot(reservation.id(), target, attemptedAt, null, null));
