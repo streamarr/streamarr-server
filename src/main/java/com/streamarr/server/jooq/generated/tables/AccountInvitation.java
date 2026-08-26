@@ -296,8 +296,11 @@ public class AccountInvitation extends TableImpl<AccountInvitationRecord> {
     @Override
     public List<Check<AccountInvitationRecord>> getChecks() {
         return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chk_account_invitation_decided_at"), "(((status = 'PENDING'::account_invitation_status) = (decided_at IS NULL)))", true),
             Internal.createCheck(this, DSL.name("chk_account_invitation_email_not_blank"), "((btrim(recipient_email) <> ''::text))", true),
-            Internal.createCheck(this, DSL.name("chk_account_invitation_profile_name_not_blank"), "((btrim(profile_name) <> ''::text))", true)
+            Internal.createCheck(this, DSL.name("chk_account_invitation_invalidation_reason"), "(((status = 'INVALIDATED'::account_invitation_status) = (invalidation_reason IS NOT NULL)))", true),
+            Internal.createCheck(this, DSL.name("chk_account_invitation_profile_name_not_blank"), "((btrim(profile_name) <> ''::text))", true),
+            Internal.createCheck(this, DSL.name("chk_account_invitation_secret_digest_length"), "((octet_length(secret_digest) = 32))", true)
         );
     }
 

@@ -17,6 +17,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
@@ -238,6 +239,15 @@ public class PasswordResetCode extends TableImpl<PasswordResetCodeRecord> {
             _fkPasswordResetCodeIssuer = new UserAccountPath(this, Keys.PASSWORD_RESET_CODE__FK_PASSWORD_RESET_CODE_ISSUER, null);
 
         return _fkPasswordResetCodeIssuer;
+    }
+
+    @Override
+    public List<Check<PasswordResetCodeRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chk_password_reset_code_invalidation_reason"), "(((status = 'INVALIDATED'::password_reset_code_status) = (invalidation_reason IS NOT NULL)))", true),
+            Internal.createCheck(this, DSL.name("chk_password_reset_code_redeemed_at"), "(((status = 'REDEEMED'::password_reset_code_status) = (redeemed_at IS NOT NULL)))", true),
+            Internal.createCheck(this, DSL.name("chk_password_reset_code_secret_digest_length"), "((octet_length(secret_digest) = 32))", true)
+        );
     }
 
     @Override

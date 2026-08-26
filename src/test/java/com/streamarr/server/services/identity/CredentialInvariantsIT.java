@@ -1,6 +1,7 @@
 package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountInvitation;
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /** What the schema itself guarantees about credential rows, independent of any service. */
 @Tag("IntegrationTest")
@@ -129,34 +131,99 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName("Should reject an invitation whose decision state contradicts its status")
+  void shouldRejectInvitationWhoseDecisionStateContradictsItsStatus() {
+    var target = authTestSupport.createAccount();
+    var accepted =
+        pendingInvitationRow(target, target, Instant.now().plus(Duration.ofDays(7)))
+            .status(AccountInvitationStatus.ACCEPTED)
+            .build();
+
+    try {
+      assertThatThrownBy(() -> invitationRepository.saveAndFlush(accepted))
+          .isInstanceOf(DataIntegrityViolationException.class)
+          .hasStackTraceContaining("chk_account_invitation_decided_at");
+    } finally {
+      invitationRepository
+          .findByPublicId(accepted.getPublicId())
+          .ifPresent(row -> invitationRepository.deleteById(row.getId()));
+      authTestSupport.deleteAccount(target.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should reject a credential whose secret digest is not a SHA-256 digest")
+  void shouldRejectCredentialWhoseSecretDigestIsNotSha256Digest() {
+    var target = authTestSupport.createAccount();
+    var shortDigest =
+        pendingResetCodeRow(target, target, Instant.now().plus(Duration.ofHours(1)))
+            .secretDigest(new byte[] {1, 2, 3})
+            .build();
+
+    try {
+      assertThatThrownBy(() -> resetCodeRepository.saveAndFlush(shortDigest))
+          .isInstanceOf(DataIntegrityViolationException.class)
+          .hasStackTraceContaining("chk_password_reset_code_secret_digest_length");
+    } finally {
+      authTestSupport.deleteAccount(target.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should reject a redeemed reset code that records no redemption time")
+  void shouldRejectRedeemedResetCodeThatRecordsNoRedemptionTime() {
+    var target = authTestSupport.createAccount();
+    var redeemed =
+        pendingResetCodeRow(target, target, Instant.now().plus(Duration.ofHours(1)))
+            .status(PasswordResetCodeStatus.REDEEMED)
+            .build();
+
+    try {
+      assertThatThrownBy(() -> resetCodeRepository.saveAndFlush(redeemed))
+          .isInstanceOf(DataIntegrityViolationException.class)
+          .hasStackTraceContaining("chk_password_reset_code_redeemed_at");
+    } finally {
+      // Reset codes cascade with their Account; a row that slipped through leaves with it.
+      authTestSupport.deleteAccount(target.getId());
+    }
+  }
+
   private AccountInvitation savePendingInvitation(
       UserAccount target, UserAccount issuer, Instant expiresAt) {
-    var issued = opaqueCodes.issue();
     return invitationRepository.saveAndFlush(
-        AccountInvitation.builder()
-            .recipientEmail("invitee-" + UUID.randomUUID() + "@example.com")
-            .householdId(target.getHouseholdId())
-            .householdName("Target Household")
-            .householdRole(HouseholdRole.MEMBER)
-            .profileName("Invitee")
-            .profileKind(ProfileKind.ADULT)
-            .issuerAccountId(issuer.getId())
-            .expiresAt(expiresAt)
-            .publicId(issued.publicId())
-            .secretDigest(issued.digest())
-            .build());
+        pendingInvitationRow(target, issuer, expiresAt).build());
+  }
+
+  private AccountInvitation.AccountInvitationBuilder<?, ?> pendingInvitationRow(
+      UserAccount target, UserAccount issuer, Instant expiresAt) {
+    var issued = opaqueCodes.issue();
+    return AccountInvitation.builder()
+        .recipientEmail("invitee-" + UUID.randomUUID() + "@example.com")
+        .householdId(target.getHouseholdId())
+        .householdName("Target Household")
+        .householdRole(HouseholdRole.MEMBER)
+        .profileName("Invitee")
+        .profileKind(ProfileKind.ADULT)
+        .issuerAccountId(issuer.getId())
+        .expiresAt(expiresAt)
+        .publicId(issued.publicId())
+        .secretDigest(issued.digest());
   }
 
   private PasswordResetCode savePendingResetCode(
       UserAccount target, UserAccount issuer, Instant expiresAt) {
+    return resetCodeRepository.saveAndFlush(pendingResetCodeRow(target, issuer, expiresAt).build());
+  }
+
+  private PasswordResetCode.PasswordResetCodeBuilder<?, ?> pendingResetCodeRow(
+      UserAccount target, UserAccount issuer, Instant expiresAt) {
     var issued = opaqueCodes.issue();
-    return resetCodeRepository.saveAndFlush(
-        PasswordResetCode.builder()
-            .accountId(target.getId())
-            .issuerAccountId(issuer.getId())
-            .expiresAt(expiresAt)
-            .publicId(issued.publicId())
-            .secretDigest(issued.digest())
-            .build());
+    return PasswordResetCode.builder()
+        .accountId(target.getId())
+        .issuerAccountId(issuer.getId())
+        .expiresAt(expiresAt)
+        .publicId(issued.publicId())
+        .secretDigest(issued.digest());
   }
 }
