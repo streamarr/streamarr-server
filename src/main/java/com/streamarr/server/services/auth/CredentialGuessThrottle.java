@@ -24,13 +24,18 @@ public class CredentialGuessThrottle {
 
   public CredentialGuessThrottle(AuthThrottleProperties properties, Clock clock) {
     credentialBudget =
-        new SlidingWindowAttemptBudget<>(properties.maxAttempts(), properties.window(), clock);
+        new SlidingWindowAttemptBudget<>(
+            SlidingWindowAttemptBudget.Limits.unboundedKeys(
+                properties.maxAttempts(), properties.window()),
+            clock);
     opaqueCodeBudget =
         new SlidingWindowAttemptBudget<>(
-            properties.maxAttempts(),
-            properties.window(),
-            clock,
-            properties.maxOpaqueCodeBudgets());
+            SlidingWindowAttemptBudget.Limits.builder()
+                .maximumAttempts(properties.maxAttempts())
+                .window(properties.window())
+                .maximumTrackedKeys(properties.maxOpaqueCodeBudgets())
+                .build(),
+            clock);
   }
 
   public void registerProfilePinAttempt(UUID accountId, UUID profileId) {

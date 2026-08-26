@@ -8,6 +8,7 @@ import java.util.Deque;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
+import lombok.Builder;
 
 /**
  * An in-memory sliding-window attempt counter per key. {@link #reserve} takes a slot atomically
@@ -23,20 +24,26 @@ final class SlidingWindowAttemptBudget<K> {
   private final Semaphore availableKeySlots;
   private final ConcurrentHashMap<K, Deque<Instant>> attempts = new ConcurrentHashMap<>();
 
-  SlidingWindowAttemptBudget(int maximumAttempts, Duration window, Clock clock) {
-    this(maximumAttempts, window, clock, Integer.MAX_VALUE);
+  SlidingWindowAttemptBudget(Limits limits, Clock clock) {
+    this.maximumAttempts = limits.maximumAttempts();
+    this.window = limits.window();
+    this.clock = clock;
+    availableKeySlots = new Semaphore(limits.maximumTrackedKeys());
   }
 
-  SlidingWindowAttemptBudget(
-      int maximumAttempts, Duration window, Clock clock, int maximumTrackedKeys) {
-    if (maximumTrackedKeys <= 0) {
-      throw new IllegalArgumentException("maximumTrackedKeys must be positive");
+  /** How many attempts a key gets per window, and how many keys the budget tracks at once. */
+  @Builder
+  record Limits(int maximumAttempts, Duration window, int maximumTrackedKeys) {
+
+    Limits {
+      if (maximumTrackedKeys <= 0) {
+        throw new IllegalArgumentException("maximumTrackedKeys must be positive");
+      }
     }
 
-    this.maximumAttempts = maximumAttempts;
-    this.window = window;
-    this.clock = clock;
-    availableKeySlots = new Semaphore(maximumTrackedKeys);
+    static Limits unboundedKeys(int maximumAttempts, Duration window) {
+      return new Limits(maximumAttempts, window, Integer.MAX_VALUE);
+    }
   }
 
   boolean reserve(K key) {
