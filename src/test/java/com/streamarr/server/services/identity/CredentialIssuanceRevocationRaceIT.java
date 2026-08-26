@@ -5,8 +5,10 @@ import static com.streamarr.server.fixtures.PasswordResetCodeFixture.pendingRese
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockAccountRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
+import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
@@ -20,6 +22,7 @@ import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
+import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
@@ -30,6 +33,7 @@ import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -51,6 +55,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Credential Issuance Revocation Race Integration Tests")
 class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
 
+  private static final String INVITATION_UPDATE = "%update%account_invitation%recipient_email%";
+  private static final String RESET_CODE_UPDATE = "%update%password_reset_code%account_id%";
+  private static final String ACCOUNT_UPDATE = "%update%user_account%";
+  private static final String ACCOUNT_ROW = "%user_account%";
+  private static final String RECIPIENT_LOCK = "%pg_advisory_xact_lock%";
+
   @Autowired private CredentialIssuanceService credentialIssuanceService;
   @Autowired private AccountAdministrationService accountAdministrationService;
   @Autowired private AccountInvitationService invitationService;
@@ -58,6 +68,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private PasswordResetCodeRepository resetCodeRepository;
   @Autowired private UserAccountRepository userAccountRepository;
+  @Autowired private AuthSessionRepository authSessionRepository;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
@@ -100,7 +111,8 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
                       "recover access"));
       await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(hasWaitingResetCodeUpdate()).isTrue());
+          .untilAsserted(
+              () -> assertThat(waitingBehind(lock.backendPid(), RESET_CODE_UPDATE)).isOne());
 
       var revocation =
           executor.submit(
@@ -112,7 +124,11 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(
-              () -> assertThat(revocation.isDone() || hasWaitingAccountUpdate()).isTrue());
+              () ->
+                  assertThat(
+                          revocation.isDone()
+                              || waitingBehind(lock.backendPid(), ACCOUNT_UPDATE) == 1)
+                      .isTrue());
 
       lock.release();
       var issued = accepted(issuance.get(10, TimeUnit.SECONDS));
@@ -149,7 +165,8 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
                       authTestSupport.identityOf(issuer), invitationCommand(recipientEmail)));
       await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(hasWaitingInvitationUpdate()).isTrue());
+          .untilAsserted(
+              () -> assertThat(waitingBehind(lock.backendPid(), INVITATION_UPDATE)).isOne());
 
       var revocationStarted = new CountDownLatch(1);
       var disable =
@@ -162,7 +179,11 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
       assertThat(revocationStarted.await(10, TimeUnit.SECONDS)).isTrue();
       await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(disable.isDone() || hasWaitingAccountUpdate()).isTrue());
+          .untilAsserted(
+              () ->
+                  assertThat(
+                          disable.isDone() || waitingBehind(lock.backendPid(), ACCOUNT_UPDATE) == 1)
+                      .isTrue());
 
       lock.release();
       var issued = accepted(issuance.get(10, TimeUnit.SECONDS));
@@ -185,7 +206,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
     revoker = authTestSupport.createAdminIdentity();
     var recipientEmail = "issuance-lock-order@example.com";
 
-    var lockAcquired = new CountDownLatch(1);
+    var lockAcquired = new CompletableFuture<Integer>();
     var releaseLock = new CountDownLatch(1);
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var blocker =
@@ -196,13 +217,15 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
                         _ -> {
                           invitationRepository.lockInvitationIssuanceForRecipientEmail(
                               recipientEmail);
-                          lockAcquired.countDown();
+                          lockAcquired.complete(
+                              jdbcTemplate.queryForObject(
+                                  "SELECT pg_backend_pid()", Integer.class));
                           awaitLatch(releaseLock);
                         });
                 return null;
               });
       try {
-        assertThat(lockAcquired.await(10, TimeUnit.SECONDS)).isTrue();
+        var blockerPid = lockAcquired.get(10, TimeUnit.SECONDS);
         var issuance =
             executor.submit(
                 () ->
@@ -210,7 +233,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
                         authTestSupport.identityOf(issuer), invitationCommand(recipientEmail)));
         await()
             .atMost(Duration.ofSeconds(10))
-            .untilAsserted(() -> assertThat(hasWaitingCredentialLock()).isTrue());
+            .untilAsserted(() -> assertThat(waitingBehind(blockerPid, RECIPIENT_LOCK)).isOne());
 
         var disable =
             executor.submit(
@@ -218,7 +241,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
                     accountAdministrationService.disableAccount(
                         authTestSupport.identityOf(revoker), issuer.account().getId()));
 
-        assertThat(disable.get(2, TimeUnit.SECONDS)).isInstanceOf(Outcome.Accepted.class);
+        assertThat(disable.get(10, TimeUnit.SECONDS)).isInstanceOf(Outcome.Accepted.class);
         assertThat(issuance.isDone()).isFalse();
         releaseLock.countDown();
         assertThatThrownBy(() -> issuance.get(10, TimeUnit.SECONDS))
@@ -250,6 +273,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
         var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       lockConnection.setAutoCommit(false);
       lockAccountRow(lockConnection, issuer.account().getId());
+      var holderPid = backendPid(lockConnection);
 
       var disable =
           executor.submit(
@@ -258,7 +282,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
                       authTestSupport.identityOf(revoker), issuer.account().getId()));
       await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(waitingAccountRowLocks()).isEqualTo(1));
+          .untilAsserted(() -> assertThat(waitingBehind(holderPid, ACCOUNT_ROW)).isOne());
 
       var redemption =
           executor.submit(
@@ -273,28 +297,37 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
       try {
         await()
             .atMost(Duration.ofSeconds(10))
-            .untilAsserted(() -> assertThat(waitingAccountRowLocks()).isEqualTo(2));
+            .untilAsserted(() -> assertThat(waitingBehind(holderPid, ACCOUNT_ROW)).isEqualTo(2));
       } finally {
         lockConnection.rollback();
       }
 
       assertThat(disable.get(10, TimeUnit.SECONDS)).isInstanceOf(Outcome.Accepted.class);
-      var redemptionFailure = redemption.get(10, TimeUnit.SECONDS);
-      var account = userAccountRepository.findById(issuer.account().getId()).orElseThrow();
-      var resetStatus =
-          resetCodeRepository.findById(issued.resetCode().getId()).orElseThrow().getStatus();
-      assertThat(account.isEnabled()).isFalse();
-      if (redemptionFailure == null) {
-        assertThat(resetStatus).isEqualTo(PasswordResetCodeStatus.REDEEMED);
-        assertThat(passwordEncoder.matches("a replacement passphrase", account.getPasswordHash()))
-            .isTrue();
-      } else {
-        assertThat(redemptionFailure).isInstanceOf(InvalidOneTimeCodeException.class);
-        assertThat(resetStatus).isEqualTo(PasswordResetCodeStatus.INVALIDATED);
-        assertThat(passwordEncoder.matches("a replacement passphrase", account.getPasswordHash()))
-            .isFalse();
-      }
+      var redeemed = redemption.get(10, TimeUnit.SECONDS) == null;
+      assertRedemptionOutcome(issued.resetCode().getId(), redeemed);
     }
+  }
+
+  /**
+   * Whichever transaction won the Account row, the reset either fully happened (password changed,
+   * refresh sessions revoked, code REDEEMED) or fully did not (code INVALIDATED by the disable,
+   * password untouched) — never both, never neither.
+   */
+  private void assertRedemptionOutcome(UUID resetCodeId, boolean redeemed) {
+    var account = userAccountRepository.findById(issuer.account().getId()).orElseThrow();
+    var expectedStatus = PasswordResetCodeStatus.INVALIDATED;
+    if (redeemed) {
+      expectedStatus = PasswordResetCodeStatus.REDEEMED;
+    }
+
+    assertThat(account.isEnabled()).isFalse();
+    assertThat(resetCodeRepository.findById(resetCodeId).orElseThrow().getStatus())
+        .isEqualTo(expectedStatus);
+    assertThat(passwordEncoder.matches("a replacement passphrase", account.getPasswordHash()))
+        .isEqualTo(redeemed);
+    assertThat(authSessionRepository.findByAccountId(issuer.account().getId()))
+        .isNotEmpty()
+        .allSatisfy(session -> assertThat(session.getRevokedAt()).isNotNull());
   }
 
   private AccountInvitation saveBlockingInvitation(String recipientEmail) {
@@ -329,77 +362,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
     return RowLockTarget.builder().dataSource(dataSource).table(table).rowId(rowId).build();
   }
 
-  private boolean hasWaitingCredentialLock() {
-    var waiting =
-        jdbcTemplate.queryForObject(
-            """
-            SELECT EXISTS (
-              SELECT 1
-              FROM pg_stat_activity
-              WHERE wait_event_type = 'Lock'
-                AND query ILIKE '%pg_advisory_xact_lock%'
-            )
-            """,
-            Boolean.class);
-    return Boolean.TRUE.equals(waiting);
-  }
-
-  private boolean hasWaitingInvitationUpdate() {
-    var waiting =
-        jdbcTemplate.queryForObject(
-            """
-            SELECT EXISTS (
-              SELECT 1
-              FROM pg_stat_activity
-              WHERE wait_event_type = 'Lock'
-                AND query ILIKE '%update%account_invitation%'
-                AND query ILIKE '%recipient_email%'
-            )
-            """,
-            Boolean.class);
-    return Boolean.TRUE.equals(waiting);
-  }
-
-  private boolean hasWaitingAccountUpdate() {
-    var waiting =
-        jdbcTemplate.queryForObject(
-            """
-            SELECT EXISTS (
-              SELECT 1
-              FROM pg_stat_activity
-              WHERE wait_event_type = 'Lock'
-                AND query ILIKE '%update%user_account%'
-            )
-            """,
-            Boolean.class);
-    return Boolean.TRUE.equals(waiting);
-  }
-
-  private int waitingAccountRowLocks() {
-    return jdbcTemplate.queryForObject(
-        """
-        SELECT count(*)
-        FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock'
-          AND query ILIKE '%user_account%'
-          AND (query ILIKE '%update%' OR query ILIKE '%for update%')
-        """,
-        Integer.class);
-  }
-
-  private boolean hasWaitingResetCodeUpdate() {
-    var waiting =
-        jdbcTemplate.queryForObject(
-            """
-            SELECT EXISTS (
-              SELECT 1
-              FROM pg_stat_activity
-              WHERE wait_event_type = 'Lock'
-                AND query ILIKE '%update%password_reset_code%'
-                AND query ILIKE '%account_id%'
-            )
-            """,
-            Boolean.class);
-    return Boolean.TRUE.equals(waiting);
+  private int waitingBehind(int blockerPid, String queryPattern) {
+    return waitersBehind(jdbcTemplate, blockerPid, queryPattern);
   }
 }

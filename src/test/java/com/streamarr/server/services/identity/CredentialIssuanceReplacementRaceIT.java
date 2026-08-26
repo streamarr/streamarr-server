@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.PasswordResetCodeFixture.pendingRese
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
+import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -19,6 +20,7 @@ import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.PostgresLockTestSupport.HeldRowLock;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.time.Duration;
 import java.util.UUID;
@@ -36,6 +38,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Tag("IntegrationTest")
 @DisplayName("Credential Issuance Replacement Race Integration Tests")
 class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
+
+  private static final String RECIPIENT_UPDATE = "%update%account_invitation%recipient_email%";
+  private static final String RECIPIENT_LOCK = "%pg_advisory_xact_lock%";
+  private static final String RESET_CODE_UPDATE = "%update%password_reset_code%account_id%";
+  private static final String ACCOUNT_LOCK = "%user_account%for update%";
 
   @Autowired private CredentialIssuanceService credentialIssuanceService;
   @Autowired private AccountInvitationRepository invitationRepository;
@@ -93,8 +100,8 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(
               () -> {
-                assertThat(waitingInvitationUpdates()).isOne();
-                assertThat(waitingRecipientLocks()).isOne();
+                assertThat(waitingBehind(lock, RECIPIENT_UPDATE)).isOne();
+                assertThat(waitingBehind(lock, RECIPIENT_LOCK)).isOne();
               });
       lock.release();
 
@@ -140,8 +147,8 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(
               () -> {
-                assertThat(waitingResetCodeUpdates()).isOne();
-                assertThat(waitingAccountLocks()).isOne();
+                assertThat(waitingBehind(lock, RESET_CODE_UPDATE)).isOne();
+                assertThat(waitingBehind(lock, ACCOUNT_LOCK)).isOne();
               });
       lock.release();
 
@@ -189,50 +196,7 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
     return RowLockTarget.builder().dataSource(dataSource).table(table).rowId(rowId).build();
   }
 
-  private int waitingInvitationUpdates() {
-    return jdbcTemplate.queryForObject(
-        """
-        SELECT count(*)
-        FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock'
-          AND query ILIKE '%update%account_invitation%'
-          AND query ILIKE '%recipient_email%'
-        """,
-        Integer.class);
-  }
-
-  private int waitingRecipientLocks() {
-    return jdbcTemplate.queryForObject(
-        """
-        SELECT count(*)
-        FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock'
-          AND query ILIKE '%pg_advisory_xact_lock%'
-        """,
-        Integer.class);
-  }
-
-  private int waitingResetCodeUpdates() {
-    return jdbcTemplate.queryForObject(
-        """
-        SELECT count(*)
-        FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock'
-          AND query ILIKE '%update%password_reset_code%'
-          AND query ILIKE '%account_id%'
-        """,
-        Integer.class);
-  }
-
-  private int waitingAccountLocks() {
-    return jdbcTemplate.queryForObject(
-        """
-        SELECT count(*)
-        FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock'
-          AND query ILIKE '%user_account%'
-          AND query ILIKE '%for update%'
-        """,
-        Integer.class);
+  private int waitingBehind(HeldRowLock lock, String queryPattern) {
+    return waitersBehind(jdbcTemplate, lock.backendPid(), queryPattern);
   }
 }

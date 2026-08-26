@@ -3,6 +3,7 @@ package com.streamarr.server.controllers.auth;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
+import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -13,6 +14,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -176,9 +178,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                   .getHouseholdRole())
           .isEqualTo(HouseholdRole.MEMBER);
     } finally {
-      userAccountRepository
-          .findByEmailIgnoreCase("bootstrap-one@example.com")
-          .ifPresent(account -> authTestSupport.deleteAccount(account.getId()));
+      deleteAccounts("bootstrap-one@example.com", "bootstrap-two@example.com");
       if (householdRepository.existsById(household.getId())) {
         householdRepository.deleteById(household.getId());
       }
@@ -231,7 +231,10 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         start.countDown();
         await()
             .atMost(Duration.ofSeconds(10))
-            .untilAsserted(() -> assertThat(waitingHouseholdGuardLocks()).isEqualTo(2));
+            .untilAsserted(
+                () ->
+                    assertThat(waitersBehind(jdbcTemplate, guard.backendPid(), "%household_guard%"))
+                        .isEqualTo(2));
         guard.release();
 
         assertThat(first.get(20, TimeUnit.SECONDS)).isEqualTo(201);
@@ -242,9 +245,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
           .extracting(account -> account.getHouseholdRole())
           .containsExactlyInAnyOrder(HouseholdRole.ADMIN, HouseholdRole.MEMBER);
     } finally {
-      userAccountRepository
-          .findByEmailIgnoreCase("concurrent-one@example.com")
-          .ifPresent(account -> authTestSupport.deleteAccount(account.getId()));
+      deleteAccounts("concurrent-one@example.com", "concurrent-two@example.com");
       if (householdRepository.existsById(household.getId())) {
         householdRepository.deleteById(household.getId());
       }
@@ -695,7 +696,9 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should invalidate an issuer's outstanding codes when the issuer is disabled")
   void shouldInvalidateIssuersOutstandingCodesWhenIssuerIsDisabled() throws Exception {
     var otherAdmin = authTestSupport.createAdminIdentity();
+    var resetTarget = authTestSupport.createIdentity();
     var invitationCode = issueInvitation("invitee@example.com");
+    var resetCode = issuePasswordReset(resetTarget.account().getId());
 
     try {
       graphql(
@@ -716,8 +719,31 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
           .andExpect(status().isNotFound());
       assertThat(invitationRepository.findAll().getFirst().getStatus())
           .isEqualTo(AccountInvitationStatus.INVALIDATED);
+
+      mockMvc
+          .perform(
+              post("/api/auth/password-reset/redeem")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      """
+                      {"code": "%s", "newPassword": "a brand new passphrase"}
+                      """
+                          .formatted(resetCode)))
+          .andExpect(status().isNotFound())
+          .andExpect(jsonPath("$.code").value("INVALID_CODE"));
+      assertThat(resetCodeRepository.findAll().getFirst().getStatus())
+          .isEqualTo(PasswordResetCodeStatus.INVALIDATED);
     } finally {
       authTestSupport.deleteIdentity(otherAdmin);
+      authTestSupport.deleteIdentity(resetTarget);
+    }
+  }
+
+  private void deleteAccounts(String... emails) {
+    for (var email : emails) {
+      userAccountRepository
+          .findByEmailIgnoreCase(email)
+          .ifPresent(account -> authTestSupport.deleteAccount(account.getId()));
     }
   }
 
@@ -806,17 +832,6 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .keyColumn("household_id")
         .rowId(householdId)
         .build();
-  }
-
-  private int waitingHouseholdGuardLocks() {
-    return jdbcTemplate.queryForObject(
-        """
-        SELECT count(*)
-        FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock'
-          AND query ILIKE '%household_guard%'
-        """,
-        Integer.class);
   }
 
   private String issuePasswordReset(UUID accountId) throws Exception {

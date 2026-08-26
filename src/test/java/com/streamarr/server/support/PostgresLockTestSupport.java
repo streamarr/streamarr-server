@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
 import lombok.Builder;
 import lombok.NonNull;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 public final class PostgresLockTestSupport {
 
@@ -63,7 +64,33 @@ public final class PostgresLockTestSupport {
       throw failure;
     }
 
-    return new HeldRowLock(connection);
+    return new HeldRowLock(connection, backendPid(connection));
+  }
+
+  /**
+   * Backends whose current statement matches {@code queryPattern} (ILIKE) and that wait on a lock
+   * held by {@code blockerPid} — directly, or behind another backend that {@code blockerPid}
+   * blocks. Scoping by the holder keeps the count exact while other tests contend for locks.
+   */
+  public static int waitersBehind(JdbcTemplate jdbcTemplate, int blockerPid, String queryPattern) {
+    return jdbcTemplate.queryForObject(
+        """
+        WITH RECURSIVE waiter AS (
+          SELECT pid FROM pg_stat_activity WHERE ? = ANY(pg_blocking_pids(pid))
+          UNION
+          SELECT blocked.pid
+          FROM pg_stat_activity blocked
+          JOIN waiter ON waiter.pid = ANY(pg_blocking_pids(blocked.pid))
+        )
+        SELECT count(*)
+        FROM pg_stat_activity activity
+        JOIN waiter USING (pid)
+        WHERE activity.wait_event_type = 'Lock'
+          AND activity.query ILIKE ?
+        """,
+        Integer.class,
+        blockerPid,
+        queryPattern);
   }
 
   public static void awaitLatch(CountDownLatch latch) {
@@ -147,10 +174,17 @@ public final class PostgresLockTestSupport {
   public static final class HeldRowLock implements AutoCloseable {
 
     private final Connection connection;
+    private final int backendPid;
     private boolean released;
 
-    private HeldRowLock(Connection connection) {
+    private HeldRowLock(Connection connection, int backendPid) {
       this.connection = connection;
+      this.backendPid = backendPid;
+    }
+
+    /** The holding backend, for scoping {@link #waitersBehind} to this lock's contenders. */
+    public int backendPid() {
+      return backendPid;
     }
 
     /** Rolls the holding transaction back so blocked contenders proceed; idempotent. */

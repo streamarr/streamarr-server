@@ -3,7 +3,9 @@ package com.streamarr.server.services.auth;
 import static com.streamarr.server.fixtures.AccountInvitationFixture.pendingInvitationBuilder;
 import static com.streamarr.server.fixtures.PasswordResetCodeFixture.pendingResetCodeBuilder;
 import static com.streamarr.server.support.OutcomeTestSupport.rejectionOf;
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
+import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -25,6 +27,7 @@ import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -81,7 +84,9 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
       await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(waitingLockRequests("account_invitation")).isEqualTo(2));
+          .untilAsserted(
+              () ->
+                  assertThat(waitingBehind(lock.backendPid(), "account_invitation")).isEqualTo(2));
       lock.release();
 
       assertOneWinner(acceptance.get(10, TimeUnit.SECONDS), decline.get(10, TimeUnit.SECONDS));
@@ -113,7 +118,9 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
       await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(waitingLockRequests("account_invitation")).isEqualTo(2));
+          .untilAsserted(
+              () ->
+                  assertThat(waitingBehind(lock.backendPid(), "account_invitation")).isEqualTo(2));
       lock.release();
 
       var acceptanceAttempt = acceptance.get(10, TimeUnit.SECONDS);
@@ -166,8 +173,8 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(
               () -> {
-                assertThat(waitingLockRequests("password_reset_code")).isOne();
-                assertThat(waitingLockRequests("user_account")).isOne();
+                assertThat(waitingBehind(lock.backendPid(), "password_reset_code")).isOne();
+                assertThat(waitingBehind(lock.backendPid(), "user_account")).isOne();
               });
       lock.release();
 
@@ -199,7 +206,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
     identity = authTestSupport.createAdminIdentity();
     var issued = opaqueCodes.issue();
     saveResetCode(issued);
-    var rowLocked = new CountDownLatch(1);
+    var rowLocked = new CompletableFuture<Integer>();
     var releaseRow = new CountDownLatch(1);
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -208,7 +215,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
               () ->
                   holdAccountRowAndChangeDisplayName(
                       identity.account().getId(), rowLocked, releaseRow));
-      assertThat(rowLocked.await(10, TimeUnit.SECONDS)).isTrue();
+      var holderPid = rowLocked.get(10, TimeUnit.SECONDS);
 
       var redemption =
           executor.submit(
@@ -219,7 +226,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
                               issued.code(), "the concurrent replacement passphrase")));
       await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(waitingLockRequests("user_account")).isOne());
+          .untilAsserted(() -> assertThat(waitingBehind(holderPid, "user_account")).isOne());
       releaseRow.countDown();
 
       assertThat(redemption.get(10, TimeUnit.SECONDS).successful()).isTrue();
@@ -272,7 +279,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
   }
 
   private void holdAccountRowAndChangeDisplayName(
-      UUID accountId, CountDownLatch rowLocked, CountDownLatch releaseRow) {
+      UUID accountId, CompletableFuture<Integer> rowLocked, CountDownLatch releaseRow) {
     try (var connection = dataSource.getConnection();
         var statement =
             connection.prepareStatement("UPDATE user_account SET display_name = ? WHERE id = ?")) {
@@ -280,27 +287,20 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
       statement.setString(1, "Concurrent Display Name");
       statement.setObject(2, accountId);
       statement.executeUpdate();
-      rowLocked.countDown();
+      rowLocked.complete(backendPid(connection));
       if (!releaseRow.await(10, TimeUnit.SECONDS)) {
         throw new AssertionError("test did not release the Account row lock");
       }
 
       connection.commit();
     } catch (Exception exception) {
+      rowLocked.completeExceptionally(exception);
       throw new AssertionError("could not coordinate the Account row lock", exception);
     }
   }
 
-  private int waitingLockRequests(String tableName) {
-    return jdbcTemplate.queryForObject(
-        """
-        SELECT count(*)
-        FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock'
-          AND query ILIKE ?
-        """,
-        Integer.class,
-        "%" + tableName + "%");
+  private int waitingBehind(int blockerPid, String tableName) {
+    return waitersBehind(jdbcTemplate, blockerPid, "%" + tableName + "%");
   }
 
   private static Attempt attempt(ThrowingRunnable action) {
