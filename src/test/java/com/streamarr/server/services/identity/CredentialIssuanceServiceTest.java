@@ -43,6 +43,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.access.AccessDeniedException;
 
 /**
@@ -285,6 +287,20 @@ class CredentialIssuanceServiceTest {
 
     assertThat(rejectionOf(outcome))
         .isInstanceOf(CredentialRejections.RestrictedHouseholdAdmin.class);
+    assertThat(invitations.findAll()).isEmpty();
+  }
+
+  @ParameterizedTest(name = "Should reject \"{0}\" as a recipient email")
+  @ValueSource(
+      strings = {"kai@", "@example.com", "kai example.com", "kai@example", "kai@@example.com"})
+  @DisplayName("Should reject an implausible recipient email when an invitation is issued")
+  void shouldRejectImplausibleRecipientEmailWhenInvitationIsIssued(String recipientEmail) {
+    var outcome =
+        service.issueAccountInvitation(
+            authorization.currentIdentity(),
+            command().toBuilder().recipientEmail(recipientEmail).build());
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.EmailInvalid.class);
     assertThat(invitations.findAll()).isEmpty();
   }
 

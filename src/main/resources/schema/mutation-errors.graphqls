@@ -46,6 +46,12 @@ type LibraryPathAlreadyRegisteredError implements InputMutationError & MutationE
     inputPath: [String!]!
 }
 
+"Not the shape of an email address."
+type EmailInvalidError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 type AccountNotFoundError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!

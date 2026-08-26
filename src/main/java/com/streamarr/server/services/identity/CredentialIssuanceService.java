@@ -30,6 +30,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
@@ -44,6 +45,9 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class CredentialIssuanceService {
+
+  /** One local part, one @, a dotted domain, no whitespace: the shape, not deliverability. */
+  private static final Pattern PLAUSIBLE_EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
   private final AuthorizationService authorizationService;
   private final AccountInvitationRepository invitationRepository;
@@ -84,6 +88,10 @@ public class CredentialIssuanceService {
   private Optional<CredentialRejections.Issue> inputRejection(IssueInvitationCommand command) {
     if (isBlank(command.recipientEmail())) {
       return Optional.of(new CredentialRejections.EmailRequired());
+    }
+
+    if (!PLAUSIBLE_EMAIL.matcher(command.recipientEmail().strip()).matches()) {
+      return Optional.of(new CredentialRejections.EmailInvalid());
     }
 
     if (isBlank(command.profileName())) {

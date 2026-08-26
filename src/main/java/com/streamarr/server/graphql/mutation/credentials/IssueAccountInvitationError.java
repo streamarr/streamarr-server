@@ -8,6 +8,7 @@ import com.streamarr.server.graphql.mutation.MutationError;
  */
 public sealed interface IssueAccountInvitationError extends MutationError
     permits EmailRequiredError,
+        EmailInvalidError,
         EmailAlreadyUsedError,
         ProfileNameRequiredError,
         ProfileNameTakenError,

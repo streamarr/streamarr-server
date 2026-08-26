@@ -12,6 +12,8 @@ public final class CredentialErrors {
     return switch (rejection) {
       case CredentialRejections.EmailRequired _ ->
           new EmailRequiredError("Enter the recipient's email.", InputPath.of("recipientEmail"));
+      case CredentialRejections.EmailInvalid _ ->
+          new EmailInvalidError("Enter a valid email address.", InputPath.of("recipientEmail"));
       case CredentialRejections.EmailAlreadyUsed _ ->
           new EmailAlreadyUsedError(
               "An Account already uses that email; transfer it instead.",

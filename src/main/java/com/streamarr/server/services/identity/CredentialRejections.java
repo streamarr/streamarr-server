@@ -10,6 +10,7 @@ public final class CredentialRejections {
 
   public sealed interface Issue
       permits EmailRequired,
+          EmailInvalid,
           EmailAlreadyUsed,
           ProfileNameRequired,
           ProfileNameTaken,
@@ -26,6 +27,9 @@ public final class CredentialRejections {
       permits AccountNotFound, ReasonRequired, ReauthenticationRequired {}
 
   public record EmailRequired() implements Issue {}
+
+  /** Not the shape of an address; it would become the Account's login identity. */
+  public record EmailInvalid() implements Issue {}
 
   /** An existing email cannot be invited or reassigned; transfer the Account instead. */
   public record EmailAlreadyUsed() implements Issue {}

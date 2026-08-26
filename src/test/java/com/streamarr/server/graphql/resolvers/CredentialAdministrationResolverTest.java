@@ -163,6 +163,10 @@ class CredentialAdministrationResolverTest {
     return Stream.of(
         new IssuanceErrorCase(new CredentialRejections.EmailRequired(), "EmailRequiredError", null),
         new IssuanceErrorCase(
+            new CredentialRejections.EmailInvalid(),
+            "EmailInvalidError",
+            List.of("recipientEmail")),
+        new IssuanceErrorCase(
             new CredentialRejections.EmailAlreadyUsed(), "EmailAlreadyUsedError", null),
         new IssuanceErrorCase(
             new CredentialRejections.ProfileNameRequired(), "ProfileNameRequiredError", null),
