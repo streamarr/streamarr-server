@@ -202,12 +202,12 @@ public class AccountInvitationService {
       throw new InvalidOneTimeCodeException();
     }
 
+    throttle.resetCodeGuesses(presented.publicId());
     if (invitation.getStatus() != AccountInvitationStatus.PENDING
         || !invitation.getExpiresAt().isAfter(clock.instant())) {
       throw new InvalidOneTimeCodeException();
     }
 
-    throttle.resetCodeGuesses(presented.publicId());
     return invitation;
   }
 

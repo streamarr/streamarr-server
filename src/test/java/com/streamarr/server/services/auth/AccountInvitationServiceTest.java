@@ -217,6 +217,29 @@ class AccountInvitationServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should release the verification budget when the secret matches an expired invitation")
+  void shouldReleaseVerificationBudgetWhenSecretMatchesExpiredInvitation() {
+    var issued = pendingInvitation(pendingInvitationBuilder().build());
+    var invitation = invitations.findAll().getFirst();
+    invitation.setExpiresAt(NOW.minusSeconds(1));
+    for (var attempt = 0; attempt < 4; attempt++) {
+      var guess = invitation.getPublicId() + ".guess-" + attempt;
+      assertThatThrownBy(() -> service.lookup(guess))
+          .isInstanceOf(InvalidOneTimeCodeException.class);
+    }
+
+    // Possession of the secret is proven; the code's state is not a guess to be budgeted.
+    var expiredCode = issued.code();
+    assertThatThrownBy(() -> service.lookup(expiredCode))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+
+    var laterGuess = invitation.getPublicId() + ".guess-later";
+    assertThatThrownBy(() -> service.lookup(laterGuess))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+  }
+
+  @Test
   @DisplayName("Should not throttle when the correct invitation code is presented repeatedly")
   void shouldNotThrottleWhenCorrectInvitationCodeIsPresentedRepeatedly() {
     var issued = pendingInvitation(pendingInvitationBuilder().build());
