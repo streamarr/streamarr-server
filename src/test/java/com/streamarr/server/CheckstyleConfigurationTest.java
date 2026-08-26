@@ -162,8 +162,7 @@ class CheckstyleConfigurationTest {
         var testSource = Files.walk(Path.of("src/test/java"))) {
       var sourceFiles =
           Stream.concat(mainSource, testSource)
-              .filter(path -> path.toString().endsWith(".java"))
-              .filter(path -> !path.toString().contains("/jooq/generated/"))
+              .filter(CheckstyleConfigurationTest::isInspectedSource)
               .map(Path::toFile)
               .toList();
 
@@ -222,6 +221,15 @@ class CheckstyleConfigurationTest {
     }
   }
 
+  private static boolean isInspectedSource(Path path) {
+    var slashSeparatedPath = slashSeparated(path);
+    return slashSeparatedPath.endsWith(".java") && !slashSeparatedPath.contains("/jooq/generated/");
+  }
+
+  private static String slashSeparated(Path path) {
+    return path.toString().replace(File.separatorChar, '/');
+  }
+
   private Checker checkerFor(Path configurationPath) throws Exception {
     var configuration =
         ConfigurationLoader.loadConfiguration(
@@ -238,26 +246,33 @@ class CheckstyleConfigurationTest {
     private final Map<String, Integer> counts = new TreeMap<>();
 
     @Override
-    public void auditStarted(AuditEvent event) {}
+    public void auditStarted(AuditEvent event) {
+      // no audit-level state to prepare
+    }
 
     @Override
-    public void auditFinished(AuditEvent event) {}
+    public void auditFinished(AuditEvent event) {
+      // counts are read through snapshot()
+    }
 
     @Override
-    public void fileStarted(AuditEvent event) {}
+    public void fileStarted(AuditEvent event) {
+      // no per-file state to prepare
+    }
 
     @Override
-    public void fileFinished(AuditEvent event) {}
+    public void fileFinished(AuditEvent event) {
+      // files without violations stay absent from counts
+    }
 
     @Override
     public void addError(AuditEvent event) {
       var relativePath =
-          Path.of("")
-              .toAbsolutePath()
-              .normalize()
-              .relativize(Path.of(event.getFileName()).toAbsolutePath().normalize())
-              .toString()
-              .replace(File.separatorChar, '/');
+          slashSeparated(
+              Path.of("")
+                  .toAbsolutePath()
+                  .normalize()
+                  .relativize(Path.of(event.getFileName()).toAbsolutePath().normalize()));
       counts.merge(relativePath, 1, Integer::sum);
     }
 
