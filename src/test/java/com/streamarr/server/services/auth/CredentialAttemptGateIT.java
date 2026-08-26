@@ -1,14 +1,17 @@
 package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
+import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -27,6 +30,7 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
 
   @Autowired private CredentialAttemptGate gate;
   @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private DataSource dataSource;
 
   @AfterEach
   void deleteAttempts() {
@@ -92,5 +96,34 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
                 String.class,
                 reservation.id()))
         .isEqualTo(IPV6_ADDRESS_AS_STORED);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when the journal cannot be locked within the lock timeout")
+  void shouldFailClosedWhenJournalCannotBeLockedWithinLockTimeout() throws Exception {
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.ACCOUNT_LOGIN)
+            .accountId(UUID.randomUUID())
+            .ipAddress(IP_ADDRESS)
+            .build();
+
+    try (var blocker = dataSource.getConnection()) {
+      blocker.setAutoCommit(false);
+      try (var statement = blocker.createStatement()) {
+        statement.execute("LOCK TABLE credential_attempt IN ACCESS EXCLUSIVE MODE");
+      }
+
+      assertThatThrownBy(() -> gate.reserve(target))
+          .isInstanceOf(CredentialAttemptUnavailableException.class);
+      blocker.rollback();
+    }
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM credential_attempt WHERE host(ip_address) = ?",
+                Integer.class,
+                IP_ADDRESS))
+        .isZero();
   }
 }
