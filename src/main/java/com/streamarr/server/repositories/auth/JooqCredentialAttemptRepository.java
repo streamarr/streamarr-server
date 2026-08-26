@@ -151,7 +151,6 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
             .and(
                 CREDENTIAL_ATTEMPT.ATTEMPTED_AT.gt(
                     offsetOf(now.minus(ABANDONED_RESERVATION_TIMEOUT))))
-            .and(after(CREDENTIAL_ATTEMPT.ATTEMPTED_AT, latestSuccess))
             .fetch(CREDENTIAL_ATTEMPT.ATTEMPTED_AT)
             .stream()
             .map(attemptedAt -> attemptedAt.toInstant().plus(ABANDONED_RESERVATION_TIMEOUT))
