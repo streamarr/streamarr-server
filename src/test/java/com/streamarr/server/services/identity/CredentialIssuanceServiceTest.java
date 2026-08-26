@@ -77,7 +77,7 @@ class CredentialIssuanceServiceTest {
           profiles,
           audit,
           new OpaqueOneTimeCodes(),
-          new CredentialCodeProperties(INVITATION_TTL, PASSWORD_RESET_TTL),
+          codeProperties(),
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
           Clock.fixed(NOW, ZoneOffset.UTC));
@@ -515,6 +515,14 @@ class CredentialIssuanceServiceTest {
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
+  private static CredentialCodeProperties codeProperties() {
+    return CredentialCodeProperties.builder()
+        .invitationTtl(INVITATION_TTL)
+        .passwordResetTtl(PASSWORD_RESET_TTL)
+        .replacementLockTimeout(Duration.ofSeconds(5))
+        .build();
+  }
+
   private IssueInvitationCommand command() {
     return IssueInvitationCommand.builder()
         .recipientEmail("kai@example.com")
@@ -558,7 +566,7 @@ class CredentialIssuanceServiceTest {
         profiles,
         audit,
         new OpaqueOneTimeCodes(),
-        new CredentialCodeProperties(INVITATION_TTL, PASSWORD_RESET_TTL),
+        codeProperties(),
         new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator()),
         Clock.fixed(NOW, ZoneOffset.UTC));
   }
