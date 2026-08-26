@@ -9,10 +9,14 @@ import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
 import com.streamarr.server.support.AuthTestSupport;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -25,6 +29,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @DisplayName("Credential Attempt Gate Integration Tests")
 class CredentialAttemptGateIT extends AbstractIntegrationTest {
 
+  // Long enough that an unbounded wait is unmistakable, short enough to keep a red run honest.
+  private static final Duration LOCK_HOLD = Duration.ofSeconds(12);
   private static final String IP_ADDRESS = "192.0.2.15";
   private static final String IPV6_ADDRESS = "fe80:0:0:0:0:0:0:1";
   // PostgreSQL renders inet text in its compressed form.
@@ -137,6 +143,50 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should fail closed when the journal cannot be locked for a target that resolves to no row")
+  void shouldFailClosedWhenJournalCannotBeLockedForTargetThatResolvesToNoRow() throws Exception {
+    // An unknown email or code names no row, so nothing is advisory-locked; the journal write
+    // must still stop waiting at the lock_timeout instead of holding a pooled connection.
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.ACCOUNT_LOGIN)
+            .ipAddress(IP_ADDRESS)
+            .build();
+
+    whileJournalTableIsLocked(
+        () ->
+            assertThatThrownBy(() -> gate.reserve(target))
+                .isInstanceOf(CredentialAttemptUnavailableException.class));
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM credential_attempt WHERE host(ip_address) = ?",
+                Integer.class,
+                IP_ADDRESS))
+        .isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail closed when the journal cannot be locked while completing an attempt that"
+          + " resolves to no row")
+  void shouldFailClosedWhenJournalCannotBeLockedWhileCompletingAttemptThatResolvesToNoRow()
+      throws Exception {
+    var reservation =
+        gate.reserve(
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.ACCOUNT_LOGIN)
+                .ipAddress(IP_ADDRESS)
+                .build());
+
+    whileJournalTableIsLocked(
+        () ->
+            assertThatThrownBy(() -> gate.complete(reservation, CredentialAttemptResult.FAILED))
+                .isInstanceOf(CredentialAttemptUnavailableException.class));
+  }
+
+  @Test
   @DisplayName("Should fail closed when the target's advisory lock is held during completion")
   void shouldFailClosedWhenTargetsAdvisoryLockIsHeldDuringCompletion() throws Exception {
     var accountId = UUID.randomUUID();
@@ -214,5 +264,41 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
                 Integer.class,
                 target.credentialId()))
         .isEqualTo(1);
+  }
+
+  private void whileJournalTableIsLocked(Runnable attempt) throws Exception {
+    var tableLocked = new CountDownLatch(1);
+    var releaseTable = new CountDownLatch(1);
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var holder = executor.submit(() -> holdJournalTableLock(tableLocked, releaseTable));
+      assertThat(tableLocked.await(10, TimeUnit.SECONDS))
+          .as("the credential journal should be locked before the attempt")
+          .isTrue();
+      try {
+        var started = Instant.now();
+        attempt.run();
+        // The wait is bounded by the two-second lock_timeout, not by the lock holder's patience.
+        assertThat(Duration.between(started, Instant.now()))
+            .isGreaterThanOrEqualTo(Duration.ofSeconds(2))
+            .isLessThan(LOCK_HOLD);
+      } finally {
+        releaseTable.countDown();
+        holder.get(10, TimeUnit.SECONDS);
+      }
+    }
+  }
+
+  private Void holdJournalTableLock(CountDownLatch tableLocked, CountDownLatch releaseTable)
+      throws SQLException, InterruptedException {
+    try (var blocker = dataSource.getConnection()) {
+      blocker.setAutoCommit(false);
+      try (var statement = blocker.createStatement()) {
+        statement.execute("LOCK TABLE credential_attempt IN ACCESS EXCLUSIVE MODE");
+      }
+      tableLocked.countDown();
+      releaseTable.await(LOCK_HOLD.toMillis(), TimeUnit.MILLISECONDS);
+      blocker.rollback();
+    }
+    return null;
   }
 }
