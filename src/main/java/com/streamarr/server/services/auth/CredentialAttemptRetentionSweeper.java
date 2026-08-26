@@ -4,9 +4,11 @@ import com.streamarr.server.repositories.auth.CredentialAttemptRepository;
 import java.time.Clock;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class CredentialAttemptRetentionSweeper {
@@ -16,8 +18,11 @@ public class CredentialAttemptRetentionSweeper {
   private final CredentialAttemptRepository repository;
   private final Clock clock;
 
-  @Scheduled(initialDelayString = "PT24H", fixedDelayString = "PT24H")
+  // A short initial delay: an instance restarted more often than the delay would never sweep.
+  @Scheduled(initialDelayString = "PT5M", fixedDelayString = "PT24H")
   public void deleteExpiredAttempts() {
-    repository.deleteAttemptedBefore(clock.instant().minus(RETENTION));
+    var cutoff = clock.instant().minus(RETENTION);
+    var deleted = repository.deleteAttemptedBefore(cutoff);
+    log.info("Deleted {} credential attempts attempted before {}", deleted, cutoff);
   }
 }
