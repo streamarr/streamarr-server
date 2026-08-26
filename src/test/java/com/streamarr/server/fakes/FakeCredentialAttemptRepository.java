@@ -15,20 +15,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Records reservations and completions; admission is switched by the test ({@link
+ * #rejectReservations}) rather than computed, so service tests prove what they journal, not the
+ * window arithmetic that {@code JooqCredentialAttemptRepositoryIT} owns.
+ */
 public class FakeCredentialAttemptRepository implements CredentialAttemptRepository {
 
-  private final Map<UUID, RecordedAttempt> attempts = new LinkedHashMap<>();
+  private final Map<UUID, AttemptSnapshot> attempts = new LinkedHashMap<>();
   private Duration rejection;
+  private RuntimeException failure;
 
   @Override
   public CredentialAttemptAdmission reserve(
       CredentialAttemptTarget target, CredentialAttemptPolicy policy, Instant attemptedAt) {
+    failIfArmed();
     if (rejection != null) {
       return new CredentialAttemptAdmission.Blocked(rejection);
     }
 
     var reservation = new CredentialAttemptReservation(UUID.randomUUID(), target);
-    attempts.put(reservation.id(), new RecordedAttempt(reservation, attemptedAt));
+    attempts.put(
+        reservation.id(), new AttemptSnapshot(reservation.id(), target, attemptedAt, null, null));
     return new CredentialAttemptAdmission.Reserved(reservation);
   }
 
@@ -37,18 +45,24 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
       CredentialAttemptReservation reservation,
       CredentialAttemptResult result,
       Instant completedAt) {
-    attempts.get(reservation.id()).complete(result, completedAt);
+    failIfArmed();
+    var pending = attempts.get(reservation.id());
+    if (pending == null || pending.completedAt() != null) {
+      throw new IllegalStateException("Credential attempt reservation is not pending");
+    }
+
+    attempts.put(
+        reservation.id(),
+        new AttemptSnapshot(
+            pending.id(), pending.target(), pending.attemptedAt(), completedAt, result));
   }
 
   @Override
   public int deleteAttemptedBefore(Instant cutoff) {
-    var expired =
-        attempts.values().stream()
-            .filter(attempt -> attempt.attemptedAt().isBefore(cutoff))
-            .map(attempt -> attempt.reservation().id())
-            .toList();
-    expired.forEach(attempts::remove);
-    return expired.size();
+    failIfArmed();
+    var before = attempts.size();
+    attempts.values().removeIf(attempt -> attempt.attemptedAt().isBefore(cutoff));
+    return before - attempts.size();
   }
 
   public CredentialAttemptGate gate(Clock clock) {
@@ -63,42 +77,18 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
     rejection = null;
   }
 
+  /** Every later call throws {@code failure}, standing in for a lost database or lock. */
+  public void failWith(RuntimeException failure) {
+    this.failure = failure;
+  }
+
   public List<AttemptSnapshot> attempts() {
-    return attempts.values().stream().map(RecordedAttempt::snapshot).toList();
+    return List.copyOf(attempts.values());
   }
 
-  public List<CredentialAttemptTarget> targets() {
-    return attempts().stream().map(AttemptSnapshot::target).toList();
-  }
-
-  private static final class RecordedAttempt {
-
-    private final CredentialAttemptReservation reservation;
-    private final Instant attemptedAt;
-    private CredentialAttemptResult result;
-    private Instant completedAt;
-
-    private RecordedAttempt(CredentialAttemptReservation reservation, Instant attemptedAt) {
-      this.reservation = reservation;
-      this.attemptedAt = attemptedAt;
-    }
-
-    private void complete(CredentialAttemptResult completedResult, Instant completionTime) {
-      result = completedResult;
-      completedAt = completionTime;
-    }
-
-    private CredentialAttemptReservation reservation() {
-      return reservation;
-    }
-
-    private Instant attemptedAt() {
-      return attemptedAt;
-    }
-
-    private AttemptSnapshot snapshot() {
-      return new AttemptSnapshot(
-          reservation.id(), reservation.target(), attemptedAt, completedAt, result);
+  private void failIfArmed() {
+    if (failure != null) {
+      throw failure;
     }
   }
 
