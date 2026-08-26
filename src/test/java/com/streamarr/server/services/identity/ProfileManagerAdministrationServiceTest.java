@@ -247,7 +247,8 @@ class ProfileManagerAdministrationServiceTest {
     credentialAttempts.rejectReservations(Duration.ofMinutes(15));
     var throttled = issued.code();
     var recipientIdentity = recipientIdentity();
-    assertThatThrownBy(() -> service.acceptManagerInvitation(recipientIdentity, code(throttled)))
+    var command = code(throttled);
+    assertThatThrownBy(() -> service.acceptManagerInvitation(recipientIdentity, command))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
   }
 

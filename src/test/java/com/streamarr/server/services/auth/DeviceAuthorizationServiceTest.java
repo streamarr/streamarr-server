@@ -464,11 +464,6 @@ class DeviceAuthorizationServiceTest {
   @DisplayName("Should show the requesting device when an approver looks up a pending code")
   void shouldShowRequestingDeviceWhenApproverLooksUpPendingCode() {
     var issued = service.issue("Living Room Apple TV", "esn-1");
-    var credentialId =
-        authorizationRepository
-            .findByUserCode(UserCode.normalize(issued.userCode()))
-            .orElseThrow()
-            .getId();
 
     var view = service.lookup(presented(issued.userCode()));
 
@@ -496,7 +491,9 @@ class DeviceAuthorizationServiceTest {
   void shouldPreserveRetryDelayWhenPairingCodeAttemptThrottled() {
     credentialAttempts.rejectReservations(Duration.ofSeconds(42));
 
-    assertThatThrownBy(() -> service.lookup(presented("BCDF-GHJK")))
+    var presentation = presented("BCDF-GHJK");
+
+    assertThatThrownBy(() -> service.lookup(presentation))
         .isInstanceOf(TooManyDeviceAttemptsException.class)
         .satisfies(
             failure ->
@@ -522,7 +519,8 @@ class DeviceAuthorizationServiceTest {
 
     var userCode = issued.userCode();
     // A probe deserves no oracle detail; the poll answers expired_token for the same state.
-    assertThatThrownBy(() -> service.lookup(presented(userCode)))
+    var presentation = presented(userCode);
+    assertThatThrownBy(() -> service.lookup(presentation))
         .isInstanceOf(DeviceCodeNotFoundException.class);
   }
 
@@ -554,7 +552,8 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should reject before lookup when the user code is malformed")
   void shouldRejectBeforeLookupWhenUserCodeMalformed() {
-    assertThatThrownBy(() -> service.lookup(presented("NOPE")))
+    var presentation = presented("NOPE");
+    assertThatThrownBy(() -> service.lookup(presentation))
         .isInstanceOf(InvalidUserCodeException.class);
   }
 

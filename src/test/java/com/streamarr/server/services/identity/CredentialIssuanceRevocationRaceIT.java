@@ -145,14 +145,13 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
           .isFalse();
       assertThat(resetCodeRepository.findById(issued.resetCode().getId()).orElseThrow().getStatus())
           .isEqualTo(PasswordResetCodeStatus.INVALIDATED);
-      assertThatThrownBy(
-              () ->
-                  passwordResetService.redeem(
-                      RedeemPasswordResetCommand.builder()
-                          .code(issued.code())
-                          .newPassword("a replacement passphrase")
-                          .ipAddress("192.0.2.30")
-                          .build()))
+      var redemption =
+          RedeemPasswordResetCommand.builder()
+              .code(issued.code())
+              .newPassword("a replacement passphrase")
+              .ipAddress("192.0.2.30")
+              .build();
+      assertThatThrownBy(() -> passwordResetService.redeem(redemption))
           .isInstanceOf(InvalidOneTimeCodeException.class);
     }
   }
@@ -203,13 +202,12 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
       assertThat(
               invitationRepository.findById(issued.invitation().getId()).orElseThrow().getStatus())
           .isEqualTo(AccountInvitationStatus.INVALIDATED);
-      assertThatThrownBy(
-              () ->
-                  invitationService.lookup(
-                      InvitationCodeCommand.builder()
-                          .code(issued.code())
-                          .ipAddress("192.0.2.30")
-                          .build()))
+      var presentation =
+          InvitationCodeCommand.builder()
+              .code(issued.code())
+              .ipAddress("192.0.2.30")
+              .build();
+      assertThatThrownBy(() -> invitationService.lookup(presentation))
           .isInstanceOf(InvalidOneTimeCodeException.class);
     }
   }

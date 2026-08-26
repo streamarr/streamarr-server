@@ -177,15 +177,15 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(refreshCookie.getValue()).isNotBlank();
     assertThat(refreshCookie.getMaxAge())
         .isEqualTo(Math.toIntExact(tokenProperties.refreshTokenTtl().toSeconds()));
-    var host = DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS);
+    var ipAddressText = DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS);
     assertThat(
-            dsl.select(host)
+            dsl.select(ipAddressText)
                 .from(CREDENTIAL_ATTEMPT)
                 .where(CREDENTIAL_ATTEMPT.ACCOUNT_ID.eq(account.getId()))
                 .and(CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(CredentialKind.ACCOUNT_LOGIN))
                 .orderBy(CREDENTIAL_ATTEMPT.ATTEMPTED_AT.desc())
                 .limit(1)
-                .fetchOne(host))
+                .fetchOne(ipAddressText))
         .isEqualTo("198.51.100.41");
     assertUncacheable(response);
   }

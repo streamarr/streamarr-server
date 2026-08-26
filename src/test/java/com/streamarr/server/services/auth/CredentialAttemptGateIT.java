@@ -65,16 +65,16 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
              WHERE host(ip_address) = ?
             """,
             IP_ADDRESS);
-    assertThat(row.get("id")).isEqualTo(reservation.id());
-    assertThat(row.get("credential_kind")).isEqualTo("ACCOUNT_LOGIN");
-    assertThat(row.get("account_id")).isEqualTo(accountId);
+    assertThat(row).containsEntry("id", reservation.id());
+    assertThat(row).containsEntry("credential_kind", "ACCOUNT_LOGIN");
+    assertThat(row).containsEntry("account_id", accountId);
     assertThat(row.get("profile_id")).isNull();
     assertThat(row.get("credential_id")).isNull();
-    assertThat(row.get("ip_address")).isEqualTo(IP_ADDRESS);
+    assertThat(row).containsEntry("ip_address", IP_ADDRESS);
     assertThat(((Timestamp) row.get("attempted_at")).toInstant()).isAfterOrEqualTo(before);
     assertThat(((Timestamp) row.get("completed_at")).toInstant())
         .isAfterOrEqualTo(((Timestamp) row.get("attempted_at")).toInstant());
-    assertThat(row.get("result")).isEqualTo("FAILED");
+    assertThat(row).containsEntry("result", "FAILED");
   }
 
   @Test

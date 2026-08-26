@@ -14,10 +14,13 @@ class CredentialAttemptAdmissionTest {
   @Test
   @DisplayName("Should reject a retry delay that is not positive when blocking an attempt")
   void shouldRejectRetryDelayThatIsNotPositiveWhenBlockingAttempt() {
-    assertThatThrownBy(() -> new CredentialAttemptAdmission.Blocked(Duration.ZERO))
+    var zero = Duration.ZERO;
+    var negative = Duration.ofSeconds(-1);
+
+    assertThatThrownBy(() -> new CredentialAttemptAdmission.Blocked(zero))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("retryAfter must be positive");
-    assertThatThrownBy(() -> new CredentialAttemptAdmission.Blocked(Duration.ofSeconds(-1)))
+    assertThatThrownBy(() -> new CredentialAttemptAdmission.Blocked(negative))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("retryAfter must be positive");
   }

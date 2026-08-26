@@ -22,13 +22,12 @@ class CredentialAttemptTargetTest {
   @Test
   @DisplayName("Should require the Profile when the kind is a Profile PIN")
   void shouldRequireProfileWhenKindIsProfilePin() {
-    assertThatThrownBy(
-            () ->
-                CredentialAttemptTarget.builder()
-                    .kind(CredentialKind.PROFILE_PIN)
-                    .accountId(ACCOUNT_ID)
-                    .ipAddress(IP_ADDRESS)
-                    .build())
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.PROFILE_PIN)
+            .accountId(ACCOUNT_ID)
+            .ipAddress(IP_ADDRESS);
+    assertThatThrownBy(target::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("PROFILE_PIN target requires profileId");
   }
@@ -36,13 +35,12 @@ class CredentialAttemptTargetTest {
   @Test
   @DisplayName("Should require the Account when the kind is a Profile PIN")
   void shouldRequireAccountWhenKindIsProfilePin() {
-    assertThatThrownBy(
-            () ->
-                CredentialAttemptTarget.builder()
-                    .kind(CredentialKind.PROFILE_PIN)
-                    .profileId(PROFILE_ID)
-                    .ipAddress(IP_ADDRESS)
-                    .build())
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.PROFILE_PIN)
+            .profileId(PROFILE_ID)
+            .ipAddress(IP_ADDRESS);
+    assertThatThrownBy(target::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("PROFILE_PIN target requires accountId");
   }
@@ -50,13 +48,12 @@ class CredentialAttemptTargetTest {
   @Test
   @DisplayName("Should require the approver's Account when the kind is a device pairing code")
   void shouldRequireApproverAccountWhenKindIsDevicePairingCode() {
-    assertThatThrownBy(
-            () ->
-                CredentialAttemptTarget.builder()
-                    .kind(CredentialKind.DEVICE_PAIRING_CODE)
-                    .credentialId(CREDENTIAL_ID)
-                    .ipAddress(IP_ADDRESS)
-                    .build())
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.DEVICE_PAIRING_CODE)
+            .credentialId(CREDENTIAL_ID)
+            .ipAddress(IP_ADDRESS);
+    assertThatThrownBy(target::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("DEVICE_PAIRING_CODE target requires accountId");
   }
@@ -64,12 +61,11 @@ class CredentialAttemptTargetTest {
   @Test
   @DisplayName("Should require the Account when the kind is an Account password verification")
   void shouldRequireAccountWhenKindIsAccountPasswordVerification() {
-    assertThatThrownBy(
-            () ->
-                CredentialAttemptTarget.builder()
-                    .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
-                    .ipAddress(IP_ADDRESS)
-                    .build())
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
+            .ipAddress(IP_ADDRESS);
+    assertThatThrownBy(target::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("ACCOUNT_PASSWORD_VERIFICATION target requires accountId");
   }
@@ -80,14 +76,13 @@ class CredentialAttemptTargetTest {
       names = {"ACCOUNT_INVITATION_CODE", "PASSWORD_RESET_CODE", "PROFILE_MANAGER_INVITATION_CODE"})
   @DisplayName("Should reject an Account identifier when the kind is an opaque code")
   void shouldRejectAccountIdentifierWhenKindIsOpaqueCode(CredentialKind kind) {
-    assertThatThrownBy(
-            () ->
-                CredentialAttemptTarget.builder()
-                    .kind(kind)
-                    .accountId(ACCOUNT_ID)
-                    .credentialId(CREDENTIAL_ID)
-                    .ipAddress(IP_ADDRESS)
-                    .build())
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(kind)
+            .accountId(ACCOUNT_ID)
+            .credentialId(CREDENTIAL_ID)
+            .ipAddress(IP_ADDRESS);
+    assertThatThrownBy(target::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage(kind + " target must not carry accountId");
   }
@@ -95,14 +90,13 @@ class CredentialAttemptTargetTest {
   @Test
   @DisplayName("Should reject a Profile identifier when the kind is a login")
   void shouldRejectProfileIdentifierWhenKindIsLogin() {
-    assertThatThrownBy(
-            () ->
-                CredentialAttemptTarget.builder()
-                    .kind(CredentialKind.ACCOUNT_LOGIN)
-                    .accountId(ACCOUNT_ID)
-                    .profileId(PROFILE_ID)
-                    .ipAddress(IP_ADDRESS)
-                    .build())
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.ACCOUNT_LOGIN)
+            .accountId(ACCOUNT_ID)
+            .profileId(PROFILE_ID)
+            .ipAddress(IP_ADDRESS);
+    assertThatThrownBy(target::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("ACCOUNT_LOGIN target must not carry profileId");
   }
