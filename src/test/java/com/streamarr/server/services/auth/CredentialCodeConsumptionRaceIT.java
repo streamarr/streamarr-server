@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.AccountInvitationFixture.pendingInvi
 import static com.streamarr.server.fixtures.PasswordResetCodeFixture.pendingResetCodeBuilder;
 import static com.streamarr.server.support.OutcomeTestSupport.rejectionOf;
 import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockAccountRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -241,6 +242,63 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
             passwordEncoder.matches(
                 "the concurrent replacement passphrase", account.getPasswordHash()))
         .isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should complete both issuer disablement and acceptance when the manager is the issuer")
+  void shouldCompleteBothIssuerDisablementAndAcceptanceWhenManagerIsIssuer() throws Exception {
+    // Disablement locks the issuer's Account row and then invalidates the invitations they issued;
+    // acceptance must take the manager's Account row before the invitation row, or the two
+    // transactions deadlock when the manager is that issuer.
+    identity = authTestSupport.createAdminIdentity();
+    var issuerId = identity.account().getId();
+    var issued = opaqueCodes.issue();
+    var invitation =
+        invitationRepository.saveAndFlush(
+            pendingInvitationBuilder()
+                .recipientEmail("race-invitee@example.com")
+                .householdId(identity.household().getId())
+                .householdName(identity.household().getName())
+                .issuerAccountId(issuerId)
+                .localManagerAccountId(issuerId)
+                .publicId(issued.publicId())
+                .secretDigest(issued.digest())
+                .build());
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var disablement = dataSource.getConnection()) {
+      disablement.setAutoCommit(false);
+      lockAccountRow(disablement, issuerId);
+      var acceptance =
+          executor.submit(
+              () -> attempt(() -> invitationService.accept(acceptCommand(issued.code()))));
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(
+              () -> assertThat(waitersBehind(jdbcTemplate, backendPid(disablement), "%")).isOne());
+
+      try (var invalidate =
+          disablement.prepareStatement(
+              """
+              UPDATE account_invitation
+              SET status = 'INVALIDATED', invalidation_reason = 'issuer disabled',
+                  decided_at = NOW(), last_modified_on = NOW()
+              WHERE issuer_account_id = ? AND status = 'PENDING' AND expires_at > NOW()
+              """)) {
+        invalidate.setObject(1, issuerId);
+        assertThat(invalidate.executeUpdate()).isOne();
+      }
+
+      disablement.commit();
+      var acceptanceAttempt = acceptance.get(10, TimeUnit.SECONDS);
+      assertThat(acceptanceAttempt.successful()).isFalse();
+      assertThat(acceptanceAttempt.failure()).isInstanceOf(InvalidOneTimeCodeException.class);
+    }
+
+    assertThat(invitationRepository.findById(invitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(userAccountRepository.findByEmailIgnoreCase("race-invitee@example.com")).isEmpty();
   }
 
   private AccountInvitation saveInvitation(OpaqueOneTimeCodes.IssuedCode issued) {

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.HouseholdRole;
@@ -19,6 +20,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
@@ -54,6 +56,7 @@ public class AccountInvitationService {
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactionTemplate;
   private final ConstraintViolationTranslator constraintViolationTranslator;
+  private final CredentialCodeProperties properties;
   private final Clock clock;
 
   /** What the code holder needs to decide; never the secret, never other Households' data. */
@@ -98,6 +101,7 @@ public class AccountInvitationService {
 
   private AcceptedInvitation acceptPendingInvitation(
       AcceptInvitationCommand command, AccountInvitation invitation, String passwordHash) {
+    lockLocalManager(invitation);
     consumeInvitation(invitation);
     requireTargetHousehold(invitation);
     var account = createAccount(command, invitation, passwordHash);
@@ -107,6 +111,20 @@ public class AccountInvitationService {
         .session(issued.session())
         .rawRefreshToken(issued.rawToken())
         .build();
+  }
+
+  /**
+   * Account before credential, the order issuer disablement takes (its Account row, then the
+   * invitations it issued): the manager row is locked before this transaction touches the
+   * invitation, so the two cannot deadlock when the manager is the issuer. Bounded like issuance.
+   */
+  private void lockLocalManager(AccountInvitation invitation) {
+    if (invitation.getLocalManagerAccountId() == null) {
+      return;
+    }
+
+    userAccountRepository.lockByIds(
+        Set.of(invitation.getLocalManagerAccountId()), properties.replacementLockTimeout());
   }
 
   private void consumeInvitation(AccountInvitation invitation) {

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
@@ -346,6 +347,11 @@ class AccountInvitationServiceTest {
         new PlainPasswordEncoder(),
         new TransactionTemplate(new FakeTransactionManager()),
         new ConstraintViolationTranslator(),
+        CredentialCodeProperties.builder()
+            .invitationTtl(Duration.ofDays(7))
+            .passwordResetTtl(Duration.ofHours(1))
+            .replacementLockTimeout(Duration.ofSeconds(5))
+            .build(),
         clock);
   }
 
