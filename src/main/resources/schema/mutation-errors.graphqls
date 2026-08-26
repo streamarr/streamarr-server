@@ -118,7 +118,10 @@ type ProfileRequiresEligibleManagerError implements MutationError {
     message: String!
 }
 
-"The Account cannot manage Profiles because its Personal Profile is restricted."
+"""
+The Account cannot manage the Profile: missing, outside the Household, its own Personal Profile
+restricted, or not the Household role a restricted Profile requires.
+"""
 type ProfileManagerNotEligibleError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!

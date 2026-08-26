@@ -64,7 +64,8 @@ class CredentialIssuanceValidationIT extends AbstractIntegrationTest {
             authTestSupport.identityOf(issuer),
             supervisedInvitation().localManagerAccountId(restrictedManagerId).build());
 
-    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.LocalManagerNotFound.class);
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(CredentialRejections.ProfileManagerNotEligible.class);
     assertThat(invitationRepository.findAll()).isEmpty();
   }
 
@@ -125,7 +126,8 @@ class CredentialIssuanceValidationIT extends AbstractIntegrationTest {
             authTestSupport.identityOf(issuer),
             supervisedInvitation().localManagerAccountId(memberId).build());
 
-    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.LocalManagerNotFound.class);
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(CredentialRejections.ProfileManagerNotEligible.class);
     assertThat(invitationRepository.findAll()).isEmpty();
   }
 

@@ -131,7 +131,7 @@ public class CredentialIssuanceService {
             command.localManagerAccountId(),
             command.householdId(),
             ProfileManagerEligibility.forRestricted(restricted))) {
-      return Optional.of(new CredentialRejections.LocalManagerNotFound());
+      return Optional.of(new CredentialRejections.ProfileManagerNotEligible());
     }
 
     return Optional.empty();

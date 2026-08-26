@@ -26,7 +26,7 @@ public final class ProfileErrors {
           new ProfileManagerNotEligibleError(
               "That Account cannot manage Profiles because its Personal Profile is restricted.",
               InputPath.of("profileManagerAccountId"));
-      case ProfileRejections.LocalManagerNotFound _ ->
+      case ProfileRejections.ProfileManagerNotEligible _ ->
           new AccountNotFoundError("No such Account.", InputPath.of("profileManagerAccountId"));
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };

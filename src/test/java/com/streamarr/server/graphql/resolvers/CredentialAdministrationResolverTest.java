@@ -181,8 +181,8 @@ class CredentialAdministrationResolverTest {
             "EligibleProfileManagerRequiredError",
             List.of("profileManagerAccountId")),
         new IssuanceErrorCase(
-            new CredentialRejections.LocalManagerNotFound(),
-            "AccountNotFoundError",
+            new CredentialRejections.ProfileManagerNotEligible(),
+            "ProfileManagerNotEligibleError",
             List.of("profileManagerAccountId")),
         new IssuanceErrorCase(
             new CredentialRejections.MaximumAllowedRatingAgeInvalid(),

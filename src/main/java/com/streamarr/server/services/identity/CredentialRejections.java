@@ -17,7 +17,7 @@ public final class CredentialRejections {
           RestrictedFirstAccount,
           RestrictedHouseholdAdmin,
           LocalManagerRequired,
-          LocalManagerNotFound,
+          ProfileManagerNotEligible,
           MaximumAllowedRatingAgeInvalid {}
 
   public sealed interface Cancel permits InvitationNotPending {}
@@ -45,7 +45,8 @@ public final class CredentialRejections {
   /** A restricted Profile needs an eligible local HouseholdAdmin manager named up front. */
   public record LocalManagerRequired() implements Issue {}
 
-  public record LocalManagerNotFound() implements Issue {}
+  /** The named Account is missing, outside the Household, restricted, or not the role required. */
+  public record ProfileManagerNotEligible() implements Issue {}
 
   public record MaximumAllowedRatingAgeInvalid() implements Issue {}
 

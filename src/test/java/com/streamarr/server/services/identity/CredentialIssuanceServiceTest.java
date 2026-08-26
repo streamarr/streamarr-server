@@ -188,7 +188,8 @@ class CredentialIssuanceServiceTest {
                 .localManagerAccountId(outsideManager.getId())
                 .build());
 
-    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.LocalManagerNotFound.class);
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(CredentialRejections.ProfileManagerNotEligible.class);
   }
 
   @Test
@@ -212,7 +213,8 @@ class CredentialIssuanceServiceTest {
                 .localManagerAccountId(restrictedManager.getId())
                 .build());
 
-    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.LocalManagerNotFound.class);
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(CredentialRejections.ProfileManagerNotEligible.class);
     assertThat(invitations.findAll()).isEmpty();
   }
 

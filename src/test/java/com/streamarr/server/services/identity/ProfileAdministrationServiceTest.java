@@ -322,7 +322,7 @@ class ProfileAdministrationServiceTest {
                         .name("Kai")
                         .localManagerAccountId(UUID.randomUUID())
                         .build())))
-        .isInstanceOf(ProfileRejections.LocalManagerNotFound.class);
+        .isInstanceOf(ProfileRejections.ProfileManagerNotEligible.class);
   }
 
   @Test

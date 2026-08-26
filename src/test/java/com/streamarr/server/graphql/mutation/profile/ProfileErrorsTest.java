@@ -39,7 +39,7 @@ class ProfileErrorsTest {
         ProfileManagerNotEligibleError.class,
         "profileManagerAccountId");
     assertInputError(
-        ProfileErrors.toCreateProfileError(new ProfileRejections.LocalManagerNotFound()),
+        ProfileErrors.toCreateProfileError(new ProfileRejections.ProfileManagerNotEligible()),
         AccountNotFoundError.class,
         "profileManagerAccountId");
     assertInputError(

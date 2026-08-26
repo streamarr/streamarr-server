@@ -37,8 +37,10 @@ public final class CredentialErrors {
               "A restricted Profile needs a HouseholdAdmin of its Household, with an unrestricted"
                   + " Personal Profile, as its manager.",
               InputPath.of("profileManagerAccountId"));
-      case CredentialRejections.LocalManagerNotFound _ ->
-          new AccountNotFoundError("No such Account.", InputPath.of("profileManagerAccountId"));
+      case CredentialRejections.ProfileManagerNotEligible _ ->
+          new ProfileManagerNotEligibleError(
+              "No eligible Profile manager with that Account id in the Household.",
+              InputPath.of("profileManagerAccountId"));
       case CredentialRejections.MaximumAllowedRatingAgeInvalid _ ->
           new MaximumAllowedRatingAgeInvalidError(
               "Enter a non-negative maximum allowed rating age.",

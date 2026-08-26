@@ -19,7 +19,7 @@ public final class ProfileRejections {
           ProfileNameTaken,
           EligibleManagerRequired,
           ManagerNotEligible,
-          LocalManagerNotFound,
+          ProfileManagerNotEligible,
           MaximumAllowedRatingAgeInvalid {}
 
   public sealed interface RenameProfile
@@ -67,7 +67,7 @@ public final class ProfileRejections {
 
   public record MaximumAllowedRatingAgeInvalid() implements CreateProfile, ChangeProfilePolicy {}
 
-  public record LocalManagerNotFound() implements CreateProfile {}
+  public record ProfileManagerNotEligible() implements CreateProfile {}
 
   public record ReauthenticationRequired()
       implements ChangeProfilePolicy, AdministrativelyResetProfilePin, DeleteProfile {}
