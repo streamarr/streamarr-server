@@ -28,7 +28,9 @@ public class LoginService {
   public LoginResult login(LoginCommand command) {
     var email = lookupEmail(command.email());
     var account = userAccountRepository.findByEmailIgnoreCase(email).orElse(null);
-    credentialAttempts.attempt(
+    // Completion runs inside the attempt: it re-checks the stored hash under its row lock and
+    // refuses when a concurrent change beat this login, which the journal must record as FAILED.
+    return credentialAttempts.attempt(
         loginTarget(command, account),
         () -> {
           if (account == null) {
@@ -38,15 +40,15 @@ public class LoginService {
           if (!credentialsValid(account, command.password())) {
             throw new InvalidCredentialsException();
           }
-        });
 
-    return loginCompletionService.complete(
-        LoginCompletionCommand.builder()
-            .accountId(account.getId())
-            .expectedPasswordHash(account.getPasswordHash())
-            .upgradedPasswordHash(upgradedPasswordHash(account, command.password()))
-            .deviceName(command.deviceName())
-            .build());
+          return loginCompletionService.complete(
+              LoginCompletionCommand.builder()
+                  .accountId(account.getId())
+                  .expectedPasswordHash(account.getPasswordHash())
+                  .upgradedPasswordHash(upgradedPasswordHash(account, command.password()))
+                  .deviceName(command.deviceName())
+                  .build());
+        });
   }
 
   private static CredentialAttemptTarget loginTarget(LoginCommand command, UserAccount account) {

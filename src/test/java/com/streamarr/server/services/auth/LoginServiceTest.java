@@ -342,6 +342,36 @@ class LoginServiceTest {
         .isInstanceOf(TooManyLoginAttemptsException.class);
   }
 
+  @Test
+  @DisplayName("Should journal a failed attempt when login completion refuses the credential")
+  void shouldJournalFailedAttemptWhenLoginCompletionRefusesCredential() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+    var refusingCompletion =
+        new LoginCompletionService(userAccountRepository, refreshTokenService) {
+          @Override
+          public LoginResult complete(LoginCompletionCommand command) {
+            // The stored hash changed between verification and completion.
+            throw new InvalidCredentialsException();
+          }
+        };
+    var service =
+        new LoginService(
+            userAccountRepository,
+            refusingCompletion,
+            countingEncoder,
+            credentialAttempts.gate(clock),
+            timingEqualizer);
+    var attempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> service.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
+        .isEqualTo(CredentialAttemptResult.FAILED);
+  }
+
   private UserAccount seedAccount(String passwordHash) {
     return userAccountRepository.save(
         AccountFixture.defaultAccountBuilder().passwordHash(passwordHash).build());
