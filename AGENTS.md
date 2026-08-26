@@ -79,6 +79,8 @@ Choose the simplest mechanism that fits the operation:
   See `MovieFileProcessor.enrichMovieMetadata()`.
 - **Database locks** (`SELECT FOR UPDATE … skipLocked`): coordinate across multiple application
   instances. Pair with lease-based heartbeats for crash recovery (see `FileProcessingTaskCoordinator`).
+- **Credential throttling**: journal and admit attempts through PostgreSQL so every instance shares
+  one limit; never use a per-instance throttle. Client IP is observational only.
 - **Transaction-scoped advisory locks**: serialize a short, multi-statement database mutation
   when the logical resource has no stable row to lock. Acquire the advisory lock before row locks,
   bound the wait with a transaction-local `lock_timeout`, and keep external calls, file I/O, and
