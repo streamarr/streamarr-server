@@ -45,6 +45,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -94,24 +95,13 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     var code = issueInvitation("invitee@example.com");
 
     mockMvc
-        .perform(
-            post("/api/auth/invitation/lookup")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"code\": \"%s\"}".formatted(code)))
+        .perform(lookupRequest(code))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.householdName").value(serverAdmin.household().getName()))
         .andExpect(jsonPath("$.profileName").value("Invitee"));
 
     mockMvc
-        .perform(
-            post("/api/auth/invitation/accept")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {"code": "%s", "displayName": "Invitee", \
-                    "password": "a strong passphrase", "cookieMode": false}
-                    """
-                        .formatted(code)))
+        .perform(acceptRequest(code, "Invitee"))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.accessToken").isNotEmpty())
         .andExpect(jsonPath("$.refreshToken").isNotEmpty())
@@ -123,10 +113,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
 
     // The consumed code answers exactly like an unknown one.
     mockMvc
-        .perform(
-            post("/api/auth/invitation/lookup")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"code\": \"%s\"}".formatted(code)))
+        .perform(lookupRequest(code))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("INVALID_CODE"));
 
@@ -259,16 +246,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     var userAgent = "\u202e" + "🎬".repeat(80);
 
     mockMvc
-        .perform(
-            post("/api/auth/invitation/accept")
-                .header(HttpHeaders.USER_AGENT, userAgent)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {"code": "%s", "displayName": "Invitee", \
-                    "password": "a strong passphrase", "cookieMode": false}
-                    """
-                        .formatted(code)))
+        .perform(acceptRequest(code, "Invitee").header(HttpHeaders.USER_AGENT, userAgent))
         .andExpect(status().isCreated());
 
     var account = userAccountRepository.findByEmailIgnoreCase("invitee@example.com").orElseThrow();
@@ -360,15 +338,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         authTestSupport.createAccount(builder -> builder.email("invitee@example.com"));
     try {
       mockMvc
-          .perform(
-              post("/api/auth/invitation/accept")
-                  .contentType(MediaType.APPLICATION_JSON)
-                  .content(
-                      """
-                      {"code": "%s", "displayName": "Invitee", \
-                      "password": "a strong passphrase", "cookieMode": false}
-                      """
-                          .formatted(code)))
+          .perform(acceptRequest(code, "Invitee"))
           .andExpect(status().isConflict())
           .andExpect(jsonPath("$.code").value("INVITATION_EMAIL_ALREADY_USED"));
 
@@ -388,12 +358,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   void shouldLeaveNoAccountWhenInvitationIsDeclined() throws Exception {
     var code = issueInvitation("invitee@example.com");
 
-    mockMvc
-        .perform(
-            post("/api/auth/invitation/decline")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"code\": \"%s\"}".formatted(code)))
-        .andExpect(status().isNoContent());
+    mockMvc.perform(declineRequest(code)).andExpect(status().isNoContent());
 
     assertThat(invitationRepository.findAll().getFirst().getStatus())
         .isEqualTo(AccountInvitationStatus.DECLINED);
@@ -406,18 +371,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     var first = issueInvitation("invitee@example.com");
     var second = issueInvitation("invitee@example.com");
 
-    mockMvc
-        .perform(
-            post("/api/auth/invitation/lookup")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"code\": \"%s\"}".formatted(first)))
-        .andExpect(status().isNotFound());
-    mockMvc
-        .perform(
-            post("/api/auth/invitation/lookup")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"code\": \"%s\"}".formatted(second)))
-        .andExpect(status().isOk());
+    mockMvc.perform(lookupRequest(first)).andExpect(status().isNotFound());
+    mockMvc.perform(lookupRequest(second)).andExpect(status().isOk());
   }
 
   @Test
@@ -600,16 +555,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
       account.setEnabled(false);
       userAccountRepository.saveAndFlush(account);
 
-      mockMvc
-          .perform(
-              post("/api/auth/password-reset/redeem")
-                  .contentType(MediaType.APPLICATION_JSON)
-                  .content(
-                      """
-                      {"code": "%s", "newPassword": "a brand new passphrase"}
-                      """
-                          .formatted(code)))
-          .andExpect(status().isNoContent());
+      mockMvc.perform(redeemRequest(code)).andExpect(status().isNoContent());
 
       assertThat(authSessionRepository.findByAccountId(locked.account().getId()))
           .hasSameSizeAs(sessionIdsBefore)
@@ -711,24 +657,12 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.data.disableAccount.account.enabled").value(false));
 
-      mockMvc
-          .perform(
-              post("/api/auth/invitation/lookup")
-                  .contentType(MediaType.APPLICATION_JSON)
-                  .content("{\"code\": \"%s\"}".formatted(invitationCode)))
-          .andExpect(status().isNotFound());
+      mockMvc.perform(lookupRequest(invitationCode)).andExpect(status().isNotFound());
       assertThat(invitationRepository.findAll().getFirst().getStatus())
           .isEqualTo(AccountInvitationStatus.INVALIDATED);
 
       mockMvc
-          .perform(
-              post("/api/auth/password-reset/redeem")
-                  .contentType(MediaType.APPLICATION_JSON)
-                  .content(
-                      """
-                      {"code": "%s", "newPassword": "a brand new passphrase"}
-                      """
-                          .formatted(resetCode)))
+          .perform(redeemRequest(resetCode))
           .andExpect(status().isNotFound())
           .andExpect(jsonPath("$.code").value("INVALID_CODE"));
       assertThat(resetCodeRepository.findAll().getFirst().getStatus())
@@ -785,18 +719,44 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .asString();
   }
 
+  private static MockHttpServletRequestBuilder lookupRequest(String code) {
+    return codeRequest("/api/auth/invitation/lookup", code);
+  }
+
+  private static MockHttpServletRequestBuilder declineRequest(String code) {
+    return codeRequest("/api/auth/invitation/decline", code);
+  }
+
+  private static MockHttpServletRequestBuilder codeRequest(String path, String code) {
+    return post(path)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("{\"code\": \"%s\"}".formatted(code));
+  }
+
+  /** Accepts as a token-body client; the cookie-mode test builds its own request. */
+  private static MockHttpServletRequestBuilder acceptRequest(String code, String displayName) {
+    return post("/api/auth/invitation/accept")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(
+            """
+            {"code": "%s", "displayName": "%s", \
+            "password": "a strong passphrase", "cookieMode": false}
+            """
+                .formatted(code, displayName));
+  }
+
+  private static MockHttpServletRequestBuilder redeemRequest(String code) {
+    return post("/api/auth/password-reset/redeem")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(
+            """
+            {"code": "%s", "newPassword": "a brand new passphrase"}
+            """
+                .formatted(code));
+  }
+
   private void acceptInvitation(String code, String displayName) throws Exception {
-    mockMvc
-        .perform(
-            post("/api/auth/invitation/accept")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {"code": "%s", "displayName": "%s", \
-                    "password": "a strong passphrase", "cookieMode": false}
-                    """
-                        .formatted(code, displayName)))
-        .andExpect(status().isCreated());
+    mockMvc.perform(acceptRequest(code, displayName)).andExpect(status().isCreated());
   }
 
   private ConcurrentAcceptance.ConcurrentAcceptanceBuilder concurrentAcceptanceBuilder(
@@ -811,15 +771,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     }
 
     return mockMvc
-        .perform(
-            post("/api/auth/invitation/accept")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {"code": "%s", "displayName": "%s", \
-                    "password": "a strong passphrase", "cookieMode": false}
-                    """
-                        .formatted(acceptance.code(), acceptance.displayName())))
+        .perform(acceptRequest(acceptance.code(), acceptance.displayName()))
         .andReturn()
         .getResponse()
         .getStatus();
