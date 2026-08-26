@@ -18,11 +18,11 @@ import com.streamarr.server.exceptions.ProfileLockedException;
 import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
-import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
-import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
+import com.streamarr.server.exceptions.TooManyAttemptsException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -59,9 +59,11 @@ public class AuthExceptionHandler {
     return respond(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", e);
   }
 
-  @ExceptionHandler({TooManyLoginAttemptsException.class, TooManyCredentialAttemptsException.class})
-  public ResponseEntity<AuthErrorResponse> handleTooManyAttempts(RuntimeException e) {
-    return respond(HttpStatus.TOO_MANY_REQUESTS, "TOO_MANY_ATTEMPTS", e);
+  @ExceptionHandler(TooManyAttemptsException.class)
+  public ResponseEntity<AuthErrorResponse> handleTooManyAttempts(TooManyAttemptsException e) {
+    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+        .header(HttpHeaders.RETRY_AFTER, Long.toString(e.retryAfterSeconds()))
+        .body(new AuthErrorResponse("TOO_MANY_ATTEMPTS", e.getMessage()));
   }
 
   @ExceptionHandler({InvalidRefreshTokenException.class, TokenReuseDetectedException.class})

@@ -14,11 +14,13 @@ import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
+import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 
 @Tag("UnitTest")
@@ -63,9 +65,11 @@ class AuthExceptionHandlerTest {
   @Test
   @DisplayName("Should respond 429 too many attempts when login throttled")
   void shouldRespond429TooManyAttemptsWhenLoginThrottled() {
-    var response = handler.handleTooManyAttempts(new TooManyLoginAttemptsException());
+    var response =
+        handler.handleTooManyAttempts(new TooManyLoginAttemptsException(Duration.ofSeconds(90)));
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("90");
     assertThat(response.getBody())
         .isEqualTo(
             new AuthErrorResponse(
@@ -75,9 +79,12 @@ class AuthExceptionHandlerTest {
   @Test
   @DisplayName("Should respond 429 too many attempts when credential verification throttled")
   void shouldRespond429TooManyAttemptsWhenCredentialVerificationThrottled() {
-    var response = handler.handleTooManyAttempts(new TooManyCredentialAttemptsException());
+    var response =
+        handler.handleTooManyAttempts(
+            new TooManyCredentialAttemptsException(Duration.ofMillis(1500)));
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("2");
     assertThat(response.getBody())
         .isEqualTo(
             new AuthErrorResponse(

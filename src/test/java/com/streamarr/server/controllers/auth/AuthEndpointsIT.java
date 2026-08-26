@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -300,7 +301,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                       return request;
                     }))
         .andExpect(status().isTooManyRequests())
-        .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"));
+        .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"))
+        .andExpect(header().exists(HttpHeaders.RETRY_AFTER));
   }
 
   @Test

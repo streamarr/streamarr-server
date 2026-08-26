@@ -4,8 +4,11 @@ import com.streamarr.server.domain.auth.CredentialAttemptAdmission;
 import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
-import com.streamarr.server.exceptions.CredentialAttemptRejectedException;
 import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
+import com.streamarr.server.exceptions.TooManyAttemptsException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
+import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
+import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import com.streamarr.server.repositories.auth.CredentialAttemptRepository;
 import java.time.Clock;
 import java.time.Duration;
@@ -45,10 +48,19 @@ public class CredentialAttemptGate {
     }
   }
 
-  private static CredentialAttemptRejectedException blocked(
+  private static TooManyAttemptsException blocked(
       CredentialAttemptTarget target, Duration retryAfter) {
     log.warn("Credential attempt blocked: {} retryAfter={}", describe(target), retryAfter);
-    return new CredentialAttemptRejectedException(retryAfter);
+    return switch (target.kind()) {
+      case ACCOUNT_LOGIN -> new TooManyLoginAttemptsException(retryAfter);
+      case DEVICE_PAIRING_CODE -> new TooManyDeviceAttemptsException(retryAfter);
+      case ACCOUNT_PASSWORD_VERIFICATION,
+          PROFILE_PIN,
+          ACCOUNT_INVITATION_CODE,
+          PASSWORD_RESET_CODE,
+          PROFILE_MANAGER_INVITATION_CODE ->
+          new TooManyCredentialAttemptsException(retryAfter);
+    };
   }
 
   private static CredentialAttemptUnavailableException unavailable(

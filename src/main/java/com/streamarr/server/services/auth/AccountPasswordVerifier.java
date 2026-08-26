@@ -5,7 +5,6 @@ import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.exceptions.CredentialAttemptRejectedException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import java.util.UUID;
@@ -58,11 +57,7 @@ public class AccountPasswordVerifier {
             .accountId(account.getId())
             .ipAddress(ipAddress)
             .build();
-    try {
-      return credentialAttempts.reserve(target);
-    } catch (CredentialAttemptRejectedException _) {
-      throw new TooManyCredentialAttemptsException();
-    }
+    return credentialAttempts.reserve(target);
   }
 
   private boolean passwordMatches(UUID accountId, String expectedPasswordHash, String password) {

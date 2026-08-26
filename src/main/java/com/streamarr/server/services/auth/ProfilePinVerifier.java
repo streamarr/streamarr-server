@@ -5,9 +5,7 @@ import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.exceptions.CredentialAttemptRejectedException;
 import com.streamarr.server.exceptions.InvalidProfilePinException;
-import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,11 +49,7 @@ public class ProfilePinVerifier {
             .profileId(profileId)
             .ipAddress(ipAddress)
             .build();
-    try {
-      return credentialAttempts.reserve(target);
-    } catch (CredentialAttemptRejectedException _) {
-      throw new TooManyCredentialAttemptsException();
-    }
+    return credentialAttempts.reserve(target);
   }
 
   private boolean matches(Profile profile, String pin) {

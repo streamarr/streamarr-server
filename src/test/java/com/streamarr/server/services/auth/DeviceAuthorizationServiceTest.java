@@ -496,7 +496,7 @@ class DeviceAuthorizationServiceTest {
         .isInstanceOf(TooManyDeviceAttemptsException.class)
         .satisfies(
             failure ->
-                assertThat(((TooManyDeviceAttemptsException) failure).getRetryAfter())
+                assertThat(((TooManyDeviceAttemptsException) failure).retryAfter())
                     .isEqualTo(Duration.ofSeconds(42)));
   }
 
@@ -592,7 +592,7 @@ class DeviceAuthorizationServiceTest {
         .isInstanceOf(TooManyDeviceAttemptsException.class)
         .satisfies(
             e ->
-                assertThat(((TooManyDeviceAttemptsException) e).getRetryAfter())
+                assertThat(((TooManyDeviceAttemptsException) e).retryAfter())
                     // The moment capacity provably frees: when the oldest code expires.
                     .isEqualTo(Duration.ofMinutes(10)));
   }
@@ -651,7 +651,7 @@ class DeviceAuthorizationServiceTest {
         .isInstanceOf(TooManyDeviceAttemptsException.class)
         .satisfies(
             failure ->
-                assertThat(((TooManyDeviceAttemptsException) failure).getRetryAfter())
+                assertThat(((TooManyDeviceAttemptsException) failure).retryAfter())
                     .isEqualTo(Duration.ofMinutes(6)));
   }
 

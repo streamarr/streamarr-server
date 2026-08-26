@@ -8,9 +8,7 @@ import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
-import com.streamarr.server.exceptions.CredentialAttemptRejectedException;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
-import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -105,10 +103,6 @@ public class PasswordResetService {
             .credentialId(code == null ? null : code.getId())
             .ipAddress(ipAddress)
             .build();
-    try {
-      return credentialAttempts.reserve(target);
-    } catch (CredentialAttemptRejectedException _) {
-      throw new TooManyCredentialAttemptsException();
-    }
+    return credentialAttempts.reserve(target);
   }
 }

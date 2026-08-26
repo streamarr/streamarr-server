@@ -5,9 +5,7 @@ import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.exceptions.CredentialAttemptRejectedException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
-import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -76,11 +74,7 @@ public class LoginService {
             .accountId(account == null ? null : account.getId())
             .ipAddress(command.ipAddress())
             .build();
-    try {
-      return credentialAttempts.reserve(target);
-    } catch (CredentialAttemptRejectedException _) {
-      throw new TooManyLoginAttemptsException();
-    }
+    return credentialAttempts.reserve(target);
   }
 
   private boolean credentialsValid(UserAccount account, String password) {
