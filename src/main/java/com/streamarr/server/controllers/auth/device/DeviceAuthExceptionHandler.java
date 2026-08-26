@@ -1,21 +1,17 @@
 package com.streamarr.server.controllers.auth.device;
 
 import com.streamarr.server.controllers.auth.AuthErrorResponse;
-import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
+import com.streamarr.server.controllers.auth.AuthExceptionHandlerSupport;
 import com.streamarr.server.exceptions.DeviceCodeExpiredException;
 import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.exceptions.DevicePairingNotConfiguredException;
 import com.streamarr.server.exceptions.EsnBlockedException;
 import com.streamarr.server.exceptions.EsnRequiredException;
-import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
-import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidDecisionException;
 import com.streamarr.server.exceptions.InvalidEsnException;
 import com.streamarr.server.exceptions.InvalidUserCodeException;
 import com.streamarr.server.exceptions.SetupIncompleteException;
-import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -28,7 +24,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * AuthController and does not cover this surface.
  */
 @RestControllerAdvice(assignableTypes = DeviceAuthController.class)
-public class DeviceAuthExceptionHandler {
+public class DeviceAuthExceptionHandler extends AuthExceptionHandlerSupport {
 
   @ExceptionHandler(HttpMessageNotReadableException.class)
   public ResponseEntity<AuthErrorResponse> handleUnreadableRequestBody() {
@@ -47,16 +43,6 @@ public class DeviceAuthExceptionHandler {
     return respond(HttpStatus.BAD_REQUEST, "INVALID_ESN", e);
   }
 
-  @ExceptionHandler(HouseholdRequiredException.class)
-  public ResponseEntity<AuthErrorResponse> handleHouseholdRequired(HouseholdRequiredException e) {
-    return respond(HttpStatus.BAD_REQUEST, "HOUSEHOLD_REQUIRED", e);
-  }
-
-  @ExceptionHandler(HouseholdAccessDeniedException.class)
-  public ResponseEntity<AuthErrorResponse> handleHouseholdDenied(HouseholdAccessDeniedException e) {
-    return respond(HttpStatus.FORBIDDEN, "HOUSEHOLD_ACCESS_DENIED", e);
-  }
-
   @ExceptionHandler(EsnBlockedException.class)
   public ResponseEntity<AuthErrorResponse> handleEsnBlocked(EsnBlockedException e) {
     return respond(HttpStatus.FORBIDDEN, "ESN_BLOCKED", e);
@@ -71,12 +57,6 @@ public class DeviceAuthExceptionHandler {
   public ResponseEntity<AuthErrorResponse> handleNotConfigured(
       DevicePairingNotConfiguredException e) {
     return respond(HttpStatus.SERVICE_UNAVAILABLE, "DEVICE_PAIRING_NOT_CONFIGURED", e);
-  }
-
-  @ExceptionHandler(CredentialAttemptUnavailableException.class)
-  public ResponseEntity<AuthErrorResponse> handleCredentialAttemptUnavailable(
-      CredentialAttemptUnavailableException e) {
-    return respond(HttpStatus.SERVICE_UNAVAILABLE, "CREDENTIAL_VERIFICATION_UNAVAILABLE", e);
   }
 
   @ExceptionHandler(InvalidUserCodeException.class)
@@ -102,17 +82,5 @@ public class DeviceAuthExceptionHandler {
   @ExceptionHandler(DeviceCodeNotPendingException.class)
   public ResponseEntity<AuthErrorResponse> handleNotPending(DeviceCodeNotPendingException e) {
     return respond(HttpStatus.CONFLICT, "DEVICE_CODE_NOT_PENDING", e);
-  }
-
-  @ExceptionHandler(TooManyDeviceAttemptsException.class)
-  public ResponseEntity<AuthErrorResponse> handleTooManyAttempts(TooManyDeviceAttemptsException e) {
-    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-        .header(HttpHeaders.RETRY_AFTER, Long.toString(e.retryAfterSeconds()))
-        .body(new AuthErrorResponse("TOO_MANY_ATTEMPTS", e.getMessage()));
-  }
-
-  private static ResponseEntity<AuthErrorResponse> respond(
-      HttpStatus status, String code, RuntimeException e) {
-    return ResponseEntity.status(status).body(new AuthErrorResponse(code, e.getMessage()));
   }
 }
