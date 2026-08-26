@@ -19,9 +19,9 @@ final class InvitationIssuanceLock {
 
   void lockRecipientEmail(String recipientEmail) {
     requireActiveTransaction();
-    // The pending-email unique index and every recipient query fold case with PostgreSQL lower();
-    // Java's toLowerCase disagrees for some code points (U+0130), which would let two spellings of
-    // one address take different keys and escape serialization.
+    // The pending-email unique index and every recipient query fold case with the PostgreSQL lower
+    // function. Java's toLowerCase disagrees for some code points (U+0130), which would let two
+    // spellings of one address take different keys and escape serialization.
     var logicalKey = DSL.concat(DSL.inline(NAMESPACE), DSL.lower(DSL.val(recipientEmail.strip())));
     var keyHash =
         DSL.function(DSL.name("hashtextextended"), SQLDataType.BIGINT, logicalKey, DSL.inline(0L));
