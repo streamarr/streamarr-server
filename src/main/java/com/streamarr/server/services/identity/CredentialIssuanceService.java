@@ -264,12 +264,8 @@ public class CredentialIssuanceService {
   }
 
   private boolean mayViewAccount(AuthenticatedIdentity identity, UUID accountId) {
-    return switch (authorizationService.decide(
-        identity, new Intent.ViewAccountAdministration(accountId))) {
-      case Decision.Allowed<?> _ -> true;
-      case Decision.Denied<?> _ -> false;
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
-    };
+    return authorizationService.isAllowed(
+        identity, new Intent.ViewAccountAdministration(accountId));
   }
 
   private void requireIssuerStillAllowed(AuthenticatedIdentity identity) {
