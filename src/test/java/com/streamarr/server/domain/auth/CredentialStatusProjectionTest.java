@@ -6,6 +6,8 @@ import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 @Tag("UnitTest")
 @DisplayName("Credential Status Projection Tests")
@@ -34,16 +36,16 @@ class CredentialStatusProjectionTest {
     assertThat(invitation.getStatus()).isEqualTo(AccountInvitationStatus.PENDING);
   }
 
-  @Test
+  @ParameterizedTest(name = "Should preserve {0} after an invitation expiry passes")
+  @EnumSource(
+      value = AccountInvitationStatus.class,
+      names = {"ACCEPTED", "DECLINED", "CANCELED", "EXPIRED", "INVALIDATED"})
   @DisplayName("Should preserve a terminal invitation status after its expiry passes")
-  void shouldPreserveTerminalInvitationStatusAfterItsExpiryPasses() {
+  void shouldPreserveTerminalInvitationStatusAfterItsExpiryPasses(AccountInvitationStatus status) {
     var invitation =
-        AccountInvitation.builder()
-            .status(AccountInvitationStatus.ACCEPTED)
-            .expiresAt(NOW.minusSeconds(1))
-            .build();
+        AccountInvitation.builder().status(status).expiresAt(NOW.minusSeconds(1)).build();
 
-    assertThat(invitation.statusAt(NOW)).isEqualTo(AccountInvitationStatus.ACCEPTED);
+    assertThat(invitation.statusAt(NOW)).isEqualTo(status);
   }
 
   @Test
@@ -56,15 +58,15 @@ class CredentialStatusProjectionTest {
     assertThat(resetCode.getStatus()).isEqualTo(PasswordResetCodeStatus.PENDING);
   }
 
-  @Test
+  @ParameterizedTest(name = "Should preserve {0} after a reset-code expiry passes")
+  @EnumSource(
+      value = PasswordResetCodeStatus.class,
+      names = {"REDEEMED", "EXPIRED", "INVALIDATED"})
   @DisplayName("Should preserve a terminal reset-code status after its expiry passes")
-  void shouldPreserveTerminalResetCodeStatusAfterItsExpiryPasses() {
+  void shouldPreserveTerminalResetCodeStatusAfterItsExpiryPasses(PasswordResetCodeStatus status) {
     var resetCode =
-        PasswordResetCode.builder()
-            .status(PasswordResetCodeStatus.REDEEMED)
-            .expiresAt(NOW.minusSeconds(1))
-            .build();
+        PasswordResetCode.builder().status(status).expiresAt(NOW.minusSeconds(1)).build();
 
-    assertThat(resetCode.statusAt(NOW)).isEqualTo(PasswordResetCodeStatus.REDEEMED);
+    assertThat(resetCode.statusAt(NOW)).isEqualTo(status);
   }
 }

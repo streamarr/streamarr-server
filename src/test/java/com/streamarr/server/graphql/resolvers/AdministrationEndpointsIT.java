@@ -863,21 +863,16 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
         graphql(
                 authTestSupport.accountBearer(serverAdmin),
                 """
-                query { households(first: 2) { pageInfo { endCursor } } }
+                query { households(first: 2) { edges { node { id } } pageInfo { endCursor } } }
                 """)
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andReturn()
             .getResponse()
             .getContentAsString();
-    var before =
-        objectMapper
-            .readTree(response)
-            .path("data")
-            .path("households")
-            .path("pageInfo")
-            .path("endCursor")
-            .asString();
+    var households = objectMapper.readTree(response).path("data").path("households");
+    var expectedId = households.path("edges").path(0).path("node").path("id").asString();
+    var before = households.path("pageInfo").path("endCursor").asString();
 
     graphql(
             authTestSupport.accountBearer(serverAdmin),
@@ -887,7 +882,8 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
                 .formatted(before))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.households.edges.length()").value(1));
+        .andExpect(jsonPath("$.data.households.edges.length()").value(1))
+        .andExpect(jsonPath("$.data.households.edges[0].node.id").value(expectedId));
   }
 
   @Test

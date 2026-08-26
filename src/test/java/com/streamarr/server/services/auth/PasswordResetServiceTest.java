@@ -9,6 +9,7 @@ import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
@@ -51,6 +52,7 @@ class PasswordResetServiceTest {
               AuthThrottleProperties.builder()
                   .maxAttempts(5)
                   .window(Duration.ofMinutes(15))
+                  .maxOpaqueCodeBudgets(1)
                   .build(),
               clock),
           new PlainEncoder(),
@@ -113,6 +115,19 @@ class PasswordResetServiceTest {
   }
 
   @Test
+  @DisplayName("Should release the verification budget when a reset code succeeds")
+  void shouldReleaseVerificationBudgetWhenResetCodeSucceeds() {
+    var first = pendingCode();
+    service.redeem(first.code(), "first passphrase");
+    var second = pendingCode();
+
+    service.redeem(second.code(), "second passphrase");
+
+    assertThat(accounts.findById(account.getId()).orElseThrow().getPasswordHash())
+        .isEqualTo("hashed:second passphrase");
+  }
+
+  @Test
   @DisplayName("Should answer like an unknown code when a reset code is expired")
   void shouldAnswerLikeUnknownCodeWhenResetCodeIsExpired() {
     var issued = pendingCode();
@@ -123,6 +138,42 @@ class PasswordResetServiceTest {
         .isInstanceOf(InvalidOneTimeCodeException.class);
     assertThatThrownBy(() -> service.redeem("unknown.secret", "new passphrase"))
         .isInstanceOf(InvalidOneTimeCodeException.class);
+  }
+
+  @Test
+  @DisplayName("Should answer like an unknown code when a reset code is malformed")
+  void shouldAnswerLikeUnknownCodeWhenResetCodeIsMalformed() {
+    assertThatThrownBy(() -> service.redeem("malformed", "new passphrase"))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+
+    assertThat(accounts.findById(account.getId()).orElseThrow().getPasswordHash()).isEqualTo("old");
+  }
+
+  @Test
+  @DisplayName("Should answer like an unknown code when the reset secret is wrong")
+  void shouldAnswerLikeUnknownCodeWhenResetSecretIsWrong() {
+    var issued = pendingCode();
+    var wrongCode = issued.publicId() + ".wrong-secret";
+
+    assertThatThrownBy(() -> service.redeem(wrongCode, "new passphrase"))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+
+    assertThat(accounts.findById(account.getId()).orElseThrow().getPasswordHash()).isEqualTo("old");
+  }
+
+  @Test
+  @DisplayName("Should throttle a valid reset code when its verification budget is exhausted")
+  void shouldThrottleValidResetCodeWhenVerificationBudgetIsExhausted() {
+    var issued = pendingCode();
+    var wrongCode = issued.publicId() + ".wrong-secret";
+    for (var attempt = 0; attempt < 5; attempt++) {
+      assertThatThrownBy(() -> service.redeem(wrongCode, "new passphrase"))
+          .isInstanceOf(InvalidOneTimeCodeException.class);
+    }
+
+    assertThatThrownBy(() -> service.redeem(issued.code(), "new passphrase"))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(accounts.findById(account.getId()).orElseThrow().getPasswordHash()).isEqualTo("old");
   }
 
   private OpaqueOneTimeCodes.IssuedCode pendingCode() {

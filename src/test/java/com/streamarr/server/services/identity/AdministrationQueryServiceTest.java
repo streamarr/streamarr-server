@@ -9,12 +9,15 @@ import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.services.authorization.Decision;
+import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
 
 @Tag("UnitTest")
 @DisplayName("Administration Query Service Tests")
@@ -62,5 +65,15 @@ class AdministrationQueryServiceTest {
 
     assertThatThrownBy(() -> service.profileAdministration(identity, profileId))
         .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("Should forbid the invitation catalogue when the caller is denied")
+  void shouldForbidInvitationCatalogueWhenCallerIsDenied() {
+    authorization.denyAll();
+    var options = PaginationFixture.buildForwardOptions(10, MediaFilter.builder().build());
+
+    assertThatThrownBy(() -> service.accountInvitations(authorization.currentIdentity(), options))
+        .isInstanceOf(AccessDeniedException.class);
   }
 }

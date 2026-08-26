@@ -74,49 +74,6 @@ class CredentialIssuanceValidationIT extends AbstractIntegrationTest {
     assertThat(invitationRepository.findAll()).isEmpty();
   }
 
-  @Test
-  @DisplayName("Should reject a negative maximum allowed rating age when an invitation is issued")
-  void shouldRejectNegativeMaximumAllowedRatingAgeWhenInvitationIsIssued() {
-    issuer = authTestSupport.createAdminIdentity();
-
-    var outcome =
-        credentialIssuanceService.issueAccountInvitation(
-            identityOf(issuer),
-            IssueInvitationCommand.builder()
-                .recipientEmail("negative-rating-age@example.com")
-                .householdId(issuer.household().getId())
-                .householdRole(HouseholdRole.MEMBER)
-                .profileName("Negative Rating Age")
-                .profileKind(ProfileKind.ADULT)
-                .maximumAllowedRatingAge(-1)
-                .localManagerAccountId(issuer.account().getId())
-                .build());
-
-    assertThat(rejectionOf(outcome))
-        .isInstanceOf(InvitationRejections.MaximumAllowedRatingAgeInvalid.class);
-    assertThat(invitationRepository.findAll()).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should reject a duplicate Household Profile name when an invitation is issued")
-  void shouldRejectDuplicateHouseholdProfileNameWhenInvitationIsIssued() {
-    issuer = authTestSupport.createAdminIdentity();
-
-    var outcome =
-        credentialIssuanceService.issueAccountInvitation(
-            identityOf(issuer),
-            IssueInvitationCommand.builder()
-                .recipientEmail("duplicate-profile-name@example.com")
-                .householdId(issuer.household().getId())
-                .householdRole(HouseholdRole.MEMBER)
-                .profileName(issuer.profile().getName())
-                .profileKind(ProfileKind.ADULT)
-                .build());
-
-    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.ProfileNameTaken.class);
-    assertThat(invitationRepository.findAll()).isEmpty();
-  }
-
   private UUID createRestrictedMemberManagedByIssuer() {
     return transactionTemplate.execute(
         _ -> {

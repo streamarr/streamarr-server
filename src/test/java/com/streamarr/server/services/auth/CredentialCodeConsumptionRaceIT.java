@@ -15,6 +15,9 @@ import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.identity.CredentialIssuanceService;
+import com.streamarr.server.services.identity.InvitationRejections;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Duration;
 import java.time.Instant;
@@ -38,6 +41,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
   @Autowired private AccountInvitationService invitationService;
   @Autowired private PasswordResetService passwordResetService;
+  @Autowired private CredentialIssuanceService credentialIssuanceService;
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private PasswordResetCodeRepository resetCodeRepository;
   @Autowired private UserAccountRepository userAccountRepository;
@@ -100,6 +104,65 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
     var status = invitationRepository.findById(invitation.getId()).orElseThrow().getStatus();
     assertThat(status).isIn(AccountInvitationStatus.ACCEPTED, AccountInvitationStatus.DECLINED);
+    assertThat(userAccountRepository.findByEmailIgnoreCase("race-invitee@example.com").isPresent())
+        .isEqualTo(status == AccountInvitationStatus.ACCEPTED);
+  }
+
+  @Test
+  @DisplayName("Should permit one decision when acceptance and cancellation race")
+  void shouldPermitOneDecisionWhenAcceptanceAndCancellationRace() throws Exception {
+    identity = authTestSupport.createAdminIdentity();
+    var issued = opaqueCodes.issue();
+    var invitation = saveInvitation(issued);
+    var rowLocked = new CountDownLatch(1);
+    var releaseRow = new CountDownLatch(1);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var lock =
+          executor.submit(() -> holdInvitationRowLock(invitation.getId(), rowLocked, releaseRow));
+      assertThat(rowLocked.await(10, TimeUnit.SECONDS)).isTrue();
+
+      var acceptance =
+          executor.submit(
+              () ->
+                  attempt(
+                      () ->
+                          invitationService.accept(
+                              AccountInvitationService.AcceptInvitationCommand.builder()
+                                  .code(issued.code())
+                                  .displayName("Invitee")
+                                  .password("a strong passphrase")
+                                  .deviceName("test")
+                                  .build())));
+      var cancellation =
+          executor.submit(
+              () ->
+                  credentialIssuanceService.cancelAccountInvitation(
+                      administrativeIdentity(), invitation.getId()));
+
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(() -> assertThat(waitingLockRequests("account_invitation")).isEqualTo(2));
+      releaseRow.countDown();
+
+      var acceptanceAttempt = acceptance.get(10, TimeUnit.SECONDS);
+      var cancellationOutcome = cancellation.get(10, TimeUnit.SECONDS);
+      var cancellationSucceeded = cancellationOutcome instanceof Outcome.Accepted<?, ?>;
+      assertThat(acceptanceAttempt.successful()).isNotEqualTo(cancellationSucceeded);
+      if (acceptanceAttempt.successful()) {
+        assertThat(rejectionOf(cancellationOutcome))
+            .isInstanceOf(InvitationRejections.InvitationNotPending.class);
+      } else {
+        assertThat(acceptanceAttempt.failure()).isInstanceOf(InvalidOneTimeCodeException.class);
+      }
+
+      lock.get(10, TimeUnit.SECONDS);
+    } finally {
+      releaseRow.countDown();
+    }
+
+    var status = invitationRepository.findById(invitation.getId()).orElseThrow().getStatus();
+    assertThat(status).isIn(AccountInvitationStatus.ACCEPTED, AccountInvitationStatus.CANCELED);
     assertThat(userAccountRepository.findByEmailIgnoreCase("race-invitee@example.com").isPresent())
         .isEqualTo(status == AccountInvitationStatus.ACCEPTED);
   }
@@ -310,6 +373,25 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
         """,
         Integer.class,
         "%" + tableName + "%");
+  }
+
+  private AuthenticatedIdentity administrativeIdentity() {
+    return AuthenticatedIdentity.builder()
+        .accountId(identity.account().getId())
+        .authSessionId(identity.session().getId())
+        .scope(TokenScope.ACCOUNT)
+        .householdId(identity.household().getId())
+        .householdRole(identity.account().getHouseholdRole())
+        .contextHouseholdId(identity.household().getId())
+        .build();
+  }
+
+  private static Object rejectionOf(Outcome<?, ?> outcome) {
+    return switch (outcome) {
+      case Outcome.Rejected<?, ?>(var rejections) -> rejections.getFirst();
+      case Outcome.Accepted<?, ?> accepted ->
+          throw new AssertionError("expected a rejection but got " + accepted);
+    };
   }
 
   private static Attempt attempt(ThrowingRunnable action) {

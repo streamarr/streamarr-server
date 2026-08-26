@@ -23,6 +23,7 @@ import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
+import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -35,7 +36,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -57,9 +60,9 @@ class CredentialIssuanceServiceTest {
 
   private final FakeAccountInvitationRepository invitations = new FakeAccountInvitationRepository();
   private final FakePasswordResetCodeRepository resetCodes = new FakePasswordResetCodeRepository();
-  private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final FakeProfileRepository profiles = new FakeProfileRepository();
+  private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(profiles);
   private final FakeSecurityAuditEventRepository audit = new FakeSecurityAuditEventRepository();
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
@@ -189,14 +192,80 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should gate the whole issuance surface when the caller is forbidden")
-  void shouldGateWholeIssuanceSurfaceWhenCallerIsForbidden() {
+  @DisplayName("Should reject a restricted Profile owner as a local Profile manager")
+  void shouldRejectRestrictedProfileOwnerAsLocalProfileManager() {
+    var restrictedProfile =
+        profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
+    var restrictedManager =
+        accounts.save(
+            AccountFixture.defaultAccountBuilder()
+                .householdId(household.getId())
+                .householdRole(HouseholdRole.ADMIN)
+                .personalProfileId(restrictedProfile.getId())
+                .build());
+
+    var outcome =
+        service.issueAccountInvitation(
+            authorization.currentIdentity(),
+            command().toBuilder()
+                .profileKind(ProfileKind.KID)
+                .localManagerAccountId(restrictedManager.getId())
+                .build());
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.LocalManagerNotFound.class);
+    assertThat(invitations.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject a negative maximum allowed rating age when an invitation is issued")
+  void shouldRejectNegativeMaximumAllowedRatingAgeWhenInvitationIsIssued() {
+    var outcome =
+        service.issueAccountInvitation(
+            authorization.currentIdentity(),
+            command().toBuilder().maximumAllowedRatingAge(-1).build());
+
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(InvitationRejections.MaximumAllowedRatingAgeInvalid.class);
+    assertThat(invitations.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject a duplicate Household Profile name when an invitation is issued")
+  void shouldRejectDuplicateHouseholdProfileNameWhenInvitationIsIssued() {
+    var existing =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder()
+                .householdId(household.getId())
+                .name("Kai")
+                .build());
+    profiles.shares().share(existing.getId(), household.getId(), true);
+
+    var outcome = service.issueAccountInvitation(authorization.currentIdentity(), command());
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.ProfileNameTaken.class);
+    assertThat(invitations.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should forbid invitation issuance when the caller is denied")
+  void shouldForbidInvitationIssuanceWhenCallerIsDenied() {
     var identity = authorization.currentIdentity();
     var invite = command();
     authorization.denyAll();
 
     assertThatThrownBy(() -> service.issueAccountInvitation(identity, invite))
         .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should forbid invitation cancellation when the caller is denied")
+  void shouldForbidInvitationCancellationWhenCallerIsDenied() {
+    var identity = authorization.currentIdentity();
+    authorization.denyAll();
+
+    assertThatThrownBy(() -> service.cancelAccountInvitation(identity, UUID.randomUUID()))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(invitations.findAll()).isEmpty();
   }
 
   @Test
@@ -255,13 +324,18 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should classify refusals under the oracle rule when reset issuance is denied")
-  void shouldClassifyRefusalsUnderOracleRuleWhenResetIssuanceIsDenied() {
+  @DisplayName("Should require a reason when a password reset is issued")
+  void shouldRequireReasonWhenPasswordResetIsIssued() {
     assertThat(
             rejectionOf(
                 service.issuePasswordReset(authorization.currentIdentity(), resident.getId(), " ")))
         .isInstanceOf(InvitationRejections.ReasonRequired.class);
+    assertThat(resetCodes.findAll()).isEmpty();
+  }
 
+  @Test
+  @DisplayName("Should require fresh reauthentication when a password reset is issued")
+  void shouldRequireFreshReauthenticationWhenPasswordResetIsIssued() {
     authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.IssuePasswordReset
@@ -272,13 +346,80 @@ class CredentialIssuanceServiceTest {
                 service.issuePasswordReset(
                     authorization.currentIdentity(), resident.getId(), "locked out")))
         .isInstanceOf(InvitationRejections.ReauthenticationRequired.class);
+    assertThat(resetCodes.findAll()).isEmpty();
+  }
 
+  @Test
+  @DisplayName("Should hide the reset target when issuance and Account visibility are denied")
+  void shouldHideResetTargetWhenIssuanceAndAccountVisibilityAreDenied() {
     authorization.denyAll();
+
     assertThat(
             rejectionOf(
                 service.issuePasswordReset(
                     authorization.currentIdentity(), resident.getId(), "locked out")))
         .isInstanceOf(InvitationRejections.AccountNotFound.class);
+    assertThat(resetCodes.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should forbid a password reset when issuance is denied but the Account is visible")
+  void shouldForbidPasswordResetWhenIssuanceIsDeniedButAccountIsVisible() {
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.IssuePasswordReset
+                ? new Decision.Denied<>(Decision.DenialReason.POLICY)
+                : allowed());
+
+    assertThatThrownBy(
+            () ->
+                service.issuePasswordReset(
+                    authorization.currentIdentity(), resident.getId(), "locked out"))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(resetCodes.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should hide an unknown Account when a password reset is issued")
+  void shouldHideUnknownAccountWhenPasswordResetIsIssued() {
+    var outcome =
+        service.issuePasswordReset(
+            authorization.currentIdentity(), UUID.randomUUID(), "locked out");
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.AccountNotFound.class);
+    assertThat(resetCodes.findAll()).isEmpty();
+    assertThat(audit.entries()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should hide the reset target when it disappears before participants are locked")
+  void shouldHideResetTargetWhenItDisappearsBeforeParticipantsAreLocked() {
+    var vanishingAccounts = accountsMissingLockFor(resident.getId());
+    var serviceWithVanishingTarget = serviceUsing(vanishingAccounts);
+
+    var outcome =
+        serviceWithVanishingTarget.issuePasswordReset(
+            authorization.currentIdentity(), resident.getId(), "locked out");
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.AccountNotFound.class);
+    assertThat(resetCodes.findAll()).isEmpty();
+    assertThat(audit.entries()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should forbid a password reset when the issuer disappears before locking")
+  void shouldForbidPasswordResetWhenIssuerDisappearsBeforeLocking() {
+    var issuerId = authorization.currentIdentity().accountId();
+    var vanishingAccounts = accountsMissingLockFor(issuerId);
+    var serviceWithVanishingIssuer = serviceUsing(vanishingAccounts);
+
+    assertThatThrownBy(
+            () ->
+                serviceWithVanishingIssuer.issuePasswordReset(
+                    authorization.currentIdentity(), resident.getId(), "locked out"))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(resetCodes.findAll()).isEmpty();
+    assertThat(audit.entries()).isEmpty();
   }
 
   @Test
@@ -314,6 +455,28 @@ class CredentialIssuanceServiceTest {
         .build();
   }
 
+  private LockOmittingUserAccountRepository accountsMissingLockFor(UUID missingAccountId) {
+    var repository = new LockOmittingUserAccountRepository(missingAccountId);
+    repository.save(accounts.findById(authorization.currentIdentity().accountId()).orElseThrow());
+    repository.save(resident);
+    return repository;
+  }
+
+  private CredentialIssuanceService serviceUsing(FakeUserAccountRepository accountRepository) {
+    return new CredentialIssuanceService(
+        authorization,
+        invitations,
+        resetCodes,
+        accountRepository,
+        households,
+        profiles,
+        audit,
+        new OpaqueOneTimeCodes(),
+        new CredentialCodeProperties(INVITATION_TTL, PASSWORD_RESET_TTL),
+        new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator()),
+        Clock.fixed(NOW, ZoneOffset.UTC));
+  }
+
   private static CredentialIssuanceService.IssuedInvitation issued(
       Outcome<CredentialIssuanceService.IssuedInvitation, ?> outcome) {
     return outcome.fold(
@@ -342,5 +505,21 @@ class CredentialIssuanceServiceTest {
 
   private static Decision<AuthorizationUnit> allowed() {
     return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
+  }
+
+  private static final class LockOmittingUserAccountRepository extends FakeUserAccountRepository {
+
+    private final UUID missingAccountId;
+
+    private LockOmittingUserAccountRepository(UUID missingAccountId) {
+      this.missingAccountId = missingAccountId;
+    }
+
+    @Override
+    public Set<UUID> lockByIds(Set<UUID> accountIds, Duration timeout) {
+      return super.lockByIds(accountIds, timeout).stream()
+          .filter(accountId -> !accountId.equals(missingAccountId))
+          .collect(Collectors.toUnmodifiableSet());
+    }
   }
 }

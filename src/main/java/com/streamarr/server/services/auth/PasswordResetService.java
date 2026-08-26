@@ -67,6 +67,7 @@ public class PasswordResetService {
       throw new InvalidOneTimeCodeException();
     }
 
+    throttle.resetCodeGuesses(presented.publicId());
     if (code.getStatus() != PasswordResetCodeStatus.PENDING
         || !code.getExpiresAt().isAfter(clock.instant())) {
       throw new InvalidOneTimeCodeException();

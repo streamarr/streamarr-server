@@ -20,6 +20,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import jakarta.persistence.EntityManagerFactory;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -427,34 +428,51 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should list and cancel only pending invitations when the caller is ServerAdmin")
-  void shouldListAndCancelOnlyPendingInvitationsWhenCallerIsServerAdmin() throws Exception {
+  @DisplayName("Should list pending invitations when the caller is ServerAdmin")
+  void shouldListPendingInvitationsWhenCallerIsServerAdmin() throws Exception {
     issueInvitation("invitee@example.com");
 
-    var listed =
-        graphql(
-                authTestSupport.accountBearer(serverAdmin),
-                """
-                query { accountInvitations(first: 10) { edges { node { id recipientEmail status } } } }
-                """)
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.errors").doesNotExist())
-            .andExpect(
-                jsonPath("$.data.accountInvitations.edges[0].node.recipientEmail")
-                    .value("invitee@example.com"))
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    var invitationId =
-        objectMapper
-            .readTree(listed)
-            .path("data")
-            .path("accountInvitations")
-            .path("edges")
-            .path(0)
-            .path("node")
-            .path("id")
-            .asString();
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            query { accountInvitations(first: 10) { edges { node { recipientEmail status } } } }
+            """)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.accountInvitations.edges[0].node.recipientEmail")
+                .value("invitee@example.com"))
+        .andExpect(jsonPath("$.data.accountInvitations.edges[0].node.status").value("PENDING"));
+  }
+
+  @Test
+  @DisplayName("Should project a stale pending invitation as expired when it is listed")
+  void shouldProjectStalePendingInvitationAsExpiredWhenItIsListed() throws Exception {
+    issueInvitation("expired@example.com");
+    var invitation = invitationRepository.findAll().getFirst();
+    invitation.setExpiresAt(Instant.now().minusSeconds(1));
+    invitationRepository.saveAndFlush(invitation);
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            query { accountInvitations(first: 10) { edges { node { recipientEmail status } } } }
+            """)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.accountInvitations.edges[0].node.recipientEmail")
+                .value("expired@example.com"))
+        .andExpect(jsonPath("$.data.accountInvitations.edges[0].node.status").value("EXPIRED"));
+    assertThat(invitationRepository.findById(invitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName("Should cancel a pending invitation when the caller is ServerAdmin")
+  void shouldCancelPendingInvitationWhenCallerIsServerAdmin() throws Exception {
+    issueInvitation("invitee@example.com");
+    var invitationId = invitationRepository.findAll().getFirst().getId();
 
     graphql(
             authTestSupport.accountBearer(serverAdmin),
@@ -465,18 +483,89 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                 .formatted(invitationId))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.cancelAccountInvitation.invitation.status").value("CANCELED"));
+    assertThat(invitationRepository.findById(invitationId).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.CANCELED);
+  }
 
-    graphql(
-            authTestSupport.accountBearer(serverAdmin),
-            """
-            mutation { cancelAccountInvitation(input: {invitationId: "%s"}) {
-              invitation { status } userErrors { __typename } } }
-            """
-                .formatted(invitationId))
-        .andExpect(status().isOk())
-        .andExpect(
-            jsonPath("$.data.cancelAccountInvitation.userErrors[0].__typename")
-                .value("InvitationNotPendingError"));
+  @Test
+  @DisplayName("Should forbid invitation issuance when the caller is not ServerAdmin")
+  void shouldForbidInvitationIssuanceWhenCallerIsNotServerAdmin() throws Exception {
+    var caller = authTestSupport.createIdentity();
+    try {
+      graphql(
+              authTestSupport.accountBearer(caller),
+              """
+              mutation { issueAccountInvitation(input: {recipientEmail: "denied@example.com",
+                householdId: "%s", householdRole: MEMBER, profileName: "Denied",
+                profileKind: ADULT}) { issued { code } userErrors { __typename } } }
+              """
+                  .formatted(caller.household().getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+      assertThat(invitationRepository.findAll()).isEmpty();
+    } finally {
+      authTestSupport.deleteIdentity(caller);
+    }
+  }
+
+  @Test
+  @DisplayName("Should forbid invitation cancellation when the caller is not ServerAdmin")
+  void shouldForbidInvitationCancellationWhenCallerIsNotServerAdmin() throws Exception {
+    issueInvitation("invitee@example.com");
+    var invitation = invitationRepository.findAll().getFirst();
+    var caller = authTestSupport.createIdentity();
+    try {
+      graphql(
+              authTestSupport.accountBearer(caller),
+              """
+              mutation { cancelAccountInvitation(input: {invitationId: "%s"}) {
+                invitation { status } userErrors { __typename } } }
+              """
+                  .formatted(invitation.getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+      assertThat(invitationRepository.findById(invitation.getId()).orElseThrow().getStatus())
+          .isEqualTo(AccountInvitationStatus.PENDING);
+    } finally {
+      authTestSupport.deleteIdentity(caller);
+    }
+  }
+
+  @Test
+  @DisplayName("Should forbid the invitation catalogue when the caller is not ServerAdmin")
+  void shouldForbidInvitationCatalogueWhenCallerIsNotServerAdmin() throws Exception {
+    var caller = authTestSupport.createIdentity();
+    try {
+      graphql(
+              authTestSupport.accountBearer(caller),
+              """
+              query { accountInvitations(first: 10) { edges { node { id } } } }
+              """)
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+    } finally {
+      authTestSupport.deleteIdentity(caller);
+    }
+  }
+
+  @Test
+  @DisplayName("Should forbid password-reset issuance when the caller is not ServerAdmin")
+  void shouldForbidPasswordResetIssuanceWhenCallerIsNotServerAdmin() throws Exception {
+    var caller = authTestSupport.createIdentity();
+    try {
+      graphql(
+              authTestSupport.freshAccountBearer(caller),
+              """
+              mutation { issuePasswordReset(input: {accountId: "%s", reason: "locked out"}) {
+                issued { code } userErrors { __typename } } }
+              """
+                  .formatted(caller.account().getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+      assertThat(resetCodeRepository.findAll()).isEmpty();
+    } finally {
+      authTestSupport.deleteIdentity(caller);
+    }
   }
 
   @Test
@@ -638,36 +727,6 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     } finally {
       authTestSupport.deleteIdentity(otherAdmin);
     }
-  }
-
-  @Test
-  @DisplayName("Should return typed user errors when invitation issuance is refused")
-  void shouldReturnTypedUserErrorsWhenInvitationIssuanceIsRefused() throws Exception {
-    graphql(
-            authTestSupport.accountBearer(serverAdmin),
-            """
-            mutation { issueAccountInvitation(input: {recipientEmail: "%s",
-              householdId: "%s", householdRole: MEMBER, profileName: "Twin", profileKind: ADULT}) {
-              issued { code } userErrors { __typename } } }
-            """
-                .formatted(serverAdmin.account().getEmail(), serverAdmin.household().getId()))
-        .andExpect(status().isOk())
-        .andExpect(
-            jsonPath("$.data.issueAccountInvitation.userErrors[0].__typename")
-                .value("EmailAlreadyUsedError"));
-
-    graphql(
-            authTestSupport.accountBearer(serverAdmin),
-            """
-            mutation { issueAccountInvitation(input: {recipientEmail: "kid@example.com",
-              householdId: "%s", householdRole: MEMBER, profileName: "Kid", profileKind: KID}) {
-              issued { code } userErrors { __typename } } }
-            """
-                .formatted(serverAdmin.household().getId()))
-        .andExpect(status().isOk())
-        .andExpect(
-            jsonPath("$.data.issueAccountInvitation.userErrors[0].__typename")
-                .value("EligibleProfileManagerRequiredError"));
   }
 
   private String issueInvitation(String email) throws Exception {

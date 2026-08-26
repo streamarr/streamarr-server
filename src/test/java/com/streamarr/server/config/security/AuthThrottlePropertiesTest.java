@@ -31,8 +31,7 @@ class AuthThrottlePropertiesTest {
     var properties =
         AuthThrottleProperties.builder().maxAttempts(5).window(Duration.ofMinutes(15)).build();
 
-    assertThat(properties.maxOpaqueCodeBudgets())
-        .isEqualTo(AuthThrottleProperties.DEFAULT_MAX_OPAQUE_CODE_BUDGETS);
+    assertThat(properties.maxOpaqueCodeBudgets()).isEqualTo(10_000);
   }
 
   @Test

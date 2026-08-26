@@ -130,6 +130,32 @@ class CheckstyleConfigurationTest {
   }
 
   @Test
+  @DisplayName("Should allow a blank line after a completed conditional block")
+  void shouldAllowBlankLineAfterCompletedConditionalBlock() throws Exception {
+    var violations =
+        controlFlowViolationsOf(
+            """
+            package example;
+
+            final class SeparatedConditional {
+              void run(boolean enabled) {
+                if (enabled) {
+                  start();
+                }
+
+                finish();
+              }
+
+              private void start() {}
+
+              private void finish() {}
+            }
+            """);
+
+    assertThat(violations).isZero();
+  }
+
+  @Test
   @DisplayName("Should introduce no control-flow separation beyond legacy baseline")
   void shouldIntroduceNoControlFlowSeparationBeyondLegacyBaseline() throws Exception {
     try (var mainSource = Files.walk(Path.of("src/main/java"));

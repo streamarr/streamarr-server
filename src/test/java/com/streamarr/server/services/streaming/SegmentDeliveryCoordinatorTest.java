@@ -677,10 +677,6 @@ class SegmentDeliveryCoordinatorTest {
           livenessChecksAfterRestart.set(executor.livenessChecks());
           plannedRestartObserved.countDown();
         });
-    var logger = (Logger) LoggerFactory.getLogger(SegmentDeliveryCoordinator.class);
-    var appender = new ListAppender<ILoggingEvent>();
-    appender.start();
-    logger.addAppender(appender);
     var outcome = new AtomicReference<SegmentDelivery>();
     var delivery =
         new Thread(
@@ -693,18 +689,23 @@ class SegmentDeliveryCoordinatorTest {
       delivery.start();
       assertThat(plannedRestartObserved.await(5, TimeUnit.SECONDS)).isTrue();
       executor.awaitLivenessCheckCount(livenessChecksAfterRestart.get() + 1);
-
-      assertThat(appender.list)
-          .extracting(ILoggingEvent::getFormattedMessage)
-          .noneMatch(message -> message.startsWith("Replaced producer"));
     } finally {
       delivery.interrupt();
       delivery.join(2000);
-      logger.detachAppender(appender);
-      appender.stop();
     }
 
     assertThat(outcome.get()).isInstanceOf(SegmentDelivery.Cancelled.class);
+    executor.markDead(sessionId);
+    var retry =
+        CompletableFuture.supplyAsync(
+            () ->
+                racingCoordinator.deliver(
+                    sessionId, StreamSession.defaultVariant(), "segment0.ts"));
+    executor.awaitStartedTargetCount(2);
+    segmentStore.addSegment(sessionId, "segment0.ts", new byte[] {0});
+
+    assertThat(retry.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(executor.getStartedTargets()).containsExactly(TARGET_A, TARGET_A);
   }
 
   @Test

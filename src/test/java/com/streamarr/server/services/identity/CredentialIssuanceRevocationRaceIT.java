@@ -39,6 +39,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -60,6 +61,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private DSLContext dsl;
   @Autowired private PlatformTransactionManager transactionManager;
+  @Autowired private PasswordEncoder passwordEncoder;
 
   private AuthTestSupport.TestIdentity issuer;
   private AuthTestSupport.TestIdentity revoker;
@@ -296,7 +298,21 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
       }
 
       assertThat(disable.get(10, TimeUnit.SECONDS)).isInstanceOf(Outcome.Accepted.class);
-      redemption.get(10, TimeUnit.SECONDS);
+      var redemptionFailure = redemption.get(10, TimeUnit.SECONDS);
+      var account = userAccountRepository.findById(issuer.account().getId()).orElseThrow();
+      var resetStatus =
+          resetCodeRepository.findById(issued.resetCode().getId()).orElseThrow().getStatus();
+      assertThat(account.isEnabled()).isFalse();
+      if (redemptionFailure == null) {
+        assertThat(resetStatus).isEqualTo(PasswordResetCodeStatus.REDEEMED);
+        assertThat(passwordEncoder.matches("a replacement passphrase", account.getPasswordHash()))
+            .isTrue();
+      } else {
+        assertThat(redemptionFailure).isInstanceOf(InvalidOneTimeCodeException.class);
+        assertThat(resetStatus).isEqualTo(PasswordResetCodeStatus.INVALIDATED);
+        assertThat(passwordEncoder.matches("a replacement passphrase", account.getPasswordHash()))
+            .isFalse();
+      }
     }
   }
 

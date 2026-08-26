@@ -27,8 +27,8 @@ import org.junit.jupiter.api.Test;
 class AdministrationAccountsDataLoaderTest {
 
   @Test
-  @DisplayName("Should load Households together when pagination options match")
-  void shouldLoadHouseholdsTogetherWhenPaginationOptionsMatch() throws Exception {
+  @DisplayName("Should batch Households into one request when pagination options match")
+  void shouldBatchHouseholdsIntoOneRequestWhenPaginationOptionsMatch() throws Exception {
     var firstHouseholdId = UUID.randomUUID();
     var secondHouseholdId = UUID.randomUUID();
     var accounts = new RecordingUserAccountRepository();
@@ -56,8 +56,14 @@ class AdministrationAccountsDataLoaderTest {
     assertThat(accounts.requestedHouseholds)
         .containsExactly(Set.of(firstHouseholdId, secondHouseholdId));
     assertThat(result).containsOnlyKeys(firstKey, secondKey);
-    assertThat(result.get(firstKey).items()).singleElement();
-    assertThat(result.get(secondKey).items()).singleElement();
+    assertThat(result.get(firstKey).items())
+        .singleElement()
+        .extracting(item -> item.item().getDisplayName())
+        .isEqualTo("First Account");
+    assertThat(result.get(secondKey).items())
+        .singleElement()
+        .extracting(item -> item.item().getDisplayName())
+        .isEqualTo("Second Account");
   }
 
   private static UserAccount account(UUID householdId, String displayName) {
