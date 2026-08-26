@@ -16,6 +16,8 @@ import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -27,10 +29,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
       InvitationController.class,
       PasswordResetController.class
     })
+@Slf4j
 public class AuthExceptionHandler {
 
   // Do not reveal whether a rejected refresh token was ever valid.
   private static final String REFRESH_TOKEN_REJECTED = "The refresh token is unknown or expired.";
+  private static final String REQUEST_NOT_COMPLETED = "The request could not be completed.";
 
   @ExceptionHandler(SetupAlreadyCompletedException.class)
   public ResponseEntity<AuthErrorResponse> handleSetupAlreadyCompleted(
@@ -105,6 +109,13 @@ public class AuthExceptionHandler {
   public ResponseEntity<AuthErrorResponse> handleAuthorizationUnavailable(
       AuthorizationUnavailableException e) {
     return respond(HttpStatus.SERVICE_UNAVAILABLE, "AUTHORIZATION_UNAVAILABLE", e);
+  }
+
+  /** Persistence failures never masquerade as a wrong code or a bodyless default page. */
+  @ExceptionHandler(DataAccessException.class)
+  public ResponseEntity<AuthErrorResponse> handlePersistenceFailure(DataAccessException e) {
+    log.error("Auth persistence failure", e);
+    return respond(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", REQUEST_NOT_COMPLETED);
   }
 
   private static ResponseEntity<AuthErrorResponse> respond(

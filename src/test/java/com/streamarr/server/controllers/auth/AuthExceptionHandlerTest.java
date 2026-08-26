@@ -14,6 +14,7 @@ import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.http.HttpStatus;
 
 @Tag("UnitTest")
@@ -95,6 +96,16 @@ class AuthExceptionHandlerTest {
             new AuthErrorResponse(
                 "INVITATION_NOT_ACCEPTABLE",
                 "The required Profile manager is no longer eligible."));
+  }
+
+  @Test
+  @DisplayName("Should respond 500 internal error when persistence fails")
+  void shouldRespond500InternalErrorWhenPersistenceFails() {
+    var response = handler.handlePersistenceFailure(new CannotAcquireLockException("lock timeout"));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+    assertThat(response.getBody())
+        .isEqualTo(new AuthErrorResponse("INTERNAL_ERROR", "The request could not be completed."));
   }
 
   @Test
