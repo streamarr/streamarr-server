@@ -178,4 +178,77 @@ class CredentialAttemptTargetTest {
                 .accountId(ACCOUNT_ID)
                 .ipAddress(IP_ADDRESS)));
   }
+
+  @ParameterizedTest(name = "{0} must not carry {1}")
+  @MethodSource("forbiddenIdentifiers")
+  @DisplayName("Should reject an identifier when the kind never resolves by it")
+  void shouldRejectIdentifierWhenKindNeverResolvesByIt(
+      CredentialKind kind,
+      String identifier,
+      CredentialAttemptTarget.CredentialAttemptTargetBuilder target) {
+    assertThatThrownBy(target::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(kind + " target must not carry " + identifier);
+  }
+
+  private static Stream<Arguments> forbiddenIdentifiers() {
+    return Stream.of(
+        Arguments.of(
+            CredentialKind.ACCOUNT_LOGIN,
+            "credentialId",
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.ACCOUNT_LOGIN)
+                .accountId(ACCOUNT_ID)
+                .credentialId(CREDENTIAL_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.ACCOUNT_PASSWORD_VERIFICATION,
+            "profileId",
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
+                .accountId(ACCOUNT_ID)
+                .profileId(PROFILE_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.ACCOUNT_PASSWORD_VERIFICATION,
+            "credentialId",
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
+                .accountId(ACCOUNT_ID)
+                .credentialId(CREDENTIAL_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.PROFILE_PIN,
+            "credentialId",
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.PROFILE_PIN)
+                .accountId(ACCOUNT_ID)
+                .profileId(PROFILE_ID)
+                .credentialId(CREDENTIAL_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.DEVICE_PAIRING_CODE,
+            "profileId",
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.DEVICE_PAIRING_CODE)
+                .accountId(ACCOUNT_ID)
+                .profileId(PROFILE_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.DEVICE_PAIRING_CODE,
+            "credentialId",
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.DEVICE_PAIRING_CODE)
+                .accountId(ACCOUNT_ID)
+                .credentialId(CREDENTIAL_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.PASSWORD_RESET_CODE,
+            "profileId",
+            CredentialAttemptTarget.builder()
+                .kind(CredentialKind.PASSWORD_RESET_CODE)
+                .profileId(PROFILE_ID)
+                .credentialId(CREDENTIAL_ID)
+                .ipAddress(IP_ADDRESS)));
+  }
 }

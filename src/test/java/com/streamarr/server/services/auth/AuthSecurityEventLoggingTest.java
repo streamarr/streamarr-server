@@ -77,10 +77,12 @@ class AuthSecurityEventLoggingTest {
 
       assertThat(logs.events())
           .anySatisfy(
-              event ->
-                  assertThat(event.getFormattedMessage())
-                      .contains(accountId.toString())
-                      .doesNotContain("sensitive-token"));
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage())
+                    .contains(accountId.toString())
+                    .doesNotContain("sensitive-token");
+              });
     }
   }
 }

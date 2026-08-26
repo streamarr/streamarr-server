@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
@@ -240,5 +242,34 @@ class ProfileSelectionServiceTest {
         .householdRole(account.getHouseholdRole())
         .contextHouseholdId(account.getHouseholdId())
         .build();
+  }
+  @Test
+  @DisplayName("Should refuse the correct PIN when five wrong PINs precede it")
+  void shouldRefuseCorrectPinWhenFiveWrongPinsPrecedeIt() {
+    pin(personal, "4242");
+    for (var attempt = 0; attempt < 5; attempt++) {
+      var identity = identity();
+      var wrong = command(personal.getId(), "000" + attempt);
+      assertThatThrownBy(() -> service.selectProfile(identity, wrong))
+          .isInstanceOf(InvalidProfilePinException.class);
+    }
+    var identity = identity();
+    var correct = command(personal.getId(), "4242");
+
+    assertThatThrownBy(() -> service.selectProfile(identity, correct))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    assertThat(credentialAttempts.attempts())
+        .hasSize(5)
+        .allSatisfy(
+            attempt ->
+                assertThat(attempt.target())
+                    .isEqualTo(
+                        CredentialAttemptTarget.builder()
+                            .kind(CredentialKind.PROFILE_PIN)
+                            .accountId(account.getId())
+                            .profileId(personal.getId())
+                            .ipAddress("192.0.2.24")
+                            .build()));
   }
 }

@@ -14,6 +14,7 @@ import com.streamarr.server.exceptions.CredentialAttemptNotPendingException;
 import com.streamarr.server.services.auth.StandardCredentialAttemptPolicyProvider;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Locale;
 import java.util.UUID;
@@ -29,6 +30,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -77,8 +79,12 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
 
     completeFailures(target, NOW.plusSeconds(5), 4);
 
-    assertThat(repository.reserve(target, LIMITED_POLICY, NOW.plusSeconds(9)))
-        .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
+    // Four failures since the success still admit; only failures after the success count, so
+    // the fifth of them is the one that begins the lockout.
+    var fifthSinceSuccess = reserve(target, NOW.plusSeconds(9));
+    repository.complete(fifthSinceSuccess, CredentialAttemptResult.FAILED, NOW.plusSeconds(9));
+    assertThat(repository.reserve(target, LIMITED_POLICY, NOW.plusSeconds(10)))
+        .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
   }
 
   @Test
@@ -324,7 +330,7 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
             .filter(sql -> sql.toLowerCase(Locale.ROOT).startsWith("select"))
             .filter(sql -> sql.contains("credential_attempt"))
             .toList();
-    assertThat(admissionQueries).isNotEmpty();
+    assertThat(admissionQueries).hasSize(3);
     transactionTemplate.executeWithoutResult(
         _ -> {
           // A tiny table would otherwise be scanned on cost alone; the index must be usable.
@@ -375,7 +381,14 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
     reserve(target, NOW.minus(Duration.ofDays(30)));
 
     assertThat(repository.deleteAttemptedBefore(NOW.minus(Duration.ofDays(30)))).isEqualTo(1);
-    assertThat(attemptCount()).isEqualTo(1);
+    assertThat(
+            jdbcTemplate
+                .queryForObject(
+                    "SELECT attempted_at FROM credential_attempt WHERE host(ip_address) = ?",
+                    OffsetDateTime.class,
+                    IP_ADDRESS)
+                .toInstant())
+        .isEqualTo(NOW.minus(Duration.ofDays(30)));
   }
 
   private static CredentialAttemptTarget resolvedTarget() {
@@ -421,5 +434,81 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
         "SELECT count(*) FROM credential_attempt WHERE host(ip_address) = ?",
         Integer.class,
         IP_ADDRESS);
+  }
+
+  @Test
+  @DisplayName("Should block the target when the same Account fails from another address")
+  void shouldBlockTargetWhenSameAccountFailsFromAnotherAddress() {
+    var accountId = UUID.randomUUID();
+    completeFailures(loginTarget(accountId), NOW, 5);
+    var fromElsewhere =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.ACCOUNT_LOGIN)
+            .accountId(accountId)
+            .ipAddress("198.51.100.9")
+            .build();
+
+    // The address is observational (ADR 0028): it is never part of the throttle key.
+    assertThat(repository.reserve(fromElsewhere, LIMITED_POLICY, NOW.plusSeconds(5)))
+        .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
+  }
+
+  @Test
+  @DisplayName("Should ignore failures completed at the same instant as the latest success")
+  void shouldIgnoreFailuresCompletedAtTheSameInstantAsTheLatestSuccess() {
+    var target = resolvedTarget();
+    var success = reserve(target, NOW.minusSeconds(1));
+    repository.complete(success, CredentialAttemptResult.SUCCEEDED, NOW);
+    for (var failure = 0; failure < 5; failure++) {
+      repository.complete(reserve(target, NOW), CredentialAttemptResult.FAILED, NOW);
+    }
+
+    // "At or before" the latest success: same-instant failures are forgiven too.
+    assertThat(repository.reserve(target, LIMITED_POLICY, NOW.plusSeconds(1)))
+        .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
+  }
+
+  @Test
+  @DisplayName("Should keep the completion when the caller's transaction rolls back")
+  void shouldKeepTheCompletionWhenTheCallersTransactionRollsBack() {
+    var target = resolvedTarget();
+    var reservation = reserve(target, NOW);
+
+    transactionTemplate.executeWithoutResult(
+        status -> {
+          repository.complete(reservation, CredentialAttemptResult.FAILED, NOW);
+          status.setRollbackOnly();
+        });
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT result::text FROM credential_attempt WHERE id = ?",
+                String.class,
+                reservation.id()))
+        .isEqualTo("FAILED");
+  }
+
+  @Test
+  @DisplayName("Should refuse a result without a completion instant when the row is written")
+  void shouldRefuseResultWithoutCompletionInstantWhenRowIsWritten() {
+    var reservation = reserve(resolvedTarget(), NOW);
+
+    assertThatThrownBy(
+            () ->
+                jdbcTemplate.update(
+                    "UPDATE credential_attempt SET result = 'FAILED' WHERE id = ?",
+                    reservation.id()))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should keep the address unindexed when the journal is created")
+  void shouldKeepTheAddressUnindexedWhenTheJournalIsCreated() {
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM pg_indexes"
+                    + " WHERE tablename = 'credential_attempt' AND indexdef ILIKE '%ip_address%'",
+                Integer.class))
+        .isZero();
   }
 }

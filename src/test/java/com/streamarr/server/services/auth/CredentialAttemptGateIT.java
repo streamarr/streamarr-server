@@ -8,7 +8,9 @@ import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
+import com.streamarr.server.support.AuthTestSupport;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -31,6 +33,7 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
   @Autowired private CredentialAttemptGate gate;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private DataSource dataSource;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @AfterEach
   void deleteAttempts() {
@@ -114,8 +117,13 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
         statement.execute("LOCK TABLE credential_attempt IN ACCESS EXCLUSIVE MODE");
       }
 
+      var started = Instant.now();
       assertThatThrownBy(() -> gate.reserve(target))
           .isInstanceOf(CredentialAttemptUnavailableException.class);
+      // The wait is bounded by the two-second lock_timeout, not by the caller's patience.
+      assertThat(Duration.between(started, Instant.now()))
+          .isGreaterThanOrEqualTo(Duration.ofSeconds(2))
+          .isLessThan(Duration.ofSeconds(30));
       blocker.rollback();
     }
 
@@ -125,5 +133,85 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
                 Integer.class,
                 IP_ADDRESS))
         .isZero();
+  }
+
+  @Test
+  @DisplayName("Should fail closed when the target's advisory lock is held during completion")
+  void shouldFailClosedWhenTargetsAdvisoryLockIsHeldDuringCompletion() throws Exception {
+    var accountId = UUID.randomUUID();
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.ACCOUNT_LOGIN)
+            .accountId(accountId)
+            .ipAddress(IP_ADDRESS)
+            .build();
+    var reservation = gate.reserve(target);
+
+    try (var holder = dataSource.getConnection()) {
+      holder.setAutoCommit(false);
+      try (var statement =
+          holder.prepareStatement(
+              "SELECT pg_advisory_xact_lock(hashtextextended('credential-attempt:' || lower(?), 0))")) {
+        statement.setString(1, "ACCOUNT_LOGIN:" + accountId + ":null:null");
+        statement.execute();
+      }
+
+      // Completion serializes on the same key as admission, so it cannot slip between a
+      // concurrent admission's reads; a held lock fails closed rather than completing.
+      assertThatThrownBy(() -> gate.complete(reservation, CredentialAttemptResult.FAILED))
+          .isInstanceOf(CredentialAttemptUnavailableException.class);
+      holder.rollback();
+    }
+
+    gate.complete(reservation, CredentialAttemptResult.FAILED);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT result::text FROM credential_attempt WHERE id = ?",
+                String.class,
+                reservation.id()))
+        .isEqualTo("FAILED");
+  }
+
+  @Test
+  @DisplayName("Should keep the journal row when its Account is deleted")
+  void shouldKeepTheJournalRowWhenItsAccountIsDeleted() {
+    var account = authTestSupport.createAccount();
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.ACCOUNT_LOGIN)
+            .accountId(account.getId())
+            .ipAddress(IP_ADDRESS)
+            .build();
+    gate.complete(gate.reserve(target), CredentialAttemptResult.FAILED);
+
+    authTestSupport.deleteAccount(account.getId());
+
+    // Security history has no foreign key to its subjects (ADR 0028).
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM credential_attempt WHERE account_id = ?",
+                Integer.class,
+                account.getId()))
+        .isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should journal a credential that no row backs when the code id is unknown")
+  void shouldJournalCredentialThatNoRowBacksWhenCodeIdIsUnknown() {
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.PASSWORD_RESET_CODE)
+            .credentialId(UUID.randomUUID())
+            .ipAddress(IP_ADDRESS)
+            .build();
+
+    gate.complete(gate.reserve(target), CredentialAttemptResult.FAILED);
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM credential_attempt WHERE credential_id = ?",
+                Integer.class,
+                target.credentialId()))
+        .isEqualTo(1);
   }
 }

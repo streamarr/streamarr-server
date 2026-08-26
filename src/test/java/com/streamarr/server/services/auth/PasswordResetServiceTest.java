@@ -250,4 +250,83 @@ class PasswordResetServiceTest {
       return false;
     }
   }
+
+  @Test
+  @DisplayName("Should refuse the redemption when the journal blocks the attempt")
+  void shouldRefuseRedemptionWhenJournalBlocksAttempt() {
+    var issued = pendingCode();
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
+
+    assertThatThrownBy(() -> redeem(issued.code(), "a brand new passphrase"))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(credentialAttempts.attempts()).isEmpty();
+    assertThat(accounts.findById(account.getId()).orElseThrow().getPasswordHash()).isEqualTo("old");
+  }
+
+  @Test
+  @DisplayName("Should journal a failure against the code when the secret is wrong")
+  void shouldJournalFailureAgainstCodeWhenSecretIsWrong() {
+    var issued = pendingCode();
+    var wrongSecret = issued.publicId() + ".wrong-secret";
+
+    assertThatThrownBy(() -> redeem(wrongSecret, "a brand new passphrase"))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.PASSWORD_RESET_CODE)
+                          .credentialId(resetCodes.findAll().getFirst().getId())
+                          .ipAddress("192.0.2.26")
+                          .build());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
+            });
+  }
+
+  @Test
+  @DisplayName("Should journal a failure with no target when the public id is unknown")
+  void shouldJournalFailureWithNoTargetWhenPublicIdIsUnknown() {
+    assertThatThrownBy(() -> redeem("unknown.secret", "a brand new passphrase"))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.PASSWORD_RESET_CODE)
+                          .ipAddress("192.0.2.26")
+                          .build());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
+            });
+  }
+
+  @Test
+  @DisplayName("Should refuse the correct code when five wrong secrets hit the same reset code")
+  void shouldRefuseCorrectCodeWhenFiveWrongSecretsHitSameResetCode() {
+    var issued = pendingCode();
+    for (var attempt = 0; attempt < 5; attempt++) {
+      var guess = issued.publicId() + ".guess-" + attempt;
+      assertThatThrownBy(() -> redeem(guess, "a brand new passphrase"))
+          .isInstanceOf(InvalidOneTimeCodeException.class);
+    }
+
+    assertThatThrownBy(() -> redeem(issued.code(), "a brand new passphrase"))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should journal no attempt when the code is malformed")
+  void shouldJournalNoAttemptWhenCodeIsMalformed() {
+    assertThatThrownBy(() -> redeem("not-even-a-code", "a brand new passphrase"))
+        .isInstanceOf(InvalidOneTimeCodeException.class);
+
+    assertThat(credentialAttempts.attempts()).isEmpty();
+  }
 }

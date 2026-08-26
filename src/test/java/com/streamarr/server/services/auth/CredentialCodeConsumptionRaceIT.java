@@ -194,6 +194,14 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
     assertThat(resetCodeRepository.findById(resetCode.getId()).orElseThrow().getStatus())
         .isEqualTo(PasswordResetCodeStatus.REDEEMED);
+    // Both racers presented the correct code; the loser lost the redemption, not the
+    // verification, so the journal records two successes (ADR 0028).
+    assertThat(
+            jdbcTemplate.queryForList(
+                "SELECT result::text FROM credential_attempt WHERE credential_id = ?",
+                String.class,
+                resetCode.getId()))
+        .containsExactly("SUCCEEDED", "SUCCEEDED");
     assertThat(
             passwordEncoder.matches(
                 "the replacement passphrase",

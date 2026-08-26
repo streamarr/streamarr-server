@@ -42,6 +42,7 @@ public final class DeviceAuthorizationServiceHarness {
       EsnBlockRepository esnBlocks,
       AuthSessionRepository sessions,
       RefreshTokenRepository tokens,
+      FakeCredentialAttemptRepository credentialAttempts,
       Clock clock) {
     var properties =
         DeviceAuthProperties.builder()
@@ -78,7 +79,8 @@ public final class DeviceAuthorizationServiceHarness {
             clock),
         new UserCodeGenerator(),
         new DeviceCodeGenerator(),
-        new FakeCredentialAttemptRepository().gate(clock),
+        (credentialAttempts == null ? new FakeCredentialAttemptRepository() : credentialAttempts)
+            .gate(clock),
         properties,
         CanonicalBaseUrl.of("https://streamarr.example", false),
         clock);

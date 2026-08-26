@@ -96,12 +96,14 @@ class CredentialAttemptGateTest {
           .isInstanceOf(CredentialAttemptUnavailableException.class);
 
       assertThat(logs.events())
-          .anyMatch(
-              event ->
-                  event.getLevel() == Level.ERROR
-                      && event.getFormattedMessage().contains("ACCOUNT_LOGIN")
-                      && event.getFormattedMessage().contains(ACCOUNT_ID.toString())
-                      && event.getThrowableProxy() != null);
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+                assertThat(event.getFormattedMessage())
+                    .contains("ACCOUNT_LOGIN", ACCOUNT_ID.toString())
+                    .doesNotContain("192.0.2.30");
+                assertThat(event.getThrowableProxy()).isNotNull();
+              });
     }
   }
 
@@ -115,12 +117,13 @@ class CredentialAttemptGateTest {
           .isInstanceOf(TooManyLoginAttemptsException.class);
 
       assertThat(logs.events())
-          .anyMatch(
-              event ->
-                  event.getLevel() == Level.WARN
-                      && event.getFormattedMessage().contains("ACCOUNT_LOGIN")
-                      && event.getFormattedMessage().contains(ACCOUNT_ID.toString())
-                      && event.getFormattedMessage().contains("PT42S"));
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage())
+                    .contains("ACCOUNT_LOGIN", ACCOUNT_ID.toString(), "PT42S")
+                    .doesNotContain("192.0.2.30");
+              });
     }
   }
 
@@ -173,7 +176,17 @@ class CredentialAttemptGateTest {
   @Test
   @DisplayName("Should journal a success and return the verified value when the verifier returns")
   void shouldJournalSuccessAndReturnVerifiedValueWhenVerifierReturns() {
-    var verified = gate.attempt(LOGIN_TARGET, () -> "session");
+    var verified =
+        gate.attempt(
+            LOGIN_TARGET,
+            () -> {
+              // The reservation is journaled before the verifier runs.
+              assertThat(repository.attempts())
+                  .singleElement()
+                  .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
+                  .isNull();
+              return "session";
+            });
 
     assertThat(verified).isEqualTo("session");
     assertThat(repository.attempts())
@@ -226,11 +239,14 @@ class CredentialAttemptGateTest {
                 assertThat(attempt.completedAt()).isNull();
               });
       assertThat(logs.events())
-          .anyMatch(
-              event ->
-                  event.getLevel() == Level.WARN
-                      && event.getFormattedMessage().contains(ACCOUNT_ID.toString())
-                      && event.getThrowableProxy() != null);
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage())
+                    .contains(ACCOUNT_ID.toString())
+                    .doesNotContain("192.0.2.30");
+                assertThat(event.getThrowableProxy()).isNotNull();
+              });
     }
   }
 
