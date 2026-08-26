@@ -7,6 +7,7 @@ import ch.qos.logback.classic.Level;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
+import com.streamarr.server.exceptions.CredentialAttemptNotPendingException;
 import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.RetryAfterAware;
@@ -72,6 +73,16 @@ class CredentialAttemptGateTest {
     assertThatThrownBy(() -> gate.complete(reservation, CredentialAttemptResult.SUCCEEDED))
         .isInstanceOf(CredentialAttemptUnavailableException.class)
         .hasCauseInstanceOf(DataAccessResourceFailureException.class);
+  }
+
+  @Test
+  @DisplayName("Should refuse to complete a reservation twice")
+  void shouldRefuseToCompleteReservationTwice() {
+    var reservation = gate.reserve(LOGIN_TARGET);
+    gate.complete(reservation, CredentialAttemptResult.FAILED);
+
+    assertThatThrownBy(() -> gate.complete(reservation, CredentialAttemptResult.SUCCEEDED))
+        .isInstanceOf(CredentialAttemptNotPendingException.class);
   }
 
   @Test

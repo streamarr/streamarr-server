@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.CredentialAttemptAdmission;
@@ -9,6 +10,7 @@ import com.streamarr.server.domain.auth.CredentialAttemptReservation;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
+import com.streamarr.server.exceptions.CredentialAttemptNotPendingException;
 import com.streamarr.server.services.auth.StandardCredentialAttemptPolicyProvider;
 import java.time.Duration;
 import java.time.Instant;
@@ -233,6 +235,18 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
                 .containsPattern("Index Cond: \\(.*account_id = ");
           }
         });
+  }
+
+  @Test
+  @DisplayName("Should refuse to complete a reservation that is no longer pending")
+  void shouldRefuseToCompleteAReservationThatIsNoLongerPending() {
+    var target = resolvedTarget();
+    var reservation = reserve(target, NOW);
+    repository.complete(reservation, CredentialAttemptResult.FAILED, NOW);
+
+    assertThatThrownBy(
+            () -> repository.complete(reservation, CredentialAttemptResult.SUCCEEDED, NOW))
+        .isInstanceOf(CredentialAttemptNotPendingException.class);
   }
 
   @Test
