@@ -4,13 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.Argon2Properties;
-import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.MutableClock;
@@ -42,6 +44,8 @@ class LoginServiceTest {
       new CountingTimingEqualizer(countingEncoder);
 
   private final FakeUserAccountRepository userAccountRepository = new FakeUserAccountRepository();
+  private final FakeCredentialAttemptRepository credentialAttempts =
+      new FakeCredentialAttemptRepository();
 
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
@@ -64,12 +68,7 @@ class LoginServiceTest {
           userAccountRepository,
           new LoginCompletionService(userAccountRepository, refreshTokenService),
           countingEncoder,
-          new LoginThrottle(
-              AuthThrottleProperties.builder()
-                  .maxAttempts(5)
-                  .window(Duration.ofMinutes(15))
-                  .build(),
-              clock),
+          credentialAttempts.gate(clock),
           timingEqualizer);
 
   @Test
@@ -82,6 +81,7 @@ class LoginServiceTest {
       assertThatThrownBy(() -> loginService.login(wrongAttempt))
           .isInstanceOf(InvalidCredentialsException.class);
     }
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
     var correctAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
 
@@ -99,6 +99,7 @@ class LoginServiceTest {
       assertThatThrownBy(() -> loginService.login(wrongAttempt))
           .isInstanceOf(InvalidCredentialsException.class);
     }
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
     var burnsBeforeThrottle = countingEncoder.completedVerifications();
 
     var throttledAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
@@ -175,6 +176,16 @@ class LoginServiceTest {
 
     assertThatThrownBy(() -> loginService.login(attempt))
         .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            recorded -> {
+              assertThat(recorded.target().kind()).isEqualTo(CredentialKind.ACCOUNT_LOGIN);
+              assertThat(recorded.target().accountId()).isNull();
+              assertThat(recorded.target().ipAddress()).isEqualTo("127.0.0.1");
+              assertThat(recorded.result()).isEqualTo(CredentialAttemptResult.FAILED);
+            });
   }
 
   @Test
@@ -235,8 +246,8 @@ class LoginServiceTest {
   }
 
   @Test
-  @DisplayName("Should restore throttle budget when login succeeds")
-  void shouldRestoreThrottleBudgetWhenLoginSucceeds() {
+  @DisplayName("Should reset the failure sequence when login succeeds")
+  void shouldResetFailureSequenceWhenLoginSucceeds() {
     var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
 
     for (int i = 0; i < 4; i++) {
@@ -251,7 +262,7 @@ class LoginServiceTest {
       var wrongAttempt =
           commandBuilder(account.getEmail())
               .password("wrong-again-" + i)
-              .source("retry-src-" + i)
+              .ipAddress("192.0.2." + i)
               .build();
       assertThatThrownBy(() -> loginService.login(wrongAttempt))
           .isInstanceOf(InvalidCredentialsException.class);
@@ -260,15 +271,16 @@ class LoginServiceTest {
     var blockedAttempt =
         commandBuilder(account.getEmail())
             .password(CORRECT_PASSWORD)
-            .source("retry-src-final")
+            .ipAddress("192.0.2.100")
             .build();
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
     assertThatThrownBy(() -> loginService.login(blockedAttempt))
         .isInstanceOf(TooManyLoginAttemptsException.class);
   }
 
   @Test
-  @DisplayName("Should keep source budget when other account succeeds from same source")
-  void shouldKeepSourceBudgetWhenOtherAccountSucceedsFromSameSource() {
+  @DisplayName("Should not subject-throttle unresolved Accounts that share a source address")
+  void shouldNotSubjectThrottleUnresolvedAccountsThatShareSourceAddress() {
     var attacker = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
 
     for (int i = 0; i < 4; i++) {
@@ -279,9 +291,7 @@ class LoginServiceTest {
 
     loginService.login(commandBuilder(attacker.getEmail()).password(CORRECT_PASSWORD).build());
 
-    // The source budget is an alerting signal, never a gate: sprays from a shared source
-    // keep failing on credentials, not on a server-wide block, and each sprayed email
-    // stays capped by its own hard budget.
+    // IP addresses are observational; unresolved emails have no target to throttle.
     var fifthSpray = commandBuilder("victim-4@example.com").password("guess").build();
     assertThatThrownBy(() -> loginService.login(fifthSpray))
         .isInstanceOf(InvalidCredentialsException.class);
@@ -338,7 +348,7 @@ class LoginServiceTest {
   }
 
   private LoginCommand.LoginCommandBuilder commandBuilder(String email) {
-    return LoginCommand.builder().email(email).deviceName("test-device").source("127.0.0.1");
+    return LoginCommand.builder().email(email).deviceName("test-device").ipAddress("127.0.0.1");
   }
 
   private static PasswordEncoder encoderWith(int memoryKib, int iterations) {

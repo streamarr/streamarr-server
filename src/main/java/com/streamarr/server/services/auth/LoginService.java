@@ -1,7 +1,13 @@
 package com.streamarr.server.services.auth;
 
+import com.streamarr.server.domain.auth.CredentialAttemptReservation;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.CredentialAttemptRejectedException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +23,7 @@ public class LoginService {
   private final UserAccountRepository userAccountRepository;
   private final LoginCompletionService loginCompletionService;
   private final PasswordEncoder passwordEncoder;
-  private final LoginThrottle throttle;
+  private final CredentialAttemptGate credentialAttempts;
   private final PasswordTimingEqualizer timingEqualizer;
 
   // Deliberately not @Transactional: a method-level transaction would pin a pooled connection
@@ -25,19 +31,20 @@ public class LoginService {
   // the short transaction that begins only after all password work has finished.
   public LoginResult login(LoginCommand command) {
     var email = lookupEmail(command.email());
-    // Reserve the slot before any password work — recording failures after hashing is a
-    // check-then-act race that lets a concurrent burst overrun the budget.
-    throttle.registerAttempt(email, command.source());
-
     var account = userAccountRepository.findByEmailIgnoreCase(email).orElse(null);
+    var attempt = reserveAttempt(command, account);
     if (account == null) {
       timingEqualizer.burn(command.password());
+      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
       throw new InvalidCredentialsException();
     }
 
     if (!credentialsValid(account, command.password())) {
+      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
       throw new InvalidCredentialsException();
     }
+
+    credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
 
     var result =
         loginCompletionService.complete(
@@ -48,7 +55,6 @@ public class LoginService {
                 .deviceName(command.deviceName())
                 .build());
 
-    throttle.reset(email, command.source());
     return result;
   }
 
@@ -61,6 +67,20 @@ public class LoginService {
       case EmailAddressValidator.Valid(var address) -> address;
       case EmailAddressValidator.Blank _, EmailAddressValidator.Malformed _ -> typed;
     };
+  }
+
+  private CredentialAttemptReservation reserveAttempt(LoginCommand command, UserAccount account) {
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.ACCOUNT_LOGIN)
+            .accountId(account == null ? null : account.getId())
+            .ipAddress(command.ipAddress())
+            .build();
+    try {
+      return credentialAttempts.reserve(target);
+    } catch (CredentialAttemptRejectedException _) {
+      throw new TooManyLoginAttemptsException();
+    }
   }
 
   private boolean credentialsValid(UserAccount account, String password) {

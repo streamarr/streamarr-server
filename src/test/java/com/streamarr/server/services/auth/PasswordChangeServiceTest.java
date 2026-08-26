@@ -3,7 +3,6 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
@@ -12,6 +11,7 @@ import com.streamarr.server.exceptions.DeviceBoundSessionException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
@@ -35,6 +35,8 @@ class PasswordChangeServiceTest {
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
   private final PasswordEncoder passwordEncoder = new TestPasswordEncoder();
   private final Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
+  private final FakeCredentialAttemptRepository credentialAttempts =
+      new FakeCredentialAttemptRepository();
   private final RefreshTokenService refreshTokenService =
       new RefreshTokenService(
           sessionRepository,
@@ -56,12 +58,7 @@ class PasswordChangeServiceTest {
           new AccountPasswordVerifier(
               passwordEncoder,
               new PasswordTimingEqualizer(passwordEncoder),
-              new CredentialGuessThrottle(
-                  AuthThrottleProperties.builder()
-                      .maxAttempts(2)
-                      .window(Duration.ofMinutes(15))
-                      .build(),
-                  clock)),
+              credentialAttempts.gate(clock)),
           passwordEncoder);
 
   @Test
@@ -180,6 +177,7 @@ class PasswordChangeServiceTest {
       assertThatThrownBy(() -> service.changePassword(identity, wrongCommand))
           .isInstanceOf(InvalidCredentialsException.class);
     }
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
     var correctCommand = commandBuilder().currentPassword(currentPassword).build();
 
@@ -191,7 +189,8 @@ class PasswordChangeServiceTest {
   private ChangePasswordCommand.ChangePasswordCommandBuilder commandBuilder() {
     return ChangePasswordCommand.builder()
         .currentPassword(UUID.randomUUID().toString())
-        .newPassword(UUID.randomUUID().toString());
+        .newPassword(UUID.randomUUID().toString())
+        .ipAddress("192.0.2.22");
   }
 
   private AuthenticatedIdentity identity(UUID accountId, UUID sessionId) {

@@ -4,6 +4,7 @@ import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeServerBootstrapRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
@@ -49,8 +50,6 @@ public final class DeviceAuthorizationServiceHarness {
             .pollIntervalSeconds(5)
             .verificationPath("/link")
             .maxOutstandingCodes(3)
-            .maxGuessAttempts(5)
-            .guessWindow(Duration.ofMinutes(15))
             .sweepInterval(Duration.ofMinutes(15))
             .build();
     var tokenProperties =
@@ -80,7 +79,7 @@ public final class DeviceAuthorizationServiceHarness {
             clock),
         new UserCodeGenerator(),
         new DeviceCodeGenerator(),
-        new DeviceGuessThrottle(properties, clock),
+        new FakeCredentialAttemptRepository().gate(clock),
         properties,
         CanonicalBaseUrl.of("https://streamarr.example", false),
         clock);

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
@@ -140,6 +141,10 @@ class StreamarrDataFetcherExceptionHandlerTest {
     assertThat(errorTypeFor(new ProfileRequiredException())).isEqualTo("FAILED_PRECONDITION");
     assertThat(errorTypeFor(new HouseholdRequiredException())).isEqualTo("FAILED_PRECONDITION");
     assertThat(errorTypeFor(new AuthorizationUnavailableException())).isEqualTo("UNAVAILABLE");
+    var credentialUnavailable =
+        new CredentialAttemptUnavailableException(new IllegalStateException("offline"));
+    assertThat(errorTypeFor(credentialUnavailable)).isEqualTo("UNAVAILABLE");
+    assertThat(codeFor(credentialUnavailable)).isEqualTo("CREDENTIAL_VERIFICATION_UNAVAILABLE");
     assertThat(errorTypeFor(new SessionNotFoundException(UUID.randomUUID())))
         .isEqualTo("NOT_FOUND");
     assertThat(errorTypeFor(new TooManyCredentialAttemptsException())).isEqualTo("UNAVAILABLE");

@@ -207,7 +207,8 @@ public class Image extends TableImpl<ImageRecord> {
     @Override
     public List<Check<ImageRecord>> getChecks() {
         return Arrays.asList(
-            Internal.createCheck(this, DSL.name("image_content_sha256_format_check"), "(((content_sha256 IS NULL) OR (content_sha256 ~ '^[0-9a-f]{64}$'::text)))", true)
+            Internal.createCheck(this, DSL.name("chk_image_ambient_colors_complete"), "((num_nonnulls(ambient_top_left, ambient_top_right, ambient_bottom_right, ambient_bottom_left, ambient_primary) = ANY (ARRAY[0, 5])))", true),
+            Internal.createCheck(this, DSL.name("image_content_sha256_format_check"), "(((content_sha256 IS NULL) OR (content_sha256 ~ '^[0-9a-f]{64}$'::text))) NOT VALID", true)
         );
     }
 

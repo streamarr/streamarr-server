@@ -2,6 +2,7 @@ package com.streamarr.server.controllers.auth;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
 import com.streamarr.server.exceptions.DeviceBoundSessionException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
@@ -141,6 +142,12 @@ public class AuthExceptionHandler {
   public ResponseEntity<AuthErrorResponse> handlePersistenceFailure(DataAccessException e) {
     log.error("Auth persistence failure", e);
     return respond(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", REQUEST_NOT_COMPLETED);
+  }
+
+  @ExceptionHandler(CredentialAttemptUnavailableException.class)
+  public ResponseEntity<AuthErrorResponse> handleCredentialAttemptUnavailable(
+      CredentialAttemptUnavailableException e) {
+    return respond(HttpStatus.SERVICE_UNAVAILABLE, "CREDENTIAL_VERIFICATION_UNAVAILABLE", e);
   }
 
   private static ResponseEntity<AuthErrorResponse> respond(

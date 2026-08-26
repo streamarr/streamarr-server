@@ -1,6 +1,7 @@
 package com.streamarr.server.controllers.auth.device;
 
 import com.streamarr.server.controllers.auth.AuthErrorResponse;
+import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
 import com.streamarr.server.exceptions.DeviceCodeExpiredException;
 import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
@@ -65,6 +66,12 @@ public class DeviceAuthExceptionHandler {
   public ResponseEntity<AuthErrorResponse> handleNotConfigured(
       DevicePairingNotConfiguredException e) {
     return respond(HttpStatus.SERVICE_UNAVAILABLE, "DEVICE_PAIRING_NOT_CONFIGURED", e);
+  }
+
+  @ExceptionHandler(CredentialAttemptUnavailableException.class)
+  public ResponseEntity<AuthErrorResponse> handleCredentialAttemptUnavailable(
+      CredentialAttemptUnavailableException e) {
+    return respond(HttpStatus.SERVICE_UNAVAILABLE, "CREDENTIAL_VERIFICATION_UNAVAILABLE", e);
   }
 
   @ExceptionHandler(InvalidUserCodeException.class)

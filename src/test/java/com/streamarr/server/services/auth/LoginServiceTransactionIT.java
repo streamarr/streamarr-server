@@ -62,7 +62,7 @@ class LoginServiceTransactionIT extends AbstractIntegrationTest {
             .email(account.getEmail())
             .password(PASSWORD)
             .deviceName("transaction-probe")
-            .source("127.0.0.1")
+            .ipAddress("127.0.0.1")
             .build());
 
     assertThat(passwordEncoder.sawTransactionBoundConnection()).isFalse();

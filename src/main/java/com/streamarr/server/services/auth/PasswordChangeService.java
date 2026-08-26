@@ -32,7 +32,7 @@ public class PasswordChangeService {
         userAccountRepository
             .findById(identity.accountId())
             .orElseThrow(AuthenticationRequiredException::new);
-    passwordVerifier.verify(account, command.currentPassword());
+    passwordVerifier.verify(account, command.currentPassword(), command.ipAddress());
     var newPasswordHash = passwordEncoder.encode(command.newPassword());
 
     return completionService.complete(

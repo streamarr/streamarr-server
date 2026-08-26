@@ -79,6 +79,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
         ChangePasswordCommand.builder()
             .currentPassword(oldPassword)
             .newPassword(UUID.randomUUID().toString())
+            .ipAddress("192.0.2.30")
             .build());
 
     assertThat(passwordEncoder.matchObservation()).isEqualTo(TransactionObservation.NONE);
@@ -145,7 +146,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
                         .email(account.getEmail())
                         .password(oldPassword)
                         .deviceName("racing-login-device")
-                        .source("race-test")
+                        .ipAddress("127.0.0.1")
                         .build());
               });
 
@@ -157,6 +158,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
               ChangePasswordCommand.builder()
                   .currentPassword(oldPassword)
                   .newPassword(newPassword)
+                  .ipAddress("192.0.2.30")
                   .build());
 
       passwordEncoder.releaseLogin();
@@ -191,7 +193,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
                         .email(account.getEmail())
                         .password(oldPassword)
                         .deviceName("racing-login-device")
-                        .source("race-test")
+                        .ipAddress("127.0.0.1")
                         .build());
               });
 
@@ -203,6 +205,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
               ChangePasswordCommand.builder()
                   .currentPassword(oldPassword)
                   .newPassword(newPassword)
+                  .ipAddress("192.0.2.30")
                   .build());
 
       passwordEncoder.releaseLogin();
@@ -242,7 +245,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
                           .email(account.getEmail())
                           .password(oldPassword)
                           .deviceName("racing-login-device")
-                          .source("race-test")
+                          .ipAddress("127.0.0.1")
                           .build()));
       await()
           .atMost(Duration.ofSeconds(10))
@@ -260,6 +263,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
                       ChangePasswordCommand.builder()
                           .currentPassword(oldPassword)
                           .newPassword(newPassword)
+                          .ipAddress("192.0.2.30")
                           .build()));
       await()
           .atMost(Duration.ofSeconds(10))
@@ -315,6 +319,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
         ChangePasswordCommand.builder()
             .currentPassword(oldPassword)
             .newPassword(newPassword)
+            .ipAddress("192.0.2.30")
             .build());
   }
 

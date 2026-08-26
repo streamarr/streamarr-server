@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDENTIAL_ATTEMPT;
 import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,6 +18,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.jooq.generated.enums.CredentialKind;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -132,6 +134,19 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.acceptManagerInvitation.invitation.status").value("ACCEPTED"));
+
+    var host = DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS);
+    assertThat(
+            dsl.select(host)
+                .from(CREDENTIAL_ATTEMPT)
+                .where(CREDENTIAL_ATTEMPT.CREDENTIAL_ID.eq(UUID.fromString(invitationId)))
+                .and(
+                    CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(
+                        CredentialKind.PROFILE_MANAGER_INVITATION_CODE))
+                .orderBy(CREDENTIAL_ATTEMPT.ATTEMPTED_AT.desc())
+                .limit(1)
+                .fetchOne(host))
+        .isEqualTo("198.51.100.42");
 
     assertThat(
             profileManagerRepository.existsByAccountIdAndProfileId(
@@ -805,6 +820,11 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   private ResultActions graphql(String bearer, String query) throws Exception {
     return mockMvc.perform(
         post("/graphql")
+            .with(
+                request -> {
+                  request.setRemoteAddr("198.51.100.42");
+                  return request;
+                })
             .contentType(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
             .content(objectMapper.writeValueAsString(Map.of("query", query))));

@@ -26,8 +26,6 @@ public record DeviceAuthProperties(
     @NotBlank String verificationPath,
     // The hard issuance limit: a global count of outstanding pending codes.
     @Positive int maxOutstandingCodes,
-    @Positive int maxGuessAttempts,
-    @NotNull @DurationMin(seconds = 1) Duration guessWindow,
     @NotNull @DurationMin(seconds = 1) @DurationUnit(ChronoUnit.MILLIS) Duration sweepInterval) {
 
   public DeviceAuthProperties {

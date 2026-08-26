@@ -89,52 +89,12 @@ class DeviceAuthPropertiesTest {
         .containsExactly("maxOutstandingCodes");
   }
 
-  @Test
-  @DisplayName("Should reject the guessing limit when it is not positive")
-  void shouldRejectGuessingLimitWhenNotPositive() {
-    var properties = defaultProperties().maxGuessAttempts(0).build();
-
-    assertThat(validator.validate(properties))
-        .extracting(violation -> violation.getPropertyPath().toString())
-        .containsExactly("maxGuessAttempts");
-  }
-
-  @Test
-  @DisplayName("Should reject the guess window when it is missing")
-  void shouldRejectGuessWindowWhenMissing() {
-    var properties = defaultProperties().guessWindow(null).build();
-
-    assertThat(validator.validate(properties))
-        .extracting(violation -> violation.getPropertyPath().toString())
-        .containsExactly("guessWindow");
-  }
-
-  @Test
-  @DisplayName("Should reject the guess window when it is shorter than one second")
-  void shouldRejectGuessWindowWhenShorterThanOneSecond() {
-    var properties = defaultProperties().guessWindow(Duration.ofMillis(999)).build();
-
-    assertThat(validator.validate(properties))
-        .extracting(violation -> violation.getPropertyPath().toString())
-        .containsExactly("guessWindow");
-  }
-
-  @Test
-  @DisplayName("Should accept the guess window when it is exactly one second")
-  void shouldAcceptGuessWindowWhenExactlyOneSecond() {
-    var properties = defaultProperties().guessWindow(Duration.ofSeconds(1)).build();
-
-    assertThat(validator.validate(properties)).isEmpty();
-  }
-
   private static DeviceAuthProperties.DeviceAuthPropertiesBuilder defaultProperties() {
     return DeviceAuthProperties.builder()
         .codeTtl(Duration.ofMinutes(10))
         .pollIntervalSeconds(5)
         .verificationPath("/link")
         .maxOutstandingCodes(50)
-        .maxGuessAttempts(5)
-        .guessWindow(Duration.ofMinutes(15))
         .sweepInterval(Duration.ofMinutes(15));
   }
 }

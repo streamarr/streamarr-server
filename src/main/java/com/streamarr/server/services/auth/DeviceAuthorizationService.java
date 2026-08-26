@@ -2,10 +2,15 @@ package com.streamarr.server.services.auth;
 
 import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.config.security.DeviceAuthProperties;
+import com.streamarr.server.domain.auth.CredentialAttemptReservation;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.CredentialAttemptRejectedException;
 import com.streamarr.server.exceptions.DeviceCodeExpiredException;
 import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
@@ -58,7 +63,7 @@ public class DeviceAuthorizationService {
   private final AccessTokenIssuer accessTokenIssuer;
   private final UserCodeGenerator userCodeGenerator;
   private final DeviceCodeGenerator deviceCodeGenerator;
-  private final DeviceGuessThrottle guessThrottle;
+  private final CredentialAttemptGate credentialAttempts;
   private final DeviceAuthProperties properties;
   private final CanonicalBaseUrl baseUrl;
   private final Clock clock;
@@ -146,39 +151,40 @@ public class DeviceAuthorizationService {
     };
   }
 
-  @Transactional(readOnly = true)
-  public DeviceAuthorizationDetails lookup(String typedUserCode, UUID callerAccountId) {
-    guessThrottle.registerAttempt(callerAccountId);
-
-    var authorization = findUnexpired(UserCode.normalize(typedUserCode));
-
+  public DeviceAuthorizationDetails lookup(String typedUserCode, String ipAddress) {
+    var userCode = UserCode.normalize(typedUserCode);
+    var authorization = authorizationRepository.findByUserCode(userCode).orElse(null);
+    var attempt = reserveCodeAttempt(authorization, ipAddress);
+    requireUnexpired(authorization, attempt);
+    credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
     return detailsOf(authorization, authorization.getStatus());
   }
 
   /**
-   * Resolves a typed code to its pairing grant for the approval ceremony: the guessing budget is
-   * spent here, once per presented code, before Cedar or any validation sees the request.
+   * Resolves a typed code to its pairing grant for the approval ceremony, recording one attempt
+   * before Cedar or any validation sees the request.
    */
-  @Transactional(readOnly = true)
-  public ResolvedGrant resolveForDecision(String typedUserCode, UUID callerAccountId) {
-    guessThrottle.registerAttempt(callerAccountId);
-    var authorization =
-        authorizationRepository
-            .findByUserCode(UserCode.normalize(typedUserCode))
-            .orElseThrow(DeviceCodeNotFoundException::new);
+  public ResolvedGrant resolveForDecision(String typedUserCode, String ipAddress) {
+    var userCode = UserCode.normalize(typedUserCode);
+    var authorization = authorizationRepository.findByUserCode(userCode).orElse(null);
+    var attempt = reserveCodeAttempt(authorization, ipAddress);
+    requirePresent(authorization, attempt);
+
     // The approver is mid-flow on a code they demonstrably saw, so expiry earns its own answer
     // here; a bare not-found would read as a typo. Lookup collapses it to 404 on purpose.
     if (authorization.hasExpiredAt(clock.instant())) {
+      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
       throw new DeviceCodeExpiredException();
     }
 
+    credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
     return new ResolvedGrant(
         authorization.getId(), authorization.getEsn(), authorization.getDeviceName());
   }
 
   /**
-   * The conditional decision write. Deliberately not throttled: {@link #resolveForDecision} already
-   * spent the budget for this presentation, and the ceremony calls both in one request.
+   * The conditional decision write. It records no attempt because {@link #resolveForDecision}
+   * already recorded this presentation, and the ceremony calls both in one request.
    */
   @Transactional
   public DeviceAuthorizationDetails decide(DeviceDecisionCommand command) {
@@ -331,19 +337,39 @@ public class DeviceAuthorizationService {
         id, intervalSeconds, now.plusSeconds(intervalSeconds), now);
   }
 
-  private DeviceAuthorization findUnexpired(String userCode) {
-    var authorization =
-        authorizationRepository
-            .findByUserCode(userCode)
-            .orElseThrow(DeviceCodeNotFoundException::new);
+  private void requireUnexpired(
+      DeviceAuthorization authorization, CredentialAttemptReservation attempt) {
+    requirePresent(authorization, attempt);
 
     // A probe deserves no oracle: expired collapses into not-found, matching the poll's
     // expired_token.
     if (authorization.hasExpiredAt(clock.instant())) {
+      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
       throw new DeviceCodeNotFoundException();
     }
+  }
 
-    return authorization;
+  private void requirePresent(
+      DeviceAuthorization authorization, CredentialAttemptReservation attempt) {
+    if (authorization == null) {
+      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
+      throw new DeviceCodeNotFoundException();
+    }
+  }
+
+  private CredentialAttemptReservation reserveCodeAttempt(
+      DeviceAuthorization authorization, String ipAddress) {
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.DEVICE_PAIRING_CODE)
+            .credentialId(authorization == null ? null : authorization.getId())
+            .ipAddress(ipAddress)
+            .build();
+    try {
+      return credentialAttempts.reserve(target);
+    } catch (CredentialAttemptRejectedException rejected) {
+      throw new TooManyDeviceAttemptsException(rejected.getRetryAfter());
+    }
   }
 
   private static DeviceAuthorizationDetails detailsOf(

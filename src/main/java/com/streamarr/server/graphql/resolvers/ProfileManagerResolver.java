@@ -5,6 +5,7 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
+import com.streamarr.server.graphql.ClientIpAddressGraphQlInterceptor;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.CursorUtil;
@@ -31,6 +32,7 @@ import com.streamarr.server.graphql.mutation.managers.RemoveProfileManagerOverri
 import com.streamarr.server.graphql.mutation.managers.RemoveProfileManagerPayload;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
+import com.streamarr.server.services.identity.ProfileManagerAdministrationService.ManagerInvitationCodeCommand;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
@@ -105,10 +107,11 @@ public class ProfileManagerResolver {
 
   @DgsMutation
   public AcceptManagerInvitationPayload acceptManagerInvitation(
-      @InputArgument AcceptManagerInvitationInput input) {
+      @InputArgument AcceptManagerInvitationInput input, DataFetchingEnvironment dfe) {
     return MutationPayloads.payload(
         managerService
-            .acceptManagerInvitation(authorizationService.currentIdentity(), input.code())
+            .acceptManagerInvitation(
+                authorizationService.currentIdentity(), managerInvitationCode(input.code(), dfe))
             .map(this::invitationDetails),
         ManagerErrors::toAcceptError,
         AcceptManagerInvitationPayload::new);
@@ -116,10 +119,11 @@ public class ProfileManagerResolver {
 
   @DgsMutation
   public DeclineManagerInvitationPayload declineManagerInvitation(
-      @InputArgument DeclineManagerInvitationInput input) {
+      @InputArgument DeclineManagerInvitationInput input, DataFetchingEnvironment dfe) {
     return MutationPayloads.payload(
         managerService
-            .declineManagerInvitation(authorizationService.currentIdentity(), input.code())
+            .declineManagerInvitation(
+                authorizationService.currentIdentity(), managerInvitationCode(input.code(), dfe))
             .map(this::invitationDetails),
         ManagerErrors::toDeclineError,
         DeclineManagerInvitationPayload::new);
@@ -191,5 +195,13 @@ public class ProfileManagerResolver {
 
   private ManagerInvitationDetails invitationDetails(ProfileManagerInvitation invitation) {
     return ManagerInvitationDetails.from(invitation, clock.instant());
+  }
+
+  private ManagerInvitationCodeCommand managerInvitationCode(
+      String code, DataFetchingEnvironment dfe) {
+    return ManagerInvitationCodeCommand.builder()
+        .code(code)
+        .ipAddress(ClientIpAddressGraphQlInterceptor.resolve(dfe))
+        .build();
   }
 }

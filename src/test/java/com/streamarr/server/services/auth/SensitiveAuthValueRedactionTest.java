@@ -79,7 +79,11 @@ class SensitiveAuthValueRedactionTest {
             new ReauthRequest(SECRET_MARKER),
             new RefreshRequest(SECRET_MARKER),
             new TokenRefreshService.RefreshedTokens(null, SECRET_MARKER),
-            SelectProfileCommand.builder().profileId(UUID.randomUUID()).pin(SECRET_MARKER).build(),
+            SelectProfileCommand.builder()
+                .profileId(UUID.randomUUID())
+                .pin(SECRET_MARKER)
+                .ipAddress("192.0.2.30")
+                .build(),
             SelectProfileCommand.builder().pin(SECRET_MARKER),
             new SelectProfileRequest(UUID.randomUUID(), SECRET_MARKER),
             // Pairing credentials: the device code is polled with, and the user code is low-entropy
@@ -156,6 +160,7 @@ class SensitiveAuthValueRedactionTest {
             ChangePasswordCommand.builder()
                 .currentPassword(SECRET_MARKER)
                 .newPassword(SECRET_MARKER)
+                .ipAddress("192.0.2.30")
                 .build(),
             PasswordChangeCompletionCommand.builder()
                 .accountId(UUID.randomUUID())
@@ -186,6 +191,7 @@ class SensitiveAuthValueRedactionTest {
         ChangePasswordCommand.builder()
             .currentPassword(SECRET_MARKER)
             .newPassword(SECRET_MARKER)
+            .ipAddress("192.0.2.30")
             .build(),
         PasswordChangeCompletionCommand.builder()
             .accountId(UUID.randomUUID())

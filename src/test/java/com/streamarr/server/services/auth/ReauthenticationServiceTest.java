@@ -29,7 +29,12 @@ class ReauthenticationServiceTest {
             .build();
 
     // The null verifier proves the gate fires first: reaching verification would NPE instead.
-    assertThatThrownBy(() -> service.reauthenticate(device, "correct horse battery staple"))
+    var command =
+        ReauthenticationCommand.builder()
+            .password("correct horse battery staple")
+            .ipAddress("192.0.2.23")
+            .build();
+    assertThatThrownBy(() -> service.reauthenticate(device, command))
         .isInstanceOf(DeviceBoundSessionException.class);
   }
 }

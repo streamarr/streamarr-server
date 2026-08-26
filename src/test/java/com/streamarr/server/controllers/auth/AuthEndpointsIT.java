@@ -1,5 +1,6 @@
 package com.streamarr.server.controllers.auth;
 
+import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDENTIAL_ATTEMPT;
 import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -20,6 +21,7 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.jooq.generated.enums.CredentialKind;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -44,6 +46,7 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -137,6 +140,11 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         mockMvc
             .perform(
                 post("/api/auth/login")
+                    .with(
+                        request -> {
+                          request.setRemoteAddr("198.51.100.41");
+                          return request;
+                        })
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         """
@@ -171,6 +179,16 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(refreshCookie.getValue()).isNotBlank();
     assertThat(refreshCookie.getMaxAge())
         .isEqualTo(Math.toIntExact(tokenProperties.refreshTokenTtl().toSeconds()));
+    var host = DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS);
+    assertThat(
+            dsl.select(host)
+                .from(CREDENTIAL_ATTEMPT)
+                .where(CREDENTIAL_ATTEMPT.ACCOUNT_ID.eq(account.getId()))
+                .and(CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(CredentialKind.ACCOUNT_LOGIN))
+                .orderBy(CREDENTIAL_ATTEMPT.ATTEMPTED_AT.desc())
+                .limit(1)
+                .fetchOne(host))
+        .isEqualTo("198.51.100.41");
     assertUncacheable(response);
   }
 

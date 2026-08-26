@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AccountInvitation;
@@ -24,6 +23,7 @@ import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAccountInvitationReofferRepository;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
@@ -37,6 +37,7 @@ import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
+import com.streamarr.server.services.auth.AccountInvitationService.InvitationCodeCommand;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import java.sql.SQLException;
 import java.time.Clock;
@@ -83,10 +84,8 @@ class AccountInvitationServiceTest {
   private final FakeRefreshTokenRepository refreshTokens = new FakeRefreshTokenRepository();
   private final OpaqueOneTimeCodes opaqueCodes = new OpaqueOneTimeCodes();
   private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
-  private final CredentialGuessThrottle throttle =
-      new CredentialGuessThrottle(
-          AuthThrottleProperties.builder().maxAttempts(5).window(Duration.ofMinutes(15)).build(),
-          clock);
+  private final FakeCredentialAttemptRepository credentialAttempts =
+      new FakeCredentialAttemptRepository();
 
   private final AccountInvitationService service = serviceUsing(accounts);
 
@@ -95,7 +94,7 @@ class AccountInvitationServiceTest {
   void shouldPreviewDecisionDetailsWhenInvitationCodeIsPresented() {
     var issued = pendingInvitation(pendingInvitationBuilder().build());
 
-    var preview = service.lookup(issued.code());
+    var preview = lookup(issued.code());
 
     assertThat(preview.householdName()).isEqualTo("Home");
     assertThat(preview.profileName()).isEqualTo("Kai");
@@ -121,6 +120,7 @@ class AccountInvitationServiceTest {
                 .displayName("Kai H")
                 .password("a strong passphrase")
                 .deviceName("web")
+                .ipAddress("192.0.2.25")
                 .build());
 
     var account = accepted.account();
@@ -137,8 +137,7 @@ class AccountInvitationServiceTest {
         .isEqualTo(AccountInvitationStatus.ACCEPTED);
 
     var consumed = issued.code();
-    assertThatThrownBy(() -> service.lookup(consumed))
-        .isInstanceOf(InvalidOneTimeCodeException.class);
+    assertThatThrownBy(() -> lookup(consumed)).isInstanceOf(InvalidOneTimeCodeException.class);
   }
 
   @ParameterizedTest(name = "Should refuse acceptance when {0} fails at commit")
@@ -205,6 +204,7 @@ class AccountInvitationServiceTest {
                 .displayName("Kai H")
                 .password("a strong passphrase")
                 .deviceName("web")
+                .ipAddress("192.0.2.25")
                 .build());
 
     assertThat(accepted.account().getHouseholdRole()).isEqualTo(HouseholdRole.ADMIN);
@@ -215,13 +215,12 @@ class AccountInvitationServiceTest {
   void shouldAnswerLaterPresentationsAsInvalidWhenInvitationIsDeclined() {
     var issued = pendingInvitation(pendingInvitationBuilder().build());
 
-    service.decline(issued.code());
+    decline(issued.code());
 
     assertThat(invitations.findAll().getFirst().getStatus())
         .isEqualTo(AccountInvitationStatus.DECLINED);
     var consumed = issued.code();
-    assertThatThrownBy(() -> service.decline(consumed))
-        .isInstanceOf(InvalidOneTimeCodeException.class);
+    assertThatThrownBy(() -> decline(consumed)).isInstanceOf(InvalidOneTimeCodeException.class);
   }
 
   @Test
@@ -231,17 +230,15 @@ class AccountInvitationServiceTest {
     var expired = invitations.findAll().getFirst();
     var wrongSecret = expired.getPublicId() + ".not-the-secret";
 
-    assertThatThrownBy(() -> service.lookup("not-even-a-code"))
+    assertThatThrownBy(() -> lookup("not-even-a-code"))
         .isInstanceOf(InvalidOneTimeCodeException.class);
-    assertThatThrownBy(() -> service.lookup("unknown.secret"))
+    assertThatThrownBy(() -> lookup("unknown.secret"))
         .isInstanceOf(InvalidOneTimeCodeException.class);
-    assertThatThrownBy(() -> service.lookup(wrongSecret))
-        .isInstanceOf(InvalidOneTimeCodeException.class);
+    assertThatThrownBy(() -> lookup(wrongSecret)).isInstanceOf(InvalidOneTimeCodeException.class);
 
     expired.setExpiresAt(NOW.minusSeconds(1));
     var expiredCode = issued.code();
-    assertThatThrownBy(() -> service.lookup(expiredCode))
-        .isInstanceOf(InvalidOneTimeCodeException.class);
+    assertThatThrownBy(() -> lookup(expiredCode)).isInstanceOf(InvalidOneTimeCodeException.class);
   }
 
   @Test
@@ -251,13 +248,13 @@ class AccountInvitationServiceTest {
     var publicId = invitations.findAll().getFirst().getPublicId();
     for (var attempt = 0; attempt < 5; attempt++) {
       var guess = publicId + ".guess-" + attempt;
-      assertThatThrownBy(() -> service.lookup(guess))
-          .isInstanceOf(InvalidOneTimeCodeException.class);
+      assertThatThrownBy(() -> lookup(guess)).isInstanceOf(InvalidOneTimeCodeException.class);
     }
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
-    // The right code no longer helps: the budget is per publicId, not per outcome.
+    // The right code no longer helps once this invitation's attempt limit is exhausted.
     var throttled = issued.code();
-    assertThatThrownBy(() -> service.lookup(throttled))
+    assertThatThrownBy(() -> lookup(throttled))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
   }
 
@@ -270,17 +267,17 @@ class AccountInvitationServiceTest {
     invitation.setExpiresAt(NOW.minusSeconds(1));
     for (var attempt = 0; attempt < 4; attempt++) {
       var guess = invitation.getPublicId() + ".guess-" + attempt;
-      assertThatThrownBy(() -> service.lookup(guess))
+      assertThatThrownBy(() -> lookup(guess))
           .isInstanceOf(InvalidOneTimeCodeException.class);
     }
 
     // Possession of the secret is proven; the code's state is not a guess to be budgeted.
     var expiredCode = issued.code();
-    assertThatThrownBy(() -> service.lookup(expiredCode))
+    assertThatThrownBy(() -> lookup(expiredCode))
         .isInstanceOf(InvalidOneTimeCodeException.class);
 
     var laterGuess = invitation.getPublicId() + ".guess-later";
-    assertThatThrownBy(() -> service.lookup(laterGuess))
+    assertThatThrownBy(() -> lookup(laterGuess))
         .isInstanceOf(InvalidOneTimeCodeException.class);
   }
 
@@ -292,59 +289,13 @@ class AccountInvitationServiceTest {
     assertThatCode(
             () -> {
               for (var presentation = 0; presentation <= 5; presentation++) {
-                service.lookup(issued.code());
+                lookup(issued.code());
               }
             })
         .doesNotThrowAnyException();
   }
 
-  @Test
-  @DisplayName("Should not spend an opaque-code budget slot when unknown public ids are sprayed")
-  void shouldNotSpendOpaqueCodeBudgetSlotWhenUnknownPublicIdsAreSprayed() {
-    // A single slot: any key taken by the spray would refuse the valid code below.
-    var singleSlotService = serviceUsing(accounts, throttleTracking(1));
-    var issued = pendingInvitation(pendingInvitationBuilder().build());
-    for (var key = 0; key < 3; key++) {
-      var sprayed = "sprayed-public-id-" + key + ".secret";
-      assertThatThrownBy(() -> singleSlotService.lookup(sprayed))
-          .isInstanceOf(InvalidOneTimeCodeException.class);
-    }
-
-    assertThatCode(() -> singleSlotService.lookup(issued.code())).doesNotThrowAnyException();
-  }
-
-  @Test
-  @DisplayName("Should refuse a valid code when every opaque-code budget slot is held")
-  void shouldRefuseValidCodeWhenEveryOpaqueCodeBudgetSlotIsHeld() {
-    // Slots belong to publicIds that exist, so only issued codes can fill them; the budget then
-    // fails closed rather than growing without bound.
-    var singleSlotService = serviceUsing(accounts, throttleTracking(1));
-    var occupied = pendingInvitation(pendingInvitationBuilder().build());
-    var refusedCode = pendingInvitation(pendingInvitationBuilder().build()).code();
-    var wrongGuess = occupied.publicId() + ".not-the-secret";
-    assertThatThrownBy(() -> singleSlotService.lookup(wrongGuess))
-        .isInstanceOf(InvalidOneTimeCodeException.class);
-
-    assertThatThrownBy(() -> singleSlotService.lookup(refusedCode))
-        .isInstanceOf(TooManyCredentialAttemptsException.class);
-  }
-
-  private CredentialGuessThrottle throttleTracking(int maximumOpaqueCodeBudgets) {
-    return new CredentialGuessThrottle(
-        AuthThrottleProperties.builder()
-            .maxAttempts(5)
-            .window(Duration.ofMinutes(15))
-            .maxOpaqueCodeBudgets(maximumOpaqueCodeBudgets)
-            .build(),
-        clock);
-  }
-
   private AccountInvitationService serviceUsing(FakeUserAccountRepository accountRepository) {
-    return serviceUsing(accountRepository, throttle);
-  }
-
-  private AccountInvitationService serviceUsing(
-      FakeUserAccountRepository accountRepository, CredentialGuessThrottle guessThrottle) {
     return new AccountInvitationService(
         invitations,
         accountRepository,
@@ -365,7 +316,8 @@ class AccountInvitationServiceTest {
                 .build(),
             clock,
             new TokenReuseRevoker(new TokenReuseRevocationWriter(sessions, refreshTokens))),
-        new OpaqueCodeResolver(opaqueCodes, guessThrottle, clock),
+        opaqueCodes,
+        credentialAttempts.gate(clock),
         new PlainPasswordEncoder(),
         new TransactionTemplate(new FakeTransactionManager()),
         new ConstraintViolationTranslator(),
@@ -634,8 +586,7 @@ class AccountInvitationServiceTest {
         pendingConnectInvitation(
             ConnectInvitationFixture.builder().householdId(home.getId()).build());
     var vanishedCode = vanished.code();
-    assertThatThrownBy(() -> service.lookup(vanishedCode))
-        .isInstanceOf(InvalidOneTimeCodeException.class);
+    assertThatThrownBy(() -> lookup(vanishedCode)).isInstanceOf(InvalidOneTimeCodeException.class);
   }
 
   @Test
@@ -682,7 +633,7 @@ class AccountInvitationServiceTest {
                             .build()))
                 .build());
 
-    var preview = service.lookup(issued.code());
+    var preview = lookup(issued.code());
 
     assertThat(preview.mode()).isEqualTo(AccountInvitationMode.CONNECT);
     assertThat(preview.remainingManagers()).containsExactly("Nina");
@@ -746,7 +697,20 @@ class AccountInvitationServiceTest {
         .displayName("Kai H")
         .password("a strong passphrase")
         .deviceName("web")
+        .ipAddress("192.0.2.25")
         .build();
+  }
+
+  private AccountInvitationService.InvitationPreview lookup(String code) {
+    return service.lookup(codeCommand(code));
+  }
+
+  private void decline(String code) {
+    service.decline(codeCommand(code));
+  }
+
+  private static InvitationCodeCommand codeCommand(String code) {
+    return InvitationCodeCommand.builder().code(code).ipAddress("192.0.2.25").build();
   }
 
   private PendingInvitation.PendingInvitationBuilder pendingInvitationBuilder() {

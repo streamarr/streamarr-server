@@ -14,6 +14,9 @@ import com.streamarr.server.graphql.dto.AccountInvitationDetails;
 import com.streamarr.server.graphql.dto.IssuedAccountInvitation;
 import com.streamarr.server.graphql.dto.IssuedPasswordReset;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
+import com.streamarr.server.services.identity.DevicePairingService.PairingDecisionCommand;
+import com.streamarr.server.services.identity.DevicePairingService.PairingLookupCommand;
+import com.streamarr.server.services.identity.ProfileManagerAdministrationService.ManagerInvitationCodeCommand;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
@@ -162,6 +165,7 @@ class CredentialSecretRedactionTest {
                 .displayName("Invitee")
                 .password(PASSWORD)
                 .deviceName("test")
+                .ipAddress("192.0.2.30")
                 .build(),
             secret("code=REDACTED", CODE)),
         redaction(
@@ -171,8 +175,48 @@ class CredentialSecretRedactionTest {
                 .displayName("Invitee")
                 .password(PASSWORD)
                 .deviceName("test")
+                .ipAddress("192.0.2.30")
                 .build(),
             secret("password=REDACTED", PASSWORD)),
+        redaction(
+            "invitation lookup code",
+            AccountInvitationCeremonyService.InvitationCodeCommand.builder()
+                .code(CODE)
+                .ipAddress("192.0.2.30")
+                .build(),
+            secret("code=REDACTED", CODE)),
+        redaction(
+            "password-reset command code",
+            RedeemPasswordResetCommand.builder()
+                .code(CODE)
+                .newPassword(PASSWORD)
+                .ipAddress("192.0.2.30")
+                .build(),
+            secret("code=REDACTED", CODE)),
+        redaction(
+            "password-reset command password",
+            RedeemPasswordResetCommand.builder()
+                .code(CODE)
+                .newPassword(PASSWORD)
+                .ipAddress("192.0.2.30")
+                .build(),
+            secret("newPassword=REDACTED", PASSWORD)),
+        redaction(
+            "reauthentication command password",
+            ReauthenticationCommand.builder().password(PASSWORD).ipAddress("192.0.2.30").build(),
+            secret("password=REDACTED", PASSWORD)),
+        redaction(
+            "manager invitation command code",
+            ManagerInvitationCodeCommand.builder().code(CODE).ipAddress("192.0.2.30").build(),
+            secret("code=REDACTED", CODE)),
+        redaction(
+            "pairing lookup command code",
+            PairingLookupCommand.builder().userCode(CODE).ipAddress("192.0.2.30").build(),
+            secret("userCode=REDACTED", CODE)),
+        redaction(
+            "pairing decision command code",
+            PairingDecisionCommand.builder().userCode(CODE).ipAddress("192.0.2.30").build(),
+            secret("userCode=REDACTED", CODE)),
         redaction(
             "accepted invitation refresh token",
             AccountInvitationService.AcceptedInvitation.builder()

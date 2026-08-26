@@ -1,7 +1,13 @@
 package com.streamarr.server.services.auth;
 
+import com.streamarr.server.domain.auth.CredentialAttemptReservation;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.exceptions.CredentialAttemptRejectedException;
 import com.streamarr.server.exceptions.InvalidProfilePinException;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,8 +16,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * The single PIN checkpoint (ADR 0024): PIN verification exists only inside the select-profile
- * ceremony, throttled on the PROFILE_PIN budget keyed by Account and Profile. The verified result
- * is trusted attempt context the selection service alone creates; no client supplies it.
+ * ceremony, limited by persisted PROFILE_PIN attempts keyed by Account and Profile. The result is
+ * trusted attempt context the selection service alone creates; no client supplies it.
  */
 @Slf4j
 @Component
@@ -19,20 +25,37 @@ import org.springframework.stereotype.Component;
 public class ProfilePinVerifier {
 
   private final PasswordEncoder passwordEncoder;
-  private final CredentialGuessThrottle throttle;
+  private final CredentialAttemptGate credentialAttempts;
 
   /**
-   * @throws com.streamarr.server.exceptions.TooManyCredentialAttemptsException when the budget is
-   *     exhausted — before any hashing
+   * @throws com.streamarr.server.exceptions.TooManyCredentialAttemptsException when the attempt
+   *     limit is exhausted — before any hashing
    * @throws InvalidProfilePinException when the PIN is missing or does not match
    */
-  public void verify(UUID accountId, Profile profile, String pin) {
-    throttle.registerProfilePinAttempt(accountId, profile.getId());
+  public void verify(UUID accountId, Profile profile, String pin, String ipAddress) {
+    var attempt = reserveAttempt(accountId, profile.getId(), ipAddress);
     if (pin == null || pin.isBlank() || !matches(profile, pin)) {
+      credentialAttempts.complete(attempt, CredentialAttemptResult.FAILED);
       throw new InvalidProfilePinException();
     }
 
-    throttle.resetProfilePinAttempts(accountId, profile.getId());
+    credentialAttempts.complete(attempt, CredentialAttemptResult.SUCCEEDED);
+  }
+
+  private CredentialAttemptReservation reserveAttempt(
+      UUID accountId, UUID profileId, String ipAddress) {
+    var target =
+        CredentialAttemptTarget.builder()
+            .kind(CredentialKind.PROFILE_PIN)
+            .accountId(accountId)
+            .profileId(profileId)
+            .ipAddress(ipAddress)
+            .build();
+    try {
+      return credentialAttempts.reserve(target);
+    } catch (CredentialAttemptRejectedException _) {
+      throw new TooManyCredentialAttemptsException();
+    }
   }
 
   private boolean matches(Profile profile, String pin) {

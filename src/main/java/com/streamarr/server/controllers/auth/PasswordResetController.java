@@ -1,6 +1,8 @@
 package com.streamarr.server.controllers.auth;
 
 import com.streamarr.server.services.auth.PasswordResetService;
+import com.streamarr.server.services.auth.RedeemPasswordResetCommand;
+import com.streamarr.server.web.ClientIpAddressResolver;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -20,10 +22,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class PasswordResetController {
 
   private final PasswordResetService passwordResetService;
+  private final ClientIpAddressResolver clientIpAddress;
 
   @PostMapping("/redeem")
   public ResponseEntity<Void> redeem(@Valid @RequestBody RedeemPasswordResetRequest request) {
-    passwordResetService.redeem(request.code(), request.newPassword());
+    passwordResetService.redeem(
+        RedeemPasswordResetCommand.builder()
+            .code(request.code())
+            .newPassword(request.newPassword())
+            .ipAddress(clientIpAddress.resolve())
+            .build());
     return ResponseEntity.noContent().build();
   }
 }

@@ -3,6 +3,7 @@ package com.streamarr.server.controllers.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
@@ -81,6 +82,21 @@ class AuthExceptionHandlerTest {
         .isEqualTo(
             new AuthErrorResponse(
                 "TOO_MANY_ATTEMPTS", "Too many failed credential attempts. Try again later."));
+  }
+
+  @Test
+  @DisplayName("Should respond 503 when credential attempt enforcement is unavailable")
+  void shouldRespond503WhenCredentialAttemptEnforcementUnavailable() {
+    var failure = new CredentialAttemptUnavailableException(new IllegalStateException("offline"));
+
+    var response = handler.handleCredentialAttemptUnavailable(failure);
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    assertThat(response.getBody())
+        .isEqualTo(
+            new AuthErrorResponse(
+                "CREDENTIAL_VERIFICATION_UNAVAILABLE",
+                "Credential verification is temporarily unavailable."));
   }
 
   @Test

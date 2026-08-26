@@ -37,7 +37,7 @@ class SecretRecordToStringTest {
     var secret = "review-secret-value";
     var renderedValues =
         List.of(
-            LoginCommand.builder().password(secret).build().toString(),
+            LoginCommand.builder().password(secret).ipAddress("192.0.2.30").build().toString(),
             LoginCompletionCommand.builder()
                 .expectedPasswordHash(secret)
                 .upgradedPasswordHash(Optional.of(secret))

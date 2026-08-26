@@ -4,6 +4,7 @@ import com.netflix.graphql.dgs.exceptions.DefaultDataFetcherExceptionHandler;
 import com.netflix.graphql.types.errors.ErrorType;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
@@ -177,6 +178,8 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
       case AccessDeniedException _ -> new Classification(ErrorType.PERMISSION_DENIED, "FORBIDDEN");
       case AuthorizationUnavailableException _ ->
           new Classification(ErrorType.UNAVAILABLE, "AUTHORIZATION_UNAVAILABLE");
+      case CredentialAttemptUnavailableException _ ->
+          new Classification(ErrorType.UNAVAILABLE, "CREDENTIAL_VERIFICATION_UNAVAILABLE");
       case TooManyCredentialAttemptsException _ ->
           new Classification(ErrorType.UNAVAILABLE, "TOO_MANY_CREDENTIAL_ATTEMPTS");
       case ResourceBusyException _ -> new Classification(ErrorType.UNAVAILABLE, "RESOURCE_BUSY");
