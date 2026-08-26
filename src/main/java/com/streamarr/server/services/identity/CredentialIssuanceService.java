@@ -2,6 +2,7 @@ package com.streamarr.server.services.identity;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AccountInvitation;
+import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.Profile;
@@ -24,6 +25,7 @@ import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -57,21 +59,9 @@ public class CredentialIssuanceService {
   public Outcome<IssuedInvitation, InvitationRejections.Issue> issueAccountInvitation(
       AuthenticatedIdentity identity, IssueInvitationCommand command) {
     authorizationService.requireAllowed(identity, new Intent.IssueAccountInvitation());
-    if (isBlank(command.recipientEmail())) {
-      return Outcome.rejected(new InvitationRejections.EmailRequired());
-    }
-
-    if (isBlank(command.profileName())) {
-      return Outcome.rejected(new InvitationRejections.ProfileNameRequired());
-    }
-
-    if (command.maximumAllowedRatingAge() != null && command.maximumAllowedRatingAge() < 0) {
-      return Outcome.rejected(new InvitationRejections.MaximumAllowedRatingAgeInvalid());
-    }
-
-    if (userAccountRepository.findByEmailIgnoreCase(command.recipientEmail().strip()).isPresent()) {
-      // An existing email cannot be invited or reassigned; ServerAdmin transfers instead.
-      return Outcome.rejected(new InvitationRejections.EmailAlreadyUsed());
+    var inputRejection = inputRejection(command);
+    if (inputRejection.isPresent()) {
+      return Outcome.rejected(inputRejection.get());
     }
 
     var household = householdRepository.findById(command.householdId());
@@ -79,48 +69,89 @@ public class CredentialIssuanceService {
       return Outcome.rejected(new InvitationRejections.HouseholdNotFound());
     }
 
+    var shapeRejection = profileShapeRejection(command);
+    if (shapeRejection.isPresent()) {
+      return Outcome.rejected(shapeRejection.get());
+    }
+
+    return issueInvitation(identity, command, household.get());
+  }
+
+  /**
+   * Field-level refusals that need no Household: blank fields, an invalid ceiling, a used email.
+   */
+  private Optional<InvitationRejections.Issue> inputRejection(IssueInvitationCommand command) {
+    if (isBlank(command.recipientEmail())) {
+      return Optional.of(new InvitationRejections.EmailRequired());
+    }
+
+    if (isBlank(command.profileName())) {
+      return Optional.of(new InvitationRejections.ProfileNameRequired());
+    }
+
+    if (command.maximumAllowedRatingAge() != null && command.maximumAllowedRatingAge() < 0) {
+      return Optional.of(new InvitationRejections.MaximumAllowedRatingAgeInvalid());
+    }
+
+    if (userAccountRepository.findByEmailIgnoreCase(command.recipientEmail().strip()).isPresent()) {
+      // An existing email cannot be invited or reassigned; ServerAdmin transfers instead.
+      return Optional.of(new InvitationRejections.EmailAlreadyUsed());
+    }
+
+    return Optional.empty();
+  }
+
+  /** The new Profile's shape against its Household: name, restriction, and required manager. */
+  private Optional<InvitationRejections.Issue> profileShapeRejection(
+      IssueInvitationCommand command) {
     if (profileRepository.existsAvailableInHouseholdWithNameIgnoreCase(
         command.householdId(), command.profileName().strip())) {
-      return Outcome.rejected(new InvitationRejections.ProfileNameTaken());
+      return Optional.of(new InvitationRejections.ProfileNameTaken());
     }
 
     var restricted = command.restricted();
     var emptyHousehold = userAccountRepository.findByHouseholdId(command.householdId()).isEmpty();
     if (restricted && emptyHousehold) {
       // The first Account becomes HouseholdAdmin, and a restricted Account holds no authority.
-      return Outcome.rejected(new InvitationRejections.RestrictedFirstAccount());
+      return Optional.of(new InvitationRejections.RestrictedFirstAccount());
     }
 
     if (restricted && command.localManagerAccountId() == null) {
-      return Outcome.rejected(new InvitationRejections.LocalManagerRequired());
+      return Optional.of(new InvitationRejections.LocalManagerRequired());
     }
 
     if (command.localManagerAccountId() != null
         && !userAccountRepository.isEligibleProfileManager(
             command.localManagerAccountId(), command.householdId(), restricted)) {
-      return Outcome.rejected(new InvitationRejections.LocalManagerNotFound());
+      return Optional.of(new InvitationRejections.LocalManagerNotFound());
     }
 
+    return Optional.empty();
+  }
+
+  private Outcome<IssuedInvitation, InvitationRejections.Issue> issueInvitation(
+      AuthenticatedIdentity identity, IssueInvitationCommand command, Household household) {
+    var recipientEmail = command.recipientEmail().strip();
+    var profileName = command.profileName().strip();
+    var profileKind = Objects.requireNonNullElse(command.profileKind(), ProfileKind.ADULT);
     var issued = opaqueCodes.issue();
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
-          invitationRepository.lockInvitationIssuanceForRecipientEmail(command.recipientEmail());
+          invitationRepository.lockInvitationIssuanceForRecipientEmail(recipientEmail);
           requireIssuerStillAllowed(identity);
-          invitationRepository.expirePendingInvitationsForRecipientEmail(
-              command.recipientEmail().strip(), now);
+          invitationRepository.expirePendingInvitationsForRecipientEmail(recipientEmail, now);
           invitationRepository.invalidatePendingInvitationsForRecipientEmail(
-              command.recipientEmail().strip(), "replaced by a newer invitation", now);
+              recipientEmail, "replaced by a newer invitation", now);
           var invitation =
               invitationRepository.saveAndFlush(
                   AccountInvitation.builder()
-                      .recipientEmail(command.recipientEmail().strip())
+                      .recipientEmail(recipientEmail)
                       .householdId(command.householdId())
-                      .householdName(household.get().getName())
+                      .householdName(household.getName())
                       .householdRole(command.householdRole())
-                      .profileName(command.profileName().strip())
-                      .profileKind(
-                          command.profileKind() == null ? ProfileKind.ADULT : command.profileKind())
+                      .profileName(profileName)
+                      .profileKind(profileKind)
                       .maximumAllowedRatingAge(command.maximumAllowedRatingAge())
                       .localManagerAccountId(command.localManagerAccountId())
                       .issuerAccountId(identity.accountId())
