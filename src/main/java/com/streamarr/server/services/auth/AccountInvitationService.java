@@ -9,7 +9,6 @@ import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.exceptions.InvitationEmailAlreadyUsedException;
 import com.streamarr.server.exceptions.InvitationNotAcceptableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
@@ -20,6 +19,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -85,7 +85,8 @@ public class AccountInvitationService {
     var invitation = resolvePending(rawCode);
     if (!invitationRepository.markDeclinedIfPendingAndUnexpired(
         invitation.getId(), clock.instant())) {
-      throw new InvalidOneTimeCodeException();
+      throw OpaqueCodeResolver.rejected(
+          OpaqueCodeResolver.MissReason.LOST_RACE, invitation.getPublicId());
     }
   }
 
@@ -111,14 +112,26 @@ public class AccountInvitationService {
   private void consumeInvitation(AccountInvitation invitation) {
     if (!invitationRepository.markAcceptedIfPendingAndUnexpired(
         invitation.getId(), clock.instant())) {
-      throw new InvalidOneTimeCodeException();
+      throw OpaqueCodeResolver.rejected(
+          OpaqueCodeResolver.MissReason.LOST_RACE, invitation.getPublicId());
     }
   }
 
+  /**
+   * V058 invalidates a PENDING row the moment its Household goes; PENDING without one is corrupt.
+   */
   private static void requireTargetHousehold(AccountInvitation invitation) {
     if (invitation.getHouseholdId() == null) {
-      throw new InvalidOneTimeCodeException();
+      throw new IllegalStateException(
+          "Invitation %s is PENDING without a target Household".formatted(invitation.getId()));
     }
+  }
+
+  /** The Household row still resolves (the invitation is locked), so its guard row must exist. */
+  private static IllegalStateException missingHouseholdGuard(UUID householdId) {
+    return new IllegalStateException(
+        "No household_guard row for Household %s while accepting an invitation"
+            .formatted(householdId));
   }
 
   /**
@@ -163,7 +176,7 @@ public class AccountInvitationService {
                 .householdRole(
                     userAccountRepository
                         .roleForNewAccount(householdId, invitation.getHouseholdRole())
-                        .orElseThrow(InvalidOneTimeCodeException::new))
+                        .orElseThrow(() -> missingHouseholdGuard(householdId)))
                 .personalProfileId(profile.getId())
                 .enabled(true)
                 .build());

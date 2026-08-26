@@ -30,6 +30,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
 import lombok.Builder;
@@ -146,6 +147,31 @@ class AccountInvitationServiceTest {
         new InvariantFailure(
             "chk_restricted_account_holds_no_authority",
             "A restricted Profile cannot hold Household authority."));
+  }
+
+  @Test
+  @DisplayName("Should fail loudly when a pending invitation has no target Household")
+  void shouldFailLoudlyWhenPendingInvitationHasNoTargetHousehold() {
+    // V058 makes a PENDING row without a Household impossible; reaching it is corruption, not a
+    // wrong code.
+    var issued = pendingInvitation(pendingInvitationBuilder().householdId(null).build());
+    var command = acceptCommand(issued.code());
+
+    assertThatThrownBy(() -> service.accept(command))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(invitations.findAll().getFirst().getId().toString());
+  }
+
+  @Test
+  @DisplayName("Should fail loudly when the Household guard row is missing at acceptance")
+  void shouldFailLoudlyWhenHouseholdGuardRowIsMissingAtAcceptance() {
+    var service = serviceUsing(new GuardlessUserAccountRepository());
+    var issued = pendingInvitation(pendingInvitationBuilder().build());
+    var command = acceptCommand(issued.code());
+
+    assertThatThrownBy(() -> service.accept(command))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("household_guard");
   }
 
   @Test
@@ -362,6 +388,16 @@ class AccountInvitationServiceTest {
     @Override
     public String toString() {
       return constraint;
+    }
+  }
+
+  /** Answers as if the Household's coordination row had vanished while its FK still resolves. */
+  private static final class GuardlessUserAccountRepository extends FakeUserAccountRepository {
+
+    @Override
+    public Optional<HouseholdRole> roleForNewAccount(
+        UUID householdId, HouseholdRole requestedRole) {
+      return Optional.empty();
     }
   }
 

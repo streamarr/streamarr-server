@@ -19,6 +19,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -71,6 +72,17 @@ class PasswordResetServiceTest {
     assertThat(resetCodes.findAll().getFirst().getStatus())
         .isEqualTo(PasswordResetCodeStatus.REDEEMED);
     assertThat(sessions.findAll()).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should fail loudly when the locked Account rejects the password write")
+  void shouldFailLoudlyWhenLockedAccountRejectsPasswordWrite() {
+    var service = serviceUsing(new PasswordWriteRefusingUserAccountRepository());
+    var issued = pendingCode();
+
+    assertThatThrownBy(() -> service.redeem(issued.code(), "new password"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(account.getId().toString());
   }
 
   @Test
@@ -192,6 +204,19 @@ class PasswordResetServiceTest {
             .secretDigest(issued.digest())
             .build());
     return issued;
+  }
+
+  /** The row is locked two statements earlier, so a zero-row password write cannot happen. */
+  private final class PasswordWriteRefusingUserAccountRepository extends FakeUserAccountRepository {
+
+    private PasswordWriteRefusingUserAccountRepository() {
+      save(account);
+    }
+
+    @Override
+    public boolean trySetPasswordHash(UUID accountId, String passwordHash) {
+      return false;
+    }
   }
 
   private static final class PlainEncoder implements PasswordEncoder {

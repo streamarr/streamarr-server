@@ -2,7 +2,6 @@ package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
-import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -38,15 +37,21 @@ public class PasswordResetService {
         _ -> {
           var now = clock.instant();
           if (!userAccountRepository.lockById(code.getAccountId())) {
-            throw new InvalidOneTimeCodeException();
+            // The code row is deleted with its Account, so the code itself is gone too.
+            throw OpaqueCodeResolver.rejected(
+                OpaqueCodeResolver.MissReason.ACCOUNT_GONE, code.getPublicId());
           }
 
           if (!resetCodeRepository.markRedeemedIfPendingAndUnexpired(code.getId(), now)) {
-            throw new InvalidOneTimeCodeException();
+            throw OpaqueCodeResolver.rejected(
+                OpaqueCodeResolver.MissReason.LOST_RACE, code.getPublicId());
           }
 
           if (!userAccountRepository.trySetPasswordHash(code.getAccountId(), newPasswordHash)) {
-            throw new InvalidOneTimeCodeException();
+            // The Account row is held FOR UPDATE two statements earlier; zero rows is a defect.
+            throw new IllegalStateException(
+                "Password write for locked Account %s changed no row"
+                    .formatted(code.getAccountId()));
           }
 
           authSessionRepository.revokeAllForAccount(
