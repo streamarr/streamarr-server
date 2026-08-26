@@ -13,10 +13,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
+import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -237,7 +239,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
       }
 
       assertThat(userAccountRepository.findByHouseholdId(household.getId()))
-          .extracting(account -> account.getHouseholdRole())
+          .extracting(UserAccount::getHouseholdRole)
           .containsExactlyInAnyOrder(HouseholdRole.ADMIN, HouseholdRole.MEMBER);
     } finally {
       deleteAccounts("concurrent-one@example.com", "concurrent-two@example.com");
@@ -260,7 +262,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     var account = userAccountRepository.findByEmailIgnoreCase("invitee@example.com").orElseThrow();
     assertThat(authSessionRepository.findByAccountId(account.getId()))
         .singleElement()
-        .extracting(session -> session.getDeviceName())
+        .extracting(AuthSession::getDeviceName)
         .isEqualTo("🎬".repeat(64));
   }
 
@@ -557,7 +559,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
       var code = issuePasswordReset(locked.account().getId());
       var sessionIdsBefore =
           authSessionRepository.findByAccountId(locked.account().getId()).stream()
-              .map(session -> session.getId())
+              .map(AuthSession::getId)
               .toList();
       var account = userAccountRepository.findById(locked.account().getId()).orElseThrow();
       account.setEnabled(false);

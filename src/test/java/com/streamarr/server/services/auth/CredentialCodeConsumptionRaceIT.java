@@ -13,6 +13,7 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
+import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
@@ -150,7 +151,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
     var resetCode = saveResetCode(issued);
     var sessionIdsBefore =
         authSessionRepository.findByAccountId(identity.account().getId()).stream()
-            .map(session -> session.getId())
+            .map(AuthSession::getId)
             .toList();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
