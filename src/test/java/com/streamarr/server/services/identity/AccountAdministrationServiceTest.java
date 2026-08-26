@@ -246,6 +246,32 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should leave expired credentials expired when the issuer is disabled")
+  void shouldLeaveExpiredCredentialsExpiredWhenIssuerIsDisabled() {
+    savePendingCredentialsIssuedBy(target.getId());
+    var now = Instant.now();
+    invitations.findAll().getFirst().setExpiresAt(now.minusSeconds(1));
+    resetCodes.findAll().getFirst().setExpiresAt(now.minusSeconds(1));
+
+    service.disableAccount(identity(), target.getId());
+
+    assertThat(invitations.findAll())
+        .singleElement()
+        .satisfies(
+            invitation -> {
+              assertThat(invitation.statusAt(now)).isEqualTo(AccountInvitationStatus.EXPIRED);
+              assertThat(invitation.getInvalidationReason()).isNull();
+            });
+    assertThat(resetCodes.findAll())
+        .singleElement()
+        .satisfies(
+            code -> {
+              assertThat(code.statusAt(now)).isEqualTo(PasswordResetCodeStatus.EXPIRED);
+              assertThat(code.getInvalidationReason()).isNull();
+            });
+  }
+
+  @Test
   @DisplayName("Should invalidate outstanding credentials when the issuer loses ServerAdmin")
   void shouldInvalidateOutstandingCredentialsWhenIssuerLosesServerAdmin() {
     target.setServerAdmin(true);

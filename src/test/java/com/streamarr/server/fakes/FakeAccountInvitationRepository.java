@@ -123,7 +123,11 @@ public class FakeAccountInvitationRepository extends FakeJpaRepository<AccountIn
   public int invalidatePendingInvitationsIssuedBy(
       UUID issuerAccountId, String reason, Instant now) {
     return invalidate(
-        invitation -> issuerAccountId.equals(invitation.getIssuerAccountId()), reason, now);
+        invitation ->
+            issuerAccountId.equals(invitation.getIssuerAccountId())
+                && invitation.getExpiresAt().isAfter(now),
+        reason,
+        now);
   }
 
   @Override
@@ -134,7 +138,11 @@ public class FakeAccountInvitationRepository extends FakeJpaRepository<AccountIn
             .filter(invitation -> invitation.getRecipientEmail().equalsIgnoreCase(recipientEmail))
             .filter(invitation -> !invitation.getExpiresAt().isAfter(now))
             .toList();
-    expired.forEach(invitation -> invitation.setStatus(AccountInvitationStatus.EXPIRED));
+    expired.forEach(
+        invitation -> {
+          invitation.setStatus(AccountInvitationStatus.EXPIRED);
+          invitation.setDecidedAt(now);
+        });
     return expired.size();
   }
 

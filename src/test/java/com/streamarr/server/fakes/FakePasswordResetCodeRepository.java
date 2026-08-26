@@ -42,7 +42,10 @@ public class FakePasswordResetCodeRepository extends FakeJpaRepository<PasswordR
   @Override
   public int invalidatePendingPasswordResetCodesIssuedBy(
       UUID issuerAccountId, String reason, Instant now) {
-    return invalidate(code -> issuerAccountId.equals(code.getIssuerAccountId()), reason);
+    return invalidate(
+        code ->
+            issuerAccountId.equals(code.getIssuerAccountId()) && code.getExpiresAt().isAfter(now),
+        reason);
   }
 
   @Override

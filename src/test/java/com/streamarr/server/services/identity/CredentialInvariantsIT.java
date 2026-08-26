@@ -59,6 +59,76 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName("Should leave an expired invitation out of issuer invalidation")
+  void shouldLeaveExpiredInvitationOutOfIssuerInvalidation() {
+    var issuer = authTestSupport.createAccount();
+    var target = authTestSupport.createAccount();
+    var expired = savePendingInvitation(target, issuer, Instant.now().minus(Duration.ofHours(1)));
+
+    try {
+      var affected =
+          invitationRepository.invalidatePendingInvitationsIssuedBy(
+              issuer.getId(), "issuer disabled", Instant.now());
+
+      assertThat(affected).isZero();
+      var row = invitationRepository.findById(expired.getId()).orElseThrow();
+      assertThat(row.getStatus()).isEqualTo(AccountInvitationStatus.PENDING);
+      assertThat(row.statusAt(Instant.now())).isEqualTo(AccountInvitationStatus.EXPIRED);
+      assertThat(row.getInvalidationReason()).isNull();
+    } finally {
+      invitationRepository.deleteById(expired.getId());
+      authTestSupport.deleteAccount(target.getId());
+      authTestSupport.deleteAccount(issuer.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should leave an expired reset code out of issuer invalidation")
+  void shouldLeaveExpiredResetCodeOutOfIssuerInvalidation() {
+    var issuer = authTestSupport.createAccount();
+    var target = authTestSupport.createAccount();
+    var expired = savePendingResetCode(target, issuer, Instant.now().minus(Duration.ofHours(1)));
+
+    try {
+      var affected =
+          resetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
+              issuer.getId(), "issuer disabled", Instant.now());
+
+      assertThat(affected).isZero();
+      var row = resetCodeRepository.findById(expired.getId()).orElseThrow();
+      assertThat(row.getStatus()).isEqualTo(PasswordResetCodeStatus.PENDING);
+      assertThat(row.statusAt(Instant.now())).isEqualTo(PasswordResetCodeStatus.EXPIRED);
+      assertThat(row.getInvalidationReason()).isNull();
+    } finally {
+      authTestSupport.deleteAccount(target.getId());
+      authTestSupport.deleteAccount(issuer.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should record when an invitation expired when replacement materializes it")
+  void shouldRecordWhenInvitationExpiredWhenReplacementMaterializesIt() {
+    var issuer = authTestSupport.createAccount();
+    var target = authTestSupport.createAccount();
+    var expired = savePendingInvitation(target, issuer, Instant.now().minus(Duration.ofHours(1)));
+
+    try {
+      var affected =
+          invitationRepository.expirePendingInvitationsForRecipientEmail(
+              expired.getRecipientEmail(), Instant.now());
+
+      assertThat(affected).isOne();
+      var row = invitationRepository.findById(expired.getId()).orElseThrow();
+      assertThat(row.getStatus()).isEqualTo(AccountInvitationStatus.EXPIRED);
+      assertThat(row.getDecidedAt()).isNotNull();
+    } finally {
+      invitationRepository.deleteById(expired.getId());
+      authTestSupport.deleteAccount(target.getId());
+      authTestSupport.deleteAccount(issuer.getId());
+    }
+  }
+
   private AccountInvitation savePendingInvitation(
       UserAccount target, UserAccount issuer, Instant expiresAt) {
     var issued = opaqueCodes.issue();

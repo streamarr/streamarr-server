@@ -47,7 +47,13 @@ public class PasswordResetCodeRepositoryCustomImpl implements PasswordResetCodeR
   @Override
   public int invalidatePendingPasswordResetCodesIssuedBy(
       UUID issuerAccountId, String reason, Instant now) {
-    return invalidate(PASSWORD_RESET_CODE.ISSUER_ACCOUNT_ID.eq(issuerAccountId), reason, now);
+    return invalidate(
+        PASSWORD_RESET_CODE
+            .ISSUER_ACCOUNT_ID
+            .eq(issuerAccountId)
+            .and(PASSWORD_RESET_CODE.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC))),
+        reason,
+        now);
   }
 
   @Override

@@ -156,7 +156,13 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
   @Override
   public int invalidatePendingInvitationsIssuedBy(
       UUID issuerAccountId, String reason, Instant now) {
-    return invalidate(ACCOUNT_INVITATION.ISSUER_ACCOUNT_ID.eq(issuerAccountId), reason, now);
+    return invalidate(
+        ACCOUNT_INVITATION
+            .ISSUER_ACCOUNT_ID
+            .eq(issuerAccountId)
+            .and(ACCOUNT_INVITATION.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC))),
+        reason,
+        now);
   }
 
   @Override
@@ -165,6 +171,7 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
         .set(
             ACCOUNT_INVITATION.STATUS,
             com.streamarr.server.jooq.generated.enums.AccountInvitationStatus.EXPIRED)
+        .set(ACCOUNT_INVITATION.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
         .set(ACCOUNT_INVITATION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
         .set(ACCOUNT_INVITATION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(ACCOUNT_INVITATION.RECIPIENT_EMAIL.equalIgnoreCase(recipientEmail))
