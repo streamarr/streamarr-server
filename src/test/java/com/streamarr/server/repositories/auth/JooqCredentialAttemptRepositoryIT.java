@@ -108,6 +108,23 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should keep counting pending reservations made before the latest success")
+  void shouldKeepCountingPendingReservationsMadeBeforeTheLatestSuccess() {
+    var target = resolvedTarget();
+    for (var pending = 0; pending < 4; pending++) {
+      reserve(target, NOW);
+    }
+    var success = reserve(target, NOW.plusSeconds(1));
+    repository.complete(success, CredentialAttemptResult.SUCCEEDED, NOW.plusSeconds(1));
+
+    // The four in-flight verifications may still fail after the success; they hold their slots.
+    assertThat(repository.reserve(target, LIMITED_POLICY, NOW.plusSeconds(2)))
+        .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
+    assertThat(repository.reserve(target, LIMITED_POLICY, NOW.plusSeconds(2)))
+        .isInstanceOf(CredentialAttemptAdmission.Blocked.class);
+  }
+
+  @Test
   @DisplayName("Should record unlimited attempts without rejecting them")
   void shouldRecordUnlimitedAttemptsWithoutRejectingThem() {
     var target = resolvedTarget();
