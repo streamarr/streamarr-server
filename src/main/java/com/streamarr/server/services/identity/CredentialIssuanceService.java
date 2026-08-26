@@ -25,12 +25,12 @@ import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Pattern;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
@@ -45,13 +45,6 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class CredentialIssuanceService {
-
-  /**
-   * One local part, one @, a domain of dot-separated non-empty labels, no whitespace: the shape,
-   * not deliverability. Labels exclude the dot, so the match never backtracks.
-   */
-  private static final Pattern PLAUSIBLE_EMAIL =
-      Pattern.compile("^[^\\s@]+@[^\\s@.]+(?:\\.[^\\s@.]+)+$");
 
   private final AuthorizationService authorizationService;
   private final AccountInvitationRepository invitationRepository;
@@ -94,7 +87,7 @@ public class CredentialIssuanceService {
       return Optional.of(new CredentialRejections.EmailRequired());
     }
 
-    if (!PLAUSIBLE_EMAIL.matcher(command.recipientEmail().strip()).matches()) {
+    if (!isPlausibleEmail(command.recipientEmail().strip())) {
       return Optional.of(new CredentialRejections.EmailInvalid());
     }
 
@@ -112,6 +105,24 @@ public class CredentialIssuanceService {
     }
 
     return Optional.empty();
+  }
+
+  /**
+   * One local part, one @, a domain of dot-separated non-empty labels, no whitespace: the shape,
+   * not deliverability. Iterative checks, so a long domain costs no stack.
+   */
+  private static boolean isPlausibleEmail(String email) {
+    var at = email.indexOf('@');
+    if (at < 1 || at != email.lastIndexOf('@')) {
+      return false;
+    }
+
+    if (email.chars().anyMatch(Character::isWhitespace)) {
+      return false;
+    }
+
+    var labels = email.substring(at + 1).split("\\.", -1);
+    return labels.length > 1 && Arrays.stream(labels).noneMatch(String::isEmpty);
   }
 
   /** The new Profile's shape against its Household: name, restriction, and required manager. */

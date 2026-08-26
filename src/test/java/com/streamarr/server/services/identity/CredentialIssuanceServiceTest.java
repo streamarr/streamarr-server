@@ -314,6 +314,21 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject a many-label recipient email when its domain ends with a dot")
+  void shouldRejectManyLabelRecipientEmailWhenDomainEndsWithDot() {
+    // Deciding the shape must not recurse per label: this input once overflowed the stack.
+    var recipientEmail = "kai@" + "label.".repeat(100_000);
+
+    var outcome =
+        service.issueAccountInvitation(
+            authorization.currentIdentity(),
+            command().toBuilder().recipientEmail(recipientEmail).build());
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.EmailInvalid.class);
+    assertThat(invitations.findAll()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should reject a negative maximum allowed rating age when an invitation is issued")
   void shouldRejectNegativeMaximumAllowedRatingAgeWhenInvitationIsIssued() {
     var outcome =
