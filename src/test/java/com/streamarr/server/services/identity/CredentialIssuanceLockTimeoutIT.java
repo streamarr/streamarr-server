@@ -88,6 +88,24 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should contend for the recipient lock when spellings agree only under PostgreSQL lower")
+  void shouldContendForRecipientLockWhenSpellingsAgreeOnlyUnderPostgresLower() throws Exception {
+    issuer = authTestSupport.createAdminIdentity();
+    var existing = savePendingInvitation("invitee@example.com");
+
+    // U+0130 folds to a plain "i" under PostgreSQL lower(), the view of the address taken by the
+    // pending-email unique index and every query, but to "i" plus U+0307 under Java toLowerCase.
+    assertInvitationReplacementTimesOut(
+        "invitee@example.com",
+        () ->
+            credentialIssuanceService.issueAccountInvitation(
+                authTestSupport.identityOf(issuer), invitationCommand("\u0130nvitee@Example.COM")));
+
+    assertOnlyPendingInvitation(existing);
+  }
+
+  @Test
   @DisplayName("Should reject an invitation issuance lock outside a transaction")
   void shouldRejectInvitationIssuanceLockOutsideTransaction() {
     assertThatThrownBy(
