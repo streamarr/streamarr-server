@@ -6,6 +6,7 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.graphql.Ids;
+import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
@@ -28,7 +29,6 @@ import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.OrderMediaBy;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
@@ -123,7 +123,8 @@ public class CredentialAdministrationResolver {
   }
 
   private MediaPaginationOptions mediaOptions(DataFetchingEnvironment dfe) {
-    var paginationOptions = paginationOptions(dfe);
+    var paginationOptions =
+        ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var filter =
         MediaFilter.builder().sortBy(OrderMediaBy.ADDED).sortDirection(SortOrder.DESC).build();
     return MediaPaginationOptionsResolver.resolve(
@@ -131,26 +132,5 @@ public class CredentialAdministrationResolver {
         filter,
         cursorUtil::decodeMediaCursor,
         cursorValidator::validateCursorAgainstFilter);
-  }
-
-  private PaginationOptions paginationOptions(DataFetchingEnvironment dfe) {
-    int first = dfe.getArgumentOrDefault("first", 0);
-    String after = dfe.getArgument("after");
-    int last = dfe.getArgumentOrDefault("last", 0);
-    String before = dfe.getArgument("before");
-    if (first == 0 && last == 0 && before != null) {
-      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
-    }
-
-    return paginationService.getPaginationOptions(
-        firstOrDefault(first, last, before), after, last, before);
-  }
-
-  private static int firstOrDefault(int first, int last, String before) {
-    if (first == 0 && last == 0 && before == null) {
-      return DEFAULT_PAGE_SIZE;
-    }
-
-    return first;
   }
 }

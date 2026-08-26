@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.resolvers;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsQuery;
+import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.HouseholdSummary;
@@ -11,7 +12,6 @@ import com.streamarr.server.graphql.dto.SelectableProfile;
 import com.streamarr.server.graphql.dto.UsableHousehold;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.IdentityQueryService;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
@@ -50,7 +50,7 @@ public class MeResolver {
   @DgsData(parentType = "Me", field = "usableHouseholds")
   public Connection<UsableHousehold> usableHouseholds(DataFetchingEnvironment dfe) {
     var identity = authorizationService.currentIdentity();
-    var options = options(dfe);
+    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         identityQueryService.usableHouseholds(identity, cursorUtil.decodeKeysetCursor(options));
     return relayConnectionAdapter.toConnection(
@@ -62,7 +62,7 @@ public class MeResolver {
   @DgsData(parentType = "Me", field = "selectableProfiles")
   public Connection<SelectableProfile> selectableProfiles(DataFetchingEnvironment dfe) {
     var identity = authorizationService.currentIdentity();
-    var options = options(dfe);
+    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         identityQueryService.selectableProfiles(identity, cursorUtil.decodeKeysetCursor(options));
     return relayConnectionAdapter.toConnection(
@@ -78,28 +78,6 @@ public class MeResolver {
         .selectedProfile(identity)
         .map(MeResolver::toSelectable)
         .orElse(null);
-  }
-
-  private PaginationOptions options(DataFetchingEnvironment dfe) {
-    int first = dfe.getArgumentOrDefault("first", 0);
-    String after = dfe.getArgument("after");
-    int last = dfe.getArgumentOrDefault("last", 0);
-    String before = dfe.getArgument("before");
-    if (first == 0 && last == 0 && before != null) {
-      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
-    }
-
-    return paginationService.getPaginationOptions(
-        firstOrDefault(first, last, before), after, last, before);
-  }
-
-  /** A picker-sized default when the client names no page size. */
-  private static int firstOrDefault(int first, int last, String before) {
-    if (first == 0 && last == 0 && before == null) {
-      return DEFAULT_PAGE_SIZE;
-    }
-
-    return first;
   }
 
   private static HouseholdSummary toSummary(IdentityQueryService.HouseholdSummaryDetails details) {
