@@ -8,6 +8,7 @@ import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialAttemptTarget;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
+import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.RetryAfterAware;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
@@ -19,6 +20,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -154,5 +156,96 @@ class CredentialAttemptGateTest {
         .isInstanceOf(TooManyDeviceAttemptsException.class)
         .extracting(failure -> ((RetryAfterAware) failure).retryAfter())
         .isEqualTo(Duration.ofSeconds(42));
+  }
+
+  @Test
+  @DisplayName("Should journal a success and return the verified value when the verifier returns")
+  void shouldJournalSuccessAndReturnVerifiedValueWhenVerifierReturns() {
+    var verified = gate.attempt(LOGIN_TARGET, () -> "session");
+
+    assertThat(verified).isEqualTo("session");
+    assertThat(repository.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target()).isEqualTo(LOGIN_TARGET);
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
+              assertThat(attempt.completedAt()).isEqualTo(NOW);
+            });
+  }
+
+  @Test
+  @DisplayName("Should journal a failure and rethrow when the verifier refuses the credential")
+  void shouldJournalFailureAndRethrowWhenVerifierRefusesCredential() {
+    assertThatThrownBy(
+            () ->
+                gate.attempt(
+                    LOGIN_TARGET,
+                    () -> {
+                      throw new InvalidCredentialsException();
+                    }))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(repository.attempts())
+        .singleElement()
+        .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
+        .isEqualTo(CredentialAttemptResult.FAILED);
+  }
+
+  @Test
+  @DisplayName("Should leave the reservation pending and warn when the verifier fails unexpectedly")
+  void shouldLeaveReservationPendingAndWarnWhenVerifierFailsUnexpectedly() {
+    try (var logs = LogCapture.forClass(CredentialAttemptGate.class)) {
+      assertThatThrownBy(
+              () ->
+                  gate.attempt(
+                      LOGIN_TARGET,
+                      () -> {
+                        throw new IllegalStateException("encoder misconfigured");
+                      }))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessage("encoder misconfigured");
+
+      assertThat(repository.attempts())
+          .singleElement()
+          .satisfies(
+              attempt -> {
+                assertThat(attempt.result()).isNull();
+                assertThat(attempt.completedAt()).isNull();
+              });
+      assertThat(logs.events())
+          .anyMatch(
+              event ->
+                  event.getLevel() == Level.WARN
+                      && event.getFormattedMessage().contains(ACCOUNT_ID.toString())
+                      && event.getThrowableProxy() != null);
+    }
+  }
+
+  @Test
+  @DisplayName("Should refuse without running the verifier when the target is blocked")
+  void shouldRefuseWithoutRunningVerifierWhenTargetIsBlocked() {
+    repository.rejectReservations(Duration.ofSeconds(42));
+    var verifierRuns = new AtomicInteger();
+
+    assertThatThrownBy(() -> gate.attempt(LOGIN_TARGET, verifierRuns::incrementAndGet))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+
+    assertThat(verifierRuns).hasValue(0);
+    assertThat(repository.attempts()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should journal a success when a verifier without a result returns")
+  void shouldJournalSuccessWhenVerifierWithoutResultReturns() {
+    var verifierRuns = new AtomicInteger();
+
+    gate.attempt(LOGIN_TARGET, (CredentialAttemptGate.Verification) verifierRuns::incrementAndGet);
+
+    assertThat(verifierRuns).hasValue(1);
+    assertThat(repository.attempts())
+        .singleElement()
+        .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
+        .isEqualTo(CredentialAttemptResult.SUCCEEDED);
   }
 }

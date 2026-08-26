@@ -6,7 +6,7 @@ package com.streamarr.server.exceptions;
  * Beyond the budget the per-publicId throttle answers instead, which is acceptable because public
  * ids are 72 random bits and not enumerable.
  */
-public class InvalidOneTimeCodeException extends RuntimeException {
+public class InvalidOneTimeCodeException extends CredentialVerificationException {
 
   public InvalidOneTimeCodeException() {
     super("That code is not redeemable.");
