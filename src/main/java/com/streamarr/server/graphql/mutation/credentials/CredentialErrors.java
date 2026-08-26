@@ -2,22 +2,24 @@ package com.streamarr.server.graphql.mutation.credentials;
 
 import com.streamarr.server.graphql.mutation.InputPath;
 import com.streamarr.server.services.identity.CredentialRejections;
+import java.util.List;
 
 /** The exhaustive mappings from service rejection to schema error type, one per union. */
 public final class CredentialErrors {
+
+  private static final List<String> RECIPIENT_EMAIL_PATH = InputPath.of("recipientEmail");
 
   private CredentialErrors() {}
 
   public static IssueAccountInvitationError toIssueError(CredentialRejections.Issue rejection) {
     return switch (rejection) {
       case CredentialRejections.EmailRequired _ ->
-          new EmailRequiredError("Enter the recipient's email.", InputPath.of("recipientEmail"));
+          new EmailRequiredError("Enter the recipient's email.", RECIPIENT_EMAIL_PATH);
       case CredentialRejections.EmailInvalid _ ->
-          new EmailInvalidError("Enter a valid email address.", InputPath.of("recipientEmail"));
+          new EmailInvalidError("Enter a valid email address.", RECIPIENT_EMAIL_PATH);
       case CredentialRejections.EmailAlreadyUsed _ ->
           new EmailAlreadyUsedError(
-              "An Account already uses that email; transfer it instead.",
-              InputPath.of("recipientEmail"));
+              "An Account already uses that email; transfer it instead.", RECIPIENT_EMAIL_PATH);
       case CredentialRejections.ProfileNameRequired _ ->
           new ProfileNameRequiredError("Enter a profile name.", InputPath.of("profileName"));
       case CredentialRejections.ProfileNameTaken _ ->
