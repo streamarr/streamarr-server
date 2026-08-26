@@ -273,7 +273,7 @@ public class CredentialIssuanceService {
   }
 
   private void requireIssuerStillAllowed(AuthenticatedIdentity identity) {
-    if (!userAccountRepository.lockIfEnabledServerAdmin(identity.accountId())) {
+    if (!userAccountRepository.tryLockEnabledServerAdmin(identity.accountId())) {
       throw new AccessDeniedException("Not allowed.");
     }
   }

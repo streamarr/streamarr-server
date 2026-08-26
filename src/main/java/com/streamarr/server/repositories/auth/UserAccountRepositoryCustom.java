@@ -48,8 +48,11 @@ public interface UserAccountRepositoryCustom {
    */
   boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash);
 
-  /** Locks and revalidates the live authority required to issue one-time credentials. */
-  boolean lockIfEnabledServerAdmin(UUID accountId);
+  /**
+   * Locks the Account row only while it is still an enabled ServerAdmin — the live authority a
+   * credential issuer must hold. False means no row was locked.
+   */
+  boolean tryLockEnabledServerAdmin(UUID accountId);
 
   /**
    * Locks the Household's coordination row and chooses the role for a newly accepted Account. The

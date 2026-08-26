@@ -223,7 +223,7 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
-  public boolean lockIfEnabledServerAdmin(UUID accountId) {
+  public boolean tryLockEnabledServerAdmin(UUID accountId) {
     return findById(accountId)
         .filter(UserAccount::isEnabled)
         .filter(UserAccount::isServerAdmin)

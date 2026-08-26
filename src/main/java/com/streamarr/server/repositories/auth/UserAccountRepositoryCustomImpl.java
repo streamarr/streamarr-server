@@ -245,23 +245,29 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
 
   @Override
   public boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash) {
-    return dsl.select(USER_ACCOUNT.ID)
-        .from(USER_ACCOUNT)
-        .where(USER_ACCOUNT.ID.eq(accountId))
-        .and(USER_ACCOUNT.PASSWORD_HASH.eq(expectedPasswordHash))
-        .and(USER_ACCOUNT.ENABLED.isTrue())
-        .forUpdate()
-        .fetchOptional()
-        .isPresent();
+    return lockWhere(
+        USER_ACCOUNT
+            .ID
+            .eq(accountId)
+            .and(USER_ACCOUNT.PASSWORD_HASH.eq(expectedPasswordHash))
+            .and(USER_ACCOUNT.ENABLED.isTrue()));
   }
 
   @Override
-  public boolean lockIfEnabledServerAdmin(UUID accountId) {
+  public boolean tryLockEnabledServerAdmin(UUID accountId) {
+    return lockWhere(
+        USER_ACCOUNT
+            .ID
+            .eq(accountId)
+            .and(USER_ACCOUNT.ENABLED.isTrue())
+            .and(USER_ACCOUNT.SERVER_ADMIN.isTrue()));
+  }
+
+  /** One row lock, taken only while the condition still holds; false means nothing was locked. */
+  private boolean lockWhere(Condition condition) {
     return dsl.select(USER_ACCOUNT.ID)
         .from(USER_ACCOUNT)
-        .where(USER_ACCOUNT.ID.eq(accountId))
-        .and(USER_ACCOUNT.ENABLED.isTrue())
-        .and(USER_ACCOUNT.SERVER_ADMIN.isTrue())
+        .where(condition)
         .forUpdate()
         .fetchOptional()
         .isPresent();
