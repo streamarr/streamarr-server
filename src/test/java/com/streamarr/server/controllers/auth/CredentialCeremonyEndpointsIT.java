@@ -15,11 +15,16 @@ import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
+import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
@@ -66,6 +71,9 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @Autowired private HouseholdRepository householdRepository;
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private PasswordResetCodeRepository resetCodeRepository;
+  @Autowired private ProfileRepository profileRepository;
+  @Autowired private ProfileManagerRepository profileManagerRepository;
+  @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private DSLContext dsl;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
@@ -673,6 +681,140 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName("Should create a supervised Profile when a Kid invitation is accepted")
+  void shouldCreateSupervisedProfileWhenKidInvitationIsAccepted() throws Exception {
+    var code =
+        issueInvitation(
+            invitationBuilder("invitee@example.com")
+                .profileKind(ProfileKind.KID)
+                .maximumAllowedRatingAge(7)
+                .profileManagerAccountId(serverAdmin.account().getId())
+                .build());
+
+    acceptInvitation(code, "Invitee");
+
+    var account = userAccountRepository.findByEmailIgnoreCase("invitee@example.com").orElseThrow();
+    var profile = profileRepository.findById(account.getPersonalProfileId()).orElseThrow();
+    assertThat(profile.getKind()).isEqualTo(ProfileKind.KID);
+    assertThat(profile.getMaximumAllowedRatingAge()).isEqualTo(7);
+    assertThat(
+            profileManagerRepository.existsByAccountIdAndProfileId(
+                serverAdmin.account().getId(), profile.getId()))
+        .isTrue();
+    assertThat(
+            shareRepository.findByProfileIdAndHouseholdIdAndStatus(
+                profile.getId(), serverAdmin.household().getId(), ProfileShareStatus.ACTIVE))
+        .hasValueSatisfying(share -> assertThat(share.isStructural()).isTrue());
+  }
+
+  @Test
+  @DisplayName(
+      "Should replace the pending invitation when the same email is invited again with different case")
+  void shouldReplacePendingInvitationWhenSameEmailIsInvitedAgainWithDifferentCase()
+      throws Exception {
+    var first = issueInvitation("invitee@example.com");
+    issueInvitation("Invitee@Example.com");
+
+    assertThat(invitationRepository.findByPublicId(publicIdOf(first)).orElseThrow())
+        .satisfies(
+            replaced -> {
+              assertThat(replaced.getStatus()).isEqualTo(AccountInvitationStatus.INVALIDATED);
+              assertThat(replaced.getInvalidationReason())
+                  .isEqualTo("replaced by a newer invitation");
+            });
+    assertThat(invitationRepository.findAll())
+        .filteredOn(invitation -> invitation.getStatus() == AccountInvitationStatus.PENDING)
+        .singleElement()
+        .extracting(AccountInvitation::getRecipientEmail)
+        .isEqualTo("Invitee@Example.com");
+  }
+
+  @Test
+  @DisplayName("Should return a typed conflict when the claimed email differs only in case")
+  void shouldReturnTypedConflictWhenClaimedEmailDiffersOnlyInCase() throws Exception {
+    var code = issueInvitation("invitee@example.com");
+    var competingAccount =
+        authTestSupport.createAccount(builder -> builder.email("Invitee@Example.com"));
+    try {
+      mockMvc
+          .perform(acceptRequest(code, "Invitee"))
+          .andExpect(status().isConflict())
+          .andExpect(jsonPath("$.code").value("INVITATION_EMAIL_ALREADY_USED"));
+    } finally {
+      authTestSupport.deleteAccount(competingAccount.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should throttle reset redemption when a wrong secret is presented repeatedly")
+  void shouldThrottleResetRedemptionWhenWrongSecretIsPresentedRepeatedly() throws Exception {
+    var target = authTestSupport.createIdentity();
+    try {
+      var wrongCode = publicIdOf(issuePasswordReset(target.account().getId())) + ".wrong";
+
+      var firstAnswer = rejectedRedemption(wrongCode);
+      for (var attempt = 2; attempt <= 5; attempt++) {
+        assertThat(rejectedRedemption(wrongCode)).isEqualTo(firstAnswer);
+      }
+
+      mockMvc
+          .perform(redeemRequest(wrongCode))
+          .andExpect(status().isTooManyRequests())
+          .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"));
+    } finally {
+      authTestSupport.deleteIdentity(target);
+    }
+  }
+
+  @Test
+  @DisplayName("Should answer not found when an unknown invitation is declined")
+  void shouldAnswerNotFoundWhenUnknownInvitationIsDeclined() throws Exception {
+    mockMvc
+        .perform(declineRequest("unknown.code"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("INVALID_CODE"));
+  }
+
+  @Test
+  @DisplayName("Should expose only the decision fields when an invitation is looked up")
+  void shouldExposeOnlyDecisionFieldsWhenInvitationIsLookedUp() throws Exception {
+    var code = issueInvitation("invitee@example.com");
+
+    var preview =
+        mockMvc
+            .perform(lookupRequest(code))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertThat(objectMapper.readTree(preview).propertyNames())
+        .containsExactlyInAnyOrder(
+            "recipientEmail",
+            "householdName",
+            "householdRole",
+            "profileName",
+            "profileKind",
+            "maximumAllowedRatingAge",
+            "expiresAt");
+  }
+
+  /** The 404 INVALID_CODE answer, which every miss must repeat verbatim. */
+  private String rejectedRedemption(String code) throws Exception {
+    return mockMvc
+        .perform(redeemRequest(code))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("INVALID_CODE"))
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+  }
+
+  private static String publicIdOf(String code) {
+    return code.substring(0, code.indexOf('.'));
+  }
+
   private void deleteAccounts(String... emails) {
     for (var email : emails) {
       userAccountRepository
@@ -689,7 +831,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     return InvitationSpec.builder()
         .email(email)
         .householdId(serverAdmin.household().getId())
-        .profileName("Invitee");
+        .profileName("Invitee")
+        .profileKind(ProfileKind.ADULT);
   }
 
   private String issueInvitation(InvitationSpec invitation) throws Exception {
@@ -699,11 +842,15 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                 """
                 mutation { issueAccountInvitation(input: {recipientEmail: "%s",
                   householdId: "%s", householdRole: MEMBER, profileName: "%s",
-                  profileKind: ADULT}) {
+                  profileKind: %s%s}) {
                   issued { code invitation { status } } userErrors { __typename } } }
                 """
                     .formatted(
-                        invitation.email(), invitation.householdId(), invitation.profileName()))
+                        invitation.email(),
+                        invitation.householdId(),
+                        invitation.profileName(),
+                        invitation.profileKind(),
+                        restrictionArguments(invitation)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andExpect(jsonPath("$.data.issueAccountInvitation.issued.code").isNotEmpty())
@@ -813,8 +960,33 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     return mockMvc.perform(graphqlRequest(bearer, query));
   }
 
+  /**
+   * Optional restriction arguments of the issue mutation, rendered only when the spec sets them.
+   */
+  private static String restrictionArguments(InvitationSpec invitation) {
+    var arguments = new StringBuilder();
+    if (invitation.maximumAllowedRatingAge() != null) {
+      arguments.append(", maximumAllowedRatingAge: ").append(invitation.maximumAllowedRatingAge());
+    }
+
+    if (invitation.profileManagerAccountId() != null) {
+      arguments
+          .append(", profileManagerAccountId: \"")
+          .append(invitation.profileManagerAccountId())
+          .append('"');
+    }
+
+    return arguments.toString();
+  }
+
   @Builder
-  private record InvitationSpec(String email, UUID householdId, String profileName) {}
+  private record InvitationSpec(
+      String email,
+      UUID householdId,
+      String profileName,
+      ProfileKind profileKind,
+      Integer maximumAllowedRatingAge,
+      UUID profileManagerAccountId) {}
 
   @Builder
   private record ConcurrentAcceptance(

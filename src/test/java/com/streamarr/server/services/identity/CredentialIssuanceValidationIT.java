@@ -1,9 +1,11 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static com.streamarr.server.support.OutcomeTestSupport.rejectionOf;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -61,6 +63,67 @@ class CredentialIssuanceValidationIT extends AbstractIntegrationTest {
         credentialIssuanceService.issueAccountInvitation(
             authTestSupport.identityOf(issuer),
             supervisedInvitation().localManagerAccountId(restrictedManagerId).build());
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.LocalManagerNotFound.class);
+    assertThat(invitationRepository.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should accept a Kid invitation when the local manager is an unrestricted HouseholdAdmin")
+  void shouldAcceptKidInvitationWhenLocalManagerIsUnrestrictedHouseholdAdmin() {
+    issuer = authTestSupport.createAdminIdentity();
+
+    var issued =
+        accepted(
+            credentialIssuanceService.issueAccountInvitation(
+                authTestSupport.identityOf(issuer),
+                supervisedInvitation().localManagerAccountId(issuer.account().getId()).build()));
+
+    assertThat(invitationRepository.findById(issued.invitation().getId()).orElseThrow())
+        .satisfies(
+            invitation -> {
+              assertThat(invitation.getStatus()).isEqualTo(AccountInvitationStatus.PENDING);
+              assertThat(invitation.getProfileKind()).isEqualTo(ProfileKind.KID);
+              assertThat(invitation.getLocalManagerAccountId()).isEqualTo(issuer.account().getId());
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should accept an Adult invitation with a rating ceiling when the local manager is eligible")
+  void shouldAcceptAdultInvitationWithRatingCeilingWhenLocalManagerIsEligible() {
+    issuer = authTestSupport.createAdminIdentity();
+
+    var issued =
+        accepted(
+            credentialIssuanceService.issueAccountInvitation(
+                authTestSupport.identityOf(issuer),
+                supervisedInvitation()
+                    .profileKind(ProfileKind.ADULT)
+                    .maximumAllowedRatingAge(12)
+                    .localManagerAccountId(issuer.account().getId())
+                    .build()));
+
+    assertThat(invitationRepository.findById(issued.invitation().getId()).orElseThrow())
+        .satisfies(
+            invitation -> {
+              assertThat(invitation.getProfileKind()).isEqualTo(ProfileKind.ADULT);
+              assertThat(invitation.getMaximumAllowedRatingAge()).isEqualTo(12);
+              assertThat(invitation.getLocalManagerAccountId()).isEqualTo(issuer.account().getId());
+            });
+  }
+
+  @Test
+  @DisplayName("Should reject a Member-role local manager when a restricted invitation is issued")
+  void shouldRejectMemberRoleLocalManagerWhenRestrictedInvitationIsIssued() {
+    issuer = authTestSupport.createAdminIdentity();
+    var memberId = createMember(ProfileFixture.defaultProfileBuilder()).getId();
+
+    var outcome =
+        credentialIssuanceService.issueAccountInvitation(
+            authTestSupport.identityOf(issuer),
+            supervisedInvitation().localManagerAccountId(memberId).build());
 
     assertThat(rejectionOf(outcome)).isInstanceOf(InvitationRejections.LocalManagerNotFound.class);
     assertThat(invitationRepository.findAll()).isEmpty();
