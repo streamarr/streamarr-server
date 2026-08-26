@@ -15,6 +15,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.http.HttpStatus;
 
 @Tag("UnitTest")
@@ -113,7 +114,9 @@ class AuthExceptionHandlerTest {
   @Test
   @DisplayName("Should respond 500 internal error when persistence fails")
   void shouldRespond500InternalErrorWhenPersistenceFails() {
-    var response = handler.handlePersistenceFailure(new CannotAcquireLockException("lock timeout"));
+    var response =
+        handler.handlePersistenceFailure(
+            new InvalidDataAccessApiUsageException("lock outside a transaction"));
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
     assertThat(response.getBody())
