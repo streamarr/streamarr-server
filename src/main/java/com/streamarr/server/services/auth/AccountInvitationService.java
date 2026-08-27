@@ -355,7 +355,7 @@ public class AccountInvitationService {
                 .build());
     var now = clock.instant();
     invitationRepository.invalidatePendingByProfileId(profileId, PROFILE_CONNECTED_REASON, now);
-    profileManagerInvitationRepository.invalidatePendingForProfile(
+    profileManagerInvitationRepository.invalidatePendingByProfileId(
         profileId, PROFILE_CONNECTED_REASON, now);
     shareRepository.ensureActiveMembershipShare(profileId, householdId, now);
     endCurrentVisits(profileId, householdId, now);

@@ -40,7 +40,8 @@ public class FakeProfileManagerInvitationRepository
   }
 
   @Override
-  public boolean tryDecide(UUID invitationId, ProfileManagerInvitationStatus target, Instant now) {
+  public boolean tryDecidePending(
+      UUID invitationId, ProfileManagerInvitationStatus target, Instant now) {
     var invitation = database.get(invitationId);
     if (invitation == null
         || invitation.getStatus() != ProfileManagerInvitationStatus.PENDING
@@ -54,7 +55,7 @@ public class FakeProfileManagerInvitationRepository
   }
 
   @Override
-  public int invalidatePendingForProfileAndRecipient(
+  public int invalidatePendingByProfileIdAndRecipientAccountId(
       UUID profileId, UUID recipientAccountId, String reason, Instant now) {
     return invalidate(
         invitation ->
@@ -65,7 +66,7 @@ public class FakeProfileManagerInvitationRepository
   }
 
   @Override
-  public int invalidatePendingForProfile(UUID profileId, String reason, Instant now) {
+  public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
     return invalidate(invitation -> profileId.equals(invitation.getProfileId()), reason, now);
   }
 
@@ -81,7 +82,8 @@ public class FakeProfileManagerInvitationRepository
   }
 
   @Override
-  public int invalidatePendingForRecipient(UUID recipientAccountId, String reason, Instant now) {
+  public int invalidatePendingByRecipientAccountId(
+      UUID recipientAccountId, String reason, Instant now) {
     return invalidate(
         invitation -> recipientAccountId.equals(invitation.getRecipientAccountId()), reason, now);
   }

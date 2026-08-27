@@ -415,7 +415,7 @@ public class ProfileAdministrationService {
           profileRepository.lockProfileDeletionAcrossHouseholds(profileId);
           accountInvitationRepository.invalidatePendingByProfileId(
               profileId, "Profile deleted", clock.instant());
-          profileManagerInvitationRepository.invalidatePendingForProfile(
+          profileManagerInvitationRepository.invalidatePendingByProfileId(
               profileId, "Profile deleted", clock.instant());
           profileRepository.deleteById(profileId);
           profileRepository.flush();
@@ -481,7 +481,7 @@ public class ProfileAdministrationService {
         .findByPersonalProfileId(profileId)
         .ifPresent(
             linked ->
-                profileManagerInvitationRepository.invalidatePendingForRecipient(
+                profileManagerInvitationRepository.invalidatePendingByRecipientAccountId(
                     linked.getId(), "recipient became ineligible", clock.instant()));
   }
 

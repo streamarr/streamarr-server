@@ -266,7 +266,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public int invalidatePendingSharesOfferedBy(
+  public int invalidatePendingByProfileIdOfferedBy(
       UUID profileId, UUID offererAccountId, String reason, Instant now) {
     return dsl.update(PROFILE_HOUSEHOLD_SHARE)
         .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.INVALIDATED)

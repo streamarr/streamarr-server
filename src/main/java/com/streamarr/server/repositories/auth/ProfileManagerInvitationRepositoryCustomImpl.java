@@ -22,7 +22,8 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   private final AuditorAware<UUID> auditorAware;
 
   @Override
-  public boolean tryDecide(UUID invitationId, ProfileManagerInvitationStatus target, Instant now) {
+  public boolean tryDecidePending(
+      UUID invitationId, ProfileManagerInvitationStatus target, Instant now) {
     return dsl.update(PROFILE_MANAGER_INVITATION)
             .set(PROFILE_MANAGER_INVITATION.STATUS, jooqStatus(target))
             .set(PROFILE_MANAGER_INVITATION.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
@@ -38,7 +39,7 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   }
 
   @Override
-  public int invalidatePendingForProfileAndRecipient(
+  public int invalidatePendingByProfileIdAndRecipientAccountId(
       UUID profileId, UUID recipientAccountId, String reason, Instant now) {
     return invalidate(
         PROFILE_MANAGER_INVITATION
@@ -50,7 +51,7 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   }
 
   @Override
-  public int invalidatePendingForProfile(UUID profileId, String reason, Instant now) {
+  public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
     return invalidate(PROFILE_MANAGER_INVITATION.PROFILE_ID.eq(profileId), reason, now);
   }
 
@@ -67,7 +68,8 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   }
 
   @Override
-  public int invalidatePendingForRecipient(UUID recipientAccountId, String reason, Instant now) {
+  public int invalidatePendingByRecipientAccountId(
+      UUID recipientAccountId, String reason, Instant now) {
     return invalidate(
         PROFILE_MANAGER_INVITATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId), reason, now);
   }
