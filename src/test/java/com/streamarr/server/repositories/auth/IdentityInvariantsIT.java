@@ -48,9 +48,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * The V054 invariants as the database enforces them at commit (deferred triggers, SQLSTATE 23514
- * with stable constraint names): each has a failing case that proves its user impact and a passing
- * case that proves legitimate transitions are not blocked.
+ * The V056 invariants (T7 arrived with V059) as the database enforces them at commit (deferred
+ * triggers, SQLSTATE 23514 with stable constraint names): each has a failing case that proves its
+ * user impact and a passing case that proves legitimate transitions are not blocked.
  */
 @Tag("IntegrationTest")
 @DisplayName("Identity Invariants Integration Tests")
@@ -382,8 +382,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject the transition when its decline target is not declined")
-  void shouldRejectTransitionWhenDeclineTargetIsNotDeclined() {
+  @DisplayName("Should reject a decline whose target is neither REJECTED nor CANCELED")
+  void shouldRejectDeclineWhoseTargetIsNeitherRejectedNorCanceled() {
     var owner = create();
     var host = create();
     var offer =

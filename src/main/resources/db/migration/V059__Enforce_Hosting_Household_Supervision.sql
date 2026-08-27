@@ -1,7 +1,7 @@
 -- Profile sharing (ADR 0024 §Restricted Profile supervision; server PR #313).
 -- T7: a Household hosting a restricted Profile always holds an eligible HouseholdAdmin — the
 -- supervision is a fact about the target Household, not about who clicked accept. Activation
--- checks it, and demotion, deletion, or restriction that would remove the last eligible admin of
+-- checks it, and demotion, transfer, deletion, or restriction that would remove the last eligible admin of
 -- a hosting Household is rejected while such a share is active.
 
 ALTER TYPE profile_share_status ADD VALUE IF NOT EXISTS 'INVALIDATED' BEFORE 'ENDED';
@@ -80,7 +80,8 @@ BEGIN
 END;
 $$;
 
--- Account changes (demotion, deletion, restriction of eligibility) re-check T7 for the Household.
+-- Account changes (demotion, transfer, deletion, Personal Profile relink) re-check T7 for every
+-- touched Household; restriction is the profile trigger's job.
 CREATE OR REPLACE FUNCTION enforce_user_account_invariants()
     RETURNS TRIGGER
     LANGUAGE plpgsql

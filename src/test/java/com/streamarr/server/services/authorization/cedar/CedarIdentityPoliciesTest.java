@@ -797,7 +797,8 @@ class CedarIdentityPoliciesTest {
       assertThat(decide(atHome(), new Intent.OfferProfileShare(otherPersonal.getId())))
           .isEqualTo(DENIED);
 
-      // An unlinked Profile is offered by any direct manager — and nobody else.
+      // An unlinked Profile is offered by any direct manager — and, apart from ServerAdmin, nobody
+      // else.
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       assertThat(decide(atHome(), new Intent.OfferProfileShare(orphan.getId()))).isEqualTo(DENIED);
       managers.save(

@@ -12,9 +12,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * The resource Share's lifecycle and the principal's live relationships to it: target-Household
- * admin (live role), direct manager of the Profile, sovereign Account over its own Personal
- * Profile, or the offerer. A missing Share contributes nothing, and absent facts read as denied.
+ * The resource Share's structural flag and the principal's live relationships to it: target
+ * Household admin (live role), direct manager of the Profile, sovereign Account over its own
+ * Personal Profile, or the offerer. A missing Share contributes nothing; the service answers
+ * not-found before Cedar is asked, so the ServerAdmin arms never meet an empty resource.
  */
 @Component
 @RequiredArgsConstructor

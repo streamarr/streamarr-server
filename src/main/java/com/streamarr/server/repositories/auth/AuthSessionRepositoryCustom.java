@@ -20,7 +20,9 @@ public interface AuthSessionRepositoryCustom {
    */
   int revokeAllForAccount(UUID accountId, SessionRevocationReason reason, Instant now);
 
-  /** Unsharing clears any selection of that Profile in that Household (ADR 0024 §Unshare). */
+  /**
+   * Unsharing clears any selection of that Profile in that Household (ADR 0024 §Profile sharing).
+   */
   int clearSelections(UUID profileId, UUID householdId, Instant now);
 
   /** Ending a visitor's access drops their sessions there back to the membership Household. */

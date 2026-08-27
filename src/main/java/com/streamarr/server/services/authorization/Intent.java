@@ -118,8 +118,8 @@ public sealed interface Intent {
 
   /**
    * Offer one Profile to a Household (ADR 0024 §Profile sharing): ServerAdmin, a direct manager —
-   * or, for a self-managed Personal Profile, only its own Account, because acceptance admits the
-   * person.
+   * or, for a self-managed Personal Profile, only its own Account or ServerAdmin, because
+   * acceptance admits the person.
    */
   record OfferProfileShare(UUID profileId) implements UnitIntent {}
 

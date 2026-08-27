@@ -203,7 +203,7 @@ public class ProfileSharingService {
 
   /**
    * ADR 0024 §PIN safety: the offerer learns only whether their Profile would lock in the target
-   * Household and which name conflict exists — nothing else about that Household.
+   * Household and whether a name conflict exists — nothing else about that Household.
    */
   public Optional<SharePreflight> sharePreflight(
       AuthenticatedIdentity identity, UUID profileId, UUID householdId) {

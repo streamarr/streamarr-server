@@ -2,7 +2,7 @@
 // without copying data. Share-derived authority never creates another portable relationship.
 
 // ServerAdmin or a manager offers; a self-managed Personal Profile is offered only by its own
-// Account, because acceptance admits the person to the Household.
+// Account or ServerAdmin, because acceptance admits the person to the Household.
 @id("offer-profile-share-as-offerable-manager-or-server-admin")
 permit (
   principal,
