@@ -428,6 +428,35 @@ class ProfileSharingServiceTest {
         activeShareBuilder().profileId(profile.getId()).householdId(household.getId()).build());
   }
 
+  @Test
+  @DisplayName("Should return not-found when an allowed principal offers a missing Profile")
+  void shouldReturnNotFoundWhenAllowedPrincipalOffersMissingProfile() {
+    authorization.allowAll();
+    assertThat(
+            rejectionOf(
+                service.offerProfileShare(identity(), UUID.randomUUID(), household.getId())))
+        .isInstanceOf(ShareRejections.ProfileNotFound.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer an empty preview when an allowed principal previews a missing Profile")
+  void shouldAnswerEmptyPreviewWhenAllowedPrincipalPreviewsMissingProfile() {
+    authorization.allowAll();
+    assertThat(service.sharePreflight(identity(), UUID.randomUUID(), household.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer an empty page when an allowed principal lists shares of a missing Profile")
+  void shouldAnswerEmptyPageWhenAllowedPrincipalListsSharesOfMissingProfile() {
+    authorization.allowAll();
+
+    var page = service.profileShares(identity(), UUID.randomUUID(), paginationOptions());
+
+    assertThat(page.items()).isEmpty();
+  }
+
   // ---- A missing share answers ShareNotFound for every verb, whatever the policy arm.
 
   @Test

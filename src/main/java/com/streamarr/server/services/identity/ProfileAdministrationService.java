@@ -262,6 +262,10 @@ public class ProfileAdministrationService {
 
   public Outcome<Profile, ProfileRejections.SetProfilePin> setProfilePin(
       AuthenticatedIdentity identity, UUID profileId, String pin) {
+    if (profileRepository.findById(profileId).isEmpty()) {
+      return Outcome.rejected(new ProfileRejections.ProfileNotFound());
+    }
+
     var refusal = editRefusal(identity, new Intent.ManageProfilePin(profileId), profileId);
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
@@ -325,6 +329,10 @@ public class ProfileAdministrationService {
           AuthenticatedIdentity identity, UUID profileId, String pin, String reason) {
     if (isBlank(reason)) {
       return Outcome.rejected(new ProfileRejections.ReasonRequired());
+    }
+
+    if (profileRepository.findById(profileId).isEmpty()) {
+      return Outcome.rejected(new ProfileRejections.ProfileNotFound());
     }
 
     var intent = new Intent.AdministrativelyResetProfilePin(profileId);
@@ -414,6 +422,10 @@ public class ProfileAdministrationService {
       AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent, UUID profileId) {
     return mutationTransactions.write(
         () -> {
+          if (!profileRepository.lockById(profileId)) {
+            throw new MutationRejection(new ProfileRejections.ProfileNotFound());
+          }
+
           // Decided inside the transaction: the planner locks the row, so the classified state
           // holds until commit and the write below applies exactly the normalized target.
           var transition = decideTransition(identity, intent, profileId);

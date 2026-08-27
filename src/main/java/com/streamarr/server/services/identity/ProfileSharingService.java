@@ -69,6 +69,10 @@ public class ProfileSharingService {
       AuthenticatedIdentity identity, UUID profileId, UUID householdId) {
     return mutationTransactions.write(
         () -> {
+          if (profileRepository.findById(profileId).isEmpty()) {
+            throw new MutationRejection(new ShareRejections.ProfileNotFound());
+          }
+
           Optional<ShareRejections.Offer> refusal =
               refusalOf(
                   identity,
@@ -190,17 +194,17 @@ public class ProfileSharingService {
    */
   public Optional<SharePreflight> sharePreflight(
       AuthenticatedIdentity identity, UUID profileId, UUID householdId) {
+    var profile = profileRepository.findById(profileId);
+    if (profile.isEmpty() || householdRepository.findById(householdId).isEmpty()) {
+      return Optional.empty();
+    }
+
     var decision = authorizationService.decide(identity, new Intent.OfferProfileShare(profileId));
     if (decision instanceof Decision.Failed<AuthorizationUnit>) {
       throw new AuthorizationUnavailableException();
     }
 
     if (decision instanceof Decision.Denied<AuthorizationUnit>) {
-      return Optional.empty();
-    }
-
-    var profile = profileRepository.findById(profileId);
-    if (profile.isEmpty() || householdRepository.findById(householdId).isEmpty()) {
       return Optional.empty();
     }
 
@@ -397,7 +401,7 @@ public class ProfileSharingService {
   /** Every share of one Profile, for its managers; empty when the caller may not view. */
   public MediaPage<ProfileHouseholdShare> profileShares(
       AuthenticatedIdentity identity, UUID profileId, KeysetPaginationOptions options) {
-    if (!mayViewProfile(identity, profileId)) {
+    if (profileRepository.findById(profileId).isEmpty() || !mayViewProfile(identity, profileId)) {
       return page(List.of(), options);
     }
 

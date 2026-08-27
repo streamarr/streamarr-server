@@ -926,4 +926,67 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
       authTestSupport.deleteIdentity(serverAdmin);
     }
   }
+
+  // ---- A missing Profile answers not-found (or nothing), never "authorization unavailable".
+
+  @Test
+  @DisplayName("Should answer profile-not-found when a ServerAdmin offers a missing Profile")
+  void shouldAnswerProfileNotFoundWhenServerAdminOffersMissingProfile() throws Exception {
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    try {
+      graphql(
+              authTestSupport.accountBearer(serverAdmin),
+              """
+              mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+                share { id } userErrors { __typename } } }
+              """
+                  .formatted(UUID.randomUUID(), host.household().getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.offerProfileShare.userErrors[0].__typename")
+                  .value("ProfileNotFoundError"));
+    } finally {
+      authTestSupport.deleteIdentity(serverAdmin);
+    }
+  }
+
+  @Test
+  @DisplayName("Should answer an empty preview when a ServerAdmin previews a missing Profile")
+  void shouldAnswerEmptyPreviewWhenServerAdminPreviewsMissingProfile() throws Exception {
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    try {
+      graphql(
+              authTestSupport.accountBearer(serverAdmin),
+              """
+              query { profileSharePreview(profileId: "%s", householdId: "%s") {
+                wouldLock nameConflict } }
+              """
+                  .formatted(UUID.randomUUID(), host.household().getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.profileSharePreview").doesNotExist());
+    } finally {
+      authTestSupport.deleteIdentity(serverAdmin);
+    }
+  }
+
+  @Test
+  @DisplayName("Should answer an empty page when a ServerAdmin lists shares of a missing Profile")
+  void shouldAnswerEmptyPageWhenServerAdminListsSharesOfMissingProfile() throws Exception {
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    try {
+      graphql(
+              authTestSupport.accountBearer(serverAdmin),
+              """
+              query { profileShares(profileId: "%s") { edges { node { id } } } }
+              """
+                  .formatted(UUID.randomUUID()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.profileShares.edges.length()").value(0));
+    } finally {
+      authTestSupport.deleteIdentity(serverAdmin);
+    }
+  }
 }
