@@ -10,7 +10,7 @@ $$
 DECLARE
     reason TEXT;
 BEGIN
-    IF OLD.status <> 'PENDING' THEN
+    IF OLD.status <> 'PENDING' OR OLD.expires_at <= NOW() THEN
         RETURN NEW;
     END IF;
 
@@ -46,7 +46,10 @@ LANGUAGE plpgsql
 AS
 $$
 BEGIN
-    IF OLD.status <> 'PENDING' OR OLD.issuer_account_id IS NULL OR NEW.issuer_account_id IS NOT NULL THEN
+    IF OLD.status <> 'PENDING'
+        OR OLD.expires_at <= NOW()
+        OR OLD.issuer_account_id IS NULL
+        OR NEW.issuer_account_id IS NOT NULL THEN
         RETURN NEW;
     END IF;
 

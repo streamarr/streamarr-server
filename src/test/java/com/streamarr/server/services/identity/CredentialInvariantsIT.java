@@ -62,6 +62,48 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should preserve an expired invitation when its issuer is deleted")
+  void shouldPreserveExpiredInvitationWhenIssuerIsDeleted() {
+    var issuer = authTestSupport.createAccount();
+    var target = authTestSupport.createAccount();
+    var expired = savePendingInvitation(target, issuer, Instant.now().minus(Duration.ofHours(1)));
+
+    try {
+      authTestSupport.deleteAccount(issuer.getId());
+
+      var row = invitationRepository.findById(expired.getId()).orElseThrow();
+      assertThat(row.getIssuerAccountId()).isNull();
+      assertThat(row.getStatus()).isEqualTo(AccountInvitationStatus.PENDING);
+      assertThat(row.statusAt(Instant.now())).isEqualTo(AccountInvitationStatus.EXPIRED);
+      assertThat(row.getInvalidationReason()).isNull();
+      assertThat(row.getDecidedAt()).isNull();
+    } finally {
+      invitationRepository.deleteById(expired.getId());
+      authTestSupport.deleteAccount(target.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should preserve an expired reset code when its issuer is deleted")
+  void shouldPreserveExpiredResetCodeWhenIssuerIsDeleted() {
+    var issuer = authTestSupport.createAccount();
+    var target = authTestSupport.createAccount();
+    var expired = savePendingResetCode(target, issuer, Instant.now().minus(Duration.ofHours(1)));
+
+    try {
+      authTestSupport.deleteAccount(issuer.getId());
+
+      var row = resetCodeRepository.findById(expired.getId()).orElseThrow();
+      assertThat(row.getIssuerAccountId()).isNull();
+      assertThat(row.getStatus()).isEqualTo(PasswordResetCodeStatus.PENDING);
+      assertThat(row.statusAt(Instant.now())).isEqualTo(PasswordResetCodeStatus.EXPIRED);
+      assertThat(row.getInvalidationReason()).isNull();
+    } finally {
+      authTestSupport.deleteAccount(target.getId());
+    }
+  }
+
+  @Test
   @DisplayName("Should leave an expired invitation out of issuer invalidation")
   void shouldLeaveExpiredInvitationOutOfIssuerInvalidation() {
     var issuer = authTestSupport.createAccount();
