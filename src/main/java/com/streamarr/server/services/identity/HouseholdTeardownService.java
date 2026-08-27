@@ -139,7 +139,7 @@ public class HouseholdTeardownService {
   }
 
   /** What teardown will do, for whoever may view the Household's administration. */
-  public Optional<TeardownPreflightView> teardownPreflight(
+  public Optional<TeardownPreflightDetails> teardownPreflight(
       AuthenticatedIdentity identity, UUID householdId) {
     if (!mayViewHousehold(identity, householdId)
         || householdRepository.findById(householdId).isEmpty()) {
@@ -151,14 +151,14 @@ public class HouseholdTeardownService {
     var doomedProfiles =
         profileRepository.findByHouseholdId(householdId).stream()
             .filter(profile -> !linkedProfileIds.contains(profile.getId()))
-            .map(profile -> new DoomedProfileView(profile.getId(), profile.getName()))
+            .map(profile -> new DoomedProfileDetails(profile.getId(), profile.getName()))
             .toList();
     var hostedVisits =
         shareRepository.findByHouseholdIdAndStatus(householdId, ProfileShareStatus.ACTIVE).stream()
             .filter(share -> !share.isStructural())
             .count();
     return Optional.of(
-        new TeardownPreflightView(residents.size(), doomedProfiles, (int) hostedVisits));
+        new TeardownPreflightDetails(residents.size(), doomedProfiles, (int) hostedVisits));
   }
 
   /** The security audit, newest first; only ServerAdmin reads it (whole-surface gate). */
@@ -294,19 +294,31 @@ public class HouseholdTeardownService {
       return Optional.empty();
     }
 
-    if (disposition.choice() != FinalAccountChoice.DELETE) {
-      if (disposition.destinationHouseholdId() == null) {
-        return Optional.of(new TeardownRejections.DestinationRequired());
-      }
+    if (disposition.choice() == FinalAccountChoice.DELETE) {
+      return Optional.empty();
+    }
 
-      if (disposition.destinationHouseholdId().equals(command.householdId())
-          || householdRepository.findById(disposition.destinationHouseholdId()).isEmpty()) {
-        return Optional.of(new TeardownRejections.DestinationNotFound());
-      }
+    var destinationRefusal = destinationRefusal(command.householdId(), disposition);
+    if (destinationRefusal.isPresent()) {
+      return destinationRefusal;
     }
 
     if (disposition.choice() == FinalAccountChoice.DELETE_KEEPING_PROFILE) {
       return replacementRefusal(disposition);
+    }
+
+    return Optional.empty();
+  }
+
+  private Optional<TeardownRejections.TearDown> destinationRefusal(
+      UUID sourceHouseholdId, FinalAccountDisposition disposition) {
+    if (disposition.destinationHouseholdId() == null) {
+      return Optional.of(new TeardownRejections.DestinationRequired());
+    }
+
+    if (disposition.destinationHouseholdId().equals(sourceHouseholdId)
+        || householdRepository.findById(disposition.destinationHouseholdId()).isEmpty()) {
+      return Optional.of(new TeardownRejections.DestinationNotFound());
     }
 
     return Optional.empty();
@@ -391,8 +403,8 @@ public class HouseholdTeardownService {
   public record SecurityAuditPageRequest(
       PaginationDirection direction, Instant cursorOccurredAt, UUID cursorId, int limit) {}
 
-  public record DoomedProfileView(UUID id, String name) {}
+  public record DoomedProfileDetails(UUID id, String name) {}
 
-  public record TeardownPreflightView(
-      int accountCount, List<DoomedProfileView> unlinkedProfiles, int hostedVisitCount) {}
+  public record TeardownPreflightDetails(
+      int accountCount, List<DoomedProfileDetails> unlinkedProfiles, int hostedVisitCount) {}
 }

@@ -5,7 +5,7 @@ import java.util.UUID;
 import lombok.Builder;
 
 @Builder
-public record SecurityAuditEventView(
+public record SecurityAuditEventDetails(
     UUID id,
     String occurredAt,
     UUID actorAccountId,
@@ -14,8 +14,8 @@ public record SecurityAuditEventView(
     String reason,
     String resources) {
 
-  public static SecurityAuditEventView from(SecurityAuditEventRecordView row) {
-    return SecurityAuditEventView.builder()
+  public static SecurityAuditEventDetails from(SecurityAuditEventRecordView row) {
+    return SecurityAuditEventDetails.builder()
         .id(row.id())
         .occurredAt(row.occurredAt().toString())
         .actorAccountId(row.actorAccountId())

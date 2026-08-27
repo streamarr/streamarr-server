@@ -4,6 +4,7 @@ import static com.streamarr.server.jooq.generated.tables.Household.HOUSEHOLD;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
+import static com.streamarr.server.fixtures.AccountInvitationFixture.pendingInvitationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.contains;
@@ -16,14 +17,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
-import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
@@ -364,18 +362,14 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
                       .build());
               var accountInvitation =
                   accountInvitationRepository.saveAndFlush(
-                      AccountInvitation.builder()
+                      pendingInvitationBuilder()
                           .recipientEmail("pending@example.com")
                           .householdId(admin.household().getId())
                           .householdName("Destination")
-                          .householdRole(HouseholdRole.MEMBER)
                           .profileId(orphan.getId())
                           .profileName(orphan.getName())
-                          .profileKind(ProfileKind.ADULT)
                           .issuerAccountId(admin.account().getId())
-                          .expiresAt(Instant.now().plusSeconds(3600))
                           .publicId("pending-profile-account")
-                          .secretDigest(new byte[] {1})
                           .build());
               var managerInvitation =
                   profileManagerInvitationRepository.saveAndFlush(
@@ -388,7 +382,7 @@ class TeardownEndpointsIT extends AbstractIntegrationTest {
                           .recipientEmail(admin.account().getEmail())
                           .expiresAt(Instant.now().plusSeconds(3600))
                           .publicId("pending-profile-manager")
-                          .secretDigest(new byte[] {2})
+                          .secretDigest(new byte[32])
                           .build());
               return new PendingProfileArtifacts(
                   accountInvitation.getId(), managerInvitation.getId());
