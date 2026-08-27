@@ -270,13 +270,14 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should require a reason before authorization and audit when force-end succeeds")
-  void shouldRequireReasonBeforeAuthorizationAndAuditWhenForceEndSucceeds() {
+  @DisplayName("Should require a reason after authorization and audit when force-end succeeds")
+  void shouldRequireReasonAfterAuthorizationAndAuditWhenForceEndSucceeds() {
     var active = activeShare();
 
     assertThat(rejectionOf(service.forceEndProfileShare(identity(), active.getId(), " ")))
         .isInstanceOf(ShareRejections.ReasonRequired.class);
-    assertThat(authorization.recordedIntents()).isEmpty();
+    assertThat(authorization.recordedIntents())
+        .containsExactly(new Intent.ForceEndProfileShare(active.getId()));
 
     var ended = service.forceEndProfileShare(identity(), active.getId(), "abuse report");
     assertThat(ended).isInstanceOf(Outcome.Accepted.class);
@@ -473,6 +474,17 @@ class ProfileSharingServiceTest {
     var page = service.profileShares(identity(), UUID.randomUUID(), paginationOptions());
 
     assertThat(page.items()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer ShareNotFound when an unauthorized non-viewer force-ends with a blank reason")
+  void shouldAnswerShareNotFoundWhenUnauthorizedNonViewerForceEndsWithBlankReason() {
+    var active = activeShare();
+    authorization.denyAll();
+
+    assertThat(rejectionOf(service.forceEndProfileShare(identity(), active.getId(), "  ")))
+        .isInstanceOf(ShareRejections.ShareNotFound.class);
   }
 
   // ---- A missing share answers ShareNotFound for every verb, whatever the policy arm.

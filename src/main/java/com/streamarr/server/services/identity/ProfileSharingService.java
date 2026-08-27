@@ -160,10 +160,6 @@ public class ProfileSharingService {
 
   public Outcome<ProfileHouseholdShare, ShareRejections.ForceEnd> forceEndProfileShare(
       AuthenticatedIdentity identity, UUID shareId, String reason) {
-    if (reason == null || reason.isBlank()) {
-      return Outcome.rejected(new ShareRejections.ReasonRequired());
-    }
-
     return endInTransaction(
         shareId,
         () -> {
@@ -178,6 +174,10 @@ public class ProfileSharingService {
               rejection -> {
                 throw new MutationRejection(rejection);
               });
+          // Authority first, input second: an unauthorized caller learns nothing from the reason.
+          if (reason == null || reason.isBlank()) {
+            throw new MutationRejection(new ShareRejections.ReasonRequired());
+          }
         },
         share ->
             securityAuditEventRepository.append(
