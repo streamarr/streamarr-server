@@ -117,36 +117,4 @@ class ShareErrorsTest {
               .isExactlyInstanceOf(ReauthenticationRequiredError.class);
         });
   }
-
-  @Test
-  @DisplayName("Should fail visibly when an operation receives an impossible rejection")
-  void shouldFailVisiblyWhenOperationReceivesImpossibleRejection() {
-    assertSoftly(
-        softly -> {
-          softly
-              .assertThatThrownBy(
-                  () -> ShareErrors.toRejectError(new ShareRejections.NoEligibleAdmin()))
-              .isInstanceOf(IllegalStateException.class);
-          softly
-              .assertThatThrownBy(
-                  () -> ShareErrors.toRejectError(new ShareRejections.NameConflict()))
-              .isInstanceOf(IllegalStateException.class);
-          softly
-              .assertThatThrownBy(
-                  () -> ShareErrors.toCancelError(new ShareRejections.NoEligibleAdmin()))
-              .isInstanceOf(IllegalStateException.class);
-          softly
-              .assertThatThrownBy(
-                  () -> ShareErrors.toCancelError(new ShareRejections.NameConflict()))
-              .isInstanceOf(IllegalStateException.class);
-          softly
-              .assertThatThrownBy(
-                  () -> ShareErrors.toEndError(new ShareRejections.ReauthenticationRequired()))
-              .isInstanceOf(IllegalStateException.class);
-          softly
-              .assertThatThrownBy(
-                  () -> ShareErrors.toEndError(new ShareRejections.ReasonRequired()))
-              .isInstanceOf(IllegalStateException.class);
-        });
-  }
 }

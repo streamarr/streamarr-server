@@ -105,10 +105,10 @@ public class ProfileSharingService {
                 : Optional.empty());
   }
 
-  public Outcome<ProfileHouseholdShare, ShareRejections.Decide> acceptProfileShare(
+  public Outcome<ProfileHouseholdShare, ShareRejections.Accept> acceptProfileShare(
       AuthenticatedIdentity identity, UUID shareId) {
     var attempt =
-        mutationTransactions.<Optional<ProfileHouseholdShare>, ShareRejections.Decide>write(
+        mutationTransactions.<Optional<ProfileHouseholdShare>, ShareRejections.Accept>write(
             () -> acceptInTransaction(identity, shareId),
             constraint ->
                 switch (constraint) {
@@ -119,18 +119,18 @@ public class ProfileSharingService {
     return attempt.fold(
         accepted ->
             accepted
-                .<Outcome<ProfileHouseholdShare, ShareRejections.Decide>>map(Outcome::accepted)
+                .<Outcome<ProfileHouseholdShare, ShareRejections.Accept>>map(Outcome::accepted)
                 .orElseGet(() -> Outcome.rejected(new ShareRejections.ShareNotPending())),
         Outcome::rejected);
   }
 
-  public Outcome<ProfileHouseholdShare, ShareRejections.Decide> rejectProfileShare(
+  public Outcome<ProfileHouseholdShare, ShareRejections.Decline> rejectProfileShare(
       AuthenticatedIdentity identity, UUID shareId) {
     return declinePending(
         identity, new Intent.RejectProfileShare(shareId), shareId, ProfileShareStatus.REJECTED);
   }
 
-  public Outcome<ProfileHouseholdShare, ShareRejections.Decide> cancelProfileShare(
+  public Outcome<ProfileHouseholdShare, ShareRejections.Decline> cancelProfileShare(
       AuthenticatedIdentity identity, UUID shareId) {
     return declinePending(
         identity, new Intent.CancelProfileShare(shareId), shareId, ProfileShareStatus.CANCELED);
@@ -147,16 +147,18 @@ public class ProfileSharingService {
                   new Intent.EndProfileShare(shareId),
                   () -> mayViewShare(identity, shareId),
                   ShareRejections.ShareNotFound::new,
-                  Optional.of(ShareRejections.ReauthenticationRequired::new));
+                  Optional.empty());
           refusal.ifPresent(
               rejection -> {
                 throw new MutationRejection(rejection);
               });
         },
-        _ -> {});
+        _ -> {},
+        new EndRefusals<>(
+            ShareRejections.ShareNotActive::new, ShareRejections.StructuralShareCannotEnd::new));
   }
 
-  public Outcome<ProfileHouseholdShare, ShareRejections.End> forceEndProfileShare(
+  public Outcome<ProfileHouseholdShare, ShareRejections.ForceEnd> forceEndProfileShare(
       AuthenticatedIdentity identity, UUID shareId, String reason) {
     if (reason == null || reason.isBlank()) {
       return Outcome.rejected(new ShareRejections.ReasonRequired());
@@ -165,7 +167,7 @@ public class ProfileSharingService {
     return endInTransaction(
         shareId,
         () -> {
-          Optional<ShareRejections.End> refusal =
+          Optional<ShareRejections.ForceEnd> refusal =
               refusalOf(
                   identity,
                   new Intent.ForceEndProfileShare(shareId),
@@ -185,7 +187,9 @@ public class ProfileSharingService {
                     .reason(reason)
                     .resource("profileId", share.getProfileId())
                     .resource("householdId", share.getHouseholdId())
-                    .build()));
+                    .build()),
+        new EndRefusals<>(
+            ShareRejections.ShareNotActive::new, ShareRejections.StructuralShareCannotEnd::new));
   }
 
   /**
@@ -218,7 +222,7 @@ public class ProfileSharingService {
     return Optional.of(new SharePreflight(wouldLock, nameConflict));
   }
 
-  private Outcome<ProfileHouseholdShare, ShareRejections.Decide> declinePending(
+  private Outcome<ProfileHouseholdShare, ShareRejections.Decline> declinePending(
       AuthenticatedIdentity identity,
       Intent.UnitIntent intent,
       UUID shareId,
@@ -226,7 +230,7 @@ public class ProfileSharingService {
     return mutationTransactions.write(
         () -> {
           requireShare(shareId);
-          Optional<ShareRejections.Decide> refusal =
+          Optional<ShareRejections.Decline> refusal =
               refusalOf(
                   identity,
                   intent,
@@ -283,15 +287,22 @@ public class ProfileSharingService {
     return Optional.empty();
   }
 
-  private Outcome<ProfileHouseholdShare, ShareRejections.End> endInTransaction(
-      UUID shareId, Runnable authorize, Consumer<ProfileHouseholdShare> afterEnd) {
+  /** The lifecycle refusals an end can meet, typed for the verb that asked. */
+  private record EndRefusals<R>(
+      Supplier<? extends R> notActive, Supplier<? extends R> structural) {}
+
+  private <R> Outcome<ProfileHouseholdShare, R> endInTransaction(
+      UUID shareId,
+      Runnable authorize,
+      Consumer<ProfileHouseholdShare> afterEnd,
+      EndRefusals<R> refusals) {
     return mutationTransactions.write(
         () -> {
           requireShare(shareId);
           authorize.run();
           var now = clock.instant();
           if (!shareRepository.tryEnd(shareId, now)) {
-            throw new MutationRejection(new ShareRejections.ShareNotActive());
+            throw new MutationRejection(refusals.notActive().get());
           }
 
           var share = shareRepository.findFreshById(shareId).orElseThrow();
@@ -307,10 +318,13 @@ public class ProfileSharingService {
           afterEnd.accept(share);
           return share;
         },
-        constraint ->
-            CHK_STRUCTURAL.equals(constraint)
-                ? Optional.of(new ShareRejections.StructuralShareCannotEnd())
-                : Optional.empty());
+        constraint -> {
+          if (CHK_STRUCTURAL.equals(constraint)) {
+            return Optional.of(refusals.structural().get());
+          }
+
+          return Optional.empty();
+        });
   }
 
   /** A share nobody can find answers the same way for everyone: there is nothing to protect. */
@@ -347,7 +361,7 @@ public class ProfileSharingService {
     };
   }
 
-  private Optional<ShareRejections.Decide> decideRefusal(
+  private Optional<ShareRejections.Accept> decideRefusal(
       AuthenticatedIdentity identity, Intent.UnitIntent intent, UUID shareId) {
     return refusalOf(
         identity,

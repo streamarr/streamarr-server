@@ -304,17 +304,19 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should report missing reauthentication when ordinary end requires it")
-  void shouldReportMissingReauthenticationWhenOrdinaryEndRequiresIt() {
+  @DisplayName("Should fail closed when an ordinary end is denied for missing reauthentication")
+  void shouldFailClosedWhenOrdinaryEndIsDeniedForMissingReauthentication() {
     var active = activeShare();
+    var identity = identity();
+    var shareId = active.getId();
     authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.EndProfileShare
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
                 : allowed());
 
-    assertThat(rejectionOf(service.endProfileShare(identity(), active.getId())))
-        .isInstanceOf(ShareRejections.ReauthenticationRequired.class);
+    assertThatThrownBy(() -> service.endProfileShare(identity, shareId))
+        .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
   @Test

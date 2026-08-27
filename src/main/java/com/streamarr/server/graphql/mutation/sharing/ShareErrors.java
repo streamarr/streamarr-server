@@ -23,7 +23,7 @@ public final class ShareErrors {
     };
   }
 
-  public static AcceptProfileShareError toAcceptError(ShareRejections.Decide rejection) {
+  public static AcceptProfileShareError toAcceptError(ShareRejections.Accept rejection) {
     return switch (rejection) {
       case ShareRejections.ShareNotFound _ -> shareNotFound();
       case ShareRejections.ShareNotPending _ -> shareNotPending();
@@ -35,21 +35,17 @@ public final class ShareErrors {
     };
   }
 
-  public static RejectProfileShareError toRejectError(ShareRejections.Decide rejection) {
+  public static RejectProfileShareError toRejectError(ShareRejections.Decline rejection) {
     return switch (rejection) {
       case ShareRejections.ShareNotFound _ -> shareNotFound();
       case ShareRejections.ShareNotPending _ -> shareNotPending();
-      case ShareRejections.NoEligibleAdmin _, ShareRejections.NameConflict _ ->
-          throw impossible("reject", rejection);
     };
   }
 
-  public static CancelProfileShareError toCancelError(ShareRejections.Decide rejection) {
+  public static CancelProfileShareError toCancelError(ShareRejections.Decline rejection) {
     return switch (rejection) {
       case ShareRejections.ShareNotFound _ -> shareNotFound();
       case ShareRejections.ShareNotPending _ -> shareNotPending();
-      case ShareRejections.NoEligibleAdmin _, ShareRejections.NameConflict _ ->
-          throw impossible("cancel", rejection);
     };
   }
 
@@ -58,12 +54,10 @@ public final class ShareErrors {
       case ShareRejections.ShareNotFound _ -> shareNotFound();
       case ShareRejections.ShareNotActive _ -> shareNotActive();
       case ShareRejections.StructuralShareCannotEnd _ -> structuralShare();
-      case ShareRejections.ReauthenticationRequired _, ShareRejections.ReasonRequired _ ->
-          throw impossible("end", rejection);
     };
   }
 
-  public static ForceEndProfileShareError toForceEndError(ShareRejections.End rejection) {
+  public static ForceEndProfileShareError toForceEndError(ShareRejections.ForceEnd rejection) {
     return switch (rejection) {
       case ShareRejections.ShareNotFound _ -> shareNotFound();
       case ShareRejections.ShareNotActive _ -> shareNotActive();
@@ -91,11 +85,5 @@ public final class ShareErrors {
     return new MembershipShareCannotEndError(
         "This share is required by Account membership and cannot end while the Account remains in"
             + " the Household.");
-  }
-
-  private static IllegalStateException impossible(String operation, Object rejection) {
-    return new IllegalStateException(
-        "The %s operation cannot produce %s."
-            .formatted(operation, rejection.getClass().getSimpleName()));
   }
 }
