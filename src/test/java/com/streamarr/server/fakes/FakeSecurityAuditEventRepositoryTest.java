@@ -22,7 +22,7 @@ class FakeSecurityAuditEventRepositoryTest {
     repository.append(entry("first"));
     repository.append(entry("second"));
 
-    assertThat(repository.pageNewestFirst(null, null, 10))
+    assertThat(repository.findNewestFirst(null, null, 10))
         .extracting(record -> record.operation())
         .containsExactly("second", "first");
   }
@@ -31,10 +31,10 @@ class FakeSecurityAuditEventRepositoryTest {
   @DisplayName("Should include an equal-timestamp row when the cursor identifier sorts after it")
   void shouldIncludeEqualTimestampRowWhenCursorIdentifierSortsAfterIt() {
     repository.append(entry("same timestamp"));
-    var record = repository.pageNewestFirst(null, null, 1).getFirst();
+    var record = repository.findNewestFirst(null, null, 1).getFirst();
     var cursorAfterRecord = UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff");
 
-    assertThat(repository.pageNewestFirst(record.occurredAt(), cursorAfterRecord, 10))
+    assertThat(repository.findNewestFirst(record.occurredAt(), cursorAfterRecord, 10))
         .extracting(result -> result.id())
         .containsExactly(record.id());
   }
