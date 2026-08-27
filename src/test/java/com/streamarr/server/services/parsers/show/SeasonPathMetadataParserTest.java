@@ -27,6 +27,15 @@ class SeasonPathMetadataParserTest {
     assertThat(result.isSeasonFolder()).isFalse();
   }
 
+  @Test
+  @DisplayName("Should ignore season numbers inside nested parentheses")
+  void shouldIgnoreSeasonNumbersInsideNestedParentheses() {
+    var result = seasonPathMetadataParser.parse("Season (draft (2024) 2)").orElseThrow();
+
+    assertThat(result.seasonNumber()).isEmpty();
+    assertThat(result.isSeasonFolder()).isFalse();
+  }
+
   @Nested
   @DisplayName("Successful Season Extraction Tests")
   class SuccessfulExtractionTests {

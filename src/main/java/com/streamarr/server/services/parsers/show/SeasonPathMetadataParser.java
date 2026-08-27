@@ -149,17 +149,23 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
   }
 
   private static int indexOfFirstDigitOutsideParentheses(String path) {
-    var hasOpenParenthesis = false;
+    var parenthesisDepth = 0;
 
     for (var i = 0; i < path.length(); i++) {
       var ch = path.charAt(i);
 
-      if (Character.isDigit(ch) && !hasOpenParenthesis) {
-        return i;
+      if (ch == '(') {
+        parenthesisDepth++;
+        continue;
       }
 
-      if (ch == '(' || ch == ')') {
-        hasOpenParenthesis = ch == '(';
+      if (ch == ')') {
+        parenthesisDepth = Math.max(0, parenthesisDepth - 1);
+        continue;
+      }
+
+      if (Character.isDigit(ch) && parenthesisDepth == 0) {
+        return i;
       }
     }
 
