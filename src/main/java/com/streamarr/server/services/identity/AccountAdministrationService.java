@@ -235,9 +235,11 @@ public class AccountAdministrationService {
   }
 
   /**
-   * A disabled or demoted issuer leaves no unexpired codes or pending share offers behind that
-   * could take effect later (ADR 0024 §Invitations: the system is the acting party); a deleted
-   * issuer is handled by the V058 triggers in the same statement as the SET NULL.
+   * A disabled issuer, or one demoted from ServerAdmin, leaves no unexpired codes or pending share
+   * offers behind that could take effect later (ADR 0024 §Invitations: the system is the acting
+   * party). HouseholdAdmin demotion touches neither — that role issues no codes and offers no
+   * Profiles. A deleted issuer is handled by the V058 triggers in the same statement as the SET
+   * NULL.
    */
   private void invalidateIssuedCredentials(UUID issuerAccountId, String reason) {
     var now = clock.instant();

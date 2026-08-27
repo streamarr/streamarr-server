@@ -1127,6 +1127,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         });
   }
 
+  /** An unlinked Adult Profile the owner solely manages, with no share at all. */
   private Profile unsharedManagedProfile() {
     return transactionTemplate.execute(
         _ -> {

@@ -2,7 +2,6 @@ package com.streamarr.server.repositories.auth;
 
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static org.jooq.impl.DSL.inline;
-import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
@@ -23,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
+import org.jooq.impl.DSL;
 import org.springframework.data.domain.AuditorAware;
 
 @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -127,7 +127,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
                     reverse
                         ? PROFILE_HOUSEHOLD_SHARE.ID.le(cursorId)
                         : PROFILE_HOUSEHOLD_SHARE.ID.ge(cursorId))
-            .orElseGet(() -> noCondition());
+            .orElseGet(DSL::noCondition);
     var extraRows = options.getCursorId().isPresent() ? 2 : 1;
     var query =
         dsl.select()

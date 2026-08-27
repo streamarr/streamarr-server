@@ -3,7 +3,6 @@ package com.streamarr.server.domain.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
-import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -17,7 +16,7 @@ class ProfileHouseholdShareTest {
   void shouldExposeOptionalEmptyWhenInvalidationReasonIsAbsent() {
     var share = ProfileHouseholdShare.builder().build();
 
-    assertThat(share.getInvalidationReason()).isEqualTo(Optional.empty());
+    assertThat(share.getInvalidationReason()).isEmpty();
   }
 
   @Test

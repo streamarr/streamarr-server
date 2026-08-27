@@ -196,9 +196,9 @@ class SessionContextServiceTest {
   void shouldRefuseSelectionWhenProfileHasNoActiveShareInContext() {
     var session = session(account.getHouseholdId(), null);
     var identity = identity(session);
-    var unshared = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+    var unsharedId = profiles.save(ProfileFixture.defaultProfileBuilder().build()).getId();
 
-    assertThatThrownBy(() -> service.recordProfileSelection(identity, unshared.getId()))
+    assertThatThrownBy(() -> service.recordProfileSelection(identity, unsharedId))
         .isInstanceOf(ProfileAccessDeniedException.class);
     assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
   }

@@ -173,13 +173,13 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
   void shouldOmitExpiredOfferWhenHouseholdPendingOffersArePaged() {
     var owner = create();
     var host = create();
-    var expired = pendingOffer(owner, host, Instant.now().minusSeconds(60));
+    pendingOffer(owner, host, Instant.now().minusSeconds(60));
 
     var page =
         shareRepository.findPendingOffersPage(
             host.household().getId(), Instant.now(), firstPage(10));
 
-    assertThat(page).extracting(ProfileHouseholdShare::getId).doesNotContain(expired.getId());
+    assertThat(page).isEmpty();
   }
 
   // ---- I6 / I2: which T7 arms are reachable -----------------------------------------------------
@@ -194,7 +194,9 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     var empty = createAccountlessHousehold();
     share(visitor.getId(), empty.getId());
 
-    assertThatThrownBy(() -> restrict(visitor.getId()))
+    var visitorId = visitor.getId();
+
+    assertThatThrownBy(() -> restrict(visitorId))
         .isInstanceOf(DataIntegrityViolationException.class)
         .extracting(IdentityInvariantsIT::constraintName)
         .isEqualTo(CHK_HOSTING_ADMIN);
@@ -210,7 +212,9 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     var kid = createKid(other);
     share(kid.getId(), host.household().getId());
 
-    assertThatThrownBy(() -> demote(host.account().getId()))
+    var hostAccountId = host.account().getId();
+
+    assertThatThrownBy(() -> demote(hostAccountId))
         .isInstanceOf(DataIntegrityViolationException.class)
         .extracting(IdentityInvariantsIT::constraintName)
         .isEqualTo(CHK_HOUSEHOLD_ADMIN);

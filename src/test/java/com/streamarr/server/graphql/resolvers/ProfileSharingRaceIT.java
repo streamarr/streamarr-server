@@ -236,20 +236,14 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
                 return new AcceptanceRace(revokedBeforeRelease, acceptResponse);
               });
 
-      var status = shareRepository.findById(shareId).orElseThrow().getStatus();
-      assertThat(status).isNotEqualTo(ProfileShareStatus.PENDING);
       assertThat(outcome.revokedBeforeRelease())
           .as("disablement must wait behind the acceptance's FOR SHARE read of the offerer")
           .isFalse();
-      assertThat(status).isEqualTo(ProfileShareStatus.ACTIVE);
-      if (outcome.revokedBeforeRelease()) {
-        assertThat(status)
-            .as(
-                "authority lost before activation committed must not yield ACTIVE (acceptance"
-                    + " answered %s)",
-                outcome.acceptResponse())
-            .isNotEqualTo(ProfileShareStatus.ACTIVE);
-      }
+      assertThat(shareRepository.findById(shareId).orElseThrow().getStatus())
+          .as(
+              "the acceptance won, so the share is ACTIVE (acceptance answered %s)",
+              outcome.acceptResponse())
+          .isEqualTo(ProfileShareStatus.ACTIVE);
     } finally {
       authTestSupport.deleteIdentity(offerer);
       authTestSupport.deleteIdentity(disabler);
@@ -281,6 +275,7 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.acceptProfileShare.share.status").value("ACTIVE"));
   }
 
+  /** An unlinked Adult Profile the owner solely manages, with no share at all. */
   private Profile unsharedManagedProfile() {
     return transactionTemplate.execute(
         _ -> {
@@ -441,7 +436,6 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
         });
   }
 
-  /** An unlinked Adult Profile the owner solely manages, with no share at all. */
   private ResultActions graphql(String bearer, String query) throws Exception {
     return mockMvc.perform(
         post("/graphql")

@@ -365,9 +365,11 @@ class ProfileSharingServiceTest {
   @DisplayName("Should fail closed when pending-offer authorization is unavailable")
   void shouldFailClosedWhenPendingOfferAuthorizationIsUnavailable() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var identity = identity();
+    var householdId = household.getId();
+    var options = paginationOptions();
 
-    assertThatThrownBy(
-            () -> service.pendingShareOffers(identity(), household.getId(), paginationOptions()))
+    assertThatThrownBy(() -> service.pendingShareOffers(identity, householdId, options))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -375,9 +377,11 @@ class ProfileSharingServiceTest {
   @DisplayName("Should fail closed when Profile-share authorization is unavailable")
   void shouldFailClosedWhenProfileShareAuthorizationIsUnavailable() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var identity = identity();
+    var profileId = profile.getId();
+    var options = paginationOptions();
 
-    assertThatThrownBy(
-            () -> service.profileShares(identity(), profile.getId(), paginationOptions()))
+    assertThatThrownBy(() -> service.profileShares(identity, profileId, options))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
