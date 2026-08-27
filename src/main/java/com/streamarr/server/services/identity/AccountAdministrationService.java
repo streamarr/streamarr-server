@@ -7,6 +7,7 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -40,6 +41,7 @@ public class AccountAdministrationService {
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final AccountInvitationRepository accountInvitationRepository;
   private final PasswordResetCodeRepository passwordResetCodeRepository;
+  private final ProfileHouseholdShareRepository profileHouseholdShareRepository;
   private final MutationTransactions mutationTransactions;
   private final Clock clock;
 
@@ -233,14 +235,16 @@ public class AccountAdministrationService {
   }
 
   /**
-   * A disabled or demoted issuer leaves no unexpired codes behind that could take effect later; a
-   * deleted issuer is handled by the V058 triggers in the same statement as the SET NULL.
+   * A disabled or demoted issuer leaves no unexpired codes or pending share offers behind that
+   * could take effect later (ADR 0024 §Invitations: the system is the acting party); a deleted
+   * issuer is handled by the V058 triggers in the same statement as the SET NULL.
    */
   private void invalidateIssuedCredentials(UUID issuerAccountId, String reason) {
     var now = clock.instant();
     accountInvitationRepository.invalidatePendingInvitationsIssuedBy(issuerAccountId, reason, now);
     passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
         issuerAccountId, reason, now);
+    profileHouseholdShareRepository.invalidatePendingOffersOfferedBy(issuerAccountId, reason, now);
   }
 
   private boolean mayViewAccount(AuthenticatedIdentity identity, UUID accountId) {

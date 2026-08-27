@@ -29,8 +29,11 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /** Retires an older PENDING offer for the pair as EXPIRED or CANCELED before replacement. */
   int retirePendingForPair(UUID profileId, UUID householdId, Instant now);
 
-  /** Invalidates one PENDING offer while preserving the reason for reporting. */
+  /** Invalidates one PENDING offer, recording why so the offer can explain itself later. */
   boolean tryInvalidate(UUID shareId, String reason, Instant now);
+
+  /** Invalidates every unexpired PENDING offer the Account made, recording why. */
+  int invalidatePendingOffersOfferedBy(UUID offererAccountId, String reason, Instant now);
 
   /** Refreshes a possibly managed row after jOOQ DML changed it in this transaction. */
   Optional<ProfileHouseholdShare> findFreshById(UUID shareId);

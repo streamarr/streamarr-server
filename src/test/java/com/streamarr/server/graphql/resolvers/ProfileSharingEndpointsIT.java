@@ -989,4 +989,54 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
       authTestSupport.deleteIdentity(serverAdmin);
     }
   }
+
+  @Test
+  @DisplayName("Should invalidate the pending offer when its ServerAdmin offerer is disabled")
+  void shouldInvalidatePendingOfferWhenServerAdminOffererIsDisabled() throws Exception {
+    var orphan = managedOrphan();
+    var offerer = authTestSupport.createAdminIdentity();
+    var disabler = authTestSupport.createAdminIdentity();
+    try {
+      var response =
+          graphql(
+                  authTestSupport.accountBearer(offerer),
+                  """
+                  mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+                    share { id status } userErrors { __typename } } }
+                  """
+                      .formatted(orphan.getId(), host.household().getId()))
+              .andExpect(status().isOk())
+              .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"))
+              .andReturn()
+              .getResponse()
+              .getContentAsString();
+      var shareId =
+          UUID.fromString(
+              objectMapper
+                  .readTree(response)
+                  .path("data")
+                  .path("offerProfileShare")
+                  .path("share")
+                  .path("id")
+                  .asString());
+
+      graphql(
+              authTestSupport.freshAccountBearer(disabler),
+              """
+              mutation { disableAccount(input: {accountId: "%s"}) {
+                account { enabled } userErrors { __typename } } }
+              """
+                  .formatted(offerer.account().getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.disableAccount.account.enabled").value(false));
+
+      var stored = shareRepository.findById(shareId).orElseThrow();
+      assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.INVALIDATED);
+      assertThat(stored.getInvalidationReason()).contains("issuer disabled");
+    } finally {
+      authTestSupport.deleteIdentity(disabler);
+      authTestSupport.deleteIdentity(offerer);
+    }
+  }
 }

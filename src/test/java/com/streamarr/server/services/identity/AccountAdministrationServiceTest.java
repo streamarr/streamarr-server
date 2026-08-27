@@ -9,7 +9,9 @@ import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
@@ -17,6 +19,7 @@ import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
+import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
@@ -52,6 +55,8 @@ class AccountAdministrationServiceTest {
 
   private final FakeAccountInvitationRepository invitations = new FakeAccountInvitationRepository();
   private final FakePasswordResetCodeRepository resetCodes = new FakePasswordResetCodeRepository();
+  private final FakeProfileHouseholdShareRepository shares =
+      new FakeProfileHouseholdShareRepository();
 
   private final AccountAdministrationService service =
       new AccountAdministrationService(
@@ -61,6 +66,7 @@ class AccountAdministrationServiceTest {
           audit,
           invitations,
           resetCodes,
+          shares,
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
           Clock.systemUTC());
@@ -446,5 +452,50 @@ class AccountAdministrationServiceTest {
 
   private static Decision<AuthorizationUnit> denied() {
     return new Decision.Denied<>(Decision.DenialReason.POLICY);
+  }
+
+  // ---- A demoted or disabled offerer leaves no pending share offer behind (ADR 0024
+  // §Invitations).
+
+  @Test
+  @DisplayName("Should invalidate pending share offers when the offerer loses ServerAdmin")
+  void shouldInvalidatePendingShareOffersWhenOffererLosesServerAdmin() {
+    target.setServerAdmin(true);
+    accounts.save(target);
+    var offer = pendingOfferBy(target.getId());
+
+    var outcome = service.revokeServerAdmin(identity(), target.getId(), "rotation");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertOfferInvalidated(offer.getId());
+  }
+
+  @Test
+  @DisplayName("Should invalidate pending share offers when the offerer is disabled")
+  void shouldInvalidatePendingShareOffersWhenOffererIsDisabled() {
+    var offer = pendingOfferBy(target.getId());
+
+    var outcome = service.disableAccount(identity(), target.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertOfferInvalidated(offer.getId());
+  }
+
+  private ProfileHouseholdShare pendingOfferBy(UUID offererAccountId) {
+    return shares.save(
+        ProfileHouseholdShare.builder()
+            .profileId(UUID.randomUUID())
+            .householdId(UUID.randomUUID())
+            .status(ProfileShareStatus.PENDING)
+            .offeredByAccountId(offererAccountId)
+            .expiresAt(Instant.now().plus(Duration.ofHours(1)))
+            .build());
+  }
+
+  private void assertOfferInvalidated(UUID shareId) {
+    var stored = shares.findById(shareId).orElseThrow();
+    assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.INVALIDATED);
+    assertThat(stored.getInvalidationReason())
+        .hasValueSatisfying(reason -> assertThat(reason).isNotBlank());
   }
 }

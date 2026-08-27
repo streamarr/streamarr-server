@@ -51,19 +51,37 @@ public class ProfileHouseholdShareRepositoryCustomImpl
 
   @Override
   public boolean tryInvalidate(UUID shareId, String reason, Instant now) {
+    return invalidatePending(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId), reason, now) > 0;
+  }
+
+  @Override
+  public int invalidatePendingOffersOfferedBy(UUID offererAccountId, String reason, Instant now) {
+    var nowUtc = now.atOffset(ZoneOffset.UTC);
+    return invalidatePending(
+        PROFILE_HOUSEHOLD_SHARE
+            .OFFERED_BY_ACCOUNT_ID
+            .eq(offererAccountId)
+            .and(
+                PROFILE_HOUSEHOLD_SHARE
+                    .EXPIRES_AT
+                    .isNull()
+                    .or(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.gt(nowUtc))),
+        reason,
+        now);
+  }
+
+  private int invalidatePending(Condition scope, String reason, Instant now) {
     var nowUtc = now.atOffset(ZoneOffset.UTC);
     return dsl.update(PROFILE_HOUSEHOLD_SHARE)
-            .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.INVALIDATED)
-            .set(PROFILE_HOUSEHOLD_SHARE.INVALIDATION_REASON, reason)
-            .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, nowUtc)
-            .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, nowUtc)
-            .set(
-                PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY,
-                auditorAware.getCurrentAuditor().orElse(null))
-            .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
-            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
-            .execute()
-        > 0;
+        .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.INVALIDATED)
+        .set(PROFILE_HOUSEHOLD_SHARE.INVALIDATION_REASON, reason)
+        .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, nowUtc)
+        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, nowUtc)
+        .set(
+            PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+        .where(scope)
+        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
+        .execute();
   }
 
   @Override
