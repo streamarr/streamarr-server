@@ -59,6 +59,7 @@ class AuthorizationParityTest {
       case ACCOUNT -> "Account";
       case PROFILE -> "Profile";
       case SHARE -> "Share";
+      case MANAGER_INVITATION -> "ManagerInvitation";
     };
   }
 
@@ -198,6 +199,7 @@ class AuthorizationParityTest {
           VIEW_HOUSEHOLD_ADMINISTRATION,
           VIEW_ACCOUNT_ADMINISTRATION,
           VIEW_PROFILE_ADMINISTRATION,
+          VIEW_MANAGER_INVITATIONS,
           GRANT_SERVER_ADMIN,
           REVOKE_SERVER_ADMIN,
           RENAME_HOUSEHOLD,
@@ -221,7 +223,14 @@ class AuthorizationParityTest {
           REJECT_PROFILE_SHARE,
           CANCEL_PROFILE_SHARE,
           END_PROFILE_SHARE,
-          ADMINISTRATIVELY_END_PROFILE_SHARE ->
+          ADMINISTRATIVELY_END_PROFILE_SHARE,
+          INVITE_PROFILE_MANAGER,
+          CANCEL_MANAGER_INVITATION,
+          ACCEPT_MANAGER_INVITATION,
+          DECLINE_MANAGER_INVITATION,
+          RELINQUISH_PROFILE_MANAGEMENT,
+          REMOVE_PROFILE_MANAGER,
+          OVERRIDE_PROFILE_MANAGER ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
@@ -257,6 +266,7 @@ class AuthorizationParityTest {
         new Intent.ViewHouseholdAdministration(id),
         new Intent.ViewAccountAdministration(id),
         new Intent.ViewProfileAdministration(id),
+        new Intent.ViewManagerInvitations(id),
         new Intent.GrantServerAdmin(id),
         new Intent.RevokeServerAdmin(id),
         new Intent.CreateHousehold(),
@@ -283,6 +293,13 @@ class AuthorizationParityTest {
         new Intent.RejectProfileShare(id),
         new Intent.CancelProfileShare(id),
         new Intent.EndProfileShare(id),
-        new Intent.AdministrativelyEndProfileShare(id));
+        new Intent.AdministrativelyEndProfileShare(id),
+        new Intent.InviteProfileManager(id),
+        new Intent.CancelManagerInvitation(id),
+        new Intent.AcceptManagerInvitation(id),
+        new Intent.DeclineManagerInvitation(id),
+        new Intent.RelinquishProfileManagement(id),
+        new Intent.RemoveProfileManager(id),
+        new Intent.OverrideProfileManager(id));
   }
 }

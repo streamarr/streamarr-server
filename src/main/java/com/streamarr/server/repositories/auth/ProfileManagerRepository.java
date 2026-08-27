@@ -11,7 +11,8 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
-public interface ProfileManagerRepository extends JpaRepository<ProfileManager, UUID> {
+public interface ProfileManagerRepository
+    extends JpaRepository<ProfileManager, UUID>, ProfileManagerRepositoryCustom {
 
   boolean existsByAccountIdAndProfileId(UUID accountId, UUID profileId);
 

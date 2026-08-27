@@ -22,6 +22,7 @@ import com.streamarr.server.jooq.generated.tables.MoviePerson;
 import com.streamarr.server.jooq.generated.tables.PasswordResetCode;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare;
 import com.streamarr.server.jooq.generated.tables.ProfileManager;
+import com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation;
 import com.streamarr.server.jooq.generated.tables.Rating;
 import com.streamarr.server.jooq.generated.tables.RefreshToken;
 import com.streamarr.server.jooq.generated.tables.Review;
@@ -81,6 +82,8 @@ public class Indexes {
     public static final Index IDX_MOVIE_RUNTIME_DESC_ID = Internal.createIndex(DSL.name("idx_movie_runtime_desc_id"), Movie.MOVIE, new OrderField[] { Movie.MOVIE.RUNTIME.desc(), Movie.MOVIE.ID.desc() }, false);
     public static final Index IDX_MOVIE_RUNTIME_ID = Internal.createIndex(DSL.name("idx_movie_runtime_id"), Movie.MOVIE, new OrderField[] { Movie.MOVIE.RUNTIME, Movie.MOVIE.ID }, false);
     public static final Index IDX_PASSWORD_RESET_CODE_ISSUER = Internal.createIndex(DSL.name("idx_password_reset_code_issuer"), PasswordResetCode.PASSWORD_RESET_CODE, new OrderField[] { PasswordResetCode.PASSWORD_RESET_CODE.ISSUER_ACCOUNT_ID }, false);
+    public static final Index IDX_PM_INVITATION_PROFILE = Internal.createIndex(DSL.name("idx_pm_invitation_profile"), ProfileManagerInvitation.PROFILE_MANAGER_INVITATION, new OrderField[] { ProfileManagerInvitation.PROFILE_MANAGER_INVITATION.PROFILE_ID }, false);
+    public static final Index IDX_PM_INVITATION_RECIPIENT = Internal.createIndex(DSL.name("idx_pm_invitation_recipient"), ProfileManagerInvitation.PROFILE_MANAGER_INVITATION, new OrderField[] { ProfileManagerInvitation.PROFILE_MANAGER_INVITATION.RECIPIENT_ACCOUNT_ID }, false);
     public static final Index IDX_PROFILE_HOUSEHOLD_SHARE_HOUSEHOLD_STATUS = Internal.createIndex(DSL.name("idx_profile_household_share_household_status"), ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE, new OrderField[] { ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID, ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.STATUS }, false);
     public static final Index IDX_PROFILE_MANAGER_PROFILE_ID = Internal.createIndex(DSL.name("idx_profile_manager_profile_id"), ProfileManager.PROFILE_MANAGER, new OrderField[] { ProfileManager.PROFILE_MANAGER.PROFILE_ID }, false);
     public static final Index IDX_RATING_MOVIE_ID = Internal.createIndex(DSL.name("idx_rating_movie_id"), Rating.RATING, new OrderField[] { Rating.RATING.MOVIE_ID }, false);
@@ -111,6 +114,7 @@ public class Indexes {
     public static final Index MEDIA_FILE_FILEPATH_URI_IDX = Internal.createIndex(DSL.name("media_file_filepath_uri_idx"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.FILEPATH_URI }, true);
     public static final Index SCHEMA_HISTORY_S_IDX = Internal.createIndex(DSL.name("schema_history_s_idx"), SchemaHistory.SCHEMA_HISTORY, new OrderField[] { SchemaHistory.SCHEMA_HISTORY.SUCCESS }, false);
     public static final Index UQ_PASSWORD_RESET_CODE_PENDING_ACCOUNT = Internal.createIndex(DSL.name("uq_password_reset_code_pending_account"), PasswordResetCode.PASSWORD_RESET_CODE, new OrderField[] { PasswordResetCode.PASSWORD_RESET_CODE.ACCOUNT_ID }, true);
+    public static final Index UQ_PM_INVITATION_LIVE = Internal.createIndex(DSL.name("uq_pm_invitation_live"), ProfileManagerInvitation.PROFILE_MANAGER_INVITATION, new OrderField[] { ProfileManagerInvitation.PROFILE_MANAGER_INVITATION.PROFILE_ID, ProfileManagerInvitation.PROFILE_MANAGER_INVITATION.RECIPIENT_ACCOUNT_ID }, true);
     public static final Index UQ_PROFILE_HOUSEHOLD_SHARE_LIVE = Internal.createIndex(DSL.name("uq_profile_household_share_live"), ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE, new OrderField[] { ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID }, true);
     public static final Index UQ_REFRESH_TOKEN_ACTIVE_SESSION = Internal.createIndex(DSL.name("uq_refresh_token_active_session"), RefreshToken.REFRESH_TOKEN, new OrderField[] { RefreshToken.REFRESH_TOKEN.SESSION_ID }, true);
 }
