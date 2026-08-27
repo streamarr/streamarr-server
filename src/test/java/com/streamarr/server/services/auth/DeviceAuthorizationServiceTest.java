@@ -7,6 +7,9 @@ import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
@@ -22,6 +25,7 @@ import com.streamarr.server.exceptions.InvalidUserCodeException;
 import com.streamarr.server.exceptions.SetupIncompleteException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeDeviceAuthorizationRepository;
 import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakeEsnBlockRepository;
@@ -85,6 +89,8 @@ class DeviceAuthorizationServiceTest {
   private final FakeEsnBlockRepository esnBlockRepository = new FakeEsnBlockRepository();
   private final FakeServerBootstrapRepository serverBootstrapRepository = claimedBootstrap();
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
+  private final FakeCredentialAttemptRepository credentialAttempts =
+      new FakeCredentialAttemptRepository();
 
   private final DeviceAuthProperties properties =
       DeviceAuthProperties.builder()
@@ -92,8 +98,6 @@ class DeviceAuthorizationServiceTest {
           .pollIntervalSeconds(5)
           .verificationPath("/link")
           .maxOutstandingCodes(3)
-          .maxGuessAttempts(5)
-          .guessWindow(Duration.ofMinutes(15))
           .sweepInterval(Duration.ofMinutes(15))
           .build();
 
@@ -155,8 +159,6 @@ class DeviceAuthorizationServiceTest {
             .pollIntervalSeconds(37)
             .verificationPath(properties.verificationPath())
             .maxOutstandingCodes(properties.maxOutstandingCodes())
-            .maxGuessAttempts(properties.maxGuessAttempts())
-            .guessWindow(properties.guessWindow())
             .sweepInterval(properties.sweepInterval())
             .build();
     var configuredService = serviceWith(configuredProperties);
@@ -213,7 +215,7 @@ class DeviceAuthorizationServiceTest {
 
     // Only new issuance is gated; a code already shown to a person must never be stranded.
     var unconfigured = serviceWith(CanonicalBaseUrl.absent());
-    assertThat(unconfigured.lookup(issued.userCode(), approver.getId()).status())
+    assertThat(unconfigured.lookup(presented(issued.userCode())).status())
         .isEqualTo(DeviceAuthorizationStatus.PENDING);
     unconfigured.decide(decisionCommand(issued.userCode()));
 
@@ -463,12 +465,40 @@ class DeviceAuthorizationServiceTest {
   void shouldShowRequestingDeviceWhenApproverLooksUpPendingCode() {
     var issued = service.issue("Living Room Apple TV", "esn-1");
 
-    var view = service.lookup(issued.userCode(), approver.getId());
+    var view = service.lookup(presented(issued.userCode()));
 
     assertThat(view.deviceName()).isEqualTo("Living Room Apple TV");
     assertThat(view.status()).isEqualTo(DeviceAuthorizationStatus.PENDING);
     assertThat(view.userCode()).isEqualTo(issued.userCode());
     assertThat(view.requestedAt()).isNotNull();
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.DEVICE_PAIRING_CODE)
+                          .accountId(approver.getId())
+                          .ipAddress("192.0.2.30")
+                          .build());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
+            });
+  }
+
+  @Test
+  @DisplayName("Should preserve the retry delay when a pairing-code attempt is throttled")
+  void shouldPreserveRetryDelayWhenPairingCodeAttemptThrottled() {
+    credentialAttempts.rejectReservations(Duration.ofSeconds(42));
+
+    var presentation = presented("BCDF-GHJK");
+
+    assertThatThrownBy(() -> service.lookup(presentation))
+        .isInstanceOf(TooManyDeviceAttemptsException.class)
+        .satisfies(
+            failure ->
+                assertThat(((TooManyDeviceAttemptsException) failure).retryAfter())
+                    .isEqualTo(Duration.ofSeconds(42)));
   }
 
   @Test
@@ -476,9 +506,8 @@ class DeviceAuthorizationServiceTest {
   void shouldAcceptTypedCodeWhenCaseAndSeparatorFormattingVary() {
     var issued = service.issue("Apple TV", "esn-1");
 
-    assertThat(service.lookup(issued.userCode().toLowerCase(Locale.ROOT), approver.getId()))
-        .isNotNull();
-    assertThat(service.lookup(issued.userCode().replace("-", ""), approver.getId())).isNotNull();
+    assertThat(service.lookup(presented(issued.userCode().toLowerCase(Locale.ROOT)))).isNotNull();
+    assertThat(service.lookup(presented(issued.userCode().replace("-", "")))).isNotNull();
   }
 
   @Test
@@ -489,10 +518,9 @@ class DeviceAuthorizationServiceTest {
     advanceClock(Duration.ofMinutes(11));
 
     var userCode = issued.userCode();
-    var approverId = approver.getId();
-
     // A probe deserves no oracle detail; the poll answers expired_token for the same state.
-    assertThatThrownBy(() -> service.lookup(userCode, approverId))
+    var presentation = presented(userCode);
+    assertThatThrownBy(() -> service.lookup(presentation))
         .isInstanceOf(DeviceCodeNotFoundException.class);
   }
 
@@ -524,10 +552,13 @@ class DeviceAuthorizationServiceTest {
   @Test
   @DisplayName("Should reject before lookup when the user code is malformed")
   void shouldRejectBeforeLookupWhenUserCodeMalformed() {
-    var approverId = approver.getId();
+    // A blocked journal would refuse first if the malformed code reached the attempt.
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
+    var presentation = presented("NOPE");
 
-    assertThatThrownBy(() -> service.lookup("NOPE", approverId))
+    assertThatThrownBy(() -> service.lookup(presentation))
         .isInstanceOf(InvalidUserCodeException.class);
+    assertThat(credentialAttempts.attempts()).isEmpty();
   }
 
   @Test
@@ -568,7 +599,7 @@ class DeviceAuthorizationServiceTest {
         .isInstanceOf(TooManyDeviceAttemptsException.class)
         .satisfies(
             e ->
-                assertThat(((TooManyDeviceAttemptsException) e).getRetryAfter())
+                assertThat(((TooManyDeviceAttemptsException) e).retryAfter())
                     // The moment capacity provably frees: when the oldest code expires.
                     .isEqualTo(Duration.ofMinutes(10)));
   }
@@ -627,7 +658,7 @@ class DeviceAuthorizationServiceTest {
         .isInstanceOf(TooManyDeviceAttemptsException.class)
         .satisfies(
             failure ->
-                assertThat(((TooManyDeviceAttemptsException) failure).getRetryAfter())
+                assertThat(((TooManyDeviceAttemptsException) failure).retryAfter())
                     .isEqualTo(Duration.ofMinutes(6)));
   }
 
@@ -845,8 +876,6 @@ class DeviceAuthorizationServiceTest {
             .pollIntervalSeconds(properties.pollIntervalSeconds())
             .verificationPath(properties.verificationPath())
             .maxOutstandingCodes(capacity)
-            .maxGuessAttempts(properties.maxGuessAttempts())
-            .guessWindow(properties.guessWindow())
             .sweepInterval(properties.sweepInterval())
             .build();
     return serviceWith(capacityProperties);
@@ -909,7 +938,7 @@ class DeviceAuthorizationServiceTest {
           accessTokenIssuer,
           configuredUserCodeGenerator,
           new DeviceCodeGenerator(),
-          new DeviceGuessThrottle(configuredProperties, clock),
+          credentialAttempts.gate(clock),
           configuredProperties,
           configuredBaseUrl,
           clock);
@@ -964,5 +993,49 @@ class DeviceAuthorizationServiceTest {
 
   private void advanceClock(Duration duration) {
     currentTime.updateAndGet(instant -> instant.plus(duration));
+  }
+
+  private DeviceCodePresentation presented(String userCode) {
+    return DeviceCodePresentation.builder()
+        .userCode(userCode)
+        .approverAccountId(approver.getId())
+        .ipAddress("192.0.2.30")
+        .build();
+  }
+
+  @Test
+  @DisplayName("Should journal a failure against the approver when the decision code is expired")
+  void shouldJournalFailureAgainstApproverWhenDecisionCodeIsExpired() {
+    var issued = service.issue("Apple TV", "esn-1");
+    advanceClock(Duration.ofMinutes(11));
+    var presentation = presented(issued.userCode());
+
+    assertThatThrownBy(() -> service.resolveForDecision(presentation))
+        .isInstanceOf(DeviceCodeExpiredException.class);
+
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target().accountId()).isEqualTo(approver.getId());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
+            });
+  }
+
+  @Test
+  @DisplayName("Should journal a success against the approver when the decision code resolves")
+  void shouldJournalSuccessAgainstApproverWhenDecisionCodeResolves() {
+    var issued = service.issue("Apple TV", "esn-1");
+
+    var grant = service.resolveForDecision(presented(issued.userCode()));
+
+    assertThat(grant.deviceName()).isEqualTo("Apple TV");
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target().accountId()).isEqualTo(approver.getId());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
+            });
   }
 }

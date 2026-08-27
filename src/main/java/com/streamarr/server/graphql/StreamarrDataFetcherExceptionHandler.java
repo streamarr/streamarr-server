@@ -4,6 +4,7 @@ import com.netflix.graphql.dgs.exceptions.DefaultDataFetcherExceptionHandler;
 import com.netflix.graphql.types.errors.ErrorType;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
@@ -82,7 +83,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
 
     var extensions = extensions(classification.errorType(), classification.code(), requestId);
     if (exception instanceof RetryAfterAware throttled) {
-      extensions.put(RETRY_AFTER_SECONDS, retryAfterSeconds(throttled));
+      extensions.put(RETRY_AFTER_SECONDS, throttled.retryAfterSeconds());
     }
 
     var error =
@@ -153,19 +154,6 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
     return exception;
   }
 
-  private static long retryAfterSeconds(RetryAfterAware throttled) {
-    var retryAfter = throttled.retryAfter();
-    if (retryAfter.isNegative() || retryAfter.isZero()) {
-      return 0;
-    }
-
-    if (retryAfter.getNano() == 0 || retryAfter.getSeconds() == Long.MAX_VALUE) {
-      return retryAfter.getSeconds();
-    }
-
-    return retryAfter.getSeconds() + 1;
-  }
-
   private static Classification classify(Throwable exception) {
     return switch (exception) {
       case ProfileRequiredException _ ->
@@ -177,6 +165,8 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
       case AccessDeniedException _ -> new Classification(ErrorType.PERMISSION_DENIED, "FORBIDDEN");
       case AuthorizationUnavailableException _ ->
           new Classification(ErrorType.UNAVAILABLE, "AUTHORIZATION_UNAVAILABLE");
+      case CredentialAttemptUnavailableException _ ->
+          new Classification(ErrorType.UNAVAILABLE, "CREDENTIAL_VERIFICATION_UNAVAILABLE");
       case TooManyCredentialAttemptsException _ ->
           new Classification(ErrorType.UNAVAILABLE, "TOO_MANY_CREDENTIAL_ATTEMPTS");
       case ResourceBusyException _ -> new Classification(ErrorType.UNAVAILABLE, "RESOURCE_BUSY");

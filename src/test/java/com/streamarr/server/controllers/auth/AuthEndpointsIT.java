@@ -1,10 +1,13 @@
 package com.streamarr.server.controllers.auth;
 
+import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDENTIAL_ATTEMPT;
 import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
+import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -20,6 +23,7 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.jooq.generated.enums.CredentialKind;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -41,9 +45,9 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -175,6 +179,65 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should journal the client address when a login is attempted")
+  void shouldJournalClientAddressWhenLoginIsAttempted() throws Exception {
+    seedSingleProfileIdentity();
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .with(remoteAddr("198.51.100.41"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(loginBody(account.getEmail(), password)))
+        .andExpect(status().isOk());
+
+    assertThat(journaledLoginAddresses()).containsExactly("198.51.100.41");
+  }
+
+  @Test
+  @DisplayName("Should journal no attempt when the login email or password is blank")
+  void shouldJournalNoAttemptWhenLoginEmailOrPasswordIsBlank() throws Exception {
+    seedSingleProfileIdentity();
+    var source = remoteAddr("198.51.100.43");
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .with(source)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(loginBody(" ", password)))
+        .andExpect(status().isBadRequest());
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .with(source)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(loginBody(account.getEmail(), " ")))
+        .andExpect(status().isBadRequest());
+
+    // Transport validation answers before the command exists, so the journal never sees them.
+    assertThat(journaledAttemptsFrom("198.51.100.43")).isZero();
+  }
+
+  @Test
+  @DisplayName("Should keep answering unauthorized when an unknown email fails beyond the limit")
+  void shouldKeepAnsweringUnauthorizedWhenUnknownEmailFailsBeyondLimit() throws Exception {
+    var email = "absent-" + UUID.randomUUID() + "@example.com";
+
+    // ADR 0028 keys the login budget by Account, so an email that names none never throttles;
+    // the 429-versus-401 split after five failures is the accepted existence signal.
+    for (int i = 0; i <= 5; i++) {
+      mockMvc
+          .perform(
+              post("/api/auth/login")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(loginBody(email, "wrong-password-" + i)))
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+    }
+  }
+
+  @Test
   @DisplayName("Should create identity when setup is first")
   void shouldCreateIdentityWhenSetupIsFirst() throws Exception {
     var suffix = UUID.randomUUID();
@@ -250,23 +313,13 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should throttle login when failures exceed limit")
   void shouldThrottleLoginWhenFailuresExceedLimit() throws Exception {
     seedSingleProfileIdentity();
-    var throttledSource =
-        "10.99."
-            + ThreadLocalRandom.current().nextInt(250)
-            + "."
-            + ThreadLocalRandom.current().nextInt(250);
 
     for (int i = 0; i < 5; i++) {
       mockMvc
           .perform(
               post("/api/auth/login")
                   .contentType(MediaType.APPLICATION_JSON)
-                  .content(loginBody(account.getEmail(), "wrong-password-" + i))
-                  .with(
-                      request -> {
-                        request.setRemoteAddr(throttledSource);
-                        return request;
-                      }))
+                  .content(loginBody(account.getEmail(), "wrong-password-" + i)))
           .andExpect(status().isUnauthorized())
           .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
     }
@@ -275,14 +328,10 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .perform(
             post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(loginBody(account.getEmail(), password))
-                .with(
-                    request -> {
-                      request.setRemoteAddr(throttledSource);
-                      return request;
-                    }))
+                .content(loginBody(account.getEmail(), password)))
         .andExpect(status().isTooManyRequests())
-        .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"));
+        .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"))
+        .andExpect(header().exists(HttpHeaders.RETRY_AFTER));
   }
 
   @Test
@@ -1443,24 +1492,13 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should refuse caching when an auth request is rejected")
   void shouldRefuseCachingWhenAuthRequestRejected() throws Exception {
-    var unthrottledSource =
-        "10.98."
-            + ThreadLocalRandom.current().nextInt(250)
-            + "."
-            + ThreadLocalRandom.current().nextInt(250);
-
     var response =
         mockMvc
             .perform(
                 post("/api/auth/login")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
-                        loginBody("absent-" + UUID.randomUUID() + "@example.com", SETUP_PASSWORD))
-                    .with(
-                        request -> {
-                          request.setRemoteAddr(unthrottledSource);
-                          return request;
-                        }))
+                        loginBody("absent-" + UUID.randomUUID() + "@example.com", SETUP_PASSWORD)))
             .andExpect(status().isUnauthorized())
             .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
             .andReturn()
@@ -1573,6 +1611,21 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .profileId(Optional.of(profile.getId()))
                 .build())
         .value();
+  }
+
+  private int journaledAttemptsFrom(String ipAddress) {
+    return dsl.fetchCount(
+        CREDENTIAL_ATTEMPT,
+        DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS).eq(ipAddress));
+  }
+
+  private List<String> journaledLoginAddresses() {
+    var ipAddressText = DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS);
+    return dsl.select(ipAddressText)
+        .from(CREDENTIAL_ATTEMPT)
+        .where(CREDENTIAL_ATTEMPT.ACCOUNT_ID.eq(account.getId()))
+        .and(CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(CredentialKind.ACCOUNT_LOGIN))
+        .fetch(ipAddressText);
   }
 
   private String loginBody(String email, String password) {

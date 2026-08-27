@@ -22,6 +22,7 @@ import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
+import com.streamarr.server.services.auth.AccountInvitationService.InvitationCodeCommand;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.mutation.Outcome;
@@ -83,7 +84,16 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
       var acceptance =
           executor.submit(
               () -> attempt(() -> invitationService.accept(acceptCommand(issued.code()))));
-      var decline = executor.submit(() -> attempt(() -> invitationService.decline(issued.code())));
+      var decline =
+          executor.submit(
+              () ->
+                  attempt(
+                      () ->
+                          invitationService.decline(
+                              InvitationCodeCommand.builder()
+                                  .code(issued.code())
+                                  .ipAddress("192.0.2.30")
+                                  .build())));
 
       await()
           .atMost(Duration.ofSeconds(10))
@@ -158,19 +168,9 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
         var lock = lockRow(rowLock("password_reset_code", resetCode.getId()))) {
       var first =
-          executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          passwordResetService.redeem(
-                              issued.code(), "the replacement passphrase")));
+          executor.submit(() -> attempt(() -> redeem(issued.code(), "the replacement passphrase")));
       var second =
-          executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          passwordResetService.redeem(
-                              issued.code(), "the replacement passphrase")));
+          executor.submit(() -> attempt(() -> redeem(issued.code(), "the replacement passphrase")));
 
       await()
           .atMost(Duration.ofSeconds(10))
@@ -186,6 +186,14 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
     assertThat(resetCodeRepository.findById(resetCode.getId()).orElseThrow().getStatus())
         .isEqualTo(PasswordResetCodeStatus.REDEEMED);
+    // Both racers presented the correct code; the loser lost the redemption, not the
+    // verification, so the journal records two successes (ADR 0028).
+    assertThat(
+            jdbcTemplate.queryForList(
+                "SELECT result::text FROM credential_attempt WHERE credential_id = ?",
+                String.class,
+                resetCode.getId()))
+        .containsExactly("SUCCEEDED", "SUCCEEDED");
     assertThat(
             passwordEncoder.matches(
                 "the replacement passphrase",
@@ -217,11 +225,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
         var lock = lockRow(rowLock("user_account", identity.account().getId()))) {
       var redemption =
           executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          passwordResetService.redeem(
-                              issued.code(), "the expired replacement passphrase")));
+              () -> attempt(() -> redeem(issued.code(), "the expired replacement passphrase")));
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(
@@ -264,11 +268,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
       var redemption =
           executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          passwordResetService.redeem(
-                              issued.code(), "the concurrent replacement passphrase")));
+              () -> attempt(() -> redeem(issued.code(), "the concurrent replacement passphrase")));
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(() -> assertThat(waitingBehind(holderPid, "user_account")).isOne());
@@ -373,7 +373,17 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
         .displayName("Invitee")
         .password("a strong passphrase")
         .deviceName("test")
+        .ipAddress("192.0.2.30")
         .build();
+  }
+
+  private void redeem(String code, String newPassword) {
+    passwordResetService.redeem(
+        RedeemPasswordResetCommand.builder()
+            .code(code)
+            .newPassword(newPassword)
+            .ipAddress("192.0.2.30")
+            .build());
   }
 
   private RowLockTarget rowLock(String table, UUID rowId) {

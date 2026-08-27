@@ -1,6 +1,7 @@
 package com.streamarr.server.controllers.auth;
 
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
+import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
@@ -560,6 +561,70 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
             .getResponse();
     assertThat(response.getCookie("streamarr_access")).isNotNull();
     assertThat(response.getCookie("streamarr_refresh")).isNotNull();
+  }
+
+  @Test
+  @DisplayName("Should journal no attempt when the reset code or password is blank")
+  void shouldJournalNoAttemptWhenResetCodeOrPasswordIsBlank() throws Exception {
+    var source = remoteAddr("198.51.100.71");
+
+    mockMvc
+        .perform(
+            post("/api/auth/password-reset/redeem")
+                .with(source)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"code": "", "newPassword": "a brand new passphrase"}
+                    """))
+        .andExpect(status().isBadRequest());
+    mockMvc
+        .perform(
+            post("/api/auth/password-reset/redeem")
+                .with(source)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"code": "public.secret", "newPassword": " "}
+                    """))
+        .andExpect(status().isBadRequest());
+
+    // Transport validation answers before the command exists, so the journal never sees them.
+    assertThat(journaledAttemptsFrom("198.51.100.71")).isZero();
+  }
+
+  @Test
+  @DisplayName("Should journal no attempt when the invitation code is blank")
+  void shouldJournalNoAttemptWhenInvitationCodeIsBlank() throws Exception {
+    var source = remoteAddr("198.51.100.72");
+
+    mockMvc
+        .perform(
+            post("/api/auth/invitation/lookup")
+                .with(source)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"code\": \" \"}"))
+        .andExpect(status().isBadRequest());
+    mockMvc
+        .perform(
+            post("/api/auth/invitation/accept")
+                .with(source)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"code": " ", "displayName": "Invitee", \
+                    "password": "a brand new passphrase", "cookieMode": false}
+                    """))
+        .andExpect(status().isBadRequest());
+    mockMvc
+        .perform(
+            post("/api/auth/invitation/decline")
+                .with(source)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"code\": \" \"}"))
+        .andExpect(status().isBadRequest());
+
+    assertThat(journaledAttemptsFrom("198.51.100.72")).isZero();
   }
 
   @Test
@@ -1260,6 +1325,13 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .path("issued")
         .path("code")
         .asString();
+  }
+
+  private int journaledAttemptsFrom(String ipAddress) {
+    return jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM credential_attempt WHERE host(ip_address) = ?",
+        Integer.class,
+        ipAddress);
   }
 
   private ResultActions graphql(String bearer, String query) throws Exception {

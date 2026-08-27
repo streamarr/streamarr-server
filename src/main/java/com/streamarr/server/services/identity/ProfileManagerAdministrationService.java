@@ -1,11 +1,14 @@
 package com.streamarr.server.services.identity;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -13,7 +16,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.CredentialGuessThrottle;
+import com.streamarr.server.services.auth.CredentialAttemptGate;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
@@ -33,6 +36,8 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
+import lombok.Builder;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -43,7 +48,7 @@ import org.springframework.stereotype.Service;
  * serialization boundary — the Profile row lock — and each transition is a conditional statement
  * with exactly one winner. Losing management invalidates the leaver's outstanding proposals so a
  * stale invitation or offer can never restore disputed authority. Codes follow the opaque
- * publicId.secret discipline: throttled per publicId, digest-compared, one deliberate answer.
+ * publicId.secret discipline: journaled per invitation, digest-compared, one deliberate answer.
  */
 @Service
 @RequiredArgsConstructor
@@ -63,7 +68,7 @@ public class ProfileManagerAdministrationService {
   private final ProfileHouseholdShareRepository shareRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final OpaqueOneTimeCodes opaqueCodes;
-  private final CredentialGuessThrottle throttle;
+  private final CredentialAttemptGate credentialAttempts;
   private final CredentialCodeProperties properties;
   private final MutationTransactions mutationTransactions;
   private final PaginationService paginationService;
@@ -151,8 +156,8 @@ public class ProfileManagerAdministrationService {
   }
 
   public Outcome<ProfileManagerInvitation, ManagerRejections.Accept> acceptManagerInvitation(
-      AuthenticatedIdentity identity, String rawCode) {
-    var resolved = resolvePresented(rawCode);
+      AuthenticatedIdentity identity, ManagerInvitationCodeCommand command) {
+    var resolved = resolvePresented(command);
     if (resolved.isEmpty()) {
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
@@ -209,8 +214,8 @@ public class ProfileManagerAdministrationService {
   }
 
   public Outcome<ProfileManagerInvitation, ManagerRejections.Decline> declineManagerInvitation(
-      AuthenticatedIdentity identity, String rawCode) {
-    var resolved = resolvePresented(rawCode);
+      AuthenticatedIdentity identity, ManagerInvitationCodeCommand command) {
+    var resolved = resolvePresented(command);
     if (resolved.isEmpty()) {
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
@@ -451,22 +456,57 @@ public class ProfileManagerAdministrationService {
     }
   }
 
-  /**
-   * Resolves a presented code: throttled per publicId before any lookup, constant-time digest
-   * comparison, PENDING and unexpired by predicate. Empty is the one deliberate answer.
-   */
-  private Optional<ProfileManagerInvitation> resolvePresented(String rawCode) {
-    var presented = opaqueCodes.parse(rawCode);
+  private Optional<ProfileManagerInvitation> resolvePresented(
+      ManagerInvitationCodeCommand command) {
+    var presented = opaqueCodes.parse(command.code());
     if (presented.isEmpty()) {
       return Optional.empty();
     }
 
-    throttle.registerCodeGuess(presented.get().publicId());
-    return invitationRepository
-        .findByPublicId(presented.get().publicId())
-        .filter(invitation -> opaqueCodes.matches(presented.get(), invitation.getSecretDigest()))
-        .filter(invitation -> invitation.getStatus() == ProfileManagerInvitationStatus.PENDING)
-        .filter(invitation -> invitation.getExpiresAt().isAfter(clock.instant()));
+    var invitation = invitationRepository.findByPublicId(presented.get().publicId()).orElse(null);
+    try {
+      return Optional.of(
+          credentialAttempts.attempt(
+              codeTarget(invitation, command.ipAddress()),
+              () -> {
+                if (invitation == null
+                    || !opaqueCodes.matches(presented.get(), invitation.getSecretDigest())
+                    || invitation.getStatus() != ProfileManagerInvitationStatus.PENDING
+                    || !invitation.getExpiresAt().isAfter(clock.instant())) {
+                  throw new InvalidOneTimeCodeException();
+                }
+
+                return invitation;
+              }));
+    } catch (InvalidOneTimeCodeException _) {
+      return Optional.empty();
+    }
+  }
+
+  private static CredentialAttemptTarget codeTarget(
+      ProfileManagerInvitation invitation, String ipAddress) {
+    return CredentialAttemptTarget.builder()
+        .kind(CredentialKind.PROFILE_MANAGER_INVITATION_CODE)
+        .credentialId(invitation == null ? null : invitation.getId())
+        .ipAddress(ipAddress)
+        .build();
+  }
+
+  @Builder
+  public record ManagerInvitationCodeCommand(String code, @NonNull String ipAddress) {
+
+    @Override
+    public String toString() {
+      return "ManagerInvitationCodeCommand[code=REDACTED, ipAddress=%s]".formatted(ipAddress);
+    }
+
+    public static class ManagerInvitationCodeCommandBuilder {
+
+      @Override
+      public String toString() {
+        return "ManagerInvitationCodeCommandBuilder[REDACTED]";
+      }
+    }
   }
 
   /** The invitation stands only while its inviter could still propose it (ADR 0024). */

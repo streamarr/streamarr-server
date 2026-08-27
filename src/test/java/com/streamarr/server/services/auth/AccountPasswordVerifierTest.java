@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.Argon2Properties;
-import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
 import java.time.Duration;
@@ -32,25 +35,39 @@ class AccountPasswordVerifierTest {
   private static final String MALFORMED_ARGON2_HASH = "{argon2id}not-an-argon-hash";
   private static final String MALFORMED_BCRYPT_HASH = "{bcrypt}not-a-bcrypt-hash";
   private static final String UNREADABLE_HASH = "unreadable";
+  private static final String IP_ADDRESS = "192.0.2.20";
 
   private final RecordingPasswordEncoder encoder = new RecordingPasswordEncoder();
   private final CountingTimingEqualizer equalizer = new CountingTimingEqualizer(encoder);
-  private final CredentialGuessThrottle throttle =
-      new CredentialGuessThrottle(
-          AuthThrottleProperties.builder().maxAttempts(2).window(Duration.ofMinutes(15)).build(),
-          new MutableClock());
+  private final MutableClock clock = new MutableClock();
+  private final FakeCredentialAttemptRepository credentialAttempts =
+      new FakeCredentialAttemptRepository();
   private final AccountPasswordVerifier verifier =
-      new AccountPasswordVerifier(encoder, equalizer, throttle);
+      new AccountPasswordVerifier(encoder, equalizer, credentialAttempts.gate(clock));
 
   @Test
   @DisplayName("Should accept password with one real comparison when password correct")
   void shouldAcceptPasswordWithOneRealComparisonWhenPasswordCorrect() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
 
-    assertThatCode(() -> verifier.verify(account, CORRECT_PASSWORD)).doesNotThrowAnyException();
+    assertThatCode(() -> verifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
+        .doesNotThrowAnyException();
 
     assertThat(encoder.completedComparisons()).isEqualTo(1);
     assertThat(equalizer.burns()).isZero();
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
+                          .accountId(account.getId())
+                          .ipAddress(IP_ADDRESS)
+                          .build());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
+            });
   }
 
   @Test
@@ -58,7 +75,7 @@ class AccountPasswordVerifierTest {
   void shouldRejectPasswordWithOneRealComparisonWhenPasswordWrong() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
 
-    assertThatThrownBy(() -> verifier.verify(account, "wrong"))
+    assertThatThrownBy(() -> verifier.verify(account, "wrong", IP_ADDRESS))
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(encoder.completedComparisons()).isEqualTo(1);
@@ -75,7 +92,7 @@ class AccountPasswordVerifierTest {
             .enabled(false)
             .build();
 
-    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD))
+    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(equalizer.burns()).isEqualTo(1);
@@ -88,7 +105,7 @@ class AccountPasswordVerifierTest {
   void shouldRejectPasswordAfterOneFullCostBurnWhenStoredHashUnreadable() {
     var account = enabledAccount(UNREADABLE_HASH);
 
-    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD))
+    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
         .isInstanceOf(InvalidCredentialsException.class);
 
     // The unreadable hash fails its parse cheaply; the burn is the one full-cost operation.
@@ -102,10 +119,11 @@ class AccountPasswordVerifierTest {
     var productionEncoder = productionPasswordEncoder();
     var productionEqualizer = new CountingTimingEqualizer(productionEncoder);
     var productionVerifier =
-        new AccountPasswordVerifier(productionEncoder, productionEqualizer, throttle);
+        new AccountPasswordVerifier(
+            productionEncoder, productionEqualizer, credentialAttempts.gate(clock));
     var account = enabledAccount(MALFORMED_ARGON2_HASH);
 
-    assertThatThrownBy(() -> productionVerifier.verify(account, CORRECT_PASSWORD))
+    assertThatThrownBy(() -> productionVerifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(productionEqualizer.burns()).isEqualTo(1);
@@ -117,10 +135,11 @@ class AccountPasswordVerifierTest {
     var productionEncoder = productionPasswordEncoder();
     var productionEqualizer = new CountingTimingEqualizer(productionEncoder);
     var productionVerifier =
-        new AccountPasswordVerifier(productionEncoder, productionEqualizer, throttle);
+        new AccountPasswordVerifier(
+            productionEncoder, productionEqualizer, credentialAttempts.gate(clock));
     var account = enabledAccount(MALFORMED_BCRYPT_HASH);
 
-    assertThatThrownBy(() -> productionVerifier.verify(account, CORRECT_PASSWORD))
+    assertThatThrownBy(() -> productionVerifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(productionEqualizer.burns()).isEqualTo(1);
@@ -133,10 +152,11 @@ class AccountPasswordVerifierTest {
     var productionEncoder = new DelegatingRecordingPasswordEncoder(productionPasswordEncoder());
     var productionEqualizer = new CountingTimingEqualizer(productionEncoder);
     var productionVerifier =
-        new AccountPasswordVerifier(productionEncoder, productionEqualizer, throttle);
+        new AccountPasswordVerifier(
+            productionEncoder, productionEqualizer, credentialAttempts.gate(clock));
     var account = enabledAccount(passwordHash);
 
-    assertThatThrownBy(() -> productionVerifier.verify(account, CORRECT_PASSWORD))
+    assertThatThrownBy(() -> productionVerifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(productionEqualizer.burns()).isEqualTo(1);
@@ -148,7 +168,7 @@ class AccountPasswordVerifierTest {
   void shouldRejectPasswordAfterOneFullCostBurnWhenStoredHashEmpty() {
     var account = enabledAccount("");
 
-    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD))
+    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(equalizer.burns()).isEqualTo(1);
@@ -161,7 +181,7 @@ class AccountPasswordVerifierTest {
   void shouldRejectPasswordAfterOneFullCostBurnWhenStoredHashNull() {
     var account = enabledAccount(null);
 
-    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD))
+    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
         .isInstanceOf(InvalidCredentialsException.class);
 
     assertThat(equalizer.burns()).isEqualTo(1);
@@ -170,16 +190,13 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should throttle before any Argon2 work when the budget is exhausted")
-  void shouldThrottleBeforeAnyArgon2WorkWhenBudgetIsExhausted() {
+  @DisplayName("Should refuse before any Argon2 work when the journal blocks the attempt")
+  void shouldRefuseBeforeAnyArgon2WorkWhenJournalBlocksAttempt() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
-    for (var attempt = 0; attempt < 2; attempt++) {
-      assertThatThrownBy(() -> verifier.verify(account, "wrong"))
-          .isInstanceOf(InvalidCredentialsException.class);
-    }
     var comparisonsBeforeThrottle = encoder.completedComparisons();
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
-    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD))
+    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
 
     assertThat(encoder.completedComparisons()).isEqualTo(comparisonsBeforeThrottle);
@@ -187,29 +204,38 @@ class AccountPasswordVerifierTest {
   }
 
   @Test
-  @DisplayName("Should reset budget when verification succeeds")
-  void shouldResetBudgetWhenVerificationSucceeds() {
+  @DisplayName("Should limit only the failing Account when another Account verifies")
+  void shouldLimitOnlyTheFailingAccountWhenAnotherAccountVerifies() {
     var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
+    var otherAccount = enabledAccount(encoder.encode(CORRECT_PASSWORD));
+    for (var attempt = 0; attempt < 5; attempt++) {
+      assertThatThrownBy(() -> verifier.verify(account, "wrong", IP_ADDRESS))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
 
-    assertThatThrownBy(() -> verifier.verify(account, "wrong"))
-        .isInstanceOf(InvalidCredentialsException.class);
-    assertThatCode(() -> verifier.verify(account, CORRECT_PASSWORD)).doesNotThrowAnyException();
-    assertThatThrownBy(() -> verifier.verify(account, "wrong"))
-        .isInstanceOf(InvalidCredentialsException.class);
-    assertThatCode(() -> verifier.verify(account, CORRECT_PASSWORD)).doesNotThrowAnyException();
+    assertThatThrownBy(() -> verifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThatCode(() -> verifier.verify(otherAccount, CORRECT_PASSWORD, IP_ADDRESS))
+        .doesNotThrowAnyException();
   }
 
   @Test
-  @DisplayName("Should accept password when correct at request start despite concurrent rotation")
-  void shouldAcceptPasswordWhenCorrectAtRequestStartDespiteConcurrentRotation() {
-    var originalHash = encoder.encode(CORRECT_PASSWORD);
-    var account = enabledAccount(originalHash);
-    // A concurrent rotation lands on the managed entity while the comparison is running.
-    encoder.onNextComparison(() -> account.setPasswordHash(encoder.encode("rotated")));
+  @DisplayName("Should journal each outcome in order when verifications alternate")
+  void shouldJournalEachOutcomeInOrderWhenVerificationsAlternate() {
+    var account = enabledAccount(encoder.encode(CORRECT_PASSWORD));
+    assertThatThrownBy(() -> verifier.verify(account, "wrong", IP_ADDRESS))
+        .isInstanceOf(InvalidCredentialsException.class);
+    assertThatCode(() -> verifier.verify(account, CORRECT_PASSWORD, IP_ADDRESS))
+        .doesNotThrowAnyException();
+    assertThatThrownBy(() -> verifier.verify(account, "wrong", IP_ADDRESS))
+        .isInstanceOf(InvalidCredentialsException.class);
 
-    assertThatCode(() -> verifier.verify(account, CORRECT_PASSWORD)).doesNotThrowAnyException();
-
-    assertThat(encoder.comparedAgainst()).containsExactly(originalHash);
+    assertThat(credentialAttempts.attempts())
+        .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
+        .containsExactly(
+            CredentialAttemptResult.FAILED,
+            CredentialAttemptResult.SUCCEEDED,
+            CredentialAttemptResult.FAILED);
   }
 
   private static UserAccount enabledAccount(String passwordHash) {

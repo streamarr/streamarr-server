@@ -3,8 +3,10 @@ package com.streamarr.server.controllers.auth;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
+import com.streamarr.server.services.auth.AccountInvitationService.InvitationCodeCommand;
 import com.streamarr.server.services.auth.DeviceName;
 import com.streamarr.server.services.auth.TokenContext;
+import com.streamarr.server.web.ClientIpAddressResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -28,10 +30,16 @@ public class InvitationController {
   private final AccountInvitationService invitationService;
   private final AccessTokenIssuer accessTokenIssuer;
   private final AuthTokenResponseWriter tokenResponseWriter;
+  private final ClientIpAddressResolver clientIpAddress;
 
   @PostMapping("/lookup")
   public InvitationLookupResponse lookup(@Valid @RequestBody InvitationCodeRequest request) {
-    return InvitationLookupResponse.from(invitationService.lookup(request.code()));
+    return InvitationLookupResponse.from(
+        invitationService.lookup(
+            InvitationCodeCommand.builder()
+                .code(request.code())
+                .ipAddress(clientIpAddress.resolve())
+                .build()));
   }
 
   @PostMapping("/accept")
@@ -44,6 +52,7 @@ public class InvitationController {
                 .displayName(request.displayName())
                 .password(request.password())
                 .deviceName(DeviceName.sanitize(httpRequest.getHeader(HttpHeaders.USER_AGENT)))
+                .ipAddress(clientIpAddress.resolve())
                 .build());
     var accessToken =
         accessTokenIssuer.issue(TokenContext.of(accepted.account(), accepted.session()));
@@ -59,7 +68,11 @@ public class InvitationController {
 
   @PostMapping("/decline")
   public ResponseEntity<Void> decline(@Valid @RequestBody InvitationCodeRequest request) {
-    invitationService.decline(request.code());
+    invitationService.decline(
+        InvitationCodeCommand.builder()
+            .code(request.code())
+            .ipAddress(clientIpAddress.resolve())
+            .build());
     return ResponseEntity.noContent().build();
   }
 }

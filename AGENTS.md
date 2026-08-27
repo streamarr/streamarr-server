@@ -79,6 +79,11 @@ Choose the simplest mechanism that fits the operation:
   See `MovieFileProcessor.enrichMovieMetadata()`.
 - **Database locks** (`SELECT FOR UPDATE … skipLocked`): coordinate across multiple application
   instances. Pair with lease-based heartbeats for crash recovery (see `FileProcessingTaskCoordinator`).
+- **Credential throttling**: every credential check runs through `CredentialAttemptGate.attempt`,
+  which reserves a row in the `credential_attempt` journal under a transaction-scoped advisory lock
+  keyed by the target (`JooqCredentialAttemptRepository`), runs the verifier outside any
+  transaction, then completes the row — so every instance shares one limit. Never add a
+  per-instance throttle. The journaled client IP is observational only. See ADR 0028.
 - **Transaction-scoped advisory locks**: serialize a short, multi-statement database mutation
   when the logical resource has no stable row to lock. Acquire the advisory lock before row locks,
   bound the wait with a transaction-local `lock_timeout`, and keep external calls, file I/O, and

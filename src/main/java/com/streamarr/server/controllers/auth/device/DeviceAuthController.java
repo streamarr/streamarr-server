@@ -9,6 +9,7 @@ import com.streamarr.server.services.auth.DeviceDecision;
 import com.streamarr.server.services.auth.DevicePollResult;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.DevicePairingService;
+import com.streamarr.server.web.ClientIpAddressResolver;
 import java.util.Arrays;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,7 @@ public class DeviceAuthController {
   private final DeviceAuthorizationService deviceAuthorizationService;
   private final DevicePairingService devicePairingService;
   private final AuthorizationService authorizationService;
+  private final ClientIpAddressResolver clientIpAddressResolver;
 
   @PostMapping("/code")
   public ResponseEntity<DeviceCodeResponse> issue(
@@ -83,7 +85,12 @@ public class DeviceAuthController {
   public ResponseEntity<DeviceAuthorizationResponse> lookup(
       @RequestBody DeviceLookupRequest request) {
     var lookup =
-        devicePairingService.lookup(authorizationService.currentIdentity(), request.userCode());
+        devicePairingService.lookup(
+            authorizationService.currentIdentity(),
+            DevicePairingService.PairingLookupCommand.builder()
+                .userCode(request.userCode())
+                .ipAddress(clientIpAddressResolver.resolve())
+                .build());
     var view = lookup.authorization();
 
     return ResponseEntity.ok()
@@ -112,14 +119,15 @@ public class DeviceAuthController {
                 .userCode(request.userCode())
                 .decision(parseDecision(request.decision()))
                 .householdId(request.householdId())
+                .ipAddress(clientIpAddressResolver.resolve())
                 .build());
 
     return ResponseEntity.ok().body(decisionResponseOf(view));
   }
 
   /**
-   * Validated before any code lookup, so a malformed request never spends guessing budget or
-   * reveals whether a code exists.
+   * Validated before any code lookup, so a malformed request never reserves an attempt or reveals
+   * whether a code exists.
    */
   private static DeviceDecision parseDecision(String decision) {
     if (decision == null) {

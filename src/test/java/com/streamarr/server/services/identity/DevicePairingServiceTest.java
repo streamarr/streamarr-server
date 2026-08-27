@@ -3,6 +3,9 @@ package com.streamarr.server.services.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.domain.auth.UserAccount;
@@ -11,6 +14,7 @@ import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeDeviceAuthorizationRepository;
 import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakeEsnBlockRepository;
@@ -27,6 +31,7 @@ import com.streamarr.server.services.auth.DeviceAuthorizationServiceHarness;
 import com.streamarr.server.services.auth.DeviceDecision;
 import com.streamarr.server.services.identity.DevicePairingService.EligibleHouseholdDetails;
 import com.streamarr.server.services.identity.DevicePairingService.PairingDecisionCommand;
+import com.streamarr.server.services.identity.DevicePairingService.PairingLookupCommand;
 import java.time.Clock;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -55,6 +60,8 @@ class DevicePairingServiceTest {
   private final FakeEsnBlockRepository blocks = new FakeEsnBlockRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
   private final FakeRefreshTokenRepository tokens = new FakeRefreshTokenRepository();
+  private final FakeCredentialAttemptRepository credentialAttempts =
+      new FakeCredentialAttemptRepository();
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
 
@@ -66,6 +73,7 @@ class DevicePairingServiceTest {
           .esnBlocks(blocks)
           .sessions(sessions)
           .tokens(tokens)
+          .credentialAttempts(credentialAttempts)
           .clock(clock)
           .build();
 
@@ -95,7 +103,13 @@ class DevicePairingServiceTest {
   void shouldShowDeviceAndHouseholdsWhenApproverLooksUpCode() {
     var issued = deviceAuthorizationService.issue("Living Room TV", "esn-1");
 
-    var lookup = service.lookup(identity(), issued.userCode());
+    var lookup =
+        service.lookup(
+            identity(),
+            PairingLookupCommand.builder()
+                .userCode(issued.userCode())
+                .ipAddress("192.0.2.30")
+                .build());
 
     assertThat(lookup.authorization().deviceName()).isEqualTo("Living Room TV");
     assertThat(lookup.households())
@@ -153,6 +167,7 @@ class DevicePairingServiceTest {
             PairingDecisionCommand.builder()
                 .userCode(denied)
                 .decision(DeviceDecision.DENY)
+                .ipAddress("192.0.2.30")
                 .build());
     assertThat(view.status()).isEqualTo(DeviceAuthorizationStatus.DENIED);
 
@@ -170,10 +185,52 @@ class DevicePairingServiceTest {
         .userCode(userCode)
         .decision(DeviceDecision.APPROVE)
         .householdId(householdId)
+        .ipAddress("192.0.2.30")
         .build();
   }
 
   private AuthenticatedIdentity identity() {
     return authorization.currentIdentity();
+  }
+
+  @Test
+  @DisplayName("Should journal one attempt against the approver when a code is looked up")
+  void shouldJournalOneAttemptAgainstApproverWhenCodeIsLookedUp() {
+    var issued = deviceAuthorizationService.issue("Living Room TV", "esn-1");
+
+    service.lookup(
+        identity(),
+        PairingLookupCommand.builder().userCode(issued.userCode()).ipAddress("192.0.2.30").build());
+
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.DEVICE_PAIRING_CODE)
+                          .accountId(approver.getId())
+                          .ipAddress("192.0.2.30")
+                          .build());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
+            });
+  }
+
+  @Test
+  @DisplayName("Should journal exactly one attempt when a code is decided")
+  void shouldJournalExactlyOneAttemptWhenCodeIsDecided() {
+    var issued = deviceAuthorizationService.issue("Living Room TV", "esn-2");
+
+    service.decide(identity(), approve(issued.userCode(), approver.getHouseholdId()));
+
+    // resolveForDecision journals the presentation; the decision write records nothing more.
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target().accountId()).isEqualTo(approver.getId());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
+            });
   }
 }

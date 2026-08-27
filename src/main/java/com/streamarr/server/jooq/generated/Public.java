@@ -9,6 +9,7 @@ import com.streamarr.server.jooq.generated.tables.AccountInvitationReoffer;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
+import com.streamarr.server.jooq.generated.tables.CredentialAttempt;
 import com.streamarr.server.jooq.generated.tables.DeviceAuthorization;
 import com.streamarr.server.jooq.generated.tables.DeviceRegistration;
 import com.streamarr.server.jooq.generated.tables.Episode;
@@ -95,6 +96,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.company</code>.
      */
     public final Company COMPANY = Company.COMPANY;
+
+    /**
+     * The table <code>public.credential_attempt</code>.
+     */
+    public final CredentialAttempt CREDENTIAL_ATTEMPT = CredentialAttempt.CREDENTIAL_ATTEMPT;
 
     /**
      * The table <code>public.device_authorization</code>.
@@ -312,6 +318,7 @@ public class Public extends SchemaImpl {
             AuthSession.AUTH_SESSION,
             BaseCollectable.BASE_COLLECTABLE,
             Company.COMPANY,
+            CredentialAttempt.CREDENTIAL_ATTEMPT,
             DeviceAuthorization.DEVICE_AUTHORIZATION,
             DeviceRegistration.DEVICE_REGISTRATION,
             Episode.EPISODE,

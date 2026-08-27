@@ -284,6 +284,13 @@ public class AuthTestSupport {
     };
   }
 
+  public static RequestPostProcessor remoteAddr(String address) {
+    return request -> {
+      request.setRemoteAddr(address);
+      return request;
+    };
+  }
+
   static AccessTokenIssuer expiredIssuer(AuthTokenProperties properties) {
     var cryptoConfig = new TokenCryptoConfig();
     // Rewind past the configured TTL so the minted token is expired even when

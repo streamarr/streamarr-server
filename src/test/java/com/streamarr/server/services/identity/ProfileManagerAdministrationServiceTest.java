@@ -3,8 +3,10 @@ package com.streamarr.server.services.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.CredentialCodeProperties;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -14,6 +16,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
 import com.streamarr.server.fakes.FakeProfileManagerRepository;
@@ -25,7 +28,6 @@ import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.CredentialGuessThrottle;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -67,6 +69,8 @@ class ProfileManagerAdministrationServiceTest {
   private final FakeProfileManagerInvitationRepository invitations =
       new FakeProfileManagerInvitationRepository();
   private final FakeSecurityAuditEventRepository audit = new FakeSecurityAuditEventRepository();
+  private final FakeCredentialAttemptRepository credentialAttempts =
+      new FakeCredentialAttemptRepository();
   private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
@@ -81,12 +85,7 @@ class ProfileManagerAdministrationServiceTest {
           shares,
           audit,
           new OpaqueOneTimeCodes(),
-          new CredentialGuessThrottle(
-              AuthThrottleProperties.builder()
-                  .maxAttempts(5)
-                  .window(Duration.ofMinutes(15))
-                  .build(),
-              clock),
+          credentialAttempts.gate(clock),
           CredentialCodeProperties.builder()
               .invitationTtl(Duration.ofDays(7))
               .replacementLockTimeout(Duration.ofSeconds(5))
@@ -177,8 +176,21 @@ class ProfileManagerAdministrationServiceTest {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
 
-    var accepted = service.acceptManagerInvitation(recipientIdentity(), issued.code());
+    var accepted = service.acceptManagerInvitation(recipientIdentity(), code(issued.code()));
     assertThat(accepted).isInstanceOf(Outcome.Accepted.class);
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.PROFILE_MANAGER_INVITATION_CODE)
+                          .credentialId(issued.invitation().getId())
+                          .ipAddress("192.0.2.30")
+                          .build());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
+            });
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isTrue();
     assertThat(audit.entries())
         .singleElement()
@@ -192,7 +204,8 @@ class ProfileManagerAdministrationServiceTest {
                   .containsEntry("accountId", recipient.getId());
             });
 
-    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), issued.code())))
+    assertThat(
+            rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(issued.code()))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     assertThat(
             rejectionOf(service.cancelManagerInvitation(identity(), issued.invitation().getId())))
@@ -200,26 +213,42 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should return a uniform miss and throttle when acceptance codes are invalid")
-  void shouldReturnUniformMissAndThrottleWhenAcceptanceCodesAreInvalid() {
+  @DisplayName("Should return a uniform miss for invalid codes and refuse when the journal blocks")
+  void shouldReturnUniformMissForInvalidCodesAndRefuseWhenJournalBlocks() {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
 
-    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), "garbage")))
+    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code("garbage"))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
-    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), "unknown.secret")))
+    assertThat(credentialAttempts.attempts()).isEmpty();
+    assertThat(
+            rejectionOf(
+                service.acceptManagerInvitation(recipientIdentity(), code("unknown.secret"))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.PROFILE_MANAGER_INVITATION_CODE)
+                          .ipAddress("192.0.2.30")
+                          .build());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
+            });
 
-    var publicId = issued.invitation().getPublicId();
-    for (var attempt = 0; attempt < 5; attempt++) {
-      var guess = publicId + ".guess-" + attempt;
-      assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), guess)))
-          .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
-    }
+    var guess = issued.invitation().getPublicId() + ".guess";
+    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(guess))))
+        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    assertThat(credentialAttempts.attempts().getLast().target().credentialId())
+        .isEqualTo(issued.invitation().getId());
 
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
     var throttled = issued.code();
     var recipientIdentity = recipientIdentity();
-    assertThatThrownBy(() -> service.acceptManagerInvitation(recipientIdentity, throttled))
+    var command = code(throttled);
+    assertThatThrownBy(() -> service.acceptManagerInvitation(recipientIdentity, command))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
   }
 
@@ -230,7 +259,8 @@ class ProfileManagerAdministrationServiceTest {
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
     managers.tryRemove(inviter.getId(), orphan.getId());
 
-    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), issued.code())))
+    assertThat(
+            rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(issued.code()))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
@@ -246,7 +276,8 @@ class ProfileManagerAdministrationServiceTest {
         .orElseThrow()
         .setMaximumAllowedRatingAge(12);
 
-    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), issued.code())))
+    assertThat(
+            rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(issued.code()))))
         .isInstanceOf(ManagerRejections.RecipientNotEligible.class);
   }
 
@@ -263,13 +294,14 @@ class ProfileManagerAdministrationServiceTest {
             intent instanceof Intent.DeclineManagerInvitation
                 ? new Decision.Denied<>(Decision.DenialReason.POLICY)
                 : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
-    assertThat(rejectionOf(service.declineManagerInvitation(identity(), issued.code())))
+    assertThat(rejectionOf(service.declineManagerInvitation(identity(), code(issued.code()))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
 
     authorization.allowAll();
-    var declined = service.declineManagerInvitation(recipientIdentity(), issued.code());
+    var declined = service.declineManagerInvitation(recipientIdentity(), code(issued.code()));
     assertThat(declined).isInstanceOf(Outcome.Accepted.class);
-    assertThat(rejectionOf(service.declineManagerInvitation(recipientIdentity(), issued.code())))
+    assertThat(
+            rejectionOf(service.declineManagerInvitation(recipientIdentity(), code(issued.code()))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isFalse();
   }
@@ -285,7 +317,8 @@ class ProfileManagerAdministrationServiceTest {
     // Share-derived supervision ends with the share and cannot keep portable authority standing.
     managers.tryRemove(inviter.getId(), kid.getId());
 
-    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), issued.code())))
+    assertThat(
+            rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(issued.code()))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
@@ -497,6 +530,14 @@ class ProfileManagerAdministrationServiceTest {
 
   private AuthenticatedIdentity recipientIdentity() {
     return AuthenticatedIdentityFixture.accountScopedBuilder().accountId(recipient.getId()).build();
+  }
+
+  private static ProfileManagerAdministrationService.ManagerInvitationCodeCommand code(
+      String rawCode) {
+    return ProfileManagerAdministrationService.ManagerInvitationCodeCommand.builder()
+        .code(rawCode)
+        .ipAddress("192.0.2.30")
+        .build();
   }
 
   private static ProfileManagerAdministrationService.IssuedManagerInvitation issued(

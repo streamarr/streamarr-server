@@ -1,8 +1,10 @@
 package com.streamarr.server.exceptions;
 
-public class TooManyLoginAttemptsException extends RuntimeException {
+import java.time.Duration;
 
-  public TooManyLoginAttemptsException() {
-    super("Too many failed login attempts. Try again later.");
+public class TooManyLoginAttemptsException extends TooManyAttemptsException {
+
+  public TooManyLoginAttemptsException(Duration retryAfter) {
+    super("Too many failed login attempts. Try again later.", retryAfter);
   }
 }

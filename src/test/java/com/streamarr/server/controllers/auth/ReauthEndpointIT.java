@@ -1,8 +1,10 @@
 package com.streamarr.server.controllers.auth;
 
+import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -27,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -46,6 +49,7 @@ class ReauthEndpointIT extends AbstractIntegrationTest {
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private AuthTokenProperties tokenProperties;
   @Autowired private AccessTokenIssuer accessTokenIssuer;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private AuthTestSupport.TestIdentity identity;
 
@@ -170,9 +174,25 @@ class ReauthEndpointIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject reauthentication when the password is blank")
-  void shouldRejectReauthenticationWhenPasswordBlank() throws Exception {
-    reauth(authTestSupport.accountBearer(identity), "  ").andExpect(status().isBadRequest());
+  @DisplayName("Should reject reauthentication without journaling when the password is blank")
+  void shouldRejectReauthenticationWithoutJournalingWhenPasswordBlank() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/reauth")
+                .with(remoteAddr("198.51.100.62"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .header(
+                    HttpHeaders.AUTHORIZATION, "Bearer " + authTestSupport.accountBearer(identity))
+                .content("{\"password\": \"  \"}"))
+        .andExpect(status().isBadRequest());
+
+    // Transport validation answers before the command exists, so the journal never sees it.
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM credential_attempt WHERE host(ip_address) = ?",
+                Integer.class,
+                "198.51.100.62"))
+        .isZero();
   }
 
   @Test
@@ -279,7 +299,8 @@ class ReauthEndpointIT extends AbstractIntegrationTest {
 
     reauth(bearer, authTestSupport.password())
         .andExpect(status().isTooManyRequests())
-        .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"));
+        .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"))
+        .andExpect(header().exists(HttpHeaders.RETRY_AFTER));
   }
 
   @Test

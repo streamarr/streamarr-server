@@ -1,5 +1,7 @@
 package com.streamarr.server.services.auth;
 
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -17,7 +19,7 @@ public class LoginService {
   private final UserAccountRepository userAccountRepository;
   private final LoginCompletionService loginCompletionService;
   private final PasswordEncoder passwordEncoder;
-  private final LoginThrottle throttle;
+  private final CredentialAttemptGate credentialAttempts;
   private final PasswordTimingEqualizer timingEqualizer;
 
   // Deliberately not @Transactional: a method-level transaction would pin a pooled connection
@@ -25,31 +27,37 @@ public class LoginService {
   // the short transaction that begins only after all password work has finished.
   public LoginResult login(LoginCommand command) {
     var email = lookupEmail(command.email());
-    // Reserve the slot before any password work — recording failures after hashing is a
-    // check-then-act race that lets a concurrent burst overrun the budget.
-    throttle.registerAttempt(email, command.source());
-
     var account = userAccountRepository.findByEmailIgnoreCase(email).orElse(null);
-    if (account == null) {
-      timingEqualizer.burn(command.password());
-      throw new InvalidCredentialsException();
-    }
+    // Completion runs inside the attempt: it re-checks the stored hash under its row lock and
+    // refuses when a concurrent change beat this login, which the journal must record as FAILED.
+    return credentialAttempts.attempt(
+        loginTarget(command, account),
+        () -> {
+          if (account == null) {
+            timingEqualizer.burn(command.password());
+            throw new InvalidCredentialsException();
+          }
 
-    if (!credentialsValid(account, command.password())) {
-      throw new InvalidCredentialsException();
-    }
+          if (!credentialsValid(account, command.password())) {
+            throw new InvalidCredentialsException();
+          }
 
-    var result =
-        loginCompletionService.complete(
-            LoginCompletionCommand.builder()
-                .accountId(account.getId())
-                .expectedPasswordHash(account.getPasswordHash())
-                .upgradedPasswordHash(upgradedPasswordHash(account, command.password()))
-                .deviceName(command.deviceName())
-                .build());
+          return loginCompletionService.complete(
+              LoginCompletionCommand.builder()
+                  .accountId(account.getId())
+                  .expectedPasswordHash(account.getPasswordHash())
+                  .upgradedPasswordHash(upgradedPasswordHash(account, command.password()))
+                  .deviceName(command.deviceName())
+                  .build());
+        });
+  }
 
-    throttle.reset(email, command.source());
-    return result;
+  private static CredentialAttemptTarget loginTarget(LoginCommand command, UserAccount account) {
+    return CredentialAttemptTarget.builder()
+        .kind(CredentialKind.ACCOUNT_LOGIN)
+        .accountId(account == null ? null : account.getId())
+        .ipAddress(command.ipAddress())
+        .build();
   }
 
   /**

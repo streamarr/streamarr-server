@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.CredentialAttemptUnavailableException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
@@ -29,6 +30,8 @@ import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.security.access.AccessDeniedException;
 
@@ -142,14 +145,41 @@ class StreamarrDataFetcherExceptionHandlerTest {
     assertThat(errorTypeFor(new AuthorizationUnavailableException())).isEqualTo("UNAVAILABLE");
     assertThat(errorTypeFor(new SessionNotFoundException(UUID.randomUUID())))
         .isEqualTo("NOT_FOUND");
-    assertThat(errorTypeFor(new TooManyCredentialAttemptsException())).isEqualTo("UNAVAILABLE");
-    assertThat(codeFor(new TooManyCredentialAttemptsException()))
-        .isEqualTo("TOO_MANY_CREDENTIAL_ATTEMPTS");
-    var busy = new ResourceBusyException(new CannotAcquireLockException("lock timeout"));
-    assertThat(errorTypeFor(busy)).isEqualTo("UNAVAILABLE");
-    assertThat(codeFor(busy)).isEqualTo("RESOURCE_BUSY");
-    assertThat(errorFor(busy).getMessage())
-        .isEqualTo("Another change is in progress; try again shortly.");
+  }
+
+  @Test
+  @DisplayName("Should map a journal outage to unavailable when credential verification cannot run")
+  void shouldMapJournalOutageToUnavailableWhenCredentialVerificationCannotRun() {
+    var error =
+        errorFor(new CredentialAttemptUnavailableException(new IllegalStateException("offline")));
+
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "UNAVAILABLE")
+        .containsEntry("code", "CREDENTIAL_VERIFICATION_UNAVAILABLE")
+        .doesNotContainKey("retryAfterSeconds");
+  }
+
+  @Test
+  @DisplayName(
+      "Should map a credential throttle with its retry hint when attempts exceed the limit")
+  void shouldMapCredentialThrottleWithRetryHintWhenAttemptsExceedLimit() {
+    var error = errorFor(new TooManyCredentialAttemptsException(Duration.ofSeconds(7)));
+
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "UNAVAILABLE")
+        .containsEntry("code", "TOO_MANY_CREDENTIAL_ATTEMPTS")
+        .containsEntry("retryAfterSeconds", 7L);
+  }
+
+  @Test
+  @DisplayName("Should map a busy resource to unavailable when its lock cannot be acquired")
+  void shouldMapBusyResourceToUnavailableWhenItsLockCannotBeAcquired() {
+    var error = errorFor(new ResourceBusyException(new CannotAcquireLockException("lock timeout")));
+
+    assertThat(error.getExtensions())
+        .containsEntry("errorType", "UNAVAILABLE")
+        .containsEntry("code", "RESOURCE_BUSY");
+    assertThat(error.getMessage()).isEqualTo("Another change is in progress; try again shortly.");
   }
 
   @Test
@@ -213,10 +243,19 @@ class StreamarrDataFetcherExceptionHandlerTest {
   @DisplayName("Should add retryAfterSeconds only when the exception knows when to retry")
   void shouldAddRetryAfterSecondsOnlyWhenExceptionKnowsWhenToRetry() {
     var throttled = errorFor(new TooManyDeviceAttemptsException(Duration.ofSeconds(42)));
-    var plain = errorFor(new TooManyCredentialAttemptsException());
+    var plain = errorFor(new SessionNotFoundException(UUID.randomUUID()));
 
     assertThat(throttled.getExtensions()).containsEntry("retryAfterSeconds", 42L);
     assertThat(plain.getExtensions()).doesNotContainKey("retryAfterSeconds");
+  }
+
+  @ParameterizedTest(name = "{0} seconds")
+  @ValueSource(longs = {0, -1})
+  @DisplayName("Should report at least one second when the retry delay is not positive")
+  void shouldReportAtLeastOneSecondWhenRetryDelayIsNotPositive(long seconds) {
+    var error = errorFor(new TooManyDeviceAttemptsException(Duration.ofSeconds(seconds)));
+
+    assertThat(error.getExtensions()).containsEntry("retryAfterSeconds", 1L);
   }
 
   @Test

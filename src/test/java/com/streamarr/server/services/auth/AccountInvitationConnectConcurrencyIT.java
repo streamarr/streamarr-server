@@ -274,6 +274,7 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
         .displayName("Joe")
         .password("a strong passphrase")
         .deviceName("web")
+        .ipAddress("192.0.2.30")
         .build();
   }
 

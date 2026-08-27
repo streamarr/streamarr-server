@@ -1,7 +1,9 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDENTIAL_ATTEMPT;
 import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
+import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -17,6 +19,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.jooq.generated.enums.CredentialKind;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -93,27 +96,9 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should grant management when the named recipient accepts an invitation")
   void shouldGrantManagementWhenNamedRecipientAcceptsInvitation() throws Exception {
     var orphan = managedOrphan();
-
-    var response =
-        graphql(
-                authTestSupport.accountBearer(owner),
-                """
-                mutation { inviteProfileManager(input: {profileId: "%s",
-                  recipientAccountId: "%s"}) {
-                  issued { code invitation { id profileName status } }
-                  userErrors { __typename } } }
-                """
-                    .formatted(orphan.getId(), recipient.account().getId()))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.errors").doesNotExist())
-            .andExpect(
-                jsonPath("$.data.inviteProfileManager.issued.invitation.status").value("PENDING"))
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    var issued = objectMapper.readTree(response).path("data").path("inviteProfileManager");
-    var code = issued.path("issued").path("code").asString();
-    var invitationId = issued.path("issued").path("invitation").path("id").asString();
+    var issued = issueManagerInvitation(orphan);
+    var code = issued.code();
+    var invitationId = issued.invitationId();
 
     graphql(
             authTestSupport.accountBearer(recipient),
@@ -161,6 +146,44 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.cancelManagerInvitation.userErrors[0].__typename")
                 .value("InvitationNotPendingError"));
+  }
+
+  @Test
+  @DisplayName("Should journal the client address when a manager invitation code is accepted")
+  void shouldJournalClientAddressWhenManagerInvitationCodeIsAccepted() throws Exception {
+    var issued = issueManagerInvitation(managedOrphan());
+
+    graphql(authTestSupport.accountBearer(recipient), acceptManagerInvitation(issued.code()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist());
+
+    assertThat(journaledAddresses(issued.invitationId())).containsExactly("198.51.100.42");
+  }
+
+  @Test
+  @DisplayName(
+      "Should throttle a GraphQL acceptance with a retry hint when wrong secrets exceed the limit")
+  void shouldThrottleGraphQlAcceptanceWithRetryHintWhenWrongSecretsExceedLimit() throws Exception {
+    var issued = issueManagerInvitation(managedOrphan());
+    var bearer = authTestSupport.accountBearer(recipient);
+    var publicId = issued.code().substring(0, issued.code().indexOf('.'));
+
+    for (var attempt = 0; attempt < 5; attempt++) {
+      graphql(bearer, acceptManagerInvitation(publicId + ".wrong-secret-" + attempt))
+          .andExpect(status().isOk())
+          .andExpect(
+              jsonPath("$.data.acceptManagerInvitation.userErrors[0].__typename")
+                  .value("ManagerInvitationNotFoundError"));
+    }
+
+    graphql(bearer, acceptManagerInvitation(issued.code()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.errorType").value("UNAVAILABLE"))
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("TOO_MANY_CREDENTIAL_ATTEMPTS"))
+        .andExpect(jsonPath("$.errors[0].extensions.retryAfterSeconds").isNumber());
+    assertThat(invitationRepository.findById(UUID.fromString(issued.invitationId())).orElseThrow())
+        .extracting(invitation -> invitation.getStatus().name())
+        .isEqualTo("PENDING");
   }
 
   @Test
@@ -802,9 +825,53 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         });
   }
 
+  private IssuedManagerInvitation issueManagerInvitation(Profile profile) throws Exception {
+    var response =
+        graphql(
+                authTestSupport.accountBearer(owner),
+                """
+                mutation { inviteProfileManager(input: {profileId: "%s",
+                  recipientAccountId: "%s"}) {
+                  issued { code invitation { id profileName status } }
+                  userErrors { __typename } } }
+                """
+                    .formatted(profile.getId(), recipient.account().getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(
+                jsonPath("$.data.inviteProfileManager.issued.invitation.status").value("PENDING"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var issued = objectMapper.readTree(response).path("data").path("inviteProfileManager");
+    return new IssuedManagerInvitation(
+        issued.path("issued").path("code").asString(),
+        issued.path("issued").path("invitation").path("id").asString());
+  }
+
+  private record IssuedManagerInvitation(String code, String invitationId) {}
+
+  private static String acceptManagerInvitation(String code) {
+    return """
+        mutation { acceptManagerInvitation(input: {code: "%s"}) {
+          invitation { status } userErrors { __typename } } }
+        """
+        .formatted(code);
+  }
+
+  private List<String> journaledAddresses(String invitationId) {
+    var host = DSL.field("host({0})", String.class, CREDENTIAL_ATTEMPT.IP_ADDRESS);
+    return dsl.select(host)
+        .from(CREDENTIAL_ATTEMPT)
+        .where(CREDENTIAL_ATTEMPT.CREDENTIAL_ID.eq(UUID.fromString(invitationId)))
+        .and(CREDENTIAL_ATTEMPT.CREDENTIAL_KIND.eq(CredentialKind.PROFILE_MANAGER_INVITATION_CODE))
+        .fetch(host);
+  }
+
   private ResultActions graphql(String bearer, String query) throws Exception {
     return mockMvc.perform(
         post("/graphql")
+            .with(remoteAddr("198.51.100.42"))
             .contentType(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
             .content(objectMapper.writeValueAsString(Map.of("query", query))));

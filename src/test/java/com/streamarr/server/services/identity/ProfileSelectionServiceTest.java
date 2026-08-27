@@ -3,8 +3,9 @@ package com.streamarr.server.services.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
@@ -16,6 +17,7 @@ import com.streamarr.server.exceptions.ProfileLockedException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
@@ -24,7 +26,6 @@ import com.streamarr.server.fakes.PlainPasswordEncoder;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.CredentialGuessThrottle;
 import com.streamarr.server.services.auth.ProfilePinVerifier;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.Decision;
@@ -48,10 +49,9 @@ class ProfileSelectionServiceTest {
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
   private final PasswordEncoder encoder = new PlainPasswordEncoder();
-  private final CredentialGuessThrottle throttle =
-      new CredentialGuessThrottle(
-          AuthThrottleProperties.builder().maxAttempts(2).window(Duration.ofMinutes(15)).build(),
-          new MutableClock());
+  private final MutableClock clock = new MutableClock();
+  private final FakeCredentialAttemptRepository credentialAttempts =
+      new FakeCredentialAttemptRepository();
   private final LiveSessions liveSessions = new LiveSessions(accounts, sessions);
   private final SessionContextService sessionContext =
       new SessionContextService(
@@ -82,7 +82,10 @@ class ProfileSelectionServiceTest {
     authorization = new FakeAuthorizationService(identity());
     service =
         new ProfileSelectionService(
-            profiles, new ProfilePinVerifier(encoder, throttle), authorization, sessionContext);
+            profiles,
+            new ProfilePinVerifier(encoder, credentialAttempts.gate(clock)),
+            authorization,
+            sessionContext);
   }
 
   @Test
@@ -96,6 +99,7 @@ class ProfileSelectionServiceTest {
         .isEqualTo(personal.getId());
     assertThat(authorization.recordedIntents())
         .containsExactly(new Intent.SelectProfile(personal.getId(), false));
+    assertThat(credentialAttempts.attempts()).isEmpty();
   }
 
   @Test
@@ -135,20 +139,14 @@ class ProfileSelectionServiceTest {
     assertThatThrownBy(() -> service.selectProfile(identity, command))
         .isInstanceOf(InvalidProfilePinException.class);
     assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    assertThat(credentialAttempts.attempts()).isEmpty();
   }
 
   @Test
-  @DisplayName("Should reject and throttle when the Profile PIN is wrong")
-  void shouldRejectAndThrottleWhenProfilePinIsWrong() {
+  @DisplayName("Should refuse the selection when the journal blocks the PIN attempt")
+  void shouldRefuseSelectionWhenJournalBlocksPinAttempt() {
     pin(personal, "4242");
-
-    for (var attempt = 0; attempt < 2; attempt++) {
-      var identity = identity();
-      var command = command(personal.getId(), "0000");
-
-      assertThatThrownBy(() -> service.selectProfile(identity, command))
-          .isInstanceOf(InvalidProfilePinException.class);
-    }
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
     var identity = identity();
     var command = command(personal.getId(), "4242");
@@ -228,7 +226,11 @@ class ProfileSelectionServiceTest {
   }
 
   private SelectProfileCommand command(UUID profileId, String pin) {
-    return SelectProfileCommand.builder().profileId(profileId).pin(pin).build();
+    return SelectProfileCommand.builder()
+        .profileId(profileId)
+        .pin(pin)
+        .ipAddress("192.0.2.24")
+        .build();
   }
 
   private AuthenticatedIdentity identity() {
@@ -240,5 +242,36 @@ class ProfileSelectionServiceTest {
         .householdRole(account.getHouseholdRole())
         .contextHouseholdId(account.getHouseholdId())
         .build();
+  }
+
+  @Test
+  @DisplayName("Should refuse the correct PIN when five wrong PINs precede it")
+  void shouldRefuseCorrectPinWhenFiveWrongPinsPrecedeIt() {
+    pin(personal, "4242");
+    for (var attempt = 0; attempt < 5; attempt++) {
+      var identity = identity();
+      var wrong = command(personal.getId(), "000" + attempt);
+      assertThatThrownBy(() -> service.selectProfile(identity, wrong))
+          .isInstanceOf(InvalidProfilePinException.class);
+    }
+
+    var identity = identity();
+    var correct = command(personal.getId(), "4242");
+
+    assertThatThrownBy(() -> service.selectProfile(identity, correct))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+    assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    assertThat(credentialAttempts.attempts())
+        .hasSize(5)
+        .allSatisfy(
+            attempt ->
+                assertThat(attempt.target())
+                    .isEqualTo(
+                        CredentialAttemptTarget.builder()
+                            .kind(CredentialKind.PROFILE_PIN)
+                            .accountId(account.getId())
+                            .profileId(personal.getId())
+                            .ipAddress("192.0.2.24")
+                            .build()));
   }
 }

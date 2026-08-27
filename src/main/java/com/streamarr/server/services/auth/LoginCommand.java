@@ -1,9 +1,11 @@
 package com.streamarr.server.services.auth;
 
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
-public record LoginCommand(String email, String password, String deviceName, String source) {
+public record LoginCommand(
+    String email, String password, String deviceName, @NonNull String ipAddress) {
 
   public static class LoginCommandBuilder {
 
@@ -15,6 +17,7 @@ public record LoginCommand(String email, String password, String deviceName, Str
 
   @Override
   public String toString() {
-    return "LoginCommand[email=%s, deviceName=%s, source=%s]".formatted(email, deviceName, source);
+    return "LoginCommand[email=%s, deviceName=%s, ipAddress=%s]"
+        .formatted(email, deviceName, ipAddress);
   }
 }

@@ -2,6 +2,8 @@ package com.streamarr.server.services.auth;
 
 import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.config.security.DeviceAuthProperties;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.domain.auth.DeviceRegistration;
@@ -58,7 +60,7 @@ public class DeviceAuthorizationService {
   private final AccessTokenIssuer accessTokenIssuer;
   private final UserCodeGenerator userCodeGenerator;
   private final DeviceCodeGenerator deviceCodeGenerator;
-  private final DeviceGuessThrottle guessThrottle;
+  private final CredentialAttemptGate credentialAttempts;
   private final DeviceAuthProperties properties;
   private final CanonicalBaseUrl baseUrl;
   private final Clock clock;
@@ -146,39 +148,41 @@ public class DeviceAuthorizationService {
     };
   }
 
-  @Transactional(readOnly = true)
-  public DeviceAuthorizationDetails lookup(String typedUserCode, UUID callerAccountId) {
-    guessThrottle.registerAttempt(callerAccountId);
-
-    var authorization = findUnexpired(UserCode.normalize(typedUserCode));
-
-    return detailsOf(authorization, authorization.getStatus());
+  public DeviceAuthorizationDetails lookup(DeviceCodePresentation presentation) {
+    var authorization = findPresented(presentation);
+    return credentialAttempts.attempt(
+        approverTarget(presentation),
+        () -> {
+          requireUnexpired(authorization);
+          return detailsOf(authorization, authorization.getStatus());
+        });
   }
 
   /**
-   * Resolves a typed code to its pairing grant for the approval ceremony: the guessing budget is
-   * spent here, once per presented code, before Cedar or any validation sees the request.
+   * Resolves a typed code to its pairing grant for the approval ceremony, journaling one attempt
+   * against the approver before Cedar or the existence and expiry checks see the request.
    */
-  @Transactional(readOnly = true)
-  public ResolvedGrant resolveForDecision(String typedUserCode, UUID callerAccountId) {
-    guessThrottle.registerAttempt(callerAccountId);
-    var authorization =
-        authorizationRepository
-            .findByUserCode(UserCode.normalize(typedUserCode))
-            .orElseThrow(DeviceCodeNotFoundException::new);
-    // The approver is mid-flow on a code they demonstrably saw, so expiry earns its own answer
-    // here; a bare not-found would read as a typo. Lookup collapses it to 404 on purpose.
-    if (authorization.hasExpiredAt(clock.instant())) {
-      throw new DeviceCodeExpiredException();
-    }
+  public ResolvedGrant resolveForDecision(DeviceCodePresentation presentation) {
+    var authorization = findPresented(presentation);
+    return credentialAttempts.attempt(
+        approverTarget(presentation),
+        () -> {
+          requirePresent(authorization);
+          // The approver is mid-flow on a code they demonstrably saw, so expiry earns its own
+          // answer here; a bare not-found would read as a typo. Lookup collapses it to 404 on
+          // purpose.
+          if (authorization.hasExpiredAt(clock.instant())) {
+            throw new DeviceCodeExpiredException();
+          }
 
-    return new ResolvedGrant(
-        authorization.getId(), authorization.getEsn(), authorization.getDeviceName());
+          return new ResolvedGrant(
+              authorization.getId(), authorization.getEsn(), authorization.getDeviceName());
+        });
   }
 
   /**
-   * The conditional decision write. Deliberately not throttled: {@link #resolveForDecision} already
-   * spent the budget for this presentation, and the ceremony calls both in one request.
+   * The conditional decision write. It records no attempt because {@link #resolveForDecision}
+   * already recorded this presentation, and the ceremony calls both in one request.
    */
   @Transactional
   public DeviceAuthorizationDetails decide(DeviceDecisionCommand command) {
@@ -331,19 +335,34 @@ public class DeviceAuthorizationService {
         id, intervalSeconds, now.plusSeconds(intervalSeconds), now);
   }
 
-  private DeviceAuthorization findUnexpired(String userCode) {
-    var authorization =
-        authorizationRepository
-            .findByUserCode(userCode)
-            .orElseThrow(DeviceCodeNotFoundException::new);
+  /** Format validation happens here, before any attempt is journaled. */
+  private DeviceAuthorization findPresented(DeviceCodePresentation presentation) {
+    var userCode = UserCode.normalize(presentation.userCode());
+    return authorizationRepository.findByUserCode(userCode).orElse(null);
+  }
+
+  private void requireUnexpired(DeviceAuthorization authorization) {
+    requirePresent(authorization);
 
     // A probe deserves no oracle: expired collapses into not-found, matching the poll's
     // expired_token.
     if (authorization.hasExpiredAt(clock.instant())) {
       throw new DeviceCodeNotFoundException();
     }
+  }
 
-    return authorization;
+  private static void requirePresent(DeviceAuthorization authorization) {
+    if (authorization == null) {
+      throw new DeviceCodeNotFoundException();
+    }
+  }
+
+  private static CredentialAttemptTarget approverTarget(DeviceCodePresentation presentation) {
+    return CredentialAttemptTarget.builder()
+        .kind(CredentialKind.DEVICE_PAIRING_CODE)
+        .accountId(presentation.approverAccountId())
+        .ipAddress(presentation.ipAddress())
+        .build();
   }
 
   private static DeviceAuthorizationDetails detailsOf(

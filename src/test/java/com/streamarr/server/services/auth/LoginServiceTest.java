@@ -4,19 +4,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.security.Argon2Properties;
-import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
@@ -42,6 +46,8 @@ class LoginServiceTest {
       new CountingTimingEqualizer(countingEncoder);
 
   private final FakeUserAccountRepository userAccountRepository = new FakeUserAccountRepository();
+  private final FakeCredentialAttemptRepository credentialAttempts =
+      new FakeCredentialAttemptRepository();
 
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
@@ -64,24 +70,14 @@ class LoginServiceTest {
           userAccountRepository,
           new LoginCompletionService(userAccountRepository, refreshTokenService),
           countingEncoder,
-          new LoginThrottle(
-              AuthThrottleProperties.builder()
-                  .maxAttempts(5)
-                  .window(Duration.ofMinutes(15))
-                  .build(),
-              clock),
+          credentialAttempts.gate(clock),
           timingEqualizer);
 
   @Test
-  @DisplayName("Should throttle when failures exceed limit")
-  void shouldThrottleWhenFailuresExceedLimit() {
+  @DisplayName("Should refuse the login when the journal blocks the attempt")
+  void shouldRefuseLoginWhenJournalBlocksAttempt() {
     var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
-
-    for (int i = 0; i < 5; i++) {
-      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
-      assertThatThrownBy(() -> loginService.login(wrongAttempt))
-          .isInstanceOf(InvalidCredentialsException.class);
-    }
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
     var correctAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
 
@@ -93,12 +89,7 @@ class LoginServiceTest {
   @DisplayName("Should not burn password verification cost when throttled")
   void shouldNotBurnPasswordVerificationCostWhenThrottled() {
     var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
-
-    for (int i = 0; i < 5; i++) {
-      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
-      assertThatThrownBy(() -> loginService.login(wrongAttempt))
-          .isInstanceOf(InvalidCredentialsException.class);
-    }
+    credentialAttempts.rejectReservations(Duration.ofMinutes(15));
     var burnsBeforeThrottle = countingEncoder.completedVerifications();
 
     var throttledAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
@@ -175,6 +166,19 @@ class LoginServiceTest {
 
     assertThatThrownBy(() -> loginService.login(attempt))
         .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            recorded -> {
+              assertThat(recorded.target())
+                  .isEqualTo(
+                      CredentialAttemptTarget.builder()
+                          .kind(CredentialKind.ACCOUNT_LOGIN)
+                          .ipAddress("127.0.0.1")
+                          .build());
+              assertThat(recorded.result()).isEqualTo(CredentialAttemptResult.FAILED);
+            });
   }
 
   @Test
@@ -235,60 +239,29 @@ class LoginServiceTest {
   }
 
   @Test
-  @DisplayName("Should restore throttle budget when login succeeds")
-  void shouldRestoreThrottleBudgetWhenLoginSucceeds() {
+  @DisplayName(
+      "Should journal each outcome in order when logins alternate between failure and success")
+  void shouldJournalEachOutcomeInOrderWhenLoginsAlternateBetweenFailureAndSuccess() {
     var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
-
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 2; i++) {
       var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
       assertThatThrownBy(() -> loginService.login(wrongAttempt))
           .isInstanceOf(InvalidCredentialsException.class);
     }
 
     loginService.login(commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build());
-
-    for (int i = 0; i < 5; i++) {
-      var wrongAttempt =
-          commandBuilder(account.getEmail())
-              .password("wrong-again-" + i)
-              .source("retry-src-" + i)
-              .build();
-      assertThatThrownBy(() -> loginService.login(wrongAttempt))
-          .isInstanceOf(InvalidCredentialsException.class);
-    }
-
-    var blockedAttempt =
-        commandBuilder(account.getEmail())
-            .password(CORRECT_PASSWORD)
-            .source("retry-src-final")
-            .build();
-    assertThatThrownBy(() -> loginService.login(blockedAttempt))
-        .isInstanceOf(TooManyLoginAttemptsException.class);
-  }
-
-  @Test
-  @DisplayName("Should keep source budget when other account succeeds from same source")
-  void shouldKeepSourceBudgetWhenOtherAccountSucceedsFromSameSource() {
-    var attacker = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
-
-    for (int i = 0; i < 4; i++) {
-      var spray = commandBuilder("victim-" + i + "@example.com").password("guess").build();
-      assertThatThrownBy(() -> loginService.login(spray))
-          .isInstanceOf(InvalidCredentialsException.class);
-    }
-
-    loginService.login(commandBuilder(attacker.getEmail()).password(CORRECT_PASSWORD).build());
-
-    // The source budget is an alerting signal, never a gate: sprays from a shared source
-    // keep failing on credentials, not on a server-wide block, and each sprayed email
-    // stays capped by its own hard budget.
-    var fifthSpray = commandBuilder("victim-4@example.com").password("guess").build();
-    assertThatThrownBy(() -> loginService.login(fifthSpray))
+    var wrongAgain = commandBuilder(account.getEmail()).password("wrong-again").build();
+    assertThatThrownBy(() -> loginService.login(wrongAgain))
         .isInstanceOf(InvalidCredentialsException.class);
 
-    var sixthSpray = commandBuilder("victim-5@example.com").password("guess").build();
-    assertThatThrownBy(() -> loginService.login(sixthSpray))
-        .isInstanceOf(InvalidCredentialsException.class);
+    assertThat(credentialAttempts.attempts())
+        .allSatisfy(attempt -> assertThat(attempt.target().accountId()).isEqualTo(account.getId()))
+        .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
+        .containsExactly(
+            CredentialAttemptResult.FAILED,
+            CredentialAttemptResult.FAILED,
+            CredentialAttemptResult.SUCCEEDED,
+            CredentialAttemptResult.FAILED);
   }
 
   @Test
@@ -332,13 +305,103 @@ class LoginServiceTest {
         .isInstanceOf(TooManyLoginAttemptsException.class);
   }
 
+  @Test
+  @DisplayName("Should journal a failed attempt when login completion refuses the credential")
+  void shouldJournalFailedAttemptWhenLoginCompletionRefusesCredential() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+    var refusingCompletion =
+        new LoginCompletionService(userAccountRepository, refreshTokenService) {
+          @Override
+          public LoginResult complete(LoginCompletionCommand command) {
+            // The stored hash changed between verification and completion.
+            throw new InvalidCredentialsException();
+          }
+        };
+    var service =
+        new LoginService(
+            userAccountRepository,
+            refusingCompletion,
+            countingEncoder,
+            credentialAttempts.gate(clock),
+            timingEqualizer);
+    var attempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> service.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
+        .isEqualTo(CredentialAttemptResult.FAILED);
+  }
+
+  @Test
+  @DisplayName("Should journal the same Account when the email casing differs")
+  void shouldJournalSameAccountWhenEmailCasingDiffers() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+    var upper =
+        commandBuilder(account.getEmail().toUpperCase(Locale.ROOT)).password("wrong").build();
+    var lower =
+        commandBuilder(account.getEmail().toLowerCase(Locale.ROOT)).password("wrong").build();
+
+    assertThatThrownBy(() -> loginService.login(upper))
+        .isInstanceOf(InvalidCredentialsException.class);
+    assertThatThrownBy(() -> loginService.login(lower))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(credentialAttempts.attempts())
+        .extracting(attempt -> attempt.target().accountId())
+        .containsExactly(account.getId(), account.getId());
+  }
+
+  @Test
+  @DisplayName("Should refuse the login when five failures fall within the window")
+  void shouldRefuseLoginWhenFiveFailuresFallWithinTheWindow() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+    for (int i = 0; i < 5; i++) {
+      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAttempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    var correctAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(correctAttempt))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should forgive earlier failures when a login succeeds")
+  void shouldForgiveEarlierFailuresWhenLoginSucceeds() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+    for (int i = 0; i < 4; i++) {
+      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAttempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    loginService.login(commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build());
+    currentTime.updateAndGet(instant -> instant.plusSeconds(1));
+
+    // Five fresh failures are admitted after the success; the sixth attempt is not.
+    for (int i = 0; i < 5; i++) {
+      var wrongAgain = commandBuilder(account.getEmail()).password("wrong-again-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAgain))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    var blocked = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+    assertThatThrownBy(() -> loginService.login(blocked))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
   private UserAccount seedAccount(String passwordHash) {
     return userAccountRepository.save(
         AccountFixture.defaultAccountBuilder().passwordHash(passwordHash).build());
   }
 
   private LoginCommand.LoginCommandBuilder commandBuilder(String email) {
-    return LoginCommand.builder().email(email).deviceName("test-device").source("127.0.0.1");
+    return LoginCommand.builder().email(email).deviceName("test-device").ipAddress("127.0.0.1");
   }
 
   private static PasswordEncoder encoderWith(int memoryKib, int iterations) {

@@ -1,8 +1,10 @@
 package com.streamarr.server.exceptions;
 
-public class TooManyCredentialAttemptsException extends RuntimeException {
+import java.time.Duration;
 
-  public TooManyCredentialAttemptsException() {
-    super("Too many failed credential attempts. Try again later.");
+public class TooManyCredentialAttemptsException extends TooManyAttemptsException {
+
+  public TooManyCredentialAttemptsException(Duration retryAfter) {
+    super("Too many failed credential attempts. Try again later.", retryAfter);
   }
 }

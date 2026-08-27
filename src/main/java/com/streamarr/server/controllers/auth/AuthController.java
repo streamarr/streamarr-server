@@ -11,6 +11,7 @@ import com.streamarr.server.services.auth.LoginCommand;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.LogoutService;
 import com.streamarr.server.services.auth.PasswordChangeService;
+import com.streamarr.server.services.auth.ReauthenticationCommand;
 import com.streamarr.server.services.auth.ReauthenticationService;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.SetupCommand;
@@ -22,6 +23,7 @@ import com.streamarr.server.services.identity.ProfileSelectionService;
 import com.streamarr.server.services.identity.SelectProfileCommand;
 import com.streamarr.server.services.identity.SessionContextService;
 import com.streamarr.server.services.identity.TokenRefreshService;
+import com.streamarr.server.web.ClientIpAddressResolver;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -56,6 +58,7 @@ public class AuthController {
   private final DeviceAuthorizationService deviceAuthorizationService;
   private final AuthCookieWriter cookieWriter;
   private final AuthTokenResponseWriter tokenResponseWriter;
+  private final ClientIpAddressResolver clientIpAddress;
 
   /**
    * The bootstrap a client reads before it can do anything else. Both flags are required in v1: a
@@ -91,6 +94,7 @@ public class AuthController {
             ChangePasswordCommand.builder()
                 .currentPassword(request.currentPassword())
                 .newPassword(request.newPassword())
+                .ipAddress(clientIpAddress.resolve())
                 .build());
 
     var context = sessionContextService.revalidateStoredContext(result.account(), result.session());
@@ -121,7 +125,13 @@ public class AuthController {
   public ResponseEntity<AuthTokensResponse> reauthenticate(
       @Valid @RequestBody ReauthRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
-    var context = reauthenticationService.reauthenticate(identity, request.password());
+    var context =
+        reauthenticationService.reauthenticate(
+            identity,
+            ReauthenticationCommand.builder()
+                .password(request.password())
+                .ipAddress(clientIpAddress.resolve())
+                .build());
     return tokenResponseWriter.accessOnly(
         accessTokenIssuer.issueReauthenticated(context, authorizationService.currentTokenExpiry()),
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
@@ -137,6 +147,7 @@ public class AuthController {
             SelectProfileCommand.builder()
                 .profileId(request.profileId())
                 .pin(request.pin())
+                .ipAddress(clientIpAddress.resolve())
                 .build());
     return tokenResponseWriter.accessOnly(
         accessTokenIssuer.issueDerived(
@@ -179,7 +190,7 @@ public class AuthController {
                 .email(request.email())
                 .password(request.password())
                 .deviceName(request.deviceName())
-                .source(httpRequest.getRemoteAddr())
+                .ipAddress(clientIpAddress.resolve())
                 .build());
 
     // A new session starts in the membership Household at the Profile picker (Account scope).

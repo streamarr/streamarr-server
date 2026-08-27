@@ -1,5 +1,7 @@
 package com.streamarr.server.services.auth;
 
+import com.streamarr.server.domain.auth.CredentialAttemptTarget;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
@@ -10,20 +12,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 /**
- * The single checkpoint for verifying an authenticated Account's password — password change,
- * reauthentication, and every later Account-password action share its budget and its rules. Login
- * keeps its own path because it has no authenticated Account yet and a distinct throttle key (email
- * + source).
- *
- * <p>Order of operations: reserve the ACCOUNT_PASSWORD budget first — an exhausted budget rejects
- * with no Argon2 work at all; that 429 is deliberately distinguishable because throttling is the
- * point. Every path past the reservation performs exactly one full-cost Argon2 operation: a
- * disabled Account burns the equalizer, a readable hash runs the real comparison, an unreadable
- * hash (a cheap parse failure) burns the equalizer. Response time therefore never reveals whether
- * the Account is enabled or its hash is intact.
- *
- * <p>Never called inside a transaction: Argon2 work would pin a pooled connection for its whole
- * duration.
+ * Shared checkpoint for authenticated Account-password verification. It journals the attempt before
+ * Argon2 and equalizes disabled or unreadable Accounts. Never call it inside a transaction: Argon2
+ * would pin a pooled connection for its whole run, and the journal's REQUIRES_NEW reservation and
+ * completion would each need a second connection while the caller's sat suspended.
  */
 @Component
 @Slf4j
@@ -32,28 +24,37 @@ public class AccountPasswordVerifier {
 
   private final PasswordEncoder passwordEncoder;
   private final PasswordTimingEqualizer timingEqualizer;
-  private final CredentialGuessThrottle throttle;
+  private final CredentialAttemptGate credentialAttempts;
 
   /**
-   * @throws TooManyCredentialAttemptsException when the Account's password budget is exhausted
+   * @throws TooManyCredentialAttemptsException when the Account's attempt limit is exhausted
    * @throws InvalidCredentialsException when the Account is disabled, its stored hash is
    *     unreadable, or the password does not match
    */
-  public void verify(UserAccount account, String password) {
-    throttle.registerAccountPasswordAttempt(account.getId());
-    // Snapshot before the slow comparison: a password correct when verification begins is
-    // sufficient, even if a concurrent change lands on the managed entity meanwhile.
-    var expectedPasswordHash = account.getPasswordHash();
-    if (!account.isEnabled()) {
-      timingEqualizer.burn(password);
-      throw new InvalidCredentialsException();
-    }
+  public void verify(UserAccount account, String password, String ipAddress) {
+    credentialAttempts.attempt(
+        passwordTarget(account, ipAddress),
+        () -> {
+          // Snapshot before the slow comparison: a password correct when verification begins is
+          // sufficient, even if a concurrent change lands on the managed entity meanwhile.
+          var expectedPasswordHash = account.getPasswordHash();
+          if (!account.isEnabled()) {
+            timingEqualizer.burn(password);
+            throw new InvalidCredentialsException();
+          }
 
-    if (!passwordMatches(account.getId(), expectedPasswordHash, password)) {
-      throw new InvalidCredentialsException();
-    }
+          if (!passwordMatches(account.getId(), expectedPasswordHash, password)) {
+            throw new InvalidCredentialsException();
+          }
+        });
+  }
 
-    throttle.resetAccountPasswordAttempts(account.getId());
+  private static CredentialAttemptTarget passwordTarget(UserAccount account, String ipAddress) {
+    return CredentialAttemptTarget.builder()
+        .kind(CredentialKind.ACCOUNT_PASSWORD_VERIFICATION)
+        .accountId(account.getId())
+        .ipAddress(ipAddress)
+        .build();
   }
 
   private boolean passwordMatches(UUID accountId, String expectedPasswordHash, String password) {
