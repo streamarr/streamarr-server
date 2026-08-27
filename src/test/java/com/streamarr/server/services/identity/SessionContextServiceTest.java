@@ -9,6 +9,7 @@ import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
+import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.UnwrittenAuthSessionException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
@@ -16,7 +17,9 @@ import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import java.time.Instant;
 import java.util.UUID;
@@ -36,7 +39,8 @@ class SessionContextServiceTest {
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
   private final LiveSessions liveSessions = new LiveSessions(accounts, sessions);
   private final SessionContextService service =
-      new SessionContextService(liveSessions, accounts, profiles, sessions, new MutableClock());
+      new SessionContextService(
+          liveSessions, accounts, profiles, sessions, shares, new MutableClock());
   private final HouseholdContextService households =
       new HouseholdContextService(liveSessions, accounts, service);
 
@@ -173,6 +177,39 @@ class SessionContextServiceTest {
 
     assertThatThrownBy(() -> service.revalidateStoredContext(account, unwritten))
         .isInstanceOf(UnwrittenAuthSessionException.class);
+  }
+
+  @Test
+  @DisplayName("Should record the selection when the Profile's share in the context is active")
+  void shouldRecordSelectionWhenProfileShareInContextIsActive() {
+    var session = session(account.getHouseholdId(), null);
+
+    var context = service.recordProfileSelection(identity(session), personal.getId());
+
+    assertThat(context.profileId()).contains(personal.getId());
+    assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId())
+        .isEqualTo(personal.getId());
+  }
+
+  @Test
+  @DisplayName("Should refuse the selection when the Profile has no active share in the context")
+  void shouldRefuseSelectionWhenProfileHasNoActiveShareInContext() {
+    var session = session(account.getHouseholdId(), null);
+    var identity = identity(session);
+    var unshared = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+
+    assertThatThrownBy(() -> service.recordProfileSelection(identity, unshared.getId()))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+    assertThat(sessions.findById(session.getId()).orElseThrow().getSelectedProfileId()).isNull();
+  }
+
+  private AuthenticatedIdentity identity(AuthSession session) {
+    return AuthenticatedIdentityFixture.accountScopedBuilder()
+        .accountId(account.getId())
+        .authSessionId(session.getId())
+        .householdId(account.getHouseholdId())
+        .contextHouseholdId(session.getContextHouseholdId())
+        .build();
   }
 
   private AuthSession session(UUID contextHouseholdId, UUID selectedProfileId) {

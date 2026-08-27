@@ -6,6 +6,7 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.UnwrittenAuthSessionException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -32,12 +33,22 @@ public class SessionContextService {
   private final UserAccountRepository userAccountRepository;
   private final ProfileRepository profileRepository;
   private final AuthSessionRepository sessionRepository;
+  private final ProfileHouseholdShareRepository shareRepository;
   private final Clock clock;
 
-  /** Records an authorized selection on the live session (the caller has already decided). */
+  /**
+   * Records an authorized selection on the live session (the caller has already decided). The
+   * Profile's active share is pinned first, in the order share termination takes (share, then
+   * sessions), so a concurrent unshare either refuses this selection or clears it — never leaves a
+   * session selecting an ended Profile.
+   */
   @Transactional
   public TokenContext recordProfileSelection(AuthenticatedIdentity identity, UUID profileId) {
     var account = liveSessions.loadAccount(identity.accountId());
+    if (!shareRepository.lockActiveShare(profileId, identity.contextHouseholdId())) {
+      throw new ProfileAccessDeniedException();
+    }
+
     var session = liveSessions.lockLiveSession(identity.accountId(), identity.authSessionId());
     if (!identity.contextHouseholdId().equals(session.getContextHouseholdId())) {
       throw new ProfileAccessDeniedException();
