@@ -32,8 +32,9 @@ when {
    (principal has serverAdmin && principal.serverAdmin))
 };
 
-// The offerer may withdraw while pending; ServerAdmin may always.
-@id("cancel-pending-share-as-offerer-or-server-admin")
+// The offerer may withdraw while pending; so may the sovereign Account whose Personal Profile is
+// on offer (ADR 0024 §Invitations); ServerAdmin may withdraw any pending offer.
+@id("cancel-pending-share-as-offerer-sovereign-or-server-admin")
 permit (
   principal,
   action == Streamarr::Action::"cancelProfileShare",
@@ -42,6 +43,7 @@ permit (
 when {
   principal has enabled && principal.enabled &&
   ((resource has offeredByPrincipal && resource.offeredByPrincipal) ||
+   (resource has sovereignOverProfileByPrincipal && resource.sovereignOverProfileByPrincipal) ||
    (principal has serverAdmin && principal.serverAdmin))
 };
 

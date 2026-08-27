@@ -856,8 +856,25 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should allow only the offerer when a pending offer is canceled")
-    void shouldAllowOnlyOffererWhenPendingOfferIsCanceled() {
+    @DisplayName(
+        "Should allow the sovereign Account to cancel a pending offer of its own Personal Profile")
+    void shouldAllowSovereignAccountToCancelPendingOfferOfOwnPersonalProfile() {
+      var formerManager = accounts.save(AccountFixture.defaultAccountBuilder().build());
+      var offer =
+          shares.save(
+              pendingShareBuilder()
+                  .profileId(personal.getId())
+                  .householdId(visitedHouseholdId)
+                  .build());
+      offer.setOfferedByAccountId(formerManager.getId());
+      shares.save(offer);
+
+      assertThat(decide(atHome(), new Intent.CancelProfileShare(offer.getId()))).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should allow the offerer and deny a stranger when a pending offer is canceled")
+    void shouldAllowOffererAndDenyStrangerWhenPendingOfferIsCanceled() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var offer =
           shares.save(
