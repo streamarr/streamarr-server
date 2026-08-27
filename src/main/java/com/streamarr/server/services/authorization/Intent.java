@@ -195,4 +195,10 @@ public sealed interface Intent {
 
   /** ServerAdmin deletion of an unlinked Profile; fresh, with an audited reason. */
   record AdministrativelyDeleteProfile(UUID profileId) implements UnitIntent {}
+
+  /** Tear down a whole Household; fresh-reauthenticated ServerAdmin work with a reason. */
+  record TearDownHousehold(UUID householdId) implements UnitIntent {}
+
+  /** Only ServerAdmin reads the security audit (ADR 0024 §Audit). */
+  record ViewSecurityAudit() implements UnitIntent {}
 }

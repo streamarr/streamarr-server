@@ -64,6 +64,12 @@ public class FakeDeviceRegistrationRepository extends FakeJpaRepository<DeviceRe
         now);
   }
 
+  @Override
+  public List<UUID> revokeAllByHousehold(UUID householdId, String reason, Instant now) {
+    return revokeAll(
+        registration -> householdId.equals(registration.getHouseholdId()), null, reason, now);
+  }
+
   private List<UUID> revokeAll(
       Predicate<DeviceRegistration> scope, UUID actorAccountId, String reason, Instant now) {
     var matching =

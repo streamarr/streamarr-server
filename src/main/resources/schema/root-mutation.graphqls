@@ -55,6 +55,7 @@ type Mutation {
     deleteMyAccount(input: DeleteMyAccountInput!): DeleteMyAccountPayload
     transferProfile(input: TransferProfileInput!): TransferProfilePayload
     administrativelyDeleteProfile(input: AdministrativelyDeleteProfileInput!): AdministrativelyDeleteProfilePayload
+    tearDownHousehold(input: TearDownHouseholdInput!): TearDownHouseholdPayload
 }
 
 enum ImageRefreshMode {

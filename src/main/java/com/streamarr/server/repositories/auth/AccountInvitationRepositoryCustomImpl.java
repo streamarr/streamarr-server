@@ -160,6 +160,11 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
   }
 
   @Override
+  public int invalidatePendingByHouseholdId(UUID householdId, String reason, Instant now) {
+    return invalidate(ACCOUNT_INVITATION.HOUSEHOLD_ID.eq(householdId), reason, now);
+  }
+
+  @Override
   public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
     return invalidate(ACCOUNT_INVITATION.PROFILE_ID.eq(profileId), reason, now);
   }

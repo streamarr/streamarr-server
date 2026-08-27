@@ -6,11 +6,20 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 public class FakeHouseholdRepository extends FakeJpaRepository<Household>
     implements HouseholdRepository {
+
+  private final Set<UUID> lockedHouseholds = ConcurrentHashMap.newKeySet();
+
+  @Override
+  public boolean lockById(UUID householdId) {
+    return existsById(householdId) && lockedHouseholds.add(householdId);
+  }
 
   @Override
   public void refresh(Household household) {

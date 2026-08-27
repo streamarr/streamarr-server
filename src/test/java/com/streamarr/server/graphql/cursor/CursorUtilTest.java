@@ -50,6 +50,16 @@ class CursorUtilTest {
     }
 
     @Test
+    @DisplayName("Should preserve an opaque cursor value when round-tripping encode and decode")
+    void shouldPreserveOpaqueCursorValueWhenRoundTrippingEncodeAndDecode() {
+      var value = "2026-08-22T12:00:00Z|00000000-0000-0000-0000-000000000001";
+
+      var encoded = cursorUtil.encodeOpaqueCursor(value);
+
+      assertThat(cursorUtil.decodeOpaqueCursor(encoded.getValue())).isEqualTo(value);
+    }
+
+    @Test
     @DisplayName(
         "Should preserve cursorId and all filter dimensions when round-tripping encode and decode")
     void shouldPreserveCursorIdAndAllFilterDimensionsWhenRoundTrippingEncodeAndDecode() {
