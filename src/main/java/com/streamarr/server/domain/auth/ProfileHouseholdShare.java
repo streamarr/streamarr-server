@@ -56,4 +56,13 @@ public class ProfileHouseholdShare extends BaseAuditableEntity<ProfileHouseholdS
   public Optional<String> getInvalidationReason() {
     return Optional.ofNullable(invalidationReason);
   }
+
+  /** Expiry is a predicate at read time: a stale PENDING offer projects as EXPIRED. */
+  public ProfileShareStatus statusAt(Instant now) {
+    if (status == ProfileShareStatus.PENDING && expiresAt != null && !expiresAt.isAfter(now)) {
+      return ProfileShareStatus.EXPIRED;
+    }
+
+    return status;
+  }
 }

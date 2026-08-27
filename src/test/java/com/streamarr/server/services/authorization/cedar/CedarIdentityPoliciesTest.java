@@ -29,6 +29,7 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfilePolicyTransition;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -81,7 +82,7 @@ class CedarIdentityPoliciesTest {
                       new LivePrincipalHouseholdContributor(accounts),
                       new PrincipalEligibilityContributor(accounts, profiles),
                       new ProfileSupervisionContributor(accounts, profiles, shares),
-                      new ProfileDeletionContributor(accounts, managers, shares),
+                      new ProfileDeletionContributor(accounts, managers, shares, Clock.systemUTC()),
                       new ShareFactsContributor(shares, profiles, managers, accounts))),
               new IntentPlanner(new ProfilePolicyPlanner(profiles)),
               ContributorStubs.systemClockFreshness(),

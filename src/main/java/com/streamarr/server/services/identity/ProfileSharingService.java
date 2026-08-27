@@ -394,8 +394,7 @@ public class ProfileSharingService {
     }
 
     return page(
-        shareRepository.findHouseholdPage(householdId, ProfileShareStatus.PENDING, options),
-        options);
+        shareRepository.findPendingOffersPage(householdId, clock.instant(), options), options);
   }
 
   /** Every share of one Profile, for its managers; empty when the caller may not view. */

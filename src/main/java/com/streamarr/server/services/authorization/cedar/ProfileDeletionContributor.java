@@ -6,6 +6,7 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import java.time.Clock;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -25,6 +26,7 @@ class ProfileDeletionContributor implements FactContributor {
   private final UserAccountRepository userAccountRepository;
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileHouseholdShareRepository shareRepository;
+  private final Clock clock;
 
   @Override
   public FactRequirement provides() {
@@ -42,7 +44,8 @@ class ProfileDeletionContributor implements FactContributor {
     slice.resourceAttribute(
         UNLINKED, new PrimBool(userAccountRepository.findByPersonalProfileId(profileId).isEmpty()));
     slice.resourceAttribute(
-        SHARE_FREE, new PrimBool(!shareRepository.hasLiveOrPendingShares(profileId)));
+        SHARE_FREE,
+        new PrimBool(!shareRepository.hasLiveOrPendingShares(profileId, clock.instant())));
     slice.resourceAttribute(
         PRINCIPAL_SOLE_MANAGER, new PrimBool(managers.equals(List.of(identity.accountId()))));
   }

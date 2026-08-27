@@ -366,6 +366,22 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName("Should omit an expired offer when pending offers are listed")
+  void shouldOmitExpiredOfferWhenPendingOffersAreListed() {
+    shares.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(household.getId())
+            .status(ProfileShareStatus.PENDING)
+            .expiresAt(NOW.minusSeconds(1))
+            .build());
+
+    var page = service.pendingShareOffers(identity(), household.getId(), paginationOptions());
+
+    assertThat(page.items()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should return an empty page when Profile shares are not visible")
   void shouldReturnEmptyPageWhenProfileSharesAreNotVisible() {
     activeShare();

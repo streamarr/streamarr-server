@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.HouseholdFixture;
@@ -1038,5 +1039,82 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
       authTestSupport.deleteIdentity(disabler);
       authTestSupport.deleteIdentity(offerer);
     }
+  }
+
+  // ---- Expiry is a predicate: a stale PENDING offer is neither listed nor live.
+
+  @Test
+  @DisplayName("Should omit an expired offer when a Household lists its pending offers")
+  void shouldOmitExpiredOfferWhenHouseholdListsPendingOffers() throws Exception {
+    var orphan = managedOrphan();
+    expire(UUID.fromString(offer(orphan, host.household().getId())));
+
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            query { pendingShareOffers(householdId: "%s") { edges { node { id status } } } }
+            """
+                .formatted(host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.pendingShareOffers.edges.length()").value(0));
+  }
+
+  @Test
+  @DisplayName("Should delete a Profile when its only share is an expired pending offer")
+  void shouldDeleteProfileWhenItsOnlyShareIsExpiredPendingOffer() throws Exception {
+    var orphan = unsharedManagedProfile();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            shareRepository.saveAndFlush(
+                ProfileHouseholdShare.builder()
+                    .profileId(orphan.getId())
+                    .householdId(host.household().getId())
+                    .status(ProfileShareStatus.PENDING)
+                    .offeredByAccountId(owner.account().getId())
+                    .expiresAt(Instant.now().minusSeconds(1))
+                    .build()));
+
+    graphql(
+            authTestSupport.freshAccountBearer(owner),
+            """
+            mutation { deleteProfile(input: {profileId: "%s"}) {
+              deletedProfileId userErrors { __typename } } }
+            """
+                .formatted(orphan.getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.deleteProfile.userErrors").isEmpty())
+        .andExpect(
+            jsonPath("$.data.deleteProfile.deletedProfileId").value(orphan.getId().toString()));
+
+    assertThat(profileRepository.findById(orphan.getId())).isEmpty();
+  }
+
+  private void expire(UUID shareId) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var expired = shareRepository.findById(shareId).orElseThrow();
+          expired.setExpiresAt(Instant.now().minusSeconds(1));
+          shareRepository.saveAndFlush(expired);
+        });
+  }
+
+  private Profile unsharedManagedProfile() {
+    return transactionTemplate.execute(
+        _ -> {
+          var orphan =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder()
+                      .householdId(owner.household().getId())
+                      .kind(ProfileKind.ADULT)
+                      .build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(owner.account().getId())
+                  .profileId(orphan.getId())
+                  .build());
+          return orphan;
+        });
   }
 }

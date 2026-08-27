@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.dto;
 
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import java.time.Instant;
 import java.util.UUID;
 import lombok.Builder;
 
@@ -15,12 +16,12 @@ public record ProfileShareDetails(
     String expiresAt,
     String endedAt) {
 
-  public static ProfileShareDetails from(ProfileHouseholdShare share) {
+  public static ProfileShareDetails from(ProfileHouseholdShare share, Instant now) {
     return ProfileShareDetails.builder()
         .id(share.getId())
         .profileId(share.getProfileId())
         .householdId(share.getHouseholdId())
-        .status(share.getStatus())
+        .status(share.statusAt(now))
         .requiredByAccountMembership(share.isStructural())
         .expiresAt(share.getExpiresAt() == null ? null : share.getExpiresAt().toString())
         .endedAt(share.getEndedAt() == null ? null : share.getEndedAt().toString())

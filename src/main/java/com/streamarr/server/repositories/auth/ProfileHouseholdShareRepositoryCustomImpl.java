@@ -3,6 +3,7 @@ package com.streamarr.server.repositories.auth;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
+import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -12,6 +13,7 @@ import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
@@ -20,6 +22,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.Field;
 import org.springframework.data.domain.AuditorAware;
 
 @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -61,11 +64,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
         PROFILE_HOUSEHOLD_SHARE
             .OFFERED_BY_ACCOUNT_ID
             .eq(offererAccountId)
-            .and(
-                PROFILE_HOUSEHOLD_SHARE
-                    .EXPIRES_AT
-                    .isNull()
-                    .or(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.gt(nowUtc))),
+            .and(unexpiredAt(val(nowUtc))),
         reason,
         now);
   }
@@ -92,18 +91,23 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public List<ProfileHouseholdShare> findHouseholdPage(
-      UUID householdId,
-      com.streamarr.server.domain.auth.ProfileShareStatus status,
-      KeysetPaginationOptions options) {
+  public List<ProfileHouseholdShare> findPendingOffersPage(
+      UUID householdId, Instant now, KeysetPaginationOptions options) {
     return findPage(
         PROFILE_HOUSEHOLD_SHARE
             .HOUSEHOLD_ID
             .eq(householdId)
-            .and(
-                PROFILE_HOUSEHOLD_SHARE.STATUS.eq(
-                    inline(ProfileShareStatus.valueOf(status.name())))),
+            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(inline(ProfileShareStatus.PENDING)))
+            .and(unexpiredAt(inline(now.atOffset(ZoneOffset.UTC)))),
         options);
+  }
+
+  /** Expiry is a predicate over expires_at; a NULL expiry never expires. */
+  private static Condition unexpiredAt(Field<OffsetDateTime> now) {
+    return PROFILE_HOUSEHOLD_SHARE
+        .EXPIRES_AT
+        .isNull()
+        .or(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.gt(now));
   }
 
   @Override
@@ -151,11 +155,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
                 auditorAware.getCurrentAuditor().orElse(null))
             .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
             .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
-            .and(
-                PROFILE_HOUSEHOLD_SHARE
-                    .EXPIRES_AT
-                    .isNull()
-                    .or(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC))))
+            .and(unexpiredAt(val(now.atOffset(ZoneOffset.UTC))))
             .execute()
         > 0;
   }
@@ -165,8 +165,12 @@ public class ProfileHouseholdShareRepositoryCustomImpl
       UUID shareId, com.streamarr.server.domain.auth.ProfileShareStatus target, Instant now)
       throws IllegalArgumentException {
     ProfileHouseholdShareRepositoryCustom.requireDeclineTarget(target);
+    var nowUtc = now.atOffset(ZoneOffset.UTC);
     return dsl.update(PROFILE_HOUSEHOLD_SHARE)
-            .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.valueOf(target.name()))
+            .set(
+                PROFILE_HOUSEHOLD_SHARE.STATUS,
+                when(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.le(nowUtc), ProfileShareStatus.EXPIRED)
+                    .otherwise(ProfileShareStatus.valueOf(target.name())))
             .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
             .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
             .set(
@@ -194,14 +198,17 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public boolean hasLiveOrPendingShares(UUID profileId) {
+  public boolean hasLiveOrPendingShares(UUID profileId, Instant now) {
+    var pendingAndLive =
+        PROFILE_HOUSEHOLD_SHARE
+            .STATUS
+            .eq(ProfileShareStatus.PENDING)
+            .and(unexpiredAt(val(now.atOffset(ZoneOffset.UTC))));
     return dsl.fetchExists(
         dsl.selectOne()
             .from(PROFILE_HOUSEHOLD_SHARE)
             .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
-            .and(
-                PROFILE_HOUSEHOLD_SHARE.STATUS.in(
-                    ProfileShareStatus.ACTIVE, ProfileShareStatus.PENDING)));
+            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE).or(pendingAndLive)));
   }
 
   @Override

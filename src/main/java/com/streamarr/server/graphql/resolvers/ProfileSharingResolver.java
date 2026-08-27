@@ -31,6 +31,7 @@ import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
+import java.time.Clock;
 import lombok.RequiredArgsConstructor;
 
 @DgsComponent
@@ -44,6 +45,7 @@ public class ProfileSharingResolver {
   private final PaginationService paginationService;
   private final CursorUtil cursorUtil;
   private final RelayConnectionAdapter relayConnectionAdapter;
+  private final Clock clock;
 
   @DgsQuery
   public ProfileSharePreview profileSharePreview(
@@ -89,7 +91,7 @@ public class ProfileSharingResolver {
                 authorizationService.currentIdentity(),
                 Ids.parseUuid(input.profileId()),
                 Ids.parseUuid(input.householdId()))
-            .map(ProfileShareDetails::from),
+            .map(this::details),
         ShareErrors::toOfferError,
         OfferProfileSharePayload::new);
   }
@@ -101,7 +103,7 @@ public class ProfileSharingResolver {
         profileSharingService
             .acceptProfileShare(
                 authorizationService.currentIdentity(), Ids.parseUuid(input.shareId()))
-            .map(ProfileShareDetails::from),
+            .map(this::details),
         ShareErrors::toAcceptError,
         AcceptProfileSharePayload::new);
   }
@@ -113,7 +115,7 @@ public class ProfileSharingResolver {
         profileSharingService
             .rejectProfileShare(
                 authorizationService.currentIdentity(), Ids.parseUuid(input.shareId()))
-            .map(ProfileShareDetails::from),
+            .map(this::details),
         ShareErrors::toRejectError,
         RejectProfileSharePayload::new);
   }
@@ -125,7 +127,7 @@ public class ProfileSharingResolver {
         profileSharingService
             .cancelProfileShare(
                 authorizationService.currentIdentity(), Ids.parseUuid(input.shareId()))
-            .map(ProfileShareDetails::from),
+            .map(this::details),
         ShareErrors::toCancelError,
         CancelProfileSharePayload::new);
   }
@@ -135,7 +137,7 @@ public class ProfileSharingResolver {
     return MutationPayloads.payload(
         profileSharingService
             .endProfileShare(authorizationService.currentIdentity(), Ids.parseUuid(input.shareId()))
-            .map(ProfileShareDetails::from),
+            .map(this::details),
         ShareErrors::toEndError,
         EndProfileSharePayload::new);
   }
@@ -149,15 +151,19 @@ public class ProfileSharingResolver {
                 authorizationService.currentIdentity(),
                 Ids.parseUuid(input.shareId()),
                 input.reason())
-            .map(ProfileShareDetails::from),
+            .map(this::details),
         ShareErrors::toForceEndError,
         ForceEndProfileSharePayload::new);
+  }
+
+  private ProfileShareDetails details(ProfileHouseholdShare share) {
+    return ProfileShareDetails.from(share, clock.instant());
   }
 
   private Connection<ProfileShareDetails> toConnection(MediaPage<ProfileHouseholdShare> page) {
     return relayConnectionAdapter.toConnection(
         page,
-        item -> ProfileShareDetails.from(item.item()),
+        item -> details(item.item()),
         item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
   }
 }

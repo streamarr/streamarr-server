@@ -55,12 +55,12 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public List<ProfileHouseholdShare> findHouseholdPage(
-      UUID householdId, ProfileShareStatus status, KeysetPaginationOptions options) {
+  public List<ProfileHouseholdShare> findPendingOffersPage(
+      UUID householdId, Instant now, KeysetPaginationOptions options) {
     return page(
         database.values().stream()
             .filter(share -> share.getHouseholdId().equals(householdId))
-            .filter(share -> share.getStatus() == status)
+            .filter(share -> share.statusAt(now) == ProfileShareStatus.PENDING)
             .toList(),
         options);
   }
@@ -146,7 +146,10 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
     var share = findById(shareId).filter(offer -> offer.getStatus() == ProfileShareStatus.PENDING);
     share.ifPresent(
         offer -> {
-          offer.setStatus(target);
+          offer.setStatus(
+              offer.statusAt(now) == ProfileShareStatus.EXPIRED
+                  ? ProfileShareStatus.EXPIRED
+                  : target);
           offer.setDecidedAt(now);
         });
     return share.isPresent();
@@ -164,13 +167,13 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public boolean hasLiveOrPendingShares(UUID profileId) {
+  public boolean hasLiveOrPendingShares(UUID profileId, Instant now) {
     return database.values().stream()
         .filter(share -> share.getProfileId().equals(profileId))
         .anyMatch(
             share ->
                 share.getStatus() == ProfileShareStatus.ACTIVE
-                    || share.getStatus() == ProfileShareStatus.PENDING);
+                    || share.statusAt(now) == ProfileShareStatus.PENDING);
   }
 
   @Override

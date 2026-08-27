@@ -16,12 +16,12 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /** Locks and reports the active share used as authorization authority. */
   boolean lockActiveShare(UUID profileId, UUID householdId);
 
-  /** Whether any share of the Profile is still ACTIVE or PENDING, read as a scalar. */
-  boolean hasLiveOrPendingShares(UUID profileId);
+  /** Whether any share of the Profile is ACTIVE or an unexpired PENDING offer, read as a scalar. */
+  boolean hasLiveOrPendingShares(UUID profileId, Instant now);
 
-  /** A bounded keyset window of pending offers into one Household. */
-  List<ProfileHouseholdShare> findHouseholdPage(
-      UUID householdId, ProfileShareStatus status, KeysetPaginationOptions options);
+  /** A bounded keyset window of the unexpired PENDING offers into one Household. */
+  List<ProfileHouseholdShare> findPendingOffersPage(
+      UUID householdId, Instant now, KeysetPaginationOptions options);
 
   /** A bounded keyset window of every share for one Profile. */
   List<ProfileHouseholdShare> findProfilePage(UUID profileId, KeysetPaginationOptions options);
@@ -41,7 +41,7 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /** Activates one PENDING, unexpired offer; a raced decision has exactly one winner. */
   boolean tryActivate(UUID shareId, Instant now);
 
-  /** Moves one PENDING offer to REJECTED or CANCELED. */
+  /** Moves one PENDING offer to REJECTED or CANCELED — or to EXPIRED when its time has passed. */
   boolean tryDecline(UUID shareId, ProfileShareStatus target, Instant now)
       throws IllegalArgumentException;
 
