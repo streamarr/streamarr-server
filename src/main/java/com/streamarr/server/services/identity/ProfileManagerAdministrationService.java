@@ -439,8 +439,8 @@ public class ProfileManagerAdministrationService {
 
   private void invalidateLeaversProposals(UUID profileId, UUID leaverAccountId) {
     var now = clock.instant();
-    invitationRepository.invalidatePendingInvitedBy(
-        leaverAccountId, profileId, INVITER_LEFT_REASON, now);
+    invitationRepository.invalidatePendingByProfileIdInvitedBy(
+        profileId, leaverAccountId, INVITER_LEFT_REASON, now);
     shareRepository.invalidatePendingByProfileIdOfferedBy(
         profileId, leaverAccountId, "offering manager lost management", now);
   }

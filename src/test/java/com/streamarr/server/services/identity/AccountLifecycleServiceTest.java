@@ -1,0 +1,650 @@
+package com.streamarr.server.services.identity;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.streamarr.server.domain.auth.AccountInvitation;
+import com.streamarr.server.domain.auth.AccountInvitationStatus;
+import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.DeviceRegistration;
+import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
+import com.streamarr.server.domain.auth.Household;
+import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.PasswordResetCode;
+import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.fakes.FakeAccountInvitationRepository;
+import com.streamarr.server.fakes.FakeAuthSessionRepository;
+import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
+import com.streamarr.server.fakes.FakeHouseholdRepository;
+import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
+import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
+import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
+import com.streamarr.server.fakes.FakeProfileManagerRepository;
+import com.streamarr.server.fakes.FakeProfileRepository;
+import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
+import com.streamarr.server.fakes.FakeTransactionManager;
+import com.streamarr.server.fakes.FakeUserAccountRepository;
+import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.fixtures.HouseholdFixture;
+import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
+import com.streamarr.server.services.authorization.Decision;
+import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.identity.AccountLifecycleService.DeleteAccountCommand;
+import com.streamarr.server.services.identity.AccountLifecycleService.ProfileDisposition;
+import com.streamarr.server.services.identity.AccountLifecycleService.SourceAccess;
+import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
+import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
+import com.streamarr.server.services.mutation.MutationTransactions;
+import com.streamarr.server.services.mutation.Outcome;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.Optional;
+import java.util.UUID;
+import lombok.Builder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Account transfers and deletion over fakes: the Account and its Personal Profile move together,
+ * the old Household reads END or KEEP_AS_VISITOR exactly as chosen, and deletion leaves no session,
+ * registration, or pending proposal behind.
+ */
+@Tag("UnitTest")
+@DisplayName("Account Lifecycle Service Tests")
+class AccountLifecycleServiceTest {
+
+  private final FakeProfileHouseholdShareRepository shares =
+      new FakeProfileHouseholdShareRepository();
+  private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
+  private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
+  private final FakeHouseholdRepository households = new FakeHouseholdRepository();
+  private final FakeProfileManagerRepository managers = new FakeProfileManagerRepository();
+  private final FakeProfileManagerInvitationRepository managerInvitations =
+      new FakeProfileManagerInvitationRepository();
+  private final FakeAccountInvitationRepository accountInvitations =
+      new FakeAccountInvitationRepository();
+  private final FakePasswordResetCodeRepository resetCodes = new FakePasswordResetCodeRepository();
+  private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
+  private final FakeDeviceRegistrationRepository registrations =
+      new FakeDeviceRegistrationRepository();
+  private final FakeSecurityAuditEventRepository audit = new FakeSecurityAuditEventRepository();
+  private final FakeAuthorizationService authorization =
+      new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
+
+  private final AccountLifecycleService service =
+      new AccountLifecycleService(
+          authorization,
+          accounts,
+          profiles,
+          shares,
+          households,
+          managers,
+          managerInvitations,
+          accountInvitations,
+          resetCodes,
+          sessions,
+          new DeviceRegistrationLifecycle(registrations, sessions),
+          audit,
+          new MutationTransactions(
+              new FakeTransactionManager(), new ConstraintViolationTranslator()),
+          Clock.systemUTC());
+
+  private Household source;
+  private Household destination;
+  private UserAccount mover;
+
+  @BeforeEach
+  void setUp() {
+    source = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    destination = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    mover = residentOf(source, HouseholdRole.MEMBER);
+    residentOf(source, HouseholdRole.ADMIN);
+  }
+
+  @Test
+  @DisplayName("Should move the Account with its Personal Profile and structural share")
+  void shouldMoveAccountWithItsPersonalProfileAndStructuralShare() {
+    var registration =
+        registrations.save(
+            DeviceRegistration.builder()
+                .esn("esn-1")
+                .displayName("TV")
+                .householdId(source.getId())
+                .authorizingAccountId(mover.getId())
+                .build());
+    var watching =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(mover.getId())
+                .contextHouseholdId(source.getId())
+                .selectedProfileId(mover.getPersonalProfileId())
+                .deviceName("web")
+                .build());
+    var moved =
+        service.transferAccount(
+            identity(),
+            TransferAccountCommand.builder()
+                .accountId(mover.getId())
+                .destinationHouseholdId(destination.getId())
+                .sourceAccess(SourceAccess.END)
+                .reason("support")
+                .build());
+
+    assertThat(moved).isInstanceOf(Outcome.Accepted.class);
+    var account = accounts.findById(mover.getId()).orElseThrow();
+    assertThat(account.getHouseholdId()).isEqualTo(destination.getId());
+    // The destination's first Account becomes HouseholdAdmin.
+    assertThat(account.getHouseholdRole()).isEqualTo(HouseholdRole.ADMIN);
+    assertThat(profiles.findById(mover.getPersonalProfileId()).orElseThrow().getHouseholdId())
+        .isEqualTo(destination.getId());
+    assertThat(structuralShareIn(destination.getId())).isPresent();
+    assertThat(
+            shares.findByProfileIdAndStatus(mover.getPersonalProfileId(), ProfileShareStatus.ENDED))
+        .hasSize(1);
+    assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(sessions.findById(watching.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    assertThat(sessions.findById(watching.getId()).orElseThrow().getContextHouseholdId()).isNull();
+    assertThat(audit.entries())
+        .extracting(entry -> entry.operation())
+        .containsExactly("transferAccount");
+  }
+
+  @Test
+  @DisplayName("Should join a populated destination as a HouseholdMember")
+  void shouldJoinPopulatedDestinationAsHouseholdMember() {
+    residentOf(destination, HouseholdRole.ADMIN);
+
+    var moved =
+        service.transferAccount(
+            identity(),
+            TransferAccountCommand.builder()
+                .accountId(mover.getId())
+                .destinationHouseholdId(destination.getId())
+                .sourceAccess(SourceAccess.END)
+                .build());
+
+    assertThat(moved).isInstanceOf(Outcome.Accepted.class);
+    assertThat(accounts.findById(mover.getId()).orElseThrow().getHouseholdRole())
+        .isEqualTo(HouseholdRole.MEMBER);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the old Household context while clearing its obsolete Profile selection")
+  void shouldKeepOldHouseholdAsOrdinaryVisitWhenAsked() {
+    var registration =
+        registrations.save(
+            DeviceRegistration.builder()
+                .esn("esn-keep")
+                .displayName("TV")
+                .householdId(source.getId())
+                .authorizingAccountId(mover.getId())
+                .build());
+    var watching =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(mover.getId())
+                .contextHouseholdId(source.getId())
+                .selectedProfileId(mover.getPersonalProfileId())
+                .deviceName("web")
+                .build());
+
+    var moved =
+        service.transferAccount(
+            identity(),
+            TransferAccountCommand.builder()
+                .accountId(mover.getId())
+                .destinationHouseholdId(destination.getId())
+                .sourceAccess(SourceAccess.KEEP_AS_VISITOR)
+                .build());
+
+    assertThat(moved).isInstanceOf(Outcome.Accepted.class);
+    var kept =
+        shares
+            .findByProfileIdAndHouseholdIdAndStatus(
+                mover.getPersonalProfileId(), source.getId(), ProfileShareStatus.ACTIVE)
+            .orElseThrow();
+    assertThat(kept.isStructural()).isFalse();
+    assertThat(structuralShareIn(destination.getId())).isPresent();
+    assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.ACTIVE);
+    assertThat(sessions.findById(watching.getId()).orElseThrow().getSelectedProfileId()).isNull();
+    assertThat(sessions.findById(watching.getId()).orElseThrow().getContextHouseholdId())
+        .isEqualTo(source.getId());
+  }
+
+  @Test
+  @DisplayName("Should reject an Account transfer to its current Household")
+  void shouldRejectAccountTransferToItsCurrentHousehold() {
+    assertThat(
+            rejectionOf(
+                service.transferAccount(
+                    identity(),
+                    TransferAccountCommand.builder()
+                        .accountId(mover.getId())
+                        .destinationHouseholdId(source.getId())
+                        .sourceAccess(SourceAccess.END)
+                        .build())))
+        .isInstanceOf(TransferRejections.SameHousehold.class);
+  }
+
+  @Test
+  @DisplayName("Should reject an Account transfer to an unknown Household")
+  void shouldRejectAccountTransferToUnknownHousehold() {
+    assertThat(
+            rejectionOf(
+                service.transferAccount(
+                    identity(),
+                    TransferAccountCommand.builder()
+                        .accountId(mover.getId())
+                        .destinationHouseholdId(UUID.randomUUID())
+                        .sourceAccess(SourceAccess.END)
+                        .build())))
+        .isInstanceOf(TransferRejections.HouseholdNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should reserve the final Account for Household teardown")
+  void shouldReserveFinalAccountForHouseholdTeardown() {
+    var loner =
+        residentOf(
+            households.save(HouseholdFixture.defaultHouseholdBuilder().build()),
+            HouseholdRole.ADMIN);
+    assertThat(
+            rejectionOf(
+                service.transferAccount(
+                    identity(),
+                    TransferAccountCommand.builder()
+                        .accountId(loner.getId())
+                        .destinationHouseholdId(destination.getId())
+                        .sourceAccess(SourceAccess.END)
+                        .build())))
+        .isInstanceOf(TransferRejections.FinalAccount.class);
+  }
+
+  @Test
+  @DisplayName("Should hide an unauthorized Account behind the oracle rule")
+  void shouldHideUnauthorizedAccountBehindOracleRule() {
+    authorization.denyAll();
+    assertThat(
+            rejectionOf(
+                service.transferAccount(
+                    identity(),
+                    TransferAccountCommand.builder()
+                        .accountId(mover.getId())
+                        .destinationHouseholdId(destination.getId())
+                        .sourceAccess(SourceAccess.END)
+                        .build())))
+        .isInstanceOf(TransferRejections.AccountNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should reject an authorized transfer when the Account does not exist")
+  void shouldRejectAuthorizedTransferWhenAccountDoesNotExist() {
+    assertThat(
+            rejectionOf(
+                service.transferAccount(
+                    identity(),
+                    TransferAccountCommand.builder()
+                        .accountId(UUID.randomUUID())
+                        .destinationHouseholdId(destination.getId())
+                        .sourceAccess(SourceAccess.END)
+                        .build())))
+        .isInstanceOf(TransferRejections.AccountNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should erase the Account and Profile pair leaving no proposal behind")
+  void shouldEraseAccountAndProfilePairLeavingNoProposalBehind() {
+    var registration =
+        registrations.save(
+            DeviceRegistration.builder()
+                .esn("esn-1")
+                .displayName("TV")
+                .householdId(source.getId())
+                .authorizingAccountId(mover.getId())
+                .build());
+    var session =
+        sessions.save(AuthSession.builder().accountId(mover.getId()).deviceName("web").build());
+    var restorable =
+        managerInvitations.save(
+            pendingManagerInvitation(
+                ManagerInvitationSpec.builder()
+                    .profileId(UUID.randomUUID())
+                    .recipientId(mover.getId())
+                    .inviterId(UUID.randomUUID())
+                    .build()));
+    var proposal =
+        managerInvitations.save(
+            pendingManagerInvitation(
+                ManagerInvitationSpec.builder()
+                    .profileId(UUID.randomUUID())
+                    .recipientId(UUID.randomUUID())
+                    .inviterId(mover.getId())
+                    .build()));
+    var offered =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(UUID.randomUUID())
+                .householdId(UUID.randomUUID())
+                .status(ProfileShareStatus.PENDING)
+                .offeredByAccountId(mover.getId())
+                .build());
+    var issuedInvitation =
+        accountInvitations.save(
+            AccountInvitation.builder()
+                .recipientEmail("issued@example.com")
+                .issuerAccountId(mover.getId())
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .publicId(UUID.randomUUID().toString())
+                .secretDigest(new byte[] {1})
+                .build());
+    var profileInvitation =
+        accountInvitations.save(
+            AccountInvitation.builder()
+                .recipientEmail("profile@example.com")
+                .profileId(mover.getPersonalProfileId())
+                .issuerAccountId(UUID.randomUUID())
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .publicId(UUID.randomUUID().toString())
+                .secretDigest(new byte[] {2})
+                .build());
+    var profileManagerInvitation =
+        managerInvitations.save(
+            pendingManagerInvitation(
+                ManagerInvitationSpec.builder()
+                    .profileId(mover.getPersonalProfileId())
+                    .recipientId(UUID.randomUUID())
+                    .inviterId(UUID.randomUUID())
+                    .build()));
+    var issuedReset =
+        resetCodes.save(
+            PasswordResetCode.builder()
+                .accountId(UUID.randomUUID())
+                .issuerAccountId(mover.getId())
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .publicId(UUID.randomUUID().toString())
+                .secretDigest(new byte[] {3})
+                .build());
+    shares.share(mover.getPersonalProfileId(), destination.getId(), false);
+    var sourceViewer =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(UUID.randomUUID())
+                .contextHouseholdId(source.getId())
+                .selectedProfileId(mover.getPersonalProfileId())
+                .deviceName("source viewer")
+                .build());
+    var destinationViewer =
+        sessions.save(
+            AuthSession.builder()
+                .accountId(UUID.randomUUID())
+                .contextHouseholdId(destination.getId())
+                .selectedProfileId(mover.getPersonalProfileId())
+                .deviceName("destination viewer")
+                .build());
+
+    var deleted =
+        service.deleteAccount(
+            identity(),
+            DeleteAccountCommand.builder()
+                .accountId(mover.getId())
+                .profileDisposition(ProfileDisposition.ERASE)
+                .reason("household dispute")
+                .build());
+
+    assertThat(deleted).isInstanceOf(Outcome.Accepted.class);
+    assertThat(accounts.findById(mover.getId())).isEmpty();
+    assertThat(profiles.findById(mover.getPersonalProfileId())).isEmpty();
+    assertThat(sessions.findById(session.getId()).orElseThrow().getRevokedAt()).isNotNull();
+    assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(managerInvitations.findById(restorable.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(managerInvitations.findById(proposal.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(shares.findById(offered.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.INVALIDATED);
+    assertThat(accountInvitations.findById(issuedInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(accountInvitations.findById(profileInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(
+            managerInvitations.findById(profileManagerInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(resetCodes.findById(issuedReset.getId()).orElseThrow().getStatus())
+        .isEqualTo(PasswordResetCodeStatus.INVALIDATED);
+    assertThat(sessions.findById(sourceViewer.getId()).orElseThrow().getSelectedProfileId())
+        .isNull();
+    assertThat(sessions.findById(destinationViewer.getId()).orElseThrow().getSelectedProfileId())
+        .isNull();
+    assertThat(audit.entries())
+        .extracting(entry -> entry.operation())
+        .containsExactly("deleteAccount");
+  }
+
+  @Test
+  @DisplayName("Should keep the Profile only with a valid replacement anchor")
+  void shouldKeepProfileOnlyWithValidReplacementAnchor() {
+    assertThat(rejectionOf(deleteKeeping(null)))
+        .isInstanceOf(TransferRejections.ReplacementManagerRequired.class);
+    assertThat(rejectionOf(deleteKeeping(UUID.randomUUID())))
+        .isInstanceOf(TransferRejections.ReplacementManagerNotFound.class);
+
+    var elsewhere = residentOf(destination, HouseholdRole.ADMIN);
+    assertThat(rejectionOf(deleteKeeping(elsewhere.getId())))
+        .isInstanceOf(TransferRejections.ReplacementManagerNotEligible.class);
+
+    var anchor = residentOf(source, HouseholdRole.MEMBER);
+    var kept = deleteKeeping(anchor.getId());
+
+    assertThat(kept).isInstanceOf(Outcome.Accepted.class);
+    assertThat(accounts.findById(mover.getId())).isEmpty();
+    var preserved = profiles.findById(mover.getPersonalProfileId()).orElseThrow();
+    assertThat(preserved.getHouseholdId()).isEqualTo(source.getId());
+    assertThat(managers.existsByAccountIdAndProfileId(anchor.getId(), preserved.getId())).isTrue();
+    var availability =
+        shares
+            .findByProfileIdAndHouseholdIdAndStatus(
+                preserved.getId(), source.getId(), ProfileShareStatus.ACTIVE)
+            .orElseThrow();
+    assertThat(availability.isStructural()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should reject the deleted Account as its own replacement manager")
+  void shouldRejectDeletedAccountAsItsOwnReplacementManager() {
+    assertThat(rejectionOf(deleteKeeping(mover.getId())))
+        .isInstanceOf(TransferRejections.ReplacementManagerNotEligible.class);
+  }
+
+  @Test
+  @DisplayName("Should require a HouseholdAdmin replacement for a restricted Profile")
+  void shouldRequireHouseholdAdminReplacementForRestrictedProfile() {
+    profiles.findById(mover.getPersonalProfileId()).orElseThrow().setMaximumAllowedRatingAge(13);
+    var member = residentOf(source, HouseholdRole.MEMBER);
+
+    assertThat(rejectionOf(deleteKeeping(member.getId())))
+        .isInstanceOf(TransferRejections.ReplacementManagerNotEligible.class);
+  }
+
+  @Test
+  @DisplayName("Should require the reason and classify the missing ceremony first")
+  void shouldRequireReasonAndClassifyMissingCeremonyFirst() {
+    assertThat(
+            rejectionOf(
+                service.deleteAccount(
+                    identity(),
+                    DeleteAccountCommand.builder()
+                        .accountId(mover.getId())
+                        .profileDisposition(ProfileDisposition.ERASE)
+                        .reason(" ")
+                        .build())))
+        .isInstanceOf(TransferRejections.ReasonRequired.class);
+    assertThat(authorization.recordedIntents()).isEmpty();
+
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.DeleteAccount
+                ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
+                : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+    assertThat(
+            rejectionOf(
+                service.deleteAccount(
+                    identity(),
+                    DeleteAccountCommand.builder()
+                        .accountId(mover.getId())
+                        .profileDisposition(ProfileDisposition.ERASE)
+                        .reason("dispute")
+                        .build())))
+        .isInstanceOf(TransferRejections.ReauthenticationRequired.class);
+  }
+
+  @Test
+  @DisplayName("Should erase the caller's Account and every Profile-bound artifact")
+  void shouldEraseCallersAccountAndEveryProfileBoundArtifact() {
+    var self = AuthenticatedIdentityFixture.accountScopedBuilder().accountId(mover.getId()).build();
+    var session =
+        sessions.save(AuthSession.builder().accountId(mover.getId()).deviceName("web").build());
+    var registration =
+        registrations.save(
+            DeviceRegistration.builder()
+                .esn("self-delete")
+                .displayName("TV")
+                .householdId(source.getId())
+                .authorizingAccountId(mover.getId())
+                .build());
+    var invitation =
+        accountInvitations.save(pendingAccountInvitation(mover.getPersonalProfileId()));
+    var managerInvitation =
+        managerInvitations.save(
+            pendingManagerInvitation(
+                ManagerInvitationSpec.builder()
+                    .profileId(mover.getPersonalProfileId())
+                    .recipientId(UUID.randomUUID())
+                    .inviterId(UUID.randomUUID())
+                    .build()));
+
+    assertThat(service.deleteMyAccount(self, "DELETE")).isInstanceOf(Outcome.Accepted.class);
+    assertThat(accounts.findById(mover.getId())).isEmpty();
+    assertThat(profiles.findById(mover.getPersonalProfileId())).isEmpty();
+    assertThat(sessions.findById(session.getId()).orElseThrow().getRevokedAt()).isNotNull();
+    assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
+        .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(accountInvitations.findById(invitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(managerInvitations.findById(managerInvitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(audit.entries())
+        .extracting(entry -> entry.operation())
+        .containsExactly("deleteMyAccount");
+  }
+
+  @Test
+  @DisplayName("Should reserve the final Account from self-deletion")
+  void shouldReserveFinalAccountFromSelfDeletion() {
+    var lonerHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var loner = residentOf(lonerHousehold, HouseholdRole.ADMIN);
+    var lonerIdentity =
+        AuthenticatedIdentityFixture.accountScopedBuilder().accountId(loner.getId()).build();
+    assertThat(rejectionOf(service.deleteMyAccount(lonerIdentity, "DELETE")))
+        .isInstanceOf(TransferRejections.FinalAccount.class);
+  }
+
+  @Test
+  @DisplayName("Should refuse self-deletion without the literal confirmation")
+  void shouldRefuseSelfDeletionWithoutLiteralConfirmation() {
+    var self = AuthenticatedIdentityFixture.accountScopedBuilder().accountId(mover.getId()).build();
+
+    assertThat(rejectionOf(service.deleteMyAccount(self, "delete")))
+        .isInstanceOf(TransferRejections.ConfirmationRequired.class);
+    assertThat(accounts.findById(mover.getId())).isPresent();
+  }
+
+  private Outcome<UUID, TransferRejections.DeleteAccount> deleteKeeping(UUID replacement) {
+    return service.deleteAccount(
+        identity(),
+        DeleteAccountCommand.builder()
+            .accountId(mover.getId())
+            .profileDisposition(ProfileDisposition.KEEP)
+            .replacementManagerAccountId(replacement)
+            .reason("moving on")
+            .build());
+  }
+
+  private UserAccount residentOf(Household household, HouseholdRole role) {
+    var account =
+        accounts.save(
+            AccountFixture.defaultAccountBuilder()
+                .householdId(household.getId())
+                .householdRole(role)
+                .build());
+    profiles.save(
+        ProfileFixture.defaultProfileBuilder()
+            .id(account.getPersonalProfileId())
+            .householdId(household.getId())
+            .name("Resident " + account.getId())
+            .build());
+    shares.share(account.getPersonalProfileId(), household.getId(), true);
+    return account;
+  }
+
+  private Optional<ProfileHouseholdShare> structuralShareIn(UUID householdId) {
+    return shares
+        .findByProfileIdAndHouseholdIdAndStatus(
+            mover.getPersonalProfileId(), householdId, ProfileShareStatus.ACTIVE)
+        .filter(ProfileHouseholdShare::isStructural);
+  }
+
+  private ProfileManagerInvitation pendingManagerInvitation(ManagerInvitationSpec invitation) {
+    return ProfileManagerInvitation.builder()
+        .profileId(invitation.profileId())
+        .profileName("Joe")
+        .inviterAccountId(invitation.inviterId())
+        .inviterDisplayName("Inviter")
+        .recipientAccountId(invitation.recipientId())
+        .recipientEmail("recipient@example.com")
+        .expiresAt(Instant.now().plusSeconds(3600))
+        .publicId(UUID.randomUUID().toString())
+        .secretDigest(new byte[] {1})
+        .build();
+  }
+
+  private AccountInvitation pendingAccountInvitation(UUID profileId) {
+    return AccountInvitation.builder()
+        .recipientEmail("profile@example.com")
+        .profileId(profileId)
+        .issuerAccountId(UUID.randomUUID())
+        .expiresAt(Instant.now().plusSeconds(3600))
+        .publicId(UUID.randomUUID().toString())
+        .secretDigest(new byte[] {1})
+        .build();
+  }
+
+  @Builder
+  private record ManagerInvitationSpec(UUID profileId, UUID recipientId, UUID inviterId) {}
+
+  private AuthenticatedIdentity identity() {
+    return authorization.currentIdentity();
+  }
+
+  private static Object rejectionOf(Outcome<?, ?> outcome) {
+    return switch (outcome) {
+      case Outcome.Rejected<?, ?>(var rejections) -> rejections.getFirst();
+      case Outcome.Accepted<?, ?> accepted ->
+          throw new AssertionError("expected a rejection but got " + accepted);
+    };
+  }
+}

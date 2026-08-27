@@ -1,0 +1,121 @@
+enum SourceAccess {
+    "End the old Household's membership-required share, registrations, and sessions."
+    END
+    "Keep the old share as an ordinary visit; warn when the Profile is restricted."
+    KEEP_AS_VISITOR
+}
+
+enum ProfileDisposition {
+    "Preserve and unlink the Profile with a named replacement manager."
+    KEEP
+    "Delete the Account and Profile pair."
+    ERASE
+}
+
+input TransferAccountInput {
+    accountId: ID!
+    destinationHouseholdId: ID!
+    "Defaults to END."
+    sourceAccess: SourceAccess
+    reason: String
+}
+
+type TransferAccountPayload {
+    account: AccountAdministration
+    userErrors: [TransferAccountError!]!
+}
+
+union TransferAccountError =
+    AccountNotFoundError
+  | HouseholdNotFoundError
+  | SameHouseholdError
+  | LastHouseholdAccountError
+  | LastHouseholdAdminError
+  | RestrictedProfileRequiresHouseholdAdminError
+  | ProfileNameTakenError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedFirstAccountError
+
+input DeleteAccountInput {
+    accountId: ID!
+    profileDisposition: ProfileDisposition!
+    "Required for KEEP: an eligible replacement manager for the preserved Profile."
+    replacementManagerAccountId: ID
+    reason: String!
+}
+
+type DeleteAccountPayload {
+    accountId: ID
+    userErrors: [DeleteAccountError!]!
+}
+
+union DeleteAccountError =
+    AccountNotFoundError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+  | LastHouseholdAccountError
+  | LastHouseholdAdminError
+  | LastServerAdminError
+  | ReplacementManagerRequiredError
+  | ProfileManagerNotEligibleError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedProfileRequiresHouseholdAdminError
+
+input DeleteMyAccountInput {
+    "Type the literal word DELETE."
+    confirmation: String!
+}
+
+type DeleteMyAccountPayload {
+    accountId: ID
+    userErrors: [DeleteMyAccountError!]!
+}
+
+union DeleteMyAccountError =
+    ConfirmationRequiredError
+  | ReauthenticationRequiredError
+  | LastHouseholdAccountError
+  | LastHouseholdAdminError
+  | LastServerAdminError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedProfileRequiresHouseholdAdminError
+
+input TransferProfileInput {
+    profileId: ID!
+    destinationHouseholdId: ID!
+    "An eligible Profile manager in the destination Household."
+    profileManagerAccountId: ID
+    reason: String
+}
+
+type TransferProfilePayload {
+    profile: ProfileAdministration
+    userErrors: [TransferProfileError!]!
+}
+
+union TransferProfileError =
+    ProfileNotFoundError
+  | HouseholdNotFoundError
+  | SameHouseholdError
+  | ProfileBelongsToAccountError
+  | EligibleProfileManagerRequiredError
+  | AccountNotFoundError
+  | ProfileManagerNotEligibleError
+  | ProfileNameTakenError
+  | RestrictedProfileRequiresHouseholdAdminError
+
+input AdministrativelyDeleteProfileInput {
+    profileId: ID!
+    reason: String!
+}
+
+type AdministrativelyDeleteProfilePayload {
+    profileId: ID
+    userErrors: [AdministrativelyDeleteProfileError!]!
+}
+
+union AdministrativelyDeleteProfileError =
+    ProfileNotFoundError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+  | ProfileBelongsToAccountError

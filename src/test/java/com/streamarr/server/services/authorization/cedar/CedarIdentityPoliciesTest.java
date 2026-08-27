@@ -1278,6 +1278,103 @@ class CedarIdentityPoliciesTest {
     }
   }
 
+  @Nested
+  @DisplayName("Transfers and deletion")
+  class TransfersAndDeletion {
+
+    @Test
+    @DisplayName("Should reserve transfers for a live ServerAdmin")
+    void shouldReserveTransfersForLiveServerAdmin() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+
+      assertThat(decide(atHome(), new Intent.TransferAccount(account.getId()))).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.TransferProfile(orphan.getId()))).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.TransferAccount(account.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.TransferProfile(orphan.getId()))).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny transfers when the ServerAdmin Account is disabled")
+    void shouldDenyTransfersWhenServerAdminAccountIsDisabled() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      account.setServerAdmin(true);
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(decide(atHome(), new Intent.TransferAccount(account.getId()))).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.TransferProfile(orphan.getId()))).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should reserve deletions for a fresh ServerAdmin")
+    void shouldReserveDeletionsForFreshServerAdmin() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var deleteAccount = new Intent.DeleteAccount(UUID.randomUUID());
+      var administrativeDeletion = new Intent.AdministrativelyDeleteProfile(orphan.getId());
+
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deleteAccount))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), deleteAccount)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(atHome(), administrativeDeletion)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deleteAccount))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), administrativeDeletion))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny deletions when the ServerAdmin Account is disabled")
+    void shouldDenyDeletionsWhenServerAdminAccountIsDisabled() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      account.setServerAdmin(true);
+      account.setEnabled(false);
+      accounts.save(account);
+      var fresh = withReauthenticatedAt(atHome(), Instant.now());
+
+      assertThat(decide(fresh, new Intent.DeleteAccount(UUID.randomUUID()))).isEqualTo(DENIED);
+      assertThat(decide(fresh, new Intent.AdministrativelyDeleteProfile(orphan.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should require freshness for an eligible person deleting their own Account")
+    void shouldRequireFreshnessForEligiblePersonDeletingTheirOwnAccount() {
+      var selfDeletion = new Intent.DeleteMyAccount();
+
+      assertThat(decide(atHome(), selfDeletion)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), selfDeletion))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny self-deletion when the Personal Profile is restricted")
+    void shouldDenySelfDeletionWhenPersonalProfileIsRestricted() {
+      var selfDeletion = new Intent.DeleteMyAccount();
+
+      personal.setMaximumAllowedRatingAge(12);
+      profiles.save(personal);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), selfDeletion))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should deny self-deletion when the Account is disabled")
+    void shouldDenySelfDeletionWhenAccountIsDisabled() {
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(
+              decide(withReauthenticatedAt(atHome(), Instant.now()), new Intent.DeleteMyAccount()))
+          .isEqualTo(DENIED);
+    }
+  }
+
   private ProfileHouseholdShare pendingShare(UUID profileId, UUID householdId) {
     return shares.save(
         ProfileHouseholdShare.builder()

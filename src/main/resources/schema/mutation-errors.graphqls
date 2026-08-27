@@ -297,3 +297,29 @@ type EsnBlockNotFoundError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
+
+type SameHouseholdError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The last Account in a Household must be handled through Household teardown."
+type LastHouseholdAccountError implements MutationError {
+    message: String!
+}
+
+"The Profile belongs to an Account; transfer or delete the Account instead."
+type ProfileBelongsToAccountError implements MutationError {
+    message: String!
+}
+
+type ReplacementManagerRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"Self-deletion is irreversible; the caller types the confirmation word deliberately."
+type ConfirmationRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}

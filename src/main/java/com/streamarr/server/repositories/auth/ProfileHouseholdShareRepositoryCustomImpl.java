@@ -253,6 +253,22 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
+  public boolean tryDemoteStructural(UUID profileId, UUID householdId, Instant now) {
+    return dsl.update(PROFILE_HOUSEHOLD_SHARE)
+            .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, false)
+            .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
+            .set(
+                PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY,
+                auditorAware.getCurrentAuditor().orElse(null))
+            .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
+            .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
+            .and(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL.isTrue())
+            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE))
+            .execute()
+        > 0;
+  }
+
+  @Override
   public int invalidatePendingByProfileIdOfferedBy(
       UUID profileId, UUID offererAccountId, String reason, Instant now) {
     return dsl.update(PROFILE_HOUSEHOLD_SHARE)

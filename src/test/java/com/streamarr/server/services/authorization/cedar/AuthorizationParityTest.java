@@ -11,7 +11,6 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Intent;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -67,8 +66,8 @@ class AuthorizationParityTest {
 
   @Test
   @DisplayName(
-      "Should plan every concrete schema action from at least one intent when intent parity is checked")
-  void shouldPlanEveryConcreteSchemaActionWhenIntentParityIsChecked() throws Exception {
+      "Should cover every concrete schema action while preserving the intentional edit fan-in")
+  void shouldCoverEveryConcreteSchemaActionWhilePreservingIntentionalEditFanIn() throws Exception {
     var concrete = new ArrayList<String>();
     schemaActions()
         .properties()
@@ -81,13 +80,15 @@ class AuthorizationParityTest {
             });
     var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
     var planner = new IntentPlanner(new ProfilePolicyPlanner(new FakeProfileRepository()));
-    var planned = new LinkedHashSet<String>();
+    var planned = new ArrayList<String>();
     allIntents().stream()
         .map(intent -> planner.plan(identity, intent).check().action().cedarName())
         .forEach(planned::add);
     planned.addAll(policyChangeActions());
 
-    assertThat(planned).containsExactlyInAnyOrderElementsOf(concrete);
+    assertThat(planned).containsOnlyElementsOf(concrete).containsAll(concrete);
+    assertThat(planned).filteredOn("editProfile"::equals).hasSize(6);
+    assertThat(planned).filteredOn(action -> !"editProfile".equals(action)).doesNotHaveDuplicates();
     assertThat(Action.values())
         .extracting(Action::cedarName)
         .containsExactlyInAnyOrderElementsOf(concrete);
@@ -239,7 +240,12 @@ class AuthorizationParityTest {
           REVOKE_DEVICE_REGISTRATION,
           BLOCK_ESN,
           UNBLOCK_ESN,
-          VIEW_DEVICE_ADMINISTRATION ->
+          VIEW_DEVICE_ADMINISTRATION,
+          TRANSFER_ACCOUNT,
+          DELETE_ACCOUNT,
+          DELETE_MY_ACCOUNT,
+          TRANSFER_PROFILE,
+          ADMINISTRATIVELY_DELETE_PROFILE ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
@@ -317,6 +323,11 @@ class AuthorizationParityTest {
         new Intent.UnblockEsn(id),
         new Intent.UnblockEsnServerWide(),
         new Intent.ViewDeviceAdministration(id),
-        new Intent.ViewServerDeviceAdministration());
+        new Intent.ViewServerDeviceAdministration(),
+        new Intent.TransferAccount(id),
+        new Intent.DeleteAccount(id),
+        new Intent.DeleteMyAccount(),
+        new Intent.TransferProfile(id),
+        new Intent.AdministrativelyDeleteProfile(id));
   }
 }

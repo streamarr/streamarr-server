@@ -351,6 +351,31 @@ namespace Streamarr {
     resource: Server,
     context: {},
   };
+  action transferAccount in accountAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: {},
+  };
+  action deleteAccount in accountAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: { freshReauthentication: Bool },
+  };
+  action deleteMyAccount in accountAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: { freshReauthentication: Bool },
+  };
+  action transferProfile in profileAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
+  action administrativelyDeleteProfile in profileAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: { freshReauthentication: Bool },
+  };
   action viewProfileAdministration in profileAdministration appliesTo {
     principal: Account,
     resource: Profile,

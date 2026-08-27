@@ -50,6 +50,11 @@ type Mutation {
     blockEsnServerWide(input: BlockEsnServerWideInput!): BlockEsnServerWidePayload
     unblockEsn(input: UnblockEsnInput!): UnblockEsnPayload
     unblockEsnServerWide(input: UnblockEsnServerWideInput!): UnblockEsnServerWidePayload
+    transferAccount(input: TransferAccountInput!): TransferAccountPayload
+    deleteAccount(input: DeleteAccountInput!): DeleteAccountPayload
+    deleteMyAccount(input: DeleteMyAccountInput!): DeleteMyAccountPayload
+    transferProfile(input: TransferProfileInput!): TransferProfilePayload
+    administrativelyDeleteProfile(input: AdministrativelyDeleteProfileInput!): AdministrativelyDeleteProfilePayload
 }
 
 enum ImageRefreshMode {
