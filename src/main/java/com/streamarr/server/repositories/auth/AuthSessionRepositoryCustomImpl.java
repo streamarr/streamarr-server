@@ -91,6 +91,32 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   @Override
+  public int clearProfileSelectionFromLiveSessions(UUID profileId, UUID householdId, Instant now) {
+    return dsl.update(AUTH_SESSION)
+        .setNull(AUTH_SESSION.SELECTED_PROFILE_ID)
+        .set(AUTH_SESSION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
+        .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+        .where(AUTH_SESSION.SELECTED_PROFILE_ID.eq(profileId))
+        .and(AUTH_SESSION.CONTEXT_HOUSEHOLD_ID.eq(householdId))
+        .and(AUTH_SESSION.REVOKED_AT.isNull())
+        .execute();
+  }
+
+  @Override
+  public int clearHouseholdContextFromAccountSessions(
+      UUID accountId, UUID householdId, Instant now) {
+    return dsl.update(AUTH_SESSION)
+        .setNull(AUTH_SESSION.CONTEXT_HOUSEHOLD_ID)
+        .setNull(AUTH_SESSION.SELECTED_PROFILE_ID)
+        .set(AUTH_SESSION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
+        .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+        .where(AUTH_SESSION.ACCOUNT_ID.eq(accountId))
+        .and(AUTH_SESSION.CONTEXT_HOUSEHOLD_ID.eq(householdId))
+        .and(AUTH_SESSION.REVOKED_AT.isNull())
+        .execute();
+  }
+
+  @Override
   public boolean hasRow(UUID sessionId) {
     return dsl.fetchExists(dsl.selectOne().from(AUTH_SESSION).where(AUTH_SESSION.ID.eq(sessionId)));
   }

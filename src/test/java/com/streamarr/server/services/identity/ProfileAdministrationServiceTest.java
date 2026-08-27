@@ -489,6 +489,8 @@ class ProfileAdministrationServiceTest {
         .isInstanceOf(ProfileRejections.EligibleManagerRequired.class);
     assertThat(policyRejectionFor("chk_restricted_account_holds_no_authority"))
         .isInstanceOf(ProfileRejections.RestrictedAccountAuthority.class);
+    assertThat(policyRejectionFor("chk_hosting_household_retains_eligible_admin"))
+        .isInstanceOf(ProfileRejections.HostingHouseholdLacksEligibleAdmin.class);
   }
 
   @Test
@@ -613,6 +615,14 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should return not found when a policy change targets a missing Profile")
+  void shouldReturnNotFoundWhenPolicyChangeTargetsMissingProfile() {
+    var outcome = service.changeProfileKind(identity(), UUID.randomUUID(), ProfileKind.KID);
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ProfileNotFound.class);
+  }
+
+  @Test
   @DisplayName("Should return not found when setting a picture on a missing Profile")
   void shouldReturnNotFoundWhenSettingPictureOnMissingProfile() {
     var outcome = service.setProfilePicture(identity(), UUID.randomUUID(), "kai.png");
@@ -693,13 +703,13 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should return not found after hashing when setting a PIN on a missing Profile")
-  void shouldReturnNotFoundAfterHashingWhenSettingPinOnMissingProfile() {
+  @DisplayName("Should return not found before hashing when setting a PIN on a missing Profile")
+  void shouldReturnNotFoundBeforeHashingWhenSettingPinOnMissingProfile() {
     var outcome = service.setProfilePin(identity(), UUID.randomUUID(), "4242");
 
     assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ProfileNotFound.class);
-    assertThat(encoder.encodedValues()).containsExactly("4242");
-    assertThat(transactionManager.rollbacks()).isEqualTo(1);
+    assertThat(encoder.encodedValues()).isEmpty();
+    assertThat(transactionManager.rollbacks()).isZero();
   }
 
   @Test
@@ -845,7 +855,7 @@ class ProfileAdministrationServiceTest {
 
     assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ProfileNotFound.class);
     assertThat(audit.entries()).isEmpty();
-    assertThat(transactionManager.rollbacks()).isEqualTo(1);
+    assertThat(transactionManager.rollbacks()).isZero();
   }
 
   @Test

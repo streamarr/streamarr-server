@@ -47,6 +47,7 @@ import org.springframework.stereotype.Service;
 public class ProfileAdministrationService {
 
   private static final String CHK_NAMES_UNIQUE = "chk_household_profile_names_unique";
+  private static final String CHK_HOSTING_ADMIN = "chk_hosting_household_retains_eligible_admin";
   private static final String CHK_ELIGIBLE_MANAGER = "chk_profile_home_anchor";
   private static final String CHK_RESTRICTED_AUTHORITY =
       "chk_restricted_account_holds_no_authority";
@@ -262,6 +263,10 @@ public class ProfileAdministrationService {
 
   public Outcome<Profile, ProfileRejections.SetProfilePin> setProfilePin(
       AuthenticatedIdentity identity, UUID profileId, String pin) {
+    if (profileRepository.findById(profileId).isEmpty()) {
+      return Outcome.rejected(new ProfileRejections.ProfileNotFound());
+    }
+
     var refusal = editRefusal(identity, new Intent.ManageProfilePin(profileId), profileId);
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
@@ -325,6 +330,10 @@ public class ProfileAdministrationService {
           AuthenticatedIdentity identity, UUID profileId, String pin, String reason) {
     if (isBlank(reason)) {
       return Outcome.rejected(new ProfileRejections.ReasonRequired());
+    }
+
+    if (profileRepository.findById(profileId).isEmpty()) {
+      return Outcome.rejected(new ProfileRejections.ProfileNotFound());
     }
 
     var intent = new Intent.AdministrativelyResetProfilePin(profileId);
@@ -414,6 +423,10 @@ public class ProfileAdministrationService {
       AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent, UUID profileId) {
     return mutationTransactions.write(
         () -> {
+          if (!profileRepository.lockById(profileId)) {
+            throw new MutationRejection(new ProfileRejections.ProfileNotFound());
+          }
+
           // Decided inside the transaction: the planner locks the row, so the classified state
           // holds until commit and the write below applies exactly the normalized target.
           var transition = decideTransition(identity, intent, profileId);
@@ -433,6 +446,8 @@ public class ProfileAdministrationService {
                   Optional.of(new ProfileRejections.EligibleManagerRequired());
               case CHK_RESTRICTED_AUTHORITY ->
                   Optional.of(new ProfileRejections.RestrictedAccountAuthority());
+              case CHK_HOSTING_ADMIN ->
+                  Optional.of(new ProfileRejections.HostingHouseholdLacksEligibleAdmin());
               default -> Optional.empty();
             });
   }

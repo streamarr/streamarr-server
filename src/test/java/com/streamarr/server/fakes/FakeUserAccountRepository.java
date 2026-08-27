@@ -1,6 +1,7 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
+import com.streamarr.server.domain.auth.AccountShareFacts;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileManagerEligibility;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
@@ -63,6 +64,17 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   public Optional<AccountAuthorityFacts> findAuthorityFacts(UUID accountId) {
     return findById(accountId)
         .map(account -> new AccountAuthorityFacts(account.isEnabled(), account.isServerAdmin()));
+  }
+
+  @Override
+  public Optional<AccountShareFacts> findShareFacts(UUID accountId) {
+    return findById(accountId)
+        .map(
+            account ->
+                new AccountShareFacts(
+                    account.getHouseholdId(),
+                    account.getHouseholdRole(),
+                    account.getPersonalProfileId()));
   }
 
   private List<UserAccount> findAdministrationPage(

@@ -12,6 +12,12 @@ public interface ProfileRepositoryCustom {
   /** Profiles actively shared into the Household, ordered by name then id for stable paging. */
   List<Profile> findAvailableInHousehold(UUID householdId);
 
+  /**
+   * Acquires the Household's shared availability guard, then reads its available Profiles. Safety
+   * decisions made from this result remain serialized against writers until the transaction ends.
+   */
+  List<Profile> lockAndFindAvailableInHousehold(UUID householdId);
+
   boolean existsAvailableInHouseholdWithNameIgnoreCase(UUID householdId, String name);
 
   /**
@@ -20,6 +26,9 @@ public interface ProfileRepositoryCustom {
    * managed JPA copy could be stale.
    */
   Optional<ProfilePolicySnapshot> lockPolicyById(UUID profileId);
+
+  /** Locks and confirms the Profile is unrestricted for a Share sovereignty decision. */
+  boolean lockIfUnrestricted(UUID profileId);
 
   /** Locks the Profile row so relationship writes and permanent deletion have one winner. */
   boolean lockById(UUID profileId);

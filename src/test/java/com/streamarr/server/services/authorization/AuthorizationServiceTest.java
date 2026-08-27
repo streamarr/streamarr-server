@@ -9,6 +9,8 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
+import com.streamarr.server.fakes.FakeUserAccountRepository;
+import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import java.time.Instant;
@@ -29,8 +31,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 class AuthorizationServiceTest {
 
   private final FakeAuthorizationDecider decider = new FakeAuthorizationDecider();
+  private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
   private final AuthorizationService authorizationService =
-      new SecurityContextAuthorizationService(decider);
+      new SecurityContextAuthorizationService(decider, accounts);
 
   private final UUID accountId = UUID.randomUUID();
   private final UUID householdId = UUID.randomUUID();
@@ -90,6 +93,43 @@ class AuthorizationServiceTest {
 
     assertThat(decision).isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
     assertThat(decider.recordedIntents()).containsExactly(new Intent.AddLibrary());
+  }
+
+  @Test
+  @DisplayName("Should use the Account's current relationships when a stored proposal is decided")
+  void shouldUseAccountsCurrentRelationshipsWhenStoredProposalIsDecided() {
+    var account =
+        accounts.save(
+            AccountFixture.defaultAccountBuilder()
+                .householdId(householdId)
+                .householdRole(HouseholdRole.MEMBER)
+                .build());
+    var currentRelationships = new CurrentRelationshipDecider(householdId);
+    var liveAuthorizationService =
+        new SecurityContextAuthorizationService(currentRelationships, accounts);
+    var intent = new Intent.OfferProfileShare(UUID.randomUUID());
+
+    var currentDecision = liveAuthorizationService.decideForAccount(account.getId(), intent);
+
+    assertThat(currentDecision).isEqualTo(new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+
+    account.setHouseholdRole(HouseholdRole.ADMIN);
+    accounts.save(account);
+
+    var changedDecision = liveAuthorizationService.decideForAccount(account.getId(), intent);
+
+    assertThat(changedDecision).isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
+  }
+
+  @Test
+  @DisplayName("Should deny a stored proposal when its Account no longer exists")
+  void shouldDenyStoredProposalWhenItsAccountNoLongerExists() {
+    var decision =
+        authorizationService.decideForAccount(
+            UUID.randomUUID(), new Intent.OfferProfileShare(UUID.randomUUID()));
+
+    assertThat(decision).isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
+    assertThat(decider.recordedIntents()).isEmpty();
   }
 
   @Test
@@ -248,5 +288,28 @@ class AuthorizationServiceTest {
     var authorities = List.of(new SimpleGrantedAuthority(identity.scope().authority()));
     SecurityContextHolder.getContext()
         .setAuthentication(new StreamarrAuthenticationToken(identity, token, authorities));
+  }
+
+  private record CurrentRelationshipDecider(UUID expectedHouseholdId)
+      implements AuthorizationDecider {
+
+    @Override
+    public Decision<AuthorizationUnit> decide(
+        AuthenticatedIdentity identity, Intent.UnitIntent intent) {
+      var hasCurrentRelationships =
+          expectedHouseholdId.equals(identity.householdId())
+              && identity.householdRole() == HouseholdRole.MEMBER;
+      if (hasCurrentRelationships) {
+        return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
+      }
+
+      return new Decision.Denied<>(Decision.DenialReason.POLICY);
+    }
+
+    @Override
+    public Decision<ProfilePolicyTransition> decide(
+        AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent) {
+      return new Decision.Denied<>(Decision.DenialReason.POLICY);
+    }
   }
 }

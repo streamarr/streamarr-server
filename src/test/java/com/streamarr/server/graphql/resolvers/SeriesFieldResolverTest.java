@@ -11,6 +11,7 @@ import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.support.security.WithProfileContext;
@@ -39,6 +40,7 @@ class SeriesFieldResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
+  @MockitoBean private UserAccountRepository userAccountRepository;
   @MockitoBean private SeriesService seriesService;
 
   private Series setupSeries() {

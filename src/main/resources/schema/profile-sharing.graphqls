@@ -1,0 +1,130 @@
+# Profile sharing (ADR 0024 §Profile sharing; ADR 0026 shapes).
+
+enum ProfileShareStatus {
+    "Offered and awaiting the target Household's decision."
+    PENDING
+    "The Profile is available in the Household."
+    ACTIVE
+    "Declined by the target Household."
+    REJECTED
+    "Withdrawn by the offerer, or replaced by a newer offer."
+    CANCELED
+    "Timed out before a decision."
+    EXPIRED
+    "Withdrawn by the system because its offerer lost authority; invalidationReason says why."
+    INVALIDATED
+    "Ended after being active."
+    ENDED
+}
+
+type ProfileShare {
+    id: ID!
+    profileId: ID!
+    householdId: ID!
+    status: ProfileShareStatus!
+    requiredByAccountMembership: Boolean!
+    expiresAt: String
+    endedAt: String
+    "Why the system withdrew this offer; set only when status is INVALIDATED."
+    invalidationReason: String
+}
+
+type ProfileShareConnection {
+    edges: [ProfileShareEdge!]!
+    pageInfo: PageInfo!
+}
+
+type ProfileShareEdge {
+    node: ProfileShare!
+    cursor: String!
+}
+
+"The effects of offering this Profile to the Household."
+type ProfileSharePreview {
+    wouldLock: Boolean!
+    nameConflict: Boolean!
+}
+
+input OfferProfileShareInput {
+    profileId: ID!
+    householdId: ID!
+}
+
+type OfferProfileSharePayload {
+    share: ProfileShare
+    userErrors: [OfferProfileShareError!]!
+}
+
+union OfferProfileShareError =
+    ProfileNotFoundError
+  | HouseholdNotFoundError
+  | ProfileAlreadySharedError
+
+input AcceptProfileShareInput {
+    shareId: ID!
+}
+
+type AcceptProfileSharePayload {
+    share: ProfileShare
+    userErrors: [AcceptProfileShareError!]!
+}
+
+union AcceptProfileShareError =
+    ShareNotFoundError
+  | ShareNotPendingError
+  | OfferInvalidatedError
+  | RestrictedProfileRequiresHouseholdAdminError
+  | ShareNameConflictError
+
+input RejectProfileShareInput {
+    shareId: ID!
+}
+
+type RejectProfileSharePayload {
+    share: ProfileShare
+    userErrors: [RejectProfileShareError!]!
+}
+
+union RejectProfileShareError = ShareNotFoundError | ShareNotPendingError
+
+input CancelProfileShareInput {
+    shareId: ID!
+}
+
+type CancelProfileSharePayload {
+    share: ProfileShare
+    userErrors: [CancelProfileShareError!]!
+}
+
+union CancelProfileShareError = ShareNotFoundError | ShareNotPendingError
+
+input EndProfileShareInput {
+    shareId: ID!
+}
+
+type EndProfileSharePayload {
+    share: ProfileShare
+    userErrors: [EndProfileShareError!]!
+}
+
+union EndProfileShareError =
+    ShareNotFoundError
+  | ShareNotActiveError
+  | MembershipShareCannotEndError
+
+input AdministrativelyEndProfileShareInput {
+    shareId: ID!
+    reason: String!
+}
+
+type AdministrativelyEndProfileSharePayload {
+    share: ProfileShare
+    userErrors: [AdministrativelyEndProfileShareError!]!
+}
+
+union AdministrativelyEndProfileShareError =
+    ShareNotFoundError
+  | ShareNotActiveError
+  | MembershipShareCannotEndError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError

@@ -64,6 +64,35 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
   }
 
   @Override
+  public int clearProfileSelectionFromLiveSessions(UUID profileId, UUID householdId, Instant now) {
+    var affected =
+        database.values().stream()
+            .filter(session -> profileId.equals(session.getSelectedProfileId()))
+            .filter(session -> householdId.equals(session.getContextHouseholdId()))
+            .filter(session -> session.getRevokedAt() == null)
+            .toList();
+    affected.forEach(session -> session.setSelectedProfileId(null));
+    return affected.size();
+  }
+
+  @Override
+  public int clearHouseholdContextFromAccountSessions(
+      UUID accountId, UUID householdId, Instant now) {
+    var affected =
+        database.values().stream()
+            .filter(session -> accountId.equals(session.getAccountId()))
+            .filter(session -> householdId.equals(session.getContextHouseholdId()))
+            .filter(session -> session.getRevokedAt() == null)
+            .toList();
+    affected.forEach(
+        session -> {
+          session.setContextHouseholdId(null);
+          session.setSelectedProfileId(null);
+        });
+    return affected.size();
+  }
+
+  @Override
   public boolean hasRow(UUID sessionId) {
     return findById(sessionId).isPresent();
   }

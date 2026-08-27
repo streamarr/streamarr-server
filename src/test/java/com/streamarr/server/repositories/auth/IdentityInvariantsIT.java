@@ -15,12 +15,16 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -44,9 +48,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * The V054 invariants as the database enforces them at commit (deferred triggers, SQLSTATE 23514
- * with stable constraint names): each has a failing case that proves its user impact and a passing
- * case that proves legitimate transitions are not blocked.
+ * The V056 invariants (T7 arrived with V059) as the database enforces them at commit (deferred
+ * triggers, SQLSTATE 23514 with stable constraint names): each has a failing case that proves its
+ * user impact and a passing case that proves legitimate transitions are not blocked.
  */
 @Tag("IntegrationTest")
 @DisplayName("Identity Invariants Integration Tests")
@@ -375,6 +379,63 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         .isInstanceOf(DataIntegrityViolationException.class)
         .extracting(IdentityInvariantsIT::constraintName)
         .isEqualTo("chk_profile_home_anchor");
+  }
+
+  @Test
+  @DisplayName("Should reject a decline whose target is neither REJECTED nor CANCELED")
+  void shouldRejectDeclineWhoseTargetIsNeitherRejectedNorCanceled() {
+    var owner = create();
+    var host = create();
+    var offer =
+        shareRepository.saveAndFlush(
+            ProfileHouseholdShare.builder()
+                .profileId(owner.profile().getId())
+                .householdId(host.household().getId())
+                .status(ProfileShareStatus.PENDING)
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .build());
+
+    var offerId = offer.getId();
+    var now = Instant.now();
+
+    assertThatThrownBy(
+            () -> shareRepository.tryDeclinePending(offerId, ProfileShareStatus.ACTIVE, now))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(shareRepository.findById(offer.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName("Should fetch one page plus its lookahead when Profile shares are requested")
+  void shouldFetchPagePlusLookaheadWhenProfileSharesAreRequested() {
+    var owner = create();
+    var firstHost = create();
+    var secondHost = create();
+    for (var host : List.of(firstHost, secondHost)) {
+      shareRepository.saveAndFlush(
+          ProfileHouseholdShare.builder()
+              .profileId(owner.profile().getId())
+              .householdId(host.household().getId())
+              .status(ProfileShareStatus.PENDING)
+              .expiresAt(Instant.now().plusSeconds(3600))
+              .build());
+    }
+
+    var options =
+        new KeysetPaginationOptions(
+            null,
+            PaginationOptions.builder()
+                .paginationDirection(PaginationDirection.FORWARD)
+                .cursor(Optional.empty())
+                .limit(1)
+                .build());
+
+    var window = shareRepository.findByProfileId(owner.profile().getId(), options);
+
+    assertThat(window)
+        .hasSize(2)
+        .isSortedAccordingTo(
+            (left, right) -> left.getId().toString().compareTo(right.getId().toString()));
   }
 
   // ---- T8 / PIN ---------------------------------------------------------------------------------

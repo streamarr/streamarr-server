@@ -13,4 +13,7 @@ type Query {
     accountAdministration(accountId: ID!): AccountAdministration
     profileAdministration(profileId: ID!): ProfileAdministration
     accountInvitations(first: Int, after: String, last: Int, before: String): AccountInvitationConnection!
+    profileSharePreview(profileId: ID!, householdId: ID!): ProfileSharePreview
+    pendingShareOffers(householdId: ID!, first: Int, after: String, last: Int, before: String): ProfileShareConnection!
+    profileShares(profileId: ID!, first: Int, after: String, last: Int, before: String): ProfileShareConnection!
 }

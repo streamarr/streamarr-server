@@ -15,6 +15,7 @@ import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
@@ -85,6 +86,8 @@ class MeResolverTest {
   @Autowired private PaginationService paginationService;
 
   @MockitoBean private IdentityQueryService identityQueryService;
+
+  @MockitoBean private UserAccountRepository userAccountRepository;
 
   private final UUID accountId = UUID.randomUUID();
   private final UUID householdId = UUID.randomUUID();

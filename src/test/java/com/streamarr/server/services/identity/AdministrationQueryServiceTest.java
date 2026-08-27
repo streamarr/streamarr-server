@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
@@ -10,6 +11,7 @@ import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.PaginationFixture;
+import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.PaginationService;
@@ -25,13 +27,14 @@ class AdministrationQueryServiceTest {
 
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
+  private final FakeProfileRepository profiles = new FakeProfileRepository();
   private final AdministrationQueryService service =
       new AdministrationQueryService(
           authorization,
           new FakeHouseholdRepository(),
           new FakeUserAccountRepository(),
           new PaginationService(),
-          new FakeProfileRepository(),
+          profiles,
           new FakeAccountInvitationRepository());
 
   @Test
@@ -61,10 +64,19 @@ class AdministrationQueryServiceTest {
   void shouldFailClosedWhenProfileAdministrationVisibilityCannotBeDecided() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
     var identity = authorization.currentIdentity();
-    var profileId = UUID.randomUUID();
+    var profileId = profiles.save(ProfileFixture.defaultProfileBuilder().build()).getId();
 
     assertThatThrownBy(() -> service.profileAdministration(identity, profileId))
         .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("Should answer nothing when the administered Profile is unknown")
+  void shouldAnswerNothingWhenAdministeredProfileIsUnknown() {
+    authorization.allowAll();
+    var identity = authorization.currentIdentity();
+
+    assertThat(service.profileAdministration(identity, UUID.randomUUID())).isEmpty();
   }
 
   @Test

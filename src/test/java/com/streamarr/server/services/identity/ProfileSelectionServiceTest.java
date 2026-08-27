@@ -54,7 +54,8 @@ class ProfileSelectionServiceTest {
           new MutableClock());
   private final LiveSessions liveSessions = new LiveSessions(accounts, sessions);
   private final SessionContextService sessionContext =
-      new SessionContextService(liveSessions, accounts, profiles, sessions, new MutableClock());
+      new SessionContextService(
+          liveSessions, accounts, profiles, sessions, shares, new MutableClock());
 
   private UserAccount account;
   private AuthSession session;
