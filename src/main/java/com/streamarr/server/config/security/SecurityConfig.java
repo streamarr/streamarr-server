@@ -51,6 +51,10 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/actuator/health/**", "/actuator/health")
                     .permitAll()
+                    // The OpenAPI document is served only where springdoc.api-docs.enabled is
+                    // true (dev and test); in production this matcher has nothing to match.
+                    .requestMatchers("/v3/api-docs/**")
+                    .permitAll()
                     .requestMatchers("/actuator/**")
                     .denyAll()
                     .requestMatchers(SecurityRequestMatchers.STREAM_PATHS)

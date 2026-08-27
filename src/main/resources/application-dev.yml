@@ -12,3 +12,7 @@ dgs:
       enabled: true
     introspection:
       enabled: true
+
+springdoc:
+  api-docs:
+    enabled: true

@@ -20,3 +20,7 @@ streamarr:
   # the context cache. The unconfigured and cleartext-gate paths are unit-tested on
   # CanonicalBaseUrl instead.
   base-url: https://home.example.test
+
+springdoc:
+  api-docs:
+    enabled: true

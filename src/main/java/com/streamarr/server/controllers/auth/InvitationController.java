@@ -5,6 +5,7 @@ import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
 import com.streamarr.server.services.auth.DeviceName;
 import com.streamarr.server.services.auth.TokenContext;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class InvitationController {
     return InvitationLookupResponse.from(invitationService.lookup(request.code()));
   }
 
+  @ApiResponse(responseCode = "201")
   @PostMapping("/accept")
   public ResponseEntity<AuthTokensResponse> accept(
       @Valid @RequestBody AcceptInvitationRequest request, HttpServletRequest httpRequest) {
@@ -57,6 +59,7 @@ public class InvitationController {
             .build());
   }
 
+  @ApiResponse(responseCode = "204")
   @PostMapping("/decline")
   public ResponseEntity<Void> decline(@Valid @RequestBody InvitationCodeRequest request) {
     invitationService.decline(request.code());
