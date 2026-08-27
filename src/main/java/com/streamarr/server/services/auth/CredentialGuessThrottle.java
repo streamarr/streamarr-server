@@ -73,18 +73,25 @@ public class CredentialGuessThrottle {
 
   private void requireAvailable(
       SlidingWindowAttemptBudget.Reservation reservation, CredentialType type, Object key) {
-    switch (reservation) {
-      case RESERVED -> {
-        return;
-      }
-      case KEY_EXHAUSTED ->
-          log.warn("Credential verification throttled: {} budget exhausted for key {}", type, key);
-      case CAPACITY_EXHAUSTED ->
-          log.warn(
-              "Credential verification refused: {} throttle at capacity ({} keys tracked); new"
-                  + " codes wait for a reset or the sweep",
-              type,
-              opaqueCodeBudget.maximumTrackedKeys());
+    var available =
+        switch (reservation) {
+          case RESERVED -> true;
+          case KEY_EXHAUSTED -> {
+            log.warn(
+                "Credential verification throttled: {} budget exhausted for key {}", type, key);
+            yield false;
+          }
+          case CAPACITY_EXHAUSTED -> {
+            log.warn(
+                "Credential verification refused: {} throttle at capacity ({} keys tracked); new"
+                    + " codes wait for a reset or the sweep",
+                type,
+                opaqueCodeBudget.maximumTrackedKeys());
+            yield false;
+          }
+        };
+    if (available) {
+      return;
     }
 
     throw new TooManyCredentialAttemptsException();
