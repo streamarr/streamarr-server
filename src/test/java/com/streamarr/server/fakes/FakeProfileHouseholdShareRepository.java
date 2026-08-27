@@ -176,7 +176,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public void upsertStructuralHomeShare(UUID profileId, UUID householdId, Instant now) {
+  public void upsertStructural(UUID profileId, UUID householdId, Instant now) {
     var live =
         database.values().stream()
             .filter(share -> share.getProfileId().equals(profileId))
@@ -203,7 +203,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public int invalidatePendingSharesForProfile(UUID profileId, String reason, Instant now) {
+  public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
     var pending =
         database.values().stream()
             .filter(share -> share.getProfileId().equals(profileId))
