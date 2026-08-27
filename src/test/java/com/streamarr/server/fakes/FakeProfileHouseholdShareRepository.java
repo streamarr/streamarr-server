@@ -194,10 +194,11 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
     return isActivelyShared(profileId, householdId);
   }
 
+  /** Pages in PostgreSQL uuid order (byte-wise), which UUID.compareTo's signed halves are not. */
   private static List<ProfileHouseholdShare> page(
       List<ProfileHouseholdShare> matches, KeysetPaginationOptions options) {
     var ordered =
-        matches.stream().sorted(Comparator.comparing(ProfileHouseholdShare::getId)).toList();
+        matches.stream().sorted(Comparator.comparing(share -> share.getId().toString())).toList();
     var cursorIndex =
         options
             .getCursorId()
