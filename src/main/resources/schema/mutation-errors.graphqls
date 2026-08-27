@@ -203,7 +203,7 @@ type ShareNotActiveError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"A Profile can have only one pending or active share per Household."
+"The Profile is already available in that Household; a pending offer is replaced by a new one, not refused."
 type ProfileAlreadySharedError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
