@@ -40,9 +40,10 @@ import org.springframework.stereotype.Service;
 /**
  * Profile sharing (ADR 0024 §Profile sharing): a share makes one Profile available to a Household
  * without copying data. Cedar decides every seat; the conditional status transitions give every
- * race exactly one winner; T3, T7, and T8 judge the final state at commit and roll back into typed
- * errors. Unsharing clears any selection of that Profile there, and ending a Personal Profile's
- * share drops the visitor's sessions back to their membership Household.
+ * race exactly one winner; a membership-required share is refused up front with its typed error
+ * (Cedar and T3 both refuse it — belt and braces); T7 and T8 judge the final state at commit and
+ * roll back into typed errors. Unsharing clears any selection of that Profile there, and ending a
+ * Personal Profile's share drops the visitor's sessions back to their membership Household.
  */
 @Service
 @RequiredArgsConstructor
@@ -78,8 +79,7 @@ public class ProfileSharingService {
                   identity,
                   new Intent.OfferProfileShare(profileId),
                   () -> mayViewProfile(identity, profileId),
-                  ShareRejections.ProfileNotFound::new,
-                  Optional.empty());
+                  Refusals.<ShareRejections.Offer>hiddenAs(ShareRejections.ProfileNotFound::new));
           refusal.ifPresent(
               rejection -> {
                 throw new MutationRejection(rejection);
@@ -146,8 +146,11 @@ public class ProfileSharingService {
                   identity,
                   new Intent.EndProfileShare(shareId),
                   () -> mayViewShare(identity, shareId),
-                  ShareRejections.ShareNotFound::new,
-                  Optional.empty());
+                  Refusals.<ShareRejections.End>hiddenAs(ShareRejections.ShareNotFound::new)
+                      .visibleAs(
+                          () ->
+                              structuralRefusal(
+                                  shareId, ShareRejections.StructuralShareCannotEnd::new)));
           refusal.ifPresent(
               rejection -> {
                 throw new MutationRejection(rejection);
@@ -168,8 +171,12 @@ public class ProfileSharingService {
                   identity,
                   new Intent.ForceEndProfileShare(shareId),
                   () -> mayViewShare(identity, shareId),
-                  ShareRejections.ShareNotFound::new,
-                  Optional.of(ShareRejections.ReauthenticationRequired::new));
+                  Refusals.<ShareRejections.ForceEnd>hiddenAs(ShareRejections.ShareNotFound::new)
+                      .visibleAs(
+                          () ->
+                              structuralRefusal(
+                                  shareId, ShareRejections.StructuralShareCannotEnd::new))
+                      .reauthenticatedAs(ShareRejections.ReauthenticationRequired::new));
           refusal.ifPresent(
               rejection -> {
                 throw new MutationRejection(rejection);
@@ -235,8 +242,7 @@ public class ProfileSharingService {
                   identity,
                   intent,
                   () -> mayViewShare(identity, shareId),
-                  ShareRejections.ShareNotFound::new,
-                  Optional.empty());
+                  Refusals.<ShareRejections.Decline>hiddenAs(ShareRejections.ShareNotFound::new));
           refusal.ifPresent(
               rejection -> {
                 throw new MutationRejection(rejection);
@@ -334,12 +340,34 @@ public class ProfileSharingService {
         .orElseThrow(() -> new MutationRejection(new ShareRejections.ShareNotFound()));
   }
 
+  /**
+   * How a verb answers each way authorization can refuse it (ADR 0026 oracle rule): hidden when the
+   * caller may not view the resource, a typed refusal when it may and the resource's own state
+   * explains the denial, FORBIDDEN otherwise.
+   */
+  private record Refusals<R>(
+      Supplier<? extends R> hidden,
+      Supplier<Optional<R>> visible,
+      Optional<Supplier<? extends R>> reauthenticationRequired) {
+
+    static <R> Refusals<R> hiddenAs(Supplier<? extends R> hidden) {
+      return new Refusals<>(hidden, Optional::empty, Optional.empty());
+    }
+
+    Refusals<R> visibleAs(Supplier<Optional<R>> explained) {
+      return new Refusals<>(hidden, explained, reauthenticationRequired);
+    }
+
+    Refusals<R> reauthenticatedAs(Supplier<? extends R> stepUp) {
+      return new Refusals<>(hidden, visible, Optional.of(stepUp));
+    }
+  }
+
   private <R> Optional<R> refusalOf(
       AuthenticatedIdentity identity,
       Intent.UnitIntent intent,
       BooleanSupplier mayView,
-      Supplier<? extends R> denied,
-      Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
+      Refusals<R> refusals) {
     return switch (authorizationService.decide(identity, intent)) {
       case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
       case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
@@ -347,18 +375,32 @@ public class ProfileSharingService {
           switch (reason) {
             case REAUTHENTICATION_REQUIRED ->
                 Optional.of(
-                    reauthenticationRequired
+                    refusals
+                        .reauthenticationRequired()
                         .orElseThrow(AuthorizationUnavailableException::new)
                         .get());
             case POLICY -> {
-              if (mayView.getAsBoolean()) {
-                throw new AccessDeniedException("Not allowed.");
+              if (!mayView.getAsBoolean()) {
+                yield Optional.of(refusals.hidden().get());
               }
 
-              yield Optional.of(denied.get());
+              var explained = refusals.visible().get();
+              if (explained.isPresent()) {
+                yield explained;
+              }
+
+              throw new AccessDeniedException("Not allowed.");
             }
           };
     };
+  }
+
+  /** T3 explained to a viewer: the share is refused for what it is, not for who asks. */
+  private <R> Optional<R> structuralRefusal(UUID shareId, Supplier<? extends R> structural) {
+    return shareRepository
+        .findById(shareId)
+        .filter(ProfileHouseholdShare::isStructural)
+        .map(_ -> structural.get());
   }
 
   private Optional<ShareRejections.Accept> decideRefusal(
@@ -367,8 +409,7 @@ public class ProfileSharingService {
         identity,
         intent,
         () -> mayViewShare(identity, shareId),
-        ShareRejections.ShareNotFound::new,
-        Optional.empty());
+        Refusals.<ShareRejections.Accept>hiddenAs(ShareRejections.ShareNotFound::new));
   }
 
   /** A share is visible to whoever may view its Profile's or its target Household's admin view. */

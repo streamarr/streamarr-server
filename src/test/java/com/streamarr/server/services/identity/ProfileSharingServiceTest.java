@@ -321,6 +321,22 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName("Should answer the membership refusal when a viewer ends a structural share")
+  void shouldAnswerMembershipRefusalWhenViewerEndsStructuralShare() {
+    var structural = shares.share(profile.getId(), household.getId(), true);
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.EndProfileShare
+                ? new Decision.Denied<>(Decision.DenialReason.POLICY)
+                : allowed());
+
+    assertThat(rejectionOf(service.endProfileShare(identity(), structural.getId())))
+        .isInstanceOf(ShareRejections.StructuralShareCannotEnd.class);
+    assertThat(shares.findById(structural.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.ACTIVE);
+  }
+
+  @Test
   @DisplayName("Should distinguish not-found from forbidden when visibility differs")
   void shouldDistinguishNotFoundFromForbiddenWhenVisibilityDiffers() {
     var active = activeShare();

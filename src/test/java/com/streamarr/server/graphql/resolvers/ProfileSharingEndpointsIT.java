@@ -422,7 +422,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
                 .getContextHouseholdId())
         .isNull();
 
-    // Cedar refuses to end the membership-required share before the database constraint runs.
+    // The membership-required share answers its typed refusal (Cedar and T3 both refuse it).
     var membershipShareId =
         shareRepository
             .findByProfileIdAndHouseholdIdAndStatus(
@@ -437,8 +437,11 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
             """
                 .formatted(membershipShareId))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.endProfileShare").doesNotExist())
-        .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.endProfileShare.share").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.endProfileShare.userErrors[0].__typename")
+                .value("MembershipShareCannotEndError"));
   }
 
   @Test
