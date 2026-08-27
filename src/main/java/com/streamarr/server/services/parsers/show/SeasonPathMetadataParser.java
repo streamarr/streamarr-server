@@ -156,12 +156,10 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
 
       if (ch == '(') {
         parenthesisDepth++;
-        continue;
       }
 
       if (ch == ')') {
         parenthesisDepth = Math.max(0, parenthesisDepth - 1);
-        continue;
       }
 
       if (Character.isDigit(ch) && parenthesisDepth == 0) {
