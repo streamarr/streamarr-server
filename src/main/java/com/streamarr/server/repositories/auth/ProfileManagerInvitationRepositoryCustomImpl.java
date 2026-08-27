@@ -56,8 +56,8 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   }
 
   @Override
-  public int invalidatePendingInvitedBy(
-      UUID inviterAccountId, UUID profileId, String reason, Instant now) {
+  public int invalidatePendingByProfileIdInvitedBy(
+      UUID profileId, UUID inviterAccountId, String reason, Instant now) {
     return invalidate(
         PROFILE_MANAGER_INVITATION
             .INVITER_ACCOUNT_ID
@@ -68,7 +68,7 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   }
 
   @Override
-  public int invalidatePendingForInviter(UUID inviterAccountId, String reason, Instant now) {
+  public int invalidatePendingInvitedBy(UUID inviterAccountId, String reason, Instant now) {
     return invalidate(
         PROFILE_MANAGER_INVITATION.INVITER_ACCOUNT_ID.eq(inviterAccountId), reason, now);
   }
