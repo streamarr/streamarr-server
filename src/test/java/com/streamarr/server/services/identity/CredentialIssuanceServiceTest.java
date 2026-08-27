@@ -290,6 +290,22 @@ class CredentialIssuanceServiceTest {
     assertThat(invitations.findAll()).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should issue an invitation when the recipient email uses plus addressing")
+  void shouldIssueInvitationWhenRecipientEmailUsesPlusAddressing() {
+    var recipientEmail = "kai+streamarr@example.com";
+
+    var invitation =
+        issued(
+                service.issueAccountInvitation(
+                    authorization.currentIdentity(),
+                    command().toBuilder().recipientEmail(recipientEmail).build()))
+            .invitation();
+
+    assertThat(invitation.getRecipientEmail()).isEqualTo(recipientEmail);
+    assertThat(invitation.getStatus()).isEqualTo(AccountInvitationStatus.PENDING);
+  }
+
   @ParameterizedTest(name = "Should reject \"{0}\" as a recipient email")
   @ValueSource(
       strings = {
