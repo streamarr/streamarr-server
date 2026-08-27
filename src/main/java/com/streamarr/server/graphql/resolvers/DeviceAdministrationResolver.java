@@ -7,10 +7,11 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.graphql.Ids;
+import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
-import com.streamarr.server.graphql.dto.DeviceRegistrationView;
-import com.streamarr.server.graphql.dto.EsnBlockView;
+import com.streamarr.server.graphql.dto.DeviceRegistrationDetails;
+import com.streamarr.server.graphql.dto.EsnBlockDetails;
 import com.streamarr.server.graphql.inputs.BlockEsnInput;
 import com.streamarr.server.graphql.inputs.BlockEsnServerWideInput;
 import com.streamarr.server.graphql.inputs.RevokeDeviceRegistrationInput;
@@ -26,7 +27,6 @@ import com.streamarr.server.graphql.mutation.devices.UnblockEsnServerWidePayload
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.DeviceAdministrationService;
 import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
@@ -46,9 +46,9 @@ public class DeviceAdministrationResolver {
   private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsQuery
-  public Connection<DeviceRegistrationView> householdDevices(
+  public Connection<DeviceRegistrationDetails> householdDevices(
       @InputArgument String householdId, DataFetchingEnvironment dfe) {
-    var options = options(dfe);
+    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         deviceAdministrationService.householdDevices(
             authorizationService.currentIdentity(),
@@ -58,9 +58,9 @@ public class DeviceAdministrationResolver {
   }
 
   @DgsQuery
-  public Connection<EsnBlockView> esnBlocks(
+  public Connection<EsnBlockDetails> esnBlocks(
       @InputArgument String householdId, DataFetchingEnvironment dfe) {
-    var options = options(dfe);
+    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         deviceAdministrationService.esnBlocks(
             authorizationService.currentIdentity(),
@@ -70,8 +70,8 @@ public class DeviceAdministrationResolver {
   }
 
   @DgsQuery
-  public Connection<EsnBlockView> serverEsnBlocks(DataFetchingEnvironment dfe) {
-    var options = options(dfe);
+  public Connection<EsnBlockDetails> serverEsnBlocks(DataFetchingEnvironment dfe) {
+    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         deviceAdministrationService.serverEsnBlocks(
             authorizationService.currentIdentity(), cursorUtil.decodeKeysetCursor(options));
@@ -99,7 +99,7 @@ public class DeviceAdministrationResolver {
                 Ids.parseUuid(input.householdId()),
                 input.esn(),
                 input.reason())
-            .map(EsnBlockView::from),
+            .map(EsnBlockDetails::from),
         DeviceErrors::toBlockError,
         BlockEsnPayload::new);
   }
@@ -110,7 +110,7 @@ public class DeviceAdministrationResolver {
     return MutationPayloads.payload(
         deviceAdministrationService
             .blockEsnServerWide(authorizationService.currentIdentity(), input.esn(), input.reason())
-            .map(EsnBlockView::from),
+            .map(EsnBlockDetails::from),
         DeviceErrors::toBlockServerWideError,
         BlockEsnServerWidePayload::new);
   }
@@ -136,39 +136,18 @@ public class DeviceAdministrationResolver {
         UnblockEsnServerWidePayload::new);
   }
 
-  private PaginationOptions options(DataFetchingEnvironment dfe) {
-    int first = dfe.getArgumentOrDefault("first", 0);
-    String after = dfe.getArgument("after");
-    int last = dfe.getArgumentOrDefault("last", 0);
-    String before = dfe.getArgument("before");
-    if (first == 0 && last == 0 && before != null) {
-      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
-    }
-
-    return paginationService.getPaginationOptions(
-        firstOrDefault(first, last, before), after, last, before);
-  }
-
-  private Connection<DeviceRegistrationView> toDeviceConnection(
+  private Connection<DeviceRegistrationDetails> toDeviceConnection(
       MediaPage<DeviceRegistration> page) {
     return relayConnectionAdapter.toConnection(
         page,
-        item -> DeviceRegistrationView.from(item.item()),
+        item -> DeviceRegistrationDetails.from(item.item()),
         item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
   }
 
-  private Connection<EsnBlockView> toEsnBlockConnection(MediaPage<EsnBlock> page) {
+  private Connection<EsnBlockDetails> toEsnBlockConnection(MediaPage<EsnBlock> page) {
     return relayConnectionAdapter.toConnection(
         page,
-        item -> EsnBlockView.from(item.item()),
+        item -> EsnBlockDetails.from(item.item()),
         item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
-  }
-
-  private static int firstOrDefault(int first, int last, String before) {
-    if (first == 0 && last == 0 && before == null) {
-      return DEFAULT_PAGE_SIZE;
-    }
-
-    return first;
   }
 }

@@ -5,10 +5,10 @@ import java.util.UUID;
 import lombok.Builder;
 
 @Builder
-public record EsnBlockView(UUID id, String esn, UUID householdId, String reason) {
+public record EsnBlockDetails(UUID id, String esn, UUID householdId, String reason) {
 
-  public static EsnBlockView from(EsnBlock block) {
-    return EsnBlockView.builder()
+  public static EsnBlockDetails from(EsnBlock block) {
+    return EsnBlockDetails.builder()
         .id(block.getId())
         .esn(block.getEsn())
         .householdId(block.getHouseholdId())

@@ -1,4 +1,4 @@
--- Devices (ADR 0024 §Devices; server PR #13). ADR 0021's pairing transport contract is unchanged:
+-- Devices (ADR 0024 §Devices; server PR #316). ADR 0021's pairing transport contract is unchanged:
 -- codes, budgets, poll cadence, and expiry stay as they are. This adds what ADR 0024 binds to the
 -- pairing: the TV's ESN, the chosen Household, the durable registration the winning poll creates,
 -- and ESN blocks. T9: a registered Device's authorizing Account may still use its Household and

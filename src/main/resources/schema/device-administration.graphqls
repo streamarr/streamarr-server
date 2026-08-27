@@ -6,7 +6,7 @@ enum DeviceRegistrationStatus {
     REVOKED
 }
 
-type DeviceRegistrationView {
+type DeviceRegistrationDetails {
     id: ID!
     esn: String!
     displayName: String!
@@ -22,11 +22,11 @@ type DeviceRegistrationConnection {
 }
 
 type DeviceRegistrationEdge {
-    node: DeviceRegistrationView!
+    node: DeviceRegistrationDetails!
     cursor: String!
 }
 
-type EsnBlockView {
+type EsnBlockDetails {
     id: ID!
     esn: String!
     "Null when the block is server-wide."
@@ -40,7 +40,7 @@ type EsnBlockConnection {
 }
 
 type EsnBlockEdge {
-    node: EsnBlockView!
+    node: EsnBlockDetails!
     cursor: String!
 }
 
@@ -62,7 +62,7 @@ input BlockEsnInput {
 }
 
 type BlockEsnPayload {
-    block: EsnBlockView
+    block: EsnBlockDetails
     userErrors: [BlockEsnError!]!
 }
 
@@ -78,7 +78,7 @@ input BlockEsnServerWideInput {
 }
 
 type BlockEsnServerWidePayload {
-    block: EsnBlockView
+    block: EsnBlockDetails
     userErrors: [BlockEsnServerWideError!]!
 }
 
