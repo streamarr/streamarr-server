@@ -125,10 +125,13 @@ class CredentialJournalOutageIT extends AbstractIntegrationTest {
       try (var statement = connection.createStatement()) {
         statement.execute("LOCK TABLE credential_attempt IN ACCESS EXCLUSIVE MODE");
       }
+
       tableLocked.countDown();
       releaseTable.await(60, TimeUnit.SECONDS);
+
       connection.rollback();
     }
+
     return null;
   }
 }

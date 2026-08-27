@@ -32,6 +32,7 @@ public record CredentialAttemptTarget(
       if (this == REQUIRED && value == null) {
         throw new IllegalArgumentException(kind + " target requires " + name);
       }
+
       if (this == ABSENT && value != null) {
         throw new IllegalArgumentException(kind + " target must not carry " + name);
       }

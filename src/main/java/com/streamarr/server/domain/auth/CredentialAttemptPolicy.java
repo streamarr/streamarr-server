@@ -21,6 +21,7 @@ public sealed interface CredentialAttemptPolicy {
       if (maximumFailures <= 0) {
         throw new IllegalArgumentException("maximumFailures must be positive");
       }
+
       requireValidDuration(failureWindow, "failureWindow");
       requireValidDuration(throttleDuration, "throttleDuration");
     }

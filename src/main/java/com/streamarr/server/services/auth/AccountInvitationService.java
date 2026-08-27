@@ -204,16 +204,14 @@ public class AccountInvitationService {
     }
 
     if (!profileRepository.lockById(invitation.getProfileId())) {
-      throw OpaqueCodeResolver.rejected(
-          OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
+      throw new InvalidOneTimeCodeException();
     }
   }
 
   private void consumeInvitation(AccountInvitation invitation) {
     if (!invitationRepository.markAcceptedIfPendingAndUnexpired(
         invitation.getId(), clock.instant())) {
-      throw OpaqueCodeResolver.rejected(
-          OpaqueCodeResolver.MissReason.LOST_RACE, invitation.getPublicId());
+      throw new InvalidOneTimeCodeException();
     }
   }
 
@@ -312,15 +310,11 @@ public class AccountInvitationService {
     var profile =
         profileRepository
             .findById(profileId)
-            .orElseThrow(
-                () ->
-                    OpaqueCodeResolver.rejected(
-                        OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId()));
+            .orElseThrow(InvalidOneTimeCodeException::new);
     if (userAccountRepository.findByPersonalProfileId(profileId).isPresent()
         || !profile.getHouseholdId().equals(householdId)) {
       // The Profile moved on after issuance; a late code fails exactly like an unknown one.
-      throw OpaqueCodeResolver.rejected(
-          OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
+      throw new InvalidOneTimeCodeException();
     }
 
     var recordedReoffers = reofferRepository.findByInvitationId(invitation.getId());
@@ -337,14 +331,10 @@ public class AccountInvitationService {
     var role =
         userAccountRepository
             .roleForNewAccount(householdId, invitation.getHouseholdRole())
-            .orElseThrow(
-                () ->
-                    OpaqueCodeResolver.rejected(
-                        OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId()));
+            .orElseThrow(InvalidOneTimeCodeException::new);
     if (profile.isRestricted() && role == HouseholdRole.ADMIN) {
       // The first Account becomes HouseholdAdmin, and a restricted Account holds no authority.
-      throw OpaqueCodeResolver.rejected(
-          OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
+      throw new InvalidOneTimeCodeException();
     }
 
     var account =
@@ -439,18 +429,22 @@ public class AccountInvitationService {
           if (invitation == null) {
             throw new InvalidOneTimeCodeException();
           }
+
           if (!opaqueCodes.matches(presented, invitation.getSecretDigest())) {
             throw new InvalidOneTimeCodeException();
           }
+
           if (!invitation.isRedeemableAt(clock.instant())) {
             throw new InvalidOneTimeCodeException();
           }
+
           if (invitation.getMode() == AccountInvitationMode.LINK
               && invitation.getProfileId() == null) {
             // The connectable Profile was deleted; invalidation should have flipped the row, and
             // the SET NULL is the backstop. A dead code fails exactly like an unknown one.
             throw new InvalidOneTimeCodeException();
           }
+
           return invitation;
         });
   }
@@ -476,16 +470,6 @@ public class AccountInvitationService {
       String deviceName,
       @NonNull String ipAddress) {
 
-    public static class AcceptInvitationCommandBuilder {
-
-      @Override
-      public String toString() {
-        return "AcceptInvitationCommandBuilder[code=REDACTED, displayName=%s, password=REDACTED,"
-                .formatted(displayName)
-            + " deviceName=%s]".formatted(deviceName);
-      }
-    }
-
     @Override
     public String toString() {
       return "AcceptInvitationCommand[code=REDACTED, displayName=%s, password=REDACTED,"
@@ -497,7 +481,10 @@ public class AccountInvitationService {
 
       @Override
       public String toString() {
-        return "AcceptInvitationCommandBuilder[REDACTED]";
+        return "AcceptInvitationCommandBuilder[code=REDACTED, displayName=%s,"
+                .formatted(displayName)
+            + " password=REDACTED, deviceName=%s, ipAddress=%s]"
+                .formatted(deviceName, ipAddress);
       }
     }
   }

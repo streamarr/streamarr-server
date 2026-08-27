@@ -132,6 +132,7 @@ class ReauthenticationServiceTest {
       assertThatThrownBy(() -> service.reauthenticate(identity, wrong))
           .isInstanceOf(InvalidCredentialsException.class);
     }
+
     var correct = command(PASSWORD);
 
     assertThatThrownBy(() -> service.reauthenticate(identity, correct))

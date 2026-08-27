@@ -48,14 +48,12 @@ public class PasswordResetService {
                   Set.of(code.getAccountId()), properties.replacementLockTimeout());
           if (!locked.contains(code.getAccountId())) {
             // The code row is deleted with its Account, so the code itself is gone too.
-            throw OpaqueCodeResolver.rejected(
-                OpaqueCodeResolver.MissReason.ACCOUNT_GONE, code.getPublicId());
+            throw new InvalidOneTimeCodeException();
           }
 
           var now = clock.instant();
           if (!resetCodeRepository.markRedeemedIfPendingAndUnexpired(code.getId(), now)) {
-            throw OpaqueCodeResolver.rejected(
-                OpaqueCodeResolver.MissReason.LOST_RACE, code.getPublicId());
+            throw new InvalidOneTimeCodeException();
           }
 
           if (!userAccountRepository.trySetPasswordHash(code.getAccountId(), newPasswordHash)) {
@@ -79,9 +77,11 @@ public class PasswordResetService {
           if (code == null) {
             throw new InvalidOneTimeCodeException();
           }
+
           if (!opaqueCodes.matches(presented, code.getSecretDigest())) {
             throw new InvalidOneTimeCodeException();
           }
+
           if (code.getStatus() != PasswordResetCodeStatus.PENDING
               || !code.getExpiresAt().isAfter(clock.instant())) {
             throw new InvalidOneTimeCodeException();

@@ -37,6 +37,7 @@ public class LoginService {
             timingEqualizer.burn(command.password());
             throw new InvalidCredentialsException();
           }
+
           if (!credentialsValid(account, command.password())) {
             throw new InvalidCredentialsException();
           }

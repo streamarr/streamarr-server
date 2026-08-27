@@ -180,7 +180,7 @@ class CredentialSecretRedactionTest {
             secret("password=REDACTED", PASSWORD)),
         redaction(
             "invitation lookup code",
-            AccountInvitationCeremonyService.InvitationCodeCommand.builder()
+            AccountInvitationService.InvitationCodeCommand.builder()
                 .code(CODE)
                 .ipAddress("192.0.2.30")
                 .build(),
@@ -261,7 +261,8 @@ class CredentialSecretRedactionTest {
             .code(CODE)
             .displayName("Invitee")
             .password(PASSWORD)
-            .deviceName("living room");
+            .deviceName("living room")
+            .ipAddress("192.0.2.30");
 
     return Stream.of(
         plain(

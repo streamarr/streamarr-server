@@ -147,6 +147,7 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
     for (var pending = 0; pending < 4; pending++) {
       reserve(target, NOW);
     }
+
     var success = reserve(target, NOW.plusSeconds(1));
     repository.complete(success, CredentialAttemptResult.SUCCEEDED, NOW.plusSeconds(1));
 

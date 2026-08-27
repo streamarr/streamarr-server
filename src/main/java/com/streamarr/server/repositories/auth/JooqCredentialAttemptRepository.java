@@ -213,6 +213,7 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
       transactionLocks.limitLockWait(LOCK_TIMEOUT);
       return;
     }
+
     lockTarget(target);
   }
 

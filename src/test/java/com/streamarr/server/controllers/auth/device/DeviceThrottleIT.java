@@ -167,6 +167,7 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
     for (var attempt = 0; attempt < 3; attempt++) {
       mockMvc.perform(lookup(bearer, UNKNOWN_USER_CODE)).andExpect(status().isNotFound());
     }
+
     for (var attempt = 0; attempt < MAXIMUM_FAILURES - 3; attempt++) {
       mockMvc.perform(decision(bearer, UNKNOWN_USER_CODE, "DENY")).andExpect(status().isNotFound());
     }

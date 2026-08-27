@@ -62,7 +62,12 @@ class PasswordResetLockTimeoutIT extends AbstractIntegrationTest {
       var redemption =
           executor.submit(
               () -> {
-                passwordResetService.redeem(issued.code(), "a new passphrase");
+                passwordResetService.redeem(
+                    RedeemPasswordResetCommand.builder()
+                        .code(issued.code())
+                        .newPassword("a new passphrase")
+                        .ipAddress("192.0.2.30")
+                        .build());
                 return null;
               });
 

@@ -28,11 +28,11 @@ class SecretRecordToStringTest {
             LoginResult.builder().rawRefreshToken(secret).toString(),
             AccessToken.builder().value(secret).toString(),
             RedeemPasswordResetCommand.builder().code(secret).newPassword(secret).toString(),
-            AccountInvitationCeremonyService.AcceptInvitationCommand.builder()
+            AccountInvitationService.AcceptInvitationCommand.builder()
                 .code(secret)
                 .password(secret)
                 .toString(),
-            AccountInvitationCeremonyService.InvitationCodeCommand.builder()
+            AccountInvitationService.InvitationCodeCommand.builder()
                 .code(secret)
                 .toString(),
             ProfileManagerAdministrationService.ManagerInvitationCodeCommand.builder()

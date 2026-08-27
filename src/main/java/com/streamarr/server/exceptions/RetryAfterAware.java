@@ -16,6 +16,7 @@ public interface RetryAfterAware {
     if (retryAfter.isNegative() || retryAfter.isZero()) {
       return 1;
     }
+
     if (retryAfter.getNano() == 0 || retryAfter.getSeconds() == Long.MAX_VALUE) {
       return retryAfter.getSeconds();
     }
