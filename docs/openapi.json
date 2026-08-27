@@ -194,14 +194,8 @@
         ],
         "type": "object"
       },
-      "InvitationPreview": {
+      "InvitationLookupResponse": {
         "properties": {
-          "endingHouseholds": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "expiresAt": {
             "format": "date-time",
             "type": "string"
@@ -216,6 +210,12 @@
             ],
             "type": "string"
           },
+          "householdsLosingProfileAccess": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "maximumAllowedRatingAge": {
             "format": "int32",
             "type": "integer"
@@ -223,7 +223,7 @@
           "mode": {
             "enum": [
               "CREATE",
-              "CONNECT"
+              "LINK"
             ],
             "type": "string"
           },
@@ -237,16 +237,16 @@
           "profileName": {
             "type": "string"
           },
-          "recipientEmail": {
-            "type": "string"
-          },
-          "remainingManagers": {
+          "profileShareOfferTargets": {
             "items": {
               "type": "string"
             },
             "type": "array"
           },
-          "reofferHouseholds": {
+          "recipientEmail": {
+            "type": "string"
+          },
+          "remainingManagers": {
             "items": {
               "type": "string"
             },
@@ -686,7 +686,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvitationPreview"
+                  "$ref": "#/components/schemas/InvitationLookupResponse"
                 }
               }
             },
