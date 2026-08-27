@@ -353,8 +353,9 @@ public class AccountInvitationService {
     for (var share :
         shareRepository.findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE)) {
       if (!share.getHouseholdId().equals(homeHouseholdId)) {
-        shareRepository.tryEnd(share.getId(), now);
-        authSessionRepository.clearSelections(profileId, share.getHouseholdId(), now);
+        shareRepository.tryEndActive(share.getId(), now);
+        authSessionRepository.clearProfileSelectionFromLiveSessions(
+            profileId, share.getHouseholdId(), now);
       }
     }
   }
