@@ -38,7 +38,6 @@ public class PasswordResetService {
 
     transactionTemplate.executeWithoutResult(
         _ -> {
-          var now = clock.instant();
           var locked =
               userAccountRepository.lockByIds(
                   Set.of(code.getAccountId()), properties.replacementLockTimeout());
@@ -48,6 +47,7 @@ public class PasswordResetService {
                 OpaqueCodeResolver.MissReason.ACCOUNT_GONE, code.getPublicId());
           }
 
+          var now = clock.instant();
           if (!resetCodeRepository.markRedeemedIfPendingAndUnexpired(code.getId(), now)) {
             throw OpaqueCodeResolver.rejected(
                 OpaqueCodeResolver.MissReason.LOST_RACE, code.getPublicId());

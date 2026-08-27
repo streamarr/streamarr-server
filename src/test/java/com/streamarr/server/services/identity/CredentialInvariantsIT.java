@@ -128,6 +128,29 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should preserve invitation expiry when its target Household disappears")
+  void shouldPreserveInvitationExpiryWhenTargetHouseholdDisappears() {
+    var issuer = authTestSupport.createAccount();
+    var target = authTestSupport.createAccount();
+    var expired = savePendingInvitation(target, issuer, Instant.now().minus(Duration.ofHours(1)));
+
+    try {
+      authTestSupport.deleteAccount(target.getId());
+
+      var row = invitationRepository.findById(expired.getId()).orElseThrow();
+      assertThat(row.getHouseholdId()).isNull();
+      assertThat(row.statusAt(Instant.now())).isEqualTo(AccountInvitationStatus.EXPIRED);
+      assertThat(row.getInvalidationReason()).isNull();
+    } finally {
+      invitationRepository
+          .findById(expired.getId())
+          .ifPresent(invitation -> invitationRepository.deleteById(invitation.getId()));
+      authTestSupport.deleteAccount(target.getId());
+      authTestSupport.deleteAccount(issuer.getId());
+    }
+  }
+
+  @Test
   @DisplayName("Should leave an expired reset code out of issuer invalidation")
   void shouldLeaveExpiredResetCodeOutOfIssuerInvalidation() {
     var issuer = authTestSupport.createAccount();
@@ -142,6 +165,26 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
       assertThat(affected).isZero();
       var row = resetCodeRepository.findById(expired.getId()).orElseThrow();
       assertThat(row.getStatus()).isEqualTo(PasswordResetCodeStatus.PENDING);
+      assertThat(row.statusAt(Instant.now())).isEqualTo(PasswordResetCodeStatus.EXPIRED);
+      assertThat(row.getInvalidationReason()).isNull();
+    } finally {
+      authTestSupport.deleteAccount(target.getId());
+      authTestSupport.deleteAccount(issuer.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should preserve reset-code expiry when its issuer disappears")
+  void shouldPreserveResetCodeExpiryWhenIssuerDisappears() {
+    var issuer = authTestSupport.createAccount();
+    var target = authTestSupport.createAccount();
+    var expired = savePendingResetCode(target, issuer, Instant.now().minus(Duration.ofHours(1)));
+
+    try {
+      authTestSupport.deleteAccount(issuer.getId());
+
+      var row = resetCodeRepository.findById(expired.getId()).orElseThrow();
+      assertThat(row.getIssuerAccountId()).isNull();
       assertThat(row.statusAt(Instant.now())).isEqualTo(PasswordResetCodeStatus.EXPIRED);
       assertThat(row.getInvalidationReason()).isNull();
     } finally {

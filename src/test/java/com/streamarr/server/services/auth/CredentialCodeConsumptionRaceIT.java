@@ -28,6 +28,7 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -200,6 +201,48 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
               assertThat(sessionIdsBefore).contains(session.getId());
               assertThat(session.getRevokedAt()).isNotNull();
             });
+  }
+
+  @Test
+  @DisplayName("Should reject a reset code when it expires while waiting for the Account lock")
+  void shouldRejectResetCodeWhenItExpiresWhileWaitingForAccountLock() throws Exception {
+    identity = authTestSupport.createAdminIdentity();
+    var issued = opaqueCodes.issue();
+    var expiresAt = Instant.now().plusSeconds(2);
+    var resetCode = saveResetCode(issued);
+    resetCode.setExpiresAt(expiresAt);
+    resetCodeRepository.saveAndFlush(resetCode);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var lock = lockRow(rowLock("user_account", identity.account().getId()))) {
+      var redemption =
+          executor.submit(
+              () ->
+                  attempt(
+                      () ->
+                          passwordResetService.redeem(
+                              issued.code(), "the expired replacement passphrase")));
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(
+              () -> assertThat(waitingBehind(lock.backendPid(), "user_account")).isOne());
+      assertThat(Instant.now()).isBefore(expiresAt);
+      await().atMost(Duration.ofSeconds(3)).until(() -> !Instant.now().isBefore(expiresAt));
+      lock.release();
+
+      var attempt = redemption.get(10, TimeUnit.SECONDS);
+      assertThat(attempt.successful()).isFalse();
+      assertThat(attempt.failure()).isInstanceOf(InvalidOneTimeCodeException.class);
+    }
+
+    assertThat(
+            passwordEncoder.matches(
+                "the expired replacement passphrase",
+                userAccountRepository
+                    .findById(identity.account().getId())
+                    .orElseThrow()
+                    .getPasswordHash()))
+        .isFalse();
   }
 
   @Test

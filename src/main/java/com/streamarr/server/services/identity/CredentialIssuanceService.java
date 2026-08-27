@@ -166,11 +166,15 @@ public class CredentialIssuanceService {
     var profileName = command.profileName().strip();
     var profileKind = Objects.requireNonNullElse(command.profileKind(), ProfileKind.ADULT);
     var issued = opaqueCodes.issue();
-    var now = clock.instant();
     return mutationTransactions.write(
         () -> {
           invitationRepository.lockInvitationIssuanceForRecipientEmail(recipientEmail);
           requireIssuerStillAllowed(identity);
+          if (userAccountRepository.findByEmailIgnoreCase(recipientEmail).isPresent()) {
+            throw new MutationRejection(new CredentialRejections.EmailAlreadyUsed());
+          }
+
+          var now = clock.instant();
           invitationRepository.expirePendingInvitationsForRecipientEmail(recipientEmail, now);
           invitationRepository.invalidatePendingInvitationsForRecipientEmail(
               recipientEmail, "replaced by a newer invitation", now);
@@ -223,11 +227,11 @@ public class CredentialIssuanceService {
     }
 
     var issued = opaqueCodes.issue();
-    var now = clock.instant();
     return mutationTransactions.write(
         () -> {
           lockResetParticipants(identity, accountId);
           requireIssuerStillAllowed(identity);
+          var now = clock.instant();
           resetCodeRepository.expirePendingPasswordResetCodesForAccount(accountId, now);
           resetCodeRepository.invalidatePendingPasswordResetCodesForAccount(
               accountId, "replaced by a newer code", now);

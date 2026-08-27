@@ -101,6 +101,7 @@ public class AccountInvitationService {
 
   private AcceptedInvitation acceptPendingInvitation(
       AcceptInvitationCommand command, AccountInvitation invitation, String passwordHash) {
+    invitationRepository.lockInvitationIssuanceForRecipientEmail(invitation.getRecipientEmail());
     lockLocalManager(invitation);
     consumeInvitation(invitation);
     requireTargetHousehold(invitation);
