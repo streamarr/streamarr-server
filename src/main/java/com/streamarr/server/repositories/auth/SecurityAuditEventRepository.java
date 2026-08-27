@@ -14,13 +14,13 @@ public interface SecurityAuditEventRepository {
    * One keyset page, newest first: rows strictly after the cursor in (occurred_at DESC, id DESC)
    * order. A null cursor starts at the newest row.
    */
-  List<SecurityAuditEventRecordView> pageNewestFirst(
+  List<SecurityAuditEventRecordView> findNewestFirst(
       Instant beforeOccurredAt, UUID beforeId, int limit);
 
   /**
    * One reverse keyset page, oldest first for bounded fetching: rows strictly before the cursor in
    * the connection's (occurred_at DESC, id DESC) order. A null cursor starts at the oldest row.
    */
-  List<SecurityAuditEventRecordView> pageOldestFirst(
+  List<SecurityAuditEventRecordView> findOldestFirst(
       Instant afterOccurredAt, UUID afterId, int limit);
 }

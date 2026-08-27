@@ -37,7 +37,7 @@ public class SecurityAuditEventRepositoryImpl implements SecurityAuditEventRepos
   }
 
   @Override
-  public List<SecurityAuditEventRecordView> pageNewestFirst(
+  public List<SecurityAuditEventRecordView> findNewestFirst(
       Instant beforeOccurredAt, UUID beforeId, int limit) {
     var query = dsl.selectFrom(SECURITY_AUDIT_EVENT);
     var page =
@@ -67,7 +67,7 @@ public class SecurityAuditEventRepositoryImpl implements SecurityAuditEventRepos
   }
 
   @Override
-  public List<SecurityAuditEventRecordView> pageOldestFirst(
+  public List<SecurityAuditEventRecordView> findOldestFirst(
       Instant afterOccurredAt, UUID afterId, int limit) {
     var query = dsl.selectFrom(SECURITY_AUDIT_EVENT);
     var page =
