@@ -212,12 +212,11 @@ public class AccountLifecycleService {
         account.getId(), "issuer deleted", now);
     passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
         account.getId(), "issuer deleted", now);
-    managerInvitationRepository.invalidatePendingForRecipient(
+    managerInvitationRepository.invalidatePendingByRecipientAccountId(
         account.getId(), "recipient deleted", now);
     managerInvitationRepository.invalidatePendingForInviter(
         account.getId(), "inviting manager deleted", now);
-    shareRepository.invalidatePendingSharesOfferedByAccount(
-        account.getId(), "offering manager deleted", now);
+    shareRepository.invalidatePendingOfferedBy(account.getId(), "offering manager deleted", now);
 
     var profileId = account.getPersonalProfileId();
     if (command.profileDisposition() == ProfileDisposition.KEEP) {
@@ -227,8 +226,8 @@ public class AccountLifecycleService {
       deleteAccountRow(account);
     } else {
       deleteAccountRow(account);
-      accountInvitationRepository.invalidatePendingForProfile(profileId, "Profile deleted", now);
-      managerInvitationRepository.invalidatePendingForProfile(profileId, "Profile deleted", now);
+      accountInvitationRepository.invalidatePendingByProfileId(profileId, "Profile deleted", now);
+      managerInvitationRepository.invalidatePendingByProfileId(profileId, "Profile deleted", now);
       clearSelectionsEverywhere(profileId, now);
       profileRepository.deleteById(profileId);
       profileRepository.flush();
@@ -245,16 +244,18 @@ public class AccountLifecycleService {
       TransferAccountCommand command, UUID sourceHouseholdId, UUID profileId, Instant now) {
     if (command.sourceAccess() == SourceAccess.KEEP_AS_VISITOR) {
       shareRepository.tryDemoteStructural(profileId, sourceHouseholdId, now);
-      authSessionRepository.clearSelections(profileId, sourceHouseholdId, now);
+      authSessionRepository.clearProfileSelectionFromLiveSessions(
+          profileId, sourceHouseholdId, now);
       return;
     }
 
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
-        .ifPresent(share -> shareRepository.tryEnd(share.getId(), now));
-    authSessionRepository.clearSelections(profileId, sourceHouseholdId, now);
-    authSessionRepository.resetContextForAccount(command.accountId(), sourceHouseholdId, now);
+        .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
+    authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId, now);
+    authSessionRepository.clearHouseholdContextFromAccountSessions(
+        command.accountId(), sourceHouseholdId, now);
     registrationLifecycle.revokeAllByAccountAndHousehold(
         command.accountId(), sourceHouseholdId, "old Household access ended", now);
   }
@@ -263,7 +264,9 @@ public class AccountLifecycleService {
     shareRepository
         .findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE)
         .forEach(
-            share -> authSessionRepository.clearSelections(profileId, share.getHouseholdId(), now));
+            share ->
+                authSessionRepository.clearProfileSelectionFromLiveSessions(
+                    profileId, share.getHouseholdId(), now));
   }
 
   private Optional<TransferRejections.DeleteAccount> replacementRefusal(

@@ -153,7 +153,7 @@ public class ProfileLifecycleService {
               .findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE)
               .forEach(
                   share ->
-                      authSessionRepository.clearSelections(
+                      authSessionRepository.clearProfileSelectionFromLiveSessions(
                           profileId, share.getHouseholdId(), now));
           invalidateProfileBoundArtifacts(profileId, PROFILE_DELETED, now);
           if (!profileRepository.tryDeleteUnlinked(profileId)) {
@@ -178,8 +178,8 @@ public class ProfileLifecycleService {
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
-        .ifPresent(share -> shareRepository.tryEnd(share.getId(), now));
-    authSessionRepository.clearSelections(profileId, sourceHouseholdId, now);
+        .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
+    authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId, now);
   }
 
   /** Pending offers were invalidated just above, so the availability insert cannot collide. */
@@ -203,9 +203,9 @@ public class ProfileLifecycleService {
   }
 
   private void invalidateProfileBoundArtifacts(UUID profileId, String reason, Instant now) {
-    accountInvitationRepository.invalidatePendingForProfile(profileId, reason, now);
-    managerInvitationRepository.invalidatePendingForProfile(profileId, reason, now);
-    shareRepository.invalidatePendingSharesForProfile(profileId, reason, now);
+    accountInvitationRepository.invalidatePendingByProfileId(profileId, reason, now);
+    managerInvitationRepository.invalidatePendingByProfileId(profileId, reason, now);
+    shareRepository.invalidatePendingByProfileId(profileId, reason, now);
   }
 
   private Optional<TransferRejections.TransferProfile> localManagerRefusal(
