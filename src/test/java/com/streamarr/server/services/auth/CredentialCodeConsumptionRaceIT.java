@@ -168,17 +168,9 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
         var lock = lockRow(rowLock("password_reset_code", resetCode.getId()))) {
       var first =
-          executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          redeem(issued.code(), "the replacement passphrase")));
+          executor.submit(() -> attempt(() -> redeem(issued.code(), "the replacement passphrase")));
       var second =
-          executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          redeem(issued.code(), "the replacement passphrase")));
+          executor.submit(() -> attempt(() -> redeem(issued.code(), "the replacement passphrase")));
 
       await()
           .atMost(Duration.ofSeconds(10))
@@ -233,10 +225,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
         var lock = lockRow(rowLock("user_account", identity.account().getId()))) {
       var redemption =
           executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          redeem(issued.code(), "the expired replacement passphrase")));
+              () -> attempt(() -> redeem(issued.code(), "the expired replacement passphrase")));
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(
@@ -279,10 +268,7 @@ class CredentialCodeConsumptionRaceIT extends AbstractIntegrationTest {
 
       var redemption =
           executor.submit(
-              () ->
-                  attempt(
-                      () ->
-                          redeem(issued.code(), "the concurrent replacement passphrase")));
+              () -> attempt(() -> redeem(issued.code(), "the concurrent replacement passphrase")));
       await()
           .atMost(Duration.ofSeconds(10))
           .untilAsserted(() -> assertThat(waitingBehind(holderPid, "user_account")).isOne());

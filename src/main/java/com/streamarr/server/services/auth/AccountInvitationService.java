@@ -307,9 +307,7 @@ public class AccountInvitationService {
     var householdId = invitation.getHouseholdId();
     var profileId = invitation.getProfileId();
     var profile =
-        profileRepository
-            .findById(profileId)
-            .orElseThrow(InvalidOneTimeCodeException::new);
+        profileRepository.findById(profileId).orElseThrow(InvalidOneTimeCodeException::new);
     if (userAccountRepository.findByPersonalProfileId(profileId).isPresent()
         || !profile.getHouseholdId().equals(householdId)) {
       // The Profile moved on after issuance; a late code fails exactly like an unknown one.
@@ -438,8 +436,7 @@ public class AccountInvitationService {
       public String toString() {
         return "AcceptInvitationCommandBuilder[code=REDACTED, displayName=%s,"
                 .formatted(displayName)
-            + " password=REDACTED, deviceName=%s, ipAddress=%s]"
-                .formatted(deviceName, ipAddress);
+            + " password=REDACTED, deviceName=%s, ipAddress=%s]".formatted(deviceName, ipAddress);
       }
     }
   }

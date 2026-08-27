@@ -215,8 +215,7 @@ class PasswordResetServiceTest {
     redeem(service, code, newPassword);
   }
 
-  private static void redeem(
-      PasswordResetService target, String code, String newPassword) {
+  private static void redeem(PasswordResetService target, String code, String newPassword) {
     target.redeem(
         RedeemPasswordResetCommand.builder()
             .code(code)
