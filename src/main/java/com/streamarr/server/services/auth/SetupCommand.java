@@ -2,7 +2,7 @@ package com.streamarr.server.services.auth;
 
 import lombok.Builder;
 
-@Builder
+@Builder(toBuilder = true)
 public record SetupCommand(
     String email, String displayName, String password, String householdName, String profileName) {
 
