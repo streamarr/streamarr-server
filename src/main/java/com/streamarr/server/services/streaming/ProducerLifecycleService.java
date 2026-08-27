@@ -125,6 +125,7 @@ public class ProducerLifecycleService {
 
       session.setVariantHandle(entry.getKey(), handle.withStatus(TranscodeStatus.SUSPENDED));
     }
+
     runtimeRegistry.save(session);
   }
 
@@ -172,13 +173,15 @@ public class ProducerLifecycleService {
       return new ReplaceResult.Superseded();
     }
 
-    if (transcodeExecutor.isRunning(command.sessionId(), command.variantLabel())) {
+    var producerRunning = transcodeExecutor.isRunning(command.sessionId(), command.variantLabel());
+    if (producerRunning && command.reason() != ReplacementReason.STALLED) {
       // Only a stall observation licenses stopping a live producer; a caller claiming death
       // against a producer that is running holds a stale view (e.g. another waiter's healthy
       // replacement) and must re-observe instead.
-      if (command.reason() != ReplacementReason.STALLED) {
-        return new ReplaceResult.Superseded();
-      }
+      return new ReplaceResult.Superseded();
+    }
+
+    if (producerRunning) {
       transcodeExecutor.stopVariant(command.sessionId(), command.variantLabel());
     }
 

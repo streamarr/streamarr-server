@@ -1,9 +1,11 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -34,6 +36,7 @@ public class AdministrationQueryService {
   private final UserAccountRepository userAccountRepository;
   private final PaginationService paginationService;
   private final ProfileRepository profileRepository;
+  private final AccountInvitationRepository accountInvitationRepository;
 
   public Optional<Household> householdAdministration(
       AuthenticatedIdentity identity, UUID householdId) {
@@ -55,24 +58,36 @@ public class AdministrationQueryService {
     };
   }
 
-  public Optional<ProfileAdministrationView> profileAdministration(
+  public Optional<ProfileAdministrationDetails> profileAdministration(
       AuthenticatedIdentity identity, UUID profileId) {
     return switch (authorizationService.decide(
         identity, new Intent.ViewProfileAdministration(profileId))) {
       case Decision.Allowed<?> _ ->
-          profileRepository.findById(profileId).map(this::profileAdministrationView);
+          profileRepository.findById(profileId).map(this::profileAdministrationDetails);
       case Decision.Denied<?> _ -> Optional.empty();
       case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
     };
   }
 
-  /** The view carries the live Account linkage the entity alone cannot answer. */
-  public ProfileAdministrationView profileAdministrationView(Profile profile) {
+  /** The details carry the live Account linkage the entity alone cannot answer. */
+  public ProfileAdministrationDetails profileAdministrationDetails(Profile profile) {
     var linked = userAccountRepository.findByPersonalProfileId(profile.getId()).isPresent();
-    return new ProfileAdministrationView(profile, linked);
+    return new ProfileAdministrationDetails(profile, linked);
   }
 
-  public record ProfileAdministrationView(Profile profile, boolean linked) {}
+  public record ProfileAdministrationDetails(Profile profile, boolean linked) {}
+
+  /** Every invitation, newest first — ServerAdmin's inspection surface. */
+  public MediaPage<AccountInvitation> accountInvitations(
+      AuthenticatedIdentity identity, MediaPaginationOptions options) {
+    authorizationService.requireAllowed(identity, new Intent.ViewAccountInvitations());
+    var items =
+        accountInvitationRepository.findAdministrationPage(options).stream()
+            .map(invitation -> new PageItem<>(invitation, invitation.getCreatedOn()))
+            .toList();
+    return paginationService.buildMediaPage(
+        items, options.getPaginationOptions(), options.getCursorId());
+  }
 
   /** A bounded page of Households on the server, in stable name-then-id order. */
   public MediaPage<Household> households(

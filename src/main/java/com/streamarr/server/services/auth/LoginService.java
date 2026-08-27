@@ -24,11 +24,12 @@ public class LoginService {
   // across the Argon2 work (the documented Hikari-exhaustion pattern). LoginCompletionService owns
   // the short transaction that begins only after all password work has finished.
   public LoginResult login(LoginCommand command) {
+    var email = lookupEmail(command.email());
     // Reserve the slot before any password work — recording failures after hashing is a
     // check-then-act race that lets a concurrent burst overrun the budget.
-    throttle.registerAttempt(command.email(), command.source());
+    throttle.registerAttempt(email, command.source());
 
-    var account = userAccountRepository.findByEmailIgnoreCase(command.email()).orElse(null);
+    var account = userAccountRepository.findByEmailIgnoreCase(email).orElse(null);
     if (account == null) {
       timingEqualizer.burn(command.password());
       throw new InvalidCredentialsException();
@@ -47,8 +48,19 @@ public class LoginService {
                 .deviceName(command.deviceName())
                 .build());
 
-    throttle.reset(command.email(), command.source());
+    throttle.reset(email, command.source());
     return result;
+  }
+
+  /**
+   * A blank or malformed address is looked up as typed so it fails exactly like an unknown one:
+   * throttled, burned, InvalidCredentials — never a distinguishable early rejection.
+   */
+  private static String lookupEmail(String typed) {
+    return switch (EmailAddressValidator.validate(typed)) {
+      case EmailAddressValidator.Valid(var address) -> address;
+      case EmailAddressValidator.Blank _, EmailAddressValidator.Malformed _ -> typed;
+    };
   }
 
   private boolean credentialsValid(UserAccount account, String password) {

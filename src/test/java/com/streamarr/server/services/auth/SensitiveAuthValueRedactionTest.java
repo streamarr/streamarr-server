@@ -97,8 +97,8 @@ class SensitiveAuthValueRedactionTest {
                 .deviceName("Apple TV")
                 .status("PENDING")
                 .build(),
-            DeviceAuthorizationView.builder().userCode(SECRET_MARKER).deviceName("Apple TV"),
-            DeviceAuthorizationView.builder()
+            DeviceAuthorizationDetails.builder().userCode(SECRET_MARKER).deviceName("Apple TV"),
+            DeviceAuthorizationDetails.builder()
                 .userCode(SECRET_MARKER)
                 .deviceName("Apple TV")
                 .status(DeviceAuthorizationStatus.PENDING)

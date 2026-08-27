@@ -126,44 +126,58 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
   }
 
   private Optional<Result> getSeasonNumberFromPathSubstring(String path) {
-    var numericStart = -1;
-    var length = 0;
-
-    var hasOpenParenthesis = false;
-    var isSeasonFolder = true;
-
-    for (var i = 0; i < path.length(); i++) {
-      var ch = path.charAt(i);
-
-      if (Character.isDigit(ch) && !hasOpenParenthesis) {
-        if (numericStart == -1) numericStart = i;
-        length++;
-      } else if (numericStart != -1) {
-        isSeasonFolder = false;
-        break;
-      }
-
-      if (ch == '(') hasOpenParenthesis = true;
-      else if (ch == ')') hasOpenParenthesis = false;
-    }
+    var numericStart = indexOfFirstDigitOutsideParentheses(path);
 
     if (numericStart == -1) {
       return Optional.of(
           Result.builder().seasonNumber(OptionalInt.empty()).isSeasonFolder(false).build());
     }
 
+    var numericEnd = endOfDigitRun(path, numericStart);
     var optionalSeasonNumber =
-        tryStringToOptionalIntConversion(path.substring(numericStart, length + numericStart));
+        tryStringToOptionalIntConversion(path.substring(numericStart, numericEnd));
 
     if (optionalSeasonNumber.isPresent()) {
       return Optional.of(
           Result.builder()
               .seasonNumber(optionalSeasonNumber)
-              .isSeasonFolder(isSeasonFolder)
+              .isSeasonFolder(numericEnd == path.length())
               .build());
     }
 
     return Optional.empty();
+  }
+
+  private static int indexOfFirstDigitOutsideParentheses(String path) {
+    var parenthesisDepth = 0;
+
+    for (var i = 0; i < path.length(); i++) {
+      var ch = path.charAt(i);
+
+      if (ch == '(') {
+        parenthesisDepth++;
+      }
+
+      if (ch == ')') {
+        parenthesisDepth = Math.max(0, parenthesisDepth - 1);
+      }
+
+      if (Character.isDigit(ch) && parenthesisDepth == 0) {
+        return i;
+      }
+    }
+
+    return -1;
+  }
+
+  private static int endOfDigitRun(String path, int start) {
+    var end = start;
+
+    while (end < path.length() && Character.isDigit(path.charAt(end))) {
+      end++;
+    }
+
+    return end;
   }
 
   private Optional<Result> evaluatePathUsingParts(String[] parts) {

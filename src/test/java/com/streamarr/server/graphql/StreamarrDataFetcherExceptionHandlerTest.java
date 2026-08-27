@@ -9,6 +9,7 @@ import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
@@ -28,6 +29,7 @@ import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.security.access.AccessDeniedException;
 
 @Tag("UnitTest")
@@ -143,6 +145,11 @@ class StreamarrDataFetcherExceptionHandlerTest {
     assertThat(errorTypeFor(new TooManyCredentialAttemptsException())).isEqualTo("UNAVAILABLE");
     assertThat(codeFor(new TooManyCredentialAttemptsException()))
         .isEqualTo("TOO_MANY_CREDENTIAL_ATTEMPTS");
+    var busy = new ResourceBusyException(new CannotAcquireLockException("lock timeout"));
+    assertThat(errorTypeFor(busy)).isEqualTo("UNAVAILABLE");
+    assertThat(codeFor(busy)).isEqualTo("RESOURCE_BUSY");
+    assertThat(errorFor(busy).getMessage())
+        .isEqualTo("Another change is in progress; try again shortly.");
   }
 
   @Test

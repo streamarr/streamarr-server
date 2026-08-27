@@ -125,7 +125,18 @@ enum Action {
       ResourceKind.PROFILE,
       FreshReauthentication.REQUIRED,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.PROFILE_DELETION);
+      FactRequirement.PROFILE_DELETION),
+  ISSUE_ACCOUNT_INVITATION(
+      "issueAccountInvitation", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  CANCEL_ACCOUNT_INVITATION(
+      "cancelAccountInvitation", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_ACCOUNT_INVITATIONS(
+      "viewAccountInvitations", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  ISSUE_PASSWORD_RESET(
+      "issuePasswordReset",
+      ResourceKind.ACCOUNT,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 

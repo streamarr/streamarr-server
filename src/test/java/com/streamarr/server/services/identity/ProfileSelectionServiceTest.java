@@ -20,6 +20,7 @@ import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fakes.PlainPasswordEncoder;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -46,7 +47,7 @@ class ProfileSelectionServiceTest {
   private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
-  private final PasswordEncoder encoder = new PlainEncoder();
+  private final PasswordEncoder encoder = new PlainPasswordEncoder();
   private final CredentialGuessThrottle throttle =
       new CredentialGuessThrottle(
           AuthThrottleProperties.builder().maxAttempts(2).window(Duration.ofMinutes(15)).build(),
@@ -238,17 +239,5 @@ class ProfileSelectionServiceTest {
         .householdRole(account.getHouseholdRole())
         .contextHouseholdId(account.getHouseholdId())
         .build();
-  }
-
-  private static final class PlainEncoder implements PasswordEncoder {
-    @Override
-    public String encode(CharSequence rawPassword) {
-      return "pin:" + rawPassword;
-    }
-
-    @Override
-    public boolean matches(CharSequence rawPassword, String encodedPassword) {
-      return encode(rawPassword).equals(encodedPassword);
-    }
   }
 }

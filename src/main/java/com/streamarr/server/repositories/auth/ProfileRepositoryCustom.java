@@ -12,6 +12,8 @@ public interface ProfileRepositoryCustom {
   /** Profiles actively shared into the Household, ordered by name then id for stable paging. */
   List<Profile> findAvailableInHousehold(UUID householdId);
 
+  boolean existsAvailableInHouseholdWithNameIgnoreCase(UUID householdId, String name);
+
   /**
    * The Profile's current policy read under a row-level write lock (SELECT … FOR UPDATE), as
    * scalars: the transition classification must see the state the transaction will change, and a

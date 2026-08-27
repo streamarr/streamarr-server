@@ -4,7 +4,9 @@ import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
+import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -36,6 +38,8 @@ public class AccountAdministrationService {
   private final UserAccountRepository userAccountRepository;
   private final AuthSessionRepository authSessionRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
+  private final AccountInvitationRepository accountInvitationRepository;
+  private final PasswordResetCodeRepository passwordResetCodeRepository;
   private final MutationTransactions mutationTransactions;
   private final Clock clock;
 
@@ -73,6 +77,8 @@ public class AccountAdministrationService {
             .operation("revokeServerAdmin")
             .reason(reason)
             .transition(() -> userAccountRepository.tryRevokeServerAdmin(accountId))
+            .afterTransition(
+                () -> invalidateIssuedCredentials(accountId, "issuer lost ServerAdmin"))
             .notFound(AdministrationRejections.AccountNotFound::new)
             .reauthenticationRequired(AdministrationRejections.ReauthenticationRequired::new)
             .constraint(CHK_ENABLED_SERVER_ADMIN, AdministrationRejections.LastServerAdmin::new)
@@ -117,9 +123,11 @@ public class AccountAdministrationService {
             .operation("disableAccount")
             .transition(() -> userAccountRepository.tryDisable(accountId))
             .afterTransition(
-                () ->
-                    authSessionRepository.revokeAllForAccount(
-                        accountId, SessionRevocationReason.ADMIN_REVOCATION, clock.instant()))
+                () -> {
+                  authSessionRepository.revokeAllForAccount(
+                      accountId, SessionRevocationReason.ADMIN_REVOCATION, clock.instant());
+                  invalidateIssuedCredentials(accountId, "issuer disabled");
+                })
             .notFound(AdministrationRejections.AccountNotFound::new)
             .constraint(CHK_ENABLED_SERVER_ADMIN, AdministrationRejections.LastServerAdmin::new)
             .build());
@@ -183,16 +191,22 @@ public class AccountAdministrationService {
       return Outcome.rejected(plan.notFound().get());
     }
 
+    var targetAccount = target.orElseThrow();
     if (plan.transition().getAsBoolean()) {
-      plan.runAfterTransition();
-      if (plan.isAudited()) {
-        securityAuditEventRepository.append(auditEntry(identity, plan, target.get()));
-      }
-
-      userAccountRepository.refresh(target.get());
+      applySuccessfulTransition(identity, plan, targetAccount);
     }
 
-    return Outcome.accepted(target.get());
+    return Outcome.accepted(targetAccount);
+  }
+
+  private <R> void applySuccessfulTransition(
+      AuthenticatedIdentity identity, TransitionPlan<R> plan, UserAccount target) {
+    plan.runAfterTransition();
+    if (plan.isAudited()) {
+      securityAuditEventRepository.append(auditEntry(identity, plan, target));
+    }
+
+    userAccountRepository.refresh(target);
   }
 
   /** Converts policy denial to forbidden only when the Account is visible; otherwise not-found. */
@@ -218,13 +232,20 @@ public class AccountAdministrationService {
     };
   }
 
+  /**
+   * A disabled or demoted issuer leaves no unexpired codes behind that could take effect later; a
+   * deleted issuer is handled by the V058 triggers in the same statement as the SET NULL.
+   */
+  private void invalidateIssuedCredentials(UUID issuerAccountId, String reason) {
+    var now = clock.instant();
+    accountInvitationRepository.invalidatePendingInvitationsIssuedBy(issuerAccountId, reason, now);
+    passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
+        issuerAccountId, reason, now);
+  }
+
   private boolean mayViewAccount(AuthenticatedIdentity identity, UUID accountId) {
-    return switch (authorizationService.decide(
-        identity, new Intent.ViewAccountAdministration(accountId))) {
-      case Decision.Allowed<?> _ -> true;
-      case Decision.Denied<?> _ -> false;
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
-    };
+    return authorizationService.isAllowed(
+        identity, new Intent.ViewAccountAdministration(accountId));
   }
 
   private SecurityAuditEntry auditEntry(

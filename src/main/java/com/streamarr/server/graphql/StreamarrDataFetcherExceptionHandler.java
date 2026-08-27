@@ -9,6 +9,7 @@ import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.exceptions.RetryAfterAware;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
@@ -178,6 +179,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
           new Classification(ErrorType.UNAVAILABLE, "AUTHORIZATION_UNAVAILABLE");
       case TooManyCredentialAttemptsException _ ->
           new Classification(ErrorType.UNAVAILABLE, "TOO_MANY_CREDENTIAL_ATTEMPTS");
+      case ResourceBusyException _ -> new Classification(ErrorType.UNAVAILABLE, "RESOURCE_BUSY");
       case RetryAfterAware _ -> new Classification(ErrorType.UNAVAILABLE, "TOO_MANY_ATTEMPTS");
       case SessionNotFoundException _ ->
           new Classification(ErrorType.NOT_FOUND, "SESSION_NOT_FOUND");

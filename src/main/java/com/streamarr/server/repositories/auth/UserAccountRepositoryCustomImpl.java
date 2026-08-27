@@ -1,5 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.jooq.generated.tables.HouseholdGuard.HOUSEHOLD_GUARD;
+import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 import static org.jooq.impl.DSL.lower;
@@ -10,6 +12,7 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
+import com.streamarr.server.domain.auth.ProfileManagerEligibility;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
@@ -19,6 +22,7 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,7 +41,11 @@ import org.jooq.SortOrder;
 import org.jooq.TableField;
 import org.jooq.impl.DSL;
 import org.springframework.data.domain.AuditorAware;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+// checkstyle:fullyQualifiedName suppressed for the class: the domain and generated jOOQ role
+// enums share a simple name, an unavoidable collision.
+@SuppressWarnings("checkstyle:fullyQualifiedName")
 @RequiredArgsConstructor
 public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCustom {
 
@@ -156,6 +164,25 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   }
 
   @Override
+  public Set<UUID> lockByIds(Set<UUID> accountIds, Duration timeout) {
+    requireActiveTransaction();
+    dsl.setLocal(DSL.name("lock_timeout"), DSL.inline(timeout.toMillis() + "ms")).execute();
+    return dsl.select(USER_ACCOUNT.ID)
+        .from(USER_ACCOUNT)
+        .where(USER_ACCOUNT.ID.in(accountIds))
+        .orderBy(USER_ACCOUNT.ID)
+        .forUpdate()
+        .fetchSet(USER_ACCOUNT.ID);
+  }
+
+  /** Outside a transaction, SET LOCAL only warns and the timeout would silently not apply. */
+  private static void requireActiveTransaction() {
+    if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+      throw new IllegalStateException("Account row locks require an active transaction.");
+    }
+  }
+
+  @Override
   public boolean tryGrantServerAdmin(UUID accountId) {
     return transition(
         accountId, USER_ACCOUNT.SERVER_ADMIN, true, USER_ACCOUNT.SERVER_ADMIN.isFalse());
@@ -200,6 +227,11 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     return transition(accountId, USER_ACCOUNT.DISPLAY_NAME, displayName, DSL.trueCondition());
   }
 
+  @Override
+  public boolean trySetPasswordHash(UUID accountId, String passwordHash) {
+    return transition(accountId, USER_ACCOUNT.PASSWORD_HASH, passwordHash, DSL.trueCondition());
+  }
+
   private <V> boolean transition(
       UUID accountId, TableField<UserAccountRecord, V> field, V value, Condition transitionable) {
     return dsl.update(USER_ACCOUNT)
@@ -214,13 +246,73 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
 
   @Override
   public boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash) {
+    return lockWhere(
+        USER_ACCOUNT
+            .ID
+            .eq(accountId)
+            .and(USER_ACCOUNT.PASSWORD_HASH.eq(expectedPasswordHash))
+            .and(USER_ACCOUNT.ENABLED.isTrue()));
+  }
+
+  @Override
+  public boolean tryLockEnabledServerAdmin(UUID accountId) {
+    return lockWhere(
+        USER_ACCOUNT
+            .ID
+            .eq(accountId)
+            .and(USER_ACCOUNT.ENABLED.isTrue())
+            .and(USER_ACCOUNT.SERVER_ADMIN.isTrue()));
+  }
+
+  /** One row lock, taken only while the condition still holds; false means nothing was locked. */
+  private boolean lockWhere(Condition condition) {
     return dsl.select(USER_ACCOUNT.ID)
         .from(USER_ACCOUNT)
-        .where(USER_ACCOUNT.ID.eq(accountId))
-        .and(USER_ACCOUNT.PASSWORD_HASH.eq(expectedPasswordHash))
-        .and(USER_ACCOUNT.ENABLED.isTrue())
+        .where(condition)
         .forUpdate()
         .fetchOptional()
         .isPresent();
+  }
+
+  @Override
+  public Optional<com.streamarr.server.domain.auth.HouseholdRole> roleForNewAccount(
+      UUID householdId, com.streamarr.server.domain.auth.HouseholdRole requestedRole) {
+    var locked =
+        dsl.select(HOUSEHOLD_GUARD.HOUSEHOLD_ID)
+            .from(HOUSEHOLD_GUARD)
+            .where(HOUSEHOLD_GUARD.HOUSEHOLD_ID.eq(householdId))
+            .forUpdate()
+            .fetchOptional()
+            .isPresent();
+    if (!locked) {
+      return Optional.empty();
+    }
+
+    var householdHasAccount =
+        dsl.fetchExists(
+            dsl.selectOne().from(USER_ACCOUNT).where(USER_ACCOUNT.HOUSEHOLD_ID.eq(householdId)));
+    return Optional.of(
+        householdHasAccount ? requestedRole : com.streamarr.server.domain.auth.HouseholdRole.ADMIN);
+  }
+
+  @Override
+  public boolean isEligibleProfileManager(
+      UUID accountId, UUID householdId, ProfileManagerEligibility eligibility) {
+    var eligible =
+        USER_ACCOUNT
+            .ID
+            .eq(accountId)
+            .and(USER_ACCOUNT.HOUSEHOLD_ID.eq(householdId))
+            .and(PROFILE.RESTRICTED.isFalse());
+    if (eligibility == ProfileManagerEligibility.HOUSEHOLD_ADMIN) {
+      eligible = eligible.and(USER_ACCOUNT.HOUSEHOLD_ROLE.eq(HouseholdRole.ADMIN));
+    }
+
+    return dsl.fetchExists(
+        dsl.selectOne()
+            .from(USER_ACCOUNT)
+            .join(PROFILE)
+            .on(PROFILE.ID.eq(USER_ACCOUNT.PERSONAL_PROFILE_ID))
+            .where(eligible));
   }
 }

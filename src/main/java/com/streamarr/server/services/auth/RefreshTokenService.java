@@ -140,11 +140,7 @@ public class RefreshTokenService {
     // The session is not revoked (guarded above), so grace turns purely on token timing.
     if (isWithinGrace(token, now)) {
       var rawSuccessor = deriveSuccessor(rawToken, token.getId());
-      if (tokenRepository.isActiveToken(session.getId(), digestOf(rawSuccessor), now)) {
-        return new RefreshResult.GraceRetry(rawSuccessor, session);
-      }
-
-      return new RefreshResult.SupersededRetry(session);
+      return retryWithinGrace(rawSuccessor, session, now);
     }
 
     if (token.getStatus() != RefreshTokenStatus.ROTATED) {
@@ -155,6 +151,14 @@ public class RefreshTokenService {
 
     revokeSessionForReuse(session, now);
     throw new TokenReuseDetectedException();
+  }
+
+  private RefreshResult retryWithinGrace(String rawSuccessor, AuthSession session, Instant now) {
+    if (tokenRepository.isActiveToken(session.getId(), digestOf(rawSuccessor), now)) {
+      return new RefreshResult.GraceRetry(rawSuccessor, session);
+    }
+
+    return new RefreshResult.SupersededRetry(session);
   }
 
   private boolean isWithinGrace(RefreshToken token, Instant now) {

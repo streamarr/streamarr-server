@@ -2,12 +2,14 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.ProfileManagerEligibility;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -18,6 +20,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -26,14 +29,29 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     implements UserAccountRepository {
 
   private final FakeProfileHouseholdShareRepository shares;
+  private final Predicate<UUID> unrestrictedPersonalProfile;
 
   public FakeUserAccountRepository() {
-    this(new FakeProfileHouseholdShareRepository());
+    this(new FakeProfileHouseholdShareRepository(), _ -> false);
   }
 
   /** Pair with the share fake so "may use a Household" follows the Personal Profile's shares. */
   public FakeUserAccountRepository(FakeProfileHouseholdShareRepository shares) {
+    this(shares, _ -> false);
+  }
+
+  /** Pair with the Profile fake when tests exercise Profile-manager eligibility. */
+  public FakeUserAccountRepository(FakeProfileRepository profiles) {
+    this(
+        profiles.shares(),
+        profileId ->
+            profiles.findById(profileId).filter(profile -> !profile.isRestricted()).isPresent());
+  }
+
+  private FakeUserAccountRepository(
+      FakeProfileHouseholdShareRepository shares, Predicate<UUID> unrestrictedPersonalProfile) {
     this.shares = shares;
+    this.unrestrictedPersonalProfile = unrestrictedPersonalProfile;
   }
 
   @Override
@@ -149,6 +167,11 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     return transition(accountId, _ -> true, account -> account.setDisplayName(displayName));
   }
 
+  @Override
+  public boolean trySetPasswordHash(UUID accountId, String passwordHash) {
+    return transition(accountId, _ -> true, account -> account.setPasswordHash(passwordHash));
+  }
+
   private boolean transition(
       UUID accountId, Predicate<UserAccount> transitionable, Consumer<UserAccount> change) {
     var account = findById(accountId).filter(transitionable);
@@ -188,11 +211,45 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
+  public Set<UUID> lockByIds(Set<UUID> accountIds, Duration timeout) {
+    return accountIds.stream().filter(this::existsById).collect(Collectors.toUnmodifiableSet());
+  }
+
+  @Override
   public boolean lockIfCredentialsUnchanged(UUID accountId, String expectedPasswordHash) {
     return findById(accountId)
         .filter(UserAccount::isEnabled)
         .filter(account -> account.getPasswordHash().equals(expectedPasswordHash))
         .isPresent();
+  }
+
+  @Override
+  public boolean tryLockEnabledServerAdmin(UUID accountId) {
+    return findById(accountId)
+        .filter(UserAccount::isEnabled)
+        .filter(UserAccount::isServerAdmin)
+        .isPresent();
+  }
+
+  @Override
+  public Optional<HouseholdRole> roleForNewAccount(UUID householdId, HouseholdRole requestedRole) {
+    return Optional.of(
+        findByHouseholdId(householdId).isEmpty() ? HouseholdRole.ADMIN : requestedRole);
+  }
+
+  @Override
+  public boolean isEligibleProfileManager(
+      UUID accountId, UUID householdId, ProfileManagerEligibility eligibility) {
+    return findById(accountId)
+        .filter(account -> householdId.equals(account.getHouseholdId()))
+        .filter(account -> unrestrictedPersonalProfile.test(account.getPersonalProfileId()))
+        .filter(account -> holdsRoleFor(account, eligibility))
+        .isPresent();
+  }
+
+  private static boolean holdsRoleFor(UserAccount account, ProfileManagerEligibility eligibility) {
+    return eligibility == ProfileManagerEligibility.HOUSEHOLD_MEMBER
+        || account.getHouseholdRole() == HouseholdRole.ADMIN;
   }
 
   @Override

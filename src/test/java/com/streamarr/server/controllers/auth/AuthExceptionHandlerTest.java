@@ -6,13 +6,18 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.exceptions.InvalidEmailAddressException;
+import com.streamarr.server.exceptions.InvitationNotAcceptableException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.http.HttpStatus;
 
 @Tag("UnitTest")
@@ -31,6 +36,17 @@ class AuthExceptionHandlerTest {
         .isEqualTo(
             new AuthErrorResponse(
                 "SETUP_ALREADY_COMPLETED", "Server setup has already been completed."));
+  }
+
+  @Test
+  @DisplayName("Should respond 400 invalid email address when the setup email is malformed")
+  void shouldRespond400InvalidEmailAddressWhenSetupEmailIsMalformed() {
+    var response = handler.handleInvalidEmailAddress(new InvalidEmailAddressException());
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    assertThat(response.getBody())
+        .isEqualTo(
+            new AuthErrorResponse("INVALID_EMAIL_ADDRESS", "Not the shape of an email address."));
   }
 
   @Test
@@ -77,6 +93,58 @@ class AuthExceptionHandlerTest {
         .isEqualTo(
             new AuthErrorResponse(
                 "INVALID_REFRESH_TOKEN", "The refresh token is unknown or expired."));
+  }
+
+  @Test
+  @DisplayName(
+      "Should respond 409 invitation not acceptable when the Household no longer admits it")
+  void shouldRespond409InvitationNotAcceptableWhenHouseholdNoLongerAdmitsIt() {
+    var response =
+        handler.handleInvitationNotAcceptable(
+            new InvitationNotAcceptableException(
+                "The required Profile manager is no longer eligible.", new RuntimeException()));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    assertThat(response.getBody())
+        .isEqualTo(
+            new AuthErrorResponse(
+                "INVITATION_NOT_ACCEPTABLE",
+                "The required Profile manager is no longer eligible."));
+  }
+
+  @Test
+  @DisplayName("Should respond 503 resource busy when a row lock wait runs out")
+  void shouldRespond503ResourceBusyWhenRowLockWaitRunsOut() {
+    var response = handler.handleLockContention(new CannotAcquireLockException("lock timeout"));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    assertThat(response.getBody())
+        .isEqualTo(
+            new AuthErrorResponse(
+                "RESOURCE_BUSY", "Another change is in progress; try again shortly."));
+  }
+
+  @Test
+  @DisplayName("Should respond 503 resource busy when a mutation reports contention")
+  void shouldRespond503ResourceBusyWhenMutationReportsContention() {
+    var response =
+        handler.handleLockContention(
+            new ResourceBusyException(new CannotAcquireLockException("lock timeout")));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    assertThat(response.getBody().code()).isEqualTo("RESOURCE_BUSY");
+  }
+
+  @Test
+  @DisplayName("Should respond 500 internal error when persistence fails")
+  void shouldRespond500InternalErrorWhenPersistenceFails() {
+    var response =
+        handler.handlePersistenceFailure(
+            new InvalidDataAccessApiUsageException("lock outside a transaction"));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+    assertThat(response.getBody())
+        .isEqualTo(new AuthErrorResponse("INTERNAL_ERROR", "The request could not be completed."));
   }
 
   @Test

@@ -249,7 +249,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     var issued = deviceAuthorizationService.issue("Apple TV");
     gatedClock.prepareApprovalHold();
 
-    DeviceAuthorizationView winningDecision;
+    DeviceAuthorizationDetails winningDecision;
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var losingDecision =
           executor.submit(
@@ -375,7 +375,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     decide(userCode, DeviceDecision.APPROVE, approver);
   }
 
-  private DeviceAuthorizationView decide(
+  private DeviceAuthorizationDetails decide(
       String userCode, DeviceDecision decision, UserAccount approver) {
     return deviceAuthorizationService.decide(
         DeviceDecisionCommand.builder()

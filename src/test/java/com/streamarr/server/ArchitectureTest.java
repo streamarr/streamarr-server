@@ -1,7 +1,9 @@
 package com.streamarr.server;
 
 import static com.tngtech.archunit.core.domain.JavaCall.Predicates.target;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.RECORDS;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.assignableTo;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.name;
 import static com.tngtech.archunit.core.domain.properties.HasOwner.Predicates.With.owner;
 import static com.tngtech.archunit.core.domain.properties.HasParameterTypes.Predicates.rawParameterTypes;
@@ -287,6 +289,19 @@ class ArchitectureTest {
           .should()
           .bePublic()
           .as("Cedar engine types are package-private; only the image self-check is public");
+
+  // Read models are named *Details (AccountInvitationDetails, SeasonDetails): they describe the
+  // data a client shapes, not a rendered screen.
+  @ArchTest
+  static final ArchRule presentationDtosMustDescribeDetailsRatherThanViews =
+      noClasses()
+          .that(
+              resideInAPackage("..graphql.dto..").or(resideInAPackage("..services..").and(RECORDS)))
+          .should()
+          .haveSimpleNameEndingWith("View")
+          .as(
+              "Presentation DTOs and service records are read models named *Details and must not"
+                  + " use the View suffix");
 
   @ArchTest
   @DisplayName("Should avoid Path display text when media metadata is processed")

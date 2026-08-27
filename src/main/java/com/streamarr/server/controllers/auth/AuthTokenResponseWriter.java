@@ -1,0 +1,76 @@
+package com.streamarr.server.controllers.auth;
+
+import com.streamarr.server.services.auth.AccessToken;
+import lombok.Builder;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Component;
+
+@Component
+@RequiredArgsConstructor
+public class AuthTokenResponseWriter {
+
+  private final AuthCookieWriter cookieWriter;
+
+  public ResponseEntity<AuthTokensResponse> withRefreshToken(RefreshResponse response) {
+    var body = bodyOf(response.accessToken());
+    if (!response.cookieMode()) {
+      return ResponseEntity.status(response.status())
+          .body(
+              body.accessToken(response.accessToken().value())
+                  .refreshToken(response.rawRefreshToken())
+                  .build());
+    }
+
+    return ResponseEntity.status(response.status())
+        .header(
+            HttpHeaders.SET_COOKIE,
+            cookieWriter.accessCookie(response.accessToken().value()).toString())
+        .header(
+            HttpHeaders.SET_COOKIE,
+            cookieWriter.refreshCookie(response.rawRefreshToken()).toString())
+        .body(body.build());
+  }
+
+  /** Writes only the access credential, for scope changes or a superseded refresh replay. */
+  public ResponseEntity<AuthTokensResponse> accessOnly(
+      AccessToken accessToken, boolean cookieMode) {
+    var body = bodyOf(accessToken);
+    if (!cookieMode) {
+      return ResponseEntity.ok(body.accessToken(accessToken.value()).build());
+    }
+
+    return ResponseEntity.ok()
+        .header(HttpHeaders.SET_COOKIE, cookieWriter.accessCookie(accessToken.value()).toString())
+        .body(body.build());
+  }
+
+  private static AuthTokensResponse.AuthTokensResponseBuilder bodyOf(AccessToken accessToken) {
+    return AuthTokensResponse.builder()
+        .accessTokenExpiresAt(accessToken.expiresAt())
+        .scope(accessToken.scope().claimValue());
+  }
+
+  /** Carries the raw refresh token to the writer once; neither string form renders it. */
+  @Builder
+  public record RefreshResponse(
+      HttpStatus status, AccessToken accessToken, String rawRefreshToken, boolean cookieMode) {
+
+    public static class RefreshResponseBuilder {
+
+      @Override
+      public String toString() {
+        return "RefreshResponseBuilder[status=%s, rawRefreshToken=REDACTED, cookieMode=%s]"
+            .formatted(status, cookieMode);
+      }
+    }
+
+    @Override
+    public String toString() {
+      return "RefreshResponse[status=%s, accessToken=%s, rawRefreshToken=REDACTED, cookieMode=%s]"
+          .formatted(status, accessToken, cookieMode);
+    }
+  }
+}

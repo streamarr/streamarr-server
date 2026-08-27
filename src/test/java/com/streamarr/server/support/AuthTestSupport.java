@@ -192,6 +192,16 @@ public class AuthTestSupport {
         .value();
   }
 
+  /** The identity a request bearing {@link #accountBearer} resolves to at the service boundary. */
+  public AuthenticatedIdentity identityOf(TestIdentity identity) {
+    return AuthenticatedIdentity.fromJwt(jwtDecoder.decode(accountBearer(identity)));
+  }
+
+  /** Like {@link #identityOf}, but recently reauthenticated. */
+  public AuthenticatedIdentity freshIdentityOf(TestIdentity identity) {
+    return AuthenticatedIdentity.fromJwt(jwtDecoder.decode(freshAccountBearer(identity)));
+  }
+
   public String profileBearer(TestIdentity identity) {
     return accessTokenIssuer.issue(contextBuilder(identity).build()).value();
   }

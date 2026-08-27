@@ -46,6 +46,12 @@ type LibraryPathAlreadyRegisteredError implements InputMutationError & MutationE
     inputPath: [String!]!
 }
 
+"Not the shape of an email address."
+type EmailInvalidError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 type AccountNotFoundError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
@@ -118,7 +124,10 @@ type ProfileRequiresEligibleManagerError implements MutationError {
     message: String!
 }
 
-"The Account cannot manage Profiles because its Personal Profile is restricted."
+"""
+The Account cannot manage the Profile: missing, outside the Household, its own Personal Profile
+restricted, or not the Household role a restricted Profile requires.
+"""
 type ProfileManagerNotEligibleError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
@@ -138,4 +147,37 @@ type ProfilePinRequiredError implements MutationError {
 "Deletion needs an unlinked, unshared Profile and the caller as its sole remaining manager."
 type ProfileNotDeletableError implements MutationError {
     message: String!
+}
+
+type EmailRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"An existing email cannot be invited or reassigned; transfer the Account instead."
+type EmailAlreadyUsedError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The first Account of an empty Household becomes HouseholdAdmin; it cannot be restricted."
+type RestrictedFirstAccountError implements MutationError {
+    message: String!
+}
+
+"A restricted Account holds no authority, so it cannot be invited as HouseholdAdmin."
+type RestrictedHouseholdAdminError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"A restricted Profile needs a HouseholdAdmin with an unrestricted Personal Profile as its manager."
+type EligibleProfileManagerRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type InvitationNotPendingError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
 }

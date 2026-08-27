@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.GatedClock;
@@ -16,9 +19,12 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Credential Guess Throttle Tests")
@@ -28,6 +34,18 @@ class CredentialGuessThrottleTest {
   private final AuthThrottleProperties properties =
       AuthThrottleProperties.builder().maxAttempts(2).window(Duration.ofMinutes(15)).build();
   private final CredentialGuessThrottle throttle = new CredentialGuessThrottle(properties, clock);
+  private final ListAppender<ILoggingEvent> warnings = new ListAppender<>();
+
+  @BeforeEach
+  void captureWarnings() {
+    warnings.start();
+    throttleLogger().addAppender(warnings);
+  }
+
+  @AfterEach
+  void releaseWarnings() {
+    throttleLogger().detachAppender(warnings);
+  }
 
   @Test
   @DisplayName("Should throttle Account password guesses when the budget is exhausted")
@@ -139,6 +157,100 @@ class CredentialGuessThrottleTest {
         .doesNotThrowAnyException();
     assertThatThrownBy(() -> throttle.registerAccountPasswordAttempt(accountId))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should keep opaque-code budgets independent when public identifiers differ")
+  void shouldKeepOpaqueCodeBudgetsIndependentWhenPublicIdentifiersDiffer() {
+    throttle.registerCodeGuess("first-public-id");
+    throttle.registerCodeGuess("first-public-id");
+
+    assertThatCode(() -> throttle.registerCodeGuess("second-public-id")).doesNotThrowAnyException();
+    assertThatThrownBy(() -> throttle.registerCodeGuess("first-public-id"))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should reset only the matching opaque-code budget when a code verifies")
+  void shouldResetOnlyMatchingOpaqueCodeBudgetWhenCodeVerifies() {
+    throttle.registerCodeGuess("successful-public-id");
+    throttle.registerCodeGuess("successful-public-id");
+    throttle.registerCodeGuess("blocked-public-id");
+    throttle.registerCodeGuess("blocked-public-id");
+
+    throttle.resetCodeGuesses("successful-public-id");
+
+    assertThatCode(() -> throttle.registerCodeGuess("successful-public-id"))
+        .doesNotThrowAnyException();
+    assertThatThrownBy(() -> throttle.registerCodeGuess("blocked-public-id"))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should bound opaque-code budgets when public identifiers are sprayed")
+  void shouldBoundOpaqueCodeBudgetsWhenPublicIdentifiersAreSprayed() {
+    var boundedThrottle =
+        new CredentialGuessThrottle(
+            AuthThrottleProperties.builder()
+                .maxAttempts(2)
+                .window(Duration.ofMinutes(15))
+                .maxOpaqueCodeBudgets(2)
+                .build(),
+            clock);
+    boundedThrottle.registerCodeGuess("first-public-id");
+    boundedThrottle.registerCodeGuess("second-public-id");
+
+    assertThatThrownBy(() -> boundedThrottle.registerCodeGuess("one-too-many"))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+
+    boundedThrottle.resetCodeGuesses("first-public-id");
+
+    assertThatCode(() -> boundedThrottle.registerCodeGuess("replacement-public-id"))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("Should name the public id when an opaque-code budget is exhausted")
+  void shouldNamePublicIdWhenOpaqueCodeBudgetIsExhausted() {
+    throttle.registerCodeGuess("guessed-public-id");
+    throttle.registerCodeGuess("guessed-public-id");
+
+    assertThatThrownBy(() -> throttle.registerCodeGuess("guessed-public-id"))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+
+    assertThat(warnings.list)
+        .singleElement()
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .asString()
+        .contains("guessed-public-id", "budget exhausted");
+  }
+
+  @Test
+  @DisplayName("Should report capacity, not the key, when every opaque-code slot is held")
+  void shouldReportCapacityNotKeyWhenEveryOpaqueCodeSlotIsHeld() {
+    var boundedThrottle =
+        new CredentialGuessThrottle(
+            AuthThrottleProperties.builder()
+                .maxAttempts(2)
+                .window(Duration.ofMinutes(15))
+                .maxOpaqueCodeBudgets(1)
+                .build(),
+            clock);
+    boundedThrottle.registerCodeGuess("slot-holder");
+
+    assertThatThrownBy(() -> boundedThrottle.registerCodeGuess("refused-public-id"))
+        .isInstanceOf(TooManyCredentialAttemptsException.class);
+
+    assertThat(warnings.list)
+        .singleElement()
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .asString()
+        .contains("at capacity", "1")
+        .doesNotContain("budget exhausted", "refused-public-id");
+  }
+
+  private static Logger throttleLogger() {
+    return (Logger) LoggerFactory.getLogger(CredentialGuessThrottle.class);
   }
 
   @Test

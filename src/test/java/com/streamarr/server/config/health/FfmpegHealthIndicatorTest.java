@@ -69,6 +69,7 @@ class FfmpegHealthIndicatorTest {
               if (String.join(" ", command).contains("muxer=hls")) {
                 return new FakeTestProcess("Muxer hls [Apple HTTP Live Streaming]:", 0);
               }
+
               return new FakeTestProcess("ffmpeg version 4.4.2", 0);
             });
     service.detectCapabilities();
@@ -124,23 +125,32 @@ class FfmpegHealthIndicatorTest {
                 if (commandLine.contains("-version")) {
                   return new FakeTestProcess("ffmpeg version 7.0", ffmpegAvailable ? 0 : 1);
                 }
+
                 if (commandLine.contains("muxer=hls")) {
                   return new FakeTestProcess("-hls_segment_options <dictionary>", 0);
                 }
+
                 if (commandLine.contains("-hwaccels")) {
-                  var output = "Hardware acceleration methods:\n";
-                  if (!encoders.isEmpty()) {
-                    output += accelerator + "\n";
-                  }
-                  return new FakeTestProcess(output, 0);
+                  return new FakeTestProcess(hardwareAccelerationOutput(), 0);
                 }
+
                 if (commandLine.contains("-encoders")) {
                   return new FakeTestProcess(encoderOutput.toString(), 0);
                 }
+
                 return new FakeTestProcess("", 1);
               });
       service.detectCapabilities();
       return service;
+    }
+
+    private String hardwareAccelerationOutput() {
+      var output = "Hardware acceleration methods:\n";
+      if (!encoders.isEmpty()) {
+        output += accelerator + "\n";
+      }
+
+      return output;
     }
   }
 

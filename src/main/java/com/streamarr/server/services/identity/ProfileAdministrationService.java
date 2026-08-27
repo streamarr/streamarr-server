@@ -133,7 +133,8 @@ public class ProfileAdministrationService {
     var localManager =
         userAccountRepository
             .findById(command.localManagerAccountId())
-            .orElseThrow(() -> new MutationRejection(new ProfileRejections.LocalManagerNotFound()));
+            .orElseThrow(
+                () -> new MutationRejection(new ProfileRejections.ProfileManagerNotEligible()));
     if (!isEligibleLocalManager(localManager, command.householdId())) {
       throw new MutationRejection(new ProfileRejections.ManagerNotEligible());
     }

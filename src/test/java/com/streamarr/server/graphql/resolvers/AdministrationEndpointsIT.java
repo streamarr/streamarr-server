@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
+import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -26,7 +27,6 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -40,7 +40,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -857,6 +856,36 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should use the default page size when only a before Household cursor is given")
+  void shouldUseDefaultPageSizeWhenOnlyBeforeHouseholdCursorIsGiven() throws Exception {
+    var response =
+        graphql(
+                authTestSupport.accountBearer(serverAdmin),
+                """
+                query { households(first: 2) { edges { node { id } } pageInfo { endCursor } } }
+                """)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var households = objectMapper.readTree(response).path("data").path("households");
+    var expectedId = households.path("edges").path(0).path("node").path("id").asString();
+    var before = households.path("pageInfo").path("endCursor").asString();
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            query { households(before: "%s") { edges { node { id } } } }
+            """
+                .formatted(before))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.households.edges.length()").value(1))
+        .andExpect(jsonPath("$.data.households.edges[0].node.id").value(expectedId));
+  }
+
+  @Test
   @DisplayName("Should show owned and hide foreign Households when the caller is HouseholdAdmin")
   void shouldShowOwnedAndHideForeignHouseholdWhenCallerIsHouseholdAdmin() throws Exception {
     graphql(
@@ -913,11 +942,7 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   private ResultActions graphql(String bearer, String query) throws Exception {
-    return mockMvc.perform(
-        post("/graphql")
-            .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
-            .content(objectMapper.writeValueAsString(Map.of("query", query))));
+    return mockMvc.perform(graphqlRequest(bearer, query));
   }
 
   static Stream<Arguments> malformedAdministrationIds() {

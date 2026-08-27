@@ -36,19 +36,25 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
     var extractedMetadata = extractTitleAndYear(filename);
 
     if (extractedMetadata.isPresent()) {
-      var metadata = extractedMetadata.orElseThrow();
-
-      if (StringUtils.isBlank(metadata.rawTitle())) {
-        return Optional.empty();
-      }
-
-      return Optional.of(
-          VideoFileParserResult.builder()
-              .title(cleanTitle(metadata.rawTitle()))
-              .year(cleanYear(metadata.year()))
-              .build());
+      return resultFromTitleAndYear(extractedMetadata.orElseThrow());
     }
 
+    return resultFromFilenameAsTitle(filename);
+  }
+
+  private Optional<VideoFileParserResult> resultFromTitleAndYear(ExtractedMetadata metadata) {
+    if (StringUtils.isBlank(metadata.rawTitle())) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        VideoFileParserResult.builder()
+            .title(cleanTitle(metadata.rawTitle()))
+            .year(cleanYear(metadata.year()))
+            .build());
+  }
+
+  private Optional<VideoFileParserResult> resultFromFilenameAsTitle(String filename) {
     var cleanedInput = cleanTitle(filename);
 
     if (StringUtils.isBlank(cleanedInput)) {

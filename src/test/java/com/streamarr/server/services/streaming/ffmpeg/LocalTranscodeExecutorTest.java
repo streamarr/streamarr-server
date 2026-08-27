@@ -221,6 +221,7 @@ class LocalTranscodeExecutorTest {
               if (String.join(" ", command).contains("muxer=hls")) {
                 return new FakeProcess("Muxer hls [Apple HTTP Live Streaming]:", 0);
               }
+
               return new FakeProcess("ffmpeg version 4.4.2", 0);
             });
     capabilityService.detectCapabilities();
@@ -289,46 +290,50 @@ class LocalTranscodeExecutorTest {
     var service =
         new TranscodeCapabilityService(
             "ffmpeg", command -> new FakeProcess("ffmpeg version 7.0", available ? 0 : 1));
-    if (available) {
-      // Inject capability state via reflection-free approach: detect then override
-      // We use a factory that returns the right result
-      var outputs =
-          Map.of(
-              "ffmpeg", (Process) new FakeProcess("ffmpeg version 7.0", 0),
-              "hls", (Process) new FakeProcess("-hls_segment_options <dictionary>", 0),
-              "hwaccels",
-                  (Process)
-                      new FakeProcess(
-                          hwCapability.available()
-                              ? "Hardware acceleration methods:\ncuda\n"
-                              : "Hardware acceleration methods:\n",
-                          0),
-              "encoders",
-                  (Process) new FakeProcess(buildEncoderOutput(hwCapability.encoders()), 0));
-
-      var testService =
-          new TranscodeCapabilityService(
-              "ffmpeg",
-              command -> {
-                var cmdStr = String.join(" ", command);
-                if (cmdStr.contains("-version")) {
-                  return outputs.get("ffmpeg");
-                }
-                if (cmdStr.contains("muxer=hls")) {
-                  return outputs.get("hls");
-                }
-                if (cmdStr.contains("-hwaccels")) {
-                  return outputs.get("hwaccels");
-                }
-                if (cmdStr.contains("-encoders")) {
-                  return outputs.get("encoders");
-                }
-                return new FakeProcess("", 1);
-              });
-      testService.detectCapabilities();
-      return testService;
+    if (!available) {
+      return service;
     }
-    return service;
+
+    // Inject capability state via reflection-free approach: detect then override
+    // We use a factory that returns the right result
+    var outputs =
+        Map.of(
+            "ffmpeg", (Process) new FakeProcess("ffmpeg version 7.0", 0),
+            "hls", (Process) new FakeProcess("-hls_segment_options <dictionary>", 0),
+            "hwaccels",
+                (Process)
+                    new FakeProcess(
+                        hwCapability.available()
+                            ? "Hardware acceleration methods:\ncuda\n"
+                            : "Hardware acceleration methods:\n",
+                        0),
+            "encoders", (Process) new FakeProcess(buildEncoderOutput(hwCapability.encoders()), 0));
+
+    var testService =
+        new TranscodeCapabilityService(
+            "ffmpeg",
+            command -> {
+              var cmdStr = String.join(" ", command);
+              if (cmdStr.contains("-version")) {
+                return outputs.get("ffmpeg");
+              }
+
+              if (cmdStr.contains("muxer=hls")) {
+                return outputs.get("hls");
+              }
+
+              if (cmdStr.contains("-hwaccels")) {
+                return outputs.get("hwaccels");
+              }
+
+              if (cmdStr.contains("-encoders")) {
+                return outputs.get("encoders");
+              }
+
+              return new FakeProcess("", 1);
+            });
+    testService.detectCapabilities();
+    return testService;
   }
 
   private String buildEncoderOutput(Set<String> encoders) {
@@ -340,6 +345,7 @@ class LocalTranscodeExecutorTest {
           .append(encoder)
           .append(" encoder\n");
     }
+
     return sb.toString();
   }
 }

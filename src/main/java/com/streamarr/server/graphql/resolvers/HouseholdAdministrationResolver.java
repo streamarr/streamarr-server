@@ -7,6 +7,7 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.graphql.Ids;
+import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
@@ -26,7 +27,6 @@ import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
@@ -79,26 +79,14 @@ public class HouseholdAdministrationResolver {
   }
 
   private MediaPaginationOptions mediaOptions(DataFetchingEnvironment dfe) {
-    var paginationOptions = paginationOptions(dfe);
+    var paginationOptions =
+        ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var filter = MediaFilter.builder().build();
     return MediaPaginationOptionsResolver.resolve(
         paginationOptions,
         filter,
         cursorUtil::decodeMediaCursor,
         cursorValidator::validateCursorAgainstFilter);
-  }
-
-  private PaginationOptions paginationOptions(DataFetchingEnvironment dfe) {
-    int first = dfe.getArgumentOrDefault("first", 0);
-    String after = dfe.getArgument("after");
-    int last = dfe.getArgumentOrDefault("last", 0);
-    String before = dfe.getArgument("before");
-    if (first == 0 && last == 0 && before != null) {
-      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
-    }
-
-    return paginationService.getPaginationOptions(
-        first == 0 && last == 0 ? DEFAULT_PAGE_SIZE : first, after, last, before);
   }
 
   @DgsMutation

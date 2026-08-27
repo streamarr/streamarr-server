@@ -89,20 +89,18 @@ public class PaginationService {
     var hasPreviousPage = false;
     var hasNextPage = false;
 
-    if (cursorId.isPresent() && direction == PaginationDirection.FORWARD) {
-      var cursorFound = items.getFirst().item().getId().equals(cursorId.get());
-      hasPreviousPage = cursorFound;
-      if (cursorFound) {
-        items = items.subList(1, items.size());
-      }
+    if (cursorId.isPresent()
+        && direction == PaginationDirection.FORWARD
+        && items.getFirst().item().getId().equals(cursorId.orElseThrow())) {
+      hasPreviousPage = true;
+      items = items.subList(1, items.size());
     }
 
-    if (cursorId.isPresent() && direction == PaginationDirection.REVERSE) {
-      var cursorFound = items.getLast().item().getId().equals(cursorId.get());
-      hasNextPage = cursorFound;
-      if (cursorFound) {
-        items = items.subList(0, items.size() - 1);
-      }
+    if (cursorId.isPresent()
+        && direction == PaginationDirection.REVERSE
+        && items.getLast().item().getId().equals(cursorId.orElseThrow())) {
+      hasNextPage = true;
+      items = items.subList(0, items.size() - 1);
     }
 
     if (items.isEmpty()) {

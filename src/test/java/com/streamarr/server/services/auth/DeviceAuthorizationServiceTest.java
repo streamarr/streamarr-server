@@ -758,7 +758,7 @@ class DeviceAuthorizationServiceTest {
             message, new SQLException(message, "23505"), constraintName));
   }
 
-  private DeviceAuthorizationView approve(String userCode) {
+  private DeviceAuthorizationDetails approve(String userCode) {
     return decide(userCode, DeviceDecision.APPROVE);
   }
 
@@ -770,7 +770,7 @@ class DeviceAuthorizationServiceTest {
         .build();
   }
 
-  private DeviceAuthorizationView decide(String userCode, DeviceDecision decision) {
+  private DeviceAuthorizationDetails decide(String userCode, DeviceDecision decision) {
     return service.decide(
         DeviceDecisionCommand.builder()
             .userCode(userCode)

@@ -7,6 +7,9 @@
   <module name="TreeWalker">
     <module name="SuppressWarningsHolder"/>
     <module name="AvoidStarImport"/>
+    <module name="NestedIfDepth">
+      <property name="max" value="0"/>
+    </module>
     <module name="RegexpSinglelineJava">
       <property name="id" value="fullyQualifiedName"/>
       <property name="format"

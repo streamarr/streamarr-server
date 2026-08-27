@@ -26,6 +26,30 @@ class AuthThrottlePropertiesTest {
   }
 
   @Test
+  @DisplayName("Should bound opaque-code budgets by default when the limit is omitted")
+  void shouldBoundOpaqueCodeBudgetsByDefaultWhenLimitIsOmitted() {
+    var properties =
+        AuthThrottleProperties.builder().maxAttempts(5).window(Duration.ofMinutes(15)).build();
+
+    assertThat(properties.maxOpaqueCodeBudgets()).isEqualTo(10_000);
+  }
+
+  @Test
+  @DisplayName("Should reject configuration when the opaque-code budget limit is zero")
+  void shouldRejectConfigurationWhenOpaqueCodeBudgetLimitIsZero() {
+    var properties =
+        AuthThrottleProperties.builder()
+            .maxAttempts(5)
+            .window(Duration.ofMinutes(15))
+            .maxOpaqueCodeBudgets(0)
+            .build();
+
+    assertThat(VALIDATOR.validate(properties))
+        .extracting(violation -> violation.getPropertyPath().toString())
+        .containsExactly("maxOpaqueCodeBudgets");
+  }
+
+  @Test
   @DisplayName("Should reject configuration when window is zero")
   void shouldRejectConfigurationWhenWindowIsZero() {
     var properties = AuthThrottleProperties.builder().maxAttempts(5).window(Duration.ZERO).build();

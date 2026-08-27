@@ -3,8 +3,8 @@ package com.streamarr.server.controllers.auth.device;
 import com.streamarr.server.controllers.auth.AuthErrorResponse;
 import com.streamarr.server.controllers.auth.AuthTokensResponse;
 import com.streamarr.server.exceptions.InvalidDecisionException;
+import com.streamarr.server.services.auth.DeviceAuthorizationDetails;
 import com.streamarr.server.services.auth.DeviceAuthorizationService;
-import com.streamarr.server.services.auth.DeviceAuthorizationView;
 import com.streamarr.server.services.auth.DeviceDecision;
 import com.streamarr.server.services.auth.DeviceDecisionCommand;
 import com.streamarr.server.services.auth.DevicePollResult;
@@ -121,8 +121,8 @@ public class DeviceAuthController {
         .orElseThrow(InvalidDecisionException::new);
   }
 
-  private static DeviceDecisionResponse decisionResponseOf(DeviceAuthorizationView view) {
-    return new DeviceDecisionResponse(view.status().name(), view.deviceName());
+  private static DeviceDecisionResponse decisionResponseOf(DeviceAuthorizationDetails details) {
+    return new DeviceDecisionResponse(details.status().name(), details.deviceName());
   }
 
   private static ResponseEntity<Object> pollState(String code, String message) {

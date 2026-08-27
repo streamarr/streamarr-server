@@ -3,6 +3,7 @@ package com.streamarr.server.services.mutation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import java.sql.SQLException;
 import java.util.Optional;
@@ -10,6 +11,7 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -72,6 +74,23 @@ class MutationTransactionsTest {
                     },
                     _ -> Optional.of("never")))
         .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should answer resource busy when a bounded lock wait runs out inside the write")
+  void shouldAnswerResourceBusyWhenBoundedLockWaitRunsOutInsideWrite() {
+    var lockTimeout = new CannotAcquireLockException("canceling statement due to lock timeout");
+
+    assertThatThrownBy(
+            () ->
+                transactions.<String, String>write(
+                    () -> {
+                      throw lockTimeout;
+                    },
+                    _ -> Optional.empty()))
+        .isInstanceOf(ResourceBusyException.class)
+        .hasCause(lockTimeout);
+    assertThat(transactionManager.rollbacks()).isEqualTo(1);
   }
 
   @Test

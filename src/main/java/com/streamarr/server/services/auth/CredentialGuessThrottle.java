@@ -8,20 +8,34 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Guessing budgets for credentials an already-authenticated Account presents: its own password
- * (reauthentication, password change) and a Profile PIN. The two budgets are independent — a PIN
- * guess must not spend password attempts or vice versa — and both are keyed by Account, never by
- * source address, for the reason {@link LoginThrottle} records. Keys are bounded by Accounts and
- * Profiles, so there is nothing to spray.
+ * Guessing budgets for the credentials a request presents beyond login. Authenticated: an Account's
+ * own password (reauthentication, password change) and a Profile PIN, independent of each other and
+ * keyed by Account, never by source address, for the reason {@link LoginThrottle} records; those
+ * keys are naturally bounded. Principal-less: opaque one-time codes, keyed by the presented
+ * publicId (which must already exist, so only issued codes take a slot) and capped at {@code
+ * maxOpaqueCodeBudgets} tracked keys, refusing new keys at capacity rather than growing.
  */
 @Slf4j
 @Component
 public class CredentialGuessThrottle {
 
-  private final SlidingWindowAttemptBudget<CredentialKey> budget;
+  private final SlidingWindowAttemptBudget<CredentialKey> credentialBudget;
+  private final SlidingWindowAttemptBudget<String> opaqueCodeBudget;
 
   public CredentialGuessThrottle(AuthThrottleProperties properties, Clock clock) {
-    budget = new SlidingWindowAttemptBudget<>(properties.maxAttempts(), properties.window(), clock);
+    credentialBudget =
+        new SlidingWindowAttemptBudget<>(
+            SlidingWindowAttemptBudget.Limits.unboundedKeys(
+                properties.maxAttempts(), properties.window()),
+            clock);
+    opaqueCodeBudget =
+        new SlidingWindowAttemptBudget<>(
+            SlidingWindowAttemptBudget.Limits.builder()
+                .maximumAttempts(properties.maxAttempts())
+                .window(properties.window())
+                .maximumTrackedKeys(properties.maxOpaqueCodeBudgets())
+                .build(),
+            clock);
   }
 
   public void registerProfilePinAttempt(UUID accountId, UUID profileId) {
@@ -29,7 +43,16 @@ public class CredentialGuessThrottle {
   }
 
   public void resetProfilePinAttempts(UUID accountId, UUID profileId) {
-    budget.reset(new CredentialKey(CredentialType.PROFILE_PIN, accountId, profileId));
+    credentialBudget.reset(new CredentialKey(CredentialType.PROFILE_PIN, accountId, profileId));
+  }
+
+  /** One budget per presented publicId: rotating endpoints or sources must not multiply tries. */
+  public void registerCodeGuess(String publicId) {
+    requireAvailable(opaqueCodeBudget.reserve(publicId), CredentialType.OPAQUE_CODE, publicId);
+  }
+
+  public void resetCodeGuesses(String publicId) {
+    opaqueCodeBudget.reset(publicId);
   }
 
   public void registerAccountPasswordAttempt(UUID accountId) {
@@ -37,28 +60,47 @@ public class CredentialGuessThrottle {
   }
 
   public void resetAccountPasswordAttempts(UUID accountId) {
-    budget.reset(new CredentialKey(CredentialType.ACCOUNT_PASSWORD, accountId, null));
+    credentialBudget.reset(new CredentialKey(CredentialType.ACCOUNT_PASSWORD, accountId, null));
   }
 
   public int sweepExpired() {
-    return budget.sweepExpired();
+    return credentialBudget.sweepExpired() + opaqueCodeBudget.sweepExpired();
   }
 
   private void register(CredentialKey key) {
-    if (budget.reserve(key)) {
+    requireAvailable(credentialBudget.reserve(key), key.type(), key.accountId());
+  }
+
+  private void requireAvailable(
+      SlidingWindowAttemptBudget.Reservation reservation, CredentialType type, Object key) {
+    var available =
+        switch (reservation) {
+          case RESERVED -> true;
+          case KEY_EXHAUSTED -> {
+            log.warn(
+                "Credential verification throttled: {} budget exhausted for key {}", type, key);
+            yield false;
+          }
+          case CAPACITY_EXHAUSTED -> {
+            log.warn(
+                "Credential verification refused: {} throttle at capacity ({} keys tracked); new"
+                    + " codes wait for a reset or the sweep",
+                type,
+                opaqueCodeBudget.maximumTrackedKeys());
+            yield false;
+          }
+        };
+    if (available) {
       return;
     }
 
-    log.warn(
-        "Credential verification throttled: {} budget exhausted for account {}",
-        key.type(),
-        key.accountId());
     throw new TooManyCredentialAttemptsException();
   }
 
   private enum CredentialType {
     PROFILE_PIN,
-    ACCOUNT_PASSWORD
+    ACCOUNT_PASSWORD,
+    OPAQUE_CODE
   }
 
   private record CredentialKey(CredentialType type, UUID accountId, UUID profileId) {}

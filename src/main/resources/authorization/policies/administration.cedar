@@ -62,3 +62,30 @@ when {
   (principal == resource ||
    (principal has serverAdmin && principal.serverAdmin))
 };
+
+// Only ServerAdmin proposes, replaces, cancels, or inspects Account invitations
+// (ADR 0024 §Invitations); the recipient's own ceremony authenticates by code, outside Cedar.
+@id("account-invitations-are-server-admin-work")
+permit (
+  principal,
+  action in Streamarr::Action::"invitationAdministration",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  principal has serverAdmin && principal.serverAdmin
+};
+
+// Issuing a password-reset code is ServerAdmin work in the requiresFreshReauthentication group
+// (ADR 0024 §Account): a stolen ServerAdmin session must not be enough to mint a code.
+@id("issue-password-reset-as-fresh-server-admin")
+permit (
+  principal,
+  action == Streamarr::Action::"issuePasswordReset",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  principal has serverAdmin && principal.serverAdmin &&
+  context.freshReauthentication
+};

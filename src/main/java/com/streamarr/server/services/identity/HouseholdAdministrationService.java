@@ -91,12 +91,8 @@ public class HouseholdAdministrationService {
   }
 
   private boolean mayViewHousehold(AuthenticatedIdentity identity, UUID householdId) {
-    return switch (authorizationService.decide(
-        identity, new Intent.ViewHouseholdAdministration(householdId))) {
-      case Decision.Allowed<?> _ -> true;
-      case Decision.Denied<?> _ -> false;
-      case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();
-    };
+    return authorizationService.isAllowed(
+        identity, new Intent.ViewHouseholdAdministration(householdId));
   }
 
   private static boolean isBlank(String value) {

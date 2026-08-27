@@ -104,6 +104,7 @@ class ProducerLifecycleDestroyRaceTest {
         reachedSecondStart.countDown();
         awaitRelease();
       }
+
       return super.start(request);
     }
 
@@ -169,10 +170,12 @@ class ProducerLifecycleDestroyRaceTest {
 
       @Override
       public void lock() {
-        if (Thread.currentThread() != destroyThread || tryLock()) {
-          if (Thread.currentThread() != destroyThread) {
-            super.lock();
-          }
+        if (Thread.currentThread() != destroyThread) {
+          super.lock();
+          return;
+        }
+
+        if (tryLock()) {
           return;
         }
 
