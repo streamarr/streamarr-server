@@ -2,17 +2,22 @@ package com.streamarr.server.services.identity;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AccountInvitation;
+import com.streamarr.server.domain.auth.AccountInvitationMode;
+import com.streamarr.server.domain.auth.AccountInvitationReoffer;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManagerEligibility;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.repositories.auth.AccountInvitationReofferRepository;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -52,6 +57,8 @@ public class CredentialIssuanceService {
   private final UserAccountRepository userAccountRepository;
   private final HouseholdRepository householdRepository;
   private final ProfileRepository profileRepository;
+  private final ProfileHouseholdShareRepository shareRepository;
+  private final AccountInvitationReofferRepository reofferRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final OpaqueOneTimeCodes opaqueCodes;
   private final CredentialCodeProperties properties;
@@ -74,7 +81,8 @@ public class CredentialIssuanceService {
   /** The remaining refusals and the write, for a command whose recipient email is normalized. */
   private Outcome<IssuedInvitation, CredentialRejections.Issue> issueInvitationTo(
       AuthenticatedIdentity identity, IssueInvitationCommand command) {
-    var inputRejection = inputRejection(command);
+    var mode = modeFor(command);
+    var inputRejection = inputRejection(command, mode);
     if (inputRejection.isPresent()) {
       return Outcome.rejected(inputRejection.get());
     }
@@ -84,9 +92,26 @@ public class CredentialIssuanceService {
       return Outcome.rejected(new CredentialRejections.HouseholdNotFound());
     }
 
-    var shapeRejection = profileShapeRejection(command);
+    var connectRejection = connectRejection(mode, command);
+    if (connectRejection.isPresent()) {
+      return Outcome.rejected(connectRejection.get());
+    }
+
+    var profile =
+        mode == AccountInvitationMode.CREATE
+            ? null
+            : profileRepository.findById(command.profileId()).orElseThrow();
+    var shapeRejection = profileShapeRejection(command, mode, profile);
     if (shapeRejection.isPresent()) {
       return Outcome.rejected(shapeRejection.get());
+    }
+
+    var reofferRejection =
+        profile == null
+            ? Optional.<CredentialRejections.Issue>empty()
+            : reofferRejection(profile, command);
+    if (reofferRejection.isPresent()) {
+      return Outcome.rejected(reofferRejection.get());
     }
 
     return issueInvitation(identity, command, household.get());
@@ -95,8 +120,9 @@ public class CredentialIssuanceService {
   /**
    * Field-level refusals that need no Household: a blank name, an invalid ceiling, a used email.
    */
-  private Optional<CredentialRejections.Issue> inputRejection(IssueInvitationCommand command) {
-    if (isBlank(command.profileName())) {
+  private Optional<CredentialRejections.Issue> inputRejection(
+      IssueInvitationCommand command, AccountInvitationMode mode) {
+    if (mode == AccountInvitationMode.CREATE && isBlank(command.profileName())) {
       return Optional.of(new CredentialRejections.ProfileNameRequired());
     }
 
@@ -114,25 +140,30 @@ public class CredentialIssuanceService {
 
   /** The new Profile's shape against its Household: name, restriction, and required manager. */
   private Optional<CredentialRejections.Issue> profileShapeRejection(
-      IssueInvitationCommand command) {
-    if (profileRepository.existsAvailableInHouseholdWithNameIgnoreCase(
-        command.householdId(), command.profileName().strip())) {
+      IssueInvitationCommand command, AccountInvitationMode mode, Profile profile) {
+    if (mode == AccountInvitationMode.CREATE
+        && profileRepository.existsAvailableInHouseholdWithNameIgnoreCase(
+            command.householdId(), command.profileName().strip())) {
       return Optional.of(new CredentialRejections.ProfileNameTaken());
     }
 
-    var restricted = command.restricted();
+    var restricted = profile == null ? command.restricted() : profile.isRestricted();
     var emptyHousehold = userAccountRepository.findByHouseholdId(command.householdId()).isEmpty();
     if (restricted && emptyHousehold) {
       // The first Account becomes HouseholdAdmin, and a restricted Account holds no authority.
       return Optional.of(new CredentialRejections.RestrictedFirstAccount());
     }
 
-    if (restricted && command.householdRole() == HouseholdRole.ADMIN) {
+    if (mode == AccountInvitationMode.CREATE
+        && restricted
+        && command.householdRole() == HouseholdRole.ADMIN) {
       // Otherwise acceptance would fail at commit (chk_restricted_account_holds_no_authority).
       return Optional.of(new CredentialRejections.RestrictedHouseholdAdmin());
     }
 
-    if (restricted && command.localManagerAccountId() == null) {
+    if (mode == AccountInvitationMode.CREATE
+        && restricted
+        && command.localManagerAccountId() == null) {
       return Optional.of(new CredentialRejections.LocalManagerRequired());
     }
 
@@ -150,8 +181,16 @@ public class CredentialIssuanceService {
   private Outcome<IssuedInvitation, CredentialRejections.Issue> issueInvitation(
       AuthenticatedIdentity identity, IssueInvitationCommand command, Household household) {
     var recipientEmail = command.recipientEmail();
-    var profileName = command.profileName().strip();
-    var profileKind = Objects.requireNonNullElse(command.profileKind(), ProfileKind.ADULT);
+    var mode = modeFor(command);
+    var profile =
+        mode == AccountInvitationMode.CREATE
+            ? null
+            : profileRepository.findById(command.profileId()).orElseThrow();
+    var profileName = profile == null ? command.profileName().strip() : profile.getName();
+    var profileKind =
+        profile == null
+            ? Objects.requireNonNullElse(command.profileKind(), ProfileKind.ADULT)
+            : profile.getKind();
     var issued = opaqueCodes.issue();
     return mutationTransactions.write(
         () -> {
@@ -171,19 +210,106 @@ public class CredentialIssuanceService {
                       .recipientEmail(recipientEmail)
                       .householdId(command.householdId())
                       .householdName(household.getName())
-                      .householdRole(command.householdRole())
+                      .householdRole(invitedRole(profile, command.householdRole()))
+                      .mode(mode)
+                      .profileId(profile == null ? null : profile.getId())
                       .profileName(profileName)
                       .profileKind(profileKind)
-                      .maximumAllowedRatingAge(command.maximumAllowedRatingAge())
+                      .maximumAllowedRatingAge(
+                          profile == null
+                              ? command.maximumAllowedRatingAge()
+                              : profile.getMaximumAllowedRatingAge())
                       .localManagerAccountId(command.localManagerAccountId())
                       .issuerAccountId(identity.accountId())
                       .expiresAt(now.plus(properties.invitationTtl()))
                       .publicId(issued.publicId())
                       .secretDigest(issued.digest())
                       .build());
+          saveReoffers(invitation, command);
           return new IssuedInvitation(invitation, issued.code());
         },
         _ -> Optional.empty());
+  }
+
+  private static HouseholdRole invitedRole(Profile profile, HouseholdRole requestedRole) {
+    if (profile != null && profile.isRestricted()) {
+      return HouseholdRole.MEMBER;
+    }
+
+    return requestedRole;
+  }
+
+  /** CREATE has no Profile yet; CONNECT names an existing, unlinked one in that Household. */
+  private Optional<CredentialRejections.Issue> connectRejection(
+      AccountInvitationMode mode, IssueInvitationCommand command) {
+    if (mode == AccountInvitationMode.CREATE) {
+      return Optional.empty();
+    }
+
+    if (command.profileId() == null) {
+      return Optional.of(new CredentialRejections.ConnectProfileRequired());
+    }
+
+    var profile = profileRepository.findById(command.profileId());
+    if (profile.isEmpty()) {
+      return Optional.of(new CredentialRejections.ConnectProfileNotFound());
+    }
+
+    if (userAccountRepository.findByPersonalProfileId(command.profileId()).isPresent()) {
+      return Optional.of(new CredentialRejections.ProfileAlreadyLinked());
+    }
+
+    if (!profile.get().getHouseholdId().equals(command.householdId())) {
+      return Optional.of(new CredentialRejections.ProfileNotInHousehold());
+    }
+
+    return Optional.empty();
+  }
+
+  /** Every reoffer target must exist and actively host the Profile as a visit today. */
+  private Optional<CredentialRejections.Issue> reofferRejection(
+      Profile profile, IssueInvitationCommand command) {
+    for (var householdId : reofferHouseholdIds(command)) {
+      if (householdRepository.findById(householdId).isEmpty()) {
+        return Optional.of(new CredentialRejections.ReofferHouseholdNotFound());
+      }
+
+      var visiting =
+          !householdId.equals(command.householdId())
+              && shareRepository
+                  .findByProfileIdAndHouseholdIdAndStatus(
+                      profile.getId(), householdId, ProfileShareStatus.ACTIVE)
+                  .isPresent();
+      if (!visiting) {
+        return Optional.of(new CredentialRejections.ReofferHouseholdNotShared());
+      }
+    }
+
+    return Optional.empty();
+  }
+
+  private void saveReoffers(AccountInvitation invitation, IssueInvitationCommand command) {
+    for (var householdId : reofferHouseholdIds(command)) {
+      var name = householdRepository.findById(householdId).orElseThrow().getName();
+      reofferRepository.saveAndFlush(
+          AccountInvitationReoffer.builder()
+              .invitationId(invitation.getId())
+              .householdId(householdId)
+              .householdName(name)
+              .build());
+    }
+  }
+
+  private static List<UUID> reofferHouseholdIds(IssueInvitationCommand command) {
+    if (command.mode() != AccountInvitationMode.CONNECT || command.reofferHouseholdIds() == null) {
+      return List.of();
+    }
+
+    return command.reofferHouseholdIds().stream().distinct().toList();
+  }
+
+  private static AccountInvitationMode modeFor(IssueInvitationCommand command) {
+    return Objects.requireNonNullElse(command.mode(), AccountInvitationMode.CREATE);
   }
 
   public Outcome<AccountInvitation, CredentialRejections.Cancel> cancelAccountInvitation(
@@ -314,6 +440,9 @@ public class CredentialIssuanceService {
       String recipientEmail,
       UUID householdId,
       HouseholdRole householdRole,
+      AccountInvitationMode mode,
+      UUID profileId,
+      List<UUID> reofferHouseholdIds,
       String profileName,
       ProfileKind profileKind,
       Integer maximumAllowedRatingAge,

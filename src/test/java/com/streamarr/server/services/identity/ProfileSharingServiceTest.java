@@ -89,7 +89,7 @@ class ProfileSharingServiceTest {
             CredentialCodeProperties.builder()
                 .invitationTtl(INVITATION_TTL)
                 .passwordResetTtl(Duration.ofHours(1))
-                .replacementLockTimeout(Duration.ofSeconds(1))
+                .replacementLockTimeout(Duration.ofSeconds(5))
                 .build(),
             new PaginationService(),
             CLOCK);

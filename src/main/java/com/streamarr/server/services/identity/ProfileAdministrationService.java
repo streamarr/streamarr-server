@@ -10,6 +10,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -27,6 +28,7 @@ import com.streamarr.server.services.authorization.ProfileSafetyRule;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
+import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
@@ -58,9 +60,11 @@ public class ProfileAdministrationService {
   private final ProfileHouseholdShareRepository shareRepository;
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
+  private final AccountInvitationRepository accountInvitationRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final ProfilePinHasher profilePinHasher;
   private final MutationTransactions mutationTransactions;
+  private final Clock clock;
 
   public Outcome<Profile, ProfileRejections.CreateProfile> createProfile(
       AuthenticatedIdentity identity, CreateProfileCommand command) {
@@ -406,6 +410,8 @@ public class ProfileAdministrationService {
             throw new MutationRejection(refusal.get());
           }
 
+          accountInvitationRepository.invalidatePendingByProfileId(
+              profileId, "Profile deleted", clock.instant());
           profileRepository.deleteById(profileId);
           profileRepository.flush();
           securityAuditEventRepository.append(
