@@ -361,6 +361,7 @@ class CredentialIssuanceReplacementRaceIT extends AbstractIntegrationTest {
               .displayName("Invitee")
               .password("a strong passphrase")
               .deviceName("test")
+              .ipAddress("192.0.2.30")
               .build());
       return true;
     } catch (InvalidOneTimeCodeException _) {

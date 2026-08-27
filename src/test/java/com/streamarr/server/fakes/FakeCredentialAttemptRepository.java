@@ -95,6 +95,7 @@ public class FakeCredentialAttemptRepository implements CredentialAttemptReposit
     if (rejection != null) {
       return Optional.of(new CredentialAttemptAdmission.Blocked(rejection));
     }
+
     if (!(policy instanceof CredentialAttemptPolicy.Limited limited) || !target.isResolved()) {
       return Optional.empty();
     }

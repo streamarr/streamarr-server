@@ -42,6 +42,7 @@ public class AccountPasswordVerifier {
             timingEqualizer.burn(password);
             throw new InvalidCredentialsException();
           }
+
           if (!passwordMatches(account.getId(), expectedPasswordHash, password)) {
             throw new InvalidCredentialsException();
           }

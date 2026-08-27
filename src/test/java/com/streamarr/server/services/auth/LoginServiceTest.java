@@ -248,6 +248,7 @@ class LoginServiceTest {
       assertThatThrownBy(() -> loginService.login(wrongAttempt))
           .isInstanceOf(InvalidCredentialsException.class);
     }
+
     loginService.login(commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build());
     var wrongAgain = commandBuilder(account.getEmail()).password("wrong-again").build();
     assertThatThrownBy(() -> loginService.login(wrongAgain))
@@ -362,6 +363,7 @@ class LoginServiceTest {
       assertThatThrownBy(() -> loginService.login(wrongAttempt))
           .isInstanceOf(InvalidCredentialsException.class);
     }
+
     var correctAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
 
     assertThatThrownBy(() -> loginService.login(correctAttempt))
@@ -377,6 +379,7 @@ class LoginServiceTest {
       assertThatThrownBy(() -> loginService.login(wrongAttempt))
           .isInstanceOf(InvalidCredentialsException.class);
     }
+
     loginService.login(commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build());
     currentTime.updateAndGet(instant -> instant.plusSeconds(1));
 
@@ -386,6 +389,7 @@ class LoginServiceTest {
       assertThatThrownBy(() -> loginService.login(wrongAgain))
           .isInstanceOf(InvalidCredentialsException.class);
     }
+
     var blocked = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
     assertThatThrownBy(() -> loginService.login(blocked))
         .isInstanceOf(TooManyLoginAttemptsException.class);

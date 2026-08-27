@@ -13,7 +13,7 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.services.auth.OpaqueCodes.PresentedCode;
+import com.streamarr.server.services.auth.OpaqueOneTimeCodes.PresentedCode;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
 import java.sql.Connection;
@@ -68,11 +68,13 @@ class CredentialVerificationTransactionIT extends AbstractIntegrationTest {
     if (account != null) {
       authTestSupport.deleteAccount(account.getId());
     }
+
     dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     invitationRepository.deleteAll();
     if (identity != null) {
       authTestSupport.deleteIdentity(identity);
     }
+
     if (serverAdmin != null) {
       authTestSupport.deleteIdentity(serverAdmin);
     }
@@ -220,7 +222,7 @@ class CredentialVerificationTransactionIT extends AbstractIntegrationTest {
     }
   }
 
-  static final class TransactionProbeOpaqueCodes extends OpaqueCodes {
+  static final class TransactionProbeOpaqueCodes extends OpaqueOneTimeCodes {
 
     private final ConnectionProbe probe;
 

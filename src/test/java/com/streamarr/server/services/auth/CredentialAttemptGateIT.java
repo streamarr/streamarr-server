@@ -295,10 +295,13 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
       try (var statement = blocker.createStatement()) {
         statement.execute("LOCK TABLE credential_attempt IN ACCESS EXCLUSIVE MODE");
       }
+
       tableLocked.countDown();
       releaseTable.await(LOCK_HOLD.toMillis(), TimeUnit.MILLISECONDS);
+
       blocker.rollback();
     }
+
     return null;
   }
 }
