@@ -1,4 +1,4 @@
--- A ProfileManager write and a restriction of that manager's Personal Profile previously locked
+-- PR #315: a ProfileManager write and a restriction of that manager's Personal Profile previously locked
 -- different Household guards. Both deferred T5 checks could therefore validate before either
 -- transaction committed. Lock the managed Profile homes and manager Account homes together so
 -- the second validator re-queries after the first conflicting transaction finishes.
