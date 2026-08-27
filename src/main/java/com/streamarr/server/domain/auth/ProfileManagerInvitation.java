@@ -58,6 +58,15 @@ public class ProfileManagerInvitation extends BaseAuditableEntity<ProfileManager
 
   private byte[] secretDigest;
 
+  /** Expiry is a predicate at read time: a stale PENDING row projects as EXPIRED. */
+  public ProfileManagerInvitationStatus statusAt(Instant now) {
+    if (status == ProfileManagerInvitationStatus.PENDING && !expiresAt.isAfter(now)) {
+      return ProfileManagerInvitationStatus.EXPIRED;
+    }
+
+    return status;
+  }
+
   @Override
   public String toString() {
     return "ProfileManagerInvitation[id=%s, status=%s, publicId=%s, secretDigest=REDACTED]"

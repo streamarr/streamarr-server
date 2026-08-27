@@ -72,18 +72,6 @@ public class ProfileManagerInvitationRepositoryCustomImpl
         PROFILE_MANAGER_INVITATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId), reason, now);
   }
 
-  @Override
-  public int sweepExpired(Instant now) {
-    return dsl.update(PROFILE_MANAGER_INVITATION)
-        .set(
-            PROFILE_MANAGER_INVITATION.STATUS,
-            com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.EXPIRED)
-        .set(PROFILE_MANAGER_INVITATION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-        .where(pending())
-        .and(PROFILE_MANAGER_INVITATION.EXPIRES_AT.le(now.atOffset(ZoneOffset.UTC)))
-        .execute();
-  }
-
   private int invalidate(Condition scope, String reason, Instant now) {
     return dsl.update(PROFILE_MANAGER_INVITATION)
         .set(
