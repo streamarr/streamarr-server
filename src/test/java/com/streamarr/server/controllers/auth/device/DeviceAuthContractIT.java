@@ -100,12 +100,22 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should issue with the fallback device name when the body is absent")
-  void shouldIssueWithFallbackDeviceNameWhenBodyAbsent() throws Exception {
+  @DisplayName(
+      "Should reject issuance and use a fallback name when the request omits device fields")
+  void shouldRejectIssuanceAndUseFallbackNameWhenRequestOmitsDeviceFields() throws Exception {
+    // ADR 0024 §Devices: the registration the winning poll creates is keyed by hardware
+    // identity, so a body-less request can no longer mint a code.
+    var refused =
+        readJson(mockMvc.perform(post("/api/auth/device/code")).andExpect(status().isBadRequest()));
+    assertThat(refused.get("code").asString()).isEqualTo("ESN_REQUIRED");
+
     var body =
         readJson(
             mockMvc
-                .perform(post("/api/auth/device/code"))
+                .perform(
+                    post("/api/auth/device/code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"esn\": \"esn-contract\"}"))
                 .andExpect(status().isOk())
                 .andExpect(uncacheable()));
 
@@ -240,7 +250,7 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                 .andExpect(uncacheable()));
 
     assertThat(fieldNamesOf(body))
-        .containsExactlyInAnyOrder("userCode", "deviceName", "status", "requestedAt");
+        .containsExactlyInAnyOrder("userCode", "deviceName", "status", "requestedAt", "households");
     assertThat(body.get("userCode").asString()).isEqualTo(issued.get("userCode").asString());
     assertThat(body.get("deviceName").asString()).isEqualTo("Living Room Apple TV");
     assertThat(body.get("status").asString()).isEqualTo("PENDING");
@@ -337,6 +347,31 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                 .andExpect(uncacheable()));
 
     assertErrorBody(body, "INVALID_DECISION", "The decision must be APPROVE or DENY.");
+  }
+
+  @Test
+  @DisplayName("Should reject the request when the Household identifier is malformed")
+  void shouldRejectRequestWhenHouseholdIdentifierMalformed() throws Exception {
+    var approver = seedAccount();
+
+    var body =
+        readJson(
+            mockMvc
+                .perform(
+                    authenticated(approver, post("/api/auth/device/authorizations/decision"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                            """
+                            {
+                              "userCode": "BCDF-GHJK",
+                              "decision": "APPROVE",
+                              "householdId": "not-a-uuid"
+                            }
+                            """))
+                .andExpect(status().isBadRequest())
+                .andExpect(uncacheable()));
+
+    assertErrorBody(body, "INVALID_REQUEST", "The request body is missing or malformed.");
   }
 
   @Test
@@ -482,7 +517,9 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
             .perform(
                 post("/api/auth/device/code")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content("{\"deviceName\": \"%s\"}".formatted(deviceName)))
+                    .content(
+                        "{\"deviceName\": \"%s\", \"esn\": \"esn-contract\"}"
+                            .formatted(deviceName)))
             .andExpect(status().isOk())
             .andExpect(uncacheable()));
   }
@@ -507,16 +544,23 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     if (content == null) {
       return request;
     }
+
     return request.content(content);
   }
 
   private JsonNode decide(UserAccount approver, String userCode, String decision) throws Exception {
+    // An approval binds the TV to a Household (ADR 0024); the approver's own is the default here.
+    var body =
+        "APPROVE".equals(decision)
+            ? "{\"userCode\": \"%s\", \"decision\": \"%s\", \"householdId\": \"%s\"}"
+                .formatted(userCode, decision, approver.getHouseholdId())
+            : decisionBody(userCode, decision);
     return readJson(
         mockMvc
             .perform(
                 authenticated(approver, post("/api/auth/device/authorizations/decision"))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(decisionBody(userCode, decision)))
+                    .content(body))
             .andExpect(status().isOk())
             .andExpect(uncacheable()));
   }

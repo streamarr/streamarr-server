@@ -1,0 +1,112 @@
+# Devices (ADR 0024 §Devices; ADR 0026 shapes). Pairing uses the REST endpoint defined by ADR 0021;
+# these are the administrative surfaces around registrations and ESN blocks.
+
+enum DeviceRegistrationStatus {
+    ACTIVE
+    REVOKED
+}
+
+type DeviceRegistrationDetails {
+    id: ID!
+    esn: String!
+    displayName: String!
+    householdId: ID
+    authorizingAccountId: ID
+    status: DeviceRegistrationStatus!
+    pairedAt: String!
+}
+
+type DeviceRegistrationConnection {
+    edges: [DeviceRegistrationEdge!]!
+    pageInfo: PageInfo!
+}
+
+type DeviceRegistrationEdge {
+    node: DeviceRegistrationDetails!
+    cursor: String!
+}
+
+type EsnBlockDetails {
+    id: ID!
+    esn: String!
+    "Null when the block is server-wide."
+    householdId: ID
+    reason: String!
+}
+
+type EsnBlockConnection {
+    edges: [EsnBlockEdge!]!
+    pageInfo: PageInfo!
+}
+
+type EsnBlockEdge {
+    node: EsnBlockDetails!
+    cursor: String!
+}
+
+input RevokeDeviceRegistrationInput {
+    registrationId: ID!
+}
+
+type RevokeDeviceRegistrationPayload {
+    registrationId: ID
+    userErrors: [RevokeDeviceRegistrationError!]!
+}
+
+union RevokeDeviceRegistrationError = RegistrationNotFoundError | RegistrationNotActiveError
+
+input BlockEsnInput {
+    householdId: ID!
+    esn: String!
+    reason: String!
+}
+
+type BlockEsnPayload {
+    block: EsnBlockDetails
+    userErrors: [BlockEsnError!]!
+}
+
+union BlockEsnError =
+    HouseholdNotFoundError
+  | EsnRequiredError
+  | ReasonRequiredError
+  | EsnAlreadyBlockedError
+
+input BlockEsnServerWideInput {
+    esn: String!
+    reason: String!
+}
+
+type BlockEsnServerWidePayload {
+    block: EsnBlockDetails
+    userErrors: [BlockEsnServerWideError!]!
+}
+
+union BlockEsnServerWideError =
+    EsnRequiredError
+  | ReasonRequiredError
+  | EsnAlreadyBlockedError
+  | ReauthenticationRequiredError
+
+input UnblockEsnInput {
+    householdId: ID!
+    esn: String!
+}
+
+type UnblockEsnPayload {
+    esn: String
+    userErrors: [UnblockEsnError!]!
+}
+
+union UnblockEsnError = HouseholdNotFoundError | EsnRequiredError | EsnBlockNotFoundError
+
+input UnblockEsnServerWideInput {
+    esn: String!
+}
+
+type UnblockEsnServerWidePayload {
+    esn: String
+    userErrors: [UnblockEsnServerWideError!]!
+}
+
+union UnblockEsnServerWideError = EsnRequiredError | EsnBlockNotFoundError

@@ -8,7 +8,11 @@ import lombok.Builder;
 /** The conditional decision write: which code, which outcome, decided by whom and when. */
 @Builder
 public record DeviceAuthorizationDecisionCommand(
-    String userCode, DeviceAuthorizationStatus status, UUID decidedByAccountId, Instant now) {
+    String userCode,
+    DeviceAuthorizationStatus status,
+    UUID decidedByAccountId,
+    UUID chosenHouseholdId,
+    Instant now) {
 
   public static class DeviceAuthorizationDecisionCommandBuilder {
 

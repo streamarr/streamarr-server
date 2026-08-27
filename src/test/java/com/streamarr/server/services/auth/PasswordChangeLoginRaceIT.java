@@ -9,6 +9,7 @@ import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
@@ -74,9 +75,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
     passwordEncoder.observeNextPasswordChange();
 
     passwordChangeService.changePassword(
+        identity(caller.getId()),
         ChangePasswordCommand.builder()
-            .accountId(account.getId())
-            .sessionId(caller.getId())
             .currentPassword(oldPassword)
             .newPassword(UUID.randomUUID().toString())
             .build());
@@ -153,9 +153,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
 
       var passwordChange =
           passwordChangeService.changePassword(
+              identity(caller.getId()),
               ChangePasswordCommand.builder()
-                  .accountId(account.getId())
-                  .sessionId(caller.getId())
                   .currentPassword(oldPassword)
                   .newPassword(newPassword)
                   .build());
@@ -200,9 +199,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
 
       var passwordChange =
           passwordChangeService.changePassword(
+              identity(caller.getId()),
               ChangePasswordCommand.builder()
-                  .accountId(account.getId())
-                  .sessionId(caller.getId())
                   .currentPassword(oldPassword)
                   .newPassword(newPassword)
                   .build());
@@ -258,9 +256,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
           executor.submit(
               () ->
                   passwordChangeService.changePassword(
+                      identity(caller.getId()),
                       ChangePasswordCommand.builder()
-                          .accountId(account.getId())
-                          .sessionId(caller.getId())
                           .currentPassword(oldPassword)
                           .newPassword(newPassword)
                           .build()));
@@ -314,12 +311,20 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
   private PasswordChangeResult changePassword(
       UUID callerSessionId, String oldPassword, String newPassword) {
     return passwordChangeService.changePassword(
+        identity(callerSessionId),
         ChangePasswordCommand.builder()
-            .accountId(account.getId())
-            .sessionId(callerSessionId)
             .currentPassword(oldPassword)
             .newPassword(newPassword)
             .build());
+  }
+
+  private AuthenticatedIdentity identity(UUID sessionId) {
+    return AuthenticatedIdentityFixture.accountScopedBuilder()
+        .accountId(account.getId())
+        .authSessionId(sessionId)
+        .householdId(account.getHouseholdId())
+        .contextHouseholdId(account.getHouseholdId())
+        .build();
   }
 
   private void collect(
@@ -343,6 +348,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
       if (!releaseTable.await(10, TimeUnit.SECONDS)) {
         throw new AssertionError("racing login did not release the auth-session table lock");
       }
+
       connection.rollback();
     } catch (Exception exception) {
       throw new AssertionError("could not coordinate the auth-session table lock", exception);
@@ -479,6 +485,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
       if (gate != null) {
         gate.continueLogin().countDown();
       }
+
       pausePrepared.set(new CountDownLatch(1));
     }
 
@@ -496,6 +503,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
       if (observePasswordChange.compareAndSet(true, false)) {
         encodeObservation.set(observeTransaction());
       }
+
       pauseEncodedPasswordChange();
       return encoded;
     }
@@ -506,9 +514,11 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
       if (observePasswordChange.get()) {
         matchObservation.set(observeTransaction());
       }
+
       if (matches) {
         pauseIfRequested(PausePoint.SUCCESSFUL_MATCH);
       }
+
       return matches;
     }
 
@@ -530,6 +540,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
       if (gate == null) {
         throw new AssertionError("no login pause has been prepared");
       }
+
       return gate;
     }
 
@@ -538,6 +549,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
       if (gate == null) {
         throw new AssertionError("no password-change encode gate has been prepared");
       }
+
       return gate;
     }
 
@@ -552,6 +564,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
       if (gate == null) {
         return;
       }
+
       gate.encoded().countDown();
       try {
         if (!gate.continueChanges().await(10, TimeUnit.SECONDS)) {

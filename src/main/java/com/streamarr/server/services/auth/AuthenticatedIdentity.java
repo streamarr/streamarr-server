@@ -26,7 +26,8 @@ public record AuthenticatedIdentity(
     @NonNull UUID contextHouseholdId,
     UUID profileId,
     UUID streamSessionId,
-    @NonNull Optional<Instant> reauthenticatedAt) {
+    @NonNull Optional<Instant> reauthenticatedAt,
+    UUID registrationId) {
 
   @SuppressWarnings("java:S1068") // Lombok builder default — field is used by generated code
   public static class AuthenticatedIdentityBuilder {
@@ -63,7 +64,13 @@ public record AuthenticatedIdentity(
         .streamSessionId(uuidClaim(jwt, TokenClaims.STREAM_SESSION_ID))
         .reauthenticatedAt(
             Optional.ofNullable(jwt.getClaimAsInstant(TokenClaims.REAUTHENTICATED_AT)))
+        .registrationId(uuidClaim(jwt, TokenClaims.REGISTRATION_ID))
         .build();
+  }
+
+  /** A device-bound session administers nothing and never switches Household (ADR 0024). */
+  public boolean deviceBound() {
+    return registrationId != null;
   }
 
   /** The selected Profile in the context Household; absent in Account scope. */

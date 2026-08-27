@@ -6,6 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.DeviceRegistration;
+import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
+import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -62,6 +66,9 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
+  @Autowired private AuthSessionRepository sessionRepository;
+  @Autowired private DeviceRegistrationRepository registrationRepository;
+  @Autowired private EsnBlockRepository esnBlockRepository;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
@@ -71,6 +78,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   @AfterEach
   void cleanUp() {
     dsl.deleteFrom(SERVER_BOOTSTRAP).execute();
+    registrationRepository.deleteAll();
     var failures = new ArrayList<RuntimeException>();
     for (var identity : identities) {
       try {
@@ -536,6 +544,160 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         .isInstanceOf(DataIntegrityViolationException.class)
         .extracting(IdentityInvariantsIT::constraintName)
         .isEqualTo("chk_profile_pin_hash_not_blank");
+  }
+
+  // ---- T9 ---------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("Should refuse an active Device registration when its Household is missing (T9)")
+  void shouldRefuseActiveDeviceRegistrationWhenHouseholdMissing() {
+    var identity = create();
+
+    assertThatThrownBy(
+            () ->
+                transactionTemplate.executeWithoutResult(
+                    _ ->
+                        registrationRepository.saveAndFlush(
+                            DeviceRegistration.builder()
+                                .esn("esn-missing-household")
+                                .displayName("TV")
+                                .authorizingAccountId(identity.account().getId())
+                                .build())))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .extracting(IdentityInvariantsIT::constraintName)
+        .isEqualTo("chk_device_registration_supported");
+  }
+
+  @Test
+  @DisplayName(
+      "Should revoke an active Device registration when its authorizing Account is deleted")
+  void shouldRevokeActiveDeviceRegistrationWhenAuthorizingAccountDeleted() {
+    var remainingAdmin = create();
+    var departingAdmin = joinAsAdmin(remainingAdmin);
+    var registration =
+        registrationRepository.saveAndFlush(
+            DeviceRegistration.builder()
+                .esn("esn-deleted-account")
+                .displayName("TV")
+                .householdId(remainingAdmin.household().getId())
+                .authorizingAccountId(departingAdmin.getId())
+                .build());
+
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          userAccountRepository.deleteById(departingAdmin.getId());
+          userAccountRepository.flush();
+          profileRepository.deleteById(departingAdmin.getPersonalProfileId());
+          profileRepository.flush();
+        });
+
+    var revoked = registrationRepository.findById(registration.getId()).orElseThrow();
+    assertThat(revoked.getStatus()).isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(revoked.getRevokedAt()).isNotNull();
+    assertThat(revoked.getAuthorizingAccountId()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should revoke an active visiting Device session when its Household is deleted")
+  void shouldRevokeActiveVisitingDeviceSessionWhenHouseholdDeleted() {
+    var host = create();
+    var visitor = create();
+    shareRepository.saveAndFlush(
+        ProfileHouseholdShare.builder()
+            .profileId(visitor.profile().getId())
+            .householdId(host.household().getId())
+            .status(ProfileShareStatus.ACTIVE)
+            .build());
+    var registration =
+        registrationRepository.saveAndFlush(
+            DeviceRegistration.builder()
+                .esn("esn-deleted-household")
+                .displayName("TV")
+                .householdId(host.household().getId())
+                .authorizingAccountId(visitor.account().getId())
+                .build());
+    var session =
+        sessionRepository.saveAndFlush(
+            AuthSession.builder()
+                .accountId(visitor.account().getId())
+                .registrationId(registration.getId())
+                .deviceName("TV")
+                .build());
+
+    authTestSupport.deleteAccount(host.account().getId());
+
+    var revokedRegistration = registrationRepository.findById(registration.getId()).orElseThrow();
+    assertThat(revokedRegistration.getStatus()).isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(revokedRegistration.getRevokedAt()).isNotNull();
+    assertThat(revokedRegistration.getHouseholdId()).isNull();
+    assertThat(sessionRepository.findById(session.getId()).orElseThrow().getRevokedAt())
+        .isNotNull();
+  }
+
+  // ---- T10 --------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("Should refuse an ESN block when a matching registration remains active (T10)")
+  void shouldRefuseEsnBlockWhenMatchingRegistrationRemainsActive() {
+    var identity = create();
+    registrationRepository.saveAndFlush(
+        DeviceRegistration.builder()
+            .esn("esn-active-registration")
+            .displayName("TV")
+            .householdId(identity.household().getId())
+            .authorizingAccountId(identity.account().getId())
+            .build());
+
+    assertThatThrownBy(
+            () ->
+                transactionTemplate.executeWithoutResult(
+                    _ ->
+                        esnBlockRepository.saveAndFlush(
+                            EsnBlock.builder()
+                                .esn("esn-active-registration")
+                                .householdId(identity.household().getId())
+                                .reason("stolen")
+                                .build())))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .extracting(IdentityInvariantsIT::constraintName)
+        .isEqualTo("chk_esn_block_leaves_no_device");
+  }
+
+  @Test
+  @DisplayName("Should refuse an ESN block when a matching Device session remains live (T10)")
+  void shouldRefuseEsnBlockWhenMatchingDeviceSessionRemainsLive() {
+    var identity = create();
+    var registration =
+        registrationRepository.saveAndFlush(
+            DeviceRegistration.builder()
+                .esn("esn-live-session")
+                .displayName("TV")
+                .householdId(identity.household().getId())
+                .authorizingAccountId(identity.account().getId())
+                .build());
+    sessionRepository.saveAndFlush(
+        AuthSession.builder()
+            .accountId(identity.account().getId())
+            .registrationId(registration.getId())
+            .deviceName("TV")
+            .build());
+    registration.setStatus(DeviceRegistrationStatus.REVOKED);
+    registration.setRevokedAt(Instant.now());
+    registrationRepository.saveAndFlush(registration);
+
+    assertThatThrownBy(
+            () ->
+                transactionTemplate.executeWithoutResult(
+                    _ ->
+                        esnBlockRepository.saveAndFlush(
+                            EsnBlock.builder()
+                                .esn("esn-live-session")
+                                .householdId(identity.household().getId())
+                                .reason("stolen")
+                                .build())))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .extracting(IdentityInvariantsIT::constraintName)
+        .isEqualTo("chk_esn_block_leaves_no_device");
   }
 
   // ---- helpers ----------------------------------------------------------------------------------

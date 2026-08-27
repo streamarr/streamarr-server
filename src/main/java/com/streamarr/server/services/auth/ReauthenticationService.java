@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.DeviceBoundSessionException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.util.Optional;
@@ -17,6 +18,11 @@ public class ReauthenticationService {
   private final AccountPasswordVerifier accountPasswordVerifier;
 
   public TokenContext reauthenticate(AuthenticatedIdentity identity, String password) {
+    if (identity.deviceBound()) {
+      // A TV never steps up: fresh-reauthentication work is for people at their own keyboard.
+      throw new DeviceBoundSessionException();
+    }
+
     var session =
         authSessionRepository
             .findById(identity.authSessionId())

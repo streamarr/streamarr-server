@@ -9,6 +9,7 @@ import com.streamarr.server.services.auth.ChangePasswordCommand;
 import com.streamarr.server.services.auth.DeviceAuthorizationService;
 import com.streamarr.server.services.auth.LoginCommand;
 import com.streamarr.server.services.auth.LoginService;
+import com.streamarr.server.services.auth.LogoutService;
 import com.streamarr.server.services.auth.PasswordChangeService;
 import com.streamarr.server.services.auth.ReauthenticationService;
 import com.streamarr.server.services.auth.RefreshTokenService;
@@ -43,6 +44,7 @@ public class AuthController {
   private final SetupService setupService;
   private final LoginService loginService;
   private final RefreshTokenService refreshTokenService;
+  private final LogoutService logoutService;
   private final TokenRefreshService tokenRefreshService;
   private final SessionContextService sessionContextService;
   private final HouseholdContextService householdContextService;
@@ -71,7 +73,7 @@ public class AuthController {
   public ResponseEntity<Void> logout(
       @RequestBody(required = false) RefreshRequest request, HttpServletRequest httpRequest) {
     var carrier = resolveRefreshCarrier(request, httpRequest);
-    refreshTokenService.logout(carrier.refreshToken());
+    logoutService.logout(carrier.refreshToken());
 
     return ResponseEntity.noContent()
         .header(HttpHeaders.SET_COOKIE, cookieWriter.expiredAccessCookie().toString())
@@ -85,9 +87,8 @@ public class AuthController {
     var identity = authorizationService.currentIdentity();
     var result =
         passwordChangeService.changePassword(
+            identity,
             ChangePasswordCommand.builder()
-                .accountId(identity.accountId())
-                .sessionId(identity.authSessionId())
                 .currentPassword(request.currentPassword())
                 .newPassword(request.newPassword())
                 .build());
@@ -108,9 +109,7 @@ public class AuthController {
   public ResponseEntity<AuthTokensResponse> selectHousehold(
       @Valid @RequestBody SelectHouseholdRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
-    var context =
-        householdContextService.selectHousehold(
-            identity.accountId(), identity.authSessionId(), request.householdId());
+    var context = householdContextService.selectHousehold(identity, request.householdId());
     return tokenResponseWriter.accessOnly(
         accessTokenIssuer.issueDerived(
             context.withReauthenticatedAt(identity.reauthenticatedAt()),

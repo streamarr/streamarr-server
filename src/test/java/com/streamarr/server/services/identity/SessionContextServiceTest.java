@@ -8,6 +8,7 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.DeviceBoundSessionException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.UnwrittenAuthSessionException;
@@ -127,12 +128,30 @@ class SessionContextServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject a Household switch when the identity is device-bound")
+  void shouldRejectHouseholdSwitchWhenIdentityIsDeviceBound() {
+    var session = session(account.getHouseholdId(), null);
+    var identity =
+        AuthenticatedIdentityFixture.accountScopedBuilder()
+            .accountId(account.getId())
+            .authSessionId(session.getId())
+            .householdId(account.getHouseholdId())
+            .contextHouseholdId(account.getHouseholdId())
+            .registrationId(UUID.randomUUID())
+            .build();
+
+    assertThatThrownBy(() -> households.selectHousehold(identity, visitedHouseholdId))
+        .isInstanceOf(DeviceBoundSessionException.class);
+  }
+
+  @Test
   @DisplayName("Should clear the selection when switching to a usable Household")
   void shouldClearSelectionWhenSwitchingToUsableHousehold() {
     shares.share(personal.getId(), visitedHouseholdId, false);
     var session = session(account.getHouseholdId(), personal.getId());
 
-    var context = households.selectHousehold(account.getId(), session.getId(), visitedHouseholdId);
+    var context =
+        households.selectHousehold(identity(account.getId(), session.getId()), visitedHouseholdId);
 
     assertThat(context.contextHouseholdId()).isEqualTo(visitedHouseholdId);
     assertThat(context.profileId()).isEmpty();
@@ -146,7 +165,8 @@ class SessionContextServiceTest {
     var accountId = account.getId();
     var sessionId = session.getId();
 
-    assertThatThrownBy(() -> households.selectHousehold(accountId, sessionId, visitedHouseholdId))
+    assertThatThrownBy(
+            () -> households.selectHousehold(identity(accountId, sessionId), visitedHouseholdId))
         .isInstanceOf(HouseholdAccessDeniedException.class);
   }
 
@@ -160,13 +180,15 @@ class SessionContextServiceTest {
     var membershipHouseholdId = account.getHouseholdId();
 
     assertThatThrownBy(
-            () -> households.selectHousehold(accountId, sessionId, membershipHouseholdId))
+            () -> households.selectHousehold(identity(accountId, sessionId), membershipHouseholdId))
         .isInstanceOf(AuthenticationRequiredException.class);
 
     var foreign = sessions.save(AuthSession.builder().accountId(UUID.randomUUID()).build());
     var foreignSessionId = foreign.getId();
     assertThatThrownBy(
-            () -> households.selectHousehold(accountId, foreignSessionId, membershipHouseholdId))
+            () ->
+                households.selectHousehold(
+                    identity(accountId, foreignSessionId), membershipHouseholdId))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 
@@ -219,5 +241,14 @@ class SessionContextServiceTest {
             .contextHouseholdId(contextHouseholdId)
             .selectedProfileId(selectedProfileId)
             .build());
+  }
+
+  private AuthenticatedIdentity identity(UUID accountId, UUID sessionId) {
+    return AuthenticatedIdentityFixture.accountScopedBuilder()
+        .accountId(accountId)
+        .authSessionId(sessionId)
+        .householdId(account.getHouseholdId())
+        .contextHouseholdId(account.getHouseholdId())
+        .build();
   }
 }

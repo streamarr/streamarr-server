@@ -222,6 +222,34 @@ public class DeviceAuthorizationRecord extends UpdatableRecordImpl<DeviceAuthori
         return (Integer) get(13);
     }
 
+    /**
+     * Setter for <code>public.device_authorization.esn</code>.
+     */
+    public void setEsn(String value) {
+        set(14, value);
+    }
+
+    /**
+     * Getter for <code>public.device_authorization.esn</code>.
+     */
+    public String getEsn() {
+        return (String) get(14);
+    }
+
+    /**
+     * Setter for <code>public.device_authorization.chosen_household_id</code>.
+     */
+    public void setChosenHouseholdId(UUID value) {
+        set(15, value);
+    }
+
+    /**
+     * Getter for <code>public.device_authorization.chosen_household_id</code>.
+     */
+    public UUID getChosenHouseholdId() {
+        return (UUID) get(15);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -245,7 +273,7 @@ public class DeviceAuthorizationRecord extends UpdatableRecordImpl<DeviceAuthori
     /**
      * Create a detached, initialised DeviceAuthorizationRecord
      */
-    public DeviceAuthorizationRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String deviceCodeDigest, String userCode, DeviceAuthorizationStatus status, String deviceName, UUID decidedByAccountId, OffsetDateTime expiresAt, OffsetDateTime decidedAt, OffsetDateTime nextPollAt, Integer pollIntervalSeconds) {
+    public DeviceAuthorizationRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String deviceCodeDigest, String userCode, DeviceAuthorizationStatus status, String deviceName, UUID decidedByAccountId, OffsetDateTime expiresAt, OffsetDateTime decidedAt, OffsetDateTime nextPollAt, Integer pollIntervalSeconds, String esn, UUID chosenHouseholdId) {
         super(DeviceAuthorization.DEVICE_AUTHORIZATION);
 
         setId(id);
@@ -262,6 +290,8 @@ public class DeviceAuthorizationRecord extends UpdatableRecordImpl<DeviceAuthori
         setDecidedAt(decidedAt);
         setNextPollAt(nextPollAt);
         setPollIntervalSeconds(pollIntervalSeconds);
+        setEsn(esn);
+        setChosenHouseholdId(chosenHouseholdId);
         resetTouchedOnNotNull();
     }
 }
