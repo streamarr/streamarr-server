@@ -245,9 +245,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
               invocation -> {
                 if (firstGrant.compareAndSet(true, false)) {
                   firstGrantReached.countDown();
-                  if (!releaseFirstGrant.await(10, TimeUnit.SECONDS)) {
-                    throw new AssertionError("Timed out releasing Profile transfer");
-                  }
+                  awaitProfileTransferRelease(releaseFirstGrant);
                 }
 
                 return repositoryAnswer.answer(invocation);
@@ -336,6 +334,13 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
       authTestSupport.deleteIdentity(secondDestination);
       authTestSupport.deleteIdentity(source);
       authTestSupport.deleteIdentity(actor);
+    }
+  }
+
+  private static void awaitProfileTransferRelease(CountDownLatch releaseFirstGrant)
+      throws InterruptedException {
+    if (!releaseFirstGrant.await(10, TimeUnit.SECONDS)) {
+      throw new AssertionError("Timed out releasing Profile transfer");
     }
   }
 
