@@ -1,10 +1,10 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.fixtures.AccountInvitationFixture.pendingInvitationBuilder;
 import static com.streamarr.server.jooq.generated.tables.Household.HOUSEHOLD;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
-import static com.streamarr.server.fixtures.AccountInvitationFixture.pendingInvitationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.contains;
