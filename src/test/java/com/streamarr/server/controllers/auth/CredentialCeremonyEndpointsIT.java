@@ -802,10 +802,14 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
             "recipientEmail",
             "householdName",
             "householdRole",
+            "mode",
             "profileName",
             "profileKind",
             "maximumAllowedRatingAge",
-            "expiresAt");
+            "expiresAt",
+            "remainingManagers",
+            "endingHouseholds",
+            "reofferHouseholds");
   }
 
   /** The 404 INVALID_CODE answer, which every miss must repeat verbatim. */
