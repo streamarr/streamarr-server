@@ -17,6 +17,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.EmailAddressValidator;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Decision;
@@ -25,7 +26,6 @@ import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -61,6 +61,19 @@ public class CredentialIssuanceService {
   public Outcome<IssuedInvitation, CredentialRejections.Issue> issueAccountInvitation(
       AuthenticatedIdentity identity, IssueInvitationCommand command) {
     authorizationService.requireAllowed(identity, new Intent.IssueAccountInvitation());
+    return switch (EmailAddressValidator.validate(command.recipientEmail())) {
+      case EmailAddressValidator.Blank _ ->
+          Outcome.rejected(new CredentialRejections.EmailRequired());
+      case EmailAddressValidator.Malformed _ ->
+          Outcome.rejected(new CredentialRejections.EmailInvalid());
+      case EmailAddressValidator.Valid(var recipientEmail) ->
+          issueInvitationTo(identity, command.toBuilder().recipientEmail(recipientEmail).build());
+    };
+  }
+
+  /** The remaining refusals and the write, for a command whose recipient email is normalized. */
+  private Outcome<IssuedInvitation, CredentialRejections.Issue> issueInvitationTo(
+      AuthenticatedIdentity identity, IssueInvitationCommand command) {
     var inputRejection = inputRejection(command);
     if (inputRejection.isPresent()) {
       return Outcome.rejected(inputRejection.get());
@@ -80,17 +93,9 @@ public class CredentialIssuanceService {
   }
 
   /**
-   * Field-level refusals that need no Household: blank fields, an invalid ceiling, a used email.
+   * Field-level refusals that need no Household: a blank name, an invalid ceiling, a used email.
    */
   private Optional<CredentialRejections.Issue> inputRejection(IssueInvitationCommand command) {
-    if (isBlank(command.recipientEmail())) {
-      return Optional.of(new CredentialRejections.EmailRequired());
-    }
-
-    if (!isPlausibleEmail(command.recipientEmail().strip())) {
-      return Optional.of(new CredentialRejections.EmailInvalid());
-    }
-
     if (isBlank(command.profileName())) {
       return Optional.of(new CredentialRejections.ProfileNameRequired());
     }
@@ -99,30 +104,12 @@ public class CredentialIssuanceService {
       return Optional.of(new CredentialRejections.MaximumAllowedRatingAgeInvalid());
     }
 
-    if (userAccountRepository.findByEmailIgnoreCase(command.recipientEmail().strip()).isPresent()) {
+    if (userAccountRepository.findByEmailIgnoreCase(command.recipientEmail()).isPresent()) {
       // An existing email cannot be invited or reassigned; ServerAdmin transfers instead.
       return Optional.of(new CredentialRejections.EmailAlreadyUsed());
     }
 
     return Optional.empty();
-  }
-
-  /**
-   * One local part, one @, a domain of dot-separated non-empty labels, no whitespace: the shape,
-   * not deliverability. Iterative checks, so a long domain costs no stack.
-   */
-  private static boolean isPlausibleEmail(String email) {
-    var at = email.indexOf('@');
-    if (at < 1 || at != email.lastIndexOf('@')) {
-      return false;
-    }
-
-    if (email.chars().anyMatch(Character::isWhitespace)) {
-      return false;
-    }
-
-    var labels = email.substring(at + 1).split("\\.", -1);
-    return labels.length > 1 && Arrays.stream(labels).noneMatch(String::isEmpty);
   }
 
   /** The new Profile's shape against its Household: name, restriction, and required manager. */
@@ -162,7 +149,7 @@ public class CredentialIssuanceService {
 
   private Outcome<IssuedInvitation, CredentialRejections.Issue> issueInvitation(
       AuthenticatedIdentity identity, IssueInvitationCommand command, Household household) {
-    var recipientEmail = command.recipientEmail().strip();
+    var recipientEmail = command.recipientEmail();
     var profileName = command.profileName().strip();
     var profileKind = Objects.requireNonNullElse(command.profileKind(), ProfileKind.ADULT);
     var issued = opaqueCodes.issue();
