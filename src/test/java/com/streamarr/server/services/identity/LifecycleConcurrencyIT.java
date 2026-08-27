@@ -367,7 +367,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                 return repositoryAnswer.answer(invocation);
               })
           .when(repositorySpy)
-          .invalidatePendingForProfile(eq(orphan.getId()), any(String.class), any(Instant.class));
+          .invalidatePendingByProfileId(eq(orphan.getId()), any(String.class), any(Instant.class));
 
       Object deletion;
       try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
