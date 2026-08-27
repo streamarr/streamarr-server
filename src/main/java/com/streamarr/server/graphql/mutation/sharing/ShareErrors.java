@@ -18,8 +18,7 @@ public final class ShareErrors {
           new HouseholdNotFoundError("No such Household.", InputPath.of("householdId"));
       case ShareRejections.AlreadyShared _ ->
           new ProfileAlreadySharedError(
-              "That Profile is already available in that Household.",
-              InputPath.of("householdId"));
+              "That Profile is already available in that Household.", InputPath.of("householdId"));
     };
   }
 
