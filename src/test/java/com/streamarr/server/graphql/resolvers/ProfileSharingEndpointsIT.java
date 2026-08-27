@@ -259,6 +259,64 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should preserve expiry when an expired offer's offerer is no longer authorized")
+  void shouldPreserveExpiryWhenExpiredOffersOffererIsNoLongerAuthorized() throws Exception {
+    var orphan = managedOrphan();
+    var offerer = authTestSupport.createAdminIdentity();
+    try {
+      var response =
+          graphql(
+                  authTestSupport.accountBearer(offerer),
+                  """
+                  mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+                    share { id status } userErrors { __typename } } }
+                  """
+                      .formatted(orphan.getId(), host.household().getId()))
+              .andExpect(status().isOk())
+              .andExpect(jsonPath("$.errors").doesNotExist())
+              .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"))
+              .andReturn()
+              .getResponse()
+              .getContentAsString();
+      var shareId =
+          UUID.fromString(
+              objectMapper
+                  .readTree(response)
+                  .path("data")
+                  .path("offerProfileShare")
+                  .path("share")
+                  .path("id")
+                  .asString());
+      expire(shareId);
+      transactionTemplate.executeWithoutResult(
+          _ -> {
+            var revoked = userAccountRepository.findById(offerer.account().getId()).orElseThrow();
+            revoked.setServerAdmin(false);
+            userAccountRepository.saveAndFlush(revoked);
+          });
+
+      graphql(
+              authTestSupport.accountBearer(host),
+              """
+              mutation { acceptProfileShare(input: {shareId: "%s"}) {
+                share { status } userErrors { __typename } } }
+              """
+                  .formatted(shareId))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.acceptProfileShare.userErrors[0].__typename")
+                  .value("ShareNotPendingError"));
+
+      var stored = shareRepository.findById(shareId).orElseThrow();
+      assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.PENDING);
+      assertThat(stored.getInvalidationReason()).isEmpty();
+    } finally {
+      authTestSupport.deleteIdentity(offerer);
+    }
+  }
+
+  @Test
   @DisplayName("Should refuse activation when a restricted share would leave no eligible admin")
   void shouldRefuseActivationWhenRestrictedShareWouldLeaveNoEligibleAdmin() throws Exception {
     var kid = managedKid();

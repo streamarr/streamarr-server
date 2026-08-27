@@ -1,5 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.jooq.generated.enums.ProfileKind.ADULT;
+import static com.streamarr.server.jooq.generated.tables.HouseholdGuard.HOUSEHOLD_GUARD;
 import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
@@ -45,6 +47,18 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
             row ->
                 new ProfilePolicySnapshot(
                     ProfileKind.valueOf(row.value1().name()), row.value2(), row.value3()));
+  }
+
+  @Override
+  public boolean lockIfUnrestricted(UUID profileId) {
+    return dsl.select(PROFILE.ID)
+        .from(PROFILE)
+        .where(PROFILE.ID.eq(profileId))
+        .and(PROFILE.KIND.eq(ADULT))
+        .and(PROFILE.MAXIMUM_ALLOWED_RATING_AGE.isNull())
+        .forShare()
+        .fetchOptional()
+        .isPresent();
   }
 
   @Override
@@ -125,6 +139,22 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
             .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(DSL.inline(ProfileShareStatus.ACTIVE)))
             .orderBy(PROFILE.NAME.asc(), PROFILE.ID.asc());
     return JooqQueryHelper.nativeQuery(entityManager, query, Profile.class);
+  }
+
+  @Override
+  public List<Profile> lockAndFindAvailableInHousehold(UUID householdId) {
+    var locked =
+        dsl.select(HOUSEHOLD_GUARD.HOUSEHOLD_ID)
+            .from(HOUSEHOLD_GUARD)
+            .where(HOUSEHOLD_GUARD.HOUSEHOLD_ID.eq(householdId))
+            .forShare()
+            .fetchOptional()
+            .isPresent();
+    if (!locked) {
+      return List.of();
+    }
+
+    return findAvailableInHousehold(householdId);
   }
 
   @Override

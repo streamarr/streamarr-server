@@ -42,6 +42,11 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   }
 
   @Override
+  public boolean lockIfUnrestricted(UUID profileId) {
+    return findById(profileId).filter(profile -> !profile.isRestricted()).isPresent();
+  }
+
+  @Override
   public boolean lockById(UUID profileId) {
     return findById(profileId).isPresent();
   }
@@ -105,6 +110,11 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
         .filter(profile -> available.contains(profile.getId()))
         .sorted(Comparator.comparing(Profile::getName).thenComparing(Profile::getId))
         .toList();
+  }
+
+  @Override
+  public List<Profile> lockAndFindAvailableInHousehold(UUID householdId) {
+    return findAvailableInHousehold(householdId);
   }
 
   @Override

@@ -8,17 +8,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Duration;
 import java.util.Map;
@@ -39,6 +42,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -46,7 +50,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * The two row-lock races around a share's end, driven deterministically: a side connection holds
+ * The row-lock races around a share's lifecycle, driven deterministically: a side connection holds
  * the row the racing request needs, {@code pg_stat_activity} confirms the request is blocked, the
  * competitor runs, the row is released, and the final state is asserted — no sleeps, no polling for
  * the outcome.
@@ -71,6 +75,7 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private HouseholdRepository householdRepository;
   @Autowired private AuthSessionRepository authSessionRepository;
+  @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
   @Autowired private DataSource dataSource;
@@ -92,6 +97,44 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
   }
 
   // ---- Selection versus share termination.
+
+  @Test
+  @DisplayName("Should reject a selection when a Kid share activates before it commits")
+  void shouldRejectSelectionWhenKidShareActivatesBeforeItCommits() throws Exception {
+    var kid = managedKid();
+    var shareId = offerAsOwner(kid, host.household().getId());
+    var hostBearer = authTestSupport.accountBearer(host);
+
+    var racedSelectionStatus =
+        whileRowLocked(
+            LOCK_SESSION_ROW,
+            host.session().getId(),
+            held -> {
+              var selection =
+                  held.executor().submit(() -> selectProfile(hostBearer, host.profile().getId()));
+              awaitWaitingOn(
+                  WAITING_SESSION_LOCK, "selection should wait after its authorization decision");
+
+              var activation =
+                  held.executor()
+                      .submit(
+                          () -> {
+                            accept(host, shareId);
+                            return null;
+                          });
+              outcomeOf(activation, "Kid share activation while selection is blocked");
+
+              held.release().run();
+              return outcomeOf(selection, "selection after Kid share activation");
+            });
+
+    assertThat(selectProfile(hostBearer, host.profile().getId()))
+        .as("the activated Kid share must lock the PIN-less Adult Profile")
+        .isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(racedSelectionStatus)
+        .as("a selection authorized before activation must not commit after the Profile locks")
+        .isEqualTo(HttpStatus.CONFLICT.value());
+  }
 
   /**
    * Selection pins the Profile's ACTIVE share before it locks the session, in the order termination
@@ -248,6 +291,73 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
       authTestSupport.deleteIdentity(offerer);
       authTestSupport.deleteIdentity(disabler);
     }
+  }
+
+  // ---- Share termination versus direct management removal.
+
+  @Test
+  @DisplayName("Should not end a share after the actor's direct management is removed")
+  void shouldNotEndShareAfterActorsDirectManagementIsRemoved() throws Exception {
+    var orphan = managedOrphan();
+    var shareId = offerAsOwner(orphan, host.household().getId());
+    accept(host, shareId);
+    makeHostMemberWithReplacementAdmin();
+    var manager =
+        profileManagerRepository.saveAndFlush(
+            ProfileManager.builder()
+                .accountId(host.account().getId())
+                .profileId(orphan.getId())
+                .build());
+    var hostBearer = authTestSupport.accountBearer(host);
+
+    var removalCommittedBeforeTransition =
+        whileRowLocked(
+            LOCK_SHARE_ROW,
+            shareId,
+            held -> {
+              var end =
+                  held.executor()
+                      .submit(
+                          () ->
+                              graphql(
+                                      hostBearer,
+                                      """
+                                      mutation { endProfileShare(input: {shareId: "%s"}) {
+                                        share { status } userErrors { __typename } } }
+                                      """
+                                          .formatted(shareId))
+                                  .andExpect(status().isOk())
+                                  .andReturn()
+                                  .getResponse()
+                                  .getContentAsString());
+              awaitWaitingOn(
+                  WAITING_SHARE_TRANSITION,
+                  "share termination should wait after its authorization decision");
+
+              var removal =
+                  held.executor()
+                      .submit(
+                          () -> {
+                            transactionTemplate.executeWithoutResult(
+                                _ -> {
+                                  profileManagerRepository.deleteById(manager.getId());
+                                  profileManagerRepository.flush();
+                                });
+                            return null;
+                          });
+              var removedBeforeRelease = completedWithin(removal, Duration.ofSeconds(2));
+
+              held.release().run();
+              outcomeOf(end, "share termination after manager removal");
+              outcomeOf(removal, "direct manager removal after release");
+              return removedBeforeRelease;
+            });
+
+    var ended =
+        shareRepository.findById(shareId).orElseThrow().getStatus() == ProfileShareStatus.ENDED;
+    assertThat(removalCommittedBeforeTransition && ended)
+        .as("a share transition must not commit after its authorizing manager grant is removed")
+        .isFalse();
   }
 
   private int selectProfile(String bearer, UUID profileId) throws Exception {
@@ -433,6 +543,57 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
                   .status(ProfileShareStatus.ACTIVE)
                   .build());
           return profile;
+        });
+  }
+
+  private Profile managedKid() {
+    return transactionTemplate.execute(
+        _ -> {
+          var profile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.kidProfileBuilder()
+                      .householdId(owner.household().getId())
+                      .build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(owner.account().getId())
+                  .profileId(profile.getId())
+                  .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(owner.household().getId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .build());
+          return profile;
+        });
+  }
+
+  private void makeHostMemberWithReplacementAdmin() {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var replacementProfile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder()
+                      .householdId(host.household().getId())
+                      .build());
+          userAccountRepository.saveAndFlush(
+              AccountFixture.defaultAccountBuilder()
+                  .householdId(host.household().getId())
+                  .householdRole(HouseholdRole.ADMIN)
+                  .personalProfileId(replacementProfile.getId())
+                  .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(replacementProfile.getId())
+                  .householdId(host.household().getId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .structural(true)
+                  .build());
+
+          var liveHost = userAccountRepository.findById(host.account().getId()).orElseThrow();
+          liveHost.setHouseholdRole(HouseholdRole.MEMBER);
+          userAccountRepository.saveAndFlush(liveHost);
         });
   }
 

@@ -54,7 +54,14 @@ public class ProfileHouseholdShareRepositoryCustomImpl
 
   @Override
   public boolean tryInvalidatePending(UUID shareId, String reason, Instant now) {
-    return invalidatePending(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId), reason, now) > 0;
+    return invalidatePending(
+            PROFILE_HOUSEHOLD_SHARE
+                .ID
+                .eq(shareId)
+                .and(unexpiredAt(val(now.atOffset(ZoneOffset.UTC)))),
+            reason,
+            now)
+        > 0;
   }
 
   @Override

@@ -4,6 +4,7 @@ import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.ProfileLockedException;
 import com.streamarr.server.exceptions.UnwrittenAuthSessionException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -52,6 +53,16 @@ public class SessionContextService {
     var session = liveSessions.lockLiveSession(identity.accountId(), identity.authSessionId());
     if (!identity.contextHouseholdId().equals(session.getContextHouseholdId())) {
       throw new ProfileAccessDeniedException();
+    }
+
+    var available =
+        profileRepository.lockAndFindAvailableInHousehold(identity.contextHouseholdId());
+    if (available.stream().noneMatch(profile -> profile.getId().equals(profileId))) {
+      throw new ProfileAccessDeniedException();
+    }
+
+    if (ProfileSafetyRule.lockedProfiles(available).contains(profileId)) {
+      throw new ProfileLockedException();
     }
 
     session.setSelectedProfileId(profileId);

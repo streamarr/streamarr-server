@@ -1,6 +1,7 @@
 package com.streamarr.server.services.authorization.cedar;
 
 import com.cedarpolicy.value.PrimBool;
+import com.streamarr.server.domain.auth.AccountShareFacts;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -8,6 +9,7 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -47,45 +49,50 @@ class ShareFactsContributor implements FactContributor {
     }
 
     var found = share.get();
+    var unrestrictedProfile = profileRepository.lockIfUnrestricted(found.getProfileId());
+    var principal = userAccountRepository.findShareFacts(identity.accountId());
+    var sovereign = sovereignOverProfile(principal, found, unrestrictedProfile);
+    var directlyManaged =
+        profileManagerRepository
+            .findByAccountIdAndProfileId(identity.accountId(), found.getProfileId())
+            .isPresent();
     slice.resourceAttribute(STRUCTURAL, new PrimBool(found.isStructural()));
     slice.resourceAttribute(
         OFFERED_BY_PRINCIPAL,
         new PrimBool(identity.accountId().equals(found.getOfferedByAccountId())));
     slice.resourceAttribute(
-        PRINCIPAL_MEMBER_OF_TARGET, new PrimBool(memberOfTarget(identity, found)));
+        PRINCIPAL_MEMBER_OF_TARGET, new PrimBool(memberOfTarget(principal, found)));
     slice.resourceAttribute(
-        PRINCIPAL_ADMIN_OF_TARGET, new PrimBool(adminOfTarget(identity, found)));
-    slice.resourceAttribute(
-        DIRECTLY_MANAGED_BY_PRINCIPAL,
-        new PrimBool(
-            profileManagerRepository.existsByAccountIdAndProfileId(
-                identity.accountId(), found.getProfileId())));
-    slice.resourceAttribute(
-        SOVEREIGN_OVER_PROFILE, new PrimBool(sovereignOverProfile(identity, found)));
+        PRINCIPAL_ADMIN_OF_TARGET, new PrimBool(adminOfTarget(principal, found)));
+    slice.resourceAttribute(DIRECTLY_MANAGED_BY_PRINCIPAL, new PrimBool(directlyManaged));
+    slice.resourceAttribute(SOVEREIGN_OVER_PROFILE, new PrimBool(sovereign));
   }
 
-  private boolean adminOfTarget(AuthenticatedIdentity identity, ProfileHouseholdShare share) {
-    return userAccountRepository
-        .findById(identity.accountId())
-        .filter(account -> account.getHouseholdRole() == HouseholdRole.ADMIN)
-        .filter(account -> share.getHouseholdId().equals(account.getHouseholdId()))
+  private boolean adminOfTarget(
+      Optional<AccountShareFacts> principal, ProfileHouseholdShare share) {
+    return principal
+        .filter(account -> account.householdRole() == HouseholdRole.ADMIN)
+        .filter(account -> share.getHouseholdId().equals(account.householdId()))
         .isPresent();
   }
 
-  private boolean memberOfTarget(AuthenticatedIdentity identity, ProfileHouseholdShare share) {
-    return userAccountRepository
-        .findById(identity.accountId())
-        .filter(account -> share.getHouseholdId().equals(account.getHouseholdId()))
+  private boolean memberOfTarget(
+      Optional<AccountShareFacts> principal, ProfileHouseholdShare share) {
+    return principal
+        .filter(account -> share.getHouseholdId().equals(account.householdId()))
         .isPresent();
   }
 
   private boolean sovereignOverProfile(
-      AuthenticatedIdentity identity, ProfileHouseholdShare share) {
-    return userAccountRepository
-        .findById(identity.accountId())
-        .filter(account -> share.getProfileId().equals(account.getPersonalProfileId()))
-        .flatMap(account -> profileRepository.findById(share.getProfileId()))
-        .filter(profile -> !profile.isRestricted())
+      Optional<AccountShareFacts> principal,
+      ProfileHouseholdShare share,
+      boolean unrestrictedProfile) {
+    if (!unrestrictedProfile) {
+      return false;
+    }
+
+    return principal
+        .filter(account -> share.getProfileId().equals(account.personalProfileId()))
         .isPresent();
   }
 }

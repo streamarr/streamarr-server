@@ -12,6 +12,7 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
+import com.streamarr.server.domain.auth.AccountShareFacts;
 import com.streamarr.server.domain.auth.ProfileManagerEligibility;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.jooq.generated.enums.HouseholdRole;
@@ -132,6 +133,23 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
         .where(USER_ACCOUNT.ID.eq(accountId))
         .forShare()
         .fetchOptional(row -> new AccountAuthorityFacts(row.value1(), row.value2()));
+  }
+
+  @Override
+  public Optional<AccountShareFacts> findShareFacts(UUID accountId) {
+    return dsl.select(
+            USER_ACCOUNT.HOUSEHOLD_ID,
+            USER_ACCOUNT.HOUSEHOLD_ROLE,
+            USER_ACCOUNT.PERSONAL_PROFILE_ID)
+        .from(USER_ACCOUNT)
+        .where(USER_ACCOUNT.ID.eq(accountId))
+        .forShare()
+        .fetchOptional(
+            row ->
+                new AccountShareFacts(
+                    row.value1(),
+                    com.streamarr.server.domain.auth.HouseholdRole.valueOf(row.value2().name()),
+                    row.value3()));
   }
 
   @Override
