@@ -75,8 +75,7 @@ public class TeardownResolver {
 
   @DgsQuery
   public Connection<SecurityAuditEventDetails> securityAuditEvents(DataFetchingEnvironment dfe) {
-    var options =
-        ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
+    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         householdTeardownService.securityAuditEvents(
             authorizationService.currentIdentity(), auditPageRequest(options));
@@ -86,8 +85,7 @@ public class TeardownResolver {
   @DgsQuery
   public Connection<ProfileActivityDetails> profileActivity(
       @InputArgument String profileId, DataFetchingEnvironment dfe) {
-    var options =
-        ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
+    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         householdTeardownService.profileActivity(
             authorizationService.currentIdentity(),

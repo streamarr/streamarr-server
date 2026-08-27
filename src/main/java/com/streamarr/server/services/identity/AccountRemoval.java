@@ -64,12 +64,13 @@ class AccountRemoval {
 
     if (sourceAccess == SourceAccess.KEEP_AS_VISITOR) {
       shareRepository.tryDemoteStructural(profileId, sourceHouseholdId, now);
-      authSessionRepository.clearSelections(profileId, sourceHouseholdId, now);
+      authSessionRepository.clearProfileSelectionFromLiveSessions(
+          profileId, sourceHouseholdId, now);
     } else {
       endSourceAccess(accountId, profileId, sourceHouseholdId, now);
     }
 
-    shareRepository.upsertStructuralHomeShare(profileId, destinationHouseholdId, now);
+    shareRepository.upsertStructural(profileId, destinationHouseholdId, now);
     return true;
   }
 
@@ -86,12 +87,11 @@ class AccountRemoval {
         account.getId(), "issuer deleted", now);
     passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
         account.getId(), "issuer deleted", now);
-    managerInvitationRepository.invalidatePendingForRecipient(
+    managerInvitationRepository.invalidatePendingByRecipientAccountId(
         account.getId(), "recipient deleted", now);
-    managerInvitationRepository.invalidatePendingForInviter(
+    managerInvitationRepository.invalidatePendingInvitedBy(
         account.getId(), "inviting manager deleted", now);
-    shareRepository.invalidatePendingSharesOfferedByAccount(
-        account.getId(), "offering manager deleted", now);
+    shareRepository.invalidatePendingOfferedBy(account.getId(), "offering manager deleted", now);
 
     var profileId = account.getPersonalProfileId();
     if (disposition == ProfileDisposition.KEEP) {
@@ -108,12 +108,14 @@ class AccountRemoval {
 
   /** Deletes an unlinked Profile with its selections and pending Profile-bound artifacts. */
   void deleteProfile(UUID profileId, Instant now) {
-    accountInvitationRepository.invalidatePendingForProfile(profileId, "Profile deleted", now);
-    managerInvitationRepository.invalidatePendingForProfile(profileId, "Profile deleted", now);
+    accountInvitationRepository.invalidatePendingByProfileId(profileId, "Profile deleted", now);
+    managerInvitationRepository.invalidatePendingByProfileId(profileId, "Profile deleted", now);
     shareRepository
         .findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE)
         .forEach(
-            share -> authSessionRepository.clearSelections(profileId, share.getHouseholdId(), now));
+            share ->
+                authSessionRepository.clearProfileSelectionFromLiveSessions(
+                    profileId, share.getHouseholdId(), now));
     profileRepository.deleteById(profileId);
     profileRepository.flush();
   }
@@ -123,9 +125,10 @@ class AccountRemoval {
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
-        .ifPresent(share -> shareRepository.tryEnd(share.getId(), now));
-    authSessionRepository.clearSelections(profileId, sourceHouseholdId, now);
-    authSessionRepository.resetContextForAccount(accountId, sourceHouseholdId, now);
+        .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
+    authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId, now);
+    authSessionRepository.clearHouseholdContextFromAccountSessions(
+        accountId, sourceHouseholdId, now);
     registrationLifecycle.revokeAllByAccountAndHousehold(
         accountId, sourceHouseholdId, "old Household access ended", now);
   }

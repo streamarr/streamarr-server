@@ -253,8 +253,8 @@ public class HouseholdTeardownService {
                 resident.getPersonalProfileId(),
                 resident.getHouseholdId(),
                 ProfileShareStatus.ACTIVE)
-            .ifPresent(share -> shareRepository.tryEnd(share.getId(), now));
-        shareRepository.upsertStructuralHomeShare(
+            .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
+        shareRepository.upsertStructural(
             resident.getPersonalProfileId(), disposition.destinationHouseholdId(), now);
         shareRepository.tryDemoteStructural(
             resident.getPersonalProfileId(), disposition.destinationHouseholdId(), now);
@@ -267,13 +267,14 @@ public class HouseholdTeardownService {
         .findByHouseholdIdAndStatus(householdId, ProfileShareStatus.ACTIVE)
         .forEach(
             share -> {
-              shareRepository.tryEnd(share.getId(), now);
-              authSessionRepository.clearSelections(share.getProfileId(), householdId, now);
+              shareRepository.tryEndActive(share.getId(), now);
+              authSessionRepository.clearProfileSelectionFromLiveSessions(
+                  share.getProfileId(), householdId, now);
               userAccountRepository
                   .findByPersonalProfileId(share.getProfileId())
                   .ifPresent(
                       visitor -> {
-                        authSessionRepository.resetContextForAccount(
+                        authSessionRepository.clearHouseholdContextFromAccountSessions(
                             visitor.getId(), householdId, now);
                         registrationLifecycle.revokeAllByAccountAndHousehold(
                             visitor.getId(), householdId, TORN_DOWN_REASON, now);
