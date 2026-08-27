@@ -259,6 +259,46 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should preserve a pending offer when a demoted ServerAdmin still directly manages the"
+          + " Profile")
+  void shouldPreservePendingOfferWhenDemotedServerAdminStillDirectlyManagesProfile()
+      throws Exception {
+    var orphan = managedOrphan();
+    var revoker = authTestSupport.createAdminIdentity();
+    try {
+      assertThat(userAccountRepository.tryGrantServerAdmin(owner.account().getId())).isTrue();
+      var shareId = offer(orphan, host.household().getId());
+
+      graphql(
+              authTestSupport.freshAccountBearer(revoker),
+              """
+              mutation { revokeServerAdmin(input: {accountId: "%s", reason: "rotation"}) {
+                account { serverAdmin } userErrors { __typename } } }
+              """
+                  .formatted(owner.account().getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.revokeServerAdmin.account.serverAdmin").value(false))
+          .andExpect(jsonPath("$.data.revokeServerAdmin.userErrors").isEmpty());
+
+      graphql(
+              authTestSupport.accountBearer(host),
+              """
+              mutation { acceptProfileShare(input: {shareId: "%s"}) {
+                share { status } userErrors { __typename } } }
+              """
+                  .formatted(shareId))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.acceptProfileShare.share.status").value("ACTIVE"))
+          .andExpect(jsonPath("$.data.acceptProfileShare.userErrors").isEmpty());
+    } finally {
+      authTestSupport.deleteIdentity(revoker);
+    }
+  }
+
+  @Test
   @DisplayName("Should preserve expiry when an expired offer's offerer is no longer authorized")
   void shouldPreserveExpiryWhenExpiredOffersOffererIsNoLongerAuthorized() throws Exception {
     var orphan = managedOrphan();

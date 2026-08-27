@@ -463,11 +463,28 @@ class AccountAdministrationServiceTest {
     target.setServerAdmin(true);
     accounts.save(target);
     var offer = pendingOfferBy(target.getId());
+    authorization.decideForAccountWith(_ -> denied());
 
     var outcome = service.revokeServerAdmin(identity(), target.getId(), "rotation");
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertOfferInvalidated(offer.getId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should preserve pending share offers when a demoted ServerAdmin retains offer authority")
+  void shouldPreservePendingShareOffersWhenDemotedServerAdminRetainsOfferAuthority() {
+    target.setServerAdmin(true);
+    accounts.save(target);
+    var offer = pendingOfferBy(target.getId());
+    authorization.decideForAccountWith(_ -> allowed());
+
+    var outcome = service.revokeServerAdmin(identity(), target.getId(), "rotation");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(shares.findById(offer.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.PENDING);
   }
 
   @Test

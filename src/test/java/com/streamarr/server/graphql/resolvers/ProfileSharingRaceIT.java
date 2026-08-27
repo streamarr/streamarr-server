@@ -275,7 +275,17 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
 
                 held.release().run();
                 var acceptResponse = outcomeOf(acceptance, "acceptance after release");
-                outcomeOf(disablement, "disablement after release");
+                var disableResponse = outcomeOf(disablement, "disablement after release");
+                assertThat(
+                        objectMapper
+                            .readTree(disableResponse)
+                            .path("data")
+                            .path("disableAccount")
+                            .path("account")
+                            .path("enabled")
+                            .asBoolean(true))
+                    .as("disablement must succeed after the offerer row lock is released")
+                    .isFalse();
                 return new AcceptanceRace(revokedBeforeRelease, acceptResponse);
               });
 

@@ -20,5 +20,8 @@ public interface ProfileHouseholdShareRepository
 
   List<ProfileHouseholdShare> findByProfileIdAndStatus(UUID profileId, ProfileShareStatus status);
 
+  List<ProfileHouseholdShare> findByOfferedByAccountIdAndStatus(
+      UUID offeredByAccountId, ProfileShareStatus status);
+
   List<ProfileHouseholdShare> findByProfileId(UUID profileId);
 }

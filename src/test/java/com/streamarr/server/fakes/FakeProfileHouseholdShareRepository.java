@@ -55,6 +55,15 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
+  public List<ProfileHouseholdShare> findByOfferedByAccountIdAndStatus(
+      UUID offeredByAccountId, ProfileShareStatus status) {
+    return database.values().stream()
+        .filter(share -> offeredByAccountId.equals(share.getOfferedByAccountId()))
+        .filter(share -> share.getStatus() == status)
+        .toList();
+  }
+
+  @Override
   public List<ProfileHouseholdShare> findPendingByHouseholdId(
       UUID householdId, Instant now, KeysetPaginationOptions options) {
     return page(

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
@@ -18,6 +19,7 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
@@ -80,7 +82,9 @@ public class AccountAdministrationService {
             .reason(reason)
             .transition(() -> userAccountRepository.tryRevokeServerAdmin(accountId))
             .afterTransition(
-                () -> invalidateIssuedCredentials(accountId, "issuer lost ServerAdmin"))
+                () ->
+                    invalidateIssuedCredentials(
+                        accountId, IssuerAuthorityLoss.SERVER_ADMIN_REVOKED))
             .notFound(AdministrationRejections.AccountNotFound::new)
             .reauthenticationRequired(AdministrationRejections.ReauthenticationRequired::new)
             .constraint(CHK_ENABLED_SERVER_ADMIN, AdministrationRejections.LastServerAdmin::new)
@@ -128,7 +132,7 @@ public class AccountAdministrationService {
                 () -> {
                   authSessionRepository.revokeAllForAccount(
                       accountId, SessionRevocationReason.ADMIN_REVOCATION, clock.instant());
-                  invalidateIssuedCredentials(accountId, "issuer disabled");
+                  invalidateIssuedCredentials(accountId, IssuerAuthorityLoss.ACCOUNT_DISABLED);
                 })
             .notFound(AdministrationRejections.AccountNotFound::new)
             .constraint(CHK_ENABLED_SERVER_ADMIN, AdministrationRejections.LastServerAdmin::new)
@@ -235,18 +239,58 @@ public class AccountAdministrationService {
   }
 
   /**
-   * A disabled issuer, or one demoted from ServerAdmin, leaves no unexpired codes or pending share
-   * offers behind that could take effect later (ADR 0024 §Invitations: the system is the acting
-   * party). HouseholdAdmin demotion touches neither — that role issues no codes and offers no
-   * Profiles. A deleted issuer is handled by the V058 triggers in the same statement as the SET
-   * NULL.
+   * A disabled issuer leaves no unexpired codes or pending share offers behind. A ServerAdmin
+   * demotion invalidates codes and offers for which the issuer has no remaining authority (ADR 0024
+   * §Invitations: the system is the acting party). HouseholdAdmin demotion touches neither — that
+   * role issues no codes and offers no Profiles. A deleted issuer is handled by the V058 triggers
+   * in the same statement as the SET NULL.
    */
-  private void invalidateIssuedCredentials(UUID issuerAccountId, String reason) {
+  private int invalidateIssuedCredentials(UUID issuerAccountId, IssuerAuthorityLoss authorityLoss) {
     var now = clock.instant();
-    accountInvitationRepository.invalidatePendingInvitationsIssuedBy(issuerAccountId, reason, now);
-    passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
-        issuerAccountId, reason, now);
-    profileHouseholdShareRepository.invalidatePendingOfferedBy(issuerAccountId, reason, now);
+    var reason = authorityLoss.reason();
+    var invalidated =
+        accountInvitationRepository.invalidatePendingInvitationsIssuedBy(
+            issuerAccountId, reason, now);
+    invalidated +=
+        passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
+            issuerAccountId, reason, now);
+    return invalidated
+        + switch (authorityLoss) {
+          case ACCOUNT_DISABLED ->
+              profileHouseholdShareRepository.invalidatePendingOfferedBy(
+                  issuerAccountId, reason, now);
+          case SERVER_ADMIN_REVOKED ->
+              invalidateUnauthorizedProfileShareOffers(issuerAccountId, reason, now);
+        };
+  }
+
+  private int invalidateUnauthorizedProfileShareOffers(
+      UUID issuerAccountId, String reason, Instant now) {
+    var invalidated = 0;
+    var pendingOffers =
+        profileHouseholdShareRepository.findByOfferedByAccountIdAndStatus(
+            issuerAccountId, ProfileShareStatus.PENDING);
+    for (var offer : pendingOffers) {
+      if (offer.statusAt(now) != ProfileShareStatus.PENDING
+          || mayStillOfferProfile(issuerAccountId, offer.getProfileId())) {
+        continue;
+      }
+
+      if (profileHouseholdShareRepository.tryInvalidatePending(offer.getId(), reason, now)) {
+        invalidated++;
+      }
+    }
+
+    return invalidated;
+  }
+
+  private boolean mayStillOfferProfile(UUID accountId, UUID profileId) {
+    return switch (authorizationService.decideForAccount(
+        accountId, new Intent.OfferProfileShare(profileId))) {
+      case Decision.Allowed<AuthorizationUnit> _ -> true;
+      case Decision.Denied<AuthorizationUnit> _ -> false;
+      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
+    };
   }
 
   private boolean mayViewAccount(AuthenticatedIdentity identity, UUID accountId) {
@@ -267,6 +311,21 @@ public class AccountAdministrationService {
 
   private static boolean isBlank(String value) {
     return value == null || value.isBlank();
+  }
+
+  private enum IssuerAuthorityLoss {
+    SERVER_ADMIN_REVOKED("issuer lost ServerAdmin"),
+    ACCOUNT_DISABLED("issuer disabled");
+
+    private final String reason;
+
+    IssuerAuthorityLoss(String reason) {
+      this.reason = reason;
+    }
+
+    String reason() {
+      return reason;
+    }
   }
 
   @lombok.Builder
