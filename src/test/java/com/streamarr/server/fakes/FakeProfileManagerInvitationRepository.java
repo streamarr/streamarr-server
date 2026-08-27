@@ -139,7 +139,7 @@ public class FakeProfileManagerInvitationRepository
   }
 
   @Override
-  public int invalidatePendingForInviter(UUID inviterAccountId, String reason, Instant now) {
+  public int invalidatePendingInvitedBy(UUID inviterAccountId, String reason, Instant now) {
     return invalidate(
         invitation -> inviterAccountId.equals(invitation.getInviterAccountId()), reason, now);
   }

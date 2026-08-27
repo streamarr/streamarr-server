@@ -214,7 +214,7 @@ public class AccountLifecycleService {
         account.getId(), "issuer deleted", now);
     managerInvitationRepository.invalidatePendingByRecipientAccountId(
         account.getId(), "recipient deleted", now);
-    managerInvitationRepository.invalidatePendingForInviter(
+    managerInvitationRepository.invalidatePendingInvitedBy(
         account.getId(), "inviting manager deleted", now);
     shareRepository.invalidatePendingOfferedBy(account.getId(), "offering manager deleted", now);
 
