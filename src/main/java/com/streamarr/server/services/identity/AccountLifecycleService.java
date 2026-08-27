@@ -208,8 +208,10 @@ public class AccountLifecycleService {
     registrationLifecycle.revokeAllByAccount(account.getId(), "Account deleted", now);
     authSessionRepository.revokeAllForAccount(
         account.getId(), SessionRevocationReason.ADMIN_REVOCATION, now);
-    accountInvitationRepository.invalidateIssuedBy(account.getId(), "issuer deleted", now);
-    passwordResetCodeRepository.invalidateIssuedBy(account.getId(), "issuer deleted", now);
+    accountInvitationRepository.invalidatePendingInvitationsIssuedBy(
+        account.getId(), "issuer deleted", now);
+    passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
+        account.getId(), "issuer deleted", now);
     managerInvitationRepository.invalidatePendingForRecipient(
         account.getId(), "recipient deleted", now);
     managerInvitationRepository.invalidatePendingForInviter(

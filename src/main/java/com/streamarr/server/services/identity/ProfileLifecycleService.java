@@ -156,17 +156,21 @@ public class ProfileLifecycleService {
                           profileId, share.getHouseholdId(), now));
           invalidateProfileBoundArtifacts(profileId, PROFILE_DELETED, now);
           if (!profileRepository.tryDeleteUnlinked(profileId)) {
-            if (userAccountRepository.findByPersonalProfileId(profileId).isPresent()) {
-              throw new MutationRejection(new TransferRejections.ProfileLinked());
-            }
-
-            throw new MutationRejection(new TransferRejections.ProfileNotFound());
+            throw profileDeletionRejection(profileId);
           }
 
           audit(identity, "administrativelyDeleteProfile", profileId, reason);
           return profileId;
         },
         _ -> Optional.empty());
+  }
+
+  private MutationRejection profileDeletionRejection(UUID profileId) {
+    if (userAccountRepository.findByPersonalProfileId(profileId).isPresent()) {
+      return new MutationRejection(new TransferRejections.ProfileLinked());
+    }
+
+    return new MutationRejection(new TransferRejections.ProfileNotFound());
   }
 
   private void endHomeAvailability(UUID profileId, UUID sourceHouseholdId, Instant now) {
