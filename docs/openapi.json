@@ -194,7 +194,7 @@
         ],
         "type": "object"
       },
-      "InvitationPreview": {
+      "InvitationLookupResponse": {
         "properties": {
           "endingHouseholds": {
             "items": {
@@ -686,7 +686,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvitationPreview"
+                  "$ref": "#/components/schemas/InvitationLookupResponse"
                 }
               }
             },
