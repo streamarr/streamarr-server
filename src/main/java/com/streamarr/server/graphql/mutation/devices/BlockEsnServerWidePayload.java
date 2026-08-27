@@ -1,8 +1,8 @@
 package com.streamarr.server.graphql.mutation.devices;
 
-import com.streamarr.server.graphql.dto.EsnBlockView;
+import com.streamarr.server.graphql.dto.EsnBlockDetails;
 import java.util.List;
 import java.util.Optional;
 
 public record BlockEsnServerWidePayload(
-    Optional<EsnBlockView> block, List<BlockEsnServerWideError> userErrors) {}
+    Optional<EsnBlockDetails> block, List<BlockEsnServerWideError> userErrors) {}

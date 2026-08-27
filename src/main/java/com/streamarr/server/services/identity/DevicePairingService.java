@@ -8,8 +8,8 @@ import com.streamarr.server.repositories.auth.EsnBlockRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.DeviceAuthorizationDetails;
 import com.streamarr.server.services.auth.DeviceAuthorizationService;
-import com.streamarr.server.services.auth.DeviceAuthorizationView;
 import com.streamarr.server.services.auth.DeviceDecision;
 import com.streamarr.server.services.auth.DeviceDecisionCommand;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -38,12 +38,12 @@ public class DevicePairingService {
   private final EsnBlockRepository esnBlockRepository;
 
   /** What the approver is shown: the device and the Households they could bind it to. */
-  public PairingLookupView lookup(AuthenticatedIdentity identity, String typedUserCode) {
-    var view = deviceAuthorizationService.lookup(typedUserCode, identity.accountId());
-    return new PairingLookupView(view, eligibleHouseholds(identity));
+  public PairingLookupDetails lookup(AuthenticatedIdentity identity, String typedUserCode) {
+    var details = deviceAuthorizationService.lookup(typedUserCode, identity.accountId());
+    return new PairingLookupDetails(details, eligibleHouseholds(identity));
   }
 
-  public DeviceAuthorizationView decide(
+  public DeviceAuthorizationDetails decide(
       AuthenticatedIdentity identity, PairingDecisionCommand command) {
     var grant =
         deviceAuthorizationService.resolveForDecision(command.userCode(), identity.accountId());
@@ -78,21 +78,21 @@ public class DevicePairingService {
     }
   }
 
-  private List<EligibleHouseholdView> eligibleHouseholds(AuthenticatedIdentity identity) {
+  private List<EligibleHouseholdDetails> eligibleHouseholds(AuthenticatedIdentity identity) {
     var ids = userAccountRepository.findUsableHouseholdIds(identity.accountId());
     return householdRepository.findAllById(ids).stream()
         .sorted(Comparator.comparing(household -> ids.indexOf(household.getId())))
-        .map(EligibleHouseholdView::from)
+        .map(EligibleHouseholdDetails::from)
         .toList();
   }
 
-  public record PairingLookupView(
-      DeviceAuthorizationView authorization, List<EligibleHouseholdView> households) {}
+  public record PairingLookupDetails(
+      DeviceAuthorizationDetails authorization, List<EligibleHouseholdDetails> households) {}
 
-  public record EligibleHouseholdView(UUID id, String name) {
+  public record EligibleHouseholdDetails(UUID id, String name) {
 
-    static EligibleHouseholdView from(Household household) {
-      return new EligibleHouseholdView(household.getId(), household.getName());
+    static EligibleHouseholdDetails from(Household household) {
+      return new EligibleHouseholdDetails(household.getId(), household.getName());
     }
   }
 

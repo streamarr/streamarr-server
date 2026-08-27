@@ -25,7 +25,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceAuthorizationService;
 import com.streamarr.server.services.auth.DeviceAuthorizationServiceHarness;
 import com.streamarr.server.services.auth.DeviceDecision;
-import com.streamarr.server.services.identity.DevicePairingService.EligibleHouseholdView;
+import com.streamarr.server.services.identity.DevicePairingService.EligibleHouseholdDetails;
 import com.streamarr.server.services.identity.DevicePairingService.PairingDecisionCommand;
 import java.time.Clock;
 import java.util.UUID;
@@ -99,7 +99,7 @@ class DevicePairingServiceTest {
 
     assertThat(lookup.authorization().deviceName()).isEqualTo("Living Room TV");
     assertThat(lookup.households())
-        .extracting(EligibleHouseholdView::id)
+        .extracting(EligibleHouseholdDetails::id)
         .containsExactly(approver.getHouseholdId(), visitedHouseholdId);
   }
 

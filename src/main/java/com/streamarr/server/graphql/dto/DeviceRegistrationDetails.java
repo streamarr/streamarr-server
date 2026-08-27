@@ -6,7 +6,7 @@ import java.util.UUID;
 import lombok.Builder;
 
 @Builder
-public record DeviceRegistrationView(
+public record DeviceRegistrationDetails(
     UUID id,
     String esn,
     String displayName,
@@ -15,8 +15,8 @@ public record DeviceRegistrationView(
     DeviceRegistrationStatus status,
     String pairedAt) {
 
-  public static DeviceRegistrationView from(DeviceRegistration registration) {
-    return DeviceRegistrationView.builder()
+  public static DeviceRegistrationDetails from(DeviceRegistration registration) {
+    return DeviceRegistrationDetails.builder()
         .id(registration.getId())
         .esn(registration.getEsn())
         .displayName(registration.getDisplayName())
