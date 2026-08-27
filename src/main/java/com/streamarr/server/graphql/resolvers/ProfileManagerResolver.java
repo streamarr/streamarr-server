@@ -6,10 +6,11 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.graphql.Ids;
+import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.IssuedManagerInvitation;
-import com.streamarr.server.graphql.dto.ManagerInvitationView;
+import com.streamarr.server.graphql.dto.ManagerInvitationDetails;
 import com.streamarr.server.graphql.inputs.AcceptManagerInvitationInput;
 import com.streamarr.server.graphql.inputs.CancelManagerInvitationInput;
 import com.streamarr.server.graphql.inputs.DeclineManagerInvitationInput;
@@ -31,7 +32,6 @@ import com.streamarr.server.graphql.mutation.managers.RemoveProfileManagerPayloa
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
 import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
@@ -51,9 +51,9 @@ public class ProfileManagerResolver {
   private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsQuery
-  public Connection<ManagerInvitationView> managerInvitations(
+  public Connection<ManagerInvitationDetails> managerInvitations(
       @InputArgument String profileId, DataFetchingEnvironment dfe) {
-    var options = options(dfe);
+    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         managerService.managerInvitations(
             authorizationService.currentIdentity(),
@@ -63,8 +63,9 @@ public class ProfileManagerResolver {
   }
 
   @DgsQuery
-  public Connection<ManagerInvitationView> pendingManagerInvitations(DataFetchingEnvironment dfe) {
-    var options = options(dfe);
+  public Connection<ManagerInvitationDetails> pendingManagerInvitations(
+      DataFetchingEnvironment dfe) {
+    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         managerService.pendingManagerInvitations(
             authorizationService.currentIdentity(), cursorUtil.decodeKeysetCursor(options));
@@ -83,7 +84,7 @@ public class ProfileManagerResolver {
             .map(
                 issued ->
                     new IssuedManagerInvitation(
-                        ManagerInvitationView.from(issued.invitation()), issued.code())),
+                        ManagerInvitationDetails.from(issued.invitation()), issued.code())),
         ManagerErrors::toInviteError,
         InviteProfileManagerPayload::new);
   }
@@ -95,7 +96,7 @@ public class ProfileManagerResolver {
         managerService
             .cancelManagerInvitation(
                 authorizationService.currentIdentity(), Ids.parseUuid(input.invitationId()))
-            .map(ManagerInvitationView::from),
+            .map(ManagerInvitationDetails::from),
         ManagerErrors::toCancelError,
         CancelManagerInvitationPayload::new);
   }
@@ -106,7 +107,7 @@ public class ProfileManagerResolver {
     return MutationPayloads.payload(
         managerService
             .acceptManagerInvitation(authorizationService.currentIdentity(), input.code())
-            .map(ManagerInvitationView::from),
+            .map(ManagerInvitationDetails::from),
         ManagerErrors::toAcceptError,
         AcceptManagerInvitationPayload::new);
   }
@@ -117,7 +118,7 @@ public class ProfileManagerResolver {
     return MutationPayloads.payload(
         managerService
             .declineManagerInvitation(authorizationService.currentIdentity(), input.code())
-            .map(ManagerInvitationView::from),
+            .map(ManagerInvitationDetails::from),
         ManagerErrors::toDeclineError,
         DeclineManagerInvitationPayload::new);
   }
@@ -178,31 +179,11 @@ public class ProfileManagerResolver {
         RemoveProfileManagerOverridePayload::new);
   }
 
-  private PaginationOptions options(DataFetchingEnvironment dfe) {
-    int first = dfe.getArgumentOrDefault("first", 0);
-    String after = dfe.getArgument("after");
-    int last = dfe.getArgumentOrDefault("last", 0);
-    String before = dfe.getArgument("before");
-    if (first == 0 && last == 0 && before != null) {
-      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
-    }
-
-    return paginationService.getPaginationOptions(
-        firstOrDefault(first, last, before), after, last, before);
-  }
-
-  private Connection<ManagerInvitationView> toConnection(MediaPage<ProfileManagerInvitation> page) {
+  private Connection<ManagerInvitationDetails> toConnection(
+      MediaPage<ProfileManagerInvitation> page) {
     return relayConnectionAdapter.toConnection(
         page,
-        item -> ManagerInvitationView.from(item.item()),
+        item -> ManagerInvitationDetails.from(item.item()),
         item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
-  }
-
-  private static int firstOrDefault(int first, int last, String before) {
-    if (first == 0 && last == 0 && before == null) {
-      return DEFAULT_PAGE_SIZE;
-    }
-
-    return first;
   }
 }

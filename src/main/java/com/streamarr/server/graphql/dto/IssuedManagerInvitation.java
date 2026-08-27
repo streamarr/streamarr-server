@@ -1,7 +1,7 @@
 package com.streamarr.server.graphql.dto;
 
 /** The code appears here once and never again. */
-public record IssuedManagerInvitation(ManagerInvitationView invitation, String code) {
+public record IssuedManagerInvitation(ManagerInvitationDetails invitation, String code) {
 
   @Override
   public String toString() {

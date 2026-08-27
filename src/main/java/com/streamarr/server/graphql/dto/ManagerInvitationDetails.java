@@ -7,7 +7,7 @@ import lombok.Builder;
 
 /** Everything about a manager invitation except its secret, which is never queryable. */
 @Builder
-public record ManagerInvitationView(
+public record ManagerInvitationDetails(
     UUID id,
     UUID profileId,
     String profileName,
@@ -18,8 +18,8 @@ public record ManagerInvitationView(
     ProfileManagerInvitationStatus status,
     String expiresAt) {
 
-  public static ManagerInvitationView from(ProfileManagerInvitation invitation) {
-    return ManagerInvitationView.builder()
+  public static ManagerInvitationDetails from(ProfileManagerInvitation invitation) {
+    return ManagerInvitationDetails.builder()
         .id(invitation.getId())
         .profileId(invitation.getProfileId())
         .profileName(invitation.getProfileName())

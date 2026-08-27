@@ -10,7 +10,7 @@ enum ProfileManagerInvitationStatus {
     INVALIDATED
 }
 
-type ManagerInvitationView {
+type ManagerInvitationDetails {
     id: ID!
     profileId: ID
     profileName: String!
@@ -28,7 +28,7 @@ type ManagerInvitationConnection {
 }
 
 type ManagerInvitationEdge {
-    node: ManagerInvitationView!
+    node: ManagerInvitationDetails!
     cursor: String!
 }
 
@@ -39,7 +39,7 @@ input InviteProfileManagerInput {
 
 "The code appears here once and never again."
 type IssuedManagerInvitation {
-    invitation: ManagerInvitationView!
+    invitation: ManagerInvitationDetails!
     code: String!
 }
 
@@ -59,7 +59,7 @@ input CancelManagerInvitationInput {
 }
 
 type CancelManagerInvitationPayload {
-    invitation: ManagerInvitationView
+    invitation: ManagerInvitationDetails
     userErrors: [CancelManagerInvitationError!]!
 }
 
@@ -70,7 +70,7 @@ input AcceptManagerInvitationInput {
 }
 
 type AcceptManagerInvitationPayload {
-    invitation: ManagerInvitationView
+    invitation: ManagerInvitationDetails
     userErrors: [AcceptManagerInvitationError!]!
 }
 
@@ -84,7 +84,7 @@ input DeclineManagerInvitationInput {
 }
 
 type DeclineManagerInvitationPayload {
-    invitation: ManagerInvitationView
+    invitation: ManagerInvitationDetails
     userErrors: [DeclineManagerInvitationError!]!
 }
 

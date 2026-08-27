@@ -1,4 +1,4 @@
--- Direct ProfileManager invitations (ADR 0024 §ProfileManager; server PR #12).
+-- Direct ProfileManager invitations (ADR 0024 §ProfileManager; server PR #315).
 -- A manager invitation names an existing Account, so issue/accept/decline/cancel are
 -- authenticated GraphQL mutations decided by Cedar — never a REST ceremony. The code uses the
 -- shared publicId.secret format; only the digest is stored.
