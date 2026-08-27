@@ -4,6 +4,7 @@ import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.P
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.Matchers.contains;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -238,15 +239,20 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
               authTestSupport.accountBearer(owner),
               """
               query { profileShares(profileId: "%s") {
-                edges { node { status invalidationReason } } } }
+                edges { node { id status invalidationReason } } } }
               """
                   .formatted(orphan.getId()))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.errors").doesNotExist())
-          .andExpect(jsonPath("$.data.profileShares.edges[0].node.status").value("INVALIDATED"))
           .andExpect(
-              jsonPath("$.data.profileShares.edges[0].node.invalidationReason")
-                  .value("offerer no longer authorized"));
+              jsonPath(
+                  "$.data.profileShares.edges[?(@.node.id == '%s')].node.status".formatted(shareId),
+                  contains("INVALIDATED")))
+          .andExpect(
+              jsonPath(
+                  "$.data.profileShares.edges[?(@.node.id == '%s')].node.invalidationReason"
+                      .formatted(shareId),
+                  contains("offerer no longer authorized")));
     } finally {
       authTestSupport.deleteIdentity(serverAdmin);
     }
