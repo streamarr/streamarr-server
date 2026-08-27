@@ -86,17 +86,6 @@ public class FakeProfileManagerInvitationRepository
         invitation -> recipientAccountId.equals(invitation.getRecipientAccountId()), reason, now);
   }
 
-  @Override
-  public int sweepExpired(Instant now) {
-    var expired =
-        database.values().stream()
-            .filter(invitation -> invitation.getStatus() == ProfileManagerInvitationStatus.PENDING)
-            .filter(invitation -> !invitation.getExpiresAt().isAfter(now))
-            .toList();
-    expired.forEach(invitation -> invitation.setStatus(ProfileManagerInvitationStatus.EXPIRED));
-    return expired.size();
-  }
-
   private int invalidate(Predicate<ProfileManagerInvitation> scope, String reason, Instant now) {
     var pending =
         database.values().stream()

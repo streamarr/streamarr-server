@@ -21,6 +21,4 @@ public interface ProfileManagerInvitationRepositoryCustom {
 
   /** Invalidates every PENDING invitation naming the recipient (deleted or ineligible). */
   int invalidatePendingForRecipient(UUID recipientAccountId, String reason, Instant now);
-
-  int sweepExpired(Instant now);
 }

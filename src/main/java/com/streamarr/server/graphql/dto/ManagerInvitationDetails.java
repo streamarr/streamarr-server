@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.dto;
 
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import java.time.Instant;
 import java.util.UUID;
 import lombok.Builder;
 
@@ -18,7 +19,7 @@ public record ManagerInvitationDetails(
     ProfileManagerInvitationStatus status,
     String expiresAt) {
 
-  public static ManagerInvitationDetails from(ProfileManagerInvitation invitation) {
+  public static ManagerInvitationDetails from(ProfileManagerInvitation invitation, Instant now) {
     return ManagerInvitationDetails.builder()
         .id(invitation.getId())
         .profileId(invitation.getProfileId())
@@ -27,7 +28,7 @@ public record ManagerInvitationDetails(
         .inviterDisplayName(invitation.getInviterDisplayName())
         .recipientAccountId(invitation.getRecipientAccountId())
         .recipientEmail(invitation.getRecipientEmail())
-        .status(invitation.getStatus())
+        .status(invitation.statusAt(now))
         .expiresAt(invitation.getExpiresAt().toString())
         .build();
   }

@@ -35,6 +35,7 @@ import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
+import java.time.Clock;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 
@@ -49,6 +50,7 @@ public class ProfileManagerResolver {
   private final PaginationService paginationService;
   private final CursorUtil cursorUtil;
   private final RelayConnectionAdapter relayConnectionAdapter;
+  private final Clock clock;
 
   @DgsQuery
   public Connection<ManagerInvitationDetails> managerInvitations(
@@ -84,7 +86,7 @@ public class ProfileManagerResolver {
             .map(
                 issued ->
                     new IssuedManagerInvitation(
-                        ManagerInvitationDetails.from(issued.invitation()), issued.code())),
+                        invitationDetails(issued.invitation()), issued.code())),
         ManagerErrors::toInviteError,
         InviteProfileManagerPayload::new);
   }
@@ -96,7 +98,7 @@ public class ProfileManagerResolver {
         managerService
             .cancelManagerInvitation(
                 authorizationService.currentIdentity(), Ids.parseUuid(input.invitationId()))
-            .map(ManagerInvitationDetails::from),
+            .map(this::invitationDetails),
         ManagerErrors::toCancelError,
         CancelManagerInvitationPayload::new);
   }
@@ -107,7 +109,7 @@ public class ProfileManagerResolver {
     return MutationPayloads.payload(
         managerService
             .acceptManagerInvitation(authorizationService.currentIdentity(), input.code())
-            .map(ManagerInvitationDetails::from),
+            .map(this::invitationDetails),
         ManagerErrors::toAcceptError,
         AcceptManagerInvitationPayload::new);
   }
@@ -118,7 +120,7 @@ public class ProfileManagerResolver {
     return MutationPayloads.payload(
         managerService
             .declineManagerInvitation(authorizationService.currentIdentity(), input.code())
-            .map(ManagerInvitationDetails::from),
+            .map(this::invitationDetails),
         ManagerErrors::toDeclineError,
         DeclineManagerInvitationPayload::new);
   }
@@ -183,7 +185,11 @@ public class ProfileManagerResolver {
       MediaPage<ProfileManagerInvitation> page) {
     return relayConnectionAdapter.toConnection(
         page,
-        item -> ManagerInvitationDetails.from(item.item()),
+        item -> invitationDetails(item.item()),
         item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
+  }
+
+  private ManagerInvitationDetails invitationDetails(ProfileManagerInvitation invitation) {
+    return ManagerInvitationDetails.from(invitation, clock.instant());
   }
 }
