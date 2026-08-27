@@ -48,7 +48,7 @@ when {
 };
 
 // An active non-structural share ends by target HouseholdAdmin, a direct manager who belongs to
-// that Household, or the sovereign Account. ServerAdmin uses the audited force-end path.
+// that Household, or the sovereign Account. ServerAdmin uses the audited administrative end.
 @id("end-active-share-as-target-admin-manager-or-sovereign")
 permit (
   principal,
@@ -64,11 +64,11 @@ when {
    (resource has sovereignOverProfileByPrincipal && resource.sovereignOverProfileByPrincipal))
 };
 
-// Force-end is a fresh-reauthenticated ServerAdmin override with an audited reason.
-@id("force-end-active-share-as-fresh-server-admin")
+// The administrative end is a fresh-reauthenticated ServerAdmin override with an audited reason.
+@id("administratively-end-active-share-as-fresh-server-admin")
 permit (
   principal,
-  action == Streamarr::Action::"forceEndProfileShare",
+  action == Streamarr::Action::"administrativelyEndProfileShare",
   resource
 )
 when {

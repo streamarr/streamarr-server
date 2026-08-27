@@ -247,7 +247,7 @@ namespace Streamarr {
     resource: Share,
     context: {},
   };
-  action forceEndProfileShare in shareAdministration appliesTo {
+  action administrativelyEndProfileShare in shareAdministration appliesTo {
     principal: Account,
     resource: Share,
     context: { freshReauthentication: Bool },

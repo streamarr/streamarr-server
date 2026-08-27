@@ -57,7 +57,8 @@ public final class ShareErrors {
     };
   }
 
-  public static ForceEndProfileShareError toForceEndError(ShareRejections.ForceEnd rejection) {
+  public static AdministrativelyEndProfileShareError toAdministrativelyEndError(
+      ShareRejections.AdministrativelyEnd rejection) {
     return switch (rejection) {
       case ShareRejections.ShareNotFound _ -> shareNotFound();
       case ShareRejections.ShareNotActive _ -> shareNotActive();

@@ -103,8 +103,8 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onShare(Action.CANCEL_PROFILE_SHARE, shareId));
       case Intent.EndProfileShare(var shareId) ->
           unitPlan(AuthorizationCheck.onShare(Action.END_PROFILE_SHARE, shareId));
-      case Intent.ForceEndProfileShare(var shareId) ->
-          unitPlan(AuthorizationCheck.onShare(Action.FORCE_END_PROFILE_SHARE, shareId));
+      case Intent.AdministrativelyEndProfileShare(var shareId) ->
+          unitPlan(AuthorizationCheck.onShare(Action.ADMINISTRATIVELY_END_PROFILE_SHARE, shareId));
     };
   }
 

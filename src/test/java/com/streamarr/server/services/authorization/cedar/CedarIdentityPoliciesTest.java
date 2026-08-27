@@ -956,8 +956,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should allow force-end only when the caller is a fresh ServerAdmin")
-    void shouldAllowForceEndOnlyWhenCallerIsFreshServerAdmin() {
+    @DisplayName("Should allow the administrative end only when the caller is a fresh ServerAdmin")
+    void shouldAllowAdministrativelyEndOnlyWhenCallerIsFreshServerAdmin() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var hosted =
           shares.save(
@@ -965,21 +965,21 @@ class CedarIdentityPoliciesTest {
                   .profileId(orphan.getId())
                   .householdId(visitedHouseholdId)
                   .build());
-      var forceEnd = new Intent.ForceEndProfileShare(hosted.getId());
+      var administrativelyEnd = new Intent.AdministrativelyEndProfileShare(hosted.getId());
 
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), forceEnd))
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), administrativelyEnd))
           .isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decide(atHome(), forceEnd)).isEqualTo(REAUTHENTICATION_REQUIRED);
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), forceEnd))
+      assertThat(decide(atHome(), administrativelyEnd)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), administrativelyEnd))
           .isEqualTo(ALLOWED);
     }
 
     @Test
-    @DisplayName("Should deny ordinary and force end when the share is structural")
-    void shouldDenyOrdinaryAndForceEndWhenShareIsStructural() {
+    @DisplayName("Should deny ordinary and administrative end when the share is structural")
+    void shouldDenyOrdinaryAndAdministrativelyEndWhenShareIsStructural() {
       var structural =
           shares
               .findByProfileIdAndHouseholdIdAndStatus(
@@ -994,7 +994,7 @@ class CedarIdentityPoliciesTest {
       assertThat(
               decide(
                   withReauthenticatedAt(atHome(), Instant.now()),
-                  new Intent.ForceEndProfileShare(structural.getId())))
+                  new Intent.AdministrativelyEndProfileShare(structural.getId())))
           .isEqualTo(DENIED);
     }
   }

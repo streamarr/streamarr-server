@@ -7,6 +7,6 @@ public record ShareNotFoundError(String message, List<String> inputPath)
     implements AcceptProfileShareError,
         CancelProfileShareError,
         EndProfileShareError,
-        ForceEndProfileShareError,
+        AdministrativelyEndProfileShareError,
         RejectProfileShareError,
         InputMutationError {}

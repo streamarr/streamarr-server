@@ -161,17 +161,18 @@ public class ProfileSharingService {
             ShareRejections.ShareNotActive::new, ShareRejections.StructuralShareCannotEnd::new));
   }
 
-  public Outcome<ProfileHouseholdShare, ShareRejections.ForceEnd> forceEndProfileShare(
-      AuthenticatedIdentity identity, UUID shareId, String reason) {
+  public Outcome<ProfileHouseholdShare, ShareRejections.AdministrativelyEnd>
+      administrativelyEndProfileShare(AuthenticatedIdentity identity, UUID shareId, String reason) {
     return endInTransaction(
         shareId,
         () -> {
-          Optional<ShareRejections.ForceEnd> refusal =
+          Optional<ShareRejections.AdministrativelyEnd> refusal =
               refusalOf(
                   identity,
-                  new Intent.ForceEndProfileShare(shareId),
+                  new Intent.AdministrativelyEndProfileShare(shareId),
                   () -> mayViewShare(identity, shareId),
-                  Refusals.<ShareRejections.ForceEnd>hiddenAs(ShareRejections.ShareNotFound::new)
+                  Refusals.<ShareRejections.AdministrativelyEnd>hiddenAs(
+                          ShareRejections.ShareNotFound::new)
                       .visibleAs(
                           () ->
                               structuralRefusal(
@@ -189,7 +190,7 @@ public class ProfileSharingService {
         share ->
             securityAuditEventRepository.append(
                 SecurityAuditEntry.builder()
-                    .operation("forceEndProfileShare")
+                    .operation("administrativelyEndProfileShare")
                     .actorAccountId(identity.accountId())
                     .reason(reason)
                     .resource("profileId", share.getProfileId())

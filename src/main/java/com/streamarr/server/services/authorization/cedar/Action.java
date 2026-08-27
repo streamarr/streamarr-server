@@ -162,8 +162,8 @@ enum Action {
       ResourceKind.SHARE,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.SHARE_FACTS),
-  FORCE_END_PROFILE_SHARE(
-      "forceEndProfileShare",
+  ADMINISTRATIVELY_END_PROFILE_SHARE(
+      "administrativelyEndProfileShare",
       ResourceKind.SHARE,
       FreshReauthentication.REQUIRED,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,

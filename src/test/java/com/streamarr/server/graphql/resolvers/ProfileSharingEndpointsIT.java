@@ -50,8 +50,8 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * The sharing lifecycle through the GraphQL boundary against real PostgreSQL and Cedar: offers and
- * their decisions, activation eligibility, name conflicts, membership-required shares, force-ending
- * after password confirmation, previews, and visitor-session effects.
+ * their decisions, activation eligibility, name conflicts, membership-required shares,
+ * administratively ending after password confirmation, previews, and visitor-session effects.
  */
 @Tag("IntegrationTest")
 @DisplayName("Profile Sharing Endpoints Integration Tests")
@@ -476,8 +476,9 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should require a fresh ServerAdmin and audit when a share is force-ended")
-  void shouldRequireFreshServerAdminAndAuditWhenShareIsForceEnded() throws Exception {
+  @DisplayName(
+      "Should require a fresh ServerAdmin and audit when a share is administratively ended")
+  void shouldRequireFreshServerAdminAndAuditWhenShareIsAdministrativelyEnded() throws Exception {
     var orphan = managedOrphan();
     var shareId = offer(orphan, host.household().getId());
     graphql(
@@ -494,28 +495,30 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
       graphql(
               authTestSupport.accountBearer(serverAdmin),
               """
-              mutation { forceEndProfileShare(input: {shareId: "%s", reason: "abuse report"}) {
+              mutation { administrativelyEndProfileShare(input: {shareId: "%s", reason: "abuse report"}) {
                 share { status } userErrors { __typename } } }
               """
                   .formatted(shareId))
           .andExpect(status().isOk())
           .andExpect(
-              jsonPath("$.data.forceEndProfileShare.userErrors[0].__typename")
+              jsonPath("$.data.administrativelyEndProfileShare.userErrors[0].__typename")
                   .value("ReauthenticationRequiredError"));
 
       graphql(
               authTestSupport.freshAccountBearer(serverAdmin),
               """
-              mutation { forceEndProfileShare(input: {shareId: "%s", reason: "abuse report"}) {
+              mutation { administrativelyEndProfileShare(input: {shareId: "%s", reason: "abuse report"}) {
                 share { status } userErrors { __typename } } }
               """
                   .formatted(shareId))
           .andExpect(status().isOk())
-          .andExpect(jsonPath("$.data.forceEndProfileShare.share.status").value("ENDED"));
+          .andExpect(
+              jsonPath("$.data.administrativelyEndProfileShare.share.status").value("ENDED"));
 
       assertThat(
               dsl.fetchCount(
-                  SECURITY_AUDIT_EVENT, SECURITY_AUDIT_EVENT.OPERATION.eq("forceEndProfileShare")))
+                  SECURITY_AUDIT_EVENT,
+                  SECURITY_AUDIT_EVENT.OPERATION.eq("administrativelyEndProfileShare")))
           .isEqualTo(1);
     } finally {
       authTestSupport.deleteIdentity(serverAdmin);
@@ -523,8 +526,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should audit one winner when two force-end requests race")
-  void shouldAuditOneWinnerWhenTwoForceEndRequestsRace() throws Exception {
+  @DisplayName("Should audit one winner when two administrative-end requests race")
+  void shouldAuditOneWinnerWhenTwoAdministrativelyEndRequestsRace() throws Exception {
     var orphan = managedOrphan();
     var shareId = UUID.fromString(offer(orphan, host.household().getId()));
     graphql(
@@ -540,9 +543,9 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     var serverAdmin = authTestSupport.createAdminIdentity();
     try {
       var bearer = authTestSupport.freshAccountBearer(serverAdmin);
-      var forceEnd =
+      var administrativelyEnd =
           """
-          mutation { forceEndProfileShare(input: {shareId: "%s", reason: "abuse report"}) {
+          mutation { administrativelyEndProfileShare(input: {shareId: "%s", reason: "abuse report"}) {
             share { status } userErrors { __typename } } }
           """
               .formatted(shareId);
@@ -550,13 +553,13 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           raceWhileShareLocked(
               shareId,
               () ->
-                  graphql(bearer, forceEnd)
+                  graphql(bearer, administrativelyEnd)
                       .andExpect(status().isOk())
                       .andReturn()
                       .getResponse()
                       .getContentAsString(),
               () ->
-                  graphql(bearer, forceEnd)
+                  graphql(bearer, administrativelyEnd)
                       .andExpect(status().isOk())
                       .andReturn()
                       .getResponse()
@@ -564,7 +567,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
 
       var results =
           responses.stream()
-              .map(response -> mutationResult(response, "forceEndProfileShare"))
+              .map(response -> mutationResult(response, "administrativelyEndProfileShare"))
               .toList();
       assertThat(results)
           .extracting(MutationResult::accepted)
@@ -575,7 +578,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           .containsExactly("ShareNotActiveError");
       assertThat(
               dsl.fetchCount(
-                  SECURITY_AUDIT_EVENT, SECURITY_AUDIT_EVENT.OPERATION.eq("forceEndProfileShare")))
+                  SECURITY_AUDIT_EVENT,
+                  SECURITY_AUDIT_EVENT.OPERATION.eq("administrativelyEndProfileShare")))
           .isEqualTo(1);
     } finally {
       authTestSupport.deleteIdentity(serverAdmin);

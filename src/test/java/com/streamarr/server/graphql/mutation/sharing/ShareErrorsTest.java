@@ -94,26 +94,31 @@ class ShareErrorsTest {
   }
 
   @Test
-  @DisplayName("Should map every force-end rejection when a force-end fails")
-  void shouldMapEveryForceEndRejectionWhenForceEndFails() {
+  @DisplayName("Should map every administrative-end rejection when an administrative end fails")
+  void shouldMapEveryAdministrativelyEndRejectionWhenAdministrativelyEndFails() {
     assertSoftly(
         softly -> {
           softly
-              .assertThat(ShareErrors.toForceEndError(new ShareRejections.ShareNotFound()))
+              .assertThat(
+                  ShareErrors.toAdministrativelyEndError(new ShareRejections.ShareNotFound()))
               .isExactlyInstanceOf(ShareNotFoundError.class);
           softly
-              .assertThat(ShareErrors.toForceEndError(new ShareRejections.ShareNotActive()))
+              .assertThat(
+                  ShareErrors.toAdministrativelyEndError(new ShareRejections.ShareNotActive()))
               .isExactlyInstanceOf(ShareNotActiveError.class);
           softly
               .assertThat(
-                  ShareErrors.toForceEndError(new ShareRejections.StructuralShareCannotEnd()))
+                  ShareErrors.toAdministrativelyEndError(
+                      new ShareRejections.StructuralShareCannotEnd()))
               .isExactlyInstanceOf(MembershipShareCannotEndError.class);
           softly
-              .assertThat(ShareErrors.toForceEndError(new ShareRejections.ReasonRequired()))
+              .assertThat(
+                  ShareErrors.toAdministrativelyEndError(new ShareRejections.ReasonRequired()))
               .isExactlyInstanceOf(ReasonRequiredError.class);
           softly
               .assertThat(
-                  ShareErrors.toForceEndError(new ShareRejections.ReauthenticationRequired()))
+                  ShareErrors.toAdministrativelyEndError(
+                      new ShareRejections.ReauthenticationRequired()))
               .isExactlyInstanceOf(ReauthenticationRequiredError.class);
         });
   }

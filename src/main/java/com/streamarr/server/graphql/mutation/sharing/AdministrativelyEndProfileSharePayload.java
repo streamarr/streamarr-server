@@ -4,5 +4,5 @@ import com.streamarr.server.graphql.dto.ProfileShareDetails;
 import java.util.List;
 import java.util.Optional;
 
-public record ForceEndProfileSharePayload(
-    Optional<ProfileShareDetails> share, List<ForceEndProfileShareError> userErrors) {}
+public record AdministrativelyEndProfileSharePayload(
+    Optional<ProfileShareDetails> share, List<AdministrativelyEndProfileShareError> userErrors) {}

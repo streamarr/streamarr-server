@@ -196,13 +196,16 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should authorize inside the mutation transaction when a share is force-ended")
-  void shouldAuthorizeInsideMutationTransactionWhenShareIsForceEnded() {
+  @DisplayName(
+      "Should authorize inside the mutation transaction when a share is administratively ended")
+  void shouldAuthorizeInsideMutationTransactionWhenShareIsAdministrativelyEnded() {
     var active = activeShare();
     authorization.decideUnitWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
     assertThat(
-            rejectionOf(service.forceEndProfileShare(identity(), active.getId(), "abuse report")))
+            rejectionOf(
+                service.administrativelyEndProfileShare(
+                    identity(), active.getId(), "abuse report")))
         .isInstanceOf(ShareRejections.ShareNotFound.class);
   }
 
@@ -270,37 +273,42 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should require a reason after authorization and audit when force-end succeeds")
-  void shouldRequireReasonAfterAuthorizationAndAuditWhenForceEndSucceeds() {
+  @DisplayName(
+      "Should require a reason after authorization and audit when the administrative end succeeds")
+  void shouldRequireReasonAfterAuthorizationAndAuditWhenAdministrativelyEndSucceeds() {
     var active = activeShare();
 
-    assertThat(rejectionOf(service.forceEndProfileShare(identity(), active.getId(), " ")))
+    assertThat(
+            rejectionOf(service.administrativelyEndProfileShare(identity(), active.getId(), " ")))
         .isInstanceOf(ShareRejections.ReasonRequired.class);
     assertThat(authorization.recordedIntents())
-        .containsExactly(new Intent.ForceEndProfileShare(active.getId()));
+        .containsExactly(new Intent.AdministrativelyEndProfileShare(active.getId()));
 
-    var ended = service.forceEndProfileShare(identity(), active.getId(), "abuse report");
+    var ended = service.administrativelyEndProfileShare(identity(), active.getId(), "abuse report");
     assertThat(ended).isInstanceOf(Outcome.Accepted.class);
 
     assertThat(
             rejectionOf(
-                service.forceEndProfileShare(identity(), active.getId(), "duplicate attempt")))
+                service.administrativelyEndProfileShare(
+                    identity(), active.getId(), "duplicate attempt")))
         .isInstanceOf(ShareRejections.ShareNotActive.class);
     assertThat(audit.entries()).hasSize(1);
-    assertThat(audit.entries().getFirst().operation()).isEqualTo("forceEndProfileShare");
+    assertThat(audit.entries().getFirst().operation()).isEqualTo("administrativelyEndProfileShare");
   }
 
   @Test
-  @DisplayName("Should require reauthentication when the force-end ceremony is stale")
-  void shouldRequireReauthenticationWhenForceEndCeremonyIsStale() {
+  @DisplayName("Should require reauthentication when the administrative-end ceremony is stale")
+  void shouldRequireReauthenticationWhenAdministrativelyEndCeremonyIsStale() {
     var active = activeShare();
     authorization.decideUnitWith(
         intent ->
-            intent instanceof Intent.ForceEndProfileShare
+            intent instanceof Intent.AdministrativelyEndProfileShare
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
                 : allowed());
 
-    assertThat(rejectionOf(service.forceEndProfileShare(identity(), active.getId(), "abuse")))
+    assertThat(
+            rejectionOf(
+                service.administrativelyEndProfileShare(identity(), active.getId(), "abuse")))
         .isInstanceOf(ShareRejections.ReauthenticationRequired.class);
   }
 
@@ -494,12 +502,13 @@ class ProfileSharingServiceTest {
 
   @Test
   @DisplayName(
-      "Should answer ShareNotFound when an unauthorized non-viewer force-ends with a blank reason")
-  void shouldAnswerShareNotFoundWhenUnauthorizedNonViewerForceEndsWithBlankReason() {
+      "Should answer ShareNotFound when an unauthorized non-viewer administratively ends with a blank reason")
+  void shouldAnswerShareNotFoundWhenUnauthorizedNonViewerAdministrativelyEndsWithBlankReason() {
     var active = activeShare();
     authorization.denyAll();
 
-    assertThat(rejectionOf(service.forceEndProfileShare(identity(), active.getId(), "  ")))
+    assertThat(
+            rejectionOf(service.administrativelyEndProfileShare(identity(), active.getId(), "  ")))
         .isInstanceOf(ShareRejections.ShareNotFound.class);
   }
 

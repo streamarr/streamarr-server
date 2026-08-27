@@ -221,7 +221,7 @@ class AuthorizationParityTest {
           REJECT_PROFILE_SHARE,
           CANCEL_PROFILE_SHARE,
           END_PROFILE_SHARE,
-          FORCE_END_PROFILE_SHARE ->
+          ADMINISTRATIVELY_END_PROFILE_SHARE ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
@@ -283,6 +283,6 @@ class AuthorizationParityTest {
         new Intent.RejectProfileShare(id),
         new Intent.CancelProfileShare(id),
         new Intent.EndProfileShare(id),
-        new Intent.ForceEndProfileShare(id));
+        new Intent.AdministrativelyEndProfileShare(id));
   }
 }

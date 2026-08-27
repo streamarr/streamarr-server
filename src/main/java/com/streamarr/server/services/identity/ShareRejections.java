@@ -16,7 +16,7 @@ public final class ShareRejections {
   public sealed interface End permits ShareNotFound, ShareNotActive, StructuralShareCannotEnd {}
 
   /** The audited ServerAdmin end adds the reason and fresh-reauthentication requirements. */
-  public sealed interface ForceEnd
+  public sealed interface AdministrativelyEnd
       permits ShareNotFound,
           ShareNotActive,
           StructuralShareCannotEnd,
@@ -32,7 +32,7 @@ public final class ShareRejections {
    */
   public record AlreadyShared() implements Offer {}
 
-  public record ShareNotFound() implements Accept, Decline, End, ForceEnd {}
+  public record ShareNotFound() implements Accept, Decline, End, AdministrativelyEnd {}
 
   public record ShareNotPending() implements Accept, Decline {}
 
@@ -42,12 +42,12 @@ public final class ShareRejections {
   /** T8: the Profile's name collides with another available Profile there. */
   public record NameConflict() implements Accept {}
 
-  public record ShareNotActive() implements End, ForceEnd {}
+  public record ShareNotActive() implements End, AdministrativelyEnd {}
 
   /** T3: nobody ends a structural share while the Account remains a member. */
-  public record StructuralShareCannotEnd() implements End, ForceEnd {}
+  public record StructuralShareCannotEnd() implements End, AdministrativelyEnd {}
 
-  public record ReauthenticationRequired() implements ForceEnd {}
+  public record ReauthenticationRequired() implements AdministrativelyEnd {}
 
-  public record ReasonRequired() implements ForceEnd {}
+  public record ReasonRequired() implements AdministrativelyEnd {}
 }

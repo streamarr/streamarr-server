@@ -36,7 +36,7 @@ type Mutation {
     rejectProfileShare(input: RejectProfileShareInput!): RejectProfileSharePayload
     cancelProfileShare(input: CancelProfileShareInput!): CancelProfileSharePayload
     endProfileShare(input: EndProfileShareInput!): EndProfileSharePayload
-    forceEndProfileShare(input: ForceEndProfileShareInput!): ForceEndProfileSharePayload
+    administrativelyEndProfileShare(input: AdministrativelyEndProfileShareInput!): AdministrativelyEndProfileSharePayload
 }
 
 enum ImageRefreshMode {

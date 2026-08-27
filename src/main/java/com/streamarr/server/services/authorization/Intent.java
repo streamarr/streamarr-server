@@ -138,6 +138,6 @@ public sealed interface Intent {
    */
   record EndProfileShare(UUID shareId) implements UnitIntent {}
 
-  /** ServerAdmin force-end; requiresFreshReauthentication with a reason. */
-  record ForceEndProfileShare(UUID shareId) implements UnitIntent {}
+  /** The ServerAdmin administrative end; requiresFreshReauthentication with a reason. */
+  record AdministrativelyEndProfileShare(UUID shareId) implements UnitIntent {}
 }

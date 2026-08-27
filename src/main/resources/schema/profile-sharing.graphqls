@@ -102,17 +102,17 @@ union EndProfileShareError =
   | ShareNotActiveError
   | MembershipShareCannotEndError
 
-input ForceEndProfileShareInput {
+input AdministrativelyEndProfileShareInput {
     shareId: ID!
     reason: String!
 }
 
-type ForceEndProfileSharePayload {
+type AdministrativelyEndProfileSharePayload {
     share: ProfileShare
-    userErrors: [ForceEndProfileShareError!]!
+    userErrors: [AdministrativelyEndProfileShareError!]!
 }
 
-union ForceEndProfileShareError =
+union AdministrativelyEndProfileShareError =
     ShareNotFoundError
   | ShareNotActiveError
   | MembershipShareCannotEndError

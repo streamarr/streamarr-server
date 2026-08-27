@@ -12,16 +12,16 @@ import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.ProfileShareDetails;
 import com.streamarr.server.graphql.dto.ProfileSharePreview;
 import com.streamarr.server.graphql.inputs.AcceptProfileShareInput;
+import com.streamarr.server.graphql.inputs.AdministrativelyEndProfileShareInput;
 import com.streamarr.server.graphql.inputs.CancelProfileShareInput;
 import com.streamarr.server.graphql.inputs.EndProfileShareInput;
-import com.streamarr.server.graphql.inputs.ForceEndProfileShareInput;
 import com.streamarr.server.graphql.inputs.OfferProfileShareInput;
 import com.streamarr.server.graphql.inputs.RejectProfileShareInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.sharing.AcceptProfileSharePayload;
+import com.streamarr.server.graphql.mutation.sharing.AdministrativelyEndProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.CancelProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.EndProfileSharePayload;
-import com.streamarr.server.graphql.mutation.sharing.ForceEndProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.OfferProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.RejectProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.ShareErrors;
@@ -143,17 +143,17 @@ public class ProfileSharingResolver {
   }
 
   @DgsMutation
-  public ForceEndProfileSharePayload forceEndProfileShare(
-      @InputArgument ForceEndProfileShareInput input) {
+  public AdministrativelyEndProfileSharePayload administrativelyEndProfileShare(
+      @InputArgument AdministrativelyEndProfileShareInput input) {
     return MutationPayloads.payload(
         profileSharingService
-            .forceEndProfileShare(
+            .administrativelyEndProfileShare(
                 authorizationService.currentIdentity(),
                 Ids.parseUuid(input.shareId()),
                 input.reason())
             .map(this::details),
-        ShareErrors::toForceEndError,
-        ForceEndProfileSharePayload::new);
+        ShareErrors::toAdministrativelyEndError,
+        AdministrativelyEndProfileSharePayload::new);
   }
 
   private ProfileShareDetails details(ProfileHouseholdShare share) {
