@@ -4,14 +4,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.AuthTestSupportConfig;
 import java.security.SecureRandom;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -19,11 +23,14 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 
 @Tag("IntegrationTest")
+@ResourceLock("server-bootstrap")
 @DisplayName("Device Authorization Collision Integration Tests")
-@Import(DeviceAuthorizationCollisionIT.CollisionCodeConfig.class)
+@Import({DeviceAuthorizationCollisionIT.CollisionCodeConfig.class, AuthTestSupportConfig.class})
 class DeviceAuthorizationCollisionIT extends AbstractIntegrationTest {
 
   @Autowired private DeviceAuthorizationService deviceAuthorizationService;
+
+  @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private DeviceAuthorizationRepository authorizationRepository;
 
@@ -31,9 +38,17 @@ class DeviceAuthorizationCollisionIT extends AbstractIntegrationTest {
 
   @Autowired private SequenceSecureRandom deviceCodeRandom;
 
+  @BeforeEach
+  void claimBootstrap() {
+    authTestSupport.claimBootstrap();
+  }
+
   @AfterEach
-  void deleteSeededRows() {
+  void deleteSeededRowsThenUnclaimBootstrap() {
+    // One teardown with an explicit order: authorization rows first, then the bootstrap
+    // claim and its admin account - two @AfterEach methods run in an unspecified order.
     authorizationRepository.deleteAll();
+    authTestSupport.unclaimBootstrap();
   }
 
   @Test

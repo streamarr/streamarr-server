@@ -1,5 +1,8 @@
 package com.streamarr.server.support;
 
+import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
+import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
+
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AuthSession;
@@ -16,6 +19,7 @@ import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.auth.ServerBootstrapRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -32,6 +36,7 @@ import java.util.UUID;
 import java.util.function.UnaryOperator;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
+import org.jooq.DSLContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -49,7 +54,9 @@ public class AuthTestSupport {
 
   private final String password = UUID.randomUUID().toString();
 
+  private final DSLContext dsl;
   private final UserAccountRepository userAccountRepository;
+  private final ServerBootstrapRepository serverBootstrapRepository;
   private final HouseholdRepository householdRepository;
   private final ProfileRepository profileRepository;
   private final ProfileHouseholdShareRepository shareRepository;
@@ -60,6 +67,44 @@ public class AuthTestSupport {
   private final PlaybackTokenIssuer playbackTokenIssuer;
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactionTemplate;
+
+  /**
+   * Fixture-created identities skip the setup ceremony, so the bootstrap claim it would have made
+   * is missing and pairing issuance refuses with SETUP_INCOMPLETE. Idempotent; tests that need an
+   * unclaimed server delete SERVER_BOOTSTRAP themselves, as before.
+   */
+  private TestIdentity bootstrapAdmin;
+
+  public void claimBootstrap() {
+    // Earlier test classes can leave either half behind — a claim whose admins were deleted, or
+    // admins without a claim — so both halves are ensured independently. A claim without an
+    // enabled ServerAdmin is a state production can never reach, and T4 enforces it here too.
+    if (bootstrapAdmin == null && !hasEnabledServerAdmin()) {
+      bootstrapAdmin = createAdminIdentity();
+    }
+
+    serverBootstrapRepository.claim(
+        bootstrapAdmin == null ? null : bootstrapAdmin.account().getId());
+  }
+
+  private boolean hasEnabledServerAdmin() {
+    return dsl.fetchExists(
+        dsl.selectFrom(USER_ACCOUNT)
+            .where(USER_ACCOUNT.SERVER_ADMIN.isTrue().and(USER_ACCOUNT.ENABLED.isTrue())));
+  }
+
+  /**
+   * Restores the shared database's historical unclaimed baseline. Call before deleting identities:
+   * T4 (an enabled ServerAdmin must remain) only enforces while a claim exists, and fixture cleanup
+   * routinely deletes the last admin.
+   */
+  public void unclaimBootstrap() {
+    dsl.deleteFrom(SERVER_BOOTSTRAP).execute();
+    if (bootstrapAdmin != null) {
+      deleteIdentity(bootstrapAdmin);
+      bootstrapAdmin = null;
+    }
+  }
 
   public TestIdentity createIdentity() {
     return createIdentity(false);
