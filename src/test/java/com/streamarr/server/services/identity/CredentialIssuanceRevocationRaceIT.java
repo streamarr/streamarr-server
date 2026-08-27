@@ -27,7 +27,6 @@ import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.AccountInvitationService.InvitationCodeCommand;
-import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.PasswordResetService;
 import com.streamarr.server.services.auth.RedeemPasswordResetCommand;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
@@ -203,10 +202,7 @@ class CredentialIssuanceRevocationRaceIT extends AbstractIntegrationTest {
               invitationRepository.findById(issued.invitation().getId()).orElseThrow().getStatus())
           .isEqualTo(AccountInvitationStatus.INVALIDATED);
       var presentation =
-          InvitationCodeCommand.builder()
-              .code(issued.code())
-              .ipAddress("192.0.2.30")
-              .build();
+          InvitationCodeCommand.builder().code(issued.code()).ipAddress("192.0.2.30").build();
       assertThatThrownBy(() -> invitationService.lookup(presentation))
           .isInstanceOf(InvalidOneTimeCodeException.class);
     }

@@ -123,6 +123,7 @@ public class AuthExceptionHandler extends AuthExceptionHandlerSupport {
     log.error("Auth persistence failure", e);
     return respond(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", REQUEST_NOT_COMPLETED);
   }
+
   private static ResponseEntity<AuthErrorResponse> respond(
       HttpStatus status, String code, String message) {
     return ResponseEntity.status(status).body(new AuthErrorResponse(code, message));

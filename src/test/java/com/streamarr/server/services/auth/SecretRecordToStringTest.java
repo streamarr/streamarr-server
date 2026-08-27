@@ -32,9 +32,7 @@ class SecretRecordToStringTest {
                 .code(secret)
                 .password(secret)
                 .toString(),
-            AccountInvitationService.InvitationCodeCommand.builder()
-                .code(secret)
-                .toString(),
+            AccountInvitationService.InvitationCodeCommand.builder().code(secret).toString(),
             ProfileManagerAdministrationService.ManagerInvitationCodeCommand.builder()
                 .code(secret)
                 .toString(),

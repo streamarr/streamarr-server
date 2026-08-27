@@ -243,6 +243,7 @@ class ProfileSelectionServiceTest {
         .contextHouseholdId(account.getHouseholdId())
         .build();
   }
+
   @Test
   @DisplayName("Should refuse the correct PIN when five wrong PINs precede it")
   void shouldRefuseCorrectPinWhenFiveWrongPinsPrecedeIt() {
