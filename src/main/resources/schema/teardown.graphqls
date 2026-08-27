@@ -53,7 +53,7 @@ type HouseholdTeardownPreview {
     visitingProfileCount: Int!
 }
 
-type SecurityAuditEventView {
+type SecurityAuditEventDetails {
     id: ID!
     occurredAt: String!
     actorAccountId: ID
@@ -70,11 +70,11 @@ type SecurityAuditEventConnection {
 }
 
 type SecurityAuditEventEdge {
-    node: SecurityAuditEventView!
+    node: SecurityAuditEventDetails!
     cursor: String!
 }
 
-type ProfileActivityView {
+type ProfileActivityDetails {
     id: ID!
     mediaFileId: ID!
     positionSeconds: Int!
@@ -89,6 +89,6 @@ type ProfileActivityConnection {
 }
 
 type ProfileActivityEdge {
-    node: ProfileActivityView!
+    node: ProfileActivityDetails!
     cursor: String!
 }

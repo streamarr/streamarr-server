@@ -7,13 +7,14 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.SecurityAuditEventRecordView;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.graphql.Ids;
+import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.HouseholdTeardownPreview;
-import com.streamarr.server.graphql.dto.ProfileActivityView;
+import com.streamarr.server.graphql.dto.ProfileActivityDetails;
 import com.streamarr.server.graphql.dto.ProfileDeletionPreview;
-import com.streamarr.server.graphql.dto.SecurityAuditEventView;
+import com.streamarr.server.graphql.dto.SecurityAuditEventDetails;
 import com.streamarr.server.graphql.inputs.LastAccountAction;
 import com.streamarr.server.graphql.inputs.TearDownHouseholdInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
@@ -25,7 +26,7 @@ import com.streamarr.server.services.identity.HouseholdTeardownService.FinalAcco
 import com.streamarr.server.services.identity.HouseholdTeardownService.FinalAccountDisposition;
 import com.streamarr.server.services.identity.HouseholdTeardownService.SecurityAuditPageRequest;
 import com.streamarr.server.services.identity.HouseholdTeardownService.TearDownHouseholdCommand;
-import com.streamarr.server.services.identity.HouseholdTeardownService.TeardownPreflightView;
+import com.streamarr.server.services.identity.HouseholdTeardownService.TeardownPreflightDetails;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
@@ -73,8 +74,9 @@ public class TeardownResolver {
   }
 
   @DgsQuery
-  public Connection<SecurityAuditEventView> securityAuditEvents(DataFetchingEnvironment dfe) {
-    var options = options(dfe);
+  public Connection<SecurityAuditEventDetails> securityAuditEvents(DataFetchingEnvironment dfe) {
+    var options =
+        ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         householdTeardownService.securityAuditEvents(
             authorizationService.currentIdentity(), auditPageRequest(options));
@@ -82,9 +84,10 @@ public class TeardownResolver {
   }
 
   @DgsQuery
-  public Connection<ProfileActivityView> profileActivity(
+  public Connection<ProfileActivityDetails> profileActivity(
       @InputArgument String profileId, DataFetchingEnvironment dfe) {
-    var options = options(dfe);
+    var options =
+        ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         householdTeardownService.profileActivity(
             authorizationService.currentIdentity(),
@@ -119,7 +122,7 @@ public class TeardownResolver {
     };
   }
 
-  private static HouseholdTeardownPreview toDto(TeardownPreflightView preview) {
+  private static HouseholdTeardownPreview toDto(TeardownPreflightDetails preview) {
     var profiles =
         preview.unlinkedProfiles().stream()
             .map(profile -> new ProfileDeletionPreview(profile.id(), profile.name()))
@@ -158,40 +161,19 @@ public class TeardownResolver {
     }
   }
 
-  private Connection<SecurityAuditEventView> toAuditConnection(
+  private Connection<SecurityAuditEventDetails> toAuditConnection(
       MediaPage<SecurityAuditEventRecordView> page) {
     return relayConnectionAdapter.toConnection(
         page,
-        item -> SecurityAuditEventView.from(item.item()),
+        item -> SecurityAuditEventDetails.from(item.item()),
         item -> cursorUtil.encodeOpaqueCursor(item.item().occurredAt() + "|" + item.item().id()));
   }
 
-  private Connection<ProfileActivityView> toActivityConnection(MediaPage<SessionProgress> page) {
+  private Connection<ProfileActivityDetails> toActivityConnection(MediaPage<SessionProgress> page) {
     return relayConnectionAdapter.toConnection(
         page,
-        item -> ProfileActivityView.from(item.item()),
+        item -> ProfileActivityDetails.from(item.item()),
         item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
-  }
-
-  private PaginationOptions options(DataFetchingEnvironment dfe) {
-    int first = dfe.getArgumentOrDefault("first", 0);
-    String after = dfe.getArgument("after");
-    int last = dfe.getArgumentOrDefault("last", 0);
-    String before = dfe.getArgument("before");
-    if (first == 0 && last == 0 && before != null) {
-      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
-    }
-
-    return paginationService.getPaginationOptions(
-        firstOrDefault(first, last, before), after, last, before);
-  }
-
-  private static int firstOrDefault(int first, int last, String before) {
-    if (first == 0 && last == 0 && before == null) {
-      return DEFAULT_PAGE_SIZE;
-    }
-
-    return first;
   }
 
   private record AuditCursor(Instant occurredAt, UUID id) {}

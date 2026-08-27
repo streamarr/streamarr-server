@@ -583,7 +583,7 @@ class HouseholdTeardownServiceTest {
     assertThat(preflight.accountCount()).isEqualTo(1);
     assertThat(preflight.unlinkedProfiles())
         .containsExactly(
-            new HouseholdTeardownService.DoomedProfileView(unlinked.getId(), "Unlinked"));
+            new HouseholdTeardownService.DoomedProfileDetails(unlinked.getId(), "Unlinked"));
     assertThat(preflight.hostedVisitCount()).isEqualTo(1);
   }
 
