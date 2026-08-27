@@ -339,12 +339,11 @@ public class AccountInvitationService {
                 .enabled(true)
                 .build());
     var now = clock.instant();
-    invitationRepository.invalidatePendingForProfile(
+    invitationRepository.invalidatePendingByProfileId(
         profileId, "Profile connected to an Account", now);
-    shareRepository.upsertStructuralHomeShare(profileId, householdId, now);
+    shareRepository.upsertStructural(profileId, householdId, now);
     endCurrentVisits(profileId, householdId, now);
-    shareRepository.invalidatePendingSharesForProfile(
-        profileId, "Profile connected to an Account", now);
+    shareRepository.invalidatePendingByProfileId(profileId, "Profile connected to an Account", now);
     reoffer(invitation, account, now);
     return account;
   }

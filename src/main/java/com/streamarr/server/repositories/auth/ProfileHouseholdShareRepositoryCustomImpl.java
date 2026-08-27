@@ -198,7 +198,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public void upsertStructuralHomeShare(UUID profileId, UUID householdId, Instant now) {
+  public void upsertStructural(UUID profileId, UUID householdId, Instant now) {
     var updated =
         dsl.update(PROFILE_HOUSEHOLD_SHARE)
             .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
@@ -232,7 +232,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public int invalidatePendingSharesForProfile(UUID profileId, String reason, Instant now) {
+  public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
     return dsl.update(PROFILE_HOUSEHOLD_SHARE)
         .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.INVALIDATED)
         .set(PROFILE_HOUSEHOLD_SHARE.INVALIDATION_REASON, reason)
