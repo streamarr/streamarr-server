@@ -6,7 +6,7 @@ import java.util.UUID;
 import lombok.Builder;
 
 @Builder
-public record ProfileShareView(
+public record ProfileShareDetails(
     UUID id,
     UUID profileId,
     UUID householdId,
@@ -15,8 +15,8 @@ public record ProfileShareView(
     String expiresAt,
     String endedAt) {
 
-  public static ProfileShareView from(ProfileHouseholdShare share) {
-    return ProfileShareView.builder()
+  public static ProfileShareDetails from(ProfileHouseholdShare share) {
+    return ProfileShareDetails.builder()
         .id(share.getId())
         .profileId(share.getProfileId())
         .householdId(share.getHouseholdId())

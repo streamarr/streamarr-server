@@ -44,6 +44,7 @@ class ShareFactsContributor implements FactContributor {
     if (share.isEmpty()) {
       return;
     }
+
     var found = share.get();
     slice.resourceAttribute(STRUCTURAL, new PrimBool(found.isStructural()));
     slice.resourceAttribute(

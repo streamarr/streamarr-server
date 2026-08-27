@@ -86,7 +86,11 @@ class ProfileSharingServiceTest {
             audit,
             new MutationTransactions(
                 new FakeTransactionManager(), new ConstraintViolationTranslator()),
-            new CredentialCodeProperties(INVITATION_TTL, null),
+            CredentialCodeProperties.builder()
+                .invitationTtl(INVITATION_TTL)
+                .passwordResetTtl(Duration.ofHours(1))
+                .replacementLockTimeout(Duration.ofSeconds(1))
+                .build(),
             new PaginationService(),
             CLOCK);
     household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());

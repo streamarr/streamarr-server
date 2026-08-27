@@ -6,10 +6,11 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.graphql.Ids;
+import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
+import com.streamarr.server.graphql.dto.ProfileShareDetails;
 import com.streamarr.server.graphql.dto.ProfileSharePreview;
-import com.streamarr.server.graphql.dto.ProfileShareView;
 import com.streamarr.server.graphql.inputs.AcceptProfileShareInput;
 import com.streamarr.server.graphql.inputs.CancelProfileShareInput;
 import com.streamarr.server.graphql.inputs.EndProfileShareInput;
@@ -27,7 +28,6 @@ import com.streamarr.server.graphql.mutation.sharing.ShareErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
@@ -58,9 +58,9 @@ public class ProfileSharingResolver {
   }
 
   @DgsQuery
-  public Connection<ProfileShareView> pendingShareOffers(
+  public Connection<ProfileShareDetails> pendingShareOffers(
       @InputArgument String householdId, DataFetchingEnvironment dfe) {
-    var options = options(dfe);
+    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         profileSharingService.pendingShareOffers(
             authorizationService.currentIdentity(),
@@ -70,9 +70,9 @@ public class ProfileSharingResolver {
   }
 
   @DgsQuery
-  public Connection<ProfileShareView> profileShares(
+  public Connection<ProfileShareDetails> profileShares(
       @InputArgument String profileId, DataFetchingEnvironment dfe) {
-    var options = options(dfe);
+    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         profileSharingService.profileShares(
             authorizationService.currentIdentity(),
@@ -89,7 +89,7 @@ public class ProfileSharingResolver {
                 authorizationService.currentIdentity(),
                 Ids.parseUuid(input.profileId()),
                 Ids.parseUuid(input.householdId()))
-            .map(ProfileShareView::from),
+            .map(ProfileShareDetails::from),
         ShareErrors::toOfferError,
         OfferProfileSharePayload::new);
   }
@@ -101,7 +101,7 @@ public class ProfileSharingResolver {
         profileSharingService
             .acceptProfileShare(
                 authorizationService.currentIdentity(), Ids.parseUuid(input.shareId()))
-            .map(ProfileShareView::from),
+            .map(ProfileShareDetails::from),
         ShareErrors::toAcceptError,
         AcceptProfileSharePayload::new);
   }
@@ -113,7 +113,7 @@ public class ProfileSharingResolver {
         profileSharingService
             .rejectProfileShare(
                 authorizationService.currentIdentity(), Ids.parseUuid(input.shareId()))
-            .map(ProfileShareView::from),
+            .map(ProfileShareDetails::from),
         ShareErrors::toRejectError,
         RejectProfileSharePayload::new);
   }
@@ -125,7 +125,7 @@ public class ProfileSharingResolver {
         profileSharingService
             .cancelProfileShare(
                 authorizationService.currentIdentity(), Ids.parseUuid(input.shareId()))
-            .map(ProfileShareView::from),
+            .map(ProfileShareDetails::from),
         ShareErrors::toCancelError,
         CancelProfileSharePayload::new);
   }
@@ -135,7 +135,7 @@ public class ProfileSharingResolver {
     return MutationPayloads.payload(
         profileSharingService
             .endProfileShare(authorizationService.currentIdentity(), Ids.parseUuid(input.shareId()))
-            .map(ProfileShareView::from),
+            .map(ProfileShareDetails::from),
         ShareErrors::toEndError,
         EndProfileSharePayload::new);
   }
@@ -149,36 +149,15 @@ public class ProfileSharingResolver {
                 authorizationService.currentIdentity(),
                 Ids.parseUuid(input.shareId()),
                 input.reason())
-            .map(ProfileShareView::from),
+            .map(ProfileShareDetails::from),
         ShareErrors::toForceEndError,
         ForceEndProfileSharePayload::new);
   }
 
-  private Connection<ProfileShareView> toConnection(MediaPage<ProfileHouseholdShare> page) {
+  private Connection<ProfileShareDetails> toConnection(MediaPage<ProfileHouseholdShare> page) {
     return relayConnectionAdapter.toConnection(
         page,
-        item -> ProfileShareView.from(item.item()),
+        item -> ProfileShareDetails.from(item.item()),
         item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
-  }
-
-  private PaginationOptions options(DataFetchingEnvironment dfe) {
-    int first = dfe.getArgumentOrDefault("first", 0);
-    String after = dfe.getArgument("after");
-    int last = dfe.getArgumentOrDefault("last", 0);
-    String before = dfe.getArgument("before");
-    if (first == 0 && last == 0 && before != null) {
-      return paginationService.getPaginationOptions(first, after, DEFAULT_PAGE_SIZE, before);
-    }
-
-    return paginationService.getPaginationOptions(
-        firstOrDefault(first, last, before), after, last, before);
-  }
-
-  private static int firstOrDefault(int first, int last, String before) {
-    if (first == 0 && last == 0 && before == null) {
-      return DEFAULT_PAGE_SIZE;
-    }
-
-    return first;
   }
 }

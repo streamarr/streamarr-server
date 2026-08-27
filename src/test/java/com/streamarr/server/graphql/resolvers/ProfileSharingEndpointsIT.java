@@ -644,6 +644,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
               .endedAt(Instant.now())
               .build());
     }
+
     shareRepository.saveAllAndFlush(endedShares);
     var orderedIds = orderedShareIds(orphan.getId());
     var response =
@@ -779,6 +780,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         statement.setObject(1, shareId);
         statement.executeQuery();
       }
+
       rowLocked.countDown();
       assertThat(releaseRow.await(10, TimeUnit.SECONDS))
           .as("share row should be released by the race")

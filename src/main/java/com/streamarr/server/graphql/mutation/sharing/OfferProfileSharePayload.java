@@ -1,8 +1,8 @@
 package com.streamarr.server.graphql.mutation.sharing;
 
-import com.streamarr.server.graphql.dto.ProfileShareView;
+import com.streamarr.server.graphql.dto.ProfileShareDetails;
 import java.util.List;
 import java.util.Optional;
 
 public record OfferProfileSharePayload(
-    Optional<ProfileShareView> share, List<OfferProfileShareError> userErrors) {}
+    Optional<ProfileShareDetails> share, List<OfferProfileShareError> userErrors) {}

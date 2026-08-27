@@ -418,6 +418,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
               .expiresAt(Instant.now().plusSeconds(3600))
               .build());
     }
+
     var options =
         new KeysetPaginationOptions(
             null,

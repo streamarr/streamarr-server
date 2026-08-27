@@ -188,12 +188,14 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
     if (options.getCursorId().isPresent() && cursorIndex < 0) {
       return List.of();
     }
+
     var pagination = options.getPaginationOptions();
     var rowLimit = pagination.getLimit() + (options.getCursorId().isPresent() ? 2 : 1);
     if (pagination.getPaginationDirection() == PaginationDirection.REVERSE) {
       var to = options.getCursorId().isPresent() ? cursorIndex + 1 : ordered.size();
       return List.copyOf(ordered.subList(Math.max(0, to - rowLimit), to));
     }
+
     var from = options.getCursorId().isPresent() ? cursorIndex : 0;
     return List.copyOf(ordered.subList(from, Math.min(ordered.size(), from + rowLimit)));
   }

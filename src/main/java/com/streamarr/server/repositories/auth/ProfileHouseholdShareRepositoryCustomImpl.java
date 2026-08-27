@@ -118,6 +118,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
     if (reverse) {
       Collections.reverse(found);
     }
+
     return found;
   }
 

@@ -83,6 +83,7 @@ public class ProfileSharingService {
           if (householdRepository.findById(householdId).isEmpty()) {
             throw new MutationRejection(new ShareRejections.HouseholdNotFound());
           }
+
           var now = clock.instant();
           shareRepository.retirePendingForPair(profileId, householdId, now);
           return shareRepository.saveAndFlush(
@@ -156,6 +157,7 @@ public class ProfileSharingService {
     if (reason == null || reason.isBlank()) {
       return Outcome.rejected(new ShareRejections.ReasonRequired());
     }
+
     return endInTransaction(
         shareId,
         () -> {
@@ -201,6 +203,7 @@ public class ProfileSharingService {
     if (profile.isEmpty() || householdRepository.findById(householdId).isEmpty()) {
       return Optional.empty();
     }
+
     var available = new ArrayList<>(profileRepository.findAvailableInHousehold(householdId));
     available.removeIf(other -> other.getId().equals(profileId));
     var nameConflict =
@@ -232,6 +235,7 @@ public class ProfileSharingService {
           if (!shareRepository.tryDecline(shareId, target, clock.instant())) {
             throw new MutationRejection(new ShareRejections.ShareNotPending());
           }
+
           return shareRepository.findFreshById(shareId).orElseThrow();
         },
         _ -> Optional.empty());
@@ -256,16 +260,22 @@ public class ProfileSharingService {
                   throw new AuthorizationUnavailableException();
             };
     if (!stillAuthorized) {
-      if (!shareRepository.tryInvalidate(
-          shareId, "offerer no longer authorized", clock.instant())) {
-        throw new MutationRejection(new ShareRejections.ShareNotPending());
-      }
-      return Optional.empty();
+      return invalidateUnauthorizedOffer(shareId);
     }
+
     if (!shareRepository.tryActivate(shareId, clock.instant())) {
       throw new MutationRejection(new ShareRejections.ShareNotPending());
     }
+
     return Optional.of(shareRepository.findFreshById(shareId).orElseThrow());
+  }
+
+  private Optional<ProfileHouseholdShare> invalidateUnauthorizedOffer(UUID shareId) {
+    if (!shareRepository.tryInvalidate(shareId, "offerer no longer authorized", clock.instant())) {
+      throw new MutationRejection(new ShareRejections.ShareNotPending());
+    }
+
+    return Optional.empty();
   }
 
   private Outcome<ProfileHouseholdShare, ShareRejections.End> endInTransaction(
@@ -277,6 +287,7 @@ public class ProfileSharingService {
           if (!shareRepository.tryEnd(shareId, now)) {
             throw new MutationRejection(new ShareRejections.ShareNotActive());
           }
+
           var share = shareRepository.findFreshById(shareId).orElseThrow();
           // Unsharing returns affected sessions to the picker; a visitor whose Personal
           // Profile's share ended also loses the Household context itself.

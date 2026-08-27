@@ -1,4 +1,4 @@
--- Profile sharing (ADR 0024 §Restricted Profile supervision; server PR #10).
+-- Profile sharing (ADR 0024 §Restricted Profile supervision; server PR #313).
 -- T7: a Household hosting a restricted Profile always holds an eligible HouseholdAdmin — the
 -- supervision is a fact about the target Household, not about who clicked accept. Activation
 -- checks it, and demotion, deletion, or restriction that would remove the last eligible admin of
