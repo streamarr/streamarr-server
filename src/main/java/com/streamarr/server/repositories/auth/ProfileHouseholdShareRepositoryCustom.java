@@ -70,7 +70,7 @@ public interface ProfileHouseholdShareRepositoryCustom {
    */
   int invalidatePendingByProfileId(UUID profileId, String reason, Instant now);
 
-  /** Invalidates the leaving manager's own PENDING offers of the Profile. */
-  int invalidatePendingSharesOfferedBy(
+  /** The leaving manager's own PENDING shares of the Profile become INVALIDATED. */
+  int invalidatePendingByProfileIdOfferedBy(
       UUID profileId, UUID offererAccountId, String reason, Instant now);
 }

@@ -105,7 +105,7 @@ public class ProfileManagerAdministrationService {
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
-          invitationRepository.invalidatePendingForProfileAndRecipient(
+          invitationRepository.invalidatePendingByProfileIdAndRecipientAccountId(
               profileId, recipientAccountId, REPLACED_REASON, now);
           var invitation =
               invitationRepository.saveAndFlush(
@@ -140,7 +140,7 @@ public class ProfileManagerAdministrationService {
 
     return mutationTransactions.write(
         () -> {
-          if (!invitationRepository.tryDecide(
+          if (!invitationRepository.tryDecidePending(
               invitationId, ProfileManagerInvitationStatus.CANCELED, clock.instant())) {
             throw new MutationRejection(new ManagerRejections.InvitationNotPending());
           }
@@ -173,7 +173,7 @@ public class ProfileManagerAdministrationService {
     if (!stillProposable(invitation)) {
       mutationTransactions.write(
           () ->
-              invitationRepository.invalidatePendingForProfileAndRecipient(
+              invitationRepository.invalidatePendingByProfileIdAndRecipientAccountId(
                   invitation.getProfileId(),
                   invitation.getRecipientAccountId(),
                   INVITER_LEFT_REASON,
@@ -185,7 +185,7 @@ public class ProfileManagerAdministrationService {
     return mutationTransactions.write(
         () -> {
           lockProfile(invitation.getProfileId(), ManagerRejections.ManagerInvitationNotFound::new);
-          if (!invitationRepository.tryDecide(
+          if (!invitationRepository.tryDecidePending(
               invitation.getId(), ProfileManagerInvitationStatus.ACCEPTED, now)) {
             throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
           }
@@ -224,7 +224,7 @@ public class ProfileManagerAdministrationService {
 
     return mutationTransactions.write(
         () -> {
-          if (!invitationRepository.tryDecide(
+          if (!invitationRepository.tryDecidePending(
               invitation.getId(), ProfileManagerInvitationStatus.DECLINED, clock.instant())) {
             throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
           }
@@ -319,7 +319,7 @@ public class ProfileManagerAdministrationService {
           }
 
           // The consent this grant makes redundant must not linger as a second live path.
-          invitationRepository.invalidatePendingForProfileAndRecipient(
+          invitationRepository.invalidatePendingByProfileIdAndRecipientAccountId(
               profileId, accountId, "granted by override", now);
           audit(
               identity,
@@ -425,7 +425,7 @@ public class ProfileManagerAdministrationService {
 
     var now = clock.instant();
     // An older invitation naming the removed Account could silently restore what was disputed.
-    invitationRepository.invalidatePendingForProfileAndRecipient(
+    invitationRepository.invalidatePendingByProfileIdAndRecipientAccountId(
         profileId, managerAccountId, "removal disputes the authority", now);
     invalidateLeaversProposals(profileId, managerAccountId);
     audit(
@@ -441,7 +441,7 @@ public class ProfileManagerAdministrationService {
     var now = clock.instant();
     invitationRepository.invalidatePendingInvitedBy(
         leaverAccountId, profileId, INVITER_LEFT_REASON, now);
-    shareRepository.invalidatePendingSharesOfferedBy(
+    shareRepository.invalidatePendingByProfileIdOfferedBy(
         profileId, leaverAccountId, "offering manager lost management", now);
   }
 

@@ -212,7 +212,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public int invalidatePendingSharesOfferedBy(
+  public int invalidatePendingByProfileIdOfferedBy(
       UUID profileId, UUID offererAccountId, String reason, Instant now) {
     var pending =
         database.values().stream()
