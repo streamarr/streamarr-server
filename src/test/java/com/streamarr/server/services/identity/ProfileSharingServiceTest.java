@@ -412,7 +412,7 @@ class ProfileSharingServiceTest {
   @DisplayName("Should explain a withdrawn offer when it was invalidated before acceptance")
   void shouldExplainWithdrawnOfferWhenItWasInvalidatedBeforeAcceptance() {
     var offer = pendingShare();
-    shares.tryInvalidate(offer.getId(), "issuer disabled", NOW);
+    shares.tryInvalidatePending(offer.getId(), "issuer disabled", NOW);
 
     assertThat(rejectionOf(service.acceptProfileShare(identity(), offer.getId())))
         .isEqualTo(new ShareRejections.OfferInvalidated("issuer disabled"));

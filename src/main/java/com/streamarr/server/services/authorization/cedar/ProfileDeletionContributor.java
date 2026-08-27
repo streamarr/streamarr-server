@@ -45,7 +45,7 @@ class ProfileDeletionContributor implements FactContributor {
         UNLINKED, new PrimBool(userAccountRepository.findByPersonalProfileId(profileId).isEmpty()));
     slice.resourceAttribute(
         SHARE_FREE,
-        new PrimBool(!shareRepository.hasLiveOrPendingShares(profileId, clock.instant())));
+        new PrimBool(!shareRepository.hasActiveOrPendingShares(profileId, clock.instant())));
     slice.resourceAttribute(
         PRINCIPAL_SOLE_MANAGER, new PrimBool(managers.equals(List.of(identity.accountId()))));
   }

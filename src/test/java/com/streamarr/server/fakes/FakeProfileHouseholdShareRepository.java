@@ -55,7 +55,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public List<ProfileHouseholdShare> findPendingOffersPage(
+  public List<ProfileHouseholdShare> findPendingByHouseholdId(
       UUID householdId, Instant now, KeysetPaginationOptions options) {
     return page(
         database.values().stream()
@@ -66,7 +66,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public List<ProfileHouseholdShare> findProfilePage(
+  public List<ProfileHouseholdShare> findByProfileId(
       UUID profileId, KeysetPaginationOptions options) {
     return page(
         database.values().stream().filter(share -> share.getProfileId().equals(profileId)).toList(),
@@ -74,7 +74,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public boolean tryActivate(UUID shareId, Instant now) {
+  public boolean tryActivatePending(UUID shareId, Instant now) {
     var share =
         findById(shareId)
             .filter(offer -> offer.getStatus() == ProfileShareStatus.PENDING)
@@ -88,7 +88,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public int retirePendingForPair(UUID profileId, UUID householdId, Instant now) {
+  public int supersedePending(UUID profileId, UUID householdId, Instant now) {
     var pending =
         database.values().stream()
             .filter(share -> share.getProfileId().equals(profileId))
@@ -105,7 +105,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public boolean tryInvalidate(UUID shareId, String reason, Instant now) {
+  public boolean tryInvalidatePending(UUID shareId, String reason, Instant now) {
     var pending =
         findById(shareId).filter(share -> share.getStatus() == ProfileShareStatus.PENDING);
     pending.ifPresent(
@@ -118,7 +118,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public int invalidatePendingOffersOfferedBy(UUID offererAccountId, String reason, Instant now) {
+  public int invalidatePendingOfferedBy(UUID offererAccountId, String reason, Instant now) {
     var pending =
         database.values().stream()
             .filter(share -> offererAccountId.equals(share.getOfferedByAccountId()))
@@ -135,12 +135,12 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public Optional<ProfileHouseholdShare> findFreshById(UUID shareId) {
+  public Optional<ProfileHouseholdShare> findRefreshedById(UUID shareId) {
     return findById(shareId);
   }
 
   @Override
-  public boolean tryDecline(UUID shareId, ProfileShareStatus target, Instant now)
+  public boolean tryDeclinePending(UUID shareId, ProfileShareStatus target, Instant now)
       throws IllegalArgumentException {
     ProfileHouseholdShareRepositoryCustom.requireDeclineTarget(target);
     var share = findById(shareId).filter(offer -> offer.getStatus() == ProfileShareStatus.PENDING);
@@ -156,7 +156,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public boolean tryEnd(UUID shareId, Instant now) {
+  public boolean tryEndActive(UUID shareId, Instant now) {
     var share = findById(shareId).filter(offer -> offer.getStatus() == ProfileShareStatus.ACTIVE);
     share.ifPresent(
         offer -> {
@@ -167,7 +167,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public boolean hasLiveOrPendingShares(UUID profileId, Instant now) {
+  public boolean hasActiveOrPendingShares(UUID profileId, Instant now) {
     return database.values().stream()
         .filter(share -> share.getProfileId().equals(profileId))
         .anyMatch(

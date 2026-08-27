@@ -91,7 +91,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   @Override
-  public int clearSelections(UUID profileId, UUID householdId, Instant now) {
+  public int clearProfileSelectionFromLiveSessions(UUID profileId, UUID householdId, Instant now) {
     return dsl.update(AUTH_SESSION)
         .setNull(AUTH_SESSION.SELECTED_PROFILE_ID)
         .set(AUTH_SESSION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
@@ -103,7 +103,8 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   @Override
-  public int resetContextForAccount(UUID accountId, UUID householdId, Instant now) {
+  public int clearHouseholdContextFromAccountSessions(
+      UUID accountId, UUID householdId, Instant now) {
     return dsl.update(AUTH_SESSION)
         .setNull(AUTH_SESSION.CONTEXT_HOUSEHOLD_ID)
         .setNull(AUTH_SESSION.SELECTED_PROFILE_ID)

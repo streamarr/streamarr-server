@@ -64,7 +64,7 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
   }
 
   @Override
-  public int clearSelections(UUID profileId, UUID householdId, Instant now) {
+  public int clearProfileSelectionFromLiveSessions(UUID profileId, UUID householdId, Instant now) {
     var affected =
         database.values().stream()
             .filter(session -> profileId.equals(session.getSelectedProfileId()))
@@ -76,7 +76,8 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
   }
 
   @Override
-  public int resetContextForAccount(UUID accountId, UUID householdId, Instant now) {
+  public int clearHouseholdContextFromAccountSessions(
+      UUID accountId, UUID householdId, Instant now) {
     var affected =
         database.values().stream()
             .filter(session -> accountId.equals(session.getAccountId()))

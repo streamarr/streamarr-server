@@ -133,7 +133,8 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     var now = Instant.now();
     var offer = pendingOffer(owner, host, now.minusSeconds(60));
 
-    var declined = shareRepository.tryDecline(offer.getId(), ProfileShareStatus.REJECTED, now);
+    var declined =
+        shareRepository.tryDeclinePending(offer.getId(), ProfileShareStatus.REJECTED, now);
 
     assertThat(declined).isTrue();
     assertThat(shareRepository.findById(offer.getId()).orElseThrow().getStatus())
@@ -155,7 +156,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     var invalidated =
         transactionTemplate.execute(
             _ ->
-                shareRepository.invalidatePendingOffersOfferedBy(
+                shareRepository.invalidatePendingOfferedBy(
                     owner.account().getId(), "issuer disabled", now));
 
     assertThat(invalidated).isEqualTo(1);
@@ -176,7 +177,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     pendingOffer(owner, host, Instant.now().minusSeconds(60));
 
     var page =
-        shareRepository.findPendingOffersPage(
+        shareRepository.findPendingByHouseholdId(
             host.household().getId(), Instant.now(), firstPage(10));
 
     assertThat(page).isEmpty();

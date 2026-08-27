@@ -45,7 +45,7 @@ class FakeProfileHouseholdShareRepositoryTest {
       fake.save(share);
     }
 
-    var page = fake.findPendingOffersPage(householdId, Instant.now(), firstPage(10));
+    var page = fake.findPendingByHouseholdId(householdId, Instant.now(), firstPage(10));
 
     assertThat(page).extracting(ProfileHouseholdShare::getId).containsExactly(LOW, HIGH);
   }

@@ -89,7 +89,7 @@ public class ProfileSharingService {
           }
 
           var now = clock.instant();
-          shareRepository.retirePendingForPair(profileId, householdId, now);
+          shareRepository.supersedePending(profileId, householdId, now);
           return shareRepository.saveAndFlush(
               ProfileHouseholdShare.builder()
                   .profileId(profileId)
@@ -249,11 +249,11 @@ public class ProfileSharingService {
               rejection -> {
                 throw new MutationRejection(rejection);
               });
-          if (!shareRepository.tryDecline(shareId, target, clock.instant())) {
+          if (!shareRepository.tryDeclinePending(shareId, target, clock.instant())) {
             throw new MutationRejection(new ShareRejections.ShareNotPending());
           }
 
-          return shareRepository.findFreshById(shareId).orElseThrow();
+          return shareRepository.findRefreshedById(shareId).orElseThrow();
         },
         _ -> Optional.empty());
   }
@@ -279,25 +279,26 @@ public class ProfileSharingService {
       return invalidateUnauthorizedOffer(shareId);
     }
 
-    if (!shareRepository.tryActivate(shareId, clock.instant())) {
+    if (!shareRepository.tryActivatePending(shareId, clock.instant())) {
       throw new MutationRejection(notPending(shareId));
     }
 
-    return shareRepository.findFreshById(shareId).orElseThrow();
+    return shareRepository.findRefreshedById(shareId).orElseThrow();
   }
 
   private ProfileHouseholdShare invalidateUnauthorizedOffer(UUID shareId) {
-    if (!shareRepository.tryInvalidate(shareId, "offerer no longer authorized", clock.instant())) {
+    if (!shareRepository.tryInvalidatePending(
+        shareId, "offerer no longer authorized", clock.instant())) {
       throw new MutationRejection(notPending(shareId));
     }
 
-    return shareRepository.findFreshById(shareId).orElseThrow();
+    return shareRepository.findRefreshedById(shareId).orElseThrow();
   }
 
   /** An offer that is no longer pending explains a withdrawal; any other state is just decided. */
   private ShareRejections.Accept notPending(UUID shareId) {
     return shareRepository
-        .findFreshById(shareId)
+        .findRefreshedById(shareId)
         .flatMap(ProfileSharingService::withdrawal)
         .<ShareRejections.Accept>map(withdrawn -> withdrawn)
         .orElseGet(ShareRejections.ShareNotPending::new);
@@ -327,19 +328,20 @@ public class ProfileSharingService {
           requireShare(shareId);
           authorize.run();
           var now = clock.instant();
-          if (!shareRepository.tryEnd(shareId, now)) {
+          if (!shareRepository.tryEndActive(shareId, now)) {
             throw new MutationRejection(refusals.notActive().get());
           }
 
-          var share = shareRepository.findFreshById(shareId).orElseThrow();
+          var share = shareRepository.findRefreshedById(shareId).orElseThrow();
           // Unsharing returns affected sessions to the picker; a visitor whose Personal
           // Profile's share ended also loses the Household context itself.
-          authSessionRepository.clearSelections(share.getProfileId(), share.getHouseholdId(), now);
+          authSessionRepository.clearProfileSelectionFromLiveSessions(
+              share.getProfileId(), share.getHouseholdId(), now);
           userAccountRepository
               .findByPersonalProfileId(share.getProfileId())
               .ifPresent(
                   visitor ->
-                      authSessionRepository.resetContextForAccount(
+                      authSessionRepository.clearHouseholdContextFromAccountSessions(
                           visitor.getId(), share.getHouseholdId(), now));
           afterEnd.accept(share);
           return share;
@@ -469,7 +471,7 @@ public class ProfileSharingService {
     }
 
     return page(
-        shareRepository.findPendingOffersPage(householdId, clock.instant(), options), options);
+        shareRepository.findPendingByHouseholdId(householdId, clock.instant(), options), options);
   }
 
   /** Every share of one Profile, for its managers; empty when the caller may not view. */
@@ -479,7 +481,7 @@ public class ProfileSharingService {
       return page(List.of(), options);
     }
 
-    return page(shareRepository.findProfilePage(profileId, options), options);
+    return page(shareRepository.findByProfileId(profileId, options), options);
   }
 
   private MediaPage<ProfileHouseholdShare> page(

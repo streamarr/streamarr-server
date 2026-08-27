@@ -16,33 +16,38 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /** Locks and reports the active share used as authorization authority. */
   boolean lockActiveShare(UUID profileId, UUID householdId);
 
-  /** Whether any share of the Profile is ACTIVE or an unexpired PENDING offer, read as a scalar. */
-  boolean hasLiveOrPendingShares(UUID profileId, Instant now);
+  /** Whether the Profile has any ACTIVE share or unexpired PENDING share, read as a scalar. */
+  boolean hasActiveOrPendingShares(UUID profileId, Instant now);
 
-  /** A bounded keyset window of the unexpired PENDING offers into one Household. */
-  List<ProfileHouseholdShare> findPendingOffersPage(
+  /** The keyset window of the Household's PENDING shares that are not past expires_at. */
+  List<ProfileHouseholdShare> findPendingByHouseholdId(
       UUID householdId, Instant now, KeysetPaginationOptions options);
 
-  /** A bounded keyset window of every share for one Profile. */
-  List<ProfileHouseholdShare> findProfilePage(UUID profileId, KeysetPaginationOptions options);
+  /** The keyset window of the Profile's shares in every status. */
+  List<ProfileHouseholdShare> findByProfileId(UUID profileId, KeysetPaginationOptions options);
 
-  /** Retires an older PENDING offer for the pair as EXPIRED or CANCELED before replacement. */
-  int retirePendingForPair(UUID profileId, UUID householdId, Instant now);
+  /**
+   * The PENDING share of the Profile into the Household becomes CANCELED (EXPIRED when already
+   * past) so a new one can be offered; answers how many rows that was.
+   */
+  int supersedePending(UUID profileId, UUID householdId, Instant now);
 
-  /** Invalidates one PENDING offer, recording why so the offer can explain itself later. */
-  boolean tryInvalidate(UUID shareId, String reason, Instant now);
+  /** One PENDING share becomes INVALIDATED with the reason it will later explain. */
+  boolean tryInvalidatePending(UUID shareId, String reason, Instant now);
 
-  /** Invalidates every unexpired PENDING offer the Account made, recording why. */
-  int invalidatePendingOffersOfferedBy(UUID offererAccountId, String reason, Instant now);
+  /** Every unexpired PENDING share the Account offered becomes INVALIDATED with the reason. */
+  int invalidatePendingOfferedBy(UUID offererAccountId, String reason, Instant now);
 
-  /** Refreshes a possibly managed row after jOOQ DML changed it in this transaction. */
-  Optional<ProfileHouseholdShare> findFreshById(UUID shareId);
+  /**
+   * Re-reads the share past the first-level cache after jOOQ DML changed it in this transaction.
+   */
+  Optional<ProfileHouseholdShare> findRefreshedById(UUID shareId);
 
-  /** Activates one PENDING, unexpired offer; a raced decision has exactly one winner. */
-  boolean tryActivate(UUID shareId, Instant now);
+  /** PENDING and unexpired becomes ACTIVE; a raced decision has exactly one winner. */
+  boolean tryActivatePending(UUID shareId, Instant now);
 
-  /** Moves one PENDING offer to REJECTED or CANCELED — or to EXPIRED when its time has passed. */
-  boolean tryDecline(UUID shareId, ProfileShareStatus target, Instant now)
+  /** PENDING becomes REJECTED or CANCELED — or EXPIRED when its time has already passed. */
+  boolean tryDeclinePending(UUID shareId, ProfileShareStatus target, Instant now)
       throws IllegalArgumentException;
 
   static void requireDeclineTarget(ProfileShareStatus target) {
@@ -51,6 +56,6 @@ public interface ProfileHouseholdShareRepositoryCustom {
     }
   }
 
-  /** Ends one ACTIVE share. The deferred T3 judges structural shares at commit. */
-  boolean tryEnd(UUID shareId, Instant now);
+  /** ACTIVE becomes ENDED. The deferred T3 judges structural shares at commit. */
+  boolean tryEndActive(UUID shareId, Instant now);
 }

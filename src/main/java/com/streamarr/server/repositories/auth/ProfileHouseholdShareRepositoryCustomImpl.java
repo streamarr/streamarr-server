@@ -35,7 +35,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   private final AuditorAware<UUID> auditorAware;
 
   @Override
-  public int retirePendingForPair(UUID profileId, UUID householdId, Instant now) {
+  public int supersedePending(UUID profileId, UUID householdId, Instant now) {
     var nowUtc = now.atOffset(ZoneOffset.UTC);
     return dsl.update(PROFILE_HOUSEHOLD_SHARE)
         .set(
@@ -53,12 +53,12 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public boolean tryInvalidate(UUID shareId, String reason, Instant now) {
+  public boolean tryInvalidatePending(UUID shareId, String reason, Instant now) {
     return invalidatePending(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId), reason, now) > 0;
   }
 
   @Override
-  public int invalidatePendingOffersOfferedBy(UUID offererAccountId, String reason, Instant now) {
+  public int invalidatePendingOfferedBy(UUID offererAccountId, String reason, Instant now) {
     var nowUtc = now.atOffset(ZoneOffset.UTC);
     return invalidatePending(
         PROFILE_HOUSEHOLD_SHARE
@@ -84,14 +84,14 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public Optional<ProfileHouseholdShare> findFreshById(UUID shareId) {
+  public Optional<ProfileHouseholdShare> findRefreshedById(UUID shareId) {
     var found = Optional.ofNullable(entityManager.find(ProfileHouseholdShare.class, shareId));
     found.ifPresent(entityManager::refresh);
     return found;
   }
 
   @Override
-  public List<ProfileHouseholdShare> findPendingOffersPage(
+  public List<ProfileHouseholdShare> findPendingByHouseholdId(
       UUID householdId, Instant now, KeysetPaginationOptions options) {
     return findPage(
         PROFILE_HOUSEHOLD_SHARE
@@ -111,7 +111,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public List<ProfileHouseholdShare> findProfilePage(
+  public List<ProfileHouseholdShare> findByProfileId(
       UUID profileId, KeysetPaginationOptions options) {
     return findPage(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId), options);
   }
@@ -145,7 +145,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public boolean tryActivate(UUID shareId, Instant now) {
+  public boolean tryActivatePending(UUID shareId, Instant now) {
     return dsl.update(PROFILE_HOUSEHOLD_SHARE)
             .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
             .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
@@ -161,7 +161,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public boolean tryDecline(
+  public boolean tryDeclinePending(
       UUID shareId, com.streamarr.server.domain.auth.ProfileShareStatus target, Instant now)
       throws IllegalArgumentException {
     ProfileHouseholdShareRepositoryCustom.requireDeclineTarget(target);
@@ -183,7 +183,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public boolean tryEnd(UUID shareId, Instant now) {
+  public boolean tryEndActive(UUID shareId, Instant now) {
     return dsl.update(PROFILE_HOUSEHOLD_SHARE)
             .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ENDED)
             .set(PROFILE_HOUSEHOLD_SHARE.ENDED_AT, now.atOffset(ZoneOffset.UTC))
@@ -198,7 +198,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public boolean hasLiveOrPendingShares(UUID profileId, Instant now) {
+  public boolean hasActiveOrPendingShares(UUID profileId, Instant now) {
     var pendingAndLive =
         PROFILE_HOUSEHOLD_SHARE
             .STATUS

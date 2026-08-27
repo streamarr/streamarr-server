@@ -246,7 +246,7 @@ public class AccountAdministrationService {
     accountInvitationRepository.invalidatePendingInvitationsIssuedBy(issuerAccountId, reason, now);
     passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
         issuerAccountId, reason, now);
-    profileHouseholdShareRepository.invalidatePendingOffersOfferedBy(issuerAccountId, reason, now);
+    profileHouseholdShareRepository.invalidatePendingOfferedBy(issuerAccountId, reason, now);
   }
 
   private boolean mayViewAccount(AuthenticatedIdentity identity, UUID accountId) {

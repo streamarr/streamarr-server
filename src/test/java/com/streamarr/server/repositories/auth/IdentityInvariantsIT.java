@@ -398,7 +398,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     var offerId = offer.getId();
     var now = Instant.now();
 
-    assertThatThrownBy(() -> shareRepository.tryDecline(offerId, ProfileShareStatus.ACTIVE, now))
+    assertThatThrownBy(
+            () -> shareRepository.tryDeclinePending(offerId, ProfileShareStatus.ACTIVE, now))
         .isInstanceOf(IllegalArgumentException.class);
     assertThat(shareRepository.findById(offer.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileShareStatus.PENDING);
@@ -429,7 +430,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
                 .limit(1)
                 .build());
 
-    var window = shareRepository.findProfilePage(owner.profile().getId(), options);
+    var window = shareRepository.findByProfileId(owner.profile().getId(), options);
 
     assertThat(window)
         .hasSize(2)
