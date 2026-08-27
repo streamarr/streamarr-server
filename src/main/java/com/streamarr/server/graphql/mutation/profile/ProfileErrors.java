@@ -56,6 +56,8 @@ public final class ProfileErrors {
       case ProfileRejections.EligibleManagerRequired _ -> profileRequiresEligibleManager();
       case ProfileRejections.RestrictedAccountAuthority _ ->
           restrictedAccountCannotAdminister("kind");
+      case ProfileRejections.HostingHouseholdLacksEligibleAdmin _ ->
+          restrictedProfileRequiresHouseholdAdmin();
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ ->
           maximumAllowedRatingAgeInvalid("kind");
     };
@@ -69,6 +71,8 @@ public final class ProfileErrors {
       case ProfileRejections.EligibleManagerRequired _ -> profileRequiresEligibleManager();
       case ProfileRejections.RestrictedAccountAuthority _ ->
           restrictedAccountCannotAdminister(MAXIMUM_ALLOWED_RATING_AGE);
+      case ProfileRejections.HostingHouseholdLacksEligibleAdmin _ ->
+          restrictedProfileRequiresHouseholdAdmin();
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ -> maximumAllowedRatingAgeInvalid();
     };
   }
@@ -82,6 +86,8 @@ public final class ProfileErrors {
       case ProfileRejections.EligibleManagerRequired _ -> profileRequiresEligibleManager();
       case ProfileRejections.RestrictedAccountAuthority _ ->
           restrictedAccountCannotAdminister(PROFILE_ID);
+      case ProfileRejections.HostingHouseholdLacksEligibleAdmin _ ->
+          restrictedProfileRequiresHouseholdAdmin();
       case ProfileRejections.MaximumAllowedRatingAgeInvalid _ ->
           maximumAllowedRatingAgeInvalid(PROFILE_ID);
     };
@@ -141,6 +147,13 @@ public final class ProfileErrors {
   private static ProfileNameTakenError nameTaken() {
     return new ProfileNameTakenError(
         "Another Profile in that Household already uses that name.", InputPath.of(NAME));
+  }
+
+  private static RestrictedProfileRequiresHouseholdAdminError
+      restrictedProfileRequiresHouseholdAdmin() {
+    return new RestrictedProfileRequiresHouseholdAdminError(
+        "A Household this Profile is shared into has no eligible HouseholdAdmin to supervise it"
+            + " once it is restricted.");
   }
 
   private static ProfileRequiresEligibleManagerError profileRequiresEligibleManager() {

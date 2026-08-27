@@ -32,6 +32,7 @@ public final class ProfileRejections {
           ReauthenticationRequired,
           EligibleManagerRequired,
           RestrictedAccountAuthority,
+          HostingHouseholdLacksEligibleAdmin,
           MaximumAllowedRatingAgeInvalid {}
 
   public sealed interface SetProfilePin permits ProfileNotFound, PinMalformed {}
@@ -64,6 +65,11 @@ public final class ProfileRejections {
   public record ManagerNotEligible() implements CreateProfile {}
 
   public record RestrictedAccountAuthority() implements ChangeProfilePolicy {}
+
+  /**
+   * T7: every Household hosting the Profile must keep an eligible HouseholdAdmin once restricted.
+   */
+  public record HostingHouseholdLacksEligibleAdmin() implements ChangeProfilePolicy {}
 
   public record MaximumAllowedRatingAgeInvalid() implements CreateProfile, ChangeProfilePolicy {}
 

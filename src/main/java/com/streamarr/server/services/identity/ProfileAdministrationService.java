@@ -47,6 +47,7 @@ import org.springframework.stereotype.Service;
 public class ProfileAdministrationService {
 
   private static final String CHK_NAMES_UNIQUE = "chk_household_profile_names_unique";
+  private static final String CHK_HOSTING_ADMIN = "chk_hosting_household_retains_eligible_admin";
   private static final String CHK_ELIGIBLE_MANAGER = "chk_profile_home_anchor";
   private static final String CHK_RESTRICTED_AUTHORITY =
       "chk_restricted_account_holds_no_authority";
@@ -445,6 +446,8 @@ public class ProfileAdministrationService {
                   Optional.of(new ProfileRejections.EligibleManagerRequired());
               case CHK_RESTRICTED_AUTHORITY ->
                   Optional.of(new ProfileRejections.RestrictedAccountAuthority());
+              case CHK_HOSTING_ADMIN ->
+                  Optional.of(new ProfileRejections.HostingHouseholdLacksEligibleAdmin());
               default -> Optional.empty();
             });
   }

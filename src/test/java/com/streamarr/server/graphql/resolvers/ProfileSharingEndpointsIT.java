@@ -1117,4 +1117,53 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           return orphan;
         });
   }
+
+  // ---- T7 from the profile trigger: restricting a hosted Profile answers a typed rejection.
+
+  @Test
+  @DisplayName(
+      "Should answer a typed rejection when restricting a Profile hosted by an adminless Household")
+  void shouldAnswerTypedRejectionWhenRestrictingProfileHostedByAdminlessHousehold()
+      throws Exception {
+    var orphan = managedOrphan();
+    var empty =
+        householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    try {
+      accept(serverAdmin, UUID.fromString(offer(orphan, empty.getId())));
+
+      graphql(
+              authTestSupport.accountBearer(owner),
+              """
+              mutation { changeProfileKind(input: {profileId: "%s", kind: KID}) {
+                profile { id } userErrors { __typename } } }
+              """
+                  .formatted(orphan.getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.changeProfileKind.profile").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.changeProfileKind.userErrors[0].__typename")
+                  .value("RestrictedProfileRequiresHouseholdAdminError"));
+
+      assertThat(profileRepository.findById(orphan.getId()).orElseThrow().getKind())
+          .isEqualTo(ProfileKind.ADULT);
+    } finally {
+      authTestSupport.deleteIdentity(serverAdmin);
+      householdRepository.deleteById(empty.getId());
+    }
+  }
+
+  private void accept(AuthTestSupport.TestIdentity decider, UUID shareId) throws Exception {
+    graphql(
+            authTestSupport.accountBearer(decider),
+            """
+            mutation { acceptProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.acceptProfileShare.share.status").value("ACTIVE"));
+  }
 }

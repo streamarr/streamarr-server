@@ -10,4 +10,5 @@ public sealed interface ChangeProfileKindError extends MutationError
         ReauthenticationRequiredError,
         ProfileRequiresEligibleManagerError,
         RestrictedAccountCannotAdministerError,
+        RestrictedProfileRequiresHouseholdAdminError,
         MaximumAllowedRatingAgeInvalidError {}

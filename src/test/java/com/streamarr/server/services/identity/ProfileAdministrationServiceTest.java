@@ -489,6 +489,8 @@ class ProfileAdministrationServiceTest {
         .isInstanceOf(ProfileRejections.EligibleManagerRequired.class);
     assertThat(policyRejectionFor("chk_restricted_account_holds_no_authority"))
         .isInstanceOf(ProfileRejections.RestrictedAccountAuthority.class);
+    assertThat(policyRejectionFor("chk_hosting_household_retains_eligible_admin"))
+        .isInstanceOf(ProfileRejections.HostingHouseholdLacksEligibleAdmin.class);
   }
 
   @Test
