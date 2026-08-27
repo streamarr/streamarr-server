@@ -228,6 +228,25 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should log in when the email has surrounding whitespace")
+  void shouldLogInWhenEmailHasSurroundingWhitespace() throws Exception {
+    seedSingleProfileIdentity();
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"email": "  %s ", "password": "%s", "deviceName": "it-device", \
+                    "cookieMode": false}
+                    """
+                        .formatted(account.getEmail(), password)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.accessToken").isNotEmpty());
+  }
+
+  @Test
   @DisplayName("Should throttle login when failures exceed limit")
   void shouldThrottleLoginWhenFailuresExceedLimit() throws Exception {
     seedSingleProfileIdentity();

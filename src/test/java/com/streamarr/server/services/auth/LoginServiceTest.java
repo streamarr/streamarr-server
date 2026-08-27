@@ -291,6 +291,47 @@ class LoginServiceTest {
         .isInstanceOf(InvalidCredentialsException.class);
   }
 
+  @Test
+  @DisplayName(
+      "Should reject login after one full-cost burn when the email is not shaped like an address")
+  void shouldRejectLoginAfterOneFullCostBurnWhenEmailIsNotShapedLikeAnAddress() {
+    var attempt = commandBuilder("ghost").password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+    assertThat(timingEqualizer.burns()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should log in when the email has surrounding whitespace")
+  void shouldLogInWhenEmailHasSurroundingWhitespace() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+    var attempt =
+        commandBuilder("  " + account.getEmail() + "\n").password(CORRECT_PASSWORD).build();
+
+    var result = loginService.login(attempt);
+
+    assertThat(result.account().getId()).isEqualTo(account.getId());
+  }
+
+  @Test
+  @DisplayName("Should share the throttle budget when emails differ only by surrounding whitespace")
+  void shouldShareThrottleBudgetWhenEmailsDifferOnlyBySurroundingWhitespace() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+
+    for (int i = 0; i < 5; i++) {
+      var padded = " ".repeat(i + 1) + account.getEmail();
+      var wrongAttempt = commandBuilder(padded).password("wrong-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAttempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    var correctAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(correctAttempt))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
   private UserAccount seedAccount(String passwordHash) {
     return userAccountRepository.save(
         AccountFixture.defaultAccountBuilder().passwordHash(passwordHash).build());
