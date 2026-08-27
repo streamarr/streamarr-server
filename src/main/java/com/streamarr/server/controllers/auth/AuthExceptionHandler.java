@@ -5,6 +5,7 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.exceptions.InvalidEmailAddressException;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.exceptions.InvalidProfilePinException;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
@@ -43,6 +44,12 @@ public class AuthExceptionHandler {
   public ResponseEntity<AuthErrorResponse> handleSetupAlreadyCompleted(
       SetupAlreadyCompletedException e) {
     return respond(HttpStatus.CONFLICT, "SETUP_ALREADY_COMPLETED", e);
+  }
+
+  @ExceptionHandler(InvalidEmailAddressException.class)
+  public ResponseEntity<AuthErrorResponse> handleInvalidEmailAddress(
+      InvalidEmailAddressException e) {
+    return respond(HttpStatus.BAD_REQUEST, "INVALID_EMAIL_ADDRESS", e);
   }
 
   @ExceptionHandler(InvalidCredentialsException.class)

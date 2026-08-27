@@ -8,6 +8,7 @@ import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.streaming.WatchHistory;
+import com.streamarr.server.exceptions.InvalidEmailAddressException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
@@ -25,6 +26,8 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -214,6 +217,29 @@ class SetupServiceTest {
     assertThatThrownBy(() -> setupService.setup(command))
         .isInstanceOf(SetupAlreadyCompletedException.class);
     assertThat(passwordEncoder.encodeInvocations()).isZero();
+  }
+
+  @ParameterizedTest(name = "Should reject \"{0}\" as the admin email")
+  @ValueSource(strings = {" ", "admin", "admin@example"})
+  @DisplayName("Should reject setup when the admin email is not shaped like an address")
+  void shouldRejectSetupWhenAdminEmailIsNotShapedLikeAnAddress(String email) {
+    var command = defaultCommandBuilder().email(email).build();
+
+    assertThatThrownBy(() -> setupService.setup(command))
+        .isInstanceOf(InvalidEmailAddressException.class);
+    assertThat(bootstrapRepository.isClaimed()).isFalse();
+    assertThat(passwordEncoder.encodeInvocations()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should store the stripped admin email when setup succeeds")
+  void shouldStoreStrippedAdminEmailWhenSetupSucceeds() {
+    var result = setupService.setup(defaultCommandBuilder().email(" Admin@Example.com\n").build());
+
+    assertThat(result.admin().getEmail()).isEqualTo("Admin@Example.com");
+    assertThat(userAccountRepository.findByEmailIgnoreCase("admin@example.com"))
+        .map(UserAccount::getId)
+        .contains(result.admin().getId());
   }
 
   private SetupCommand.SetupCommandBuilder defaultCommandBuilder() {

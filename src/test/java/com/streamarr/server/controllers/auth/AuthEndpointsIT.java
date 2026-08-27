@@ -214,6 +214,20 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject setup when the admin email is not shaped like an address")
+  void shouldRejectSetupWhenAdminEmailIsNotShapedLikeAnAddress() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/setup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(setupBody("admin")))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("INVALID_EMAIL_ADDRESS"));
+
+    assertThat(serverBootstrapRepository.isClaimed()).isFalse();
+  }
+
+  @Test
   @DisplayName("Should throttle login when failures exceed limit")
   void shouldThrottleLoginWhenFailuresExceedLimit() throws Exception {
     seedSingleProfileIdentity();

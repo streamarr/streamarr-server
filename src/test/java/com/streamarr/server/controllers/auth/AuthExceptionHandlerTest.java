@@ -6,6 +6,7 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.exceptions.InvalidEmailAddressException;
 import com.streamarr.server.exceptions.InvitationNotAcceptableException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.ResourceBusyException;
@@ -35,6 +36,17 @@ class AuthExceptionHandlerTest {
         .isEqualTo(
             new AuthErrorResponse(
                 "SETUP_ALREADY_COMPLETED", "Server setup has already been completed."));
+  }
+
+  @Test
+  @DisplayName("Should respond 400 invalid email address when the setup email is malformed")
+  void shouldRespond400InvalidEmailAddressWhenSetupEmailIsMalformed() {
+    var response = handler.handleInvalidEmailAddress(new InvalidEmailAddressException());
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    assertThat(response.getBody())
+        .isEqualTo(
+            new AuthErrorResponse("INVALID_EMAIL_ADDRESS", "Not the shape of an email address."));
   }
 
   @Test

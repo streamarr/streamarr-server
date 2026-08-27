@@ -7,6 +7,7 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.InvalidEmailAddressException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -63,6 +64,7 @@ public class SetupService {
 
   @Transactional
   public SetupResult setup(SetupCommand command) {
+    var adminEmail = validatedAdminEmail(command.email());
     // Fast-path guard only — the atomic claim below stays the arbiter. Without it, every
     // post-setup call burns full Argon2 work and a flushed insert before failing.
     if (serverBootstrapRepository.isClaimed()) {
@@ -86,7 +88,8 @@ public class SetupService {
 
     // saveAndFlush before the jOOQ claim: Hibernate defers JPA inserts until flush, but the
     // claim runs as direct SQL against the Account row's foreign key.
-    var admin = createAdminAccount(command, household, profile);
+    var admin =
+        createAdminAccount(command.toBuilder().email(adminEmail).build(), household, profile);
 
     if (!serverBootstrapRepository.claim(admin.getId())) {
       throw new SetupAlreadyCompletedException();
@@ -104,6 +107,14 @@ public class SetupService {
     watchHistoryRepository.reassignProfile(LEGACY_PLACEHOLDER_PROFILE_ID, profile.getId());
 
     return SetupResult.builder().admin(admin).household(household).profile(profile).build();
+  }
+
+  private static String validatedAdminEmail(String candidate) {
+    return switch (EmailAddressValidator.validate(candidate)) {
+      case EmailAddressValidator.Valid(var address) -> address;
+      case EmailAddressValidator.Blank _, EmailAddressValidator.Malformed _ ->
+          throw new InvalidEmailAddressException();
+    };
   }
 
   private UserAccount createAdminAccount(
