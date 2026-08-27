@@ -89,6 +89,10 @@ class ProfileErrorsTest {
     assertThat(
             ProfileErrors.toChangeProfileKindError(new ProfileRejections.EligibleManagerRequired()))
         .isInstanceOf(ProfileRequiresEligibleManagerError.class);
+    assertThat(
+            ProfileErrors.toChangeProfileKindError(
+                new ProfileRejections.HostingHouseholdLacksEligibleAdmin()))
+        .isInstanceOf(RestrictedProfileRequiresHouseholdAdminError.class);
     assertInputError(
         ProfileErrors.toChangeProfileKindError(new ProfileRejections.RestrictedAccountAuthority()),
         RestrictedAccountCannotAdministerError.class,
@@ -116,6 +120,10 @@ class ProfileErrorsTest {
             ProfileErrors.toSetProfileMaximumAllowedRatingAgeError(
                 new ProfileRejections.EligibleManagerRequired()))
         .isInstanceOf(ProfileRequiresEligibleManagerError.class);
+    assertThat(
+            ProfileErrors.toSetProfileMaximumAllowedRatingAgeError(
+                new ProfileRejections.HostingHouseholdLacksEligibleAdmin()))
+        .isInstanceOf(RestrictedProfileRequiresHouseholdAdminError.class);
     assertInputError(
         ProfileErrors.toSetProfileMaximumAllowedRatingAgeError(
             new ProfileRejections.RestrictedAccountAuthority()),
@@ -144,6 +152,10 @@ class ProfileErrorsTest {
             ProfileErrors.toRemoveProfileMaximumAllowedRatingAgeError(
                 new ProfileRejections.EligibleManagerRequired()))
         .isInstanceOf(ProfileRequiresEligibleManagerError.class);
+    assertThat(
+            ProfileErrors.toRemoveProfileMaximumAllowedRatingAgeError(
+                new ProfileRejections.HostingHouseholdLacksEligibleAdmin()))
+        .isInstanceOf(RestrictedProfileRequiresHouseholdAdminError.class);
     assertInputError(
         ProfileErrors.toRemoveProfileMaximumAllowedRatingAgeError(
             new ProfileRejections.RestrictedAccountAuthority()),

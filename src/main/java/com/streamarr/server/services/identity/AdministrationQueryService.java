@@ -60,6 +60,10 @@ public class AdministrationQueryService {
 
   public Optional<ProfileAdministrationDetails> profileAdministration(
       AuthenticatedIdentity identity, UUID profileId) {
+    if (profileRepository.findById(profileId).isEmpty()) {
+      return Optional.empty();
+    }
+
     return switch (authorizationService.decide(
         identity, new Intent.ViewProfileAdministration(profileId))) {
       case Decision.Allowed<?> _ ->

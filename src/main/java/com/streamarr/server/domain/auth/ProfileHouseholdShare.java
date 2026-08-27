@@ -6,7 +6,9 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -47,4 +49,20 @@ public class ProfileHouseholdShare extends BaseAuditableEntity<ProfileHouseholdS
   private Instant decidedAt;
 
   private Instant endedAt;
+
+  @Getter(AccessLevel.NONE)
+  private String invalidationReason;
+
+  public Optional<String> getInvalidationReason() {
+    return Optional.ofNullable(invalidationReason);
+  }
+
+  /** Expiry is a predicate at read time: a stale PENDING offer projects as EXPIRED. */
+  public ProfileShareStatus statusAt(Instant now) {
+    if (status == ProfileShareStatus.PENDING && expiresAt != null && !expiresAt.isAfter(now)) {
+      return ProfileShareStatus.EXPIRED;
+    }
+
+    return status;
+  }
 }

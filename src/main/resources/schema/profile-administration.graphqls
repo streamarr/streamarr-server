@@ -77,6 +77,7 @@ union ChangeProfileKindError =
   | ReauthenticationRequiredError
   | ProfileRequiresEligibleManagerError
   | RestrictedAccountCannotAdministerError
+  | RestrictedProfileRequiresHouseholdAdminError
   | MaximumAllowedRatingAgeInvalidError
 
 input SetProfileMaximumAllowedRatingAgeInput {
@@ -94,6 +95,7 @@ union SetProfileMaximumAllowedRatingAgeError =
   | ReauthenticationRequiredError
   | ProfileRequiresEligibleManagerError
   | RestrictedAccountCannotAdministerError
+  | RestrictedProfileRequiresHouseholdAdminError
   | MaximumAllowedRatingAgeInvalidError
 
 input RemoveProfileMaximumAllowedRatingAgeInput {
@@ -110,6 +112,7 @@ union RemoveProfileMaximumAllowedRatingAgeError =
   | ReauthenticationRequiredError
   | ProfileRequiresEligibleManagerError
   | RestrictedAccountCannotAdministerError
+  | RestrictedProfileRequiresHouseholdAdminError
   | MaximumAllowedRatingAgeInvalidError
 
 input SetProfilePinInput {

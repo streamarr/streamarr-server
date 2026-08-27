@@ -181,3 +181,45 @@ type InvitationNotPendingError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
+
+type ShareNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ShareNotPendingError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The system withdrew the offer — its offerer lost the authority to make it — so it cannot be accepted; the offer's invalidationReason says why."
+type OfferInvalidatedError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ShareNotActiveError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The Profile is already available in that Household; a pending offer is replaced by a new one, not refused."
+type ProfileAlreadySharedError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"A Household hosting a restricted Profile needs an eligible HouseholdAdmin."
+type RestrictedProfileRequiresHouseholdAdminError implements MutationError {
+    message: String!
+}
+
+"Another Profile in the target Household already uses the name."
+type ShareNameConflictError implements MutationError {
+    message: String!
+}
+
+"A share required by Account membership cannot end while the Account remains in the Household."
+type MembershipShareCannotEndError implements MutationError {
+    message: String!
+}

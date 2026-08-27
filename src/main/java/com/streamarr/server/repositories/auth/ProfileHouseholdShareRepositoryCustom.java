@@ -1,5 +1,11 @@
 package com.streamarr.server.repositories.auth;
 
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ProfileHouseholdShareRepositoryCustom {
@@ -10,6 +16,46 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /** Locks and reports the active share used as authorization authority. */
   boolean lockActiveShare(UUID profileId, UUID householdId);
 
-  /** Whether any share of the Profile is still ACTIVE or PENDING, read as a scalar. */
-  boolean hasLiveOrPendingShares(UUID profileId);
+  /** Whether the Profile has any ACTIVE share or unexpired PENDING share, read as a scalar. */
+  boolean hasActiveOrPendingShares(UUID profileId, Instant now);
+
+  /** The keyset window of the Household's PENDING shares that are not past expires_at. */
+  List<ProfileHouseholdShare> findPendingByHouseholdId(
+      UUID householdId, Instant now, KeysetPaginationOptions options);
+
+  /** The keyset window of the Profile's shares in every status. */
+  List<ProfileHouseholdShare> findByProfileId(UUID profileId, KeysetPaginationOptions options);
+
+  /**
+   * The PENDING share of the Profile into the Household becomes CANCELED (EXPIRED when already
+   * past) so a new one can be offered; answers how many rows that was.
+   */
+  int supersedePending(UUID profileId, UUID householdId, Instant now);
+
+  /** One PENDING share becomes INVALIDATED with the reason it will later explain. */
+  boolean tryInvalidatePending(UUID shareId, String reason, Instant now);
+
+  /** Every unexpired PENDING share the Account offered becomes INVALIDATED with the reason. */
+  int invalidatePendingOfferedBy(UUID offererAccountId, String reason, Instant now);
+
+  /**
+   * Re-reads the share past the first-level cache after jOOQ DML changed it in this transaction.
+   */
+  Optional<ProfileHouseholdShare> findRefreshedById(UUID shareId);
+
+  /** PENDING and unexpired becomes ACTIVE; a raced decision has exactly one winner. */
+  boolean tryActivatePending(UUID shareId, Instant now);
+
+  /** PENDING becomes REJECTED or CANCELED — or EXPIRED when its time has already passed. */
+  boolean tryDeclinePending(UUID shareId, ProfileShareStatus target, Instant now)
+      throws IllegalArgumentException;
+
+  static void requireDeclineTarget(ProfileShareStatus target) {
+    if (target != ProfileShareStatus.REJECTED && target != ProfileShareStatus.CANCELED) {
+      throw new IllegalArgumentException("A decline target must be REJECTED or CANCELED.");
+    }
+  }
+
+  /** ACTIVE becomes ENDED. The deferred T3 judges structural shares at commit. */
+  boolean tryEndActive(UUID shareId, Instant now);
 }

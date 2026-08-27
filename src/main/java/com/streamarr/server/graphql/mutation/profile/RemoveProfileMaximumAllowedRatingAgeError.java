@@ -7,4 +7,5 @@ public sealed interface RemoveProfileMaximumAllowedRatingAgeError extends Mutati
         ReauthenticationRequiredError,
         ProfileRequiresEligibleManagerError,
         RestrictedAccountCannotAdministerError,
+        RestrictedProfileRequiresHouseholdAdminError,
         MaximumAllowedRatingAgeInvalidError {}

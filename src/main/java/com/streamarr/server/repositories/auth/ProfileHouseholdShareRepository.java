@@ -19,4 +19,9 @@ public interface ProfileHouseholdShareRepository
       UUID householdId, ProfileShareStatus status);
 
   List<ProfileHouseholdShare> findByProfileIdAndStatus(UUID profileId, ProfileShareStatus status);
+
+  List<ProfileHouseholdShare> findByOfferedByAccountIdAndStatus(
+      UUID offeredByAccountId, ProfileShareStatus status);
+
+  List<ProfileHouseholdShare> findByProfileId(UUID profileId);
 }

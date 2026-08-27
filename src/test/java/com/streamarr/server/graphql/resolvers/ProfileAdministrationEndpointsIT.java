@@ -339,8 +339,9 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should fail closed when a ServerAdmin changes a missing Profile policy")
-  void shouldFailClosedWhenServerAdminChangesMissingProfilePolicy() throws Exception {
+  @DisplayName(
+      "Should answer profile-not-found when a ServerAdmin changes a missing Profile policy")
+  void shouldAnswerProfileNotFoundWhenServerAdminChangesMissingProfilePolicy() throws Exception {
     graphql(
             authTestSupport.accountBearer(serverAdmin),
             """
@@ -349,9 +350,11 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
             """
                 .formatted(UUID.randomUUID()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors[0].extensions.code").value("AUTHORIZATION_UNAVAILABLE"))
+        .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.changeProfileKind.profile").doesNotExist())
-        .andExpect(jsonPath("$.data.changeProfileKind.userErrors").doesNotExist());
+        .andExpect(
+            jsonPath("$.data.changeProfileKind.userErrors[0].__typename")
+                .value("ProfileNotFoundError"));
   }
 
   @Test

@@ -21,6 +21,20 @@ public interface AuthSessionRepositoryCustom {
   int revokeAllForAccount(UUID accountId, SessionRevocationReason reason, Instant now);
 
   /**
+   * Nulls selected_profile_id on every live session, whoever owns it, that has the Profile selected
+   * under that context Household: the Profile stopped being available there (ADR 0024 §Profile
+   * sharing).
+   */
+  int clearProfileSelectionFromLiveSessions(UUID profileId, UUID householdId, Instant now);
+
+  /**
+   * Nulls context_household_id and selected_profile_id on the Account's live sessions whose context
+   * is that Household: the visitor's presence there ended. A NULL context resolves to the
+   * membership Household at the next token issuance.
+   */
+  int clearHouseholdContextFromAccountSessions(UUID accountId, UUID householdId, Instant now);
+
+  /**
    * Persists only the remembered context Household and selected Profile when the session is still
    * live. Returns false when the session is missing or revoked; revocation fields are never written
    * from the supplied entity.

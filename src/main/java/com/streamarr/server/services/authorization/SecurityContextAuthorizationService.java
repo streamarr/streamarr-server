@@ -1,10 +1,13 @@
 package com.streamarr.server.services.authorization;
 
 import com.streamarr.server.config.security.StreamarrAuthenticationToken;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.TokenScope;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +21,7 @@ import org.springframework.stereotype.Service;
 public class SecurityContextAuthorizationService implements AuthorizationService {
 
   private final AuthorizationDecider decider;
+  private final UserAccountRepository userAccountRepository;
 
   @Override
   public AuthenticatedIdentity currentIdentity() {
@@ -85,6 +89,15 @@ public class SecurityContextAuthorizationService implements AuthorizationService
   }
 
   @Override
+  public Decision<AuthorizationUnit> decideForAccount(UUID accountId, Intent.UnitIntent intent) {
+    return userAccountRepository
+        .findById(accountId)
+        .<Decision<AuthorizationUnit>>map(
+            account -> decider.decide(storedIdentity(account), intent))
+        .orElseGet(() -> new Decision.Denied<>(Decision.DenialReason.POLICY));
+  }
+
+  @Override
   public AuthorizationUnit requireAllowed(
       AuthenticatedIdentity identity, Intent.UnitIntent intent) {
     return switch (decide(identity, intent)) {
@@ -92,5 +105,16 @@ public class SecurityContextAuthorizationService implements AuthorizationService
       case Decision.Denied<AuthorizationUnit> _ -> throw new AccessDeniedException("Not allowed.");
       case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
     };
+  }
+
+  private static AuthenticatedIdentity storedIdentity(UserAccount account) {
+    return AuthenticatedIdentity.builder()
+        .accountId(account.getId())
+        .authSessionId(new UUID(0, 0))
+        .scope(TokenScope.ACCOUNT)
+        .householdId(account.getHouseholdId())
+        .householdRole(account.getHouseholdRole())
+        .contextHouseholdId(account.getHouseholdId())
+        .build();
   }
 }

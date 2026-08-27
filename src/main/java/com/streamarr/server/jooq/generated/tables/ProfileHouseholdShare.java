@@ -131,6 +131,12 @@ public class ProfileHouseholdShare extends TableImpl<ProfileHouseholdShareRecord
      */
     public final TableField<ProfileHouseholdShareRecord, OffsetDateTime> ENDED_AT = createField(DSL.name("ended_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
 
+    /**
+     * The column
+     * <code>public.profile_household_share.invalidation_reason</code>.
+     */
+    public final TableField<ProfileHouseholdShareRecord, String> INVALIDATION_REASON = createField(DSL.name("invalidation_reason"), SQLDataType.CLOB, this, "");
+
     private ProfileHouseholdShare(Name alias, Table<ProfileHouseholdShareRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -255,6 +261,7 @@ public class ProfileHouseholdShare extends TableImpl<ProfileHouseholdShareRecord
     public List<Check<ProfileHouseholdShareRecord>> getChecks() {
         return Arrays.asList(
             Internal.createCheck(this, DSL.name("chk_profile_household_share_ended_at"), "(((status = 'ENDED'::profile_share_status) = (ended_at IS NOT NULL)))", true),
+            Internal.createCheck(this, DSL.name("chk_profile_household_share_invalidation_reason"), "(((status = 'INVALIDATED'::profile_share_status) = (invalidation_reason IS NOT NULL)))", true),
             Internal.createCheck(this, DSL.name("chk_profile_household_share_structural_status"), "(((NOT structural) OR (status = ANY (ARRAY['ACTIVE'::profile_share_status, 'ENDED'::profile_share_status]))))", true)
         );
     }

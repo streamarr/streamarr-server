@@ -7,4 +7,5 @@ public sealed interface SetProfileMaximumAllowedRatingAgeError extends MutationE
         ReauthenticationRequiredError,
         ProfileRequiresEligibleManagerError,
         RestrictedAccountCannotAdministerError,
+        RestrictedProfileRequiresHouseholdAdminError,
         MaximumAllowedRatingAgeInvalidError {}
