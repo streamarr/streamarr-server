@@ -428,6 +428,29 @@ class ProfileSharingServiceTest {
         activeShareBuilder().profileId(profile.getId()).householdId(household.getId()).build());
   }
 
+  // ---- A missing share answers ShareNotFound for every verb, whatever the policy arm.
+
+  @Test
+  @DisplayName("Should return ShareNotFound when an allowed principal accepts a missing share")
+  void shouldReturnShareNotFoundWhenAllowedPrincipalAcceptsMissingShare() {
+    assertThat(rejectionOf(service.acceptProfileShare(identity(), UUID.randomUUID())))
+        .isInstanceOf(ShareRejections.ShareNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should return ShareNotFound when an allowed principal rejects a missing share")
+  void shouldReturnShareNotFoundWhenAllowedPrincipalRejectsMissingShare() {
+    assertThat(rejectionOf(service.rejectProfileShare(identity(), UUID.randomUUID())))
+        .isInstanceOf(ShareRejections.ShareNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should return ShareNotFound when an allowed principal cancels a missing share")
+  void shouldReturnShareNotFoundWhenAllowedPrincipalCancelsMissingShare() {
+    assertThat(rejectionOf(service.cancelProfileShare(identity(), UUID.randomUUID())))
+        .isInstanceOf(ShareRejections.ShareNotFound.class);
+  }
+
   private static Object rejectionOf(Outcome<?, ?> outcome) {
     return switch (outcome) {
       case Outcome.Rejected<?, ?>(var rejections) -> rejections.getFirst();

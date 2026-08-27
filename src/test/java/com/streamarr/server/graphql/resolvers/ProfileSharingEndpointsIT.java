@@ -886,4 +886,44 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   private record MutationResult(boolean accepted, String errorType) {}
+
+  // ---- A missing share answers ShareNotFound for every verb, whatever the policy arm.
+
+  @Test
+  @DisplayName("Should answer share-not-found when a ServerAdmin accepts a missing share")
+  void shouldAnswerShareNotFoundWhenServerAdminAcceptsMissingShare() throws Exception {
+    decideMissingShareAsServerAdmin("acceptProfileShare");
+  }
+
+  @Test
+  @DisplayName("Should answer share-not-found when a ServerAdmin rejects a missing share")
+  void shouldAnswerShareNotFoundWhenServerAdminRejectsMissingShare() throws Exception {
+    decideMissingShareAsServerAdmin("rejectProfileShare");
+  }
+
+  @Test
+  @DisplayName("Should answer share-not-found when a ServerAdmin cancels a missing share")
+  void shouldAnswerShareNotFoundWhenServerAdminCancelsMissingShare() throws Exception {
+    decideMissingShareAsServerAdmin("cancelProfileShare");
+  }
+
+  private void decideMissingShareAsServerAdmin(String operation) throws Exception {
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    try {
+      graphql(
+              authTestSupport.accountBearer(serverAdmin),
+              """
+              mutation { %s(input: {shareId: "%s"}) {
+                share { status } userErrors { __typename } } }
+              """
+                  .formatted(operation, UUID.randomUUID()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.%s.userErrors[0].__typename".formatted(operation))
+                  .value("ShareNotFoundError"));
+    } finally {
+      authTestSupport.deleteIdentity(serverAdmin);
+    }
+  }
 }

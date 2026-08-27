@@ -221,6 +221,7 @@ public class ProfileSharingService {
       ProfileShareStatus target) {
     return mutationTransactions.write(
         () -> {
+          requireShare(shareId);
           Optional<ShareRejections.Decide> refusal =
               refusalOf(
                   identity,
@@ -243,12 +244,12 @@ public class ProfileSharingService {
 
   private Optional<ProfileHouseholdShare> acceptInTransaction(
       AuthenticatedIdentity identity, UUID shareId) {
+    var offer = requireShare(shareId);
     decideRefusal(identity, new Intent.AcceptProfileShare(shareId), shareId)
         .ifPresent(
             rejection -> {
               throw new MutationRejection(rejection);
             });
-    var offer = shareRepository.findById(shareId).orElseThrow();
     var stillAuthorized =
         offer.getOfferedByAccountId() != null
             && switch (authorizationService.decideForAccount(
@@ -282,6 +283,7 @@ public class ProfileSharingService {
       UUID shareId, Runnable authorize, Consumer<ProfileHouseholdShare> afterEnd) {
     return mutationTransactions.write(
         () -> {
+          requireShare(shareId);
           authorize.run();
           var now = clock.instant();
           if (!shareRepository.tryEnd(shareId, now)) {
@@ -305,6 +307,13 @@ public class ProfileSharingService {
             CHK_STRUCTURAL.equals(constraint)
                 ? Optional.of(new ShareRejections.StructuralShareCannotEnd())
                 : Optional.empty());
+  }
+
+  /** A share nobody can find answers the same way for everyone: there is nothing to protect. */
+  private ProfileHouseholdShare requireShare(UUID shareId) {
+    return shareRepository
+        .findById(shareId)
+        .orElseThrow(() -> new MutationRejection(new ShareRejections.ShareNotFound()));
   }
 
   private <R> Optional<R> refusalOf(
