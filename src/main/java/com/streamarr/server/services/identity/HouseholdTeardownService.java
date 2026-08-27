@@ -117,7 +117,7 @@ public class HouseholdTeardownService {
 
           // The TVs and every pending way into the Household fall before the rows do.
           registrationLifecycle.revokeAllByHousehold(command.householdId(), TORN_DOWN_REASON, now);
-          accountInvitationRepository.invalidatePendingForHousehold(
+          accountInvitationRepository.invalidatePendingByHouseholdId(
               command.householdId(), TORN_DOWN_REASON, now);
           endHostedVisits(command.householdId(), now);
           deleteResidentProfiles(command.householdId(), now);
@@ -169,10 +169,10 @@ public class HouseholdTeardownService {
     var fetched =
         switch (request.direction()) {
           case FORWARD ->
-              securityAuditEventRepository.pageNewestFirst(
+              securityAuditEventRepository.findNewestFirst(
                   request.cursorOccurredAt(), request.cursorId(), fetchLimit);
           case REVERSE ->
-              securityAuditEventRepository.pageOldestFirst(
+              securityAuditEventRepository.findOldestFirst(
                   request.cursorOccurredAt(), request.cursorId(), fetchLimit);
         };
     return auditPage(fetched, request);

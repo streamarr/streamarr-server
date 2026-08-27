@@ -39,7 +39,7 @@ public class FakeSecurityAuditEventRepository implements SecurityAuditEventRepos
   }
 
   @Override
-  public List<SecurityAuditEventRecordView> pageNewestFirst(
+  public List<SecurityAuditEventRecordView> findNewestFirst(
       Instant beforeOccurredAt, UUID beforeId, int limit) {
     return records.stream()
         .sorted(NEWEST_FIRST)
@@ -54,7 +54,7 @@ public class FakeSecurityAuditEventRepository implements SecurityAuditEventRepos
   }
 
   @Override
-  public List<SecurityAuditEventRecordView> pageOldestFirst(
+  public List<SecurityAuditEventRecordView> findOldestFirst(
       Instant afterOccurredAt, UUID afterId, int limit) {
     return records.stream()
         .sorted(OLDEST_FIRST)
