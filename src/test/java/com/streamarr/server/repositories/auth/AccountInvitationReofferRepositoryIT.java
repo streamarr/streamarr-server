@@ -8,6 +8,7 @@ import com.streamarr.server.domain.auth.AccountInvitationReoffer;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.fixtures.AccountInvitationFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
@@ -33,7 +34,7 @@ class AccountInvitationReofferRepositoryIT extends AbstractIntegrationTest {
         householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
     var invitation =
         invitationRepository.saveAndFlush(
-            AccountInvitation.builder()
+            AccountInvitationFixture.pendingInvitationBuilder()
                 .recipientEmail("reoffer-constraint@example.com")
                 .householdId(household.getId())
                 .householdName(household.getName())
@@ -42,7 +43,6 @@ class AccountInvitationReofferRepositoryIT extends AbstractIntegrationTest {
                 .profileKind(ProfileKind.ADULT)
                 .expiresAt(Instant.now().plusSeconds(3600))
                 .publicId("reoffer-constraint")
-                .secretDigest(new byte[] {1})
                 .build());
     reofferRepository.saveAndFlush(reoffer(invitation, household));
 

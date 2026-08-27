@@ -1,4 +1,4 @@
--- CONNECT invitations (ADR 0024 §Profile creation and Personal Profiles; server PR #11): an
+-- CONNECT invitations (ADR 0024 §Profile creation and Personal Profiles; server PR #314): an
 -- Account invitation may connect an existing unlinked Profile instead of creating one. The
 -- reoffer table records which Households should be offered the Profile afresh the moment the
 -- invitation is accepted — their old shares admitted a Profile; once it is a person's, the same
