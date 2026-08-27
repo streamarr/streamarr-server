@@ -26,6 +26,7 @@ public final class FakeAuthorizationService implements AuthorizationService {
   private final String tokenValue;
   private final List<Intent> intents = new ArrayList<>();
   private Function<Intent.UnitIntent, Decision<AuthorizationUnit>> unitRule = _ -> allowedUnit();
+  private Function<UUID, Decision<AuthorizationUnit>> storedProposalRule = _ -> null;
   private Function<Intent.ProfilePolicyChange, Decision<ProfilePolicyTransition>> policyRule =
       _ -> unavailablePolicy();
 
@@ -122,9 +123,21 @@ public final class FakeAuthorizationService implements AuthorizationService {
     return policyRule.apply(intent);
   }
 
+  /** Answers stored-proposal re-decisions for the given offerer instead of the unit rule. */
+  public FakeAuthorizationService decideForAccountWith(
+      Function<UUID, Decision<AuthorizationUnit>> rule) {
+    storedProposalRule = rule;
+    return this;
+  }
+
   @Override
   public Decision<AuthorizationUnit> decideForAccount(UUID accountId, Intent.UnitIntent intent) {
     intents.add(intent);
+    var stored = storedProposalRule.apply(accountId);
+    if (stored != null) {
+      return stored;
+    }
+
     return unitRule.apply(intent);
   }
 

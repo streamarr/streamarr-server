@@ -218,15 +218,35 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
               authTestSupport.accountBearer(host),
               """
               mutation { acceptProfileShare(input: {shareId: "%s"}) {
-                share { status } userErrors { __typename } } }
+                share { status } userErrors { __typename ... on MutationError { message } } } }
               """
                   .formatted(shareId))
           .andExpect(status().isOk())
           .andExpect(
               jsonPath("$.data.acceptProfileShare.userErrors[0].__typename")
-                  .value("ShareNotPendingError"));
+                  .value("OfferInvalidatedError"))
+          .andExpect(
+              jsonPath("$.data.acceptProfileShare.userErrors[0].message")
+                  .value(
+                      "This offer was withdrawn (offerer no longer authorized) and can no longer"
+                          + " be accepted."));
       assertThat(shareRepository.findById(shareId).orElseThrow().getStatus())
           .isEqualTo(ProfileShareStatus.INVALIDATED);
+
+      // A manager who may view the Profile sees why the offer was withdrawn.
+      graphql(
+              authTestSupport.accountBearer(owner),
+              """
+              query { profileShares(profileId: "%s") {
+                edges { node { status invalidationReason } } } }
+              """
+                  .formatted(orphan.getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.profileShares.edges[0].node.status").value("INVALIDATED"))
+          .andExpect(
+              jsonPath("$.data.profileShares.edges[0].node.invalidationReason")
+                  .value("offerer no longer authorized"));
     } finally {
       authTestSupport.deleteIdentity(serverAdmin);
     }

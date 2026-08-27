@@ -8,7 +8,7 @@ public final class ShareRejections {
   public sealed interface Offer permits ProfileNotFound, HouseholdNotFound, AlreadyShared {}
 
   public sealed interface Accept
-      permits ShareNotFound, ShareNotPending, NoEligibleAdmin, NameConflict {}
+      permits ShareNotFound, ShareNotPending, OfferInvalidated, NoEligibleAdmin, NameConflict {}
 
   /** Reject and cancel share one set: both only move a PENDING offer aside. */
   public sealed interface Decline permits ShareNotFound, ShareNotPending {}
@@ -35,6 +35,9 @@ public final class ShareRejections {
   public record ShareNotFound() implements Accept, Decline, End, AdministrativelyEnd {}
 
   public record ShareNotPending() implements Accept, Decline {}
+
+  /** The system withdrew the offer — its offerer lost authority — and recorded why. */
+  public record OfferInvalidated(String reason) implements Accept {}
 
   /** T7: a Household hosting a restricted Profile holds an eligible HouseholdAdmin. */
   public record NoEligibleAdmin() implements Accept {}

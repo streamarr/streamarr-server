@@ -192,6 +192,12 @@ type ShareNotPendingError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
+"The system withdrew the offer — its offerer lost the authority to make it — so it cannot be accepted; the offer's invalidationReason says why."
+type OfferInvalidatedError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 type ShareNotActiveError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!

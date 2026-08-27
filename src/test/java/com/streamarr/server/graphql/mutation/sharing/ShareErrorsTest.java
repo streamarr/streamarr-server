@@ -40,6 +40,9 @@ class ShareErrorsTest {
               .assertThat(ShareErrors.toAcceptError(new ShareRejections.ShareNotPending()))
               .isExactlyInstanceOf(ShareNotPendingError.class);
           softly
+              .assertThat(ShareErrors.toAcceptError(new ShareRejections.OfferInvalidated("gone")))
+              .isExactlyInstanceOf(OfferInvalidatedError.class);
+          softly
               .assertThat(ShareErrors.toAcceptError(new ShareRejections.NoEligibleAdmin()))
               .isExactlyInstanceOf(RestrictedProfileRequiresHouseholdAdminError.class);
           softly

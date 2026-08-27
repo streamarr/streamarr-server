@@ -14,7 +14,8 @@ public record ProfileShareDetails(
     ProfileShareStatus status,
     boolean requiredByAccountMembership,
     String expiresAt,
-    String endedAt) {
+    String endedAt,
+    String invalidationReason) {
 
   public static ProfileShareDetails from(ProfileHouseholdShare share, Instant now) {
     return ProfileShareDetails.builder()
@@ -25,6 +26,7 @@ public record ProfileShareDetails(
         .requiredByAccountMembership(share.isStructural())
         .expiresAt(share.getExpiresAt() == null ? null : share.getExpiresAt().toString())
         .endedAt(share.getEndedAt() == null ? null : share.getEndedAt().toString())
+        .invalidationReason(share.getInvalidationReason().orElse(null))
         .build();
   }
 }

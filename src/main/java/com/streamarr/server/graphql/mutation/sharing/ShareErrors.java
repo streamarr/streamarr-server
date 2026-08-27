@@ -27,6 +27,10 @@ public final class ShareErrors {
     return switch (rejection) {
       case ShareRejections.ShareNotFound _ -> shareNotFound();
       case ShareRejections.ShareNotPending _ -> shareNotPending();
+      case ShareRejections.OfferInvalidated(var reason) ->
+          new OfferInvalidatedError(
+              "This offer was withdrawn (%s) and can no longer be accepted.".formatted(reason),
+              InputPath.of(SHARE_ID));
       case ShareRejections.NoEligibleAdmin _ ->
           new RestrictedProfileRequiresHouseholdAdminError(
               "A Household hosting a restricted Profile needs an eligible HouseholdAdmin.");

@@ -108,7 +108,7 @@ public class ProfileSharingService {
   public Outcome<ProfileHouseholdShare, ShareRejections.Accept> acceptProfileShare(
       AuthenticatedIdentity identity, UUID shareId) {
     var attempt =
-        mutationTransactions.<Optional<ProfileHouseholdShare>, ShareRejections.Accept>write(
+        mutationTransactions.<ProfileHouseholdShare, ShareRejections.Accept>write(
             () -> acceptInTransaction(identity, shareId),
             constraint ->
                 switch (constraint) {
@@ -116,11 +116,12 @@ public class ProfileSharingService {
                   case CHK_NAMES_UNIQUE -> Optional.of(new ShareRejections.NameConflict());
                   default -> Optional.empty();
                 });
+    // An offer invalidated by this very acceptance commits its withdrawal and explains it.
     return attempt.fold(
-        accepted ->
-            accepted
-                .<Outcome<ProfileHouseholdShare, ShareRejections.Accept>>map(Outcome::accepted)
-                .orElseGet(() -> Outcome.rejected(new ShareRejections.ShareNotPending())),
+        share ->
+            withdrawal(share)
+                .<Outcome<ProfileHouseholdShare, ShareRejections.Accept>>map(Outcome::rejected)
+                .orElseGet(() -> Outcome.accepted(share)),
         Outcome::rejected);
   }
 
@@ -257,8 +258,7 @@ public class ProfileSharingService {
         _ -> Optional.empty());
   }
 
-  private Optional<ProfileHouseholdShare> acceptInTransaction(
-      AuthenticatedIdentity identity, UUID shareId) {
+  private ProfileHouseholdShare acceptInTransaction(AuthenticatedIdentity identity, UUID shareId) {
     var offer = requireShare(shareId);
     decideRefusal(identity, new Intent.AcceptProfileShare(shareId), shareId)
         .ifPresent(
@@ -280,18 +280,37 @@ public class ProfileSharingService {
     }
 
     if (!shareRepository.tryActivate(shareId, clock.instant())) {
-      throw new MutationRejection(new ShareRejections.ShareNotPending());
+      throw new MutationRejection(notPending(shareId));
     }
 
-    return Optional.of(shareRepository.findFreshById(shareId).orElseThrow());
+    return shareRepository.findFreshById(shareId).orElseThrow();
   }
 
-  private Optional<ProfileHouseholdShare> invalidateUnauthorizedOffer(UUID shareId) {
+  private ProfileHouseholdShare invalidateUnauthorizedOffer(UUID shareId) {
     if (!shareRepository.tryInvalidate(shareId, "offerer no longer authorized", clock.instant())) {
-      throw new MutationRejection(new ShareRejections.ShareNotPending());
+      throw new MutationRejection(notPending(shareId));
     }
 
-    return Optional.empty();
+    return shareRepository.findFreshById(shareId).orElseThrow();
+  }
+
+  /** An offer that is no longer pending explains a withdrawal; any other state is just decided. */
+  private ShareRejections.Accept notPending(UUID shareId) {
+    return shareRepository
+        .findFreshById(shareId)
+        .flatMap(ProfileSharingService::withdrawal)
+        .<ShareRejections.Accept>map(withdrawn -> withdrawn)
+        .orElseGet(ShareRejections.ShareNotPending::new);
+  }
+
+  private static Optional<ShareRejections.OfferInvalidated> withdrawal(
+      ProfileHouseholdShare share) {
+    if (share.getStatus() != ProfileShareStatus.INVALIDATED) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        new ShareRejections.OfferInvalidated(share.getInvalidationReason().orElse("withdrawn")));
   }
 
   /** The lifecycle refusals an end can meet, typed for the verb that asked. */

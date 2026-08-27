@@ -9,5 +9,6 @@ import com.streamarr.server.graphql.mutation.MutationError;
 public sealed interface AcceptProfileShareError extends MutationError
     permits ShareNotFoundError,
         ShareNotPendingError,
+        OfferInvalidatedError,
         RestrictedProfileRequiresHouseholdAdminError,
         ShareNameConflictError {}

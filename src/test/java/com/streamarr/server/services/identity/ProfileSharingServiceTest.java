@@ -393,6 +393,28 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName("Should explain a withdrawn offer when the offerer lost authority before acceptance")
+  void shouldExplainWithdrawnOfferWhenOffererLostAuthorityBeforeAcceptance() {
+    var offer = pendingShare();
+    authorization.decideForAccountWith(_ -> new Decision.Denied<>(Decision.DenialReason.POLICY));
+
+    assertThat(rejectionOf(service.acceptProfileShare(identity(), offer.getId())))
+        .isEqualTo(new ShareRejections.OfferInvalidated("offerer no longer authorized"));
+    assertThat(shares.findById(offer.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.INVALIDATED);
+  }
+
+  @Test
+  @DisplayName("Should explain a withdrawn offer when it was invalidated before acceptance")
+  void shouldExplainWithdrawnOfferWhenItWasInvalidatedBeforeAcceptance() {
+    var offer = pendingShare();
+    shares.tryInvalidate(offer.getId(), "issuer disabled", NOW);
+
+    assertThat(rejectionOf(service.acceptProfileShare(identity(), offer.getId())))
+        .isEqualTo(new ShareRejections.OfferInvalidated("issuer disabled"));
+  }
+
+  @Test
   @DisplayName("Should omit an expired offer when pending offers are listed")
   void shouldOmitExpiredOfferWhenPendingOffersAreListed() {
     shares.save(

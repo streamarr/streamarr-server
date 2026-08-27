@@ -1,12 +1,19 @@
 # Profile sharing (ADR 0024 §Profile sharing; ADR 0026 shapes).
 
 enum ProfileShareStatus {
+    "Offered and awaiting the target Household's decision."
     PENDING
+    "The Profile is available in the Household."
     ACTIVE
+    "Declined by the target Household."
     REJECTED
+    "Withdrawn by the offerer, or replaced by a newer offer."
     CANCELED
+    "Timed out before a decision."
     EXPIRED
+    "Withdrawn by the system because its offerer lost authority; invalidationReason says why."
     INVALIDATED
+    "Ended after being active."
     ENDED
 }
 
@@ -18,6 +25,8 @@ type ProfileShare {
     requiredByAccountMembership: Boolean!
     expiresAt: String
     endedAt: String
+    "Why the system withdrew this offer; set only when status is INVALIDATED."
+    invalidationReason: String
 }
 
 type ProfileShareConnection {
@@ -63,6 +72,7 @@ type AcceptProfileSharePayload {
 union AcceptProfileShareError =
     ShareNotFoundError
   | ShareNotPendingError
+  | OfferInvalidatedError
   | RestrictedProfileRequiresHouseholdAdminError
   | ShareNameConflictError
 
