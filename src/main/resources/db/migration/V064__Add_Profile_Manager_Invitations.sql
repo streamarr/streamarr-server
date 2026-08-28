@@ -27,6 +27,12 @@ CREATE TABLE profile_manager_invitation
     secret_digest        BYTEA                             NOT NULL,
     CONSTRAINT profile_manager_invitation_pkey PRIMARY KEY (id),
     CONSTRAINT uq_profile_manager_invitation_public_id UNIQUE (public_id),
+    CONSTRAINT chk_pm_invitation_pending_has_parties CHECK (
+        status <> 'PENDING'
+            OR (profile_id IS NOT NULL
+                AND inviter_account_id IS NOT NULL
+                AND recipient_account_id IS NOT NULL)
+    ),
     CONSTRAINT fk_pm_invitation_profile FOREIGN KEY (profile_id)
         REFERENCES profile (id) ON DELETE SET NULL,
     CONSTRAINT fk_pm_invitation_inviter FOREIGN KEY (inviter_account_id)
@@ -34,6 +40,49 @@ CREATE TABLE profile_manager_invitation
     CONSTRAINT fk_pm_invitation_recipient FOREIGN KEY (recipient_account_id)
         REFERENCES user_account (id) ON DELETE SET NULL
 );
+
+-- SET NULL must resolve a live credential before the pending-party check sees the missing party.
+-- Expired rows materialize their effective state; live rows retain why they can no longer act.
+CREATE FUNCTION resolve_profile_manager_invitation_when_party_disappears()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS
+$$
+BEGIN
+    IF OLD.status <> 'PENDING'
+        OR NOT (
+            (OLD.profile_id IS NOT NULL AND NEW.profile_id IS NULL)
+            OR (OLD.inviter_account_id IS NOT NULL AND NEW.inviter_account_id IS NULL)
+            OR (OLD.recipient_account_id IS NOT NULL AND NEW.recipient_account_id IS NULL)
+        ) THEN
+        RETURN NEW;
+    END IF;
+
+    NEW.decided_at := NOW();
+    NEW.last_modified_on := NOW();
+    NEW.last_modified_by := NULL;
+    IF OLD.expires_at <= NOW() THEN
+        NEW.status := 'EXPIRED';
+        NEW.invalidation_reason := NULL;
+        RETURN NEW;
+    END IF;
+
+    NEW.status := 'INVALIDATED';
+    NEW.invalidation_reason := CASE
+        WHEN OLD.profile_id IS NOT NULL AND NEW.profile_id IS NULL THEN 'Profile deleted'
+        WHEN OLD.inviter_account_id IS NOT NULL AND NEW.inviter_account_id IS NULL
+            THEN 'inviter deleted'
+        ELSE 'recipient deleted'
+    END;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER resolve_profile_manager_invitation_when_party_disappears
+    BEFORE UPDATE OF profile_id, inviter_account_id, recipient_account_id
+    ON profile_manager_invitation
+    FOR EACH ROW
+EXECUTE FUNCTION resolve_profile_manager_invitation_when_party_disappears();
 
 -- At most one PENDING invitation per Profile and recipient.
 CREATE UNIQUE INDEX uq_pm_invitation_live

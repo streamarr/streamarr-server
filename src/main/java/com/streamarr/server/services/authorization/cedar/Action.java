@@ -203,8 +203,13 @@ enum Action {
       ResourceKind.PROFILE,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.PROFILE_MANAGEMENT),
-  OVERRIDE_PROFILE_MANAGER(
-      "overrideProfileManager",
+  ADMINISTRATIVELY_GRANT_PROFILE_MANAGER(
+      "administrativelyGrantProfileManager",
+      ResourceKind.PROFILE,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  ADMINISTRATIVELY_REMOVE_PROFILE_MANAGER(
+      "administrativelyRemoveProfileManager",
       ResourceKind.PROFILE,
       FreshReauthentication.REQUIRED,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY);

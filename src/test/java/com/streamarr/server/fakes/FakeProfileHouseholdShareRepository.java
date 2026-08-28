@@ -240,13 +240,22 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public int invalidatePendingByProfileIdOfferedBy(
+  public int invalidatePendingOffersByProfileIdAndOffererAccountId(
       UUID profileId, UUID offererAccountId, String reason, Instant now) {
+    database.values().stream()
+        .filter(share -> share.getProfileId().equals(profileId))
+        .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+        .filter(share -> share.statusAt(now) == ProfileShareStatus.EXPIRED)
+        .forEach(
+            share -> {
+              share.setStatus(ProfileShareStatus.EXPIRED);
+              share.setDecidedAt(now);
+            });
     var pending =
         database.values().stream()
             .filter(share -> share.getProfileId().equals(profileId))
             .filter(share -> offererAccountId.equals(share.getOfferedByAccountId()))
-            .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+            .filter(share -> share.statusAt(now) == ProfileShareStatus.PENDING)
             .toList();
     pending.forEach(
         share -> {

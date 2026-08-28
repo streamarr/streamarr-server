@@ -80,11 +80,24 @@ when {
   resource.sovereignPersonalProfileOfPrincipal
 };
 
-// GRANT or REMOVE by override: live ServerAdmin, fresh reauthentication; the reason is audited.
-@id("override-profile-manager-as-fresh-server-admin")
+// Administrative GRANT: live ServerAdmin, fresh reauthentication; the reason is audited.
+@id("administratively-grant-profile-manager-as-fresh-server-admin")
 permit (
   principal,
-  action == Streamarr::Action::"overrideProfileManager",
+  action == Streamarr::Action::"administrativelyGrantProfileManager",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  principal has serverAdmin && principal.serverAdmin &&
+  context.freshReauthentication
+};
+
+// Administrative REMOVE: live ServerAdmin, fresh reauthentication; the reason is audited.
+@id("administratively-remove-profile-manager-as-fresh-server-admin")
+permit (
+  principal,
+  action == Streamarr::Action::"administrativelyRemoveProfileManager",
   resource
 )
 when {

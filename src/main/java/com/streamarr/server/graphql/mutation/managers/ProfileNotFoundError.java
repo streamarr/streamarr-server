@@ -7,6 +7,6 @@ public record ProfileNotFoundError(String message, List<String> inputPath)
     implements InviteProfileManagerError,
         RelinquishProfileManagementError,
         RemoveProfileManagerError,
-        GrantProfileManagerOverrideError,
-        RemoveProfileManagerOverrideError,
+        AdministrativelyGrantProfileManagerError,
+        AdministrativelyRemoveProfileManagerError,
         InputMutationError {}

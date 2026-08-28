@@ -296,7 +296,12 @@ namespace Streamarr {
     resource: Profile,
     context: {},
   };
-  action overrideProfileManager in managerAdministration appliesTo {
+  action administrativelyGrantProfileManager in managerAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: { freshReauthentication: Bool },
+  };
+  action administrativelyRemoveProfileManager in managerAdministration appliesTo {
     principal: Account,
     resource: Profile,
     context: { freshReauthentication: Bool },

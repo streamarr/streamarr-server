@@ -44,8 +44,8 @@ type Mutation {
     declineManagerInvitation(input: DeclineManagerInvitationInput!): DeclineManagerInvitationPayload
     relinquishProfileManagement(input: RelinquishProfileManagementInput!): RelinquishProfileManagementPayload
     removeProfileManager(input: RemoveProfileManagerInput!): RemoveProfileManagerPayload
-    grantProfileManagerOverride(input: GrantProfileManagerOverrideInput!): GrantProfileManagerOverridePayload
-    removeProfileManagerOverride(input: RemoveProfileManagerOverrideInput!): RemoveProfileManagerOverridePayload
+    administrativelyGrantProfileManager(input: AdministrativelyGrantProfileManagerInput!): AdministrativelyGrantProfileManagerPayload
+    administrativelyRemoveProfileManager(input: AdministrativelyRemoveProfileManagerInput!): AdministrativelyRemoveProfileManagerPayload
 }
 
 enum ImageRefreshMode {

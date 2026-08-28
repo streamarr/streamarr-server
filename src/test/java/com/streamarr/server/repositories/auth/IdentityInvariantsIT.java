@@ -249,7 +249,10 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
       race.validate().countDown();
       Awaitility.await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(blockedConstraintValidationCount()).isOne());
+          .untilAsserted(
+              () ->
+                  assertThat(blockedConstraintValidationCount("chk_user_account_invariants"))
+                      .isOne());
       race.commit().countDown();
       for (var attempt : attempts) {
         awaitServerAdminOutcome(attempt);
@@ -326,6 +329,9 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
       race.validate().countDown();
       assertThat(race.validationsStarted().await(30, TimeUnit.SECONDS)).isTrue();
       assertThat(race.firstValidationReady().await(30, TimeUnit.SECONDS)).isTrue();
+      Awaitility.await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(() -> assertThat(blockedConstraintValidationCount("chk_profile")).isOne());
       race.commit().countDown();
       for (var attempt : attempts) {
         awaitRestrictedAuthorityOutcome(attempt);
@@ -333,7 +339,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     }
 
     assertThat(attempts.stream().filter(this::completed).count())
-        .as("one conflicting write should fail after both constraint validations start")
+        .as("one conflicting write should fail after both constraint validations overlap")
         .isEqualTo(1);
     assertThat(
             profileRepository
@@ -792,14 +798,13 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         .count();
   }
 
-  private int blockedConstraintValidationCount() {
+  private int blockedConstraintValidationCount(String constraintNamePrefix) {
     return dsl.fetchCount(
         dsl.selectOne()
             .from("pg_stat_activity")
             .where(DSL.field("wait_event_type", String.class).eq("Lock"))
             .and(
                 DSL.field("query", String.class)
-                    .startsWithIgnoreCase(
-                        "SET CONSTRAINTS chk_user_account_invariants IMMEDIATE")));
+                    .startsWithIgnoreCase("SET CONSTRAINTS " + constraintNamePrefix)));
   }
 }

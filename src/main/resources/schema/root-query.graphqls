@@ -17,6 +17,6 @@ type Query {
     profileSharePreview(profileId: ID!, householdId: ID!): ProfileSharePreview
     pendingShareOffers(householdId: ID!, first: Int, after: String, last: Int, before: String): ProfileShareConnection!
     profileShares(profileId: ID!, first: Int, after: String, last: Int, before: String): ProfileShareConnection!
-    managerInvitations(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
+    pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     pendingManagerInvitations(first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
 }

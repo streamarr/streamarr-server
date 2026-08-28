@@ -125,8 +125,14 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onProfile(Action.RELINQUISH_PROFILE_MANAGEMENT, profileId));
       case Intent.RemoveProfileManager(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.REMOVE_PROFILE_MANAGER, profileId));
-      case Intent.OverrideProfileManager(var profileId) ->
-          unitPlan(AuthorizationCheck.onProfile(Action.OVERRIDE_PROFILE_MANAGER, profileId));
+      case Intent.AdministrativelyGrantProfileManager(var profileId) ->
+          unitPlan(
+              AuthorizationCheck.onProfile(
+                  Action.ADMINISTRATIVELY_GRANT_PROFILE_MANAGER, profileId));
+      case Intent.AdministrativelyRemoveProfileManager(var profileId) ->
+          unitPlan(
+              AuthorizationCheck.onProfile(
+                  Action.ADMINISTRATIVELY_REMOVE_PROFILE_MANAGER, profileId));
     };
   }
 

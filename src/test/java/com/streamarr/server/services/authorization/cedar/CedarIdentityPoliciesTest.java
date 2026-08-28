@@ -1123,18 +1123,31 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should require a fresh ServerAdmin when a manager override is requested")
-    void shouldRequireFreshServerAdminWhenManagerOverrideIsRequested() {
+    @DisplayName("Should require a fresh ServerAdmin when a manager is administratively granted")
+    void shouldRequireFreshServerAdminWhenManagerIsAdministrativelyGranted() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
-      var override = new Intent.OverrideProfileManager(orphan.getId());
+      var grant = new Intent.AdministrativelyGrantProfileManager(orphan.getId());
 
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), override))
-          .isEqualTo(DENIED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), grant)).isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decide(atHome(), override)).isEqualTo(REAUTHENTICATION_REQUIRED);
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), override))
+      assertThat(decide(atHome(), grant)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), grant)).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should require a fresh ServerAdmin when a manager is administratively removed")
+    void shouldRequireFreshServerAdminWhenManagerIsAdministrativelyRemoved() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var removal = new Intent.AdministrativelyRemoveProfileManager(orphan.getId());
+
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), removal)).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), removal)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), removal))
           .isEqualTo(ALLOWED);
     }
   }

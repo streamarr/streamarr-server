@@ -21,7 +21,6 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfilePinHasher;
 import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfilePolicyTransition;
@@ -523,25 +522,9 @@ public class ProfileAdministrationService {
       BooleanSupplier mayView,
       Supplier<? extends R> denied,
       Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
-    return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
-      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<AuthorizationUnit>(var reason) ->
-          switch (reason) {
-            case REAUTHENTICATION_REQUIRED ->
-                Optional.of(
-                    reauthenticationRequired
-                        .orElseThrow(AuthorizationUnavailableException::new)
-                        .get());
-            case POLICY -> {
-              if (mayView.getAsBoolean()) {
-                throw new AccessDeniedException("Not allowed.");
-              }
-
-              yield Optional.of(denied.get());
-            }
-          };
-    };
+    return AuthorizationRefusal.from(
+        authorizationService.decide(identity, intent),
+        new AuthorizationRefusal.Response<>(mayView, denied, reauthenticationRequired));
   }
 
   /**

@@ -55,7 +55,7 @@ public class AccountInvitationService {
   private static final String CHK_ELIGIBLE_MANAGER = "chk_profile_home_anchor";
   private static final String CHK_RESTRICTED_AUTHORITY =
       "chk_restricted_account_holds_no_authority";
-  private static final String PROFILE_CONNECTED_REASON = "Profile linked to an Account";
+  private static final String PROFILE_LINKED_REASON = "Profile linked to an Account";
 
   private final AccountInvitationRepository invitationRepository;
   private final UserAccountRepository userAccountRepository;
@@ -354,12 +354,12 @@ public class AccountInvitationService {
                 .enabled(true)
                 .build());
     var now = clock.instant();
-    invitationRepository.invalidatePendingByProfileId(profileId, PROFILE_CONNECTED_REASON, now);
+    invitationRepository.invalidatePendingByProfileId(profileId, PROFILE_LINKED_REASON, now);
     profileManagerInvitationRepository.invalidatePendingByProfileId(
-        profileId, PROFILE_CONNECTED_REASON, now);
+        profileId, PROFILE_LINKED_REASON, now);
     shareRepository.ensureActiveMembershipShare(profileId, householdId, now);
     endCurrentVisits(profileId, householdId, now);
-    shareRepository.invalidatePendingByProfileId(profileId, PROFILE_CONNECTED_REASON, now);
+    shareRepository.invalidatePendingByProfileId(profileId, PROFILE_LINKED_REASON, now);
     var reofferAccountId =
         profile.isRestricted() ? invitation.getIssuerAccountId() : account.getId();
     reoffer(

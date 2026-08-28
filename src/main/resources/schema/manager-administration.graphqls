@@ -119,18 +119,18 @@ union RemoveProfileManagerError =
   | NotAManagerError
   | ProfileRequiresEligibleManagerError
 
-input GrantProfileManagerOverrideInput {
+input AdministrativelyGrantProfileManagerInput {
     profileId: ID!
     accountId: ID!
     reason: String!
 }
 
-type GrantProfileManagerOverridePayload {
+type AdministrativelyGrantProfileManagerPayload {
     profileId: ID
-    userErrors: [GrantProfileManagerOverrideError!]!
+    userErrors: [AdministrativelyGrantProfileManagerError!]!
 }
 
-union GrantProfileManagerOverrideError =
+union AdministrativelyGrantProfileManagerError =
     ProfileNotFoundError
   | ReasonRequiredError
   | ReauthenticationRequiredError
@@ -138,18 +138,18 @@ union GrantProfileManagerOverrideError =
   | ProfileManagerNotEligibleError
   | AlreadyManagerError
 
-input RemoveProfileManagerOverrideInput {
+input AdministrativelyRemoveProfileManagerInput {
     profileId: ID!
     accountId: ID!
     reason: String!
 }
 
-type RemoveProfileManagerOverridePayload {
+type AdministrativelyRemoveProfileManagerPayload {
     profileId: ID
-    userErrors: [RemoveProfileManagerOverrideError!]!
+    userErrors: [AdministrativelyRemoveProfileManagerError!]!
 }
 
-union RemoveProfileManagerOverrideError =
+union AdministrativelyRemoveProfileManagerError =
     ProfileNotFoundError
   | ReasonRequiredError
   | ReauthenticationRequiredError

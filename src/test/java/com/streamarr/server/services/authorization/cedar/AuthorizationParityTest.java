@@ -230,7 +230,8 @@ class AuthorizationParityTest {
           DECLINE_MANAGER_INVITATION,
           RELINQUISH_PROFILE_MANAGEMENT,
           REMOVE_PROFILE_MANAGER,
-          OVERRIDE_PROFILE_MANAGER ->
+          ADMINISTRATIVELY_GRANT_PROFILE_MANAGER,
+          ADMINISTRATIVELY_REMOVE_PROFILE_MANAGER ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
@@ -300,6 +301,7 @@ class AuthorizationParityTest {
         new Intent.DeclineManagerInvitation(id),
         new Intent.RelinquishProfileManagement(id),
         new Intent.RemoveProfileManager(id),
-        new Intent.OverrideProfileManager(id));
+        new Intent.AdministrativelyGrantProfileManager(id),
+        new Intent.AdministrativelyRemoveProfileManager(id));
   }
 }

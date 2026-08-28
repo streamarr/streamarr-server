@@ -20,7 +20,7 @@ public final class ManagerRejections {
 
   public sealed interface Remove permits ProfileNotFound, NotAManager, EligibleManagerRequired {}
 
-  public sealed interface OverrideGrant
+  public sealed interface AdministrativelyGrant
       permits ProfileNotFound,
           ReasonRequired,
           ReauthenticationRequired,
@@ -28,7 +28,7 @@ public final class ManagerRejections {
           RecipientNotEligible,
           AlreadyManager {}
 
-  public sealed interface OverrideRemove
+  public sealed interface AdministrativelyRemove
       permits ProfileNotFound,
           ReasonRequired,
           ReauthenticationRequired,
@@ -36,14 +36,14 @@ public final class ManagerRejections {
           EligibleManagerRequired {}
 
   public record ProfileNotFound()
-      implements Invite, Relinquish, Remove, OverrideGrant, OverrideRemove {}
+      implements Invite, Relinquish, Remove, AdministrativelyGrant, AdministrativelyRemove {}
 
-  public record RecipientNotFound() implements Invite, OverrideGrant {}
+  public record RecipientNotFound() implements Invite, AdministrativelyGrant {}
 
   /** Eligible means the Account's own Personal Profile is an unrestricted Adult. */
-  public record RecipientNotEligible() implements Invite, Accept, OverrideGrant {}
+  public record RecipientNotEligible() implements Invite, Accept, AdministrativelyGrant {}
 
-  public record AlreadyManager() implements Invite, Accept, OverrideGrant {}
+  public record AlreadyManager() implements Invite, Accept, AdministrativelyGrant {}
 
   /** The one deliberate answer for every miss: unknown, expired, decided, or hidden. */
   public record ManagerInvitationNotFound() implements Cancel, Accept, Decline {}
@@ -52,11 +52,12 @@ public final class ManagerRejections {
 
   public record ManagementAlreadyRemoved() implements Relinquish {}
 
-  public record NotAManager() implements Remove, OverrideRemove {}
+  public record NotAManager() implements Remove, AdministrativelyRemove {}
 
-  public record EligibleManagerRequired() implements Relinquish, Remove, OverrideRemove {}
+  public record EligibleManagerRequired() implements Relinquish, Remove, AdministrativelyRemove {}
 
-  public record ReasonRequired() implements OverrideGrant, OverrideRemove {}
+  public record ReasonRequired() implements AdministrativelyGrant, AdministrativelyRemove {}
 
-  public record ReauthenticationRequired() implements OverrideGrant, OverrideRemove {}
+  public record ReauthenticationRequired()
+      implements AdministrativelyGrant, AdministrativelyRemove {}
 }

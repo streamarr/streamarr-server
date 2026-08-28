@@ -12,22 +12,22 @@ import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.IssuedManagerInvitation;
 import com.streamarr.server.graphql.dto.ManagerInvitationDetails;
 import com.streamarr.server.graphql.inputs.AcceptManagerInvitationInput;
+import com.streamarr.server.graphql.inputs.AdministrativelyGrantProfileManagerInput;
+import com.streamarr.server.graphql.inputs.AdministrativelyRemoveProfileManagerInput;
 import com.streamarr.server.graphql.inputs.CancelManagerInvitationInput;
 import com.streamarr.server.graphql.inputs.DeclineManagerInvitationInput;
-import com.streamarr.server.graphql.inputs.GrantProfileManagerOverrideInput;
 import com.streamarr.server.graphql.inputs.InviteProfileManagerInput;
 import com.streamarr.server.graphql.inputs.RelinquishProfileManagementInput;
 import com.streamarr.server.graphql.inputs.RemoveProfileManagerInput;
-import com.streamarr.server.graphql.inputs.RemoveProfileManagerOverrideInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.managers.AcceptManagerInvitationPayload;
+import com.streamarr.server.graphql.mutation.managers.AdministrativelyGrantProfileManagerPayload;
+import com.streamarr.server.graphql.mutation.managers.AdministrativelyRemoveProfileManagerPayload;
 import com.streamarr.server.graphql.mutation.managers.CancelManagerInvitationPayload;
 import com.streamarr.server.graphql.mutation.managers.DeclineManagerInvitationPayload;
-import com.streamarr.server.graphql.mutation.managers.GrantProfileManagerOverridePayload;
 import com.streamarr.server.graphql.mutation.managers.InviteProfileManagerPayload;
 import com.streamarr.server.graphql.mutation.managers.ManagerErrors;
 import com.streamarr.server.graphql.mutation.managers.RelinquishProfileManagementPayload;
-import com.streamarr.server.graphql.mutation.managers.RemoveProfileManagerOverridePayload;
 import com.streamarr.server.graphql.mutation.managers.RemoveProfileManagerPayload;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
@@ -53,11 +53,11 @@ public class ProfileManagerResolver {
   private final Clock clock;
 
   @DgsQuery
-  public Connection<ManagerInvitationDetails> managerInvitations(
+  public Connection<ManagerInvitationDetails> pendingManagerInvitationsForProfile(
       @InputArgument String profileId, DataFetchingEnvironment dfe) {
     var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
-        managerService.managerInvitations(
+        managerService.pendingManagerInvitationsForProfile(
             authorizationService.currentIdentity(),
             Ids.parseUuid(profileId),
             cursorUtil.decodeKeysetCursor(options));
@@ -152,33 +152,33 @@ public class ProfileManagerResolver {
   }
 
   @DgsMutation
-  public GrantProfileManagerOverridePayload grantProfileManagerOverride(
-      @InputArgument GrantProfileManagerOverrideInput input) {
+  public AdministrativelyGrantProfileManagerPayload administrativelyGrantProfileManager(
+      @InputArgument AdministrativelyGrantProfileManagerInput input) {
     return MutationPayloads.payload(
         managerService
-            .grantProfileManagerOverride(
+            .administrativelyGrantProfileManager(
                 authorizationService.currentIdentity(),
                 Ids.parseUuid(input.profileId()),
                 Ids.parseUuid(input.accountId()),
                 input.reason())
             .map(UUID::toString),
-        ManagerErrors::toGrantOverrideError,
-        GrantProfileManagerOverridePayload::new);
+        ManagerErrors::toAdministrativelyGrantError,
+        AdministrativelyGrantProfileManagerPayload::new);
   }
 
   @DgsMutation
-  public RemoveProfileManagerOverridePayload removeProfileManagerOverride(
-      @InputArgument RemoveProfileManagerOverrideInput input) {
+  public AdministrativelyRemoveProfileManagerPayload administrativelyRemoveProfileManager(
+      @InputArgument AdministrativelyRemoveProfileManagerInput input) {
     return MutationPayloads.payload(
         managerService
-            .removeProfileManagerOverride(
+            .administrativelyRemoveProfileManager(
                 authorizationService.currentIdentity(),
                 Ids.parseUuid(input.profileId()),
                 Ids.parseUuid(input.accountId()),
                 input.reason())
             .map(UUID::toString),
-        ManagerErrors::toRemoveOverrideError,
-        RemoveProfileManagerOverridePayload::new);
+        ManagerErrors::toAdministrativelyRemoveError,
+        AdministrativelyRemoveProfileManagerPayload::new);
   }
 
   private Connection<ManagerInvitationDetails> toConnection(

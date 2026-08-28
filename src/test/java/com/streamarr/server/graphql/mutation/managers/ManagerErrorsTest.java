@@ -96,28 +96,36 @@ class ManagerErrorsTest {
         .isInstanceOf(NotAManagerError.class);
     assertThat(ManagerErrors.toRemoveError(new ManagerRejections.EligibleManagerRequired()))
         .isInstanceOf(ProfileRequiresEligibleManagerError.class);
-    assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.ProfileNotFound()))
+    assertThat(ManagerErrors.toAdministrativelyGrantError(new ManagerRejections.ProfileNotFound()))
         .isInstanceOf(ProfileNotFoundError.class);
-    assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.ReasonRequired()))
-        .isInstanceOf(ReasonRequiredError.class);
-    assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.ReauthenticationRequired()))
-        .isInstanceOf(ReauthenticationRequiredError.class);
-    assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.RecipientNotFound()))
-        .isInstanceOf(AccountNotFoundError.class);
-    assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.RecipientNotEligible()))
-        .isInstanceOf(ProfileManagerNotEligibleError.class);
-    assertThat(ManagerErrors.toGrantOverrideError(new ManagerRejections.AlreadyManager()))
-        .isInstanceOf(AlreadyManagerError.class);
-    assertThat(ManagerErrors.toRemoveOverrideError(new ManagerRejections.ProfileNotFound()))
-        .isInstanceOf(ProfileNotFoundError.class);
-    assertThat(ManagerErrors.toRemoveOverrideError(new ManagerRejections.ReasonRequired()))
+    assertThat(ManagerErrors.toAdministrativelyGrantError(new ManagerRejections.ReasonRequired()))
         .isInstanceOf(ReasonRequiredError.class);
     assertThat(
-            ManagerErrors.toRemoveOverrideError(new ManagerRejections.ReauthenticationRequired()))
+            ManagerErrors.toAdministrativelyGrantError(
+                new ManagerRejections.ReauthenticationRequired()))
         .isInstanceOf(ReauthenticationRequiredError.class);
-    assertThat(ManagerErrors.toRemoveOverrideError(new ManagerRejections.NotAManager()))
+    assertThat(
+            ManagerErrors.toAdministrativelyGrantError(new ManagerRejections.RecipientNotFound()))
+        .isInstanceOf(AccountNotFoundError.class);
+    assertThat(
+            ManagerErrors.toAdministrativelyGrantError(
+                new ManagerRejections.RecipientNotEligible()))
+        .isInstanceOf(ProfileManagerNotEligibleError.class);
+    assertThat(ManagerErrors.toAdministrativelyGrantError(new ManagerRejections.AlreadyManager()))
+        .isInstanceOf(AlreadyManagerError.class);
+    assertThat(ManagerErrors.toAdministrativelyRemoveError(new ManagerRejections.ProfileNotFound()))
+        .isInstanceOf(ProfileNotFoundError.class);
+    assertThat(ManagerErrors.toAdministrativelyRemoveError(new ManagerRejections.ReasonRequired()))
+        .isInstanceOf(ReasonRequiredError.class);
+    assertThat(
+            ManagerErrors.toAdministrativelyRemoveError(
+                new ManagerRejections.ReauthenticationRequired()))
+        .isInstanceOf(ReauthenticationRequiredError.class);
+    assertThat(ManagerErrors.toAdministrativelyRemoveError(new ManagerRejections.NotAManager()))
         .isInstanceOf(NotAManagerError.class);
-    assertThat(ManagerErrors.toRemoveOverrideError(new ManagerRejections.EligibleManagerRequired()))
+    assertThat(
+            ManagerErrors.toAdministrativelyRemoveError(
+                new ManagerRejections.EligibleManagerRequired()))
         .isInstanceOf(ProfileRequiresEligibleManagerError.class);
   }
 }

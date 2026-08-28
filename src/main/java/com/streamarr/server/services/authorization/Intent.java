@@ -159,6 +159,9 @@ public sealed interface Intent {
   /** The sovereign Account removes a direct manager of its own Personal Profile. */
   record RemoveProfileManager(UUID profileId) implements UnitIntent {}
 
-  /** ServerAdmin grants or removes management as a fresh-reauthenticated, audited override. */
-  record OverrideProfileManager(UUID profileId) implements UnitIntent {}
+  /** ServerAdmin grants management without recipient consent after fresh reauthentication. */
+  record AdministrativelyGrantProfileManager(UUID profileId) implements UnitIntent {}
+
+  /** ServerAdmin removes management after fresh reauthentication. */
+  record AdministrativelyRemoveProfileManager(UUID profileId) implements UnitIntent {}
 }

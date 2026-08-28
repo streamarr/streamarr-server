@@ -5,7 +5,6 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -16,8 +15,6 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.CredentialGuessThrottle;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.authorization.AuthorizationUnit;
-import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
@@ -27,14 +24,12 @@ import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -54,6 +49,8 @@ public class ProfileManagerAdministrationService {
   private static final String CHK_ELIGIBLE_MANAGER = "chk_profile_home_anchor";
   private static final String REPLACED_REASON = "replaced by a newer invitation";
   private static final String INVITER_LEFT_REASON = "inviting manager lost management";
+  private static final String RESOURCE_PROFILE_ID = "profileId";
+  private static final String RESOURCE_ACCOUNT_ID = "accountId";
 
   private final AuthorizationService authorizationService;
   private final ProfileManagerInvitationRepository invitationRepository;
@@ -71,13 +68,12 @@ public class ProfileManagerAdministrationService {
 
   public Outcome<IssuedManagerInvitation, ManagerRejections.Invite> inviteProfileManager(
       AuthenticatedIdentity identity, UUID profileId, UUID recipientAccountId) {
-    Optional<ManagerRejections.Invite> refusal =
-        refusalOf(
-            identity,
-            new Intent.InviteProfileManager(profileId),
-            () -> mayViewProfile(identity, profileId),
-            ManagerRejections.ProfileNotFound::new,
-            Optional.empty());
+    var profile = profileRepository.findById(profileId);
+    if (profile.isEmpty()) {
+      return Outcome.rejected(new ManagerRejections.ProfileNotFound());
+    }
+
+    var refusal = inviteRefusal(identity, profileId);
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -95,7 +91,6 @@ public class ProfileManagerAdministrationService {
       return Outcome.rejected(new ManagerRejections.AlreadyManager());
     }
 
-    var profile = profileRepository.findById(profileId).orElseThrow();
     var inviterName =
         userAccountRepository
             .findById(identity.accountId())
@@ -105,13 +100,19 @@ public class ProfileManagerAdministrationService {
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
+          lockProfile(profileId, ManagerRejections.ProfileNotFound::new);
+          var currentRefusal = inviteRefusal(identity, profileId);
+          if (currentRefusal.isPresent()) {
+            throw new MutationRejection(currentRefusal.get());
+          }
+
           invitationRepository.invalidatePendingByProfileIdAndRecipientAccountId(
               profileId, recipientAccountId, REPLACED_REASON, now);
           var invitation =
               invitationRepository.saveAndFlush(
                   ProfileManagerInvitation.builder()
                       .profileId(profileId)
-                      .profileName(profile.getName())
+                      .profileName(profile.orElseThrow().getName())
                       .inviterAccountId(identity.accountId())
                       .inviterDisplayName(inviterName)
                       .recipientAccountId(recipientAccountId)
@@ -123,6 +124,16 @@ public class ProfileManagerAdministrationService {
           return new IssuedManagerInvitation(invitation, issued.code());
         },
         _ -> Optional.empty());
+  }
+
+  private Optional<ManagerRejections.Invite> inviteRefusal(
+      AuthenticatedIdentity identity, UUID profileId) {
+    return refusalOf(
+        identity,
+        new Intent.InviteProfileManager(profileId),
+        () -> mayViewProfile(identity, profileId),
+        ManagerRejections.ProfileNotFound::new,
+        Optional.empty());
   }
 
   public Outcome<ProfileManagerInvitation, ManagerRejections.Cancel> cancelManagerInvitation(
@@ -140,8 +151,7 @@ public class ProfileManagerAdministrationService {
 
     return mutationTransactions.write(
         () -> {
-          if (!invitationRepository.tryDecidePending(
-              invitationId, ProfileManagerInvitationStatus.CANCELED, clock.instant())) {
+          if (!invitationRepository.tryCancelPending(invitationId, clock.instant())) {
             throw new MutationRejection(new ManagerRejections.InvitationNotPending());
           }
 
@@ -158,9 +168,8 @@ public class ProfileManagerAdministrationService {
     }
 
     var invitation = resolved.get();
-    if (!(authorizationService.decide(
-            identity, new Intent.AcceptManagerInvitation(invitation.getId()))
-        instanceof Decision.Allowed<AuthorizationUnit>)) {
+    if (!authorizationService.isAllowed(
+        identity, new Intent.AcceptManagerInvitation(invitation.getId()))) {
       // Whoever is not the named recipient learns nothing beyond the one deliberate answer.
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
@@ -172,12 +181,12 @@ public class ProfileManagerAdministrationService {
     var now = clock.instant();
     if (!stillProposable(invitation)) {
       mutationTransactions.write(
-          () ->
-              invitationRepository.invalidatePendingByProfileIdAndRecipientAccountId(
-                  invitation.getProfileId(),
-                  invitation.getRecipientAccountId(),
-                  INVITER_LEFT_REASON,
-                  now),
+          () -> {
+            lockProfile(
+                invitation.getProfileId(), ManagerRejections.ManagerInvitationNotFound::new);
+            return invitationRepository.tryInvalidatePending(
+                invitation.getId(), INVITER_LEFT_REASON, now);
+          },
           _ -> Optional.empty());
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
@@ -185,12 +194,12 @@ public class ProfileManagerAdministrationService {
     return mutationTransactions.write(
         () -> {
           lockProfile(invitation.getProfileId(), ManagerRejections.ManagerInvitationNotFound::new);
-          if (!invitationRepository.tryDecidePending(
-              invitation.getId(), ProfileManagerInvitationStatus.ACCEPTED, now)) {
+          if (!invitationRepository.tryAcceptPending(invitation.getId(), now)) {
             throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
           }
 
-          if (!profileManagerRepository.tryGrant(identity.accountId(), invitation.getProfileId())) {
+          if (!profileManagerRepository.tryGrantDirectManagement(
+              identity.accountId(), invitation.getProfileId())) {
             throw new MutationRejection(new ManagerRejections.AlreadyManager());
           }
 
@@ -198,8 +207,8 @@ public class ProfileManagerAdministrationService {
               identity,
               SecurityAuditEntry.builder()
                   .operation("acceptManagerInvitation")
-                  .resource("profileId", invitation.getProfileId())
-                  .resource("accountId", identity.accountId()));
+                  .resource(RESOURCE_PROFILE_ID, invitation.getProfileId())
+                  .resource(RESOURCE_ACCOUNT_ID, identity.accountId()));
           return invitationRepository.findById(invitation.getId()).orElseThrow();
         },
         constraint ->
@@ -216,16 +225,14 @@ public class ProfileManagerAdministrationService {
     }
 
     var invitation = resolved.get();
-    if (!(authorizationService.decide(
-            identity, new Intent.DeclineManagerInvitation(invitation.getId()))
-        instanceof Decision.Allowed<AuthorizationUnit>)) {
+    if (!authorizationService.isAllowed(
+        identity, new Intent.DeclineManagerInvitation(invitation.getId()))) {
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
 
     return mutationTransactions.write(
         () -> {
-          if (!invitationRepository.tryDecidePending(
-              invitation.getId(), ProfileManagerInvitationStatus.DECLINED, clock.instant())) {
+          if (!invitationRepository.tryDeclinePending(invitation.getId(), clock.instant())) {
             throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
           }
 
@@ -250,7 +257,8 @@ public class ProfileManagerAdministrationService {
     return mutationTransactions.write(
         () -> {
           lockProfile(profileId, ManagerRejections.ProfileNotFound::new);
-          if (!profileManagerRepository.tryRemove(identity.accountId(), profileId)) {
+          if (!profileManagerRepository.tryRevokeDirectManagement(
+              identity.accountId(), profileId)) {
             throw new MutationRejection(new ManagerRejections.ManagementAlreadyRemoved());
           }
 
@@ -284,16 +292,16 @@ public class ProfileManagerAdministrationService {
             eligibleManagerRejection(constraint, ManagerRejections.EligibleManagerRequired::new));
   }
 
-  public Outcome<UUID, ManagerRejections.OverrideGrant> grantProfileManagerOverride(
+  public Outcome<UUID, ManagerRejections.AdministrativelyGrant> administrativelyGrantProfileManager(
       AuthenticatedIdentity identity, UUID profileId, UUID accountId, String reason) {
     if (isBlank(reason)) {
       return Outcome.rejected(new ManagerRejections.ReasonRequired());
     }
 
-    Optional<ManagerRejections.OverrideGrant> refusal =
+    Optional<ManagerRejections.AdministrativelyGrant> refusal =
         refusalOf(
             identity,
-            new Intent.OverrideProfileManager(profileId),
+            new Intent.AdministrativelyGrantProfileManager(profileId),
             () -> mayViewProfile(identity, profileId),
             ManagerRejections.ProfileNotFound::new,
             Optional.of(ManagerRejections.ReauthenticationRequired::new));
@@ -314,7 +322,7 @@ public class ProfileManagerAdministrationService {
     return mutationTransactions.write(
         () -> {
           lockProfile(profileId, ManagerRejections.ProfileNotFound::new);
-          if (!profileManagerRepository.tryGrant(accountId, profileId)) {
+          if (!profileManagerRepository.tryGrantDirectManagement(accountId, profileId)) {
             throw new MutationRejection(new ManagerRejections.AlreadyManager());
           }
 
@@ -324,10 +332,10 @@ public class ProfileManagerAdministrationService {
           audit(
               identity,
               SecurityAuditEntry.builder()
-                  .operation("grantProfileManagerOverride")
+                  .operation("administrativelyGrantProfileManager")
                   .reason(reason)
-                  .resource("profileId", profileId)
-                  .resource("accountId", accountId));
+                  .resource(RESOURCE_PROFILE_ID, profileId)
+                  .resource(RESOURCE_ACCOUNT_ID, accountId));
           return profileId;
         },
         constraint ->
@@ -336,16 +344,17 @@ public class ProfileManagerAdministrationService {
                 : Optional.empty());
   }
 
-  public Outcome<UUID, ManagerRejections.OverrideRemove> removeProfileManagerOverride(
-      AuthenticatedIdentity identity, UUID profileId, UUID accountId, String reason) {
+  public Outcome<UUID, ManagerRejections.AdministrativelyRemove>
+      administrativelyRemoveProfileManager(
+          AuthenticatedIdentity identity, UUID profileId, UUID accountId, String reason) {
     if (isBlank(reason)) {
       return Outcome.rejected(new ManagerRejections.ReasonRequired());
     }
 
-    Optional<ManagerRejections.OverrideRemove> refusal =
+    Optional<ManagerRejections.AdministrativelyRemove> refusal =
         refusalOf(
             identity,
-            new Intent.OverrideProfileManager(profileId),
+            new Intent.AdministrativelyRemoveProfileManager(profileId),
             () -> mayViewProfile(identity, profileId),
             ManagerRejections.ProfileNotFound::new,
             Optional.of(ManagerRejections.ReauthenticationRequired::new));
@@ -357,7 +366,7 @@ public class ProfileManagerAdministrationService {
         () -> {
           lockProfile(profileId, ManagerRejections.ProfileNotFound::new);
           removeDisputedAuthority(
-              identity, profileId, accountId, "removeProfileManagerOverride", reason);
+              identity, profileId, accountId, "administrativelyRemoveProfileManager", reason);
           return profileId;
         },
         constraint ->
@@ -365,47 +374,33 @@ public class ProfileManagerAdministrationService {
   }
 
   /** Pending invitations for the Profile, visible only to direct managers and ServerAdmin. */
-  public MediaPage<ProfileManagerInvitation> managerInvitations(
+  public MediaPage<ProfileManagerInvitation> pendingManagerInvitationsForProfile(
       AuthenticatedIdentity identity, UUID profileId, KeysetPaginationOptions options) {
-    if (!(authorizationService.decide(identity, new Intent.ViewManagerInvitations(profileId))
-        instanceof Decision.Allowed<AuthorizationUnit>)) {
+    if (!authorizationService.isAllowed(identity, new Intent.ViewManagerInvitations(profileId))) {
       return page(List.of(), options);
     }
 
     return page(
-        unexpired(
-            invitationRepository.findByProfileIdAndStatus(
-                profileId, ProfileManagerInvitationStatus.PENDING)),
-        options);
+        invitationRepository.findPendingByProfileId(profileId, clock.instant(), options), options);
   }
 
   /** The caller's own pending invitations; possession of the seat is the visibility. */
   public MediaPage<ProfileManagerInvitation> pendingManagerInvitations(
       AuthenticatedIdentity identity, KeysetPaginationOptions options) {
     return page(
-        unexpired(
-            invitationRepository.findByRecipientAccountIdAndStatus(
-                identity.accountId(), ProfileManagerInvitationStatus.PENDING)),
+        invitationRepository.findPendingByRecipientAccountId(
+            identity.accountId(), clock.instant(), options),
         options);
-  }
-
-  private List<ProfileManagerInvitation> unexpired(List<ProfileManagerInvitation> pending) {
-    var now = clock.instant();
-    return pending.stream().filter(invitation -> invitation.getExpiresAt().isAfter(now)).toList();
   }
 
   private MediaPage<ProfileManagerInvitation> page(
       List<ProfileManagerInvitation> invitations, KeysetPaginationOptions options) {
     var items =
         invitations.stream()
-            .sorted(
-                Comparator.comparing(
-                        ProfileManagerInvitation::getCreatedOn,
-                        Comparator.nullsLast(Comparator.reverseOrder()))
-                    .thenComparing(ProfileManagerInvitation::getId))
             .map(invitation -> new PageItem<>(invitation, invitation.getCreatedOn()))
             .toList();
-    return paginationService.buildKeysetPage(items, options, ProfileManagerInvitation::getId);
+    return paginationService.buildMediaPage(
+        items, options.getPaginationOptions(), options.getCursorId());
   }
 
   private void removeDisputedAuthority(
@@ -419,7 +414,7 @@ public class ProfileManagerAdministrationService {
       UUID managerAccountId,
       String operation,
       String reason) {
-    if (!profileManagerRepository.tryRemove(managerAccountId, profileId)) {
+    if (!profileManagerRepository.tryRevokeDirectManagement(managerAccountId, profileId)) {
       throw new MutationRejection(new ManagerRejections.NotAManager());
     }
 
@@ -433,15 +428,15 @@ public class ProfileManagerAdministrationService {
         SecurityAuditEntry.builder()
             .operation(operation)
             .reason(reason)
-            .resource("profileId", profileId)
-            .resource("accountId", managerAccountId));
+            .resource(RESOURCE_PROFILE_ID, profileId)
+            .resource(RESOURCE_ACCOUNT_ID, managerAccountId));
   }
 
   private void invalidateLeaversProposals(UUID profileId, UUID leaverAccountId) {
     var now = clock.instant();
-    invitationRepository.invalidatePendingInvitedBy(
+    invitationRepository.invalidatePendingInvitationsByInviterAccountIdAndProfileId(
         leaverAccountId, profileId, INVITER_LEFT_REASON, now);
-    shareRepository.invalidatePendingByProfileIdOfferedBy(
+    shareRepository.invalidatePendingOffersByProfileIdAndOffererAccountId(
         profileId, leaverAccountId, "offering manager lost management", now);
   }
 
@@ -476,10 +471,14 @@ public class ProfileManagerAdministrationService {
       return false;
     }
 
+    return stillProposable(inviterId, invitation.getProfileId());
+  }
+
+  private boolean stillProposable(UUID inviterId, UUID profileId) {
     return userAccountRepository
         .findById(inviterId)
         .filter(this::isEligible)
-        .filter(account -> alreadyManages(account, invitation.getProfileId()))
+        .filter(account -> alreadyManages(account, profileId))
         .isPresent();
   }
 
@@ -513,25 +512,9 @@ public class ProfileManagerAdministrationService {
       BooleanSupplier mayView,
       Supplier<? extends R> denied,
       Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
-    return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
-      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<AuthorizationUnit>(var reason) ->
-          switch (reason) {
-            case REAUTHENTICATION_REQUIRED ->
-                Optional.of(
-                    reauthenticationRequired
-                        .orElseThrow(AuthorizationUnavailableException::new)
-                        .get());
-            case POLICY -> {
-              if (mayView.getAsBoolean()) {
-                throw new AccessDeniedException("Not allowed.");
-              }
-
-              yield Optional.of(denied.get());
-            }
-          };
-    };
+    return AuthorizationRefusal.from(
+        authorizationService.decide(identity, intent),
+        new AuthorizationRefusal.Response<>(mayView, denied, reauthenticationRequired));
   }
 
   /** The invitation is visible to its parties and to whoever may view the Profile's admin. */
@@ -548,8 +531,8 @@ public class ProfileManagerAdministrationService {
   }
 
   private boolean mayViewProfile(AuthenticatedIdentity identity, UUID profileId) {
-    return authorizationService.decide(identity, new Intent.ViewProfileAdministration(profileId))
-        instanceof Decision.Allowed<AuthorizationUnit>;
+    return authorizationService.isAllowed(
+        identity, new Intent.ViewProfileAdministration(profileId));
   }
 
   private static boolean isBlank(String value) {

@@ -1,4 +1,4 @@
 package com.streamarr.server.graphql.inputs;
 
-public record RemoveProfileManagerOverrideInput(
+public record AdministrativelyGrantProfileManagerInput(
     String profileId, String accountId, String reason) {}

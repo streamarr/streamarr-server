@@ -66,8 +66,8 @@ public final class ManagerErrors {
     };
   }
 
-  public static GrantProfileManagerOverrideError toGrantOverrideError(
-      ManagerRejections.OverrideGrant rejection) {
+  public static AdministrativelyGrantProfileManagerError toAdministrativelyGrantError(
+      ManagerRejections.AdministrativelyGrant rejection) {
     return switch (rejection) {
       case ManagerRejections.ProfileNotFound _ -> profileNotFound();
       case ManagerRejections.ReasonRequired _ -> reasonRequired();
@@ -78,8 +78,8 @@ public final class ManagerErrors {
     };
   }
 
-  public static RemoveProfileManagerOverrideError toRemoveOverrideError(
-      ManagerRejections.OverrideRemove rejection) {
+  public static AdministrativelyRemoveProfileManagerError toAdministrativelyRemoveError(
+      ManagerRejections.AdministrativelyRemove rejection) {
     return switch (rejection) {
       case ManagerRejections.ProfileNotFound _ -> profileNotFound();
       case ManagerRejections.ReasonRequired _ -> reasonRequired();

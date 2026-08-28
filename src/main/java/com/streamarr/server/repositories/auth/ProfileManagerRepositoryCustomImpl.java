@@ -12,7 +12,7 @@ public class ProfileManagerRepositoryCustomImpl implements ProfileManagerReposit
   private final DSLContext dsl;
 
   @Override
-  public boolean tryGrant(UUID accountId, UUID profileId) {
+  public boolean tryGrantDirectManagement(UUID accountId, UUID profileId) {
     return dsl.insertInto(PROFILE_MANAGER)
             .set(PROFILE_MANAGER.ACCOUNT_ID, accountId)
             .set(PROFILE_MANAGER.PROFILE_ID, profileId)
@@ -22,7 +22,7 @@ public class ProfileManagerRepositoryCustomImpl implements ProfileManagerReposit
   }
 
   @Override
-  public boolean tryRemove(UUID accountId, UUID profileId) {
+  public boolean tryRevokeDirectManagement(UUID accountId, UUID profileId) {
     return dsl.deleteFrom(PROFILE_MANAGER)
             .where(PROFILE_MANAGER.ACCOUNT_ID.eq(accountId))
             .and(PROFILE_MANAGER.PROFILE_ID.eq(profileId))

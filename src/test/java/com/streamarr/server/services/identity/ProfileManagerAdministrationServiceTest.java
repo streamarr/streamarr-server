@@ -12,6 +12,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
@@ -43,6 +44,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -105,7 +107,7 @@ class ProfileManagerAdministrationServiceTest {
     inviter = eligibleAccount(authorization.currentIdentity().accountId());
     recipient = eligibleAccount(UUID.randomUUID());
     orphan = profiles.save(ProfileFixture.defaultProfileBuilder().name("Joe").build());
-    managers.tryGrant(inviter.getId(), orphan.getId());
+    managers.tryGrantDirectManagement(inviter.getId(), orphan.getId());
   }
 
   @Test
@@ -172,6 +174,32 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should return Profile not found before authorization when the Profile is missing")
+  void shouldReturnProfileNotFoundBeforeAuthorizationWhenProfileIsMissing() {
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+
+    assertThat(
+            rejectionOf(
+                service.inviteProfileManager(identity(), UUID.randomUUID(), recipient.getId())))
+        .isInstanceOf(ManagerRejections.ProfileNotFound.class);
+    assertThat(authorization.recordedIntents()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should surface authorization unavailable when Profile visibility cannot decide")
+  void shouldSurfaceAuthorizationUnavailableWhenProfileVisibilityCannotDecide() {
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.ViewProfileAdministration
+                ? new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE)
+                : new Decision.Denied<>(Decision.DenialReason.POLICY));
+
+    assertThatThrownBy(
+            () -> service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
   @DisplayName("Should allow only one decision when a pending invitation is presented again")
   void shouldAllowOnlyOneDecisionWhenPendingInvitationIsPresentedAgain() {
     var issued =
@@ -197,6 +225,17 @@ class ProfileManagerAdministrationServiceTest {
     assertThat(
             rejectionOf(service.cancelManagerInvitation(identity(), issued.invitation().getId())))
         .isInstanceOf(ManagerRejections.InvitationNotPending.class);
+  }
+
+  @Test
+  @DisplayName("Should surface authorization unavailable when invitation acceptance cannot decide")
+  void shouldSurfaceAuthorizationUnavailableWhenInvitationAcceptanceCannotDecide() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+
+    assertThatThrownBy(() -> service.acceptManagerInvitation(recipientIdentity(), issued.code()))
+        .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
   @Test
@@ -228,12 +267,46 @@ class ProfileManagerAdministrationServiceTest {
   void shouldInvalidateInvitationWhenInvitingManagerLosesManagement() {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
-    managers.tryRemove(inviter.getId(), orphan.getId());
+    managers.tryRevokeDirectManagement(inviter.getId(), orphan.getId());
 
     assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), issued.code())))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+  }
+
+  @Test
+  @DisplayName("Should preserve a replacement when stale acceptance finds its inviter gone")
+  void shouldPreserveReplacementWhenStaleAcceptanceFindsItsInviterGone() {
+    var stale = issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+    managers.tryRevokeDirectManagement(inviter.getId(), orphan.getId());
+    var replacementInviter = eligibleAccount(UUID.randomUUID());
+    managers.tryGrantDirectManagement(replacementInviter.getId(), orphan.getId());
+    var replacement =
+        new AtomicReference<ProfileManagerAdministrationService.IssuedManagerInvitation>();
+    authorization.decideUnitWith(
+        intent -> {
+          if (intent instanceof Intent.AcceptManagerInvitation) {
+            var replacementIdentity =
+                AuthenticatedIdentityFixture.accountScopedBuilder()
+                    .accountId(replacementInviter.getId())
+                    .build();
+            replacement.set(
+                issued(
+                    service.inviteProfileManager(
+                        replacementIdentity, orphan.getId(), recipient.getId())));
+          }
+
+          return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
+        });
+
+    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), stale.code())))
+        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    assertThat(invitations.findById(stale.invitation().getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(
+            invitations.findById(replacement.get().invitation().getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.PENDING);
   }
 
   @Test
@@ -275,6 +348,17 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should surface authorization unavailable when invitation decline cannot decide")
+  void shouldSurfaceAuthorizationUnavailableWhenInvitationDeclineCannotDecide() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+
+    assertThatThrownBy(() -> service.declineManagerInvitation(recipientIdentity(), issued.code()))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
   @DisplayName("Should invalidate an invitation when its inviter only supervises the Profile")
   void shouldInvalidateInvitationWhenInviterOnlySupervisesProfile() {
     var kid = profiles.save(ProfileFixture.kidProfileBuilder().name("Kid").build());
@@ -283,7 +367,7 @@ class ProfileManagerAdministrationServiceTest {
     accounts.save(inviter);
     var issued = issued(service.inviteProfileManager(identity(), kid.getId(), recipient.getId()));
     // Share-derived supervision ends with the share and cannot keep portable authority standing.
-    managers.tryRemove(inviter.getId(), kid.getId());
+    managers.tryRevokeDirectManagement(inviter.getId(), kid.getId());
 
     assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), issued.code())))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
@@ -296,7 +380,7 @@ class ProfileManagerAdministrationServiceTest {
   void shouldRejectOverrideGrantWhenAccountDoesNotExist() {
     assertThat(
             rejectionOf(
-                service.grantProfileManagerOverride(
+                service.administrativelyGrantProfileManager(
                     identity(), orphan.getId(), UUID.randomUUID(), "support")))
         .isInstanceOf(ManagerRejections.RecipientNotFound.class);
   }
@@ -308,7 +392,7 @@ class ProfileManagerAdministrationServiceTest {
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
 
     var granted =
-        service.grantProfileManagerOverride(
+        service.administrativelyGrantProfileManager(
             identity(), orphan.getId(), recipient.getId(), "support");
     assertThat(granted).isInstanceOf(Outcome.Accepted.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isTrue();
@@ -318,7 +402,7 @@ class ProfileManagerAdministrationServiceTest {
         .singleElement()
         .satisfies(
             entry -> {
-              assertThat(entry.operation()).isEqualTo("grantProfileManagerOverride");
+              assertThat(entry.operation()).isEqualTo("administrativelyGrantProfileManager");
               assertThat(entry.actorAccountId()).isEqualTo(inviter.getId());
               assertThat(entry.reason()).isEqualTo("support");
               assertThat(entry.resources())
@@ -328,7 +412,7 @@ class ProfileManagerAdministrationServiceTest {
 
     assertThat(
             rejectionOf(
-                service.grantProfileManagerOverride(
+                service.administrativelyGrantProfileManager(
                     identity(), orphan.getId(), recipient.getId(), "again")))
         .isInstanceOf(ManagerRejections.AlreadyManager.class);
   }
@@ -336,7 +420,7 @@ class ProfileManagerAdministrationServiceTest {
   @Test
   @DisplayName("Should invalidate restorable proposals when an override removal succeeds once")
   void shouldInvalidateRestorableProposalsWhenOverrideRemovalSucceedsOnce() {
-    managers.tryGrant(recipient.getId(), orphan.getId());
+    managers.tryGrantDirectManagement(recipient.getId(), orphan.getId());
     var restorable =
         invitations.save(pendingInvitation(orphan.getId(), recipient.getId(), inviter.getId()));
     var offered =
@@ -350,7 +434,7 @@ class ProfileManagerAdministrationServiceTest {
                 .build());
 
     var removed =
-        service.removeProfileManagerOverride(
+        service.administrativelyRemoveProfileManager(
             identity(), orphan.getId(), recipient.getId(), "abuse");
     assertThat(removed).isInstanceOf(Outcome.Accepted.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isFalse();
@@ -363,7 +447,7 @@ class ProfileManagerAdministrationServiceTest {
         .singleElement()
         .satisfies(
             entry -> {
-              assertThat(entry.operation()).isEqualTo("removeProfileManagerOverride");
+              assertThat(entry.operation()).isEqualTo("administrativelyRemoveProfileManager");
               assertThat(entry.actorAccountId()).isEqualTo(inviter.getId());
               assertThat(entry.reason()).isEqualTo("abuse");
               assertThat(entry.resources())
@@ -373,7 +457,7 @@ class ProfileManagerAdministrationServiceTest {
 
     assertThat(
             rejectionOf(
-                service.removeProfileManagerOverride(
+                service.administrativelyRemoveProfileManager(
                     identity(), orphan.getId(), recipient.getId(), "again")))
         .isInstanceOf(ManagerRejections.NotAManager.class);
   }
@@ -401,7 +485,7 @@ class ProfileManagerAdministrationServiceTest {
     var personal =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().id(inviter.getPersonalProfileId()).build());
-    managers.tryGrant(recipient.getId(), personal.getId());
+    managers.tryGrantDirectManagement(recipient.getId(), personal.getId());
 
     var removed = service.removeProfileManager(identity(), personal.getId(), recipient.getId());
     assertThat(removed).isInstanceOf(Outcome.Accepted.class);
@@ -419,19 +503,19 @@ class ProfileManagerAdministrationServiceTest {
   void shouldValidateReasonBeforeCeremonyWhenOverrideIsRequested() {
     assertThat(
             rejectionOf(
-                service.grantProfileManagerOverride(
+                service.administrativelyGrantProfileManager(
                     identity(), orphan.getId(), recipient.getId(), " ")))
         .isInstanceOf(ManagerRejections.ReasonRequired.class);
     assertThat(authorization.recordedIntents()).isEmpty();
 
     authorization.decideUnitWith(
         intent ->
-            intent instanceof Intent.OverrideProfileManager
+            intent instanceof Intent.AdministrativelyGrantProfileManager
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
                 : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
     assertThat(
             rejectionOf(
-                service.grantProfileManagerOverride(
+                service.administrativelyGrantProfileManager(
                     identity(), orphan.getId(), recipient.getId(), "support")))
         .isInstanceOf(ManagerRejections.ReauthenticationRequired.class);
   }
@@ -444,14 +528,34 @@ class ProfileManagerAdministrationServiceTest {
     expired.setExpiresAt(NOW.minusSeconds(1));
     invitations.save(expired);
 
-    assertThat(service.managerInvitations(identity(), orphan.getId(), paginationOptions()).items())
+    assertThat(
+            service
+                .pendingManagerInvitationsForProfile(
+                    identity(), orphan.getId(), paginationOptions())
+                .items())
         .hasSize(1);
     assertThat(service.pendingManagerInvitations(recipientIdentity(), paginationOptions()).items())
         .hasSize(1);
 
     authorization.denyAll();
-    assertThat(service.managerInvitations(identity(), orphan.getId(), paginationOptions()).items())
+    assertThat(
+            service
+                .pendingManagerInvitationsForProfile(
+                    identity(), orphan.getId(), paginationOptions())
+                .items())
         .isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should surface authorization unavailable when invitation listing cannot decide")
+  void shouldSurfaceAuthorizationUnavailableWhenInvitationListingCannotDecide() {
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+
+    assertThatThrownBy(
+            () ->
+                service.pendingManagerInvitationsForProfile(
+                    identity(), orphan.getId(), paginationOptions()))
+        .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
   private UserAccount eligibleAccount(UUID accountId) {

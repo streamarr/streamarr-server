@@ -27,7 +27,7 @@ public class FakeProfileManagerRepository extends FakeJpaRepository<ProfileManag
   }
 
   @Override
-  public boolean tryGrant(UUID accountId, UUID profileId) {
+  public boolean tryGrantDirectManagement(UUID accountId, UUID profileId) {
     if (existsByAccountIdAndProfileId(accountId, profileId)) {
       return false;
     }
@@ -37,7 +37,7 @@ public class FakeProfileManagerRepository extends FakeJpaRepository<ProfileManag
   }
 
   @Override
-  public boolean tryRemove(UUID accountId, UUID profileId) {
+  public boolean tryRevokeDirectManagement(UUID accountId, UUID profileId) {
     var grant =
         database.values().stream()
             .filter(manager -> manager.getAccountId().equals(accountId))

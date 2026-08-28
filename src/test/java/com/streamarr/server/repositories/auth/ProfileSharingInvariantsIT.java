@@ -181,7 +181,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
         transactionTemplate.execute(
             _ ->
                 shareRepository.invalidatePendingByProfileId(
-                    owner.profile().getId(), "Profile connected to an Account", now));
+                    owner.profile().getId(), "Profile linked to an Account", now));
 
     assertThat(invalidated).isZero();
     var stored = shareRepository.findById(expired.getId()).orElseThrow();

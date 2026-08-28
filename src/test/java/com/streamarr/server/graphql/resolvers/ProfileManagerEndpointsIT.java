@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.PENDING;
 import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,6 +34,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.Builder;
 import org.awaitility.Awaitility;
 import org.jooq.DSLContext;
@@ -210,13 +212,13 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.accountBearer(recipient),
             """
-            query { managerInvitations(profileId: "%s") {
+            query { pendingManagerInvitationsForProfile(profileId: "%s") {
               edges { node { id recipientEmail } } } }
             """
                 .formatted(invitation.getProfileId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.managerInvitations.edges").isEmpty());
+        .andExpect(jsonPath("$.data.pendingManagerInvitationsForProfile.edges").isEmpty());
   }
 
   @Test
@@ -402,8 +404,96 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should let exactly one override grant win when two grants race")
-  void shouldLetExactlyOneOverrideGrantWinWhenTwoGrantsRace() throws Exception {
+  @DisplayName(
+      "Should leave the newest invitation pending when two invitations replace concurrently")
+  void shouldLeaveNewestInvitationPendingWhenTwoInvitationsReplaceConcurrently() throws Exception {
+    var orphan = managedOrphan();
+    var request =
+        new ConcurrentGraphqlCall(
+            authTestSupport.accountBearer(owner),
+            """
+            mutation { inviteProfileManager(input: {profileId: "%s",
+              recipientAccountId: "%s"}) {
+              issued { invitation { id status } } userErrors { __typename } } }
+            """
+                .formatted(orphan.getId(), recipient.account().getId()));
+
+    var outcomes =
+        raceGraphql(new GraphqlRaceLock(RaceLockTarget.PROFILE, orphan.getId()), request, request);
+
+    assertThat(
+            outcomes.stream()
+                .map(node -> node.at("/data/inviteProfileManager/issued/invitation/id").asString()))
+        .allSatisfy(id -> assertThat(id).isNotBlank())
+        .doesNotHaveDuplicates();
+    assertThat(invitationRepository.findAll())
+        .filteredOn(invitation -> orphan.getId().equals(invitation.getProfileId()))
+        .extracting(ProfileManagerInvitation::getStatus)
+        .containsExactlyInAnyOrder(
+            ProfileManagerInvitationStatus.INVALIDATED, ProfileManagerInvitationStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName("Should reject an invitation when the inviter loses management before its write")
+  void shouldRejectInvitationWhenInviterLosesManagementBeforeItsWrite() throws Exception {
+    var orphan = managedOrphan();
+    var remainingManagerId = transactionTemplate.execute(_ -> secondLocalManagerId());
+    profileManagerRepository.saveAndFlush(
+        ProfileManager.builder().accountId(remainingManagerId).profileId(orphan.getId()).build());
+    var response = new AtomicReference<Future<JsonNode>>();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      transactionTemplate.executeWithoutResult(
+          _ -> {
+            assertThat(profileRepository.lockPolicyById(orphan.getId())).isPresent();
+            response.set(
+                executor.submit(
+                    () ->
+                        objectMapper.readTree(
+                            graphql(
+                                    authTestSupport.accountBearer(owner),
+                                    """
+                                    mutation { inviteProfileManager(input: {profileId: "%s",
+                                      recipientAccountId: "%s"}) {
+                                      issued { invitation { id } }
+                                      userErrors { __typename } } }
+                                    """
+                                        .formatted(orphan.getId(), recipient.account().getId()))
+                                .andExpect(status().isOk())
+                                .andReturn()
+                                .getResponse()
+                                .getContentAsString())));
+            Awaitility.await()
+                .atMost(Duration.ofSeconds(10))
+                .untilAsserted(
+                    () ->
+                        assertThat(
+                                blockedRaceRequestCount(
+                                    new GraphqlRaceLock(RaceLockTarget.PROFILE, orphan.getId())))
+                            .isOne());
+            assertThat(
+                    profileManagerRepository.tryRevokeDirectManagement(
+                        owner.account().getId(), orphan.getId()))
+                .isTrue();
+          });
+    }
+
+    var outcome = response.get().get(30, TimeUnit.SECONDS);
+    assertThat(outcome.at("/errors/0/extensions/code").asString()).isEqualTo("FORBIDDEN");
+    assertThat(outcome.at("/data/inviteProfileManager").isNull()).isTrue();
+    assertThat(
+            dsl.fetchExists(
+                PROFILE_MANAGER_INVITATION,
+                PROFILE_MANAGER_INVITATION
+                    .PROFILE_ID
+                    .eq(orphan.getId())
+                    .and(PROFILE_MANAGER_INVITATION.STATUS.eq(PENDING))))
+        .isFalse();
+  }
+
+  @Test
+  @DisplayName("Should let exactly one administrative grant win when two grants race")
+  void shouldLetExactlyOneAdministrativeGrantWinWhenTwoGrantsRace() throws Exception {
     var orphan = managedOrphan();
     var bearer = authTestSupport.freshAccountBearer(owner);
     var request =
@@ -415,12 +505,14 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
 
     assertThat(
             countText(
-                outcomes, "/data/grantProfileManagerOverride/profileId", orphan.getId().toString()))
+                outcomes,
+                "/data/administrativelyGrantProfileManager/profileId",
+                orphan.getId().toString()))
         .isEqualTo(1);
     assertThat(
             countText(
                 outcomes,
-                "/data/grantProfileManagerOverride/userErrors/0/__typename",
+                "/data/administrativelyGrantProfileManager/userErrors/0/__typename",
                 "AlreadyManagerError"))
         .isEqualTo(1);
     assertThat(
@@ -430,13 +522,13 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
     assertThat(
             dsl.fetchCount(
                 SECURITY_AUDIT_EVENT,
-                SECURITY_AUDIT_EVENT.OPERATION.eq("grantProfileManagerOverride")))
+                SECURITY_AUDIT_EVENT.OPERATION.eq("administrativelyGrantProfileManager")))
         .isEqualTo(1);
   }
 
   @Test
-  @DisplayName("Should let exactly one override removal win when two removals race")
-  void shouldLetExactlyOneOverrideRemovalWinWhenTwoRemovalsRace() throws Exception {
+  @DisplayName("Should let exactly one administrative removal win when two removals race")
+  void shouldLetExactlyOneAdministrativeRemovalWinWhenTwoRemovalsRace() throws Exception {
     var orphan = managedOrphan();
     transactionTemplate.executeWithoutResult(
         _ ->
@@ -450,7 +542,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         new ConcurrentGraphqlCall(
             bearer,
             """
-            mutation { removeProfileManagerOverride(input: {profileId: "%s", accountId: "%s",
+            mutation { administrativelyRemoveProfileManager(input: {profileId: "%s", accountId: "%s",
               reason: "abuse report"}) { profileId userErrors { __typename } } }
             """
                 .formatted(orphan.getId(), recipient.account().getId()));
@@ -461,13 +553,13 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
     assertThat(
             countText(
                 outcomes,
-                "/data/removeProfileManagerOverride/profileId",
+                "/data/administrativelyRemoveProfileManager/profileId",
                 orphan.getId().toString()))
         .isEqualTo(1);
     assertThat(
             countText(
                 outcomes,
-                "/data/removeProfileManagerOverride/userErrors/0/__typename",
+                "/data/administrativelyRemoveProfileManager/userErrors/0/__typename",
                 "NotAManagerError"))
         .isEqualTo(1);
     assertThat(
@@ -477,7 +569,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
     assertThat(
             dsl.fetchCount(
                 SECURITY_AUDIT_EVENT,
-                SECURITY_AUDIT_EVENT.OPERATION.eq("removeProfileManagerOverride")))
+                SECURITY_AUDIT_EVENT.OPERATION.eq("administrativelyRemoveProfileManager")))
         .isEqualTo(1);
   }
 
@@ -532,14 +624,14 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
             grantOverrideMutation(orphan, recipient.account().getId().toString()))
         .andExpect(status().isOk())
         .andExpect(
-            jsonPath("$.data.grantProfileManagerOverride.userErrors[0].__typename")
+            jsonPath("$.data.administrativelyGrantProfileManager.userErrors[0].__typename")
                 .value("ReauthenticationRequiredError"));
 
     graphql(
             authTestSupport.freshAccountBearer(owner),
             grantOverrideMutation(orphan, recipient.account().getId().toString()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.grantProfileManagerOverride.userErrors").isEmpty());
+        .andExpect(jsonPath("$.data.administrativelyGrantProfileManager.userErrors").isEmpty());
     assertThat(
             profileManagerRepository.existsByAccountIdAndProfileId(
                 recipient.account().getId(), orphan.getId()))
@@ -565,12 +657,12 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.freshAccountBearer(owner),
             """
-            mutation { removeProfileManagerOverride(input: {profileId: "%s", accountId: "%s",
+            mutation { administrativelyRemoveProfileManager(input: {profileId: "%s", accountId: "%s",
               reason: "abuse report"}) { profileId userErrors { __typename } } }
             """
                 .formatted(orphan.getId(), recipient.account().getId()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.removeProfileManagerOverride.userErrors").isEmpty());
+        .andExpect(jsonPath("$.data.administrativelyRemoveProfileManager.userErrors").isEmpty());
 
     assertThat(
             profileManagerRepository.existsByAccountIdAndProfileId(
@@ -582,7 +674,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
     assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isEqualTo(2);
     assertAuditEvent(
         ExpectedAuditEvent.builder()
-            .operation("grantProfileManagerOverride")
+            .operation("administrativelyGrantProfileManager")
             .reason("support")
             .actorAccountId(owner.account().getId())
             .profileId(orphan.getId())
@@ -590,7 +682,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
             .build());
     assertAuditEvent(
         ExpectedAuditEvent.builder()
-            .operation("removeProfileManagerOverride")
+            .operation("administrativelyRemoveProfileManager")
             .reason("abuse report")
             .actorAccountId(owner.account().getId())
             .profileId(orphan.getId())
@@ -600,7 +692,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
 
   private String grantOverrideMutation(Profile profile, String accountId) {
     return """
-           mutation { grantProfileManagerOverride(input: {profileId: "%s", accountId: "%s",
+           mutation { administrativelyGrantProfileManager(input: {profileId: "%s", accountId: "%s",
              reason: "support"}) { profileId userErrors { __typename } } }
            """
         .formatted(profile.getId(), accountId);

@@ -6,5 +6,5 @@ import java.util.List;
 public record AlreadyManagerError(String message, List<String> inputPath)
     implements InviteProfileManagerError,
         AcceptManagerInvitationError,
-        GrantProfileManagerOverrideError,
+        AdministrativelyGrantProfileManagerError,
         InputMutationError {}

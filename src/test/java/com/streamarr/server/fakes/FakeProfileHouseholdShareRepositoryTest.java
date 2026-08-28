@@ -50,6 +50,34 @@ class FakeProfileHouseholdShareRepositoryTest {
     assertThat(page).extracting(ProfileHouseholdShare::getId).containsExactly(LOW, HIGH);
   }
 
+  @Test
+  @DisplayName("Should preserve expiry when invalidating offers from a former manager")
+  void shouldPreserveExpiryWhenInvalidatingOffersFromFormerManager() {
+    var now = Instant.parse("2026-08-21T12:00:00Z");
+    var profileId = UUID.randomUUID();
+    var offererAccountId = UUID.randomUUID();
+    var expiredOffer =
+        fake.save(
+            ProfileHouseholdShare.builder()
+                .profileId(profileId)
+                .householdId(UUID.randomUUID())
+                .status(ProfileShareStatus.PENDING)
+                .offeredByAccountId(offererAccountId)
+                .expiresAt(now.minusSeconds(1))
+                .build());
+
+    fake.invalidatePendingOffersByProfileIdAndOffererAccountId(
+        profileId, offererAccountId, "offerer left", now);
+
+    assertThat(expiredOffer)
+        .satisfies(
+            offer -> {
+              assertThat(offer.getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
+              assertThat(offer.getDecidedAt()).isEqualTo(now);
+              assertThat(offer.getInvalidationReason()).isEmpty();
+            });
+  }
+
   private static KeysetPaginationOptions firstPage(int limit) {
     return new KeysetPaginationOptions(
         null,

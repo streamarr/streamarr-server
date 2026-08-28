@@ -118,6 +118,41 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
 
   @Test
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
+  @DisplayName("Should preserve an expired offer when its offerer loses management")
+  void shouldPreserveExpiredOfferWhenItsOffererLosesManagement() {
+    var offerer = authTestSupport.createAdminIdentity();
+    var recipient = authTestSupport.createAdminIdentity();
+    var now = Instant.parse("2026-08-21T12:00:00Z");
+    var expiredOffer =
+        shareRepository.saveAndFlush(
+            ProfileHouseholdShare.builder()
+                .profileId(offerer.profile().getId())
+                .householdId(recipient.household().getId())
+                .status(ProfileShareStatus.PENDING)
+                .offeredByAccountId(offerer.account().getId())
+                .expiresAt(now.minusSeconds(1))
+                .build());
+
+    try {
+      shareRepository.invalidatePendingOffersByProfileIdAndOffererAccountId(
+          offerer.profile().getId(), offerer.account().getId(), "offerer left", now);
+
+      assertThat(shareRepository.findById(expiredOffer.getId()).orElseThrow())
+          .satisfies(
+              offer -> {
+                assertThat(offer.getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
+                assertThat(offer.getDecidedAt()).isEqualTo(now);
+                assertThat(offer.getInvalidationReason()).isEmpty();
+              });
+    } finally {
+      shareRepository.deleteById(expiredOffer.getId());
+      authTestSupport.deleteIdentity(recipient);
+      authTestSupport.deleteIdentity(offerer);
+    }
+  }
+
+  @Test
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
   @DisplayName("Should create one structural home Share when two writers race")
   void shouldCreateOneStructuralHomeShareWhenTwoWritersRace() throws Exception {
     var manager = authTestSupport.createAdminIdentity();
