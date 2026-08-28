@@ -35,10 +35,12 @@ import org.springframework.stereotype.Service;
 /**
  * Direct ProfileManagers (ADR 0024 §ProfileManager): durable authority granted by invitation and
  * consent, or by a fresh-reauthenticated ServerAdmin override. Accept, GRANT, and REMOVE share one
- * serialization boundary — the Profile row lock — and each transition is a conditional statement
- * with exactly one winner. Losing management invalidates the leaver's outstanding proposals so a
- * stale invitation or offer can never restore disputed authority. Codes follow the opaque
- * publicId.secret discipline: throttled per publicId, digest-compared, one deliberate answer.
+ * target-Profile serialization boundary. Accept also locks the inviter's Personal Profile in UUID
+ * order so eligibility is rechecked atomically with consent. Each transition is a conditional
+ * statement with exactly one winner. Losing management invalidates the leaver's outstanding
+ * proposals so a stale invitation or offer can never restore disputed authority. Codes follow the
+ * opaque publicId.secret discipline: throttled per publicId, digest-compared, one deliberate
+ * answer.
  */
 @Service
 @RequiredArgsConstructor
@@ -179,42 +181,61 @@ public class ProfileManagerAdministrationService {
     }
 
     var now = clock.instant();
-    if (!stillProposable(invitation)) {
-      mutationTransactions.write(
-          () -> {
-            lockProfile(
-                invitation.getProfileId(), ManagerRejections.ManagerInvitationNotFound::new);
-            return invitationRepository.tryInvalidatePending(
-                invitation.getId(), INVITER_LEFT_REASON, now);
-          },
-          _ -> Optional.empty());
-      return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
-    }
+    Outcome<Optional<ProfileManagerInvitation>, ManagerRejections.Accept> attempt =
+        mutationTransactions.write(
+            () -> {
+              lockAcceptanceProfiles(invitation);
+              if (!stillProposable(invitation)) {
+                invitationRepository.tryInvalidatePending(
+                    invitation.getId(), INVITER_LEFT_REASON, now);
+                return Optional.empty();
+              }
 
-    return mutationTransactions.write(
-        () -> {
-          lockProfile(invitation.getProfileId(), ManagerRejections.ManagerInvitationNotFound::new);
-          if (!invitationRepository.tryAcceptPending(invitation.getId(), now)) {
-            throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
-          }
+              if (!invitationRepository.tryAcceptPending(invitation.getId(), now)) {
+                throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
+              }
 
-          if (!profileManagerRepository.tryGrantDirectManagement(
-              identity.accountId(), invitation.getProfileId())) {
-            throw new MutationRejection(new ManagerRejections.AlreadyManager());
-          }
+              if (!profileManagerRepository.tryGrantDirectManagement(
+                  identity.accountId(), invitation.getProfileId())) {
+                throw new MutationRejection(new ManagerRejections.AlreadyManager());
+              }
 
-          audit(
-              identity,
-              SecurityAuditEntry.builder()
-                  .operation("acceptManagerInvitation")
-                  .resource(RESOURCE_PROFILE_ID, invitation.getProfileId())
-                  .resource(RESOURCE_ACCOUNT_ID, identity.accountId()));
-          return invitationRepository.findById(invitation.getId()).orElseThrow();
-        },
-        constraint ->
-            CHK_RESTRICTED_AUTHORITY.equals(constraint)
-                ? Optional.of(new ManagerRejections.RecipientNotEligible())
-                : Optional.empty());
+              audit(
+                  identity,
+                  SecurityAuditEntry.builder()
+                      .operation("acceptManagerInvitation")
+                      .resource(RESOURCE_PROFILE_ID, invitation.getProfileId())
+                      .resource(RESOURCE_ACCOUNT_ID, identity.accountId()));
+              return invitationRepository.findById(invitation.getId());
+            },
+            constraint ->
+                CHK_RESTRICTED_AUTHORITY.equals(constraint)
+                    ? Optional.of(new ManagerRejections.RecipientNotEligible())
+                    : Optional.empty());
+    return attempt.fold(
+        accepted ->
+            accepted
+                .<Outcome<ProfileManagerInvitation, ManagerRejections.Accept>>map(Outcome::accepted)
+                .orElseGet(
+                    () -> Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound())),
+        Outcome::rejected);
+  }
+
+  private void lockAcceptanceProfiles(ProfileManagerInvitation invitation) {
+    var invitationProfileId = invitation.getProfileId();
+    var inviterProfileId =
+        Optional.ofNullable(invitation.getInviterAccountId())
+            .flatMap(userAccountRepository::findById)
+            .map(UserAccount::getPersonalProfileId);
+    var profileIds =
+        inviterProfileId
+            .map(profileId -> List.of(invitationProfileId, profileId))
+            .orElseGet(() -> List.of(invitationProfileId));
+    profileIds.stream()
+        .distinct()
+        .sorted()
+        .forEach(
+            profileId -> lockProfile(profileId, ManagerRejections.ManagerInvitationNotFound::new));
   }
 
   public Outcome<ProfileManagerInvitation, ManagerRejections.Decline> declineManagerInvitation(

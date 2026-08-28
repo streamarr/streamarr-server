@@ -4,6 +4,7 @@ import static com.streamarr.server.jooq.generated.enums.ProfileManagerInvitation
 import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -401,6 +402,148 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                 recipient.account().getId(), orphan.getId()))
         .isEqualTo(accepted == 1);
     assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isEqualTo((int) accepted);
+  }
+
+  @Test
+  @DisplayName("Should reject acceptance when inviter restriction commits first")
+  void shouldRejectAcceptanceWhenInviterRestrictionCommitsFirst() throws Exception {
+    var replacementManagerId = transactionTemplate.execute(_ -> secondLocalManagerId());
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var replacementManager =
+              userAccountRepository.findById(replacementManagerId).orElseThrow();
+          replacementManager.setHouseholdRole(HouseholdRole.ADMIN);
+          userAccountRepository.save(replacementManager);
+          profileManagerRepository.save(
+              ProfileManager.builder()
+                  .accountId(replacementManagerId)
+                  .profileId(owner.profile().getId())
+                  .build());
+
+          var inviter = userAccountRepository.findById(owner.account().getId()).orElseThrow();
+          inviter.setHouseholdRole(HouseholdRole.MEMBER);
+          inviter.setServerAdmin(false);
+          userAccountRepository.save(inviter);
+
+          var acceptingAccount =
+              userAccountRepository.findById(recipient.account().getId()).orElseThrow();
+          acceptingAccount.setServerAdmin(true);
+          userAccountRepository.save(acceptingAccount);
+        });
+    assertThat(
+            profileManagerRepository.existsByAccountIdAndProfileId(
+                owner.account().getId(), owner.profile().getId()))
+        .as("self-derived management should have no stored grant")
+        .isFalse();
+
+    var invitationResponse =
+        graphql(
+                authTestSupport.accountBearer(owner),
+                """
+                mutation { inviteProfileManager(input: {profileId: "%s",
+                  recipientAccountId: "%s"}) {
+                  issued { code invitation { id } } userErrors { __typename } } }
+                """
+                    .formatted(owner.profile().getId(), recipient.account().getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var issued = objectMapper.readTree(invitationResponse).at("/data/inviteProfileManager/issued");
+    var code = issued.path("code").asString();
+    var restriction = new AtomicReference<Future<JsonNode>>();
+    var acceptance = new AtomicReference<Future<JsonNode>>();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      transactionTemplate.executeWithoutResult(
+          _ -> {
+            assertThat(profileRepository.lockPolicyById(owner.profile().getId())).isPresent();
+            restriction.set(
+                executor.submit(
+                    () -> {
+                      var response =
+                          graphql(
+                                  authTestSupport.freshAccountBearer(recipient),
+                                  """
+                                  mutation { setProfileMaximumAllowedRatingAge(input: {
+                                    profileId: "%s", maximumAllowedRatingAge: 12}) {
+                                    profile { maximumAllowedRatingAge }
+                                    userErrors { __typename } } }
+                                  """
+                                      .formatted(owner.profile().getId()))
+                              .andExpect(status().isOk())
+                              .andExpect(jsonPath("$.errors").doesNotExist())
+                              .andReturn()
+                              .getResponse()
+                              .getContentAsString();
+                      return objectMapper.readTree(response);
+                    }));
+            Awaitility.await()
+                .atMost(Duration.ofSeconds(10))
+                .untilAsserted(
+                    () ->
+                        assertThat(
+                                blockedRaceRequestCount(
+                                    new GraphqlRaceLock(
+                                        RaceLockTarget.PROFILE, owner.profile().getId())))
+                            .isOne());
+
+            acceptance.set(
+                executor.submit(
+                    () -> {
+                      var response =
+                          graphql(
+                                  authTestSupport.accountBearer(recipient),
+                                  """
+                                  mutation { acceptManagerInvitation(input: {code: "%s"}) {
+                                    invitation { status } userErrors { __typename } } }
+                                  """
+                                      .formatted(code))
+                              .andExpect(status().isOk())
+                              .andExpect(jsonPath("$.errors").doesNotExist())
+                              .andReturn()
+                              .getResponse()
+                              .getContentAsString();
+                      return objectMapper.readTree(response);
+                    }));
+            Awaitility.await()
+                .atMost(Duration.ofSeconds(10))
+                .untilAsserted(
+                    () ->
+                        assertThat(
+                                blockedRaceRequestCount(
+                                    new GraphqlRaceLock(
+                                        RaceLockTarget.PROFILE, owner.profile().getId())))
+                            .isEqualTo(2));
+          });
+    }
+
+    var restrictionOutcome = restriction.get().get(30, TimeUnit.SECONDS);
+    var acceptanceOutcome = acceptance.get().get(30, TimeUnit.SECONDS);
+    assertThat(
+            restrictionOutcome
+                .at("/data/setProfileMaximumAllowedRatingAge/profile/maximumAllowedRatingAge")
+                .asInt())
+        .isEqualTo(12);
+    assertAll(
+        () ->
+            assertThat(
+                    acceptanceOutcome
+                        .at("/data/acceptManagerInvitation/userErrors/0/__typename")
+                        .asString())
+                .isEqualTo("ManagerInvitationNotFoundError"),
+        () ->
+            assertThat(
+                    acceptanceOutcome
+                        .at("/data/acceptManagerInvitation/invitation/status")
+                        .asString())
+                .isEmpty(),
+        () ->
+            assertThat(
+                    profileManagerRepository.existsByAccountIdAndProfileId(
+                        recipient.account().getId(), owner.profile().getId()))
+                .isFalse());
   }
 
   @Test
