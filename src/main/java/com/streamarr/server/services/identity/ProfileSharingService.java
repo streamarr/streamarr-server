@@ -70,7 +70,7 @@ public class ProfileSharingService {
       AuthenticatedIdentity identity, UUID profileId, UUID householdId) {
     return mutationTransactions.write(
         () -> {
-          if (profileRepository.findById(profileId).isEmpty()) {
+          if (!profileRepository.lockById(profileId)) {
             throw new MutationRejection(new ShareRejections.ProfileNotFound());
           }
 

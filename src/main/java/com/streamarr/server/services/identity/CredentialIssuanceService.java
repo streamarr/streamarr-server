@@ -182,24 +182,21 @@ public class CredentialIssuanceService {
       AuthenticatedIdentity identity, IssueInvitationCommand command, Household household) {
     var recipientEmail = command.recipientEmail();
     var mode = modeFor(command);
-    var profile =
-        mode == AccountInvitationMode.CREATE
-            ? null
-            : profileRepository.findById(command.profileId()).orElseThrow();
-    var profileName = profile == null ? command.profileName().strip() : profile.getName();
-    var profileKind =
-        profile == null
-            ? Objects.requireNonNullElse(command.profileKind(), ProfileKind.ADULT)
-            : profile.getKind();
     var issued = opaqueCodes.issue();
     return mutationTransactions.write(
         () -> {
           invitationRepository.lockInvitationIssuanceForRecipientEmail(recipientEmail);
           requireIssuerStillAllowed(identity);
+          var profile = lockConnectProfile(mode, command);
           if (userAccountRepository.findByEmailIgnoreCase(recipientEmail).isPresent()) {
             throw new MutationRejection(new CredentialRejections.EmailAlreadyUsed());
           }
 
+          var profileName = profile == null ? command.profileName().strip() : profile.getName();
+          var profileKind =
+              profile == null
+                  ? Objects.requireNonNullElse(command.profileKind(), ProfileKind.ADULT)
+                  : profile.getKind();
           var now = clock.instant();
           invitationRepository.expirePendingInvitationsForRecipientEmail(recipientEmail, now);
           invitationRepository.invalidatePendingInvitationsForRecipientEmail(
@@ -229,6 +226,23 @@ public class CredentialIssuanceService {
           return new IssuedInvitation(invitation, issued.code());
         },
         _ -> Optional.empty());
+  }
+
+  private Profile lockConnectProfile(AccountInvitationMode mode, IssueInvitationCommand command) {
+    if (mode == AccountInvitationMode.CREATE) {
+      return null;
+    }
+
+    if (!profileRepository.lockById(command.profileId())) {
+      throw new MutationRejection(new CredentialRejections.ConnectProfileNotFound());
+    }
+
+    var rejection = connectRejection(mode, command);
+    if (rejection.isPresent()) {
+      throw new MutationRejection(rejection.get());
+    }
+
+    return profileRepository.findById(command.profileId()).orElseThrow();
   }
 
   private static HouseholdRole invitedRole(Profile profile, HouseholdRole requestedRole) {

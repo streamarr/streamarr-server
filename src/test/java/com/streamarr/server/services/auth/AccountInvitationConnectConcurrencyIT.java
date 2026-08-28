@@ -1,5 +1,7 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.support.OutcomeTestSupport.accepted;
+import static com.streamarr.server.support.OutcomeTestSupport.rejectionOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -23,13 +25,18 @@ import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitat
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptedInvitation;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
+import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.identity.ProfileSharingService;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.support.AuthTestSupport;
 import java.sql.Connection;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -123,6 +130,34 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject CONNECT issuance when the Profile is connected while issuance waits")
+  void shouldRejectConnectIssuanceWhenProfileIsConnectedWhileIssuanceWaits() throws Exception {
+    var orphan = orphanAtHome();
+    var acceptedCode = pendingConnectInvitation(orphan, FIRST_RIVAL_EMAIL);
+
+    try (var issuanceLock = holdInvitationIssuanceLock(SECOND_RIVAL_EMAIL);
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var issuance =
+          executor.submit(
+              () ->
+                  credentialIssuanceService.issueAccountInvitation(
+                      accountIdentity(sourceAdmin),
+                      connectInvitationCommand(orphan, SECOND_RIVAL_EMAIL)));
+      var blockerPid = backendPid(issuanceLock);
+      await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) == 1);
+
+      try {
+        invitationService.accept(acceptCommand(acceptedCode));
+      } finally {
+        issuanceLock.rollback();
+      }
+
+      assertThat(rejectionOf(issuance.get(15, TimeUnit.SECONDS)))
+          .isInstanceOf(CredentialRejections.ProfileAlreadyLinked.class);
+    }
+  }
+
+  @Test
   @DisplayName("Should end a share when it activates concurrently with CONNECT acceptance")
   void shouldEndShareWhenItActivatesConcurrentlyWithConnectAcceptance() throws Exception {
     targetAdmin = authTestSupport.createIdentity();
@@ -167,6 +202,48 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
 
     assertThat(shareRepository.findById(pending.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileShareStatus.ENDED);
+  }
+
+  @Test
+  @DisplayName("Should invalidate a share offered before the Profile is connected")
+  void shouldInvalidateShareOfferedBeforeProfileIsConnected() throws Exception {
+    targetAdmin = authTestSupport.createIdentity();
+    var orphan = orphanAtHome();
+    var targetHouseholdId = targetAdmin.household().getId();
+    var code = pendingConnectInvitation(orphan, SHARE_RACE_EMAIL);
+    installShareInsertBarrier(orphan.getId(), targetHouseholdId);
+
+    try (var insertBarrier = holdShareInsertBarrier();
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var offer =
+          executor.submit(
+              () ->
+                  profileSharingService.offerProfileShare(
+                      accountIdentity(sourceAdmin), orphan.getId(), targetHouseholdId));
+      var blockerPid = backendPid(insertBarrier);
+      await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) == 1);
+
+      var acceptance = executor.submit(() -> invitationService.accept(acceptCommand(code)));
+      try {
+        await()
+            .atMost(Duration.ofSeconds(5))
+            .until(() -> acceptance.isDone() || blockedConnectionCount(blockerPid) == 2);
+      } finally {
+        insertBarrier.rollback();
+      }
+
+      accepted(offer.get(15, TimeUnit.SECONDS));
+      assertThat(acceptance.get(15, TimeUnit.SECONDS)).isNotNull();
+    } finally {
+      removeShareInsertBarrier();
+    }
+
+    assertThat(
+            profileSharingService
+                .pendingShareOffers(
+                    accountIdentity(targetAdmin), targetHouseholdId, paginationOptions())
+                .items())
+        .isEmpty();
   }
 
   @Test
@@ -266,6 +343,101 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
                     .secretDigest(issued.digest())
                     .build()));
     return issued.code();
+  }
+
+  private IssueInvitationCommand connectInvitationCommand(Profile profile, String recipientEmail) {
+    return IssueInvitationCommand.builder()
+        .recipientEmail(recipientEmail)
+        .householdId(sourceAdmin.household().getId())
+        .householdRole(HouseholdRole.MEMBER)
+        .mode(AccountInvitationMode.CONNECT)
+        .profileId(profile.getId())
+        .build();
+  }
+
+  private Connection holdInvitationIssuanceLock(String recipientEmail) throws Exception {
+    var connection = dataSource.getConnection();
+    connection.setAutoCommit(false);
+    try (var statement =
+        connection.prepareStatement(
+            """
+            SELECT pg_advisory_xact_lock(
+                hashtextextended('account-invitation:' || lower(?), 0))
+            """)) {
+      statement.setString(1, recipientEmail);
+      statement.executeQuery().close();
+    } catch (Exception failure) {
+      connection.close();
+      throw failure;
+    }
+
+    return connection;
+  }
+
+  private void installShareInsertBarrier(UUID profileId, UUID householdId) throws Exception {
+    try (var connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute(
+          """
+          CREATE FUNCTION block_connect_share_offer_insert()
+              RETURNS TRIGGER
+              LANGUAGE plpgsql
+          AS $$
+          BEGIN
+              PERFORM pg_advisory_xact_lock(
+                  hashtextextended('test-connect-share-offer-insert', 0));
+              RETURN NEW;
+          END;
+          $$
+          """);
+      statement.execute(
+          """
+          CREATE TRIGGER block_connect_share_offer_insert
+          BEFORE INSERT ON profile_household_share
+          FOR EACH ROW
+          WHEN (NEW.profile_id = '%s'::uuid AND NEW.household_id = '%s'::uuid)
+          EXECUTE FUNCTION block_connect_share_offer_insert()
+          """
+              .formatted(profileId, householdId));
+    }
+  }
+
+  private Connection holdShareInsertBarrier() throws Exception {
+    var connection = dataSource.getConnection();
+    connection.setAutoCommit(false);
+    try (var statement = connection.createStatement()) {
+      statement
+          .executeQuery(
+              """
+              SELECT pg_advisory_xact_lock(
+                  hashtextextended('test-connect-share-offer-insert', 0))
+              """)
+          .close();
+    } catch (Exception failure) {
+      connection.close();
+      throw failure;
+    }
+
+    return connection;
+  }
+
+  private void removeShareInsertBarrier() throws Exception {
+    try (var connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute(
+          "DROP TRIGGER IF EXISTS block_connect_share_offer_insert ON profile_household_share");
+      statement.execute("DROP FUNCTION IF EXISTS block_connect_share_offer_insert()");
+    }
+  }
+
+  private static KeysetPaginationOptions paginationOptions() {
+    return new KeysetPaginationOptions(
+        null,
+        PaginationOptions.builder()
+            .paginationDirection(PaginationDirection.FORWARD)
+            .cursor(Optional.empty())
+            .limit(100)
+            .build());
   }
 
   private static AcceptInvitationCommand acceptCommand(String code) {
