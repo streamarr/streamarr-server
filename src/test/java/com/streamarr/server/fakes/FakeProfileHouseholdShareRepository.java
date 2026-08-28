@@ -250,6 +250,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
             share -> {
               share.setStatus(ProfileShareStatus.EXPIRED);
               share.setDecidedAt(now);
+              AuditFieldSetter.setLastModifiedOn(share, now);
             });
     var pending =
         database.values().stream()

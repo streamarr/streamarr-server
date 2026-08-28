@@ -74,6 +74,7 @@ class FakeProfileHouseholdShareRepositoryTest {
             offer -> {
               assertThat(offer.getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
               assertThat(offer.getDecidedAt()).isEqualTo(now);
+              assertThat(offer.getLastModifiedOn()).isEqualTo(now);
               assertThat(offer.getInvalidationReason()).isEmpty();
             });
   }
