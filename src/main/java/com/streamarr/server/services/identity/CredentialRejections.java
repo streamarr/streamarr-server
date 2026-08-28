@@ -19,7 +19,13 @@ public final class CredentialRejections {
           RestrictedHouseholdAdmin,
           LocalManagerRequired,
           ProfileManagerNotEligible,
-          MaximumAllowedRatingAgeInvalid {}
+          MaximumAllowedRatingAgeInvalid,
+          LinkProfileRequired,
+          LinkProfileNotFound,
+          ProfileAlreadyLinked,
+          ProfileNotInHousehold,
+          ReofferHouseholdNotFound,
+          ReofferHouseholdNotShared {}
 
   public sealed interface Cancel permits InvitationNotPending {}
 
@@ -53,6 +59,22 @@ public final class CredentialRejections {
   public record ProfileManagerNotEligible() implements Issue {}
 
   public record MaximumAllowedRatingAgeInvalid() implements Issue {}
+
+  /** A LINK invitation names the existing Profile it assigns. */
+  public record LinkProfileRequired() implements Issue {}
+
+  public record LinkProfileNotFound() implements Issue {}
+
+  /** A linked Profile already belongs to a person; it cannot be linked again. */
+  public record ProfileAlreadyLinked() implements Issue {}
+
+  /** LINK joins the recipient to the Profile's own Household. */
+  public record ProfileNotInHousehold() implements Issue {}
+
+  public record ReofferHouseholdNotFound() implements Issue {}
+
+  /** Only a Household the Profile actively visits today can be offered it afresh. */
+  public record ReofferHouseholdNotShared() implements Issue {}
 
   public record InvitationNotPending() implements Cancel {}
 

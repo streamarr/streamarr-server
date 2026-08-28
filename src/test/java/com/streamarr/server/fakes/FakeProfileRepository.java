@@ -31,6 +31,16 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   }
 
   @Override
+  public boolean lockByShareId(UUID shareId) {
+    return shares.findById(shareId).map(share -> existsById(share.getProfileId())).orElse(false);
+  }
+
+  @Override
+  public boolean lockSharedByShareId(UUID shareId) {
+    return lockByShareId(shareId);
+  }
+
+  @Override
   public Optional<ProfilePolicySnapshot> lockPolicyById(UUID profileId) {
     return findById(profileId)
         .map(
@@ -49,6 +59,22 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   @Override
   public boolean lockById(UUID profileId) {
     return findById(profileId).isPresent();
+  }
+
+  @Override
+  public void lockProfileAvailabilityAcrossHouseholds(UUID profileId) {
+    // Row-lock ordering is a PostgreSQL concern and has no in-memory fake equivalent.
+  }
+
+  @Override
+  public void lockProfileTransitionAcrossHouseholds(
+      UUID profileId, List<UUID> additionalHouseholdIds) {
+    // Row-lock ordering is a PostgreSQL concern and has no in-memory fake equivalent.
+  }
+
+  @Override
+  public void lockProfileDeletionAcrossHouseholds(UUID profileId) {
+    // Row-lock ordering is a PostgreSQL concern and has no in-memory fake equivalent.
   }
 
   /** Marks the Profile as some Account's Personal Profile for policy snapshots. */
@@ -110,11 +136,6 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
         .filter(profile -> available.contains(profile.getId()))
         .sorted(Comparator.comparing(Profile::getName).thenComparing(Profile::getId))
         .toList();
-  }
-
-  @Override
-  public List<Profile> lockAndFindAvailableInHousehold(UUID householdId) {
-    return findAvailableInHousehold(householdId);
   }
 
   @Override

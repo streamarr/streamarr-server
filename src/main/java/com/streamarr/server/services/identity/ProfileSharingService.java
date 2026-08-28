@@ -70,7 +70,7 @@ public class ProfileSharingService {
       AuthenticatedIdentity identity, UUID profileId, UUID householdId) {
     return mutationTransactions.write(
         () -> {
-          if (profileRepository.findById(profileId).isEmpty()) {
+          if (!profileRepository.lockById(profileId)) {
             throw new MutationRejection(new ShareRejections.ProfileNotFound());
           }
 
@@ -260,6 +260,10 @@ public class ProfileSharingService {
 
   private ProfileHouseholdShare acceptInTransaction(AuthenticatedIdentity identity, UUID shareId) {
     var offer = requireShare(shareId);
+    if (!profileRepository.lockByShareId(shareId)) {
+      throw new MutationRejection(new ShareRejections.ShareNotPending());
+    }
+
     decideRefusal(identity, new Intent.AcceptProfileShare(shareId), shareId)
         .ifPresent(
             rejection -> {
@@ -326,6 +330,7 @@ public class ProfileSharingService {
     return mutationTransactions.write(
         () -> {
           requireShare(shareId);
+          profileRepository.lockSharedByShareId(shareId);
           authorize.run();
           var now = clock.instant();
           if (!shareRepository.tryEndActive(shareId, now)) {

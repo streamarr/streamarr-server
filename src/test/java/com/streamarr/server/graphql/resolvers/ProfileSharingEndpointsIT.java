@@ -2,6 +2,8 @@ package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
+import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.contains;
@@ -24,6 +26,7 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -44,6 +47,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -70,6 +74,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
   @Autowired private DataSource dataSource;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private AuthTestSupport.TestIdentity owner;
   private AuthTestSupport.TestIdentity host;
@@ -466,8 +471,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     var bearer = authTestSupport.accountBearer(host);
 
     var responses =
-        raceWhileShareLocked(
-            shareId,
+        raceWhileProfileLocked(
+            orphan.getId(),
             () ->
                 graphql(
                         bearer,
@@ -899,6 +904,32 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
       } finally {
         releaseRow.countDown();
       }
+    }
+  }
+
+  private List<String> raceWhileProfileLocked(
+      UUID profileId, Callable<String> firstMutation, Callable<String> secondMutation)
+      throws Exception {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var profileLock =
+            lockRow(
+                RowLockTarget.builder()
+                    .dataSource(dataSource)
+                    .table("profile")
+                    .rowId(profileId)
+                    .build())) {
+      var first = executor.submit(firstMutation);
+      var second = executor.submit(secondMutation);
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(
+              () ->
+                  assertThat(waitersBehind(jdbcTemplate, profileLock.backendPid(), "%"))
+                      .as("both mutations should wait on the Profile coordination lock")
+                      .isEqualTo(2));
+
+      profileLock.release();
+      return List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS));
     }
   }
 

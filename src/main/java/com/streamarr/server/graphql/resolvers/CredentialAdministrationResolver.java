@@ -14,17 +14,21 @@ import com.streamarr.server.graphql.dto.AccountInvitationDetails;
 import com.streamarr.server.graphql.dto.IssuedAccountInvitation;
 import com.streamarr.server.graphql.dto.IssuedPasswordReset;
 import com.streamarr.server.graphql.inputs.CancelAccountInvitationInput;
-import com.streamarr.server.graphql.inputs.IssueAccountInvitationInput;
+import com.streamarr.server.graphql.inputs.IssueAccountInvitationForExistingProfileInput;
+import com.streamarr.server.graphql.inputs.IssueAccountInvitationWithNewProfileInput;
 import com.streamarr.server.graphql.inputs.IssuePasswordResetInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.credentials.CancelAccountInvitationPayload;
 import com.streamarr.server.graphql.mutation.credentials.CredentialErrors;
-import com.streamarr.server.graphql.mutation.credentials.IssueAccountInvitationPayload;
+import com.streamarr.server.graphql.mutation.credentials.IssueAccountInvitationForExistingProfilePayload;
+import com.streamarr.server.graphql.mutation.credentials.IssueAccountInvitationWithNewProfilePayload;
 import com.streamarr.server.graphql.mutation.credentials.IssuePasswordResetPayload;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.AdministrationQueryService;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
-import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
+import com.streamarr.server.services.identity.CredentialIssuanceService.AccountInvitationProfilePreview;
+import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationForProfileCommand;
+import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationWithNewProfileCommand;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
@@ -52,6 +56,15 @@ public class CredentialAdministrationResolver {
   private final Clock clock;
 
   @DgsQuery
+  public AccountInvitationProfilePreview accountInvitationProfilePreview(
+      @InputArgument String profileId) {
+    return credentialIssuanceService
+        .accountInvitationProfilePreview(
+            authorizationService.currentIdentity(), Ids.parseUuid(profileId))
+        .orElse(null);
+  }
+
+  @DgsQuery
   public Connection<AccountInvitationDetails> accountInvitations(DataFetchingEnvironment dfe) {
     var options = mediaOptions(dfe);
     var page =
@@ -61,13 +74,35 @@ public class CredentialAdministrationResolver {
   }
 
   @DgsMutation
-  public IssueAccountInvitationPayload issueAccountInvitation(
-      @InputArgument IssueAccountInvitationInput input) {
+  public IssueAccountInvitationForExistingProfilePayload issueAccountInvitationForExistingProfile(
+      @InputArgument IssueAccountInvitationForExistingProfileInput input) {
     return MutationPayloads.payload(
         credentialIssuanceService
-            .issueAccountInvitation(
+            .issueAccountInvitationForProfile(
                 authorizationService.currentIdentity(),
-                IssueInvitationCommand.builder()
+                IssueInvitationForProfileCommand.builder()
+                    .recipientEmail(input.recipientEmail())
+                    .profileId(Ids.parseUuid(input.profileId()))
+                    .householdRole(input.householdRole())
+                    .reofferHouseholdIds(
+                        input.reofferHouseholdIds().stream().map(Ids::parseUuid).toList())
+                    .build())
+            .map(
+                issued ->
+                    new IssuedAccountInvitation(
+                        invitationDetails(issued.invitation()), issued.code())),
+        CredentialErrors::toIssueError,
+        IssueAccountInvitationForExistingProfilePayload::new);
+  }
+
+  @DgsMutation
+  public IssueAccountInvitationWithNewProfilePayload issueAccountInvitationWithNewProfile(
+      @InputArgument IssueAccountInvitationWithNewProfileInput input) {
+    return MutationPayloads.payload(
+        credentialIssuanceService
+            .issueAccountInvitationWithNewProfile(
+                authorizationService.currentIdentity(),
+                IssueInvitationWithNewProfileCommand.builder()
                     .recipientEmail(input.recipientEmail())
                     .householdId(Ids.parseUuid(input.householdId()))
                     .householdRole(input.householdRole())
@@ -84,7 +119,7 @@ public class CredentialAdministrationResolver {
                     new IssuedAccountInvitation(
                         invitationDetails(issued.invitation()), issued.code())),
         CredentialErrors::toIssueError,
-        IssueAccountInvitationPayload::new);
+        IssueAccountInvitationWithNewProfilePayload::new);
   }
 
   @DgsMutation

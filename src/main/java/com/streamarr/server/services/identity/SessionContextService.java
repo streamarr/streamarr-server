@@ -39,13 +39,18 @@ public class SessionContextService {
 
   /**
    * Records an authorized selection on the live session (the caller has already decided). The
-   * Profile's active share is pinned first, in the order share termination takes (share, then
-   * sessions), so a concurrent unshare either refuses this selection or clears it — never leaves a
-   * session selecting an ended Profile.
+   * Profile and every Household where it is available are locked before the active share, matching
+   * LINK acceptance's lock order. The share still precedes sessions, so a concurrent unshare either
+   * refuses this selection or clears it — never leaves a session selecting an ended Profile.
    */
   @Transactional
   public TokenContext recordProfileSelection(AuthenticatedIdentity identity, UUID profileId) {
     var account = liveSessions.loadAccount(identity.accountId());
+    if (!profileRepository.lockById(profileId)) {
+      throw new ProfileAccessDeniedException();
+    }
+
+    profileRepository.lockProfileAvailabilityAcrossHouseholds(profileId);
     if (!shareRepository.lockActiveShare(profileId, identity.contextHouseholdId())) {
       throw new ProfileAccessDeniedException();
     }
@@ -55,8 +60,7 @@ public class SessionContextService {
       throw new ProfileAccessDeniedException();
     }
 
-    var available =
-        profileRepository.lockAndFindAvailableInHousehold(identity.contextHouseholdId());
+    var available = profileRepository.findAvailableInHousehold(identity.contextHouseholdId());
     if (available.stream().noneMatch(profile -> profile.getId().equals(profileId))) {
       throw new ProfileAccessDeniedException();
     }

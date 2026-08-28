@@ -5,6 +5,7 @@ package com.streamarr.server.jooq.generated;
 
 
 import com.streamarr.server.jooq.generated.tables.AccountInvitation;
+import com.streamarr.server.jooq.generated.tables.AccountInvitationReoffer;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
@@ -45,6 +46,7 @@ import com.streamarr.server.jooq.generated.tables.SessionProgress;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
 import com.streamarr.server.jooq.generated.tables.records.AccountInvitationRecord;
+import com.streamarr.server.jooq.generated.tables.records.AccountInvitationReofferRecord;
 import com.streamarr.server.jooq.generated.tables.records.AuthSessionRecord;
 import com.streamarr.server.jooq.generated.tables.records.BaseCollectableRecord;
 import com.streamarr.server.jooq.generated.tables.records.CompanyRecord;
@@ -106,6 +108,8 @@ public class Keys {
 
     public static final UniqueKey<AccountInvitationRecord> ACCOUNT_INVITATION_PKEY = Internal.createUniqueKey(AccountInvitation.ACCOUNT_INVITATION, DSL.name("account_invitation_pkey"), new TableField[] { AccountInvitation.ACCOUNT_INVITATION.ID }, true);
     public static final UniqueKey<AccountInvitationRecord> UQ_ACCOUNT_INVITATION_PUBLIC_ID = Internal.createUniqueKey(AccountInvitation.ACCOUNT_INVITATION, DSL.name("uq_account_invitation_public_id"), new TableField[] { AccountInvitation.ACCOUNT_INVITATION.PUBLIC_ID }, true);
+    public static final UniqueKey<AccountInvitationReofferRecord> ACCOUNT_INVITATION_REOFFER_PKEY = Internal.createUniqueKey(AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER, DSL.name("account_invitation_reoffer_pkey"), new TableField[] { AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER.ID }, true);
+    public static final UniqueKey<AccountInvitationReofferRecord> UQ_ACCOUNT_INVITATION_REOFFER_HOUSEHOLD = Internal.createUniqueKey(AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER, DSL.name("uq_account_invitation_reoffer_household"), new TableField[] { AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER.INVITATION_ID, AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER.HOUSEHOLD_ID }, true);
     public static final UniqueKey<AuthSessionRecord> AUTH_SESSION_PKEY = Internal.createUniqueKey(AuthSession.AUTH_SESSION, DSL.name("auth_session_pkey"), new TableField[] { AuthSession.AUTH_SESSION.ID }, true);
     public static final UniqueKey<BaseCollectableRecord> BASE_COLLECTABLE_PKEY = Internal.createUniqueKey(BaseCollectable.BASE_COLLECTABLE, DSL.name("base_collectable_pkey"), new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true);
     public static final UniqueKey<CompanyRecord> COMPANY_PKEY = Internal.createUniqueKey(Company.COMPANY, DSL.name("company_pkey"), new TableField[] { Company.COMPANY.ID }, true);
@@ -169,6 +173,9 @@ public class Keys {
     public static final ForeignKey<AccountInvitationRecord, HouseholdRecord> ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_HOUSEHOLD = Internal.createForeignKey(AccountInvitation.ACCOUNT_INVITATION, DSL.name("fk_account_invitation_household"), new TableField[] { AccountInvitation.ACCOUNT_INVITATION.HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<AccountInvitationRecord, UserAccountRecord> ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_ISSUER = Internal.createForeignKey(AccountInvitation.ACCOUNT_INVITATION, DSL.name("fk_account_invitation_issuer"), new TableField[] { AccountInvitation.ACCOUNT_INVITATION.ISSUER_ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<AccountInvitationRecord, UserAccountRecord> ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_LOCAL_MANAGER = Internal.createForeignKey(AccountInvitation.ACCOUNT_INVITATION, DSL.name("fk_account_invitation_local_manager"), new TableField[] { AccountInvitation.ACCOUNT_INVITATION.LOCAL_MANAGER_ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<AccountInvitationRecord, ProfileRecord> ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_PROFILE = Internal.createForeignKey(AccountInvitation.ACCOUNT_INVITATION, DSL.name("fk_account_invitation_profile"), new TableField[] { AccountInvitation.ACCOUNT_INVITATION.PROFILE_ID }, Keys.PROFILE_PKEY, new TableField[] { Profile.PROFILE.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<AccountInvitationReofferRecord, HouseholdRecord> ACCOUNT_INVITATION_REOFFER__FK_ACCOUNT_INVITATION_REOFFER_HOUSEHOLD = Internal.createForeignKey(AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER, DSL.name("fk_account_invitation_reoffer_household"), new TableField[] { AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER.HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<AccountInvitationReofferRecord, AccountInvitationRecord> ACCOUNT_INVITATION_REOFFER__FK_ACCOUNT_INVITATION_REOFFER_INVITATION = Internal.createForeignKey(AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER, DSL.name("fk_account_invitation_reoffer_invitation"), new TableField[] { AccountInvitationReoffer.ACCOUNT_INVITATION_REOFFER.INVITATION_ID }, Keys.ACCOUNT_INVITATION_PKEY, new TableField[] { AccountInvitation.ACCOUNT_INVITATION.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<AuthSessionRecord, UserAccountRecord> AUTH_SESSION__FK_AUTH_SESSION_ACCOUNT = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_account"), new TableField[] { AuthSession.AUTH_SESSION.ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<AuthSessionRecord, ProfileRecord> AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_active_profile"), new TableField[] { AuthSession.AUTH_SESSION.SELECTED_PROFILE_ID }, Keys.PROFILE_PKEY, new TableField[] { Profile.PROFILE.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<AuthSessionRecord, HouseholdRecord> AUTH_SESSION__FK_AUTH_SESSION_CONTEXT_HOUSEHOLD = Internal.createForeignKey(AuthSession.AUTH_SESSION, DSL.name("fk_auth_session_context_household"), new TableField[] { AuthSession.AUTH_SESSION.CONTEXT_HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);

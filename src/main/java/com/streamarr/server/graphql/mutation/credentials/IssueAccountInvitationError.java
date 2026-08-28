@@ -17,4 +17,10 @@ public sealed interface IssueAccountInvitationError extends MutationError
         RestrictedHouseholdAdminError,
         EligibleProfileManagerRequiredError,
         MaximumAllowedRatingAgeInvalidError,
-        ProfileManagerNotEligibleError {}
+        ProfileManagerNotEligibleError,
+        LinkProfileRequiredError,
+        LinkProfileNotFoundError,
+        ProfileAlreadyLinkedError,
+        ProfileNotInHouseholdError,
+        ReofferHouseholdNotFoundError,
+        ReofferHouseholdNotSharedError {}

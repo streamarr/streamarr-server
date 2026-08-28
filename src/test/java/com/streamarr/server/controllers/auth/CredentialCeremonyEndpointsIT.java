@@ -11,15 +11,27 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
+import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.streaming.SessionProgress;
+import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.fixtures.HouseholdFixture;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
@@ -28,11 +40,16 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.repositories.streaming.SessionProgressRepository;
+import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import jakarta.persistence.EntityManagerFactory;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -53,6 +70,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -76,6 +94,11 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
+  @Autowired private LibraryRepository libraryRepository;
+  @Autowired private MovieRepository movieRepository;
+  @Autowired private SessionProgressRepository sessionProgressRepository;
+  @Autowired private WatchHistoryRepository watchHistoryRepository;
+  @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
@@ -404,6 +427,45 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should preserve a deleted Profile snapshot when LINK invitations are listed")
+  void shouldPreserveDeletedProfileSnapshotWhenLinkInvitationsAreListed() throws Exception {
+    var orphan = restrictedOrphan();
+    issueLinkInvitation(
+        LinkInvitationSpec.builder()
+            .profileId(orphan.getId())
+            .profileName(orphan.getName())
+            .profileKind(orphan.getKind())
+            .maximumAllowedRatingAge(orphan.getMaximumAllowedRatingAge())
+            .reofferHouseholdIds(List.of())
+            .build());
+    transactionTemplate.executeWithoutResult(_ -> profileRepository.deleteById(orphan.getId()));
+    var profilePath = "$.data.accountInvitations.edges[0].node.profile";
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            query { accountInvitations(first: 10) { edges { node {
+              status
+              profile {
+                __typename
+                ... on ExistingAccountInvitationProfile {
+                  id name kind maximumAllowedRatingAge deleted
+                }
+              }
+            } } } }
+            """)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.accountInvitations.edges[0].node.status").value("INVALIDATED"))
+        .andExpect(jsonPath(profilePath + ".__typename").value("ExistingAccountInvitationProfile"))
+        .andExpect(jsonPath(profilePath + ".id").doesNotExist())
+        .andExpect(jsonPath(profilePath + ".name").value("Grandpa Joe"))
+        .andExpect(jsonPath(profilePath + ".kind").value("KID"))
+        .andExpect(jsonPath(profilePath + ".maximumAllowedRatingAge").value(10))
+        .andExpect(jsonPath(profilePath + ".deleted").value(true));
+  }
+
+  @Test
   @DisplayName("Should project a stale pending invitation as expired when it is listed")
   void shouldProjectStalePendingInvitationAsExpiredWhenItIsListed() throws Exception {
     issueInvitation("expired@example.com");
@@ -453,7 +515,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
       graphql(
               authTestSupport.accountBearer(caller),
               """
-              mutation { issueAccountInvitation(input: {recipientEmail: "denied@example.com",
+              mutation { issueAccountInvitationWithNewProfile(input: {recipientEmail: "denied@example.com",
                 householdId: "%s", householdRole: MEMBER, profileName: "Denied",
                 profileKind: ADULT}) { issued { code } userErrors { __typename } } }
               """
@@ -796,10 +858,14 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
             "recipientEmail",
             "householdName",
             "householdRole",
+            "mode",
             "profileName",
             "profileKind",
             "maximumAllowedRatingAge",
-            "expiresAt");
+            "expiresAt",
+            "remainingManagers",
+            "householdsLosingProfileAccess",
+            "profileShareOfferTargets");
   }
 
   /** The 404 INVALID_CODE answer, which every miss must repeat verbatim. */
@@ -825,6 +891,283 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should link an existing Profile, end its visits, and reoffer when the invitation is accepted")
+  void shouldLinkExistingProfileEndVisitsAndReofferWhenInvitationAccepted() throws Exception {
+    var previousHost = authTestSupport.createIdentity();
+    try {
+      var orphan = orphanVisiting(previousHost.household().getId());
+      var code =
+          issueLinkInvitation(
+              LinkInvitationSpec.builder()
+                  .profileId(orphan.getId())
+                  .profileName(orphan.getName())
+                  .profileKind(orphan.getKind())
+                  .maximumAllowedRatingAge(orphan.getMaximumAllowedRatingAge())
+                  .reofferHouseholdIds(List.of(previousHost.household().getId()))
+                  .build());
+
+      mockMvc
+          .perform(
+              post("/api/auth/invitation/lookup")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content("{\"code\": \"%s\"}".formatted(code)))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.mode").value("LINK"))
+          .andExpect(jsonPath("$.profileName").value("Grandpa Joe"))
+          .andExpect(
+              jsonPath("$.remainingManagers[0]").value(serverAdmin.account().getDisplayName()))
+          .andExpect(
+              jsonPath("$.householdsLosingProfileAccess[0]")
+                  .value(previousHost.household().getName()))
+          .andExpect(
+              jsonPath("$.profileShareOfferTargets[0]").value(previousHost.household().getName()));
+
+      mockMvc
+          .perform(
+              post("/api/auth/invitation/accept")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      """
+                      {"code": "%s", "displayName": "Joe", \
+                      "password": "a strong passphrase", "cookieMode": false}
+                      """
+                          .formatted(code)))
+          .andExpect(status().isCreated())
+          .andExpect(jsonPath("$.accessToken").isNotEmpty());
+
+      var linkedAccount =
+          userAccountRepository.findByEmailIgnoreCase("invitee@example.com").orElseThrow();
+      assertThat(linkedAccount.getPersonalProfileId()).isEqualTo(orphan.getId());
+      var shares = shareRepository.findByProfileId(orphan.getId());
+      var home =
+          shares.stream()
+              .filter(share -> share.getHouseholdId().equals(serverAdmin.household().getId()))
+              .findFirst()
+              .orElseThrow();
+      assertThat(home.getStatus()).isEqualTo(ProfileShareStatus.ACTIVE);
+      assertThat(home.isStructural()).isTrue();
+      var visits =
+          shares.stream()
+              .filter(share -> share.getHouseholdId().equals(previousHost.household().getId()))
+              .toList();
+      assertThat(visits)
+          .extracting(ProfileHouseholdShare::getStatus)
+          .containsExactlyInAnyOrder(ProfileShareStatus.ENDED, ProfileShareStatus.PENDING);
+      var reoffered =
+          visits.stream()
+              .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+              .findFirst()
+              .orElseThrow();
+      assertThat(reoffered.getOfferedByAccountId()).isEqualTo(linkedAccount.getId());
+
+      // The linked Profile can never be linked again.
+      graphql(
+              authTestSupport.accountBearer(serverAdmin),
+              """
+              mutation { issueAccountInvitationForExistingProfile(input: {
+                recipientEmail: "second@example.com", householdRole: MEMBER, profileId: "%s",
+                reofferHouseholdIds: []}) {
+                issued { code } userErrors { __typename } } }
+              """
+                  .formatted(orphan.getId()))
+          .andExpect(status().isOk())
+          .andExpect(
+              jsonPath("$.data.issueAccountInvitationForExistingProfile.userErrors[0].__typename")
+                  .value("ProfileAlreadyLinkedError"));
+    } finally {
+      userAccountRepository
+          .findByEmailIgnoreCase("invitee@example.com")
+          .ifPresent(created -> authTestSupport.deleteAccount(created.getId()));
+      authTestSupport.deleteIdentity(previousHost);
+    }
+  }
+
+  @Test
+  @DisplayName("Should preserve existing Profile state when a LINK invitation is accepted")
+  void shouldPreserveExistingProfileStateWhenLinkInvitationIsAccepted() throws Exception {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var movie = movieWithFile(library);
+    var orphan = restrictedOrphan();
+    var history =
+        watchHistoryRepository.saveAndFlush(
+            WatchHistory.builder()
+                .profileId(orphan.getId())
+                .collectableId(movie.getId())
+                .watchedAt(Instant.parse("2026-08-01T12:00:00Z"))
+                .durationSeconds(7200)
+                .build());
+    var progress =
+        sessionProgressRepository.saveAndFlush(
+            SessionProgress.builder()
+                .sessionId(UUID.randomUUID())
+                .profileId(orphan.getId())
+                .mediaFileId(movie.getFiles().iterator().next().getId())
+                .positionSeconds(1800)
+                .percentComplete(25.0)
+                .durationSeconds(7200)
+                .build());
+
+    try {
+      var code =
+          issueLinkInvitation(
+              LinkInvitationSpec.builder()
+                  .profileId(orphan.getId())
+                  .profileName(orphan.getName())
+                  .profileKind(orphan.getKind())
+                  .maximumAllowedRatingAge(orphan.getMaximumAllowedRatingAge())
+                  .reofferHouseholdIds(List.of())
+                  .build());
+
+      acceptInvitation(code, "Joe");
+
+      var preserved = profileRepository.findById(orphan.getId()).orElseThrow();
+      assertThat(preserved.getName()).isEqualTo("Grandpa Joe");
+      assertThat(preserved.getPicture()).isEqualTo("profile://grandpa-joe");
+      assertThat(preserved.getPinHash()).isEqualTo("stored-pin-hash");
+      assertThat(preserved.getKind()).isEqualTo(ProfileKind.KID);
+      assertThat(preserved.getMaximumAllowedRatingAge()).isEqualTo(10);
+      assertThat(
+              profileManagerRepository.existsByAccountIdAndProfileId(
+                  serverAdmin.account().getId(), orphan.getId()))
+          .isTrue();
+      assertThat(watchHistoryRepository.findById(history.getId()))
+          .hasValueSatisfying(row -> assertThat(row.getProfileId()).isEqualTo(orphan.getId()));
+      assertThat(sessionProgressRepository.findById(progress.getId()))
+          .hasValueSatisfying(row -> assertThat(row.getProfileId()).isEqualTo(orphan.getId()));
+    } finally {
+      watchHistoryRepository.deleteById(history.getId());
+      sessionProgressRepository.deleteById(progress.getId());
+      movieRepository.deleteById(movie.getId());
+      libraryRepository.deleteById(library.getId());
+    }
+  }
+
+  /** An unlinked Profile managed by the admin, at home and actively visiting one Household. */
+  private Profile orphanVisiting(UUID visitedHouseholdId) {
+    return transactionTemplate.execute(
+        _ -> {
+          var profile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder()
+                      .householdId(serverAdmin.household().getId())
+                      .name("Grandpa Joe")
+                      .build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(serverAdmin.account().getId())
+                  .profileId(profile.getId())
+                  .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(serverAdmin.household().getId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(visitedHouseholdId)
+                  .status(ProfileShareStatus.ACTIVE)
+                  .build());
+          return profile;
+        });
+  }
+
+  private Profile restrictedOrphan() {
+    return transactionTemplate.execute(
+        _ -> {
+          var profile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.kidProfileBuilder()
+                      .householdId(serverAdmin.household().getId())
+                      .name("Grandpa Joe")
+                      .picture("profile://grandpa-joe")
+                      .pinHash("stored-pin-hash")
+                      .maximumAllowedRatingAge(10)
+                      .build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(serverAdmin.account().getId())
+                  .profileId(profile.getId())
+                  .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(serverAdmin.household().getId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .build());
+          return profile;
+        });
+  }
+
+  private Movie movieWithFile(Library library) {
+    var file =
+        MediaFile.builder()
+            .libraryId(library.getId())
+            .status(MediaFileStatus.MATCHED)
+            .filename("preserved-profile.mkv")
+            .filepathUri("file:///media/preserved-profile.mkv")
+            .build();
+    return movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("Preserved Profile")
+            .titleSort("Preserved Profile")
+            .files(Set.of(file))
+            .library(library)
+            .build());
+  }
+
+  private String issueLinkInvitation(LinkInvitationSpec invitation) throws Exception {
+    var issuedPath = "$.data.issueAccountInvitationForExistingProfile.issued";
+    var response =
+        graphql(
+                authTestSupport.accountBearer(serverAdmin),
+                """
+                mutation { issueAccountInvitationForExistingProfile(input: {
+                  recipientEmail: "invitee@example.com", householdRole: MEMBER, profileId: "%s",
+                  reofferHouseholdIds: %s}) {
+                  issued { code invitation { profile {
+                    __typename
+                    ... on ExistingAccountInvitationProfile {
+                      id name kind maximumAllowedRatingAge
+                    }
+                  } } } userErrors { __typename } } }
+                """
+                    .formatted(
+                        invitation.profileId(),
+                        objectMapper.writeValueAsString(invitation.reofferHouseholdIds())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(
+                jsonPath(issuedPath + ".invitation" + ".profile" + ".__typename")
+                    .value("ExistingAccountInvitationProfile"))
+            .andExpect(
+                jsonPath(issuedPath + ".invitation" + ".profile" + ".id")
+                    .value(invitation.profileId().toString()))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var issued =
+        objectMapper
+            .readTree(response)
+            .path("data")
+            .path("issueAccountInvitationForExistingProfile")
+            .path("issued");
+    var profile = issued.path("invitation").path("profile");
+    assertThat(profile.path("name").asString()).isEqualTo(invitation.profileName());
+    assertThat(profile.path("kind").asString()).isEqualTo(invitation.profileKind().name());
+    if (invitation.maximumAllowedRatingAge() == null) {
+      assertThat(profile.path("maximumAllowedRatingAge").isNull()).isTrue();
+    } else {
+      assertThat(profile.path("maximumAllowedRatingAge").asInt())
+          .isEqualTo(invitation.maximumAllowedRatingAge());
+    }
+
+    return issued.path("code").asString();
+  }
+
   private String issueInvitation(String email) throws Exception {
     return issueInvitation(invitationBuilder(email).build());
   }
@@ -838,14 +1181,18 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   private String issueInvitation(InvitationSpec invitation) throws Exception {
+    var issuedPath = "$.data.issueAccountInvitationWithNewProfile.issued";
     var response =
         graphql(
                 authTestSupport.accountBearer(serverAdmin),
                 """
-                mutation { issueAccountInvitation(input: {recipientEmail: "%s",
+                mutation { issueAccountInvitationWithNewProfile(input: {recipientEmail: "%s",
                   householdId: "%s", householdRole: MEMBER, profileName: "%s",
                   profileKind: %s%s}) {
-                  issued { code invitation { status } } userErrors { __typename } } }
+                  issued { code invitation { status profile {
+                    __typename
+                    ... on NewAccountInvitationProfile { name kind maximumAllowedRatingAge }
+                  } } } userErrors { __typename } } }
                 """
                     .formatted(
                         invitation.email(),
@@ -855,14 +1202,17 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                         restrictionArguments(invitation)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
-            .andExpect(jsonPath("$.data.issueAccountInvitation.issued.code").isNotEmpty())
+            .andExpect(
+                jsonPath(issuedPath + ".invitation" + ".profile" + ".__typename")
+                    .value("NewAccountInvitationProfile"))
+            .andExpect(jsonPath(issuedPath + ".code").isNotEmpty())
             .andReturn()
             .getResponse()
             .getContentAsString();
     return objectMapper
         .readTree(response)
         .path("data")
-        .path("issueAccountInvitation")
+        .path("issueAccountInvitationWithNewProfile")
         .path("issued")
         .path("code")
         .asString();
@@ -980,6 +1330,14 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
 
     return arguments.toString();
   }
+
+  @Builder
+  private record LinkInvitationSpec(
+      UUID profileId,
+      String profileName,
+      ProfileKind profileKind,
+      Integer maximumAllowedRatingAge,
+      List<UUID> reofferHouseholdIds) {}
 
   @Builder
   private record InvitationSpec(

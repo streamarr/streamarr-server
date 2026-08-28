@@ -3,7 +3,6 @@ package com.streamarr.server.graphql.dto;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
-import com.streamarr.server.domain.auth.ProfileKind;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.Builder;
@@ -19,9 +18,7 @@ public record AccountInvitationDetails(
     UUID householdId,
     String householdName,
     HouseholdRole householdRole,
-    String profileName,
-    ProfileKind profileKind,
-    Integer maximumAllowedRatingAge,
+    AccountInvitationProfile profile,
     AccountInvitationStatus status,
     String expiresAt) {
 
@@ -32,11 +29,26 @@ public record AccountInvitationDetails(
         .householdId(invitation.getHouseholdId())
         .householdName(invitation.getHouseholdName())
         .householdRole(invitation.getHouseholdRole())
-        .profileName(invitation.getProfileName())
-        .profileKind(invitation.getProfileKind())
-        .maximumAllowedRatingAge(invitation.getMaximumAllowedRatingAge())
+        .profile(profile(invitation))
         .status(invitation.statusAt(now))
         .expiresAt(invitation.getExpiresAt().toString())
         .build();
+  }
+
+  private static AccountInvitationProfile profile(AccountInvitation invitation) {
+    return switch (invitation.getMode()) {
+      case CREATE ->
+          new NewAccountInvitationProfile(
+              invitation.getProfileName(),
+              invitation.getProfileKind(),
+              invitation.getMaximumAllowedRatingAge());
+      case LINK ->
+          new ExistingAccountInvitationProfile(
+              invitation.getProfileId(),
+              invitation.getProfileName(),
+              invitation.getProfileKind(),
+              invitation.getMaximumAllowedRatingAge(),
+              invitation.getProfileId() == null);
+    };
   }
 }

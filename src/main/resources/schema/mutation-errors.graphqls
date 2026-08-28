@@ -223,3 +223,23 @@ type ShareNameConflictError implements MutationError {
 type MembershipShareCannotEndError implements MutationError {
     message: String!
 }
+
+type LinkProfileNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ProfileAlreadyLinkedError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ReofferHouseholdNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ReofferHouseholdNotSharedError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}

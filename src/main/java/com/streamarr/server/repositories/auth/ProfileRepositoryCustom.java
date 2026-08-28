@@ -12,12 +12,6 @@ public interface ProfileRepositoryCustom {
   /** Profiles actively shared into the Household, ordered by name then id for stable paging. */
   List<Profile> findAvailableInHousehold(UUID householdId);
 
-  /**
-   * Acquires the Household's shared availability guard, then reads its available Profiles. Safety
-   * decisions made from this result remain serialized against writers until the transaction ends.
-   */
-  List<Profile> lockAndFindAvailableInHousehold(UUID householdId);
-
   boolean existsAvailableInHouseholdWithNameIgnoreCase(UUID householdId, String name);
 
   /**
@@ -32,6 +26,31 @@ public interface ProfileRepositoryCustom {
 
   /** Locks the Profile row so relationship writes and permanent deletion have one winner. */
   boolean lockById(UUID profileId);
+
+  /**
+   * Shares the Profile's availability guards across its home Household and every active visit,
+   * acquiring locks in PostgreSQL UUID order. The caller holds the Profile row lock, so this
+   * Household set cannot change before commit.
+   */
+  void lockProfileAvailabilityAcrossHouseholds(UUID profileId);
+
+  /**
+   * Exclusively locks every guard a Profile link transition may write: home, active and pending
+   * shares, plus the invitation's explicit reoffer Households.
+   */
+  void lockProfileTransitionAcrossHouseholds(UUID profileId, List<UUID> additionalHouseholdIds);
+
+  /** Exclusively locks the Profile's home and every current or historical share Household. */
+  void lockProfileDeletionAcrossHouseholds(UUID profileId);
+
+  /** Locks the Profile row for a share without loading the share into Hibernate's cache. */
+  boolean lockByShareId(UUID shareId);
+
+  /**
+   * Shares a Profile row lock with other relationship terminators while serializing against
+   * invitation issuance and permanent deletion.
+   */
+  boolean lockSharedByShareId(UUID shareId);
 
   /**
    * Writes the authorized transition. The caller holds the row lock {@link #lockPolicyById} took in

@@ -3,12 +3,16 @@ package com.streamarr.server.services.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.auth.AccountInvitation;
+import com.streamarr.server.domain.auth.AccountInvitationMode;
+import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
@@ -33,6 +37,8 @@ import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.sql.SQLException;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -64,6 +70,7 @@ class ProfileAdministrationServiceTest {
   private final FakeProfileManagerRepository managers = new FakeProfileManagerRepository();
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
+  private final FakeAccountInvitationRepository invitations = new FakeAccountInvitationRepository();
   private final FakeSecurityAuditEventRepository audit = new FakeSecurityAuditEventRepository();
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
@@ -78,9 +85,11 @@ class ProfileAdministrationServiceTest {
           shares,
           households,
           accounts,
+          invitations,
           audit,
           new ProfilePinHasher(encoder),
-          new MutationTransactions(transactionManager, new ConstraintViolationTranslator()));
+          new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),
+          Clock.systemUTC());
 
   private Household household;
 
@@ -954,8 +963,46 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should explain or hide refusal when Profile visibility changes")
-  void shouldExplainOrHideRefusalWhenProfileVisibilityChanges() {
+  @DisplayName("Should invalidate only pending LINK invitations when the Profile is deleted")
+  void shouldInvalidateOnlyPendingLinkInvitationsWhenProfileIsDeleted() {
+    var orphan =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var invitation =
+        invitations.save(
+            AccountInvitation.builder()
+                .recipientEmail("joe@example.com")
+                .householdId(household.getId())
+                .householdName("Home")
+                .householdRole(HouseholdRole.MEMBER)
+                .mode(AccountInvitationMode.LINK)
+                .profileId(orphan.getId())
+                .profileName("Joe")
+                .profileKind(ProfileKind.ADULT)
+                .issuerAccountId(UUID.randomUUID())
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .publicId("pub")
+                .secretDigest(new byte[] {1})
+                .build());
+    var decided =
+        invitations.save(
+            invitation.toBuilder()
+                .id(null)
+                .status(AccountInvitationStatus.ACCEPTED)
+                .publicId("accepted")
+                .build());
+
+    service.deleteProfile(identity(), orphan.getId());
+
+    assertThat(invitations.findById(invitation.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.INVALIDATED);
+    assertThat(invitations.findById(decided.getId()).orElseThrow().getStatus())
+        .isEqualTo(AccountInvitationStatus.ACCEPTED);
+  }
+
+  @Test
+  @DisplayName("Should explain refusal only to a caller who may view the Profile")
+  void shouldExplainRefusalOnlyToCallerWhoMayViewProfile() {
     var orphan =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
@@ -1037,9 +1084,11 @@ class ProfileAdministrationServiceTest {
         shares,
         households,
         accounts,
+        invitations,
         audit,
         new ProfilePinHasher(encoder),
-        new MutationTransactions(transactionManager, new ConstraintViolationTranslator()));
+        new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),
+        Clock.systemUTC());
   }
 
   private AuthenticatedIdentity identity() {

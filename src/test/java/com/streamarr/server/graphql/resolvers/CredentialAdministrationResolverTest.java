@@ -15,11 +15,15 @@ import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.AdministrationQueryService;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
+import com.streamarr.server.services.identity.CredentialIssuanceService.AccountInvitationProfilePreview;
+import com.streamarr.server.services.identity.CredentialIssuanceService.AffectedHousehold;
 import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,10 +48,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @DisplayName("Credential Administration Resolver Tests")
 class CredentialAdministrationResolverTest {
 
-  private static final String ISSUE_INVITATION_MUTATION =
+  private static final String ISSUE_NEW_PROFILE_INVITATION_MUTATION =
       """
       mutation {
-        issueAccountInvitation(input: {
+        issueAccountInvitationWithNewProfile(input: {
           recipientEmail: "invitee@example.com"
           householdId: "%s"
           householdRole: MEMBER
@@ -66,6 +70,21 @@ class CredentialAdministrationResolverTest {
         cancelAccountInvitation(input: { invitationId: "%s" }) {
           invitation { status }
           userErrors { __typename }
+        }
+      }
+      """
+          .formatted(UUID.randomUUID());
+  private static final String ISSUE_EXISTING_PROFILE_INVITATION_MUTATION =
+      """
+      mutation {
+        issueAccountInvitationForExistingProfile(input: {
+          recipientEmail: "invitee@example.com"
+          profileId: "%s"
+          householdRole: MEMBER
+          reofferHouseholdIds: []
+        }) {
+          issued { code }
+          userErrors { __typename ... on InputMutationError { inputPath } }
         }
       }
       """
@@ -108,15 +127,16 @@ class CredentialAdministrationResolverTest {
   @ParameterizedTest(name = "Should expose {0} through the invitation payload union")
   @MethodSource("issuanceErrorCases")
   @DisplayName(
-      "Should expose an issuance rejection through the invitation payload union when the service rejects")
-  void shouldExposeIssuanceRejectionThroughInvitationPayloadUnionWhenServiceRejects(
+      "Should expose a new Profile invitation rejection through its payload union when the service rejects")
+  void shouldExposeNewProfileInvitationRejectionThroughPayloadUnionWhenServiceRejects(
       IssuanceErrorCase errorCase) {
-    when(credentialIssuanceService.issueAccountInvitation(any(), any()))
+    when(credentialIssuanceService.issueAccountInvitationWithNewProfile(any(), any()))
         .thenReturn(Outcome.rejected(errorCase.rejection()));
 
     String type =
         dgsQueryExecutor.executeAndExtractJsonPath(
-            ISSUE_INVITATION_MUTATION, "data.issueAccountInvitation.userErrors[0].__typename");
+            ISSUE_NEW_PROFILE_INVITATION_MUTATION,
+            "data.issueAccountInvitationWithNewProfile.userErrors[0].__typename");
 
     assertThat(type).isEqualTo(errorCase.expectedType());
     if (errorCase.expectedInputPath() == null) {
@@ -125,7 +145,77 @@ class CredentialAdministrationResolverTest {
 
     List<String> inputPath =
         dgsQueryExecutor.executeAndExtractJsonPath(
-            ISSUE_INVITATION_MUTATION, "data.issueAccountInvitation.userErrors[0].inputPath");
+            ISSUE_NEW_PROFILE_INVITATION_MUTATION,
+            "data.issueAccountInvitationWithNewProfile.userErrors[0].inputPath");
+    assertThat(inputPath).containsExactlyElementsOf(errorCase.expectedInputPath());
+  }
+
+  @Test
+  @DisplayName("Should expose the Households affected by inviting an existing Profile")
+  void shouldExposeHouseholdsAffectedByInvitingExistingProfile() {
+    var profileId = UUID.randomUUID();
+    var householdId = UUID.randomUUID();
+    var affectedHouseholdId = UUID.randomUUID();
+    when(credentialIssuanceService.accountInvitationProfilePreview(any(), any()))
+        .thenReturn(
+            Optional.of(
+                new AccountInvitationProfilePreview(
+                    profileId,
+                    "Grandpa Joe",
+                    householdId,
+                    "Home",
+                    List.of(new AffectedHousehold(affectedHouseholdId, "Cabin")))));
+
+    var preview =
+        dgsQueryExecutor.executeAndExtractJsonPathAsObject(
+            """
+            query {
+              accountInvitationProfilePreview(profileId: "%s") {
+                profileId
+                profileName
+                householdId
+                householdName
+                affectedHouseholds { householdId householdName }
+              }
+            }
+            """
+                .formatted(profileId),
+            "data.accountInvitationProfilePreview",
+            Map.class);
+
+    assertThat(preview)
+        .containsEntry("profileId", profileId.toString())
+        .containsEntry("profileName", "Grandpa Joe")
+        .containsEntry("householdId", householdId.toString())
+        .containsEntry("householdName", "Home");
+    assertThat(preview.get("affectedHouseholds").toString()).contains("Cabin");
+  }
+
+  @ParameterizedTest(
+      name = "Should expose {0} through the existing-Profile invitation payload union")
+  @MethodSource("existingProfileIssuanceErrorCases")
+  @DisplayName(
+      "Should expose an existing Profile invitation rejection through its payload union when the service rejects")
+  void shouldExposeExistingProfileInvitationRejectionThroughPayloadUnionWhenServiceRejects(
+      IssuanceErrorCase errorCase) {
+    when(credentialIssuanceService.issueAccountInvitationForProfile(any(), any()))
+        .thenReturn(Outcome.rejected(errorCase.rejection()));
+
+    String type =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            ISSUE_EXISTING_PROFILE_INVITATION_MUTATION,
+            "data.issueAccountInvitationForExistingProfile.userErrors[0].__typename");
+
+    assertThat(type).isEqualTo(errorCase.expectedType());
+    if (errorCase.expectedInputPath() == null) {
+      return;
+    }
+
+    List<String> inputPath =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            ISSUE_EXISTING_PROFILE_INVITATION_MUTATION,
+            "data.issueAccountInvitationForExistingProfile.userErrors[0].inputPath");
+
     assertThat(inputPath).containsExactlyElementsOf(errorCase.expectedInputPath());
   }
 
@@ -192,6 +282,48 @@ class CredentialAdministrationResolverTest {
             new CredentialRejections.MaximumAllowedRatingAgeInvalid(),
             "MaximumAllowedRatingAgeInvalidError",
             null));
+  }
+
+  private static Stream<IssuanceErrorCase> existingProfileIssuanceErrorCases() {
+    return Stream.of(
+        new IssuanceErrorCase(
+            new CredentialRejections.EmailRequired(),
+            "EmailRequiredError",
+            List.of("recipientEmail")),
+        new IssuanceErrorCase(
+            new CredentialRejections.EmailInvalid(),
+            "EmailInvalidError",
+            List.of("recipientEmail")),
+        new IssuanceErrorCase(
+            new CredentialRejections.EmailAlreadyUsed(),
+            "EmailAlreadyUsedError",
+            List.of("recipientEmail")),
+        new IssuanceErrorCase(
+            new CredentialRejections.RestrictedFirstAccount(), "RestrictedFirstAccountError", null),
+        new IssuanceErrorCase(
+            new CredentialRejections.RestrictedHouseholdAdmin(),
+            "RestrictedHouseholdAdminError",
+            List.of("householdRole")),
+        new IssuanceErrorCase(
+            new CredentialRejections.HouseholdNotFound(),
+            "HouseholdNotFoundError",
+            List.of("householdId")),
+        new IssuanceErrorCase(
+            new CredentialRejections.LinkProfileNotFound(),
+            "LinkProfileNotFoundError",
+            List.of("profileId")),
+        new IssuanceErrorCase(
+            new CredentialRejections.ProfileAlreadyLinked(),
+            "ProfileAlreadyLinkedError",
+            List.of("profileId")),
+        new IssuanceErrorCase(
+            new CredentialRejections.ReofferHouseholdNotFound(),
+            "ReofferHouseholdNotFoundError",
+            List.of("reofferHouseholdIds")),
+        new IssuanceErrorCase(
+            new CredentialRejections.ReofferHouseholdNotShared(),
+            "ReofferHouseholdNotSharedError",
+            List.of("reofferHouseholdIds")));
   }
 
   private static Stream<ResetErrorCase> resetErrorCases() {

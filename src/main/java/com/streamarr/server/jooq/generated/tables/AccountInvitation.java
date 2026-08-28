@@ -7,10 +7,13 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
+import com.streamarr.server.jooq.generated.enums.AccountInvitationMode;
 import com.streamarr.server.jooq.generated.enums.AccountInvitationStatus;
 import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.enums.ProfileKind;
+import com.streamarr.server.jooq.generated.tables.AccountInvitationReoffer.AccountInvitationReofferPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
+import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
 import com.streamarr.server.jooq.generated.tables.records.AccountInvitationRecord;
 
@@ -168,6 +171,16 @@ public class AccountInvitation extends TableImpl<AccountInvitationRecord> {
      */
     public final TableField<AccountInvitationRecord, byte[]> SECRET_DIGEST = createField(DSL.name("secret_digest"), SQLDataType.BLOB.nullable(false), this, "");
 
+    /**
+     * The column <code>public.account_invitation.mode</code>.
+     */
+    public final TableField<AccountInvitationRecord, AccountInvitationMode> MODE = createField(DSL.name("mode"), SQLDataType.VARCHAR.nullable(false).defaultValue(DSL.field(DSL.raw("'CREATE'::account_invitation_mode"), SQLDataType.VARCHAR)).asEnumDataType(AccountInvitationMode.class), this, "");
+
+    /**
+     * The column <code>public.account_invitation.profile_id</code>.
+     */
+    public final TableField<AccountInvitationRecord, UUID> PROFILE_ID = createField(DSL.name("profile_id"), SQLDataType.UUID, this, "");
+
     private AccountInvitation(Name alias, Table<AccountInvitationRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -252,7 +265,7 @@ public class AccountInvitation extends TableImpl<AccountInvitationRecord> {
 
     @Override
     public List<ForeignKey<AccountInvitationRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_HOUSEHOLD, Keys.ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_ISSUER, Keys.ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_LOCAL_MANAGER);
+        return Arrays.asList(Keys.ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_HOUSEHOLD, Keys.ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_ISSUER, Keys.ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_LOCAL_MANAGER, Keys.ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_PROFILE);
     }
 
     private transient HouseholdPath _household;
@@ -293,9 +306,35 @@ public class AccountInvitation extends TableImpl<AccountInvitationRecord> {
         return _fkAccountInvitationLocalManager;
     }
 
+    private transient ProfilePath _profile;
+
+    /**
+     * Get the implicit join path to the <code>public.profile</code> table.
+     */
+    public ProfilePath profile() {
+        if (_profile == null)
+            _profile = new ProfilePath(this, Keys.ACCOUNT_INVITATION__FK_ACCOUNT_INVITATION_PROFILE, null);
+
+        return _profile;
+    }
+
+    private transient AccountInvitationReofferPath _accountInvitationReoffer;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.account_invitation_reoffer</code> table
+     */
+    public AccountInvitationReofferPath accountInvitationReoffer() {
+        if (_accountInvitationReoffer == null)
+            _accountInvitationReoffer = new AccountInvitationReofferPath(this, null, Keys.ACCOUNT_INVITATION_REOFFER__FK_ACCOUNT_INVITATION_REOFFER_INVITATION.getInverseKey());
+
+        return _accountInvitationReoffer;
+    }
+
     @Override
     public List<Check<AccountInvitationRecord>> getChecks() {
         return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chk_account_invitation_link_names_profile"), "(((mode <> 'LINK'::account_invitation_mode) OR (profile_id IS NOT NULL) OR (status <> 'PENDING'::account_invitation_status)))", true),
             Internal.createCheck(this, DSL.name("chk_account_invitation_decided_at"), "(((status = 'PENDING'::account_invitation_status) = (decided_at IS NULL)))", true),
             Internal.createCheck(this, DSL.name("chk_account_invitation_email_not_blank"), "((btrim(recipient_email) <> ''::text))", true),
             Internal.createCheck(this, DSL.name("chk_account_invitation_invalidation_reason"), "(((status = 'INVALIDATED'::account_invitation_status) = (invalidation_reason IS NOT NULL)))", true),

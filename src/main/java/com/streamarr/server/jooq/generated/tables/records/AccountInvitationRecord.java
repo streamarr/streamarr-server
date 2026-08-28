@@ -4,6 +4,7 @@
 package com.streamarr.server.jooq.generated.tables.records;
 
 
+import com.streamarr.server.jooq.generated.enums.AccountInvitationMode;
 import com.streamarr.server.jooq.generated.enums.AccountInvitationStatus;
 import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.enums.ProfileKind;
@@ -308,6 +309,34 @@ public class AccountInvitationRecord extends UpdatableRecordImpl<AccountInvitati
         return (byte[]) get(19);
     }
 
+    /**
+     * Setter for <code>public.account_invitation.mode</code>.
+     */
+    public void setMode(AccountInvitationMode value) {
+        set(20, value);
+    }
+
+    /**
+     * Getter for <code>public.account_invitation.mode</code>.
+     */
+    public AccountInvitationMode getMode() {
+        return (AccountInvitationMode) get(20);
+    }
+
+    /**
+     * Setter for <code>public.account_invitation.profile_id</code>.
+     */
+    public void setProfileId(UUID value) {
+        set(21, value);
+    }
+
+    /**
+     * Getter for <code>public.account_invitation.profile_id</code>.
+     */
+    public UUID getProfileId() {
+        return (UUID) get(21);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -331,7 +360,7 @@ public class AccountInvitationRecord extends UpdatableRecordImpl<AccountInvitati
     /**
      * Create a detached, initialised AccountInvitationRecord
      */
-    public AccountInvitationRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String recipientEmail, UUID householdId, String householdName, HouseholdRole householdRole, String profileName, ProfileKind profileKind, Integer maximumAllowedRatingAge, UUID localManagerAccountId, UUID issuerAccountId, AccountInvitationStatus status, OffsetDateTime expiresAt, OffsetDateTime decidedAt, String invalidationReason, String publicId, byte[] secretDigest) {
+    public AccountInvitationRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String recipientEmail, UUID householdId, String householdName, HouseholdRole householdRole, String profileName, ProfileKind profileKind, Integer maximumAllowedRatingAge, UUID localManagerAccountId, UUID issuerAccountId, AccountInvitationStatus status, OffsetDateTime expiresAt, OffsetDateTime decidedAt, String invalidationReason, String publicId, byte[] secretDigest, AccountInvitationMode mode, UUID profileId) {
         super(AccountInvitation.ACCOUNT_INVITATION);
 
         setId(id);
@@ -354,6 +383,8 @@ public class AccountInvitationRecord extends UpdatableRecordImpl<AccountInvitati
         setInvalidationReason(invalidationReason);
         setPublicId(publicId);
         setSecretDigest(secretDigest);
+        setMode(mode);
+        setProfileId(profileId);
         resetTouchedOnNotNull();
     }
 }

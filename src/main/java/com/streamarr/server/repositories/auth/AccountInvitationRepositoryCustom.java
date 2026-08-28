@@ -28,6 +28,9 @@ public interface AccountInvitationRepositoryCustom {
    */
   Optional<AccountInvitation> cancelIfPendingAndUnexpired(UUID invitationId, Instant now);
 
+  /** Invalidates every PENDING, unexpired invitation bound to the Profile. */
+  int invalidatePendingByProfileId(UUID profileId, String reason, Instant now);
+
   /**
    * Invalidates the PENDING, unexpired invitation for the email, ignoring case (replacement rule);
    * an expired one is materialized as EXPIRED first, see below.

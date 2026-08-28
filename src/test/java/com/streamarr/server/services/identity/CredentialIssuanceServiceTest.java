@@ -2,20 +2,25 @@ package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AccountInvitation;
+import com.streamarr.server.domain.auth.AccountInvitationMode;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.fakes.FakeAccountInvitationReofferRepository;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
+import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
@@ -24,11 +29,14 @@ import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
+import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationForProfileCommand;
+import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationWithNewProfileCommand;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
@@ -36,6 +44,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -62,9 +72,13 @@ class CredentialIssuanceServiceTest {
 
   private final FakeAccountInvitationRepository invitations = new FakeAccountInvitationRepository();
   private final FakePasswordResetCodeRepository resetCodes = new FakePasswordResetCodeRepository();
-  private final FakeHouseholdRepository households = new FakeHouseholdRepository();
-  private final FakeProfileRepository profiles = new FakeProfileRepository();
+  private final FakeProfileHouseholdShareRepository shares =
+      new FakeProfileHouseholdShareRepository();
+  private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
+  private final FakeAccountInvitationReofferRepository reoffers =
+      new FakeAccountInvitationReofferRepository();
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(profiles);
+  private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final FakeSecurityAuditEventRepository audit = new FakeSecurityAuditEventRepository();
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
@@ -77,6 +91,8 @@ class CredentialIssuanceServiceTest {
           accounts,
           households,
           profiles,
+          shares,
+          reoffers,
           audit,
           new OpaqueOneTimeCodes(),
           codeProperties(),
@@ -101,8 +117,252 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should replace the older pending invitation when a new code is issued")
-  void shouldReplaceOlderPendingInvitationWhenNewCodeIsIssued() {
+  @DisplayName("Should preview the Households affected by inviting an existing Profile")
+  void shouldPreviewHouseholdsAffectedByInvitingExistingProfile() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder()
+                .householdId(household.getId())
+                .name("Grandpa Joe")
+                .build());
+    var cabin = households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
+    var lodge = households.save(HouseholdFixture.defaultHouseholdBuilder().name("Lodge").build());
+    shares.share(profile.getId(), household.getId(), true);
+    shares.share(profile.getId(), lodge.getId(), false);
+    shares.share(profile.getId(), cabin.getId(), false);
+
+    var preview =
+        service.accountInvitationProfilePreview(identity(), profile.getId()).orElseThrow();
+
+    assertThat(preview.profileId()).isEqualTo(profile.getId());
+    assertThat(preview.profileName()).isEqualTo("Grandpa Joe");
+    assertThat(preview.householdId()).isEqualTo(household.getId());
+    assertThat(preview.householdName()).isEqualTo(household.getName());
+    assertThat(preview.affectedHouseholds())
+        .extracting(
+            CredentialIssuanceService.AffectedHousehold::householdId,
+            CredentialIssuanceService.AffectedHousehold::householdName)
+        .containsExactly(tuple(cabin.getId(), "Cabin"), tuple(lodge.getId(), "Lodge"));
+  }
+
+  @Test
+  @DisplayName("Should not preview an existing Profile that already belongs to an Account")
+  void shouldNotPreviewExistingProfileThatAlreadyBelongsToAccount() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    resident.setPersonalProfileId(profile.getId());
+
+    var preview = service.accountInvitationProfilePreview(identity(), profile.getId());
+
+    assertThat(preview).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should derive the Household when issuing an invitation for an existing Profile")
+  void shouldDeriveHouseholdWhenIssuingInvitationForExistingProfile() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+
+    var invitation =
+        issued(
+                service.issueAccountInvitationForProfile(
+                    identity(),
+                    IssueInvitationForProfileCommand.builder()
+                        .recipientEmail("joe@example.com")
+                        .profileId(profile.getId())
+                        .householdRole(HouseholdRole.MEMBER)
+                        .reofferHouseholdIds(List.of())
+                        .build()))
+            .invitation();
+
+    assertThat(invitation.getHouseholdId()).isEqualTo(household.getId());
+    assertThat(invitation.getProfileId()).isEqualTo(profile.getId());
+  }
+
+  @Test
+  @DisplayName("Should require a Profile when issuing a LINK invitation")
+  void shouldRequireProfileWhenIssuingLinkInvitation() {
+    assertThat(rejectionOf(issueLink(null, List.of())))
+        .isInstanceOf(CredentialRejections.LinkProfileRequired.class);
+  }
+
+  @Test
+  @DisplayName("Should reject an unknown Profile when issuing a LINK invitation")
+  void shouldRejectUnknownProfileWhenIssuingLinkInvitation() {
+    assertThat(rejectionOf(issueLink(UUID.randomUUID(), List.of())))
+        .isInstanceOf(CredentialRejections.LinkProfileNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a LINK invitation when its Profile disappears during validation")
+  void shouldRejectLinkInvitationWhenProfileDisappearsDuringValidation() {
+    var vanishingProfiles = new VanishingProfileRepository(shares);
+    var profile =
+        vanishingProfiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var vanishingAccounts = new FakeUserAccountRepository(vanishingProfiles);
+    accounts.findAll().forEach(vanishingAccounts::save);
+    var vanishingService = serviceUsing(vanishingAccounts, vanishingProfiles);
+
+    var outcome =
+        vanishingService.issueAccountInvitationForProfile(
+            identity(), linkCommand(profile.getId(), List.of()));
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.LinkProfileNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a linked Profile when issuing a LINK invitation")
+  void shouldRejectLinkedProfileWhenIssuingLinkInvitation() {
+    var linked =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    resident.setPersonalProfileId(linked.getId());
+    assertThat(rejectionOf(issueLink(linked.getId(), List.of())))
+        .isInstanceOf(CredentialRejections.ProfileAlreadyLinked.class);
+  }
+
+  @Test
+  @DisplayName("Should reject an unknown reoffer Household when issuing a LINK invitation")
+  void shouldRejectUnknownReofferHouseholdWhenIssuingLinkInvitation() {
+    var orphan =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    assertThat(rejectionOf(issueLink(orphan.getId(), List.of(UUID.randomUUID()))))
+        .isInstanceOf(CredentialRejections.ReofferHouseholdNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should reject an unshared reoffer Household when issuing a LINK invitation")
+  void shouldRejectUnsharedReofferHouseholdWhenIssuingLinkInvitation() {
+    var orphan =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var unshared = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    assertThat(rejectionOf(issueLink(orphan.getId(), List.of(unshared.getId()))))
+        .isInstanceOf(CredentialRejections.ReofferHouseholdNotShared.class);
+  }
+
+  @Test
+  @DisplayName("Should reject the home Household when reoffering a LINK Profile")
+  void shouldRejectHomeHouseholdWhenReofferingLinkProfile() {
+    var orphan =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    assertThat(rejectionOf(issueLink(orphan.getId(), List.of(household.getId()))))
+        .isInstanceOf(CredentialRejections.ReofferHouseholdNotShared.class);
+  }
+
+  @Test
+  @DisplayName("Should snapshot the Profile when issuing a LINK invitation")
+  void shouldSnapshotProfileWhenIssuingLinkInvitation() {
+    var orphan =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder()
+                .householdId(household.getId())
+                .name("Grandpa Joe")
+                .kind(ProfileKind.KID)
+                .maximumAllowedRatingAge(10)
+                .build());
+    var issued = issued(issueLink(orphan.getId(), List.of()));
+
+    var invitation = issued.invitation();
+    assertThat(invitation.getMode()).isEqualTo(AccountInvitationMode.LINK);
+    assertThat(invitation.getProfileId()).isEqualTo(orphan.getId());
+    assertThat(invitation.getProfileName()).isEqualTo("Grandpa Joe");
+    assertThat(invitation.getProfileKind()).isEqualTo(ProfileKind.KID);
+    assertThat(invitation.getMaximumAllowedRatingAge()).isEqualTo(10);
+  }
+
+  @Test
+  @DisplayName("Should snapshot reoffer Households when issuing a LINK invitation")
+  void shouldSnapshotReofferHouseholdsWhenIssuingLinkInvitation() {
+    var orphan =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var previous =
+        households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
+    shares.share(orphan.getId(), previous.getId(), false);
+
+    var invitation = issued(issueLink(orphan.getId(), List.of(previous.getId()))).invitation();
+
+    var rows = reoffers.findByInvitationId(invitation.getId());
+    assertThat(rows).hasSize(1);
+    assertThat(rows.getFirst().getHouseholdName()).isEqualTo("Cabin");
+  }
+
+  @Test
+  @DisplayName("Should snapshot each reoffer Household once when IDs repeat")
+  void shouldSnapshotEachReofferHouseholdOnceWhenIdsRepeat() {
+    var orphan =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var previous =
+        households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
+    shares.share(orphan.getId(), previous.getId(), false);
+
+    var issued = issueLink(orphan.getId(), List.of(previous.getId(), previous.getId()));
+
+    assertThat(reoffers.findByInvitationId(issued(issued).invitation().getId())).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should preserve the requested role when issuing into an empty Household")
+  void shouldPreserveRequestedRoleWhenIssuingIntoEmptyHousehold() {
+    var empty = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+
+    var issued =
+        issued(
+            service.issueAccountInvitationWithNewProfile(
+                identity(),
+                IssueInvitationWithNewProfileCommand.builder()
+                    .recipientEmail("kai@example.com")
+                    .householdId(empty.getId())
+                    .householdRole(HouseholdRole.MEMBER)
+                    .profileName("Kai")
+                    .profileKind(ProfileKind.ADULT)
+                    .build()));
+
+    assertThat(issued.invitation().getHouseholdRole()).isEqualTo(HouseholdRole.MEMBER);
+  }
+
+  @Test
+  @DisplayName("Should reject HouseholdAdmin when issuing a restricted LINK invitation")
+  void shouldRejectHouseholdAdminWhenIssuingRestrictedLinkInvitation() {
+    var kid =
+        profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
+
+    var outcome =
+        service.issueAccountInvitationForProfile(
+            identity(),
+            linkCommand(kid.getId(), List.of()).toBuilder()
+                .householdRole(HouseholdRole.ADMIN)
+                .build());
+
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(CredentialRejections.RestrictedHouseholdAdmin.class);
+    assertThat(invitations.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a link when a restricted Profile would be a Household's first Account")
+  void shouldRefuseLinkWhenRestrictedProfileWouldBeHouseholdsFirstAccount() {
+    var empty = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var kid = profiles.save(ProfileFixture.kidProfileBuilder().householdId(empty.getId()).build());
+
+    var outcome =
+        service.issueAccountInvitationForProfile(identity(), linkCommand(kid.getId(), List.of()));
+
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(CredentialRejections.RestrictedFirstAccount.class);
+  }
+
+  @Test
+  @DisplayName("Should issue a code once and replace the older pending invitation")
+  void shouldIssueCodeOnceAndReplaceOlderPendingInvitation() {
     var first = issued(service.issueAccountInvitation(authorization.currentIdentity(), command()));
     var second = issued(service.issueAccountInvitation(authorization.currentIdentity(), command()));
 
@@ -580,6 +840,10 @@ class CredentialIssuanceServiceTest {
         .build();
   }
 
+  private AuthenticatedIdentity identity() {
+    return authorization.currentIdentity();
+  }
+
   private IssueInvitationCommand command() {
     return IssueInvitationCommand.builder()
         .recipientEmail("kai@example.com")
@@ -614,13 +878,20 @@ class CredentialIssuanceServiceTest {
   }
 
   private CredentialIssuanceService serviceUsing(FakeUserAccountRepository accountRepository) {
+    return serviceUsing(accountRepository, profiles);
+  }
+
+  private CredentialIssuanceService serviceUsing(
+      FakeUserAccountRepository accountRepository, FakeProfileRepository profileRepository) {
     return new CredentialIssuanceService(
         authorization,
         invitations,
         resetCodes,
         accountRepository,
         households,
-        profiles,
+        profileRepository,
+        shares,
+        reoffers,
         audit,
         new OpaqueOneTimeCodes(),
         codeProperties(),
@@ -672,5 +943,41 @@ class CredentialIssuanceServiceTest {
           .filter(accountId -> !accountId.equals(missingAccountId))
           .collect(Collectors.toUnmodifiableSet());
     }
+  }
+
+  private static final class VanishingProfileRepository extends FakeProfileRepository {
+
+    private int reads;
+
+    private VanishingProfileRepository(FakeProfileHouseholdShareRepository shares) {
+      super(shares);
+    }
+
+    @Override
+    public Optional<Profile> findById(UUID profileId) {
+      var profile = super.findById(profileId);
+      reads++;
+      if (reads == 2) {
+        deleteById(profileId);
+      }
+
+      return profile;
+    }
+  }
+
+  private Outcome<CredentialIssuanceService.IssuedInvitation, CredentialRejections.Issue> issueLink(
+      UUID profileId, List<UUID> reofferHouseholdIds) {
+    return service.issueAccountInvitationForProfile(
+        identity(), linkCommand(profileId, reofferHouseholdIds));
+  }
+
+  private IssueInvitationForProfileCommand linkCommand(
+      UUID profileId, List<UUID> reofferHouseholdIds) {
+    return IssueInvitationForProfileCommand.builder()
+        .recipientEmail("joe@example.com")
+        .householdRole(HouseholdRole.MEMBER)
+        .profileId(profileId)
+        .reofferHouseholdIds(reofferHouseholdIds)
+        .build();
   }
 }

@@ -5,14 +5,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountInvitation;
+import com.streamarr.server.domain.auth.AccountInvitationMode;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Duration;
@@ -23,6 +29,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** What the schema itself guarantees about credential rows, independent of any service. */
 @Tag("IntegrationTest")
@@ -31,8 +38,11 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
 
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private PasswordResetCodeRepository resetCodeRepository;
+  @Autowired private ProfileRepository profileRepository;
+  @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private OpaqueOneTimeCodes opaqueCodes;
+  @Autowired private TransactionTemplate transactionTemplate;
 
   @Test
   @DisplayName("Should invalidate outstanding credentials when their issuer is deleted")
@@ -124,6 +134,70 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
       invitationRepository.deleteById(expired.getId());
       authTestSupport.deleteAccount(target.getId());
       authTestSupport.deleteAccount(issuer.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should leave an expired invitation out of Profile invalidation")
+  void shouldLeaveExpiredInvitationOutOfProfileInvalidation() {
+    var issuer = authTestSupport.createAccount();
+    var target = authTestSupport.createAccount();
+    var expired =
+        invitationRepository.saveAndFlush(
+            pendingInvitationRow(target, issuer, Instant.now().minus(Duration.ofHours(1)))
+                .mode(AccountInvitationMode.LINK)
+                .profileId(target.getPersonalProfileId())
+                .build());
+
+    try {
+      var affected =
+          invitationRepository.invalidatePendingByProfileId(
+              target.getPersonalProfileId(), "Profile linked to an Account", Instant.now());
+
+      assertThat(affected).isZero();
+      var row = invitationRepository.findById(expired.getId()).orElseThrow();
+      assertThat(row.getStatus()).isEqualTo(AccountInvitationStatus.PENDING);
+      assertThat(row.statusAt(Instant.now())).isEqualTo(AccountInvitationStatus.EXPIRED);
+      assertThat(row.getInvalidationReason()).isNull();
+    } finally {
+      invitationRepository.deleteById(expired.getId());
+      authTestSupport.deleteAccount(target.getId());
+      authTestSupport.deleteAccount(issuer.getId());
+    }
+  }
+
+  @Test
+  @DisplayName("Should invalidate a pending LINK invitation when its Profile is deleted")
+  void shouldInvalidatePendingLinkInvitationWhenProfileIsDeleted() {
+    var fixture = pendingLinkInvitation(Instant.now().plus(Duration.ofDays(7)));
+
+    try {
+      deleteProfile(fixture.profile());
+
+      var row = invitationRepository.findById(fixture.invitation().getId()).orElseThrow();
+      assertThat(row.getProfileId()).isNull();
+      assertThat(row.getStatus()).isEqualTo(AccountInvitationStatus.INVALIDATED);
+      assertThat(row.getInvalidationReason()).isEqualTo("Profile deleted");
+    } finally {
+      delete(fixture);
+    }
+  }
+
+  @Test
+  @DisplayName("Should preserve expired LINK history when its Profile is deleted")
+  void shouldPreserveExpiredLinkHistoryWhenProfileIsDeleted() {
+    var fixture = pendingLinkInvitation(Instant.now().minus(Duration.ofHours(1)));
+
+    try {
+      deleteProfile(fixture.profile());
+
+      var row = invitationRepository.findById(fixture.invitation().getId()).orElseThrow();
+      assertThat(row.getProfileId()).isNull();
+      assertThat(row.getStatus()).isEqualTo(AccountInvitationStatus.EXPIRED);
+      assertThat(row.statusAt(Instant.now())).isEqualTo(AccountInvitationStatus.EXPIRED);
+      assertThat(row.getInvalidationReason()).isNull();
+    } finally {
+      delete(fixture);
     }
   }
 
@@ -238,6 +312,28 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject a pending LINK invitation when it names no Profile")
+  void shouldRejectPendingLinkInvitationWhenItNamesNoProfile() {
+    var target = authTestSupport.createAccount();
+    var invalid =
+        pendingInvitationRow(target, target, Instant.now().plus(Duration.ofDays(7)))
+            .mode(AccountInvitationMode.LINK)
+            .profileId(null)
+            .build();
+
+    try {
+      assertThatThrownBy(() -> invitationRepository.saveAndFlush(invalid))
+          .isInstanceOf(DataIntegrityViolationException.class)
+          .hasStackTraceContaining("chk_account_invitation_link_names_profile");
+    } finally {
+      invitationRepository
+          .findByPublicId(invalid.getPublicId())
+          .ifPresent(row -> invitationRepository.deleteById(row.getId()));
+      authTestSupport.deleteAccount(target.getId());
+    }
+  }
+
+  @Test
   @DisplayName("Should reject a credential whose secret digest is not a SHA-256 digest")
   void shouldRejectCredentialWhoseSecretDigestIsNotSha256Digest() {
     var target = authTestSupport.createAccount();
@@ -280,6 +376,51 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
         pendingInvitationRow(target, issuer, expiresAt).build());
   }
 
+  private Profile createManagedOrphan(UserAccount manager) {
+    return transactionTemplate.execute(
+        _ -> {
+          var profile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder()
+                      .householdId(manager.getHouseholdId())
+                      .build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(manager.getId())
+                  .profileId(profile.getId())
+                  .build());
+          return profile;
+        });
+  }
+
+  private LinkProfileFixture pendingLinkInvitation(Instant expiresAt) {
+    var issuer = authTestSupport.createAccount();
+    var profile = createManagedOrphan(issuer);
+    var invitation =
+        invitationRepository.saveAndFlush(
+            pendingInvitationRow(issuer, issuer, expiresAt)
+                .mode(AccountInvitationMode.LINK)
+                .profileId(profile.getId())
+                .build());
+    return new LinkProfileFixture(issuer, profile, invitation);
+  }
+
+  private void deleteProfile(Profile profile) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          profileRepository.deleteById(profile.getId());
+          profileRepository.flush();
+        });
+  }
+
+  private void delete(LinkProfileFixture fixture) {
+    invitationRepository
+        .findById(fixture.invitation().getId())
+        .ifPresent(row -> invitationRepository.deleteById(row.getId()));
+    profileRepository.findById(fixture.profile().getId()).ifPresent(profileRepository::delete);
+    authTestSupport.deleteAccount(fixture.issuer().getId());
+  }
+
   private AccountInvitation.AccountInvitationBuilder<?, ?> pendingInvitationRow(
       UserAccount target, UserAccount issuer, Instant expiresAt) {
     var issued = opaqueCodes.issue();
@@ -311,4 +452,7 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
         .publicId(issued.publicId())
         .secretDigest(issued.digest());
   }
+
+  private record LinkProfileFixture(
+      UserAccount issuer, Profile profile, AccountInvitation invitation) {}
 }

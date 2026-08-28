@@ -7,6 +7,7 @@ import java.util.List;
 /** The exhaustive mappings from service rejection to schema error type, one per union. */
 public final class CredentialErrors {
 
+  private static final List<String> PROFILE_ID_PATH = InputPath.of("profileId");
   private static final List<String> RECIPIENT_EMAIL_PATH = InputPath.of("recipientEmail");
 
   private CredentialErrors() {}
@@ -34,7 +35,7 @@ public final class CredentialErrors {
                   + " restricted.");
       case CredentialRejections.RestrictedHouseholdAdmin _ ->
           new RestrictedHouseholdAdminError(
-              "A restricted Profile cannot be invited as HouseholdAdmin.",
+              "A restricted Profile cannot be a HouseholdAdmin. Choose Household Member instead.",
               InputPath.of("householdRole"));
       case CredentialRejections.LocalManagerRequired _ ->
           new EligibleProfileManagerRequiredError(
@@ -49,6 +50,24 @@ public final class CredentialErrors {
           new MaximumAllowedRatingAgeInvalidError(
               "Enter a non-negative maximum allowed rating age.",
               InputPath.of("maximumAllowedRatingAge"));
+      case CredentialRejections.LinkProfileRequired _ ->
+          new LinkProfileRequiredError(
+              "Choose the existing Profile to link to the recipient's Account.", PROFILE_ID_PATH);
+      case CredentialRejections.LinkProfileNotFound _ ->
+          new LinkProfileNotFoundError("No such Profile.", PROFILE_ID_PATH);
+      case CredentialRejections.ProfileAlreadyLinked _ ->
+          new ProfileAlreadyLinkedError(
+              "That Profile already belongs to an Account.", PROFILE_ID_PATH);
+      case CredentialRejections.ProfileNotInHousehold _ ->
+          new ProfileNotInHouseholdError(
+              "Choose the Household this Profile belongs to.", InputPath.of("householdId"));
+      case CredentialRejections.ReofferHouseholdNotFound _ ->
+          new ReofferHouseholdNotFoundError(
+              "No such Household.", InputPath.of("reofferHouseholdIds"));
+      case CredentialRejections.ReofferHouseholdNotShared _ ->
+          new ReofferHouseholdNotSharedError(
+              "Choose a Household where the Profile previously had an active share.",
+              InputPath.of("reofferHouseholdIds"));
     };
   }
 
