@@ -374,9 +374,9 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should link the Profile and create its structural home share when CONNECT wins")
-  void shouldLinkProfileAndCreateStructuralHomeShareWhenConnectWins() {
-    var fixture = connectAcceptanceFixture();
+  @DisplayName("Should link the Profile and create its structural home share when LINK wins")
+  void shouldLinkProfileAndCreateStructuralHomeShareWhenLinkWins() {
+    var fixture = linkAcceptanceFixture();
 
     var accepted = service.accept(acceptCommand(fixture.code()));
 
@@ -392,9 +392,9 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should end every visit and clear only visiting selections when CONNECT wins")
-  void shouldEndEveryVisitAndClearOnlyVisitingSelectionsWhenConnectWins() {
-    var fixture = connectAcceptanceFixture();
+  @DisplayName("Should end every visit and clear only visiting selections when LINK wins")
+  void shouldEndEveryVisitAndClearOnlyVisitingSelectionsWhenLinkWins() {
+    var fixture = linkAcceptanceFixture();
 
     service.accept(acceptCommand(fixture.code()));
 
@@ -413,9 +413,9 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should invalidate every pending offer when CONNECT wins")
-  void shouldInvalidateEveryPendingOfferWhenConnectWins() {
-    var fixture = connectAcceptanceFixture();
+  @DisplayName("Should invalidate every pending offer when LINK wins")
+  void shouldInvalidateEveryPendingOfferWhenLinkWins() {
+    var fixture = linkAcceptanceFixture();
 
     service.accept(acceptCommand(fixture.code()));
 
@@ -427,9 +427,9 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should reoffer every recorded Household once when CONNECT wins")
-  void shouldReofferEveryRecordedHouseholdOnceWhenConnectWins() {
-    var fixture = connectAcceptanceFixture();
+  @DisplayName("Should reoffer every recorded Household once when LINK wins")
+  void shouldReofferEveryRecordedHouseholdOnceWhenLinkWins() {
+    var fixture = linkAcceptanceFixture();
 
     var accepted = service.accept(acceptCommand(fixture.code()));
 
@@ -452,7 +452,7 @@ class AccountInvitationServiceTest {
   @Test
   @DisplayName("Should attribute a restricted Profile reoffer to the invitation issuer")
   void shouldAttributeRestrictedProfileReofferToInvitationIssuer() {
-    var fixture = connectAcceptanceFixture();
+    var fixture = linkAcceptanceFixture();
     profiles.findById(fixture.profileId()).orElseThrow().setKind(ProfileKind.KID);
     var issuerAccountId = invitations.findAll().getFirst().getIssuerAccountId();
 
@@ -465,7 +465,7 @@ class AccountInvitationServiceTest {
         .containsOnly(issuerAccountId);
   }
 
-  private ConnectAcceptanceFixture connectAcceptanceFixture() {
+  private LinkAcceptanceFixture linkAcceptanceFixture() {
     var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var previous =
         households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
@@ -521,8 +521,8 @@ class AccountInvitationServiceTest {
                 .deviceName("phone")
                 .build());
     var issued =
-        pendingConnectInvitation(
-            ConnectInvitationFixture.builder()
+        pendingLinkInvitation(
+            LinkInvitationFixture.builder()
                 .profileId(orphan.getId())
                 .householdId(home.getId())
                 .reoffers(
@@ -537,7 +537,7 @@ class AccountInvitationServiceTest {
                             .build()))
                 .build());
 
-    return ConnectAcceptanceFixture.builder()
+    return LinkAcceptanceFixture.builder()
         .profileId(orphan.getId())
         .homeHouseholdId(home.getId())
         .visitIds(List.of(firstVisit.getId(), secondVisit.getId()))
@@ -550,19 +550,16 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should invalidate rival CONNECT invitations for the Profile when one wins")
-  void shouldInvalidateRivalConnectInvitationsForProfileWhenOneWins() {
+  @DisplayName("Should invalidate rival LINK invitations for the Profile when one wins")
+  void shouldInvalidateRivalLinkInvitationsForProfileWhenOneWins() {
     var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var orphan =
         profiles.save(ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
     accounts.save(AccountFixture.defaultAccountBuilder().householdId(home.getId()).build());
     var fixture =
-        ConnectInvitationFixture.builder()
-            .profileId(orphan.getId())
-            .householdId(home.getId())
-            .build();
-    var winner = pendingConnectInvitation(fixture);
-    pendingConnectInvitation(fixture);
+        LinkInvitationFixture.builder().profileId(orphan.getId()).householdId(home.getId()).build();
+    var winner = pendingLinkInvitation(fixture);
+    pendingLinkInvitation(fixture);
 
     service.accept(acceptCommand(winner.code()));
 
@@ -573,15 +570,15 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject a CONNECT acceptance when the Profile is already linked")
-  void shouldRejectConnectAcceptanceWhenProfileAlreadyLinked() {
+  @DisplayName("Should reject a LINK acceptance when the Profile is already linked")
+  void shouldRejectLinkAcceptanceWhenProfileAlreadyLinked() {
     var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var orphan =
         profiles.save(ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
     accounts.save(AccountFixture.defaultAccountBuilder().householdId(home.getId()).build());
     var issued =
-        pendingConnectInvitation(
-            ConnectInvitationFixture.builder()
+        pendingLinkInvitation(
+            LinkInvitationFixture.builder()
                 .profileId(orphan.getId())
                 .householdId(home.getId())
                 .build());
@@ -593,16 +590,16 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject CONNECT acceptance when the Profile moves after invitation")
-  void shouldRejectConnectAcceptanceWhenProfileMovesAfterInvitation() {
+  @DisplayName("Should reject LINK acceptance when the Profile moves after invitation")
+  void shouldRejectLinkAcceptanceWhenProfileMovesAfterInvitation() {
     var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var destination = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var orphan =
         profiles.save(ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
     accounts.save(AccountFixture.defaultAccountBuilder().householdId(home.getId()).build());
     var issued =
-        pendingConnectInvitation(
-            ConnectInvitationFixture.builder()
+        pendingLinkInvitation(
+            LinkInvitationFixture.builder()
                 .profileId(orphan.getId())
                 .householdId(home.getId())
                 .build());
@@ -616,16 +613,16 @@ class AccountInvitationServiceTest {
 
   @Test
   @DisplayName(
-      "Should reject CONNECT acceptance when a restricted Profile would become the first Account")
-  void shouldRejectConnectAcceptanceWhenRestrictedProfileWouldBecomeFirstAccount() {
+      "Should reject LINK acceptance when a restricted Profile would become the first Account")
+  void shouldRejectLinkAcceptanceWhenRestrictedProfileWouldBecomeFirstAccount() {
     var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var orphan =
         profiles.save(ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
     var resident =
         accounts.save(AccountFixture.defaultAccountBuilder().householdId(home.getId()).build());
     var issued =
-        pendingConnectInvitation(
-            ConnectInvitationFixture.builder()
+        pendingLinkInvitation(
+            LinkInvitationFixture.builder()
                 .profileId(orphan.getId())
                 .householdId(home.getId())
                 .build());
@@ -639,24 +636,22 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject a lookup when the CONNECT Profile no longer exists")
-  void shouldRejectLookupWhenConnectProfileNoLongerExists() {
+  @DisplayName("Should reject a lookup when the LINK Profile no longer exists")
+  void shouldRejectLookupWhenLinkProfileNoLongerExists() {
     var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var vanished =
-        pendingConnectInvitation(
-            ConnectInvitationFixture.builder().householdId(home.getId()).build());
+        pendingLinkInvitation(LinkInvitationFixture.builder().householdId(home.getId()).build());
     var vanishedCode = vanished.code();
     assertThatThrownBy(() -> service.lookup(vanishedCode))
         .isInstanceOf(InvalidOneTimeCodeException.class);
   }
 
   @Test
-  @DisplayName("Should reject an acceptance when the CONNECT Profile no longer exists")
-  void shouldRejectAcceptanceWhenConnectProfileNoLongerExists() {
+  @DisplayName("Should reject an acceptance when the LINK Profile no longer exists")
+  void shouldRejectAcceptanceWhenLinkProfileNoLongerExists() {
     var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var vanished =
-        pendingConnectInvitation(
-            ConnectInvitationFixture.builder().householdId(home.getId()).build());
+        pendingLinkInvitation(LinkInvitationFixture.builder().householdId(home.getId()).build());
     var vanishedCode = vanished.code();
     var vanishedCommand = acceptCommand(vanishedCode);
     assertThatThrownBy(() -> service.accept(vanishedCommand))
@@ -665,8 +660,8 @@ class AccountInvitationServiceTest {
 
   @Test
   @DisplayName(
-      "Should preview remaining managers, ending visits, and reoffers when looking up a CONNECT invitation")
-  void shouldPreviewRemainingManagersEndingVisitsAndReoffersWhenLookingUpConnectInvitation() {
+      "Should preview remaining managers, ending visits, and reoffers when looking up a LINK invitation")
+  void shouldPreviewRemainingManagersEndingVisitsAndReoffersWhenLookingUpLinkInvitation() {
     var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var previous =
         households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
@@ -682,8 +677,8 @@ class AccountInvitationServiceTest {
         ProfileManager.builder().accountId(manager.getId()).profileId(orphan.getId()).build());
     shares.share(orphan.getId(), previous.getId(), false);
     var issued =
-        pendingConnectInvitation(
-            ConnectInvitationFixture.builder()
+        pendingLinkInvitation(
+            LinkInvitationFixture.builder()
                 .profileId(orphan.getId())
                 .householdId(home.getId())
                 .reoffers(
@@ -696,13 +691,13 @@ class AccountInvitationServiceTest {
 
     var preview = service.lookup(issued.code());
 
-    assertThat(preview.mode()).isEqualTo(AccountInvitationMode.CONNECT);
+    assertThat(preview.mode()).isEqualTo(AccountInvitationMode.LINK);
     assertThat(preview.remainingManagers()).containsExactly("Nina");
-    assertThat(preview.endingHouseholds()).containsExactly("Cabin");
-    assertThat(preview.reofferHouseholds()).containsExactly("Cabin");
+    assertThat(preview.householdsLosingProfileAccess()).containsExactly("Cabin");
+    assertThat(preview.profileShareOfferTargets()).containsExactly("Cabin");
   }
 
-  private OpaqueOneTimeCodes.IssuedCode pendingConnectInvitation(ConnectInvitationFixture fixture) {
+  private OpaqueOneTimeCodes.IssuedCode pendingLinkInvitation(LinkInvitationFixture fixture) {
     var issued = opaqueCodes.issue();
     var invitation =
         invitations.save(
@@ -711,7 +706,7 @@ class AccountInvitationServiceTest {
                 .householdId(fixture.householdId())
                 .householdName("Home")
                 .householdRole(HouseholdRole.MEMBER)
-                .mode(AccountInvitationMode.CONNECT)
+                .mode(AccountInvitationMode.LINK)
                 .profileId(fixture.profileId())
                 .profileName("Joe")
                 .profileKind(ProfileKind.ADULT)
@@ -735,14 +730,14 @@ class AccountInvitationServiceTest {
   }
 
   @Builder
-  private record ConnectInvitationFixture(
+  private record LinkInvitationFixture(
       UUID profileId, UUID householdId, List<ReofferHouseholdFixture> reoffers) {}
 
   @Builder
   private record ReofferHouseholdFixture(UUID householdId, String householdName) {}
 
   @Builder
-  private record ConnectAcceptanceFixture(
+  private record LinkAcceptanceFixture(
       UUID profileId,
       UUID homeHouseholdId,
       List<UUID> visitIds,

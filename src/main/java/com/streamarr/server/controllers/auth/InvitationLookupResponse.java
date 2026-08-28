@@ -20,8 +20,8 @@ public record InvitationLookupResponse(
     Integer maximumAllowedRatingAge,
     Instant expiresAt,
     List<String> remainingManagers,
-    List<String> endingHouseholds,
-    List<String> reofferHouseholds) {
+    List<String> householdsLosingProfileAccess,
+    List<String> profileShareOfferTargets) {
 
   public static InvitationLookupResponse from(InvitationPreview preview) {
     return InvitationLookupResponse.builder()
@@ -34,8 +34,8 @@ public record InvitationLookupResponse(
         .maximumAllowedRatingAge(preview.maximumAllowedRatingAge())
         .expiresAt(preview.expiresAt())
         .remainingManagers(preview.remainingManagers())
-        .endingHouseholds(preview.endingHouseholds())
-        .reofferHouseholds(preview.reofferHouseholds())
+        .householdsLosingProfileAccess(preview.householdsLosingProfileAccess())
+        .profileShareOfferTargets(preview.profileShareOfferTargets())
         .build();
   }
 }

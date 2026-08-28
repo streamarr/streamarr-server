@@ -963,8 +963,8 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should invalidate only pending CONNECT invitations when the Profile is deleted")
-  void shouldInvalidateOnlyPendingConnectInvitationsWhenProfileIsDeleted() {
+  @DisplayName("Should invalidate only pending LINK invitations when the Profile is deleted")
+  void shouldInvalidateOnlyPendingLinkInvitationsWhenProfileIsDeleted() {
     var orphan =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
@@ -975,7 +975,7 @@ class ProfileAdministrationServiceTest {
                 .householdId(household.getId())
                 .householdName("Home")
                 .householdRole(HouseholdRole.MEMBER)
-                .mode(AccountInvitationMode.CONNECT)
+                .mode(AccountInvitationMode.LINK)
                 .profileId(orphan.getId())
                 .profileName("Joe")
                 .profileKind(ProfileKind.ADULT)

@@ -19,7 +19,7 @@ public enum AccountInvitationMode implements EnumType {
 
     CREATE("CREATE"),
 
-    CONNECT("CONNECT");
+    LINK("LINK");
 
     private final String literal;
 

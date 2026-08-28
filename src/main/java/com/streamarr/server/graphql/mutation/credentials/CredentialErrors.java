@@ -50,17 +50,16 @@ public final class CredentialErrors {
           new MaximumAllowedRatingAgeInvalidError(
               "Enter a non-negative maximum allowed rating age.",
               InputPath.of("maximumAllowedRatingAge"));
-      case CredentialRejections.ConnectProfileRequired _ ->
-          new ConnectProfileRequiredError(
-              "Name the Profile this invitation connects.", PROFILE_ID_PATH);
-      case CredentialRejections.ConnectProfileNotFound _ ->
-          new ConnectProfileNotFoundError("No such Profile.", PROFILE_ID_PATH);
+      case CredentialRejections.LinkProfileRequired _ ->
+          new LinkProfileRequiredError("Name the Profile this invitation links.", PROFILE_ID_PATH);
+      case CredentialRejections.LinkProfileNotFound _ ->
+          new LinkProfileNotFoundError("No such Profile.", PROFILE_ID_PATH);
       case CredentialRejections.ProfileAlreadyLinked _ ->
           new ProfileAlreadyLinkedError(
               "That Profile already belongs to an Account.", PROFILE_ID_PATH);
       case CredentialRejections.ProfileNotInHousehold _ ->
           new ProfileNotInHouseholdError(
-              "CONNECT joins the recipient to the Profile's own Household.",
+              "LINK joins the recipient to the Profile's own Household.",
               InputPath.of("householdId"));
       case CredentialRejections.ReofferHouseholdNotFound _ ->
           new ReofferHouseholdNotFoundError(

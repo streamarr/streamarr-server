@@ -334,7 +334,7 @@ public class AccountInvitation extends TableImpl<AccountInvitationRecord> {
     @Override
     public List<Check<AccountInvitationRecord>> getChecks() {
         return Arrays.asList(
-            Internal.createCheck(this, DSL.name("chk_account_invitation_connect_names_profile"), "(((mode <> 'CONNECT'::account_invitation_mode) OR (profile_id IS NOT NULL) OR (status <> 'PENDING'::account_invitation_status)))", true),
+            Internal.createCheck(this, DSL.name("chk_account_invitation_link_names_profile"), "(((mode <> 'LINK'::account_invitation_mode) OR (profile_id IS NOT NULL) OR (status <> 'PENDING'::account_invitation_status)))", true),
             Internal.createCheck(this, DSL.name("chk_account_invitation_decided_at"), "(((status = 'PENDING'::account_invitation_status) = (decided_at IS NULL)))", true),
             Internal.createCheck(this, DSL.name("chk_account_invitation_email_not_blank"), "((btrim(recipient_email) <> ''::text))", true),
             Internal.createCheck(this, DSL.name("chk_account_invitation_invalidation_reason"), "(((status = 'INVALIDATED'::account_invitation_status) = (invalidation_reason IS NOT NULL)))", true),

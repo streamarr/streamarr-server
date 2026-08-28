@@ -145,14 +145,14 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
     var expired =
         invitationRepository.saveAndFlush(
             pendingInvitationRow(target, issuer, Instant.now().minus(Duration.ofHours(1)))
-                .mode(AccountInvitationMode.CONNECT)
+                .mode(AccountInvitationMode.LINK)
                 .profileId(target.getPersonalProfileId())
                 .build());
 
     try {
       var affected =
           invitationRepository.invalidatePendingByProfileId(
-              target.getPersonalProfileId(), "Profile connected to an Account", Instant.now());
+              target.getPersonalProfileId(), "Profile linked to an Account", Instant.now());
 
       assertThat(affected).isZero();
       var row = invitationRepository.findById(expired.getId()).orElseThrow();
@@ -167,9 +167,9 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should invalidate a pending CONNECT invitation when its Profile is deleted")
-  void shouldInvalidatePendingConnectInvitationWhenProfileIsDeleted() {
-    var fixture = pendingConnectInvitation(Instant.now().plus(Duration.ofDays(7)));
+  @DisplayName("Should invalidate a pending LINK invitation when its Profile is deleted")
+  void shouldInvalidatePendingLinkInvitationWhenProfileIsDeleted() {
+    var fixture = pendingLinkInvitation(Instant.now().plus(Duration.ofDays(7)));
 
     try {
       deleteProfile(fixture.profile());
@@ -184,9 +184,9 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should preserve expired CONNECT history when its Profile is deleted")
-  void shouldPreserveExpiredConnectHistoryWhenProfileIsDeleted() {
-    var fixture = pendingConnectInvitation(Instant.now().minus(Duration.ofHours(1)));
+  @DisplayName("Should preserve expired LINK history when its Profile is deleted")
+  void shouldPreserveExpiredLinkHistoryWhenProfileIsDeleted() {
+    var fixture = pendingLinkInvitation(Instant.now().minus(Duration.ofHours(1)));
 
     try {
       deleteProfile(fixture.profile());
@@ -371,16 +371,16 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
         });
   }
 
-  private ConnectProfileFixture pendingConnectInvitation(Instant expiresAt) {
+  private LinkProfileFixture pendingLinkInvitation(Instant expiresAt) {
     var issuer = authTestSupport.createAccount();
     var profile = createManagedOrphan(issuer);
     var invitation =
         invitationRepository.saveAndFlush(
             pendingInvitationRow(issuer, issuer, expiresAt)
-                .mode(AccountInvitationMode.CONNECT)
+                .mode(AccountInvitationMode.LINK)
                 .profileId(profile.getId())
                 .build());
-    return new ConnectProfileFixture(issuer, profile, invitation);
+    return new LinkProfileFixture(issuer, profile, invitation);
   }
 
   private void deleteProfile(Profile profile) {
@@ -391,7 +391,7 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
         });
   }
 
-  private void delete(ConnectProfileFixture fixture) {
+  private void delete(LinkProfileFixture fixture) {
     invitationRepository
         .findById(fixture.invitation().getId())
         .ifPresent(row -> invitationRepository.deleteById(row.getId()));
@@ -431,6 +431,6 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
         .secretDigest(issued.digest());
   }
 
-  private record ConnectProfileFixture(
+  private record LinkProfileFixture(
       UserAccount issuer, Profile profile, AccountInvitation invitation) {}
 }

@@ -205,7 +205,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public void upsertStructural(UUID profileId, UUID householdId, Instant now) {
+  public void ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now) {
     var updated =
         dsl.update(PROFILE_HOUSEHOLD_SHARE)
             .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)

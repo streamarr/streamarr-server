@@ -20,8 +20,8 @@ public final class CredentialRejections {
           LocalManagerRequired,
           ProfileManagerNotEligible,
           MaximumAllowedRatingAgeInvalid,
-          ConnectProfileRequired,
-          ConnectProfileNotFound,
+          LinkProfileRequired,
+          LinkProfileNotFound,
           ProfileAlreadyLinked,
           ProfileNotInHousehold,
           ReofferHouseholdNotFound,
@@ -60,15 +60,15 @@ public final class CredentialRejections {
 
   public record MaximumAllowedRatingAgeInvalid() implements Issue {}
 
-  /** A CONNECT invitation names the existing Profile it links. */
-  public record ConnectProfileRequired() implements Issue {}
+  /** A LINK invitation names the existing Profile it assigns. */
+  public record LinkProfileRequired() implements Issue {}
 
-  public record ConnectProfileNotFound() implements Issue {}
+  public record LinkProfileNotFound() implements Issue {}
 
-  /** A linked Profile already belongs to a person; it cannot be connected again. */
+  /** A linked Profile already belongs to a person; it cannot be linked again. */
   public record ProfileAlreadyLinked() implements Issue {}
 
-  /** CONNECT joins the recipient to the Profile's own Household. */
+  /** LINK joins the recipient to the Profile's own Household. */
   public record ProfileNotInHousehold() implements Issue {}
 
   public record ReofferHouseholdNotFound() implements Issue {}

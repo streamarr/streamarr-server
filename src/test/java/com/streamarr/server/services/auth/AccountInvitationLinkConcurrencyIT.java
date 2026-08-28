@@ -58,19 +58,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
-@DisplayName("Account Invitation CONNECT Concurrency Integration Tests")
-class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
+@DisplayName("Account Invitation LINK Concurrency Integration Tests")
+class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
 
-  private static final String FIRST_RIVAL_EMAIL = "connect-rival-one@example.com";
-  private static final String SECOND_RIVAL_EMAIL = "connect-rival-two@example.com";
-  private static final String SHARE_RACE_EMAIL = "connect-share-race@example.com";
-  private static final String DUPLICATE_REOFFER_EMAIL = "connect-duplicate-reoffer@example.com";
-  private static final String RESTRICTED_REOFFER_EMAIL = "connect-restricted-reoffer@example.com";
-  private static final String CROSS_HOME_FIRST_EMAIL = "connect-cross-home-one@example.com";
-  private static final String CROSS_HOME_SECOND_EMAIL = "connect-cross-home-two@example.com";
-  private static final String HISTORY_WINNER_EMAIL = "connect-history-winner@example.com";
-  private static final String HISTORY_EXPIRED_EMAIL = "connect-history-expired@example.com";
-  private static final String STALE_REOFFER_EMAIL = "connect-stale-reoffer@example.com";
+  private static final String FIRST_RIVAL_EMAIL = "link-rival-one@example.com";
+  private static final String SECOND_RIVAL_EMAIL = "link-rival-two@example.com";
+  private static final String SHARE_RACE_EMAIL = "link-share-race@example.com";
+  private static final String DUPLICATE_REOFFER_EMAIL = "link-duplicate-reoffer@example.com";
+  private static final String RESTRICTED_REOFFER_EMAIL = "link-restricted-reoffer@example.com";
+  private static final String CROSS_HOME_FIRST_EMAIL = "link-cross-home-one@example.com";
+  private static final String CROSS_HOME_SECOND_EMAIL = "link-cross-home-two@example.com";
+  private static final String HISTORY_WINNER_EMAIL = "link-history-winner@example.com";
+  private static final String HISTORY_EXPIRED_EMAIL = "link-history-expired@example.com";
+  private static final String STALE_REOFFER_EMAIL = "link-stale-reoffer@example.com";
 
   @Autowired private AccountInvitationService invitationService;
   @Autowired private CredentialIssuanceService credentialIssuanceService;
@@ -98,15 +98,15 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   void tearDown() {
     invitationRepository.deleteAll();
     invitationRepository.flush();
-    deleteConnectedAccount(FIRST_RIVAL_EMAIL);
-    deleteConnectedAccount(SECOND_RIVAL_EMAIL);
-    deleteConnectedAccount(SHARE_RACE_EMAIL);
-    deleteConnectedAccount(DUPLICATE_REOFFER_EMAIL);
-    deleteConnectedAccount(RESTRICTED_REOFFER_EMAIL);
-    deleteConnectedAccount(CROSS_HOME_FIRST_EMAIL);
-    deleteConnectedAccount(CROSS_HOME_SECOND_EMAIL);
-    deleteConnectedAccount(HISTORY_WINNER_EMAIL);
-    deleteConnectedAccount(STALE_REOFFER_EMAIL);
+    deleteLinkedAccount(FIRST_RIVAL_EMAIL);
+    deleteLinkedAccount(SECOND_RIVAL_EMAIL);
+    deleteLinkedAccount(SHARE_RACE_EMAIL);
+    deleteLinkedAccount(DUPLICATE_REOFFER_EMAIL);
+    deleteLinkedAccount(RESTRICTED_REOFFER_EMAIL);
+    deleteLinkedAccount(CROSS_HOME_FIRST_EMAIL);
+    deleteLinkedAccount(CROSS_HOME_SECOND_EMAIL);
+    deleteLinkedAccount(HISTORY_WINNER_EMAIL);
+    deleteLinkedAccount(STALE_REOFFER_EMAIL);
     authTestSupport.deleteIdentity(sourceAdmin);
     if (targetAdmin != null) {
       authTestSupport.deleteIdentity(targetAdmin);
@@ -115,12 +115,12 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should reject one rival CONNECT acceptance as an invalid code when both are accepted concurrently")
-  void shouldRejectOneRivalConnectAcceptanceAsInvalidCodeWhenBothAcceptedConcurrently()
+      "Should reject one rival LINK acceptance as an invalid code when both are accepted concurrently")
+  void shouldRejectOneRivalLinkAcceptanceAsInvalidCodeWhenBothAcceptedConcurrently()
       throws Exception {
     var orphan = orphanAtHome();
-    var firstCode = pendingConnectInvitation(orphan, FIRST_RIVAL_EMAIL);
-    var secondCode = pendingConnectInvitation(orphan, SECOND_RIVAL_EMAIL);
+    var firstCode = pendingLinkInvitation(orphan, FIRST_RIVAL_EMAIL);
+    var secondCode = pendingLinkInvitation(orphan, SECOND_RIVAL_EMAIL);
     var successes = new ArrayList<AcceptedInvitation>();
     var failures = new ArrayList<Throwable>();
 
@@ -148,10 +148,10 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject CONNECT issuance when the Profile is connected while issuance waits")
-  void shouldRejectConnectIssuanceWhenProfileIsConnectedWhileIssuanceWaits() throws Exception {
+  @DisplayName("Should reject LINK issuance when the Profile is linked while issuance waits")
+  void shouldRejectLinkIssuanceWhenProfileIsLinkedWhileIssuanceWaits() throws Exception {
     var orphan = orphanAtHome();
-    var acceptedCode = pendingConnectInvitation(orphan, FIRST_RIVAL_EMAIL);
+    var acceptedCode = pendingLinkInvitation(orphan, FIRST_RIVAL_EMAIL);
 
     try (var issuanceLock = holdInvitationIssuanceLock(SECOND_RIVAL_EMAIL);
         var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -160,7 +160,7 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
               () ->
                   credentialIssuanceService.issueAccountInvitation(
                       accountIdentity(sourceAdmin),
-                      connectInvitationCommand(orphan, SECOND_RIVAL_EMAIL)));
+                      linkInvitationCommand(orphan, SECOND_RIVAL_EMAIL)));
       var blockerPid = backendPid(issuanceLock);
       await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) == 1);
 
@@ -176,13 +176,13 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject CONNECT issuance when a reoffer visit ends while issuance waits")
-  void shouldRejectConnectIssuanceWhenReofferVisitEndsWhileIssuanceWaits() throws Exception {
+  @DisplayName("Should reject LINK issuance when a reoffer visit ends while issuance waits")
+  void shouldRejectLinkIssuanceWhenReofferVisitEndsWhileIssuanceWaits() throws Exception {
     targetAdmin = authTestSupport.createIdentity();
     var orphan = orphanAtHome();
     var visit = activeShare(orphan, targetAdmin.household().getId());
     var command =
-        connectInvitationCommand(orphan, STALE_REOFFER_EMAIL).toBuilder()
+        linkInvitationCommand(orphan, STALE_REOFFER_EMAIL).toBuilder()
             .reofferHouseholdIds(List.of(targetAdmin.household().getId()))
             .build();
 
@@ -213,12 +213,12 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should end a share when it activates concurrently with CONNECT acceptance")
-  void shouldEndShareWhenItActivatesConcurrentlyWithConnectAcceptance() throws Exception {
+  @DisplayName("Should end a share when it activates concurrently with LINK acceptance")
+  void shouldEndShareWhenItActivatesConcurrentlyWithLinkAcceptance() throws Exception {
     targetAdmin = authTestSupport.createIdentity();
     var orphan = orphanAtHome();
     var pending = pendingShare(orphan, targetAdmin.household().getId());
-    var code = pendingConnectInvitation(orphan, SHARE_RACE_EMAIL);
+    var code = pendingLinkInvitation(orphan, SHARE_RACE_EMAIL);
     var targetIdentity = accountIdentity(targetAdmin);
 
     try (var connection = dataSource.getConnection();
@@ -234,10 +234,10 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
       var shareAcceptance =
           executor.submit(
               () -> profileSharingService.acceptProfileShare(targetIdentity, pending.getId()));
-      Future<AcceptedInvitation> connectAcceptance;
+      Future<AcceptedInvitation> linkAcceptance;
       try {
         await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) >= 1);
-        connectAcceptance = executor.submit(() -> invitationService.accept(acceptCommand(code)));
+        linkAcceptance = executor.submit(() -> invitationService.accept(acceptCommand(code)));
         await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) >= 2);
       } finally {
         connection.rollback();
@@ -252,7 +252,7 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
                     throw new AssertionError("expected acceptance but got " + rejections);
                   });
       assertThat(acceptedShare.getStatus()).isEqualTo(ProfileShareStatus.ACTIVE);
-      assertThat(connectAcceptance.get(15, TimeUnit.SECONDS)).isNotNull();
+      assertThat(linkAcceptance.get(15, TimeUnit.SECONDS)).isNotNull();
     }
 
     assertThat(shareRepository.findById(pending.getId()).orElseThrow().getStatus())
@@ -260,12 +260,12 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should invalidate a share offered before the Profile is connected")
-  void shouldInvalidateShareOfferedBeforeProfileIsConnected() throws Exception {
+  @DisplayName("Should invalidate a share offered before the Profile is linked")
+  void shouldInvalidateShareOfferedBeforeProfileIsLinked() throws Exception {
     targetAdmin = authTestSupport.createIdentity();
     var orphan = orphanAtHome();
     var targetHouseholdId = targetAdmin.household().getId();
-    var code = pendingConnectInvitation(orphan, SHARE_RACE_EMAIL);
+    var code = pendingLinkInvitation(orphan, SHARE_RACE_EMAIL);
     installShareInsertBarrier(orphan.getId(), targetHouseholdId);
 
     try (var insertBarrier = holdShareInsertBarrier();
@@ -315,7 +315,7 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
                 .recipientEmail(DUPLICATE_REOFFER_EMAIL)
                 .householdId(sourceAdmin.household().getId())
                 .householdRole(HouseholdRole.MEMBER)
-                .mode(AccountInvitationMode.CONNECT)
+                .mode(AccountInvitationMode.LINK)
                 .profileId(orphan.getId())
                 .reofferHouseholdIds(List.of(targetHouseholdId, targetHouseholdId))
                 .build());
@@ -335,8 +335,8 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should let a Household accept a restricted Profile reoffered after CONNECT")
-  void shouldLetHouseholdAcceptRestrictedProfileReofferedAfterConnect() {
+  @DisplayName("Should let a Household accept a restricted Profile reoffered after LINK")
+  void shouldLetHouseholdAcceptRestrictedProfileReofferedAfterLink() {
     targetAdmin = authTestSupport.createIdentity();
     var orphan = orphanAtHome();
     orphan.setKind(ProfileKind.KID);
@@ -351,7 +351,7 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
                     .recipientEmail(RESTRICTED_REOFFER_EMAIL)
                     .householdId(sourceAdmin.household().getId())
                     .householdRole(HouseholdRole.MEMBER)
-                    .mode(AccountInvitationMode.CONNECT)
+                    .mode(AccountInvitationMode.LINK)
                     .profileId(orphan.getId())
                     .reofferHouseholdIds(List.of(targetHouseholdId))
                     .build()));
@@ -371,15 +371,15 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should accept reciprocal cross-Household CONNECT invitations without deadlock")
-  void shouldAcceptReciprocalCrossHouseholdConnectInvitationsWithoutDeadlock() throws Exception {
+  @DisplayName("Should accept reciprocal cross-Household LINK invitations without deadlock")
+  void shouldAcceptReciprocalCrossHouseholdLinkInvitationsWithoutDeadlock() throws Exception {
     targetAdmin = authTestSupport.createAdminIdentity();
     var sourceOrphan = orphanAtHome(sourceAdmin, "Source Visitor");
     var targetOrphan = orphanAtHome(targetAdmin, "Target Visitor");
     activeShare(sourceOrphan, targetAdmin.household().getId());
     activeShare(targetOrphan, sourceAdmin.household().getId());
-    var sourceCode = pendingConnectInvitation(sourceOrphan, CROSS_HOME_FIRST_EMAIL, sourceAdmin);
-    var targetCode = pendingConnectInvitation(targetOrphan, CROSS_HOME_SECOND_EMAIL, targetAdmin);
+    var sourceCode = pendingLinkInvitation(sourceOrphan, CROSS_HOME_FIRST_EMAIL, sourceAdmin);
+    var targetCode = pendingLinkInvitation(targetOrphan, CROSS_HOME_SECOND_EMAIL, targetAdmin);
     var successes = new ArrayList<AcceptedInvitation>();
     var failures = new ArrayList<Throwable>();
     installAccountInsertBarrier();
@@ -408,13 +408,13 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should preserve expired invitation and share history when CONNECT wins")
-  void shouldPreserveExpiredInvitationAndShareHistoryWhenConnectWins() {
+  @DisplayName("Should preserve expired invitation and share history when LINK wins")
+  void shouldPreserveExpiredInvitationAndShareHistoryWhenLinkWins() {
     targetAdmin = authTestSupport.createIdentity();
     var orphan = orphanAtHome();
     var now = Instant.now();
-    pendingConnectInvitation(
-        pendingConnectInvitationBuilder(orphan, HISTORY_EXPIRED_EMAIL, sourceAdmin)
+    pendingLinkInvitation(
+        pendingLinkInvitationBuilder(orphan, HISTORY_EXPIRED_EMAIL, sourceAdmin)
             .expiresAt(now.minus(Duration.ofHours(1))));
     var expiredInvitation =
         invitationRepository.findAll().stream()
@@ -430,7 +430,7 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
                 .offeredByAccountId(sourceAdmin.account().getId())
                 .expiresAt(now.minus(Duration.ofHours(1)))
                 .build());
-    var winnerCode = pendingConnectInvitation(orphan, HISTORY_WINNER_EMAIL);
+    var winnerCode = pendingLinkInvitation(orphan, HISTORY_WINNER_EMAIL);
 
     invitationService.accept(acceptCommand(winnerCode));
 
@@ -505,18 +505,17 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
             .build());
   }
 
-  private String pendingConnectInvitation(Profile profile, String recipientEmail) {
-    return pendingConnectInvitation(
-        pendingConnectInvitationBuilder(profile, recipientEmail, sourceAdmin));
+  private String pendingLinkInvitation(Profile profile, String recipientEmail) {
+    return pendingLinkInvitation(
+        pendingLinkInvitationBuilder(profile, recipientEmail, sourceAdmin));
   }
 
-  private String pendingConnectInvitation(
+  private String pendingLinkInvitation(
       Profile profile, String recipientEmail, AuthTestSupport.TestIdentity homeAdmin) {
-    return pendingConnectInvitation(
-        pendingConnectInvitationBuilder(profile, recipientEmail, homeAdmin));
+    return pendingLinkInvitation(pendingLinkInvitationBuilder(profile, recipientEmail, homeAdmin));
   }
 
-  private String pendingConnectInvitation(
+  private String pendingLinkInvitation(
       AccountInvitation.AccountInvitationBuilder<?, ?> invitationBuilder) {
     var issued = opaqueCodes.issue();
     transactions.executeWithoutResult(
@@ -529,14 +528,14 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
     return issued.code();
   }
 
-  private AccountInvitation.AccountInvitationBuilder<?, ?> pendingConnectInvitationBuilder(
+  private AccountInvitation.AccountInvitationBuilder<?, ?> pendingLinkInvitationBuilder(
       Profile profile, String recipientEmail, AuthTestSupport.TestIdentity homeAdmin) {
     return AccountInvitation.builder()
         .recipientEmail(recipientEmail)
         .householdId(homeAdmin.household().getId())
         .householdName(homeAdmin.household().getName())
         .householdRole(HouseholdRole.MEMBER)
-        .mode(AccountInvitationMode.CONNECT)
+        .mode(AccountInvitationMode.LINK)
         .profileId(profile.getId())
         .profileName(profile.getName())
         .profileKind(ProfileKind.ADULT)
@@ -549,24 +548,24 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
         var statement = connection.createStatement()) {
       statement.execute(
           """
-          CREATE FUNCTION block_connect_account_insert()
+          CREATE FUNCTION block_link_account_insert()
               RETURNS TRIGGER
               LANGUAGE plpgsql
           AS $$
           BEGIN
               PERFORM pg_advisory_xact_lock(
-                  hashtextextended('test-connect-account-insert', 0));
+                  hashtextextended('test-link-account-insert', 0));
               RETURN NEW;
           END;
           $$
           """);
       statement.execute(
           """
-          CREATE TRIGGER block_connect_account_insert
+          CREATE TRIGGER block_link_account_insert
           BEFORE INSERT ON user_account
           FOR EACH ROW
           WHEN (NEW.email IN ('%s', '%s'))
-          EXECUTE FUNCTION block_connect_account_insert()
+          EXECUTE FUNCTION block_link_account_insert()
           """
               .formatted(CROSS_HOME_FIRST_EMAIL, CROSS_HOME_SECOND_EMAIL));
     }
@@ -580,7 +579,7 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
           .executeQuery(
               """
               SELECT pg_advisory_xact_lock(
-                  hashtextextended('test-connect-account-insert', 0))
+                  hashtextextended('test-link-account-insert', 0))
               """)
           .close();
     } catch (Exception failure) {
@@ -594,17 +593,17 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   private void removeAccountInsertBarrier() throws Exception {
     try (var connection = dataSource.getConnection();
         var statement = connection.createStatement()) {
-      statement.execute("DROP TRIGGER IF EXISTS block_connect_account_insert ON user_account");
-      statement.execute("DROP FUNCTION IF EXISTS block_connect_account_insert()");
+      statement.execute("DROP TRIGGER IF EXISTS block_link_account_insert ON user_account");
+      statement.execute("DROP FUNCTION IF EXISTS block_link_account_insert()");
     }
   }
 
-  private IssueInvitationCommand connectInvitationCommand(Profile profile, String recipientEmail) {
+  private IssueInvitationCommand linkInvitationCommand(Profile profile, String recipientEmail) {
     return IssueInvitationCommand.builder()
         .recipientEmail(recipientEmail)
         .householdId(sourceAdmin.household().getId())
         .householdRole(HouseholdRole.MEMBER)
-        .mode(AccountInvitationMode.CONNECT)
+        .mode(AccountInvitationMode.LINK)
         .profileId(profile.getId())
         .build();
   }
@@ -633,24 +632,24 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
         var statement = connection.createStatement()) {
       statement.execute(
           """
-          CREATE FUNCTION block_connect_share_offer_insert()
+          CREATE FUNCTION block_link_share_offer_insert()
               RETURNS TRIGGER
               LANGUAGE plpgsql
           AS $$
           BEGIN
               PERFORM pg_advisory_xact_lock(
-                  hashtextextended('test-connect-share-offer-insert', 0));
+                  hashtextextended('test-link-share-offer-insert', 0));
               RETURN NEW;
           END;
           $$
           """);
       statement.execute(
           """
-          CREATE TRIGGER block_connect_share_offer_insert
+          CREATE TRIGGER block_link_share_offer_insert
           BEFORE INSERT ON profile_household_share
           FOR EACH ROW
           WHEN (NEW.profile_id = '%s'::uuid AND NEW.household_id = '%s'::uuid)
-          EXECUTE FUNCTION block_connect_share_offer_insert()
+          EXECUTE FUNCTION block_link_share_offer_insert()
           """
               .formatted(profileId, householdId));
     }
@@ -664,7 +663,7 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
           .executeQuery(
               """
               SELECT pg_advisory_xact_lock(
-                  hashtextextended('test-connect-share-offer-insert', 0))
+                  hashtextextended('test-link-share-offer-insert', 0))
               """)
           .close();
     } catch (Exception failure) {
@@ -679,8 +678,8 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
     try (var connection = dataSource.getConnection();
         var statement = connection.createStatement()) {
       statement.execute(
-          "DROP TRIGGER IF EXISTS block_connect_share_offer_insert ON profile_household_share");
-      statement.execute("DROP FUNCTION IF EXISTS block_connect_share_offer_insert()");
+          "DROP TRIGGER IF EXISTS block_link_share_offer_insert ON profile_household_share");
+      statement.execute("DROP FUNCTION IF EXISTS block_link_share_offer_insert()");
     }
   }
 
@@ -739,7 +738,7 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
     }
   }
 
-  private void deleteConnectedAccount(String email) {
+  private void deleteLinkedAccount(String email) {
     accountRepository
         .findByEmailIgnoreCase(email)
         .ifPresent(account -> authTestSupport.deleteAccount(account.getId()));

@@ -38,7 +38,7 @@ public class AccountInvitation extends BaseAuditableEntity<AccountInvitation>
   @Builder.Default
   private AccountInvitationMode mode = AccountInvitationMode.CREATE;
 
-  /** The existing unlinked Profile a CONNECT invitation links; null for CREATE. */
+  /** The existing unlinked Profile a LINK invitation assigns; null for CREATE. */
   private UUID profileId;
 
   private UUID householdId;

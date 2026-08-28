@@ -176,7 +176,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public void upsertStructural(UUID profileId, UUID householdId, Instant now) {
+  public void ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now) {
     var live =
         database.values().stream()
             .filter(share -> share.getProfileId().equals(profileId))

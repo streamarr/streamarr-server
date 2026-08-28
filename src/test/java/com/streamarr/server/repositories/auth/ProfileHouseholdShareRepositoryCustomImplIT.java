@@ -44,7 +44,7 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
                       ProfileFixture.defaultProfileBuilder()
                           .householdId(household.getId())
                           .build());
-              shareRepository.upsertStructural(profile.getId(), household.getId(), now);
+              shareRepository.ensureActiveMembershipShare(profile.getId(), household.getId(), now);
               return new ProfileHouseholdIds(profile.getId(), household.getId());
             });
 

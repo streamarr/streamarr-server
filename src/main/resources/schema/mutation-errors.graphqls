@@ -224,12 +224,12 @@ type MembershipShareCannotEndError implements MutationError {
     message: String!
 }
 
-type ConnectProfileRequiredError implements InputMutationError & MutationError {
+type LinkProfileRequiredError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
 
-type ConnectProfileNotFoundError implements InputMutationError & MutationError {
+type LinkProfileNotFoundError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }

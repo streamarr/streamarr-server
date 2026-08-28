@@ -83,14 +83,14 @@ public class AccountInvitationService {
         .maximumAllowedRatingAge(invitation.getMaximumAllowedRatingAge())
         .expiresAt(invitation.getExpiresAt())
         .remainingManagers(remainingManagers(invitation))
-        .endingHouseholds(endingHouseholds(invitation))
-        .reofferHouseholds(reofferHouseholds(invitation))
+        .householdsLosingProfileAccess(householdsLosingProfileAccess(invitation))
+        .profileShareOfferTargets(profileShareOfferTargets(invitation))
         .build();
   }
 
-  /** The direct managers the recipient keeps after connecting (ADR 0024 §Profile creation). */
+  /** The direct managers the recipient keeps after linking (ADR 0024 §Profile creation). */
   private List<String> remainingManagers(AccountInvitation invitation) {
-    if (invitation.getMode() != AccountInvitationMode.CONNECT) {
+    if (invitation.getMode() != AccountInvitationMode.LINK) {
       return List.of();
     }
 
@@ -103,8 +103,8 @@ public class AccountInvitationService {
   }
 
   /** Every current visit ends at acceptance; the same share must never admit the person. */
-  private List<String> endingHouseholds(AccountInvitation invitation) {
-    if (invitation.getMode() != AccountInvitationMode.CONNECT) {
+  private List<String> householdsLosingProfileAccess(AccountInvitation invitation) {
+    if (invitation.getMode() != AccountInvitationMode.LINK) {
       return List.of();
     }
 
@@ -119,8 +119,8 @@ public class AccountInvitationService {
         .toList();
   }
 
-  private List<String> reofferHouseholds(AccountInvitation invitation) {
-    if (invitation.getMode() != AccountInvitationMode.CONNECT) {
+  private List<String> profileShareOfferTargets(AccountInvitation invitation) {
+    if (invitation.getMode() != AccountInvitationMode.LINK) {
       return List.of();
     }
 
@@ -160,12 +160,12 @@ public class AccountInvitationService {
       AcceptInvitationCommand command, AccountInvitation invitation, String passwordHash) {
     invitationRepository.lockInvitationIssuanceForRecipientEmail(invitation.getRecipientEmail());
     lockLocalManager(invitation);
-    lockConnectProfile(invitation);
+    lockLinkProfile(invitation);
     consumeInvitation(invitation);
     requireTargetHousehold(invitation);
     var account =
-        invitation.getMode() == AccountInvitationMode.CONNECT
-            ? connectAccount(command, invitation, passwordHash)
+        invitation.getMode() == AccountInvitationMode.LINK
+            ? linkAccount(command, invitation, passwordHash)
             : createAccount(command, invitation, passwordHash);
     var issued = refreshTokenService.createSession(account, command.deviceName());
     return AcceptedInvitation.builder()
@@ -189,8 +189,8 @@ public class AccountInvitationService {
         Set.of(invitation.getLocalManagerAccountId()), properties.replacementLockTimeout());
   }
 
-  private void lockConnectProfile(AccountInvitation invitation) {
-    if (invitation.getMode() != AccountInvitationMode.CONNECT) {
+  private void lockLinkProfile(AccountInvitation invitation) {
+    if (invitation.getMode() != AccountInvitationMode.LINK) {
       return;
     }
 
@@ -290,13 +290,13 @@ public class AccountInvitationService {
   }
 
   /**
-   * Connects the invitation's existing Profile as the new Account's Personal Profile (ADR 0024
+   * Links the invitation's existing Profile as the new Account's Personal Profile (ADR 0024
    * §Profile creation): the home availability becomes the structural share, every current visit
    * ends — a share that admitted a Profile must never silently admit the person — pending offers
    * are invalidated, and each recorded reoffer Household receives a fresh PENDING offer to consent
    * to anew, made exactly once because exactly one acceptance wins the PENDING transition.
    */
-  private UserAccount connectAccount(
+  private UserAccount linkAccount(
       AcceptInvitationCommand command, AccountInvitation invitation, String passwordHash) {
     var householdId = invitation.getHouseholdId();
     var profileId = invitation.getProfileId();
@@ -341,10 +341,10 @@ public class AccountInvitationService {
                 .build());
     var now = clock.instant();
     invitationRepository.invalidatePendingByProfileId(
-        profileId, "Profile connected to an Account", now);
-    shareRepository.upsertStructural(profileId, householdId, now);
+        profileId, "Profile linked to an Account", now);
+    shareRepository.ensureActiveMembershipShare(profileId, householdId, now);
     endCurrentVisits(profileId, householdId, now);
-    shareRepository.invalidatePendingByProfileId(profileId, "Profile connected to an Account", now);
+    shareRepository.invalidatePendingByProfileId(profileId, "Profile linked to an Account", now);
     var reofferAccountId =
         profile.isRestricted() ? invitation.getIssuerAccountId() : account.getId();
     reoffer(invitation, reofferAccountId, now);
@@ -364,8 +364,7 @@ public class AccountInvitationService {
 
   private void reoffer(AccountInvitation invitation, UUID offererAccountId, Instant now) {
     for (var recorded : reofferRepository.findByInvitationId(invitation.getId())) {
-      if (recorded.getHouseholdId() != null
-          && !recorded.getHouseholdId().equals(invitation.getHouseholdId())) {
+      if (isProfileShareOfferTarget(recorded, invitation)) {
         shareRepository.saveAndFlush(
             ProfileHouseholdShare.builder()
                 .profileId(invitation.getProfileId())
@@ -378,17 +377,26 @@ public class AccountInvitationService {
     }
   }
 
+  private static boolean isProfileShareOfferTarget(
+      AccountInvitationReoffer recorded, AccountInvitation invitation) {
+    return recorded.getHouseholdId() != null
+        && !recorded.getHouseholdId().equals(invitation.getHouseholdId());
+  }
+
   private AccountInvitation resolvePending(String rawCode) {
     var invitation = codeResolver.resolvePending(rawCode, invitationRepository::findByPublicId);
-    if (invitation.getMode() == AccountInvitationMode.CONNECT
-        && invitation.getProfileId() == null) {
-      // The connectable Profile was deleted; invalidation should have flipped the row, and the
+    if (isLinkInvitationMissingProfile(invitation)) {
+      // The linkable Profile was deleted; invalidation should have flipped the row, and the
       // SET NULL is the backstop. A dead code fails exactly like an unknown one.
       throw OpaqueCodeResolver.rejected(
           OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
     }
 
     return invitation;
+  }
+
+  private static boolean isLinkInvitationMissingProfile(AccountInvitation invitation) {
+    return invitation.getMode() == AccountInvitationMode.LINK && invitation.getProfileId() == null;
   }
 
   @Builder
@@ -424,8 +432,8 @@ public class AccountInvitationService {
       Integer maximumAllowedRatingAge,
       Instant expiresAt,
       List<String> remainingManagers,
-      List<String> endingHouseholds,
-      List<String> reofferHouseholds) {}
+      List<String> householdsLosingProfileAccess,
+      List<String> profileShareOfferTargets) {}
 
   @Builder
   public record AcceptedInvitation(

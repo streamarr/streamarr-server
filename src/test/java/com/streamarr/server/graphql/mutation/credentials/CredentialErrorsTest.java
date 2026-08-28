@@ -51,26 +51,26 @@ class CredentialErrorsTest {
   }
 
   @Test
-  @DisplayName("Should map the Profile path when CONNECT requires a Profile")
-  void shouldMapProfilePathWhenConnectRequiresProfile() {
-    assertThat(CredentialErrors.toIssueError(new CredentialRejections.ConnectProfileRequired()))
+  @DisplayName("Should map the Profile path when LINK requires a Profile")
+  void shouldMapProfilePathWhenLinkRequiresProfile() {
+    assertThat(CredentialErrors.toIssueError(new CredentialRejections.LinkProfileRequired()))
         .isInstanceOfSatisfying(
-            ConnectProfileRequiredError.class,
+            LinkProfileRequiredError.class,
             error -> assertThat(error.inputPath()).containsExactly("profileId"));
   }
 
   @Test
-  @DisplayName("Should map the Profile path when the CONNECT Profile is not found")
-  void shouldMapProfilePathWhenConnectProfileNotFound() {
-    assertThat(CredentialErrors.toIssueError(new CredentialRejections.ConnectProfileNotFound()))
+  @DisplayName("Should map the Profile path when the LINK Profile is not found")
+  void shouldMapProfilePathWhenLinkProfileNotFound() {
+    assertThat(CredentialErrors.toIssueError(new CredentialRejections.LinkProfileNotFound()))
         .isInstanceOfSatisfying(
-            ConnectProfileNotFoundError.class,
+            LinkProfileNotFoundError.class,
             error -> assertThat(error.inputPath()).containsExactly("profileId"));
   }
 
   @Test
-  @DisplayName("Should map the Profile path when the CONNECT Profile is already linked")
-  void shouldMapProfilePathWhenConnectProfileAlreadyLinked() {
+  @DisplayName("Should map the Profile path when the LINK Profile is already linked")
+  void shouldMapProfilePathWhenLinkProfileAlreadyLinked() {
     assertThat(CredentialErrors.toIssueError(new CredentialRejections.ProfileAlreadyLinked()))
         .isInstanceOfSatisfying(
             ProfileAlreadyLinkedError.class,
@@ -78,8 +78,8 @@ class CredentialErrorsTest {
   }
 
   @Test
-  @DisplayName("Should map the Household path when the CONNECT Profile belongs elsewhere")
-  void shouldMapHouseholdPathWhenConnectProfileBelongsElsewhere() {
+  @DisplayName("Should map the Household path when the LINK Profile belongs elsewhere")
+  void shouldMapHouseholdPathWhenLinkProfileBelongsElsewhere() {
     assertThat(CredentialErrors.toIssueError(new CredentialRejections.ProfileNotInHousehold()))
         .isInstanceOfSatisfying(
             ProfileNotInHouseholdError.class,

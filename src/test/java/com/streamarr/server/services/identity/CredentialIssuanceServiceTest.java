@@ -112,27 +112,27 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should require a Profile when issuing a CONNECT invitation")
-  void shouldRequireProfileWhenIssuingConnectInvitation() {
-    assertThat(rejectionOf(issueConnect(null, List.of())))
-        .isInstanceOf(CredentialRejections.ConnectProfileRequired.class);
+  @DisplayName("Should require a Profile when issuing a LINK invitation")
+  void shouldRequireProfileWhenIssuingLinkInvitation() {
+    assertThat(rejectionOf(issueLink(null, List.of())))
+        .isInstanceOf(CredentialRejections.LinkProfileRequired.class);
   }
 
   @Test
-  @DisplayName("Should reject an unknown Profile when issuing a CONNECT invitation")
-  void shouldRejectUnknownProfileWhenIssuingConnectInvitation() {
-    assertThat(rejectionOf(issueConnect(UUID.randomUUID(), List.of())))
-        .isInstanceOf(CredentialRejections.ConnectProfileNotFound.class);
+  @DisplayName("Should reject an unknown Profile when issuing a LINK invitation")
+  void shouldRejectUnknownProfileWhenIssuingLinkInvitation() {
+    assertThat(rejectionOf(issueLink(UUID.randomUUID(), List.of())))
+        .isInstanceOf(CredentialRejections.LinkProfileNotFound.class);
   }
 
   @Test
-  @DisplayName("Should reject a linked Profile when issuing a CONNECT invitation")
-  void shouldRejectLinkedProfileWhenIssuingConnectInvitation() {
+  @DisplayName("Should reject a linked Profile when issuing a LINK invitation")
+  void shouldRejectLinkedProfileWhenIssuingLinkInvitation() {
     var linked =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
     resident.setPersonalProfileId(linked.getId());
-    assertThat(rejectionOf(issueConnect(linked.getId(), List.of())))
+    assertThat(rejectionOf(issueLink(linked.getId(), List.of())))
         .isInstanceOf(CredentialRejections.ProfileAlreadyLinked.class);
   }
 
@@ -142,61 +142,61 @@ class CredentialIssuanceServiceTest {
     var elsewhere =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(UUID.randomUUID()).build());
-    assertThat(rejectionOf(issueConnect(elsewhere.getId(), List.of())))
+    assertThat(rejectionOf(issueLink(elsewhere.getId(), List.of())))
         .isInstanceOf(CredentialRejections.ProfileNotInHousehold.class);
   }
 
   @Test
-  @DisplayName("Should reject an unknown reoffer Household when issuing a CONNECT invitation")
-  void shouldRejectUnknownReofferHouseholdWhenIssuingConnectInvitation() {
+  @DisplayName("Should reject an unknown reoffer Household when issuing a LINK invitation")
+  void shouldRejectUnknownReofferHouseholdWhenIssuingLinkInvitation() {
     var orphan =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    assertThat(rejectionOf(issueConnect(orphan.getId(), List.of(UUID.randomUUID()))))
+    assertThat(rejectionOf(issueLink(orphan.getId(), List.of(UUID.randomUUID()))))
         .isInstanceOf(CredentialRejections.ReofferHouseholdNotFound.class);
   }
 
   @Test
-  @DisplayName("Should reject an unshared reoffer Household when issuing a CONNECT invitation")
-  void shouldRejectUnsharedReofferHouseholdWhenIssuingConnectInvitation() {
+  @DisplayName("Should reject an unshared reoffer Household when issuing a LINK invitation")
+  void shouldRejectUnsharedReofferHouseholdWhenIssuingLinkInvitation() {
     var orphan =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
     var unshared = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    assertThat(rejectionOf(issueConnect(orphan.getId(), List.of(unshared.getId()))))
+    assertThat(rejectionOf(issueLink(orphan.getId(), List.of(unshared.getId()))))
         .isInstanceOf(CredentialRejections.ReofferHouseholdNotShared.class);
   }
 
   @Test
-  @DisplayName("Should reject the home Household when reoffering a CONNECT Profile")
-  void shouldRejectHomeHouseholdWhenReofferingConnectProfile() {
+  @DisplayName("Should reject the home Household when reoffering a LINK Profile")
+  void shouldRejectHomeHouseholdWhenReofferingLinkProfile() {
     var orphan =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    assertThat(rejectionOf(issueConnect(orphan.getId(), List.of(household.getId()))))
+    assertThat(rejectionOf(issueLink(orphan.getId(), List.of(household.getId()))))
         .isInstanceOf(CredentialRejections.ReofferHouseholdNotShared.class);
   }
 
   @Test
-  @DisplayName("Should snapshot the Profile when issuing a CONNECT invitation")
-  void shouldSnapshotProfileWhenIssuingConnectInvitation() {
+  @DisplayName("Should snapshot the Profile when issuing a LINK invitation")
+  void shouldSnapshotProfileWhenIssuingLinkInvitation() {
     var orphan =
         profiles.save(
             ProfileFixture.defaultProfileBuilder()
                 .householdId(household.getId())
                 .name("Grandpa Joe")
                 .build());
-    var issued = issued(issueConnect(orphan.getId(), List.of()));
+    var issued = issued(issueLink(orphan.getId(), List.of()));
 
     var invitation = issued.invitation();
-    assertThat(invitation.getMode()).isEqualTo(AccountInvitationMode.CONNECT);
+    assertThat(invitation.getMode()).isEqualTo(AccountInvitationMode.LINK);
     assertThat(invitation.getProfileId()).isEqualTo(orphan.getId());
     assertThat(invitation.getProfileName()).isEqualTo("Grandpa Joe");
   }
 
   @Test
-  @DisplayName("Should snapshot reoffer Households when issuing a CONNECT invitation")
-  void shouldSnapshotReofferHouseholdsWhenIssuingConnectInvitation() {
+  @DisplayName("Should snapshot reoffer Households when issuing a LINK invitation")
+  void shouldSnapshotReofferHouseholdsWhenIssuingLinkInvitation() {
     var orphan =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
@@ -204,7 +204,7 @@ class CredentialIssuanceServiceTest {
         households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
     shares.share(orphan.getId(), previous.getId(), false);
 
-    var invitation = issued(issueConnect(orphan.getId(), List.of(previous.getId()))).invitation();
+    var invitation = issued(issueLink(orphan.getId(), List.of(previous.getId()))).invitation();
 
     var rows = reoffers.findByInvitationId(invitation.getId());
     assertThat(rows).hasSize(1);
@@ -236,7 +236,7 @@ class CredentialIssuanceServiceTest {
         households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
     shares.share(orphan.getId(), previous.getId(), false);
 
-    var issued = issueConnect(orphan.getId(), List.of(previous.getId(), previous.getId()));
+    var issued = issueLink(orphan.getId(), List.of(previous.getId(), previous.getId()));
 
     assertThat(reoffers.findByInvitationId(issued(issued).invitation().getId())).hasSize(1);
   }
@@ -255,8 +255,8 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should snapshot MEMBER when issuing a restricted CONNECT invitation")
-  void shouldSnapshotMemberWhenIssuingRestrictedConnectInvitation() {
+  @DisplayName("Should snapshot MEMBER when issuing a restricted LINK invitation")
+  void shouldSnapshotMemberWhenIssuingRestrictedLinkInvitation() {
     var kid =
         profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
 
@@ -264,7 +264,7 @@ class CredentialIssuanceServiceTest {
         issued(
             service.issueAccountInvitation(
                 identity(),
-                connectCommand(kid.getId(), List.of()).toBuilder()
+                linkCommand(kid.getId(), List.of()).toBuilder()
                     .householdRole(HouseholdRole.ADMIN)
                     .build()));
 
@@ -273,15 +273,15 @@ class CredentialIssuanceServiceTest {
 
   @Test
   @DisplayName(
-      "Should refuse connection when a restricted Profile would be a Household's first Account")
-  void shouldRefuseConnectionWhenRestrictedProfileWouldBeHouseholdsFirstAccount() {
+      "Should refuse a link when a restricted Profile would be a Household's first Account")
+  void shouldRefuseLinkWhenRestrictedProfileWouldBeHouseholdsFirstAccount() {
     var empty = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var kid = profiles.save(ProfileFixture.kidProfileBuilder().householdId(empty.getId()).build());
 
     var outcome =
         service.issueAccountInvitation(
             identity(),
-            connectCommand(kid.getId(), List.of()).toBuilder().householdId(empty.getId()).build());
+            linkCommand(kid.getId(), List.of()).toBuilder().householdId(empty.getId()).build());
 
     assertThat(rejectionOf(outcome))
         .isInstanceOf(CredentialRejections.RestrictedFirstAccount.class);
@@ -867,18 +867,17 @@ class CredentialIssuanceServiceTest {
     }
   }
 
-  private Outcome<CredentialIssuanceService.IssuedInvitation, CredentialRejections.Issue>
-      issueConnect(UUID profileId, List<UUID> reofferHouseholdIds) {
-    return service.issueAccountInvitation(
-        identity(), connectCommand(profileId, reofferHouseholdIds));
+  private Outcome<CredentialIssuanceService.IssuedInvitation, CredentialRejections.Issue> issueLink(
+      UUID profileId, List<UUID> reofferHouseholdIds) {
+    return service.issueAccountInvitation(identity(), linkCommand(profileId, reofferHouseholdIds));
   }
 
-  private IssueInvitationCommand connectCommand(UUID profileId, List<UUID> reofferHouseholdIds) {
+  private IssueInvitationCommand linkCommand(UUID profileId, List<UUID> reofferHouseholdIds) {
     return IssueInvitationCommand.builder()
         .recipientEmail("joe@example.com")
         .householdId(household.getId())
         .householdRole(HouseholdRole.MEMBER)
-        .mode(AccountInvitationMode.CONNECT)
+        .mode(AccountInvitationMode.LINK)
         .profileId(profileId)
         .reofferHouseholdIds(reofferHouseholdIds)
         .build();

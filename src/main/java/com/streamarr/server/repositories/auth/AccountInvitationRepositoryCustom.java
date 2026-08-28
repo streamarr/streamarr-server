@@ -28,7 +28,7 @@ public interface AccountInvitationRepositoryCustom {
    */
   Optional<AccountInvitation> cancelIfPendingAndUnexpired(UUID invitationId, Instant now);
 
-  /** Invalidates every PENDING invitation bound to the Profile (connected, moved, or deleted). */
+  /** Invalidates every PENDING invitation bound to the Profile (linked, moved, or deleted). */
   int invalidatePendingByProfileId(UUID profileId, String reason, Instant now);
 
   /**

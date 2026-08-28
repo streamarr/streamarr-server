@@ -10,10 +10,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
 
-/**
- * A Household to be offered the connected Profile afresh at acceptance (ADR 0024): its old share
- * admitted a Profile; once the Profile is a person's, the same share would admit the person.
- */
+/** A Household that may receive a new Profile share offer after a LINK invitation is accepted. */
 @Entity
 @Table(name = "account_invitation_reoffer")
 @Getter

@@ -92,9 +92,9 @@ public class CredentialIssuanceService {
       return Outcome.rejected(new CredentialRejections.HouseholdNotFound());
     }
 
-    var connectRejection = connectRejection(mode, command);
-    if (connectRejection.isPresent()) {
-      return Outcome.rejected(connectRejection.get());
+    var linkRejection = linkRejection(mode, command);
+    if (linkRejection.isPresent()) {
+      return Outcome.rejected(linkRejection.get());
     }
 
     var profile =
@@ -187,7 +187,7 @@ public class CredentialIssuanceService {
         () -> {
           invitationRepository.lockInvitationIssuanceForRecipientEmail(recipientEmail);
           requireIssuerStillAllowed(identity);
-          var profile = lockConnectProfile(mode, command);
+          var profile = lockLinkProfile(mode, command);
           if (userAccountRepository.findByEmailIgnoreCase(recipientEmail).isPresent()) {
             throw new MutationRejection(new CredentialRejections.EmailAlreadyUsed());
           }
@@ -228,16 +228,16 @@ public class CredentialIssuanceService {
         _ -> Optional.empty());
   }
 
-  private Profile lockConnectProfile(AccountInvitationMode mode, IssueInvitationCommand command) {
+  private Profile lockLinkProfile(AccountInvitationMode mode, IssueInvitationCommand command) {
     if (mode == AccountInvitationMode.CREATE) {
       return null;
     }
 
     if (!profileRepository.lockById(command.profileId())) {
-      throw new MutationRejection(new CredentialRejections.ConnectProfileNotFound());
+      throw new MutationRejection(new CredentialRejections.LinkProfileNotFound());
     }
 
-    var rejection = connectRejection(mode, command);
+    var rejection = linkRejection(mode, command);
     if (rejection.isPresent()) {
       throw new MutationRejection(rejection.get());
     }
@@ -259,20 +259,20 @@ public class CredentialIssuanceService {
     return requestedRole;
   }
 
-  /** CREATE has no Profile yet; CONNECT names an existing, unlinked one in that Household. */
-  private Optional<CredentialRejections.Issue> connectRejection(
+  /** CREATE has no Profile yet; LINK names an existing, unlinked one in that Household. */
+  private Optional<CredentialRejections.Issue> linkRejection(
       AccountInvitationMode mode, IssueInvitationCommand command) {
     if (mode == AccountInvitationMode.CREATE) {
       return Optional.empty();
     }
 
     if (command.profileId() == null) {
-      return Optional.of(new CredentialRejections.ConnectProfileRequired());
+      return Optional.of(new CredentialRejections.LinkProfileRequired());
     }
 
     var profile = profileRepository.findById(command.profileId());
     if (profile.isEmpty()) {
-      return Optional.of(new CredentialRejections.ConnectProfileNotFound());
+      return Optional.of(new CredentialRejections.LinkProfileNotFound());
     }
 
     if (userAccountRepository.findByPersonalProfileId(command.profileId()).isPresent()) {
@@ -321,7 +321,7 @@ public class CredentialIssuanceService {
   }
 
   private static List<UUID> reofferHouseholdIds(IssueInvitationCommand command) {
-    if (command.mode() != AccountInvitationMode.CONNECT || command.reofferHouseholdIds() == null) {
+    if (command.mode() != AccountInvitationMode.LINK || command.reofferHouseholdIds() == null) {
       return List.of();
     }
 

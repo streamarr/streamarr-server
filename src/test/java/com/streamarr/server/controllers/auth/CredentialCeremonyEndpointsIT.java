@@ -808,8 +808,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
             "maximumAllowedRatingAge",
             "expiresAt",
             "remainingManagers",
-            "endingHouseholds",
-            "reofferHouseholds");
+            "householdsLosingProfileAccess",
+            "profileShareOfferTargets");
   }
 
   /** The 404 INVALID_CODE answer, which every miss must repeat verbatim. */
@@ -837,12 +837,12 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should connect an existing Profile, end its visits, and reoffer when the invitation is accepted")
-  void shouldConnectExistingProfileEndVisitsAndReofferWhenInvitationAccepted() throws Exception {
+      "Should link an existing Profile, end its visits, and reoffer when the invitation is accepted")
+  void shouldLinkExistingProfileEndVisitsAndReofferWhenInvitationAccepted() throws Exception {
     var previousHost = authTestSupport.createIdentity();
     try {
       var orphan = orphanVisiting(previousHost.household().getId());
-      var code = issueConnectInvitation(orphan.getId(), previousHost.household().getId());
+      var code = issueLinkInvitation(orphan.getId(), previousHost.household().getId());
 
       mockMvc
           .perform(
@@ -850,12 +850,15 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                   .contentType(MediaType.APPLICATION_JSON)
                   .content("{\"code\": \"%s\"}".formatted(code)))
           .andExpect(status().isOk())
-          .andExpect(jsonPath("$.mode").value("CONNECT"))
+          .andExpect(jsonPath("$.mode").value("LINK"))
           .andExpect(jsonPath("$.profileName").value("Grandpa Joe"))
           .andExpect(
               jsonPath("$.remainingManagers[0]").value(serverAdmin.account().getDisplayName()))
-          .andExpect(jsonPath("$.endingHouseholds[0]").value(previousHost.household().getName()))
-          .andExpect(jsonPath("$.reofferHouseholds[0]").value(previousHost.household().getName()));
+          .andExpect(
+              jsonPath("$.householdsLosingProfileAccess[0]")
+                  .value(previousHost.household().getName()))
+          .andExpect(
+              jsonPath("$.profileShareOfferTargets[0]").value(previousHost.household().getName()));
 
       mockMvc
           .perform(
@@ -870,9 +873,9 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
           .andExpect(status().isCreated())
           .andExpect(jsonPath("$.accessToken").isNotEmpty());
 
-      var connected =
+      var linkedAccount =
           userAccountRepository.findByEmailIgnoreCase("invitee@example.com").orElseThrow();
-      assertThat(connected.getPersonalProfileId()).isEqualTo(orphan.getId());
+      assertThat(linkedAccount.getPersonalProfileId()).isEqualTo(orphan.getId());
       var shares = shareRepository.findByProfileId(orphan.getId());
       var home =
           shares.stream()
@@ -893,14 +896,14 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
               .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
               .findFirst()
               .orElseThrow();
-      assertThat(reoffered.getOfferedByAccountId()).isEqualTo(connected.getId());
+      assertThat(reoffered.getOfferedByAccountId()).isEqualTo(linkedAccount.getId());
 
-      // The linked Profile can never be connected again.
+      // The linked Profile can never be linked again.
       graphql(
               authTestSupport.accountBearer(serverAdmin),
               """
               mutation { issueAccountInvitation(input: {recipientEmail: "second@example.com",
-                householdId: "%s", householdRole: MEMBER, mode: CONNECT, profileId: "%s"}) {
+                householdId: "%s", householdRole: MEMBER, mode: LINK, profileId: "%s"}) {
                 issued { code } userErrors { __typename } } }
               """
                   .formatted(serverAdmin.household().getId(), orphan.getId()))
@@ -947,13 +950,13 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         });
   }
 
-  private String issueConnectInvitation(UUID profileId, UUID reofferHouseholdId) throws Exception {
+  private String issueLinkInvitation(UUID profileId, UUID reofferHouseholdId) throws Exception {
     var response =
         graphql(
                 authTestSupport.accountBearer(serverAdmin),
                 """
                 mutation { issueAccountInvitation(input: {recipientEmail: "invitee@example.com",
-                  householdId: "%s", householdRole: MEMBER, mode: CONNECT, profileId: "%s",
+                  householdId: "%s", householdRole: MEMBER, mode: LINK, profileId: "%s",
                   reofferHouseholdIds: ["%s"]}) {
                   issued { code invitation { mode profileId } } userErrors { __typename } } }
                 """
@@ -961,7 +964,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andExpect(
-                jsonPath("$.data.issueAccountInvitation.issued.invitation.mode").value("CONNECT"))
+                jsonPath("$.data.issueAccountInvitation.issued.invitation.mode").value("LINK"))
             .andReturn()
             .getResponse()
             .getContentAsString();

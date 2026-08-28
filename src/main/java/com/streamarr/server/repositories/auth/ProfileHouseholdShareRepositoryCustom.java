@@ -60,13 +60,11 @@ public interface ProfileHouseholdShareRepositoryCustom {
   boolean tryEndActive(UUID shareId, Instant now);
 
   /**
-   * Connecting makes the Profile someone's Personal Profile: its home availability becomes the
+   * Linking makes the Profile someone's Personal Profile: its home availability becomes the
    * structural share, whether it was active, still pending, or missing.
    */
-  void upsertStructural(UUID profileId, UUID householdId, Instant now);
+  void ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now);
 
-  /**
-   * Every PENDING share of the Profile becomes INVALIDATED (connected, transferred, or deleted).
-   */
+  /** Every PENDING share of the Profile becomes INVALIDATED (linked, transferred, or deleted). */
   int invalidatePendingByProfileId(UUID profileId, String reason, Instant now);
 }
