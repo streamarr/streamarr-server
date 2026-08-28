@@ -49,6 +49,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
 
 /**
  * The direct-manager lifecycle over fakes: invitation and consent, one winner per transition, the
@@ -140,6 +141,31 @@ class ProfileManagerAdministrationServiceTest {
     assertThat(
             rejectionOf(service.cancelManagerInvitation(identity(), issued.invitation().getId())))
         .isInstanceOf(ManagerRejections.InvitationNotPending.class);
+  }
+
+  @Test
+  @DisplayName("Should hide an invitation when an unauthorized cancellation caller cannot view it")
+  void shouldHideInvitationWhenUnauthorizedCancellationCallerCannotViewIt() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+    var outsider =
+        AuthenticatedIdentityFixture.accountScopedBuilder().accountId(UUID.randomUUID()).build();
+    authorization.denyAll();
+
+    assertThat(rejectionOf(service.cancelManagerInvitation(outsider, issued.invitation().getId())))
+        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should forbid cancellation when an unauthorized caller can view the invitation")
+  void shouldForbidCancellationWhenUnauthorizedCallerCanViewInvitation() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+    authorization.denyAll();
+
+    assertThatThrownBy(
+            () -> service.cancelManagerInvitation(recipientIdentity(), issued.invitation().getId()))
+        .isInstanceOf(AccessDeniedException.class);
   }
 
   @Test
@@ -260,6 +286,18 @@ class ProfileManagerAdministrationServiceTest {
     var recipientIdentity = recipientIdentity();
     assertThatThrownBy(() -> service.acceptManagerInvitation(recipientIdentity, throttled))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should return invitation not found when an acceptance code has expired")
+  void shouldReturnInvitationNotFoundWhenAcceptanceCodeHasExpired() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+    issued.invitation().setExpiresAt(NOW.minusSeconds(1));
+
+    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), issued.code())))
+        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isFalse();
   }
 
   @Test
@@ -386,6 +424,22 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject an administrative grant when the recipient is ineligible")
+  void shouldRejectAdministrativeGrantWhenRecipientIsIneligible() {
+    profiles
+        .findById(recipient.getPersonalProfileId())
+        .orElseThrow()
+        .setMaximumAllowedRatingAge(12);
+
+    assertThat(
+            rejectionOf(
+                service.administrativelyGrantProfileManager(
+                    identity(), orphan.getId(), recipient.getId(), "support")))
+        .isInstanceOf(ManagerRejections.RecipientNotEligible.class);
+    assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isFalse();
+  }
+
+  @Test
   @DisplayName("Should invalidate the redundant invitation when an override grant succeeds once")
   void shouldInvalidateRedundantInvitationWhenOverrideGrantSucceedsOnce() {
     var issued =
@@ -480,17 +534,37 @@ class ProfileManagerAdministrationServiceTest {
 
   @Test
   @DisplayName(
-      "Should remove a direct manager when the sovereign Account acts on its Personal Profile")
-  void shouldRemoveDirectManagerWhenSovereignAccountActsOnPersonalProfile() {
+      "Should remove a direct manager and invalidate their proposals when the sovereign Account acts on its Personal Profile")
+  void
+      shouldRemoveDirectManagerAndInvalidateTheirProposalsWhenSovereignAccountActsOnPersonalProfile() {
     var personal =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().id(inviter.getPersonalProfileId()).build());
     managers.tryGrantDirectManagement(recipient.getId(), personal.getId());
+    var restorable =
+        invitations.save(pendingInvitation(personal.getId(), recipient.getId(), inviter.getId()));
+    var proposed =
+        invitations.save(pendingInvitation(personal.getId(), UUID.randomUUID(), recipient.getId()));
+    var offered =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(personal.getId())
+                .householdId(UUID.randomUUID())
+                .status(ProfileShareStatus.PENDING)
+                .offeredByAccountId(recipient.getId())
+                .expiresAt(NOW.plusSeconds(3600))
+                .build());
 
     var removed = service.removeProfileManager(identity(), personal.getId(), recipient.getId());
     assertThat(removed).isInstanceOf(Outcome.Accepted.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), personal.getId()))
         .isFalse();
+    assertThat(invitations.findById(restorable.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(invitations.findById(proposed.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(shares.findById(offered.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.INVALIDATED);
 
     assertThat(
             rejectionOf(
@@ -499,15 +573,20 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should validate the reason before the ceremony when an override is requested")
-  void shouldValidateReasonBeforeCeremonyWhenOverrideIsRequested() {
+  @DisplayName(
+      "Should validate the reason before the ceremony when an administrative grant is requested")
+  void shouldValidateReasonBeforeCeremonyWhenAdministrativeGrantIsRequested() {
     assertThat(
             rejectionOf(
                 service.administrativelyGrantProfileManager(
                     identity(), orphan.getId(), recipient.getId(), " ")))
         .isInstanceOf(ManagerRejections.ReasonRequired.class);
     assertThat(authorization.recordedIntents()).isEmpty();
+  }
 
+  @Test
+  @DisplayName("Should require reauthentication when an administrative grant is requested")
+  void shouldRequireReauthenticationWhenAdministrativeGrantIsRequested() {
     authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.AdministrativelyGrantProfileManager
@@ -521,21 +600,64 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should validate the reason before the ceremony when an administrative removal is requested")
+  void shouldValidateReasonBeforeCeremonyWhenAdministrativeRemovalIsRequested() {
+    managers.tryGrantDirectManagement(recipient.getId(), orphan.getId());
+
+    assertThat(
+            rejectionOf(
+                service.administrativelyRemoveProfileManager(
+                    identity(), orphan.getId(), recipient.getId(), " ")))
+        .isInstanceOf(ManagerRejections.ReasonRequired.class);
+    assertThat(authorization.recordedIntents()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should require reauthentication when an administrative removal is requested")
+  void shouldRequireReauthenticationWhenAdministrativeRemovalIsRequested() {
+    managers.tryGrantDirectManagement(recipient.getId(), orphan.getId());
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.AdministrativelyRemoveProfileManager
+                ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
+                : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+
+    assertThat(
+            rejectionOf(
+                service.administrativelyRemoveProfileManager(
+                    identity(), orphan.getId(), recipient.getId(), "support")))
+        .isInstanceOf(ManagerRejections.ReauthenticationRequired.class);
+  }
+
+  @Test
   @DisplayName("Should filter by visibility and expiry when invitation queries run")
   void shouldFilterByVisibilityAndExpiryWhenInvitationQueriesRun() {
     invitations.save(pendingInvitation(orphan.getId(), recipient.getId(), inviter.getId()));
     var expired = pendingInvitation(orphan.getId(), UUID.randomUUID(), inviter.getId());
     expired.setExpiresAt(NOW.minusSeconds(1));
     invitations.save(expired);
+    var accepted = pendingInvitation(orphan.getId(), recipient.getId(), inviter.getId());
+    accepted.setStatus(ProfileManagerInvitationStatus.ACCEPTED);
+    accepted.setDecidedAt(NOW.minusSeconds(1));
+    invitations.save(accepted);
 
     assertThat(
             service
                 .pendingManagerInvitationsForProfile(
                     identity(), orphan.getId(), paginationOptions())
                 .items())
-        .hasSize(1);
+        .singleElement()
+        .satisfies(
+            item ->
+                assertThat(item.item().getStatus())
+                    .isEqualTo(ProfileManagerInvitationStatus.PENDING));
     assertThat(service.pendingManagerInvitations(recipientIdentity(), paginationOptions()).items())
-        .hasSize(1);
+        .singleElement()
+        .satisfies(
+            item ->
+                assertThat(item.item().getStatus())
+                    .isEqualTo(ProfileManagerInvitationStatus.PENDING));
 
     authorization.denyAll();
     assertThat(

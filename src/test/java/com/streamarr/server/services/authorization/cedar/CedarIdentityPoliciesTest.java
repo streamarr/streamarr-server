@@ -1017,6 +1017,9 @@ class CedarIdentityPoliciesTest {
     @Test
     @DisplayName("Should allow a manager invitation only when the caller has durable management")
     void shouldAllowManagerInvitationOnlyWhenCallerHasDurableManagement() {
+      assertThat(decide(atHome(), new Intent.InviteProfileManager(personal.getId())))
+          .isEqualTo(ALLOWED);
+
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       assertThat(decide(atHome(), new Intent.InviteProfileManager(orphan.getId())))
           .isEqualTo(DENIED);

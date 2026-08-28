@@ -187,8 +187,11 @@ class CredentialAdministrationResolverTest {
         .containsEntry("profileId", profileId.toString())
         .containsEntry("profileName", "Grandpa Joe")
         .containsEntry("householdId", householdId.toString())
-        .containsEntry("householdName", "Home");
-    assertThat(preview.get("affectedHouseholds").toString()).contains("Cabin");
+        .containsEntry("householdName", "Home")
+        .containsEntry(
+            "affectedHouseholds",
+            List.of(
+                Map.of("householdId", affectedHouseholdId.toString(), "householdName", "Cabin")));
   }
 
   @ParameterizedTest(
