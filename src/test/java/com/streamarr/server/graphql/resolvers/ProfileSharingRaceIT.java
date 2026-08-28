@@ -65,6 +65,8 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
       "SELECT id FROM auth_session WHERE id = ? FOR UPDATE";
   private static final String WAITING_SHARE_TRANSITION = "update%profile_household_share";
   private static final String WAITING_SESSION_LOCK = "auth_session%for update";
+  private static final String WAITING_PROFILE_LOCK = "profile%for share";
+  private static final String WAITING_COMMIT = "COMMIT";
   private static final Duration BOUND = Duration.ofSeconds(10);
 
   @Autowired private MockMvc mockMvc;
@@ -99,8 +101,8 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
   // ---- Selection versus share termination.
 
   @Test
-  @DisplayName("Should reject a selection when a Kid share activates before it commits")
-  void shouldRejectSelectionWhenKidShareActivatesBeforeItCommits() throws Exception {
+  @DisplayName("Should serialize a Kid share activation after an in-flight selection")
+  void shouldSerializeKidShareActivationAfterInFlightSelection() throws Exception {
     var kid = managedKid();
     var shareId = offerAsOwner(kid, host.household().getId());
     var hostBearer = authTestSupport.accountBearer(host);
@@ -122,23 +124,26 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
                             accept(host, shareId);
                             return null;
                           });
-              outcomeOf(activation, "Kid share activation while selection is blocked");
+              awaitWaitingOn(
+                  WAITING_COMMIT, "Kid share activation should wait behind the selection's guard");
 
               held.release().run();
-              return outcomeOf(selection, "selection after Kid share activation");
+              var selectionStatus = outcomeOf(selection, "selection after release");
+              outcomeOf(activation, "Kid share activation after selection");
+              return selectionStatus;
             });
 
     assertThat(selectProfile(hostBearer, host.profile().getId()))
         .as("the activated Kid share must lock the PIN-less Adult Profile")
         .isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(racedSelectionStatus)
-        .as("a selection authorized before activation must not commit after the Profile locks")
-        .isEqualTo(HttpStatus.CONFLICT.value());
+        .as("the in-flight selection commits before the serialized Kid share activation")
+        .isEqualTo(HttpStatus.OK.value());
   }
 
   /**
-   * Selection pins the Profile's ACTIVE share before it locks the session, in the order termination
-   * takes, so an end that commits first refuses the selection and one that waits clears it.
+   * Selection pins the Profile, its Household guards, and its ACTIVE share before it locks the
+   * session, so a concurrent end waits and then clears the committed selection.
    */
   @Test
   @DisplayName(
@@ -174,11 +179,12 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
                                   .andReturn()
                                   .getResponse()
                                   .getContentAsString());
-              // Today the end completes at once; after the fix it waits behind the selection's
-              // share lock. Either way the row is released only once the end has made its move.
               await()
                   .atMost(BOUND)
-                  .until(() -> end.isDone() || waitingOn(WAITING_SHARE_TRANSITION) >= 1);
+                  .until(
+                      () ->
+                          waitingOn(WAITING_PROFILE_LOCK) >= 1
+                              || waitingOn(WAITING_SHARE_TRANSITION) >= 1);
 
               held.release().run();
               var selectionStatus = outcomeOf(selection, "selection after release");

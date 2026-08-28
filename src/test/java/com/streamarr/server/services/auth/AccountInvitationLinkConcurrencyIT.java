@@ -31,6 +31,7 @@ import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
 import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.identity.ProfileSharingService;
+import com.streamarr.server.services.identity.SessionContextService;
 import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
@@ -80,6 +81,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
   @Autowired private CredentialIssuanceService credentialIssuanceService;
   @Autowired private AdministrationQueryService administrationQueryService;
   @Autowired private ProfileSharingService profileSharingService;
+  @Autowired private SessionContextService sessionContextService;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private AccountInvitationReofferRepository reofferRepository;
@@ -415,6 +417,36 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should accept LINK while Profile selection waits without deadlock")
+  void shouldAcceptLinkWhileProfileSelectionWaitsWithoutDeadlock() throws Exception {
+    targetAdmin = authTestSupport.createIdentity();
+    var orphan = orphanAtHome();
+    activeShare(orphan, targetAdmin.household().getId());
+    var code = pendingLinkInvitation(orphan, SHARE_RACE_EMAIL);
+
+    try (var sessionLock = holdAuthSessionLock(targetAdmin.session().getId());
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var selection =
+          executor.submit(
+              () ->
+                  sessionContextService.recordProfileSelection(
+                      accountIdentity(targetAdmin), orphan.getId()));
+      var blockerPid = backendPid(sessionLock);
+      await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) == 1);
+
+      var acceptance = executor.submit(() -> invitationService.accept(acceptCommand(code)));
+      try {
+        await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) == 2);
+      } finally {
+        sessionLock.rollback();
+      }
+
+      assertThat(selection.get(15, TimeUnit.SECONDS).profileId()).contains(orphan.getId());
+      assertThat(acceptance.get(15, TimeUnit.SECONDS)).isNotNull();
+    }
+  }
+
+  @Test
   @DisplayName("Should preserve expired invitation and share history when LINK wins")
   void shouldPreserveExpiredInvitationAndShareHistoryWhenLinkWins() {
     targetAdmin = authTestSupport.createIdentity();
@@ -708,6 +740,21 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
                 hashtextextended('account-invitation:' || lower(?), 0))
             """)) {
       statement.setString(1, recipientEmail);
+      statement.executeQuery().close();
+    } catch (Exception failure) {
+      connection.close();
+      throw failure;
+    }
+
+    return connection;
+  }
+
+  private Connection holdAuthSessionLock(UUID sessionId) throws Exception {
+    var connection = dataSource.getConnection();
+    connection.setAutoCommit(false);
+    try (var statement =
+        connection.prepareStatement("SELECT id FROM auth_session WHERE id = ? FOR UPDATE")) {
+      statement.setObject(1, sessionId);
       statement.executeQuery().close();
     } catch (Exception failure) {
       connection.close();
