@@ -56,7 +56,11 @@ class CredentialErrorsTest {
     assertThat(CredentialErrors.toIssueError(new CredentialRejections.LinkProfileRequired()))
         .isInstanceOfSatisfying(
             LinkProfileRequiredError.class,
-            error -> assertThat(error.inputPath()).containsExactly("profileId"));
+            error -> {
+              assertThat(error.message())
+                  .isEqualTo("Choose the existing Profile to link to the recipient's Account.");
+              assertThat(error.inputPath()).containsExactly("profileId");
+            });
   }
 
   @Test

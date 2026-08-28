@@ -51,7 +51,8 @@ public final class CredentialErrors {
               "Enter a non-negative maximum allowed rating age.",
               InputPath.of("maximumAllowedRatingAge"));
       case CredentialRejections.LinkProfileRequired _ ->
-          new LinkProfileRequiredError("Name the Profile this invitation links.", PROFILE_ID_PATH);
+          new LinkProfileRequiredError(
+              "Choose the existing Profile to link to the recipient's Account.", PROFILE_ID_PATH);
       case CredentialRejections.LinkProfileNotFound _ ->
           new LinkProfileNotFoundError("No such Profile.", PROFILE_ID_PATH);
       case CredentialRejections.ProfileAlreadyLinked _ ->
