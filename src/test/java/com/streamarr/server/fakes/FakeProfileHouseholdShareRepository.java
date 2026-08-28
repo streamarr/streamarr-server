@@ -177,6 +177,16 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
 
   @Override
   public void ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now) {
+    database.values().stream()
+        .filter(share -> share.getProfileId().equals(profileId))
+        .filter(share -> share.getHouseholdId().equals(householdId))
+        .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+        .filter(share -> share.statusAt(now) == ProfileShareStatus.EXPIRED)
+        .forEach(
+            share -> {
+              share.setStatus(ProfileShareStatus.EXPIRED);
+              share.setDecidedAt(now);
+            });
     var live =
         database.values().stream()
             .filter(share -> share.getProfileId().equals(profileId))
@@ -204,6 +214,15 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
 
   @Override
   public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
+    database.values().stream()
+        .filter(share -> share.getProfileId().equals(profileId))
+        .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+        .filter(share -> share.statusAt(now) == ProfileShareStatus.EXPIRED)
+        .forEach(
+            share -> {
+              share.setStatus(ProfileShareStatus.EXPIRED);
+              share.setDecidedAt(now);
+            });
     var pending =
         database.values().stream()
             .filter(share -> share.getProfileId().equals(profileId))

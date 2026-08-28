@@ -170,8 +170,8 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should leave an expired offer out of Profile invalidation")
-  void shouldLeaveExpiredOfferOutOfProfileInvalidation() {
+  @DisplayName("Should materialize an expired offer before Profile invalidation")
+  void shouldMaterializeExpiredOfferBeforeProfileInvalidation() {
     var owner = create();
     var host = create();
     var now = Instant.now();
@@ -185,7 +185,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
 
     assertThat(invalidated).isZero();
     var stored = shareRepository.findById(expired.getId()).orElseThrow();
-    assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.PENDING);
+    assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
     assertThat(stored.statusAt(now)).isEqualTo(ProfileShareStatus.EXPIRED);
     assertThat(stored.getInvalidationReason()).isEmpty();
   }

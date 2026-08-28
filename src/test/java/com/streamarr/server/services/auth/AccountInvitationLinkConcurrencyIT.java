@@ -8,6 +8,7 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationMode;
+import com.streamarr.server.domain.auth.AccountInvitationReoffer;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
@@ -17,6 +18,7 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.repositories.auth.AccountInvitationReofferRepository;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -70,6 +72,8 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
   private static final String CROSS_HOME_SECOND_EMAIL = "link-cross-home-two@example.com";
   private static final String HISTORY_WINNER_EMAIL = "link-history-winner@example.com";
   private static final String HISTORY_EXPIRED_EMAIL = "link-history-expired@example.com";
+  private static final String EXPIRED_HOME_EMAIL = "link-expired-home@example.com";
+  private static final String EXPIRED_REOFFER_EMAIL = "link-expired-reoffer@example.com";
   private static final String STALE_REOFFER_EMAIL = "link-stale-reoffer@example.com";
 
   @Autowired private AccountInvitationService invitationService;
@@ -78,6 +82,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
   @Autowired private ProfileSharingService profileSharingService;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private AccountInvitationRepository invitationRepository;
+  @Autowired private AccountInvitationReofferRepository reofferRepository;
   @Autowired private UserAccountRepository accountRepository;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository managerRepository;
@@ -106,6 +111,8 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     deleteLinkedAccount(CROSS_HOME_FIRST_EMAIL);
     deleteLinkedAccount(CROSS_HOME_SECOND_EMAIL);
     deleteLinkedAccount(HISTORY_WINNER_EMAIL);
+    deleteLinkedAccount(EXPIRED_HOME_EMAIL);
+    deleteLinkedAccount(EXPIRED_REOFFER_EMAIL);
     deleteLinkedAccount(STALE_REOFFER_EMAIL);
     authTestSupport.deleteIdentity(sourceAdmin);
     if (targetAdmin != null) {
@@ -457,8 +464,91 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     assertThat(shareHistory.statusAt(Instant.now())).isEqualTo(ProfileShareStatus.EXPIRED);
   }
 
+  @Test
+  @DisplayName("Should preserve an expired home offer when LINK creates the membership share")
+  void shouldPreserveExpiredHomeOfferWhenLinkCreatesMembershipShare() {
+    var orphan = orphanWithoutHomeShare();
+    var expiredOffer =
+        shareRepository.saveAndFlush(
+            ProfileHouseholdShare.builder()
+                .profileId(orphan.getId())
+                .householdId(sourceAdmin.household().getId())
+                .status(ProfileShareStatus.PENDING)
+                .offeredByAccountId(sourceAdmin.account().getId())
+                .expiresAt(Instant.now().minus(Duration.ofHours(1)))
+                .build());
+    var code = pendingLinkInvitation(orphan, EXPIRED_HOME_EMAIL);
+
+    invitationService.accept(acceptCommand(code));
+
+    assertThat(shareRepository.findById(expiredOffer.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.EXPIRED);
+    assertThat(
+            shareRepository
+                .findByProfileIdAndHouseholdIdAndStatus(
+                    orphan.getId(), sourceAdmin.household().getId(), ProfileShareStatus.ACTIVE)
+                .orElseThrow())
+        .matches(ProfileHouseholdShare::isStructural);
+  }
+
+  @Test
+  @DisplayName("Should preserve an expired offer when LINK reoffers the Profile")
+  void shouldPreserveExpiredOfferWhenLinkReoffersProfile() {
+    targetAdmin = authTestSupport.createIdentity();
+    var orphan = orphanAtHome();
+    var targetHouseholdId = targetAdmin.household().getId();
+    var expiredOffer =
+        shareRepository.saveAndFlush(
+            ProfileHouseholdShare.builder()
+                .profileId(orphan.getId())
+                .householdId(targetHouseholdId)
+                .status(ProfileShareStatus.PENDING)
+                .offeredByAccountId(sourceAdmin.account().getId())
+                .expiresAt(Instant.now().minus(Duration.ofHours(1)))
+                .build());
+    var code = pendingLinkInvitation(orphan, EXPIRED_REOFFER_EMAIL);
+    var invitation =
+        invitationRepository.findAll().stream()
+            .filter(candidate -> candidate.getRecipientEmail().equals(EXPIRED_REOFFER_EMAIL))
+            .findFirst()
+            .orElseThrow();
+    reofferRepository.saveAndFlush(
+        AccountInvitationReoffer.builder()
+            .invitationId(invitation.getId())
+            .householdId(targetHouseholdId)
+            .householdName(targetAdmin.household().getName())
+            .build());
+
+    invitationService.accept(acceptCommand(code));
+
+    assertThat(shareRepository.findById(expiredOffer.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.EXPIRED);
+    assertThat(shareRepository.findByProfileId(orphan.getId()))
+        .filteredOn(share -> share.getHouseholdId().equals(targetHouseholdId))
+        .extracting(ProfileHouseholdShare::getStatus)
+        .containsExactlyInAnyOrder(ProfileShareStatus.EXPIRED, ProfileShareStatus.PENDING);
+  }
+
   private Profile orphanAtHome() {
     return orphanAtHome(sourceAdmin, "Grandpa Joe");
+  }
+
+  private Profile orphanWithoutHomeShare() {
+    return transactions.execute(
+        _ -> {
+          var orphan =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder()
+                      .householdId(sourceAdmin.household().getId())
+                      .name("Expired Offer")
+                      .build());
+          managerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(sourceAdmin.account().getId())
+                  .profileId(orphan.getId())
+                  .build());
+          return orphan;
+        });
   }
 
   private Profile orphanAtHome(AuthTestSupport.TestIdentity homeAdmin, String name) {

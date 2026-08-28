@@ -3,6 +3,7 @@ package com.streamarr.server.repositories.auth;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
@@ -61,6 +62,41 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
           softly.assertThat(share.getLastModifiedOn()).isEqualTo(now);
           softly.assertThat(share.getCreatedBy()).isEqualTo(expectedAuditor);
           softly.assertThat(share.getLastModifiedBy()).isEqualTo(expectedAuditor);
+        });
+  }
+
+  @Test
+  @DisplayName("Should preserve an expired offer when creating a structural home share")
+  void shouldPreserveExpiredOfferWhenCreatingStructuralHomeShare() {
+    var now = Instant.parse("2026-08-21T12:00:00Z");
+    var household =
+        householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var profile =
+        profileRepository.saveAndFlush(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var expiredOffer =
+        shareRepository.saveAndFlush(
+            ProfileHouseholdShare.builder()
+                .profileId(profile.getId())
+                .householdId(household.getId())
+                .status(ProfileShareStatus.PENDING)
+                .expiresAt(now.minusSeconds(1))
+                .build());
+
+    shareRepository.ensureActiveMembershipShare(profile.getId(), household.getId(), now);
+
+    var preservedOffer = shareRepository.findRefreshedById(expiredOffer.getId()).orElseThrow();
+    var structuralShare =
+        shareRepository
+            .findByProfileIdAndHouseholdIdAndStatus(
+                profile.getId(), household.getId(), ProfileShareStatus.ACTIVE)
+            .orElseThrow();
+    assertSoftly(
+        softly -> {
+          softly.assertThat(preservedOffer.getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
+          softly.assertThat(preservedOffer.getDecidedAt()).isEqualTo(now);
+          softly.assertThat(structuralShare.getId()).isNotEqualTo(expiredOffer.getId());
+          softly.assertThat(structuralShare.isStructural()).isTrue();
         });
   }
 

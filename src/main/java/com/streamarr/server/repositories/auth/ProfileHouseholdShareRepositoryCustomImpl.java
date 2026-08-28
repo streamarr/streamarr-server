@@ -206,6 +206,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
 
   @Override
   public void ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now) {
+    materializeExpiredPending(profileId, householdId, now);
     var updated =
         dsl.update(PROFILE_HOUSEHOLD_SHARE)
             .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
@@ -238,19 +239,37 @@ public class ProfileHouseholdShareRepositoryCustomImpl
     }
   }
 
-  @Override
-  public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
-    return dsl.update(PROFILE_HOUSEHOLD_SHARE)
-        .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.INVALIDATED)
-        .set(PROFILE_HOUSEHOLD_SHARE.INVALIDATION_REASON, reason)
-        .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
-        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
+  private void materializeExpiredPending(UUID profileId, UUID householdId, Instant now) {
+    materializeExpiredPending(
+        PROFILE_HOUSEHOLD_SHARE
+            .PROFILE_ID
+            .eq(profileId)
+            .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId)),
+        now);
+  }
+
+  private void materializeExpiredPending(UUID profileId, Instant now) {
+    materializeExpiredPending(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId), now);
+  }
+
+  private void materializeExpiredPending(Condition scope, Instant now) {
+    var nowUtc = now.atOffset(ZoneOffset.UTC);
+    dsl.update(PROFILE_HOUSEHOLD_SHARE)
+        .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.EXPIRED)
+        .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, nowUtc)
+        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, nowUtc)
         .set(
             PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
-        .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
+        .where(scope)
         .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
-        .and(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)))
+        .and(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.le(nowUtc))
         .execute();
+  }
+
+  @Override
+  public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
+    materializeExpiredPending(profileId, now);
+    return invalidatePending(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId), reason, now);
   }
 
   @Override
