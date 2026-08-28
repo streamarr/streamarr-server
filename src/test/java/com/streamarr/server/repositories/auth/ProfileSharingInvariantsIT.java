@@ -170,8 +170,8 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should materialize an expired offer before Profile invalidation")
-  void shouldMaterializeExpiredOfferBeforeProfileInvalidation() {
+  @DisplayName("Should materialize an expired offer when its Profile is invalidated")
+  void shouldMaterializeExpiredOfferWhenProfileIsInvalidated() {
     var owner = create();
     var host = create();
     var now = Instant.now();

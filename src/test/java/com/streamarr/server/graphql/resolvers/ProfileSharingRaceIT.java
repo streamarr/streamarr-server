@@ -101,8 +101,8 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
   // ---- Selection versus share termination.
 
   @Test
-  @DisplayName("Should serialize a Kid share activation after an in-flight selection")
-  void shouldSerializeKidShareActivationAfterInFlightSelection() throws Exception {
+  @DisplayName("Should serialize a Kid share activation when a selection is in flight")
+  void shouldSerializeKidShareActivationWhenSelectionIsInFlight() throws Exception {
     var kid = managedKid();
     var shareId = offerAsOwner(kid, host.household().getId());
     var hostBearer = authTestSupport.accountBearer(host);

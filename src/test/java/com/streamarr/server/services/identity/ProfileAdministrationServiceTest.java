@@ -1075,8 +1075,8 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should explain refusal only to a caller who may view the Profile")
-  void shouldExplainRefusalOnlyToCallerWhoMayViewProfile() {
+  @DisplayName("Should hide a deletion refusal when the caller cannot view the Profile")
+  void shouldHideDeletionRefusalWhenCallerCannotViewProfile() {
     var orphan =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());

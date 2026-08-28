@@ -62,12 +62,12 @@ class CredentialStatusProjectionTest {
     assertThat(invitation.getStatus()).isEqualTo(ProfileManagerInvitationStatus.PENDING);
   }
 
-  @ParameterizedTest(name = "Should preserve {0} after a manager-invitation expiry passes")
+  @ParameterizedTest(name = "Should preserve {0} when a manager-invitation expiry has passed")
   @EnumSource(
       value = ProfileManagerInvitationStatus.class,
       names = {"ACCEPTED", "DECLINED", "CANCELED", "EXPIRED", "INVALIDATED"})
-  @DisplayName("Should preserve a terminal manager-invitation status after its expiry passes")
-  void shouldPreserveTerminalManagerInvitationStatusAfterItsExpiryPasses(
+  @DisplayName("Should preserve a terminal manager-invitation status when its expiry has passed")
+  void shouldPreserveTerminalManagerInvitationStatusWhenItsExpiryHasPassed(
       ProfileManagerInvitationStatus status) {
     var invitation =
         ProfileManagerInvitation.builder().status(status).expiresAt(NOW.minusSeconds(1)).build();

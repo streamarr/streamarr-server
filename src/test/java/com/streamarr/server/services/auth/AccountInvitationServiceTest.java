@@ -454,8 +454,8 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should omit a reoffer after Profile removal invalidates its invitation plan")
-  void shouldOmitReofferAfterProfileRemovalInvalidatesInvitationPlan() {
+  @DisplayName("Should omit a reoffer when Profile removal invalidates its invitation plan")
+  void shouldOmitReofferWhenProfileRemovalInvalidatesInvitationPlan() {
     var fixture = linkAcceptanceFixture();
     var removedHouseholdId = fixture.reofferHouseholdIds().getFirst();
     var retainedHouseholdId = fixture.reofferHouseholdIds().getLast();
@@ -479,8 +479,9 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should attribute a restricted Profile reoffer to the invitation issuer")
-  void shouldAttributeRestrictedProfileReofferToInvitationIssuer() {
+  @DisplayName(
+      "Should attribute a restricted Profile reoffer to the invitation issuer when LINK wins")
+  void shouldAttributeRestrictedProfileReofferToInvitationIssuerWhenLinkWins() {
     var fixture = linkAcceptanceFixture();
     profiles.findById(fixture.profileId()).orElseThrow().setKind(ProfileKind.KID);
     var issuerAccountId = invitations.findAll().getFirst().getIssuerAccountId();

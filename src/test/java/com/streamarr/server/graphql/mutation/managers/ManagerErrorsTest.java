@@ -14,8 +14,9 @@ class ManagerErrorsTest {
 
   @Test
   @DisplayName(
-      "Should describe the eligible Profile manager requirement without implementation detail")
-  void shouldDescribeEligibleProfileManagerRequirementWithoutImplementationDetail() {
+      "Should describe the eligible Profile manager requirement without implementation detail when an eligible manager is required")
+  void
+      shouldDescribeEligibleProfileManagerRequirementWithoutImplementationDetailWhenEligibleManagerIsRequired() {
     var error = ManagerErrors.toRelinquishError(new ManagerRejections.EligibleManagerRequired());
 
     assertThat(error)

@@ -57,8 +57,8 @@ class FakeProfileManagerInvitationRepositoryTest {
   }
 
   @Test
-  @DisplayName("Should reject an unknown invitation cursor")
-  void shouldRejectUnknownInvitationCursor() {
+  @DisplayName("Should reject an unknown invitation cursor when an invitation page is requested")
+  void shouldRejectUnknownInvitationCursorWhenInvitationPageIsRequested() {
     var now = Instant.parse("2026-08-21T12:00:00Z");
     var profileId = UUID.randomUUID();
     fake.save(

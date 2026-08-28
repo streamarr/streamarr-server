@@ -118,8 +118,8 @@ class CredentialErrorsTest {
   }
 
   @Test
-  @DisplayName("Should map the cancel and reset rejections to their schema errors")
-  void shouldMapCancelAndResetRejectionsToTheirSchemaErrors() {
+  @DisplayName("Should map cancel and reset rejections when converted to schema errors")
+  void shouldMapCancelAndResetRejectionsWhenConvertedToSchemaErrors() {
     assertThat(CredentialErrors.toCancelError(new CredentialRejections.InvitationNotPending()))
         .isInstanceOf(InvitationNotPendingError.class);
     assertThat(CredentialErrors.toIssueResetError(new CredentialRejections.AccountNotFound()))

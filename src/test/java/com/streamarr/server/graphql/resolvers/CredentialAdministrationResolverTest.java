@@ -151,8 +151,8 @@ class CredentialAdministrationResolverTest {
   }
 
   @Test
-  @DisplayName("Should expose the Households affected by inviting an existing Profile")
-  void shouldExposeHouseholdsAffectedByInvitingExistingProfile() {
+  @DisplayName("Should expose affected Households when an existing Profile is previewed")
+  void shouldExposeAffectedHouseholdsWhenExistingProfileIsPreviewed() {
     var profileId = UUID.randomUUID();
     var householdId = UUID.randomUUID();
     var affectedHouseholdId = UUID.randomUUID();

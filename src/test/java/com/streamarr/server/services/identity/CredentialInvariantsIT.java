@@ -138,8 +138,8 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should leave an expired invitation out of Profile invalidation")
-  void shouldLeaveExpiredInvitationOutOfProfileInvalidation() {
+  @DisplayName("Should leave an expired invitation out of invalidation when its Profile is deleted")
+  void shouldLeaveExpiredInvitationOutOfInvalidationWhenProfileIsDeleted() {
     var issuer = authTestSupport.createAccount();
     var target = authTestSupport.createAccount();
     var expired =

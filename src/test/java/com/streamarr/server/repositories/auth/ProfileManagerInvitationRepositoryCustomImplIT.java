@@ -37,8 +37,9 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
 
   @Test
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
-  @DisplayName("Should return the newest pending Profile invitation window with lookahead")
-  void shouldReturnNewestPendingProfileInvitationWindowWithLookahead() {
+  @DisplayName(
+      "Should return the newest pending Profile invitation window when lookahead is requested")
+  void shouldReturnNewestPendingProfileInvitationWindowWhenLookaheadIsRequested() {
     var inviter = authTestSupport.createAdminIdentity();
     var recipients =
         List.of(
@@ -81,8 +82,9 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
 
   @Test
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
-  @DisplayName("Should return the newest pending recipient invitation window with lookahead")
-  void shouldReturnNewestPendingRecipientInvitationWindowWithLookahead() {
+  @DisplayName(
+      "Should return the newest pending recipient invitation window when lookahead is requested")
+  void shouldReturnNewestPendingRecipientInvitationWindowWhenLookaheadIsRequested() {
     var inviters =
         List.of(
             authTestSupport.createAdminIdentity(),
@@ -152,6 +154,7 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
   @ParameterizedTest(name = "Should invalidate a pending invitation when its {0} disappears")
   @EnumSource(RequiredParty.class)
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
+  @DisplayName("Should invalidate a pending invitation when its required party disappears")
   void shouldInvalidatePendingInvitationWhenRequiredPartyDisappears(RequiredParty requiredParty) {
     var inviter = authTestSupport.createAdminIdentity();
     var recipient = authTestSupport.createIdentity();

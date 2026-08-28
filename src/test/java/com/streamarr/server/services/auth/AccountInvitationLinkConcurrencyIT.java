@@ -227,8 +227,8 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep an earlier reoffer invalid after the Profile is shared there again")
-  void shouldKeepEarlierReofferInvalidAfterProfileIsSharedThereAgain() {
+  @DisplayName("Should keep an earlier reoffer invalid when the Profile is shared there again")
+  void shouldKeepEarlierReofferInvalidWhenProfileIsSharedThereAgain() {
     targetAdmin = authTestSupport.createIdentity();
     var orphan = orphanAtHome();
     var targetHouseholdId = targetAdmin.household().getId();
@@ -304,8 +304,8 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should invalidate a share offered before the Profile is linked")
-  void shouldInvalidateShareOfferedBeforeProfileIsLinked() throws Exception {
+  @DisplayName("Should invalidate a share when it was offered before the Profile was linked")
+  void shouldInvalidateShareWhenItWasOfferedBeforeProfileWasLinked() throws Exception {
     targetAdmin = authTestSupport.createIdentity();
     var orphan = orphanAtHome();
     var targetHouseholdId = targetAdmin.household().getId();
@@ -377,8 +377,8 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should let a Household accept a restricted Profile reoffered after LINK")
-  void shouldLetHouseholdAcceptRestrictedProfileReofferedAfterLink() {
+  @DisplayName("Should let a Household accept a restricted Profile when it is reoffered after LINK")
+  void shouldLetHouseholdAcceptRestrictedProfileWhenItIsReofferedAfterLink() {
     targetAdmin = authTestSupport.createIdentity();
     var orphan = orphanAtHome();
     orphan.setKind(ProfileKind.KID);
@@ -411,8 +411,10 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should accept reciprocal cross-Household LINK invitations without deadlock")
-  void shouldAcceptReciprocalCrossHouseholdLinkInvitationsWithoutDeadlock() throws Exception {
+  @DisplayName(
+      "Should accept reciprocal cross-Household LINK invitations without deadlock when they run concurrently")
+  void shouldAcceptReciprocalCrossHouseholdLinkInvitationsWithoutDeadlockWhenTheyRunConcurrently()
+      throws Exception {
     targetAdmin = authTestSupport.createAdminIdentity();
     var sourceOrphan = orphanAtHome(sourceAdmin, "Source Visitor");
     var targetOrphan = orphanAtHome(targetAdmin, "Target Visitor");
