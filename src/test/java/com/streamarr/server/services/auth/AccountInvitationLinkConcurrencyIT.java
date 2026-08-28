@@ -20,6 +20,7 @@ import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.AccountInvitationReofferRepository;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
+import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -28,7 +29,7 @@ import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitat
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptedInvitation;
 import com.streamarr.server.services.identity.AdministrationQueryService;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
-import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
+import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationForProfileCommand;
 import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.SessionContextService;
@@ -86,6 +87,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private AccountInvitationReofferRepository reofferRepository;
+  @Autowired private AuthSessionRepository sessionRepository;
   @Autowired private UserAccountRepository accountRepository;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository managerRepository;
@@ -168,7 +170,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
       var issuance =
           executor.submit(
               () ->
-                  credentialIssuanceService.issueAccountInvitation(
+                  credentialIssuanceService.issueAccountInvitationForProfile(
                       accountIdentity(sourceAdmin),
                       linkInvitationCommand(orphan, SECOND_RIVAL_EMAIL)));
       var blockerPid = backendPid(issuanceLock);
@@ -201,7 +203,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
       var issuance =
           executor.submit(
               () ->
-                  credentialIssuanceService.issueAccountInvitation(
+                  credentialIssuanceService.issueAccountInvitationForProfile(
                       accountIdentity(sourceAdmin), command));
       var blockerPid = backendPid(issuanceLock);
       await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) == 1);
@@ -319,13 +321,11 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     activeShare(orphan, targetAdmin.household().getId());
     var targetHouseholdId = targetAdmin.household().getId();
     var outcome =
-        credentialIssuanceService.issueAccountInvitation(
+        credentialIssuanceService.issueAccountInvitationForProfile(
             accountIdentity(sourceAdmin),
-            IssueInvitationCommand.builder()
+            IssueInvitationForProfileCommand.builder()
                 .recipientEmail(DUPLICATE_REOFFER_EMAIL)
-                .householdId(sourceAdmin.household().getId())
                 .householdRole(HouseholdRole.MEMBER)
-                .mode(AccountInvitationMode.LINK)
                 .profileId(orphan.getId())
                 .reofferHouseholdIds(List.of(targetHouseholdId, targetHouseholdId))
                 .build());
@@ -355,13 +355,11 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     activeShare(orphan, targetHouseholdId);
     var issued =
         accepted(
-            credentialIssuanceService.issueAccountInvitation(
+            credentialIssuanceService.issueAccountInvitationForProfile(
                 accountIdentity(sourceAdmin),
-                IssueInvitationCommand.builder()
+                IssueInvitationForProfileCommand.builder()
                     .recipientEmail(RESTRICTED_REOFFER_EMAIL)
-                    .householdId(sourceAdmin.household().getId())
                     .householdRole(HouseholdRole.MEMBER)
-                    .mode(AccountInvitationMode.LINK)
                     .profileId(orphan.getId())
                     .reofferHouseholdIds(List.of(targetHouseholdId))
                     .build()));
@@ -418,8 +416,10 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should accept LINK while Profile selection waits without deadlock")
-  void shouldAcceptLinkWhileProfileSelectionWaitsWithoutDeadlock() throws Exception {
+  @DisplayName(
+      "Should clear the selected Profile when LINK acceptance follows concurrent Profile selection")
+  void shouldClearSelectedProfileWhenLinkAcceptanceFollowsConcurrentProfileSelection()
+      throws Exception {
     targetAdmin = authTestSupport.createIdentity();
     var orphan = orphanAtHome();
     activeShare(orphan, targetAdmin.household().getId());
@@ -444,6 +444,12 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
 
       assertThat(selection.get(15, TimeUnit.SECONDS).profileId()).contains(orphan.getId());
       assertThat(acceptance.get(15, TimeUnit.SECONDS)).isNotNull();
+      assertThat(
+              sessionRepository
+                  .findById(targetAdmin.session().getId())
+                  .orElseThrow()
+                  .getSelectedProfileId())
+          .isNull();
     }
   }
 
@@ -721,12 +727,11 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     }
   }
 
-  private IssueInvitationCommand linkInvitationCommand(Profile profile, String recipientEmail) {
-    return IssueInvitationCommand.builder()
+  private IssueInvitationForProfileCommand linkInvitationCommand(
+      Profile profile, String recipientEmail) {
+    return IssueInvitationForProfileCommand.builder()
         .recipientEmail(recipientEmail)
-        .householdId(sourceAdmin.household().getId())
         .householdRole(HouseholdRole.MEMBER)
-        .mode(AccountInvitationMode.LINK)
         .profileId(profile.getId())
         .build();
   }

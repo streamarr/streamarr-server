@@ -191,12 +191,15 @@ class CredentialAdministrationResolverTest {
     assertThat(preview.get("affectedHouseholds").toString()).contains("Cabin");
   }
 
-  @Test
+  @ParameterizedTest(
+      name = "Should expose {0} through the existing-Profile invitation payload union")
+  @MethodSource("existingProfileIssuanceErrorCases")
   @DisplayName(
       "Should expose an existing Profile invitation rejection through its payload union when the service rejects")
-  void shouldExposeExistingProfileInvitationRejectionThroughPayloadUnionWhenServiceRejects() {
+  void shouldExposeExistingProfileInvitationRejectionThroughPayloadUnionWhenServiceRejects(
+      IssuanceErrorCase errorCase) {
     when(credentialIssuanceService.issueAccountInvitationForProfile(any(), any()))
-        .thenReturn(Outcome.rejected(new CredentialRejections.LinkProfileNotFound()));
+        .thenReturn(Outcome.rejected(errorCase.rejection()));
 
     String type =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -207,8 +210,8 @@ class CredentialAdministrationResolverTest {
             ISSUE_EXISTING_PROFILE_INVITATION_MUTATION,
             "data.issueAccountInvitationForExistingProfile.userErrors[0].inputPath");
 
-    assertThat(type).isEqualTo("LinkProfileNotFoundError");
-    assertThat(inputPath).containsExactly("profileId");
+    assertThat(type).isEqualTo(errorCase.expectedType());
+    assertThat(inputPath).containsExactlyElementsOf(errorCase.expectedInputPath());
   }
 
   @Test
@@ -274,6 +277,42 @@ class CredentialAdministrationResolverTest {
             new CredentialRejections.MaximumAllowedRatingAgeInvalid(),
             "MaximumAllowedRatingAgeInvalidError",
             null));
+  }
+
+  private static Stream<IssuanceErrorCase> existingProfileIssuanceErrorCases() {
+    return Stream.of(
+        new IssuanceErrorCase(
+            new CredentialRejections.EmailRequired(),
+            "EmailRequiredError",
+            List.of("recipientEmail")),
+        new IssuanceErrorCase(
+            new CredentialRejections.EmailInvalid(),
+            "EmailInvalidError",
+            List.of("recipientEmail")),
+        new IssuanceErrorCase(
+            new CredentialRejections.EmailAlreadyUsed(),
+            "EmailAlreadyUsedError",
+            List.of("recipientEmail")),
+        new IssuanceErrorCase(
+            new CredentialRejections.HouseholdNotFound(),
+            "HouseholdNotFoundError",
+            List.of("householdId")),
+        new IssuanceErrorCase(
+            new CredentialRejections.LinkProfileNotFound(),
+            "LinkProfileNotFoundError",
+            List.of("profileId")),
+        new IssuanceErrorCase(
+            new CredentialRejections.ProfileAlreadyLinked(),
+            "ProfileAlreadyLinkedError",
+            List.of("profileId")),
+        new IssuanceErrorCase(
+            new CredentialRejections.ReofferHouseholdNotFound(),
+            "ReofferHouseholdNotFoundError",
+            List.of("reofferHouseholdIds")),
+        new IssuanceErrorCase(
+            new CredentialRejections.ReofferHouseholdNotShared(),
+            "ReofferHouseholdNotSharedError",
+            List.of("reofferHouseholdIds")));
   }
 
   private static Stream<ResetErrorCase> resetErrorCases() {

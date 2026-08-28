@@ -312,6 +312,28 @@ class CredentialInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject a pending LINK invitation when it names no Profile")
+  void shouldRejectPendingLinkInvitationWhenItNamesNoProfile() {
+    var target = authTestSupport.createAccount();
+    var invalid =
+        pendingInvitationRow(target, target, Instant.now().plus(Duration.ofDays(7)))
+            .mode(AccountInvitationMode.LINK)
+            .profileId(null)
+            .build();
+
+    try {
+      assertThatThrownBy(() -> invitationRepository.saveAndFlush(invalid))
+          .isInstanceOf(DataIntegrityViolationException.class)
+          .hasStackTraceContaining("chk_account_invitation_link_names_profile");
+    } finally {
+      invitationRepository
+          .findByPublicId(invalid.getPublicId())
+          .ifPresent(row -> invitationRepository.deleteById(row.getId()));
+      authTestSupport.deleteAccount(target.getId());
+    }
+  }
+
+  @Test
   @DisplayName("Should reject a credential whose secret digest is not a SHA-256 digest")
   void shouldRejectCredentialWhoseSecretDigestIsNotSha256Digest() {
     var target = authTestSupport.createAccount();

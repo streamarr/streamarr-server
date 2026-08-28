@@ -35,6 +35,7 @@ import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationForProfileCommand;
+import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationWithNewProfileCommand;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
@@ -204,16 +205,6 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject a Profile when it belongs to another Household")
-  void shouldRejectProfileWhenItBelongsToAnotherHousehold() {
-    var elsewhere =
-        profiles.save(
-            ProfileFixture.defaultProfileBuilder().householdId(UUID.randomUUID()).build());
-    assertThat(rejectionOf(issueLink(elsewhere.getId(), List.of())))
-        .isInstanceOf(CredentialRejections.ProfileNotInHousehold.class);
-  }
-
-  @Test
   @DisplayName("Should reject an unknown reoffer Household when issuing a LINK invitation")
   void shouldRejectUnknownReofferHouseholdWhenIssuingLinkInvitation() {
     var orphan =
@@ -252,6 +243,8 @@ class CredentialIssuanceServiceTest {
             ProfileFixture.defaultProfileBuilder()
                 .householdId(household.getId())
                 .name("Grandpa Joe")
+                .kind(ProfileKind.KID)
+                .maximumAllowedRatingAge(10)
                 .build());
     var issued = issued(issueLink(orphan.getId(), List.of()));
 
@@ -259,6 +252,8 @@ class CredentialIssuanceServiceTest {
     assertThat(invitation.getMode()).isEqualTo(AccountInvitationMode.LINK);
     assertThat(invitation.getProfileId()).isEqualTo(orphan.getId());
     assertThat(invitation.getProfileName()).isEqualTo("Grandpa Joe");
+    assertThat(invitation.getProfileKind()).isEqualTo(ProfileKind.KID);
+    assertThat(invitation.getMaximumAllowedRatingAge()).isEqualTo(10);
   }
 
   @Test
@@ -276,21 +271,6 @@ class CredentialIssuanceServiceTest {
     var rows = reoffers.findByInvitationId(invitation.getId());
     assertThat(rows).hasSize(1);
     assertThat(rows.getFirst().getHouseholdName()).isEqualTo("Cabin");
-  }
-
-  @Test
-  @DisplayName("Should ignore reoffer Households when issuing a CREATE invitation")
-  void shouldIgnoreReofferHouseholdsWhenIssuingCreateInvitation() {
-    var previous =
-        households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
-
-    var issued =
-        issued(
-            service.issueAccountInvitation(
-                identity(),
-                command().toBuilder().reofferHouseholdIds(List.of(previous.getId())).build()));
-
-    assertThat(reoffers.findByInvitationId(issued.invitation().getId())).isEmpty();
   }
 
   @Test
@@ -315,8 +295,15 @@ class CredentialIssuanceServiceTest {
 
     var issued =
         issued(
-            service.issueAccountInvitation(
-                identity(), command().toBuilder().householdId(empty.getId()).build()));
+            service.issueAccountInvitationWithNewProfile(
+                identity(),
+                IssueInvitationWithNewProfileCommand.builder()
+                    .recipientEmail("kai@example.com")
+                    .householdId(empty.getId())
+                    .householdRole(HouseholdRole.MEMBER)
+                    .profileName("Kai")
+                    .profileKind(ProfileKind.ADULT)
+                    .build()));
 
     assertThat(issued.invitation().getHouseholdRole()).isEqualTo(HouseholdRole.MEMBER);
   }
@@ -329,7 +316,7 @@ class CredentialIssuanceServiceTest {
 
     var issued =
         issued(
-            service.issueAccountInvitation(
+            service.issueAccountInvitationForProfile(
                 identity(),
                 linkCommand(kid.getId(), List.of()).toBuilder()
                     .householdRole(HouseholdRole.ADMIN)
@@ -346,9 +333,7 @@ class CredentialIssuanceServiceTest {
     var kid = profiles.save(ProfileFixture.kidProfileBuilder().householdId(empty.getId()).build());
 
     var outcome =
-        service.issueAccountInvitation(
-            identity(),
-            linkCommand(kid.getId(), List.of()).toBuilder().householdId(empty.getId()).build());
+        service.issueAccountInvitationForProfile(identity(), linkCommand(kid.getId(), List.of()));
 
     assertThat(rejectionOf(outcome))
         .isInstanceOf(CredentialRejections.RestrictedFirstAccount.class);
@@ -936,15 +921,15 @@ class CredentialIssuanceServiceTest {
 
   private Outcome<CredentialIssuanceService.IssuedInvitation, CredentialRejections.Issue> issueLink(
       UUID profileId, List<UUID> reofferHouseholdIds) {
-    return service.issueAccountInvitation(identity(), linkCommand(profileId, reofferHouseholdIds));
+    return service.issueAccountInvitationForProfile(
+        identity(), linkCommand(profileId, reofferHouseholdIds));
   }
 
-  private IssueInvitationCommand linkCommand(UUID profileId, List<UUID> reofferHouseholdIds) {
-    return IssueInvitationCommand.builder()
+  private IssueInvitationForProfileCommand linkCommand(
+      UUID profileId, List<UUID> reofferHouseholdIds) {
+    return IssueInvitationForProfileCommand.builder()
         .recipientEmail("joe@example.com")
-        .householdId(household.getId())
         .householdRole(HouseholdRole.MEMBER)
-        .mode(AccountInvitationMode.LINK)
         .profileId(profileId)
         .reofferHouseholdIds(reofferHouseholdIds)
         .build();
