@@ -11,6 +11,7 @@ import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.PasswordResetCodeStatus;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
@@ -44,6 +45,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -194,6 +196,24 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject a LINK invitation when its Profile disappears during validation")
+  void shouldRejectLinkInvitationWhenProfileDisappearsDuringValidation() {
+    var vanishingProfiles = new VanishingProfileRepository(shares);
+    var profile =
+        vanishingProfiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var vanishingAccounts = new FakeUserAccountRepository(vanishingProfiles);
+    accounts.findAll().forEach(vanishingAccounts::save);
+    var vanishingService = serviceUsing(vanishingAccounts, vanishingProfiles);
+
+    var outcome =
+        vanishingService.issueAccountInvitationForProfile(
+            identity(), linkCommand(profile.getId(), List.of()));
+
+    assertThat(rejectionOf(outcome)).isInstanceOf(CredentialRejections.LinkProfileNotFound.class);
+  }
+
+  @Test
   @DisplayName("Should reject a linked Profile when issuing a LINK invitation")
   void shouldRejectLinkedProfileWhenIssuingLinkInvitation() {
     var linked =
@@ -309,20 +329,21 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should snapshot MEMBER when issuing a restricted LINK invitation")
-  void shouldSnapshotMemberWhenIssuingRestrictedLinkInvitation() {
+  @DisplayName("Should reject HouseholdAdmin when issuing a restricted LINK invitation")
+  void shouldRejectHouseholdAdminWhenIssuingRestrictedLinkInvitation() {
     var kid =
         profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
 
-    var issued =
-        issued(
-            service.issueAccountInvitationForProfile(
-                identity(),
-                linkCommand(kid.getId(), List.of()).toBuilder()
-                    .householdRole(HouseholdRole.ADMIN)
-                    .build()));
+    var outcome =
+        service.issueAccountInvitationForProfile(
+            identity(),
+            linkCommand(kid.getId(), List.of()).toBuilder()
+                .householdRole(HouseholdRole.ADMIN)
+                .build());
 
-    assertThat(issued.invitation().getHouseholdRole()).isEqualTo(HouseholdRole.MEMBER);
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(CredentialRejections.RestrictedHouseholdAdmin.class);
+    assertThat(invitations.findAll()).isEmpty();
   }
 
   @Test
@@ -857,13 +878,18 @@ class CredentialIssuanceServiceTest {
   }
 
   private CredentialIssuanceService serviceUsing(FakeUserAccountRepository accountRepository) {
+    return serviceUsing(accountRepository, profiles);
+  }
+
+  private CredentialIssuanceService serviceUsing(
+      FakeUserAccountRepository accountRepository, FakeProfileRepository profileRepository) {
     return new CredentialIssuanceService(
         authorization,
         invitations,
         resetCodes,
         accountRepository,
         households,
-        profiles,
+        profileRepository,
         shares,
         reoffers,
         audit,
@@ -916,6 +942,26 @@ class CredentialIssuanceServiceTest {
       return super.lockByIds(accountIds, timeout).stream()
           .filter(accountId -> !accountId.equals(missingAccountId))
           .collect(Collectors.toUnmodifiableSet());
+    }
+  }
+
+  private static final class VanishingProfileRepository extends FakeProfileRepository {
+
+    private int reads;
+
+    private VanishingProfileRepository(FakeProfileHouseholdShareRepository shares) {
+      super(shares);
+    }
+
+    @Override
+    public Optional<Profile> findById(UUID profileId) {
+      var profile = super.findById(profileId);
+      reads++;
+      if (reads == 2) {
+        deleteById(profileId);
+      }
+
+      return profile;
     }
   }
 

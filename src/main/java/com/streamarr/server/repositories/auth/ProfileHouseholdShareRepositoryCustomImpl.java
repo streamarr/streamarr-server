@@ -207,36 +207,29 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   @Override
   public void ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now) {
     materializeExpiredPending(profileId, householdId, now);
-    var updated =
-        dsl.update(PROFILE_HOUSEHOLD_SHARE)
-            .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
-            .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
-            .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
-            .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
-            .set(
-                PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY,
-                auditorAware.getCurrentAuditor().orElse(null))
-            .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
-            .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
-            .and(
-                PROFILE_HOUSEHOLD_SHARE.STATUS.in(
-                    ProfileShareStatus.PENDING, ProfileShareStatus.ACTIVE))
-            .execute();
-    if (updated == 0) {
-      var timestamp = now.atOffset(ZoneOffset.UTC);
-      var auditor = auditorAware.getCurrentAuditor().orElse(null);
-      dsl.insertInto(PROFILE_HOUSEHOLD_SHARE)
-          .set(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, profileId)
-          .set(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID, householdId)
-          .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
-          .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
-          .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, timestamp)
-          .set(PROFILE_HOUSEHOLD_SHARE.CREATED_ON, timestamp)
-          .set(PROFILE_HOUSEHOLD_SHARE.CREATED_BY, auditor)
-          .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, timestamp)
-          .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditor)
-          .execute();
-    }
+    var timestamp = now.atOffset(ZoneOffset.UTC);
+    var auditor = auditorAware.getCurrentAuditor().orElse(null);
+    dsl.insertInto(PROFILE_HOUSEHOLD_SHARE)
+        .set(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, profileId)
+        .set(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID, householdId)
+        .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
+        .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
+        .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, timestamp)
+        .set(PROFILE_HOUSEHOLD_SHARE.CREATED_ON, timestamp)
+        .set(PROFILE_HOUSEHOLD_SHARE.CREATED_BY, auditor)
+        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, timestamp)
+        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditor)
+        .onConflict(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
+        .where(
+            PROFILE_HOUSEHOLD_SHARE.STATUS.in(
+                ProfileShareStatus.PENDING, ProfileShareStatus.ACTIVE))
+        .doUpdate()
+        .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
+        .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
+        .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, timestamp)
+        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, timestamp)
+        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditor)
+        .execute();
   }
 
   private void materializeExpiredPending(UUID profileId, UUID householdId, Instant now) {

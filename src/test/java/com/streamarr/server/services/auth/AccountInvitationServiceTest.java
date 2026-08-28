@@ -450,6 +450,31 @@ class AccountInvitationServiceTest {
   }
 
   @Test
+  @DisplayName("Should omit a reoffer after Profile removal invalidates its invitation plan")
+  void shouldOmitReofferAfterProfileRemovalInvalidatesInvitationPlan() {
+    var fixture = linkAcceptanceFixture();
+    var removedHouseholdId = fixture.reofferHouseholdIds().getFirst();
+    var retainedHouseholdId = fixture.reofferHouseholdIds().getLast();
+    assertThat(shares.tryEndActive(fixture.visitIds().getFirst(), NOW)).isTrue();
+    reoffers.findByInvitationId(invitations.findAll().getFirst().getId()).stream()
+        .filter(reoffer -> reoffer.getHouseholdId().equals(removedHouseholdId))
+        .forEach(reoffers::delete);
+
+    var preview = service.lookup(fixture.code());
+    service.accept(acceptCommand(fixture.code()));
+
+    assertThat(preview.profileShareOfferTargets()).containsExactly("Lodge");
+    assertThat(
+            shares.findByProfileIdAndHouseholdIdAndStatus(
+                fixture.profileId(), removedHouseholdId, ProfileShareStatus.PENDING))
+        .isEmpty();
+    assertThat(
+            shares.findByProfileIdAndHouseholdIdAndStatus(
+                fixture.profileId(), retainedHouseholdId, ProfileShareStatus.PENDING))
+        .isPresent();
+  }
+
+  @Test
   @DisplayName("Should attribute a restricted Profile reoffer to the invitation issuer")
   void shouldAttributeRestrictedProfileReofferToInvitationIssuer() {
     var fixture = linkAcceptanceFixture();

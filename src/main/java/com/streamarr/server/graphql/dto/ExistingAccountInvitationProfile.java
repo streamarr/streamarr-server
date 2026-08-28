@@ -4,5 +4,5 @@ import com.streamarr.server.domain.auth.ProfileKind;
 import java.util.UUID;
 
 public record ExistingAccountInvitationProfile(
-    UUID id, String name, ProfileKind kind, Integer maximumAllowedRatingAge)
+    UUID id, String name, ProfileKind kind, Integer maximumAllowedRatingAge, boolean deleted)
     implements AccountInvitationProfile {}

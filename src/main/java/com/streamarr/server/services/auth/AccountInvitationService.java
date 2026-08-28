@@ -27,6 +27,7 @@ import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -124,7 +125,7 @@ public class AccountInvitationService {
       return List.of();
     }
 
-    return reofferRepository.findByInvitationId(invitation.getId()).stream()
+    return profileShareOfferTargetsAtDecision(invitation).stream()
         .map(AccountInvitationReoffer::getHouseholdName)
         .sorted()
         .toList();
@@ -314,7 +315,17 @@ public class AccountInvitationService {
           OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
     }
 
-    profileRepository.lockProfileAvailabilityAcrossHouseholds(profileId);
+    var recordedReoffers = reofferRepository.findByInvitationId(invitation.getId());
+    profileRepository.lockProfileTransitionAcrossHouseholds(
+        profileId,
+        recordedReoffers.stream()
+            .map(AccountInvitationReoffer::getHouseholdId)
+            .filter(Objects::nonNull)
+            .toList());
+    var reofferTargets =
+        recordedReoffers.stream()
+            .filter(recorded -> isProfileShareOfferTarget(recorded, invitation))
+            .toList();
     var role =
         userAccountRepository
             .roleForNewAccount(householdId, invitation.getHouseholdRole())
@@ -347,34 +358,52 @@ public class AccountInvitationService {
     shareRepository.invalidatePendingByProfileId(profileId, "Profile linked to an Account", now);
     var reofferAccountId =
         profile.isRestricted() ? invitation.getIssuerAccountId() : account.getId();
-    reoffer(invitation, reofferAccountId, now);
+    reoffer(
+        ReofferPlan.builder()
+            .profileId(profileId)
+            .targets(reofferTargets)
+            .offererAccountId(reofferAccountId)
+            .now(now)
+            .build());
     return account;
   }
 
   private void endCurrentVisits(UUID profileId, UUID homeHouseholdId, Instant now) {
     for (var share :
         shareRepository.findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE)) {
-      if (!share.getHouseholdId().equals(homeHouseholdId)) {
-        shareRepository.tryEndActive(share.getId(), now);
-        authSessionRepository.clearProfileSelectionFromLiveSessions(
-            profileId, share.getHouseholdId(), now);
+      if (share.getHouseholdId().equals(homeHouseholdId)) {
+        continue;
       }
+
+      if (!shareRepository.tryEndActive(share.getId(), now)) {
+        throw new IllegalStateException(
+            "Active Profile share %s could not be ended during Account linking"
+                .formatted(share.getId()));
+      }
+
+      authSessionRepository.clearProfileSelectionFromLiveSessions(
+          profileId, share.getHouseholdId(), now);
     }
   }
 
-  private void reoffer(AccountInvitation invitation, UUID offererAccountId, Instant now) {
-    for (var recorded : reofferRepository.findByInvitationId(invitation.getId())) {
-      if (isProfileShareOfferTarget(recorded, invitation)) {
-        shareRepository.saveAndFlush(
-            ProfileHouseholdShare.builder()
-                .profileId(invitation.getProfileId())
-                .householdId(recorded.getHouseholdId())
-                .status(ProfileShareStatus.PENDING)
-                .offeredByAccountId(offererAccountId)
-                .expiresAt(now.plus(properties.invitationTtl()))
-                .build());
-      }
+  private void reoffer(ReofferPlan plan) {
+    for (var target : plan.targets()) {
+      shareRepository.saveAndFlush(
+          ProfileHouseholdShare.builder()
+              .profileId(plan.profileId())
+              .householdId(target.getHouseholdId())
+              .status(ProfileShareStatus.PENDING)
+              .offeredByAccountId(plan.offererAccountId())
+              .expiresAt(plan.now().plus(properties.invitationTtl()))
+              .build());
     }
+  }
+
+  private List<AccountInvitationReoffer> profileShareOfferTargetsAtDecision(
+      AccountInvitation invitation) {
+    return reofferRepository.findByInvitationId(invitation.getId()).stream()
+        .filter(recorded -> isProfileShareOfferTarget(recorded, invitation))
+        .toList();
   }
 
   private static boolean isProfileShareOfferTarget(
@@ -382,6 +411,10 @@ public class AccountInvitationService {
     return recorded.getHouseholdId() != null
         && !recorded.getHouseholdId().equals(invitation.getHouseholdId());
   }
+
+  @Builder
+  private record ReofferPlan(
+      UUID profileId, List<AccountInvitationReoffer> targets, UUID offererAccountId, Instant now) {}
 
   private AccountInvitation resolvePending(String rawCode) {
     var invitation = codeResolver.resolvePending(rawCode, invitationRepository::findByPublicId);

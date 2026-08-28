@@ -185,17 +185,22 @@ public class CredentialIssuanceService {
 
     var profile =
         mode == AccountInvitationMode.CREATE
-            ? null
-            : profileRepository.findById(command.profileId()).orElseThrow();
-    var shapeRejection = profileShapeRejection(command, mode, profile);
+            ? Optional.<Profile>empty()
+            : profileRepository.findById(command.profileId());
+    if (mode == AccountInvitationMode.LINK && profile.isEmpty()) {
+      return Outcome.rejected(new CredentialRejections.LinkProfileNotFound());
+    }
+
+    var linkedProfile = profile.orElse(null);
+    var shapeRejection = profileShapeRejection(command, mode, linkedProfile);
     if (shapeRejection.isPresent()) {
       return Outcome.rejected(shapeRejection.get());
     }
 
     var reofferRejection =
-        profile == null
+        linkedProfile == null
             ? Optional.<CredentialRejections.Issue>empty()
-            : reofferRejection(profile, command);
+            : reofferRejection(linkedProfile, command);
     if (reofferRejection.isPresent()) {
       return Outcome.rejected(reofferRejection.get());
     }
@@ -240,9 +245,7 @@ public class CredentialIssuanceService {
       return Optional.of(new CredentialRejections.RestrictedFirstAccount());
     }
 
-    if (mode == AccountInvitationMode.CREATE
-        && restricted
-        && command.householdRole() == HouseholdRole.ADMIN) {
+    if (restricted && command.householdRole() == HouseholdRole.ADMIN) {
       // Otherwise acceptance would fail at commit (chk_restricted_account_holds_no_authority).
       return Optional.of(new CredentialRejections.RestrictedHouseholdAdmin());
     }

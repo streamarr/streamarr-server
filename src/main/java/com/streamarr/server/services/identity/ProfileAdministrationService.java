@@ -410,6 +410,7 @@ public class ProfileAdministrationService {
             throw new MutationRejection(refusal.get());
           }
 
+          profileRepository.lockProfileDeletionAcrossHouseholds(profileId);
           accountInvitationRepository.invalidatePendingByProfileId(
               profileId, "Profile deleted", clock.instant());
           profileRepository.deleteById(profileId);

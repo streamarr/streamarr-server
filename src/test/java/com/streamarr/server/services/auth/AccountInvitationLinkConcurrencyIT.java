@@ -78,6 +78,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
   private static final String EXPIRED_HOME_EMAIL = "link-expired-home@example.com";
   private static final String EXPIRED_REOFFER_EMAIL = "link-expired-reoffer@example.com";
   private static final String STALE_REOFFER_EMAIL = "link-stale-reoffer@example.com";
+  private static final String REMOVED_REOFFER_EMAIL = "link-removed-reoffer@example.com";
 
   @Autowired private AccountInvitationService invitationService;
   @Autowired private CredentialIssuanceService credentialIssuanceService;
@@ -119,6 +120,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     deleteLinkedAccount(EXPIRED_HOME_EMAIL);
     deleteLinkedAccount(EXPIRED_REOFFER_EMAIL);
     deleteLinkedAccount(STALE_REOFFER_EMAIL);
+    deleteLinkedAccount(REMOVED_REOFFER_EMAIL);
     authTestSupport.deleteIdentity(sourceAdmin);
     if (targetAdmin != null) {
       authTestSupport.deleteIdentity(targetAdmin);
@@ -222,6 +224,36 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
       assertThat(rejectionOf(issuance.get(15, TimeUnit.SECONDS)))
           .isInstanceOf(CredentialRejections.ReofferHouseholdNotShared.class);
     }
+  }
+
+  @Test
+  @DisplayName("Should keep an earlier reoffer invalid after the Profile is shared there again")
+  void shouldKeepEarlierReofferInvalidAfterProfileIsSharedThereAgain() {
+    targetAdmin = authTestSupport.createIdentity();
+    var orphan = orphanAtHome();
+    var targetHouseholdId = targetAdmin.household().getId();
+    var visit = activeShare(orphan, targetHouseholdId);
+    var issued =
+        accepted(
+            credentialIssuanceService.issueAccountInvitationForProfile(
+                accountIdentity(sourceAdmin),
+                IssueInvitationForProfileCommand.builder()
+                    .recipientEmail(REMOVED_REOFFER_EMAIL)
+                    .householdRole(HouseholdRole.MEMBER)
+                    .profileId(orphan.getId())
+                    .reofferHouseholdIds(List.of(targetHouseholdId))
+                    .build()));
+    accepted(profileSharingService.endProfileShare(accountIdentity(targetAdmin), visit.getId()));
+    activeShare(orphan, targetHouseholdId);
+
+    var preview = invitationService.lookup(issued.code());
+    invitationService.accept(acceptCommand(issued.code()));
+
+    assertThat(preview.profileShareOfferTargets()).isEmpty();
+    assertThat(shareRepository.findByProfileId(orphan.getId()))
+        .filteredOn(share -> share.getHouseholdId().equals(targetHouseholdId))
+        .extracting(ProfileHouseholdShare::getStatus)
+        .doesNotContain(ProfileShareStatus.PENDING);
   }
 
   @Test

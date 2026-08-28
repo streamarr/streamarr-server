@@ -427,6 +427,45 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should preserve a deleted Profile snapshot when LINK invitations are listed")
+  void shouldPreserveDeletedProfileSnapshotWhenLinkInvitationsAreListed() throws Exception {
+    var orphan = restrictedOrphan();
+    issueLinkInvitation(
+        LinkInvitationSpec.builder()
+            .profileId(orphan.getId())
+            .profileName(orphan.getName())
+            .profileKind(orphan.getKind())
+            .maximumAllowedRatingAge(orphan.getMaximumAllowedRatingAge())
+            .reofferHouseholdIds(List.of())
+            .build());
+    transactionTemplate.executeWithoutResult(_ -> profileRepository.deleteById(orphan.getId()));
+    var profilePath = "$.data.accountInvitations.edges[0].node.profile";
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            query { accountInvitations(first: 10) { edges { node {
+              status
+              profile {
+                __typename
+                ... on ExistingAccountInvitationProfile {
+                  id name kind maximumAllowedRatingAge deleted
+                }
+              }
+            } } } }
+            """)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.accountInvitations.edges[0].node.status").value("INVALIDATED"))
+        .andExpect(jsonPath(profilePath + ".__typename").value("ExistingAccountInvitationProfile"))
+        .andExpect(jsonPath(profilePath + ".id").doesNotExist())
+        .andExpect(jsonPath(profilePath + ".name").value("Grandpa Joe"))
+        .andExpect(jsonPath(profilePath + ".kind").value("KID"))
+        .andExpect(jsonPath(profilePath + ".maximumAllowedRatingAge").value(10))
+        .andExpect(jsonPath(profilePath + ".deleted").value(true));
+  }
+
+  @Test
   @DisplayName("Should project a stale pending invitation as expired when it is listed")
   void shouldProjectStalePendingInvitationAsExpiredWhenItIsListed() throws Exception {
     issueInvitation("expired@example.com");

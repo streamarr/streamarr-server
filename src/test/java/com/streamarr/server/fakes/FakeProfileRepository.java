@@ -66,6 +66,17 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
     // Row-lock ordering is a PostgreSQL concern and has no in-memory fake equivalent.
   }
 
+  @Override
+  public void lockProfileTransitionAcrossHouseholds(
+      UUID profileId, List<UUID> additionalHouseholdIds) {
+    // Row-lock ordering is a PostgreSQL concern and has no in-memory fake equivalent.
+  }
+
+  @Override
+  public void lockProfileDeletionAcrossHouseholds(UUID profileId) {
+    // Row-lock ordering is a PostgreSQL concern and has no in-memory fake equivalent.
+  }
+
   /** Marks the Profile as some Account's Personal Profile for policy snapshots. */
   public void linkTo(UUID profileId, UUID accountId) {
     linkedAccountsByProfile.put(profileId, accountId);

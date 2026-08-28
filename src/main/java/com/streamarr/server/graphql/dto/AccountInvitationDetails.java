@@ -47,7 +47,8 @@ public record AccountInvitationDetails(
               invitation.getProfileId(),
               invitation.getProfileName(),
               invitation.getProfileKind(),
-              invitation.getMaximumAllowedRatingAge());
+              invitation.getMaximumAllowedRatingAge(),
+              invitation.getProfileId() == null);
     };
   }
 }

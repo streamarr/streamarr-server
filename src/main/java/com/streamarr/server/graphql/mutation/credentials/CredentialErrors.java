@@ -35,7 +35,7 @@ public final class CredentialErrors {
                   + " restricted.");
       case CredentialRejections.RestrictedHouseholdAdmin _ ->
           new RestrictedHouseholdAdminError(
-              "A restricted Profile cannot be invited as HouseholdAdmin.",
+              "A restricted Profile cannot be a HouseholdAdmin. Choose Household Member instead.",
               InputPath.of("householdRole"));
       case CredentialRejections.LocalManagerRequired _ ->
           new EligibleProfileManagerRequiredError(

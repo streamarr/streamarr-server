@@ -205,12 +205,17 @@ class CredentialAdministrationResolverTest {
         dgsQueryExecutor.executeAndExtractJsonPath(
             ISSUE_EXISTING_PROFILE_INVITATION_MUTATION,
             "data.issueAccountInvitationForExistingProfile.userErrors[0].__typename");
+
+    assertThat(type).isEqualTo(errorCase.expectedType());
+    if (errorCase.expectedInputPath() == null) {
+      return;
+    }
+
     List<String> inputPath =
         dgsQueryExecutor.executeAndExtractJsonPath(
             ISSUE_EXISTING_PROFILE_INVITATION_MUTATION,
             "data.issueAccountInvitationForExistingProfile.userErrors[0].inputPath");
 
-    assertThat(type).isEqualTo(errorCase.expectedType());
     assertThat(inputPath).containsExactlyElementsOf(errorCase.expectedInputPath());
   }
 
@@ -293,6 +298,12 @@ class CredentialAdministrationResolverTest {
             new CredentialRejections.EmailAlreadyUsed(),
             "EmailAlreadyUsedError",
             List.of("recipientEmail")),
+        new IssuanceErrorCase(
+            new CredentialRejections.RestrictedFirstAccount(), "RestrictedFirstAccountError", null),
+        new IssuanceErrorCase(
+            new CredentialRejections.RestrictedHouseholdAdmin(),
+            "RestrictedHouseholdAdminError",
+            List.of("householdRole")),
         new IssuanceErrorCase(
             new CredentialRejections.HouseholdNotFound(),
             "HouseholdNotFoundError",
