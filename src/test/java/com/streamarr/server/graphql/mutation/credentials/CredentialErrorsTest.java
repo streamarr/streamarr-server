@@ -87,7 +87,11 @@ class CredentialErrorsTest {
     assertThat(CredentialErrors.toIssueError(new CredentialRejections.ProfileNotInHousehold()))
         .isInstanceOfSatisfying(
             ProfileNotInHouseholdError.class,
-            error -> assertThat(error.inputPath()).containsExactly("householdId"));
+            error -> {
+              assertThat(error.message())
+                  .isEqualTo("Choose the Household this Profile belongs to.");
+              assertThat(error.inputPath()).containsExactly("householdId");
+            });
   }
 
   @Test

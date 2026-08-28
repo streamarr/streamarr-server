@@ -60,8 +60,7 @@ public final class CredentialErrors {
               "That Profile already belongs to an Account.", PROFILE_ID_PATH);
       case CredentialRejections.ProfileNotInHousehold _ ->
           new ProfileNotInHouseholdError(
-              "LINK joins the recipient to the Profile's own Household.",
-              InputPath.of("householdId"));
+              "Choose the Household this Profile belongs to.", InputPath.of("householdId"));
       case CredentialRejections.ReofferHouseholdNotFound _ ->
           new ReofferHouseholdNotFoundError(
               "No such Household.", InputPath.of("reofferHouseholdIds"));
