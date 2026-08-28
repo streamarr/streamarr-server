@@ -2,6 +2,7 @@ package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AccountInvitation;
@@ -33,6 +34,7 @@ import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
+import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationForProfileCommand;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
@@ -109,6 +111,71 @@ class CredentialIssuanceServiceTest {
     resident =
         accounts.save(
             AccountFixture.defaultAccountBuilder().householdId(household.getId()).build());
+  }
+
+  @Test
+  @DisplayName("Should preview the Households affected by inviting an existing Profile")
+  void shouldPreviewHouseholdsAffectedByInvitingExistingProfile() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder()
+                .householdId(household.getId())
+                .name("Grandpa Joe")
+                .build());
+    var cabin = households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
+    var lodge = households.save(HouseholdFixture.defaultHouseholdBuilder().name("Lodge").build());
+    shares.share(profile.getId(), household.getId(), true);
+    shares.share(profile.getId(), lodge.getId(), false);
+    shares.share(profile.getId(), cabin.getId(), false);
+
+    var preview =
+        service.accountInvitationProfilePreview(identity(), profile.getId()).orElseThrow();
+
+    assertThat(preview.profileId()).isEqualTo(profile.getId());
+    assertThat(preview.profileName()).isEqualTo("Grandpa Joe");
+    assertThat(preview.householdId()).isEqualTo(household.getId());
+    assertThat(preview.householdName()).isEqualTo(household.getName());
+    assertThat(preview.affectedHouseholds())
+        .extracting(
+            CredentialIssuanceService.AffectedHousehold::householdId,
+            CredentialIssuanceService.AffectedHousehold::householdName)
+        .containsExactly(tuple(cabin.getId(), "Cabin"), tuple(lodge.getId(), "Lodge"));
+  }
+
+  @Test
+  @DisplayName("Should not preview an existing Profile that already belongs to an Account")
+  void shouldNotPreviewExistingProfileThatAlreadyBelongsToAccount() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    resident.setPersonalProfileId(profile.getId());
+
+    var preview = service.accountInvitationProfilePreview(identity(), profile.getId());
+
+    assertThat(preview).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should derive the Household when issuing an invitation for an existing Profile")
+  void shouldDeriveHouseholdWhenIssuingInvitationForExistingProfile() {
+    var profile =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+
+    var invitation =
+        issued(
+                service.issueAccountInvitationForProfile(
+                    identity(),
+                    IssueInvitationForProfileCommand.builder()
+                        .recipientEmail("joe@example.com")
+                        .profileId(profile.getId())
+                        .householdRole(HouseholdRole.MEMBER)
+                        .reofferHouseholdIds(List.of())
+                        .build()))
+            .invitation();
+
+    assertThat(invitation.getHouseholdId()).isEqualTo(household.getId());
+    assertThat(invitation.getProfileId()).isEqualTo(profile.getId());
   }
 
   @Test

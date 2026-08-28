@@ -53,6 +53,25 @@ class MutationContractTest {
   private static final TypeDefinitionRegistry SCHEMA = loadSchema();
 
   @Test
+  @DisplayName("Should model Account invitation Profile choices as distinct GraphQL actions")
+  void shouldModelAccountInvitationProfileChoicesAsDistinctGraphqlActions() {
+    assertThat(SCHEMA.getType("AccountInvitationMode")).isEmpty();
+    assertThat(SCHEMA.getType("LinkProfileRequiredError")).isEmpty();
+    assertThat(SCHEMA.getType("ProfileNotInHouseholdError")).isEmpty();
+    assertThat(mutationFields().stream().map(FieldDefinition::getName))
+        .contains(
+            "issueAccountInvitationWithNewProfile", "issueAccountInvitationForExistingProfile")
+        .doesNotContain("issueAccountInvitation");
+
+    var details =
+        SCHEMA.getType("AccountInvitationDetails", ObjectTypeDefinition.class).orElseThrow();
+    assertThat(fieldNames(details.getFieldDefinitions()))
+        .contains("profile")
+        .doesNotContain(
+            "mode", "profileId", "profileName", "profileKind", "maximumAllowedRatingAge");
+  }
+
+  @Test
   @DisplayName("Should report no shape violations when non-legacy mutations conform to ADR 0026")
   void shouldReportNoShapeViolationsWhenNonLegacyMutationsConformToAdr0026() {
     var violations = new ArrayList<String>();

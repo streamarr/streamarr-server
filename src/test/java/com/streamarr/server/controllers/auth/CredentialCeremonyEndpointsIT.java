@@ -459,7 +459,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
       graphql(
               authTestSupport.accountBearer(caller),
               """
-              mutation { issueAccountInvitation(input: {recipientEmail: "denied@example.com",
+              mutation { issueAccountInvitationWithNewProfile(input: {recipientEmail: "denied@example.com",
                 householdId: "%s", householdRole: MEMBER, profileName: "Denied",
                 profileKind: ADULT}) { issued { code } userErrors { __typename } } }
               """
@@ -902,14 +902,15 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
       graphql(
               authTestSupport.accountBearer(serverAdmin),
               """
-              mutation { issueAccountInvitation(input: {recipientEmail: "second@example.com",
-                householdId: "%s", householdRole: MEMBER, mode: LINK, profileId: "%s"}) {
+              mutation { issueAccountInvitationForExistingProfile(input: {
+                recipientEmail: "second@example.com", householdRole: MEMBER, profileId: "%s",
+                reofferHouseholdIds: []}) {
                 issued { code } userErrors { __typename } } }
               """
-                  .formatted(serverAdmin.household().getId(), orphan.getId()))
+                  .formatted(orphan.getId()))
           .andExpect(status().isOk())
           .andExpect(
-              jsonPath("$.data.issueAccountInvitation.userErrors[0].__typename")
+              jsonPath("$.data.issueAccountInvitationForExistingProfile.userErrors[0].__typename")
                   .value("ProfileAlreadyLinkedError"));
     } finally {
       userAccountRepository
@@ -951,27 +952,35 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   private String issueLinkInvitation(UUID profileId, UUID reofferHouseholdId) throws Exception {
+    var issuedPath = "$.data.issueAccountInvitationForExistingProfile.issued";
     var response =
         graphql(
                 authTestSupport.accountBearer(serverAdmin),
                 """
-                mutation { issueAccountInvitation(input: {recipientEmail: "invitee@example.com",
-                  householdId: "%s", householdRole: MEMBER, mode: LINK, profileId: "%s",
+                mutation { issueAccountInvitationForExistingProfile(input: {
+                  recipientEmail: "invitee@example.com", householdRole: MEMBER, profileId: "%s",
                   reofferHouseholdIds: ["%s"]}) {
-                  issued { code invitation { mode profileId } } userErrors { __typename } } }
+                  issued { code invitation { profile {
+                    __typename
+                    ... on ExistingAccountInvitationProfile { id name }
+                  } } } userErrors { __typename } } }
                 """
-                    .formatted(serverAdmin.household().getId(), profileId, reofferHouseholdId))
+                    .formatted(profileId, reofferHouseholdId))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andExpect(
-                jsonPath("$.data.issueAccountInvitation.issued.invitation.mode").value("LINK"))
+                jsonPath(issuedPath + ".invitation" + ".profile" + ".__typename")
+                    .value("ExistingAccountInvitationProfile"))
+            .andExpect(
+                jsonPath(issuedPath + ".invitation" + ".profile" + ".id")
+                    .value(profileId.toString()))
             .andReturn()
             .getResponse()
             .getContentAsString();
     return objectMapper
         .readTree(response)
         .path("data")
-        .path("issueAccountInvitation")
+        .path("issueAccountInvitationForExistingProfile")
         .path("issued")
         .path("code")
         .asString();
@@ -990,14 +999,18 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   private String issueInvitation(InvitationSpec invitation) throws Exception {
+    var issuedPath = "$.data.issueAccountInvitationWithNewProfile.issued";
     var response =
         graphql(
                 authTestSupport.accountBearer(serverAdmin),
                 """
-                mutation { issueAccountInvitation(input: {recipientEmail: "%s",
+                mutation { issueAccountInvitationWithNewProfile(input: {recipientEmail: "%s",
                   householdId: "%s", householdRole: MEMBER, profileName: "%s",
                   profileKind: %s%s}) {
-                  issued { code invitation { status } } userErrors { __typename } } }
+                  issued { code invitation { status profile {
+                    __typename
+                    ... on NewAccountInvitationProfile { name kind maximumAllowedRatingAge }
+                  } } } userErrors { __typename } } }
                 """
                     .formatted(
                         invitation.email(),
@@ -1007,14 +1020,17 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                         restrictionArguments(invitation)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
-            .andExpect(jsonPath("$.data.issueAccountInvitation.issued.code").isNotEmpty())
+            .andExpect(
+                jsonPath(issuedPath + ".invitation" + ".profile" + ".__typename")
+                    .value("NewAccountInvitationProfile"))
+            .andExpect(jsonPath(issuedPath + ".code").isNotEmpty())
             .andReturn()
             .getResponse()
             .getContentAsString();
     return objectMapper
         .readTree(response)
         .path("data")
-        .path("issueAccountInvitation")
+        .path("issueAccountInvitationWithNewProfile")
         .path("issued")
         .path("code")
         .asString();

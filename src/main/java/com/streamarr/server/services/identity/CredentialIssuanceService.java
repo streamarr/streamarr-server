@@ -31,6 +31,7 @@ import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -68,6 +69,11 @@ public class CredentialIssuanceService {
   public Outcome<IssuedInvitation, CredentialRejections.Issue> issueAccountInvitation(
       AuthenticatedIdentity identity, IssueInvitationCommand command) {
     authorizationService.requireAllowed(identity, new Intent.IssueAccountInvitation());
+    return issueAuthorizedAccountInvitation(identity, command);
+  }
+
+  private Outcome<IssuedInvitation, CredentialRejections.Issue> issueAuthorizedAccountInvitation(
+      AuthenticatedIdentity identity, IssueInvitationCommand command) {
     return switch (EmailAddressValidator.validate(command.recipientEmail())) {
       case EmailAddressValidator.Blank _ ->
           Outcome.rejected(new CredentialRejections.EmailRequired());
@@ -76,6 +82,86 @@ public class CredentialIssuanceService {
       case EmailAddressValidator.Valid(var recipientEmail) ->
           issueInvitationTo(identity, command.toBuilder().recipientEmail(recipientEmail).build());
     };
+  }
+
+  public Outcome<IssuedInvitation, CredentialRejections.Issue> issueAccountInvitationWithNewProfile(
+      AuthenticatedIdentity identity, IssueInvitationWithNewProfileCommand command) {
+    return issueAccountInvitation(
+        identity,
+        IssueInvitationCommand.builder()
+            .recipientEmail(command.recipientEmail())
+            .householdId(command.householdId())
+            .householdRole(command.householdRole())
+            .mode(AccountInvitationMode.CREATE)
+            .profileName(command.profileName())
+            .profileKind(command.profileKind())
+            .maximumAllowedRatingAge(command.maximumAllowedRatingAge())
+            .localManagerAccountId(command.localManagerAccountId())
+            .build());
+  }
+
+  public Outcome<IssuedInvitation, CredentialRejections.Issue> issueAccountInvitationForProfile(
+      AuthenticatedIdentity identity, IssueInvitationForProfileCommand command) {
+    authorizationService.requireAllowed(identity, new Intent.IssueAccountInvitation());
+    if (command.profileId() == null) {
+      return Outcome.rejected(new CredentialRejections.LinkProfileRequired());
+    }
+
+    var profile = profileRepository.findById(command.profileId());
+    if (profile.isEmpty()) {
+      return Outcome.rejected(new CredentialRejections.LinkProfileNotFound());
+    }
+
+    return issueAuthorizedAccountInvitation(
+        identity,
+        IssueInvitationCommand.builder()
+            .recipientEmail(command.recipientEmail())
+            .householdId(profile.get().getHouseholdId())
+            .householdRole(command.householdRole())
+            .mode(AccountInvitationMode.LINK)
+            .profileId(command.profileId())
+            .reofferHouseholdIds(command.reofferHouseholdIds())
+            .build());
+  }
+
+  public Optional<AccountInvitationProfilePreview> accountInvitationProfilePreview(
+      AuthenticatedIdentity identity, UUID profileId) {
+    authorizationService.requireAllowed(identity, new Intent.IssueAccountInvitation());
+    var profile = profileRepository.findById(profileId);
+    if (profile.isEmpty()) {
+      return Optional.empty();
+    }
+
+    if (userAccountRepository.findByPersonalProfileId(profileId).isPresent()) {
+      return Optional.empty();
+    }
+
+    var household = householdRepository.findById(profile.get().getHouseholdId());
+    if (household.isEmpty()) {
+      return Optional.empty();
+    }
+
+    var affectedHouseholdIds =
+        shareRepository.findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE).stream()
+            .map(share -> share.getHouseholdId())
+            .filter(id -> !id.equals(profile.get().getHouseholdId()))
+            .distinct()
+            .toList();
+    var affectedHouseholds =
+        householdRepository.findAllById(affectedHouseholdIds).stream()
+            .map(affected -> new AffectedHousehold(affected.getId(), affected.getName()))
+            .sorted(
+                Comparator.comparing(
+                        AffectedHousehold::householdName, String.CASE_INSENSITIVE_ORDER)
+                    .thenComparing(AffectedHousehold::householdId))
+            .toList();
+    return Optional.of(
+        new AccountInvitationProfilePreview(
+            profile.get().getId(),
+            profile.get().getName(),
+            household.get().getId(),
+            household.get().getName(),
+            affectedHouseholds));
   }
 
   /** The remaining refusals and the write, for a command whose recipient email is normalized. */
@@ -454,6 +540,32 @@ public class CredentialIssuanceService {
       return "IssuedResetCode[resetCode=%s, code=REDACTED]".formatted(resetCode.getId());
     }
   }
+
+  @Builder(toBuilder = true)
+  public record IssueInvitationWithNewProfileCommand(
+      String recipientEmail,
+      UUID householdId,
+      HouseholdRole householdRole,
+      String profileName,
+      ProfileKind profileKind,
+      Integer maximumAllowedRatingAge,
+      UUID localManagerAccountId) {}
+
+  @Builder(toBuilder = true)
+  public record IssueInvitationForProfileCommand(
+      String recipientEmail,
+      UUID profileId,
+      HouseholdRole householdRole,
+      List<UUID> reofferHouseholdIds) {}
+
+  public record AccountInvitationProfilePreview(
+      UUID profileId,
+      String profileName,
+      UUID householdId,
+      String householdName,
+      List<AffectedHousehold> affectedHouseholds) {}
+
+  public record AffectedHousehold(UUID householdId, String householdName) {}
 
   @Builder(toBuilder = true)
   public record IssueInvitationCommand(

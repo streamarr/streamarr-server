@@ -28,7 +28,8 @@ type Mutation {
     removeProfilePin(input: RemoveProfilePinInput!): RemoveProfilePinPayload
     administrativelyResetProfilePin(input: AdministrativelyResetProfilePinInput!): AdministrativelyResetProfilePinPayload
     deleteProfile(input: DeleteProfileInput!): DeleteProfilePayload
-    issueAccountInvitation(input: IssueAccountInvitationInput!): IssueAccountInvitationPayload
+    issueAccountInvitationWithNewProfile(input: IssueAccountInvitationWithNewProfileInput!): IssueAccountInvitationWithNewProfilePayload
+    issueAccountInvitationForExistingProfile(input: IssueAccountInvitationForExistingProfileInput!): IssueAccountInvitationForExistingProfilePayload
     cancelAccountInvitation(input: CancelAccountInvitationInput!): CancelAccountInvitationPayload
     issuePasswordReset(input: IssuePasswordResetInput!): IssuePasswordResetPayload
     offerProfileShare(input: OfferProfileShareInput!): OfferProfileSharePayload
