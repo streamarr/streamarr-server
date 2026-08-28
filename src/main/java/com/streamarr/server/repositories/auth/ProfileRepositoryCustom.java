@@ -33,8 +33,20 @@ public interface ProfileRepositoryCustom {
   /** Locks the Profile row so relationship writes and permanent deletion have one winner. */
   boolean lockById(UUID profileId);
 
+  /**
+   * Locks the guards for the Profile's home and every active visit in PostgreSQL UUID order. The
+   * caller holds the Profile row lock, so this Household set cannot change before commit.
+   */
+  void lockHouseholdGuardsByProfileId(UUID profileId);
+
   /** Locks the Profile row for a share without loading the share into Hibernate's cache. */
   boolean lockByShareId(UUID shareId);
+
+  /**
+   * Shares a Profile row lock with other relationship terminators while serializing against
+   * invitation issuance and permanent deletion.
+   */
+  boolean lockSharedByShareId(UUID shareId);
 
   /**
    * Writes the authorized transition. The caller holds the row lock {@link #lockPolicyById} took in

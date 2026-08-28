@@ -242,7 +242,13 @@ public class CredentialIssuanceService {
       throw new MutationRejection(rejection.get());
     }
 
-    return profileRepository.findById(command.profileId()).orElseThrow();
+    var profile = profileRepository.findById(command.profileId()).orElseThrow();
+    var reofferRejection = reofferRejection(profile, command);
+    if (reofferRejection.isPresent()) {
+      throw new MutationRejection(reofferRejection.get());
+    }
+
+    return profile;
   }
 
   private static HouseholdRole invitedRole(Profile profile, HouseholdRole requestedRole) {

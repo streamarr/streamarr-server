@@ -8,6 +8,7 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationMode;
+import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -23,11 +24,15 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptedInvitation;
+import com.streamarr.server.services.identity.AdministrationQueryService;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationCommand;
 import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.support.AuthTestSupport;
@@ -43,6 +48,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
+import org.jooq.SortOrder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -59,9 +65,16 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   private static final String SECOND_RIVAL_EMAIL = "connect-rival-two@example.com";
   private static final String SHARE_RACE_EMAIL = "connect-share-race@example.com";
   private static final String DUPLICATE_REOFFER_EMAIL = "connect-duplicate-reoffer@example.com";
+  private static final String RESTRICTED_REOFFER_EMAIL = "connect-restricted-reoffer@example.com";
+  private static final String CROSS_HOME_FIRST_EMAIL = "connect-cross-home-one@example.com";
+  private static final String CROSS_HOME_SECOND_EMAIL = "connect-cross-home-two@example.com";
+  private static final String HISTORY_WINNER_EMAIL = "connect-history-winner@example.com";
+  private static final String HISTORY_EXPIRED_EMAIL = "connect-history-expired@example.com";
+  private static final String STALE_REOFFER_EMAIL = "connect-stale-reoffer@example.com";
 
   @Autowired private AccountInvitationService invitationService;
   @Autowired private CredentialIssuanceService credentialIssuanceService;
+  @Autowired private AdministrationQueryService administrationQueryService;
   @Autowired private ProfileSharingService profileSharingService;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private AccountInvitationRepository invitationRepository;
@@ -89,6 +102,11 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
     deleteConnectedAccount(SECOND_RIVAL_EMAIL);
     deleteConnectedAccount(SHARE_RACE_EMAIL);
     deleteConnectedAccount(DUPLICATE_REOFFER_EMAIL);
+    deleteConnectedAccount(RESTRICTED_REOFFER_EMAIL);
+    deleteConnectedAccount(CROSS_HOME_FIRST_EMAIL);
+    deleteConnectedAccount(CROSS_HOME_SECOND_EMAIL);
+    deleteConnectedAccount(HISTORY_WINNER_EMAIL);
+    deleteConnectedAccount(STALE_REOFFER_EMAIL);
     authTestSupport.deleteIdentity(sourceAdmin);
     if (targetAdmin != null) {
       authTestSupport.deleteIdentity(targetAdmin);
@@ -154,6 +172,43 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
 
       assertThat(rejectionOf(issuance.get(15, TimeUnit.SECONDS)))
           .isInstanceOf(CredentialRejections.ProfileAlreadyLinked.class);
+    }
+  }
+
+  @Test
+  @DisplayName("Should reject CONNECT issuance when a reoffer visit ends while issuance waits")
+  void shouldRejectConnectIssuanceWhenReofferVisitEndsWhileIssuanceWaits() throws Exception {
+    targetAdmin = authTestSupport.createIdentity();
+    var orphan = orphanAtHome();
+    var visit = activeShare(orphan, targetAdmin.household().getId());
+    var command =
+        connectInvitationCommand(orphan, STALE_REOFFER_EMAIL).toBuilder()
+            .reofferHouseholdIds(List.of(targetAdmin.household().getId()))
+            .build();
+
+    try (var issuanceLock = holdInvitationIssuanceLock(STALE_REOFFER_EMAIL);
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var issuance =
+          executor.submit(
+              () ->
+                  credentialIssuanceService.issueAccountInvitation(
+                      accountIdentity(sourceAdmin), command));
+      var blockerPid = backendPid(issuanceLock);
+      await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) == 1);
+
+      try {
+        assertThat(
+                accepted(
+                    profileSharingService.endProfileShare(
+                        accountIdentity(targetAdmin), visit.getId())))
+            .extracting(ProfileHouseholdShare::getStatus)
+            .isEqualTo(ProfileShareStatus.ENDED);
+      } finally {
+        issuanceLock.rollback();
+      }
+
+      assertThat(rejectionOf(issuance.get(15, TimeUnit.SECONDS)))
+          .isInstanceOf(CredentialRejections.ReofferHouseholdNotShared.class);
     }
   }
 
@@ -279,24 +334,151 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
         .containsExactlyInAnyOrder(ProfileShareStatus.ENDED, ProfileShareStatus.PENDING);
   }
 
+  @Test
+  @DisplayName("Should let a Household accept a restricted Profile reoffered after CONNECT")
+  void shouldLetHouseholdAcceptRestrictedProfileReofferedAfterConnect() {
+    targetAdmin = authTestSupport.createIdentity();
+    var orphan = orphanAtHome();
+    orphan.setKind(ProfileKind.KID);
+    profileRepository.saveAndFlush(orphan);
+    var targetHouseholdId = targetAdmin.household().getId();
+    activeShare(orphan, targetHouseholdId);
+    var issued =
+        accepted(
+            credentialIssuanceService.issueAccountInvitation(
+                accountIdentity(sourceAdmin),
+                IssueInvitationCommand.builder()
+                    .recipientEmail(RESTRICTED_REOFFER_EMAIL)
+                    .householdId(sourceAdmin.household().getId())
+                    .householdRole(HouseholdRole.MEMBER)
+                    .mode(AccountInvitationMode.CONNECT)
+                    .profileId(orphan.getId())
+                    .reofferHouseholdIds(List.of(targetHouseholdId))
+                    .build()));
+
+    invitationService.accept(acceptCommand(issued.code()));
+    var targetIdentity = accountIdentity(targetAdmin);
+    var reoffer =
+        profileSharingService
+            .pendingShareOffers(targetIdentity, targetHouseholdId, paginationOptions())
+            .items()
+            .getFirst()
+            .item();
+
+    assertThat(accepted(profileSharingService.acceptProfileShare(targetIdentity, reoffer.getId())))
+        .extracting(ProfileHouseholdShare::getStatus)
+        .isEqualTo(ProfileShareStatus.ACTIVE);
+  }
+
+  @Test
+  @DisplayName("Should accept reciprocal cross-Household CONNECT invitations without deadlock")
+  void shouldAcceptReciprocalCrossHouseholdConnectInvitationsWithoutDeadlock() throws Exception {
+    targetAdmin = authTestSupport.createAdminIdentity();
+    var sourceOrphan = orphanAtHome(sourceAdmin, "Source Visitor");
+    var targetOrphan = orphanAtHome(targetAdmin, "Target Visitor");
+    activeShare(sourceOrphan, targetAdmin.household().getId());
+    activeShare(targetOrphan, sourceAdmin.household().getId());
+    var sourceCode = pendingConnectInvitation(sourceOrphan, CROSS_HOME_FIRST_EMAIL, sourceAdmin);
+    var targetCode = pendingConnectInvitation(targetOrphan, CROSS_HOME_SECOND_EMAIL, targetAdmin);
+    var successes = new ArrayList<AcceptedInvitation>();
+    var failures = new ArrayList<Throwable>();
+    installAccountInsertBarrier();
+
+    try (var insertBarrier = holdAccountInsertBarrier();
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var sourceAcceptance =
+          executor.submit(() -> invitationService.accept(acceptCommand(sourceCode)));
+      var targetAcceptance =
+          executor.submit(() -> invitationService.accept(acceptCommand(targetCode)));
+      var blockerPid = backendPid(insertBarrier);
+      try {
+        await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) == 2);
+      } finally {
+        insertBarrier.rollback();
+      }
+
+      collect(sourceAcceptance, successes, failures);
+      collect(targetAcceptance, successes, failures);
+    } finally {
+      removeAccountInsertBarrier();
+    }
+
+    assertThat(successes).hasSize(2);
+    assertThat(failures).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should preserve expired invitation and share history when CONNECT wins")
+  void shouldPreserveExpiredInvitationAndShareHistoryWhenConnectWins() {
+    targetAdmin = authTestSupport.createIdentity();
+    var orphan = orphanAtHome();
+    var now = Instant.now();
+    pendingConnectInvitation(
+        pendingConnectInvitationBuilder(orphan, HISTORY_EXPIRED_EMAIL, sourceAdmin)
+            .expiresAt(now.minus(Duration.ofHours(1))));
+    var expiredInvitation =
+        invitationRepository.findAll().stream()
+            .filter(invitation -> invitation.getRecipientEmail().equals(HISTORY_EXPIRED_EMAIL))
+            .findFirst()
+            .orElseThrow();
+    var expiredOffer =
+        shareRepository.saveAndFlush(
+            ProfileHouseholdShare.builder()
+                .profileId(orphan.getId())
+                .householdId(targetAdmin.household().getId())
+                .status(ProfileShareStatus.PENDING)
+                .offeredByAccountId(sourceAdmin.account().getId())
+                .expiresAt(now.minus(Duration.ofHours(1)))
+                .build());
+    var winnerCode = pendingConnectInvitation(orphan, HISTORY_WINNER_EMAIL);
+
+    invitationService.accept(acceptCommand(winnerCode));
+
+    var invitationHistory =
+        administrationQueryService
+            .accountInvitations(accountIdentity(sourceAdmin), invitationPaginationOptions())
+            .items()
+            .stream()
+            .map(item -> item.item())
+            .filter(invitation -> invitation.getId().equals(expiredInvitation.getId()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(invitationHistory.statusAt(Instant.now()))
+        .isEqualTo(AccountInvitationStatus.EXPIRED);
+    var shareHistory =
+        profileSharingService
+            .profileShares(accountIdentity(sourceAdmin), orphan.getId(), paginationOptions())
+            .items()
+            .stream()
+            .map(item -> item.item())
+            .filter(share -> share.getId().equals(expiredOffer.getId()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(shareHistory.statusAt(Instant.now())).isEqualTo(ProfileShareStatus.EXPIRED);
+  }
+
   private Profile orphanAtHome() {
+    return orphanAtHome(sourceAdmin, "Grandpa Joe");
+  }
+
+  private Profile orphanAtHome(AuthTestSupport.TestIdentity homeAdmin, String name) {
     return transactions.execute(
         _ -> {
           var orphan =
               profileRepository.saveAndFlush(
                   ProfileFixture.defaultProfileBuilder()
-                      .householdId(sourceAdmin.household().getId())
-                      .name("Grandpa Joe")
+                      .householdId(homeAdmin.household().getId())
+                      .name(name)
                       .build());
           managerRepository.saveAndFlush(
               ProfileManager.builder()
-                  .accountId(sourceAdmin.account().getId())
+                  .accountId(homeAdmin.account().getId())
                   .profileId(orphan.getId())
                   .build());
           shareRepository.saveAndFlush(
               ProfileHouseholdShare.builder()
                   .profileId(orphan.getId())
-                  .householdId(sourceAdmin.household().getId())
+                  .householdId(homeAdmin.household().getId())
                   .status(ProfileShareStatus.ACTIVE)
                   .build());
           return orphan;
@@ -324,25 +506,97 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
   }
 
   private String pendingConnectInvitation(Profile profile, String recipientEmail) {
+    return pendingConnectInvitation(
+        pendingConnectInvitationBuilder(profile, recipientEmail, sourceAdmin));
+  }
+
+  private String pendingConnectInvitation(
+      Profile profile, String recipientEmail, AuthTestSupport.TestIdentity homeAdmin) {
+    return pendingConnectInvitation(
+        pendingConnectInvitationBuilder(profile, recipientEmail, homeAdmin));
+  }
+
+  private String pendingConnectInvitation(
+      AccountInvitation.AccountInvitationBuilder<?, ?> invitationBuilder) {
     var issued = opaqueCodes.issue();
     transactions.executeWithoutResult(
         _ ->
             invitationRepository.saveAndFlush(
-                AccountInvitation.builder()
-                    .recipientEmail(recipientEmail)
-                    .householdId(sourceAdmin.household().getId())
-                    .householdName(sourceAdmin.household().getName())
-                    .householdRole(HouseholdRole.MEMBER)
-                    .mode(AccountInvitationMode.CONNECT)
-                    .profileId(profile.getId())
-                    .profileName(profile.getName())
-                    .profileKind(ProfileKind.ADULT)
-                    .issuerAccountId(sourceAdmin.account().getId())
-                    .expiresAt(Instant.now().plus(Duration.ofDays(7)))
+                invitationBuilder
                     .publicId(issued.publicId())
                     .secretDigest(issued.digest())
                     .build()));
     return issued.code();
+  }
+
+  private AccountInvitation.AccountInvitationBuilder<?, ?> pendingConnectInvitationBuilder(
+      Profile profile, String recipientEmail, AuthTestSupport.TestIdentity homeAdmin) {
+    return AccountInvitation.builder()
+        .recipientEmail(recipientEmail)
+        .householdId(homeAdmin.household().getId())
+        .householdName(homeAdmin.household().getName())
+        .householdRole(HouseholdRole.MEMBER)
+        .mode(AccountInvitationMode.CONNECT)
+        .profileId(profile.getId())
+        .profileName(profile.getName())
+        .profileKind(ProfileKind.ADULT)
+        .issuerAccountId(homeAdmin.account().getId())
+        .expiresAt(Instant.now().plus(Duration.ofDays(7)));
+  }
+
+  private void installAccountInsertBarrier() throws Exception {
+    try (var connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute(
+          """
+          CREATE FUNCTION block_connect_account_insert()
+              RETURNS TRIGGER
+              LANGUAGE plpgsql
+          AS $$
+          BEGIN
+              PERFORM pg_advisory_xact_lock(
+                  hashtextextended('test-connect-account-insert', 0));
+              RETURN NEW;
+          END;
+          $$
+          """);
+      statement.execute(
+          """
+          CREATE TRIGGER block_connect_account_insert
+          BEFORE INSERT ON user_account
+          FOR EACH ROW
+          WHEN (NEW.email IN ('%s', '%s'))
+          EXECUTE FUNCTION block_connect_account_insert()
+          """
+              .formatted(CROSS_HOME_FIRST_EMAIL, CROSS_HOME_SECOND_EMAIL));
+    }
+  }
+
+  private Connection holdAccountInsertBarrier() throws Exception {
+    var connection = dataSource.getConnection();
+    connection.setAutoCommit(false);
+    try (var statement = connection.createStatement()) {
+      statement
+          .executeQuery(
+              """
+              SELECT pg_advisory_xact_lock(
+                  hashtextextended('test-connect-account-insert', 0))
+              """)
+          .close();
+    } catch (Exception failure) {
+      connection.close();
+      throw failure;
+    }
+
+    return connection;
+  }
+
+  private void removeAccountInsertBarrier() throws Exception {
+    try (var connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("DROP TRIGGER IF EXISTS block_connect_account_insert ON user_account");
+      statement.execute("DROP FUNCTION IF EXISTS block_connect_account_insert()");
+    }
   }
 
   private IssueInvitationCommand connectInvitationCommand(Profile profile, String recipientEmail) {
@@ -438,6 +692,19 @@ class AccountInvitationConnectConcurrencyIT extends AbstractIntegrationTest {
             .cursor(Optional.empty())
             .limit(100)
             .build());
+  }
+
+  private static MediaPaginationOptions invitationPaginationOptions() {
+    return MediaPaginationOptions.builder()
+        .paginationOptions(
+            PaginationOptions.builder()
+                .paginationDirection(PaginationDirection.FORWARD)
+                .cursor(Optional.empty())
+                .limit(100)
+                .build())
+        .mediaFilter(
+            MediaFilter.builder().sortBy(OrderMediaBy.ADDED).sortDirection(SortOrder.DESC).build())
+        .build();
   }
 
   private static AcceptInvitationCommand acceptCommand(String code) {

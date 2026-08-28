@@ -36,6 +36,11 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   }
 
   @Override
+  public boolean lockSharedByShareId(UUID shareId) {
+    return lockByShareId(shareId);
+  }
+
+  @Override
   public Optional<ProfilePolicySnapshot> lockPolicyById(UUID profileId) {
     return findById(profileId)
         .map(
@@ -55,6 +60,9 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   public boolean lockById(UUID profileId) {
     return findById(profileId).isPresent();
   }
+
+  @Override
+  public void lockHouseholdGuardsByProfileId(UUID profileId) {}
 
   /** Marks the Profile as some Account's Personal Profile for policy snapshots. */
   public void linkTo(UUID profileId, UUID accountId) {

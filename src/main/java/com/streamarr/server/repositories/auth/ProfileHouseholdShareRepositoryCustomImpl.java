@@ -249,6 +249,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
             PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
         .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
+        .and(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)))
         .execute();
   }
 

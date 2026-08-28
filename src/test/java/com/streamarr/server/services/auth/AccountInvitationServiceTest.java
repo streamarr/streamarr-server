@@ -449,6 +449,22 @@ class AccountInvitationServiceTest {
             });
   }
 
+  @Test
+  @DisplayName("Should attribute a restricted Profile reoffer to the invitation issuer")
+  void shouldAttributeRestrictedProfileReofferToInvitationIssuer() {
+    var fixture = connectAcceptanceFixture();
+    profiles.findById(fixture.profileId()).orElseThrow().setKind(ProfileKind.KID);
+    var issuerAccountId = invitations.findAll().getFirst().getIssuerAccountId();
+
+    service.accept(acceptCommand(fixture.code()));
+
+    assertThat(shares.findAll())
+        .filteredOn(share -> fixture.reofferHouseholdIds().contains(share.getHouseholdId()))
+        .filteredOn(share -> share.getStatus() == ProfileShareStatus.PENDING)
+        .extracting(ProfileHouseholdShare::getOfferedByAccountId)
+        .containsOnly(issuerAccountId);
+  }
+
   private ConnectAcceptanceFixture connectAcceptanceFixture() {
     var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var previous =

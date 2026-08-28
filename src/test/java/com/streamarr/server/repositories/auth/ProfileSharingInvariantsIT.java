@@ -170,6 +170,27 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should leave an expired offer out of Profile invalidation")
+  void shouldLeaveExpiredOfferOutOfProfileInvalidation() {
+    var owner = create();
+    var host = create();
+    var now = Instant.now();
+    var expired = pendingOffer(owner, host, now.minusSeconds(60));
+
+    var invalidated =
+        transactionTemplate.execute(
+            _ ->
+                shareRepository.invalidatePendingByProfileId(
+                    owner.profile().getId(), "Profile connected to an Account", now));
+
+    assertThat(invalidated).isZero();
+    var stored = shareRepository.findById(expired.getId()).orElseThrow();
+    assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.PENDING);
+    assertThat(stored.statusAt(now)).isEqualTo(ProfileShareStatus.EXPIRED);
+    assertThat(stored.getInvalidationReason()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should omit an expired offer when a Household's pending offers are paged")
   void shouldOmitExpiredOfferWhenHouseholdPendingOffersArePaged() {
     var owner = create();

@@ -314,6 +314,7 @@ public class AccountInvitationService {
           OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
     }
 
+    profileRepository.lockHouseholdGuardsByProfileId(profileId);
     var role =
         userAccountRepository
             .roleForNewAccount(householdId, invitation.getHouseholdRole())
@@ -344,7 +345,9 @@ public class AccountInvitationService {
     shareRepository.upsertStructural(profileId, householdId, now);
     endCurrentVisits(profileId, householdId, now);
     shareRepository.invalidatePendingByProfileId(profileId, "Profile connected to an Account", now);
-    reoffer(invitation, account, now);
+    var reofferAccountId =
+        profile.isRestricted() ? invitation.getIssuerAccountId() : account.getId();
+    reoffer(invitation, reofferAccountId, now);
     return account;
   }
 
@@ -359,7 +362,7 @@ public class AccountInvitationService {
     }
   }
 
-  private void reoffer(AccountInvitation invitation, UserAccount account, Instant now) {
+  private void reoffer(AccountInvitation invitation, UUID offererAccountId, Instant now) {
     for (var recorded : reofferRepository.findByInvitationId(invitation.getId())) {
       if (recorded.getHouseholdId() != null
           && !recorded.getHouseholdId().equals(invitation.getHouseholdId())) {
@@ -368,7 +371,7 @@ public class AccountInvitationService {
                 .profileId(invitation.getProfileId())
                 .householdId(recorded.getHouseholdId())
                 .status(ProfileShareStatus.PENDING)
-                .offeredByAccountId(account.getId())
+                .offeredByAccountId(offererAccountId)
                 .expiresAt(now.plus(properties.invitationTtl()))
                 .build());
       }

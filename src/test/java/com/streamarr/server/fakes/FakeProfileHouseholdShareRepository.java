@@ -207,7 +207,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
     var pending =
         database.values().stream()
             .filter(share -> share.getProfileId().equals(profileId))
-            .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+            .filter(share -> share.statusAt(now) == ProfileShareStatus.PENDING)
             .toList();
     pending.forEach(
         share -> {

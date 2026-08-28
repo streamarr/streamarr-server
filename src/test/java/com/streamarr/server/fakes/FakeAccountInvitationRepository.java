@@ -126,7 +126,11 @@ public class FakeAccountInvitationRepository extends FakeJpaRepository<AccountIn
 
   @Override
   public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
-    return invalidate(invitation -> profileId.equals(invitation.getProfileId()), reason, now);
+    return invalidate(
+        invitation ->
+            profileId.equals(invitation.getProfileId()) && invitation.getExpiresAt().isAfter(now),
+        reason,
+        now);
   }
 
   @Override

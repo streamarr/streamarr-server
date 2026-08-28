@@ -48,6 +48,19 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
   }
 
   @Override
+  public boolean lockSharedByShareId(UUID shareId) {
+    return dsl.selectOne()
+        .from(PROFILE)
+        .join(PROFILE_HOUSEHOLD_SHARE)
+        .on(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(PROFILE.ID))
+        .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
+        .forShare()
+        .of(PROFILE)
+        .fetchOptional()
+        .isPresent();
+  }
+
+  @Override
   public Optional<ProfilePolicySnapshot> lockPolicyById(UUID profileId) {
     return dsl.select(PROFILE.KIND, PROFILE.MAXIMUM_ALLOWED_RATING_AGE, USER_ACCOUNT.ID)
         .from(PROFILE)
@@ -82,6 +95,25 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
         .forUpdate()
         .fetchOptional()
         .isPresent();
+  }
+
+  @Override
+  public void lockHouseholdGuardsByProfileId(UUID profileId) {
+    var affectedHouseholds =
+        dsl.select(PROFILE.HOUSEHOLD_ID)
+            .from(PROFILE)
+            .where(PROFILE.ID.eq(profileId))
+            .union(
+                dsl.select(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
+                    .from(PROFILE_HOUSEHOLD_SHARE)
+                    .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
+                    .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(DSL.inline(ProfileShareStatus.ACTIVE))));
+    dsl.select(HOUSEHOLD_GUARD.HOUSEHOLD_ID)
+        .from(HOUSEHOLD_GUARD)
+        .where(HOUSEHOLD_GUARD.HOUSEHOLD_ID.in(affectedHouseholds))
+        .orderBy(HOUSEHOLD_GUARD.HOUSEHOLD_ID)
+        .forUpdate()
+        .fetch();
   }
 
   @Override

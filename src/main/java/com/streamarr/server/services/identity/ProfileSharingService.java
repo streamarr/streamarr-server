@@ -330,6 +330,7 @@ public class ProfileSharingService {
     return mutationTransactions.write(
         () -> {
           requireShare(shareId);
+          profileRepository.lockSharedByShareId(shareId);
           authorize.run();
           var now = clock.instant();
           if (!shareRepository.tryEndActive(shareId, now)) {

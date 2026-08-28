@@ -14,6 +14,40 @@ ALTER TABLE account_invitation
     ADD CONSTRAINT chk_account_invitation_connect_names_profile
         CHECK (mode <> 'CONNECT' OR profile_id IS NOT NULL OR status <> 'PENDING') NOT VALID;
 
+-- SET NULL must resolve the credential before the CONNECT check sees a missing Profile. Expired
+-- rows materialize their effective state; a live row records why it can no longer be accepted.
+CREATE FUNCTION resolve_connect_invitation_when_profile_disappears()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS
+$$
+BEGIN
+    IF OLD.status <> 'PENDING'
+        OR OLD.profile_id IS NULL
+        OR NEW.profile_id IS NOT NULL THEN
+        RETURN NEW;
+    END IF;
+
+    NEW.decided_at := NOW();
+    NEW.last_modified_on := NOW();
+    NEW.last_modified_by := NULL;
+    IF OLD.expires_at <= NOW() THEN
+        NEW.status := 'EXPIRED';
+        RETURN NEW;
+    END IF;
+
+    NEW.status := 'INVALIDATED';
+    NEW.invalidation_reason := 'Profile deleted';
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER resolve_connect_invitation_when_profile_disappears
+    BEFORE UPDATE OF profile_id
+    ON account_invitation
+    FOR EACH ROW
+EXECUTE FUNCTION resolve_connect_invitation_when_profile_disappears();
+
 CREATE TABLE account_invitation_reoffer
 (
     id               UUID                     NOT NULL DEFAULT gen_random_uuid(),
