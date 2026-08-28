@@ -673,6 +673,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
   }
 
   private void installAccountInsertBarrier() throws Exception {
+    removeAccountInsertBarrier();
     try (var connection = dataSource.getConnection();
         var statement = connection.createStatement()) {
       statement.execute(

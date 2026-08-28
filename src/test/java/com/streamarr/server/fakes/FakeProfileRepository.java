@@ -128,11 +128,6 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   }
 
   @Override
-  public List<Profile> lockAndFindAvailableInHousehold(UUID householdId) {
-    return findAvailableInHousehold(householdId);
-  }
-
-  @Override
   public boolean existsAvailableInHouseholdWithNameIgnoreCase(UUID householdId, String name) {
     return findAvailableInHousehold(householdId).stream()
         .map(Profile::getName)

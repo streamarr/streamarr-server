@@ -910,14 +910,14 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   private List<String> raceWhileProfileLocked(
       UUID profileId, Callable<String> firstMutation, Callable<String> secondMutation)
       throws Exception {
-    try (var profileLock =
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var profileLock =
             lockRow(
                 RowLockTarget.builder()
                     .dataSource(dataSource)
                     .table("profile")
                     .rowId(profileId)
-                    .build());
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                    .build())) {
       var first = executor.submit(firstMutation);
       var second = executor.submit(secondMutation);
       await()

@@ -187,22 +187,6 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
   }
 
   @Override
-  public List<Profile> lockAndFindAvailableInHousehold(UUID householdId) {
-    var locked =
-        dsl.select(HOUSEHOLD_GUARD.HOUSEHOLD_ID)
-            .from(HOUSEHOLD_GUARD)
-            .where(HOUSEHOLD_GUARD.HOUSEHOLD_ID.eq(householdId))
-            .forShare()
-            .fetchOptional()
-            .isPresent();
-    if (!locked) {
-      return List.of();
-    }
-
-    return findAvailableInHousehold(householdId);
-  }
-
-  @Override
   public boolean existsAvailableInHouseholdWithNameIgnoreCase(UUID householdId, String name) {
     return dsl.fetchExists(
         dsl.selectOne()
