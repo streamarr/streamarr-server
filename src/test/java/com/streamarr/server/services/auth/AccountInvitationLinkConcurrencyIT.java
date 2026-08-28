@@ -36,6 +36,7 @@ import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.support.AuthTestSupport;
@@ -478,7 +479,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
             .accountInvitations(accountIdentity(sourceAdmin), invitationPaginationOptions())
             .items()
             .stream()
-            .map(item -> item.item())
+            .map(PageItem::item)
             .filter(invitation -> invitation.getId().equals(expiredInvitation.getId()))
             .findFirst()
             .orElseThrow();
@@ -489,7 +490,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
             .profileShares(accountIdentity(sourceAdmin), orphan.getId(), paginationOptions())
             .items()
             .stream()
-            .map(item -> item.item())
+            .map(PageItem::item)
             .filter(share -> share.getId().equals(expiredOffer.getId()))
             .findFirst()
             .orElseThrow();

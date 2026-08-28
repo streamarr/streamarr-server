@@ -45,8 +45,9 @@ class AccountInvitationReofferRepositoryIT extends AbstractIntegrationTest {
                 .publicId("reoffer-constraint")
                 .build());
     reofferRepository.saveAndFlush(reoffer(invitation, household));
+    var duplicateReoffer = reoffer(invitation, household);
 
-    assertThatThrownBy(() -> reofferRepository.saveAndFlush(reoffer(invitation, household)))
+    assertThatThrownBy(() -> reofferRepository.saveAndFlush(duplicateReoffer))
         .isInstanceOf(DataIntegrityViolationException.class)
         .rootCause()
         .hasMessageContaining("uq_account_invitation_reoffer_household");
