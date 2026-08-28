@@ -3,6 +3,7 @@ package com.streamarr.server.fakes;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.exceptions.InvalidPaginationCursorException;
@@ -10,8 +11,10 @@ import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -85,5 +88,71 @@ class FakeProfileManagerInvitationRepositoryTest {
 
     assertThatThrownBy(() -> fake.findPendingByProfileId(profileId, now, options))
         .isInstanceOf(InvalidPaginationCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should include the cursor row when a forward invitation window is requested")
+  void shouldIncludeCursorRowWhenForwardInvitationWindowIsRequested() {
+    var now = Instant.parse("2026-08-21T12:00:00Z");
+    var profileId = UUID.randomUUID();
+    var invitations = invitations(now, profileId);
+    var options = cursorWindow(invitations.get(2).getId(), PaginationDirection.FORWARD);
+
+    var window = fake.findPendingByProfileId(profileId, now, options);
+
+    assertThat(window)
+        .extracting(ProfileManagerInvitation::getId)
+        .containsExactly(
+            invitations.get(2).getId(), invitations.get(1).getId(), invitations.getFirst().getId());
+  }
+
+  @Test
+  @DisplayName("Should include the cursor row when a reverse invitation window is requested")
+  void shouldIncludeCursorRowWhenReverseInvitationWindowIsRequested() {
+    var now = Instant.parse("2026-08-21T12:00:00Z");
+    var profileId = UUID.randomUUID();
+    var invitations = invitations(now, profileId);
+    var options = cursorWindow(invitations.get(1).getId(), PaginationDirection.REVERSE);
+
+    var window = fake.findPendingByProfileId(profileId, now, options);
+
+    assertThat(window)
+        .extracting(ProfileManagerInvitation::getId)
+        .containsExactly(
+            invitations.get(3).getId(), invitations.get(2).getId(), invitations.get(1).getId());
+  }
+
+  private List<ProfileManagerInvitation> invitations(Instant now, UUID profileId) {
+    return IntStream.range(0, 4)
+        .mapToObj(
+            index -> {
+              var invitation =
+                  ProfileManagerInvitation.builder()
+                      .profileId(profileId)
+                      .profileName("Kids")
+                      .inviterAccountId(UUID.randomUUID())
+                      .inviterDisplayName("Inviter")
+                      .recipientAccountId(UUID.randomUUID())
+                      .recipientEmail("recipient@example.com")
+                      .status(ProfileManagerInvitationStatus.PENDING)
+                      .expiresAt(now.plusSeconds(3600))
+                      .publicId(UUID.randomUUID().toString())
+                      .secretDigest(new byte[] {1})
+                      .build();
+              AuditFieldSetter.setCreatedOn(invitation, now.plusSeconds(index));
+              return fake.save(invitation);
+            })
+        .toList();
+  }
+
+  private static KeysetPaginationOptions cursorWindow(
+      UUID cursorId, PaginationDirection direction) {
+    return new KeysetPaginationOptions(
+        cursorId,
+        PaginationOptions.builder()
+            .paginationDirection(direction)
+            .cursor(Optional.of("cursor"))
+            .limit(1)
+            .build());
   }
 }

@@ -8,11 +8,17 @@ import java.util.UUID;
 
 public interface ProfileManagerInvitationRepositoryCustom {
 
-  /** The newest-first keyset window of the Profile's live PENDING invitations. */
+  /**
+   * The newest-first keyset window of the Profile's live PENDING invitations. A cursor window
+   * includes its cursor row so pagination can derive adjacent-page state before pruning it.
+   */
   List<ProfileManagerInvitation> findPendingByProfileId(
       UUID profileId, Instant now, KeysetPaginationOptions options);
 
-  /** The newest-first keyset window of the recipient's live PENDING invitations. */
+  /**
+   * The newest-first keyset window of the recipient's live PENDING invitations. A cursor window
+   * includes its cursor row so pagination can derive adjacent-page state before pruning it.
+   */
   List<ProfileManagerInvitation> findPendingByRecipientAccountId(
       UUID recipientAccountId, Instant now, KeysetPaginationOptions options);
 

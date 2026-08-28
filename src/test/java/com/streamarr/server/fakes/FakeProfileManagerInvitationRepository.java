@@ -64,7 +64,7 @@ public class FakeProfileManagerInvitationRepository
       return ordered.subList(from, to);
     }
 
-    var from = cursorIndex + 1;
+    var from = options.getCursorId().isPresent() ? cursorIndex : 0;
     var extraRows = options.getCursorId().isPresent() ? 2 : 1;
     var to = Math.min(ordered.size(), from + pagination.getLimit() + extraRows);
     return ordered.subList(from, to);
