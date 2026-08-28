@@ -512,6 +512,9 @@ class SegmentDeliveryCoordinatorTest {
 
     var delivery = deliverAsync(sessionId, "segment0.ts");
     transcodeExecutor.awaitStartedTargetCount(1);
+    // The fake records the start before the lifecycle installs its returned handle. The next
+    // liveness poll proves that installation completed before this test kills the replacement.
+    awaitLivenessChecks(1);
     // The first replacement dies before publishing anything: recovery continues, A is not
     // retried, and target B is next.
     transcodeExecutor.markDead(sessionId);
