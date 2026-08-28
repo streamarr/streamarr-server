@@ -98,7 +98,7 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
   }
 
   @Override
-  public void lockHouseholdGuardsByProfileId(UUID profileId) {
+  public void lockProfileAvailabilityAcrossHouseholds(UUID profileId) {
     var affectedHouseholds =
         dsl.select(PROFILE.HOUSEHOLD_ID)
             .from(PROFILE)

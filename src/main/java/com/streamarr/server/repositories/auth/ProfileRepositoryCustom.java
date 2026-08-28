@@ -34,10 +34,11 @@ public interface ProfileRepositoryCustom {
   boolean lockById(UUID profileId);
 
   /**
-   * Locks the guards for the Profile's home and every active visit in PostgreSQL UUID order. The
-   * caller holds the Profile row lock, so this Household set cannot change before commit.
+   * Locks the Profile's availability across its home Household and every active visit, acquiring
+   * locks in PostgreSQL UUID order. The caller holds the Profile row lock, so this Household set
+   * cannot change before commit.
    */
-  void lockHouseholdGuardsByProfileId(UUID profileId);
+  void lockProfileAvailabilityAcrossHouseholds(UUID profileId);
 
   /** Locks the Profile row for a share without loading the share into Hibernate's cache. */
   boolean lockByShareId(UUID shareId);

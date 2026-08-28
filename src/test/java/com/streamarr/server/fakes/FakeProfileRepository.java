@@ -62,7 +62,7 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   }
 
   @Override
-  public void lockHouseholdGuardsByProfileId(UUID profileId) {
+  public void lockProfileAvailabilityAcrossHouseholds(UUID profileId) {
     // Row-lock ordering is a PostgreSQL concern and has no in-memory fake equivalent.
   }
 

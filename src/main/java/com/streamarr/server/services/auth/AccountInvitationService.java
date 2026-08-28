@@ -314,7 +314,7 @@ public class AccountInvitationService {
           OpaqueCodeResolver.MissReason.NOT_REDEEMABLE, invitation.getPublicId());
     }
 
-    profileRepository.lockHouseholdGuardsByProfileId(profileId);
+    profileRepository.lockProfileAvailabilityAcrossHouseholds(profileId);
     var role =
         userAccountRepository
             .roleForNewAccount(householdId, invitation.getHouseholdRole())
