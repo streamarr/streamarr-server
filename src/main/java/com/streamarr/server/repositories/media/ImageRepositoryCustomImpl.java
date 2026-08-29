@@ -104,6 +104,10 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
     values.put(IMAGE.AMBIENT_BOTTOM_RIGHT, ambient.map(AmbientColors::bottomRight).orElse(null));
     values.put(IMAGE.AMBIENT_BOTTOM_LEFT, ambient.map(AmbientColors::bottomLeft).orElse(null));
     values.put(IMAGE.AMBIENT_PRIMARY, ambient.map(AmbientColors::primary).orElse(null));
+    values.put(IMAGE.AMBIENT_DARK_VIBRANT, ambient.map(AmbientColors::darkVibrant).orElse(null));
+    values.put(IMAGE.AMBIENT_DARK_MUTED, ambient.map(AmbientColors::darkMuted).orElse(null));
+    values.put(IMAGE.AMBIENT_LIGHT_VIBRANT, ambient.map(AmbientColors::lightVibrant).orElse(null));
+    values.put(IMAGE.AMBIENT_LIGHT_MUTED, ambient.map(AmbientColors::lightMuted).orElse(null));
     values.put(IMAGE.PATH, image.getPath());
     values.put(IMAGE.CREATED_BY, auditUser);
     values.put(IMAGE.LAST_MODIFIED_BY, auditUser);

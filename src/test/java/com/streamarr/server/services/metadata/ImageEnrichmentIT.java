@@ -111,15 +111,26 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
                   .satisfies(
                       small ->
                           assertThat(small.getAmbientColors())
-                              .hasValue(
-                                  AmbientColors.builder()
-                                      .topLeft("#202020")
-                                      .topRight("#404040")
-                                      .bottomRight("#c0c0c0")
-                                      .bottomLeft("#808080")
-                                      .primary("#00a0a0")
-                                      .build()));
+                              .hasValueSatisfying(this::assertDistinctColorAmbientColors));
             });
+  }
+
+  private void assertDistinctColorAmbientColors(AmbientColors colors) {
+    assertThat(colors)
+        .usingRecursiveComparison()
+        .ignoringFields("darkVibrant", "darkMuted", "lightVibrant", "lightMuted")
+        .isEqualTo(
+            AmbientColors.builder()
+                .topLeft("#202020")
+                .topRight("#404040")
+                .bottomRight("#c0c0c0")
+                .bottomLeft("#808080")
+                .primary("#00a0a0")
+                .build());
+    // The resized variant's edge blends make the vibrant targets unpredictable here; exact
+    // selection is pinned by AmbientColorExtractorTest on unblended canvases.
+    assertThat(colors.darkMuted()).as("dark gray quadrants").isNotNull();
+    assertThat(colors.lightMuted()).as("light gray quadrant").isNotNull();
   }
 
   @Test

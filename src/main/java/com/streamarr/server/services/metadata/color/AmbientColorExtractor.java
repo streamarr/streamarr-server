@@ -28,7 +28,8 @@ import java.util.SplittableRandom;
 
 /**
  * Derives ambient UI colors from artwork: a linear-light average per image quadrant for corner
- * gradient tinting, and a saturation-weighted dominant color for accents.
+ * gradient tinting, a saturation-weighted dominant color for accents, and the dark and light target
+ * swatches theme surfaces are built from.
  */
 public final class AmbientColorExtractor {
 
@@ -69,7 +70,18 @@ public final class AmbientColorExtractor {
             .bottomRight(quadrantHex(quadrants[BOTTOM_RIGHT], wholeImage))
             .bottomLeft(quadrantHex(quadrants[BOTTOM_LEFT], wholeImage))
             .primary(ColorConversions.toHex(selectPrimaryColor(palette)))
+            .darkVibrant(targetHex(palette, Target.DARK_VIBRANT))
+            .darkMuted(targetHex(palette, Target.DARK_MUTED))
+            .lightVibrant(targetHex(palette, Target.LIGHT_VIBRANT))
+            .lightMuted(targetHex(palette, Target.LIGHT_MUTED))
             .build());
+  }
+
+  private static String targetHex(Palette palette, Target target) {
+    return palette
+        .swatchFor(target)
+        .map(swatch -> ColorConversions.toHex(swatch.rgb()))
+        .orElse(null);
   }
 
   private static int[] collectOpaquePixels(int[] pixels) {
