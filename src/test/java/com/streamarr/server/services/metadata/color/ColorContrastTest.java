@@ -89,37 +89,31 @@ class ColorContrastTest {
   }
 
   @Test
-  @DisplayName("Should choose light text when background is dark")
-  void shouldChooseLightTextWhenBackgroundIsDark() {
-    var text = ColorContrast.textColorsOver(TEAL_BASE);
-    var baseLuminance = ColorContrast.relativeLuminance(TEAL_BASE);
-
-    assertThat(ColorContrast.relativeLuminance(text.body())).isGreaterThan(baseLuminance);
-    assertThat(ColorContrast.relativeLuminance(text.title())).isGreaterThan(baseLuminance);
-    assertThat(ColorContrast.contrastRatio(text.body(), TEAL_BASE)).isGreaterThanOrEqualTo(4.5);
-    assertThat(ColorContrast.contrastRatio(text.title(), TEAL_BASE)).isGreaterThanOrEqualTo(3.0);
+  @DisplayName("Should choose white text when background is dark")
+  void shouldChooseWhiteTextWhenBackgroundIsDark() {
+    assertThat(ColorContrast.contrastingTextColor(TEAL_BASE)).isEqualTo(WHITE);
   }
 
   @Test
-  @DisplayName("Should choose dark text when background is bright")
-  void shouldChooseDarkTextWhenBackgroundIsBright() {
-    var text = ColorContrast.textColorsOver(AMBER_FIELD);
-    var fieldLuminance = ColorContrast.relativeLuminance(AMBER_FIELD);
-
-    assertThat(ColorContrast.relativeLuminance(text.body())).isLessThan(fieldLuminance);
-    assertThat(ColorContrast.relativeLuminance(text.title())).isLessThan(fieldLuminance);
-    assertThat(ColorContrast.contrastRatio(text.body(), AMBER_FIELD)).isGreaterThanOrEqualTo(4.5);
-    assertThat(ColorContrast.contrastRatio(text.title(), AMBER_FIELD)).isGreaterThanOrEqualTo(3.0);
+  @DisplayName("Should choose black text when background is bright")
+  void shouldChooseBlackTextWhenBackgroundIsBright() {
+    assertThat(ColorContrast.contrastingTextColor(AMBER_FIELD)).isEqualTo(BLACK);
   }
 
   @Test
-  @DisplayName("Should soften title text when body text is stronger than needed")
-  void shouldSoftenTitleTextWhenBodyTextIsStrongerThanNeeded() {
-    var text = ColorContrast.textColorsOver(BLACK);
+  @DisplayName("Should choose black text when white falls just short of body contrast")
+  void shouldChooseBlackTextWhenWhiteFallsJustShortOfBodyContrast() {
+    assertThat(ColorContrast.contrastingTextColor(MID_GRAY))
+        .as("white on #808080 is 3.95:1, under the 4.5:1 body floor")
+        .isEqualTo(BLACK);
+  }
 
-    assertThat(ColorContrast.relativeLuminance(text.title()))
-        .as("title only needs 3:1, so it composites at a lower alpha than body's 4.5:1")
-        .isLessThan(ColorContrast.relativeLuminance(text.body()));
+  @Test
+  @DisplayName("Should prefer white text when it just clears body contrast")
+  void shouldPreferWhiteTextWhenItJustClearsBodyContrast() {
+    assertThat(ColorContrast.contrastingTextColor(0x767676))
+        .as("white on #767676 is 4.54:1")
+        .isEqualTo(WHITE);
   }
 
   @ParameterizedTest
@@ -128,15 +122,12 @@ class ColorContrastTest {
         0x000000, 0x1A1A1A, 0x404040, 0x5C5C5C, 0x767676, 0x808080, 0x8A8A8A, 0xA0A0A0, 0xC0C0C0,
         0xFFFFFF
       })
-  @DisplayName("Should keep both text colors on one side of the background when gray level varies")
-  void shouldKeepBothTextColorsOnOneSideOfBackgroundWhenGrayLevelVaries(int background) {
-    var text = ColorContrast.textColorsOver(background);
-    var backgroundLuminance = ColorContrast.relativeLuminance(background);
+  @DisplayName("Should reach body contrast when gray level varies")
+  void shouldReachBodyContrastWhenGrayLevelVaries(int background) {
+    var text = ColorContrast.contrastingTextColor(background);
 
-    assertThat(ColorContrast.contrastRatio(text.body(), background)).isGreaterThanOrEqualTo(4.5);
-    assertThat(ColorContrast.contrastRatio(text.title(), background)).isGreaterThanOrEqualTo(3.0);
-    assertThat(ColorContrast.relativeLuminance(text.body()) > backgroundLuminance)
-        .as("body and title never straddle the background")
-        .isEqualTo(ColorContrast.relativeLuminance(text.title()) > backgroundLuminance);
+    assertThat(ColorContrast.contrastRatio(text, background))
+        .as("white and black ratios multiply to 21, so one always clears 4.5")
+        .isGreaterThanOrEqualTo(4.5);
   }
 }
