@@ -14,12 +14,12 @@
  * limitations under the License.
  *
  * Modified by Streamarr contributors: the contrast ratio, minimum-alpha search, and compositing
- * are adapted from AndroidX ColorUtils, and the title/body text color generation from AndroidX
+ * are adapted from AndroidX ColorUtils, and the light-or-dark text choice from AndroidX
  * Palette.Swatch (androidx commit 9748764301e5dce66cbf297f6778fa658768c213). Luminance reuses
- * ColorConversions' linear-light conversion, backgrounds are always opaque, results are composited
- * to opaque colors, and the mismatched-polarity fallback is removed as unreachable: body contrast
- * implies title contrast, and one of white or black always reaches 4.5:1 because their ratios
- * against any background multiply to 21. See THIRD_PARTY_NOTICES.md.
+ * ColorConversions' linear-light conversion, backgrounds are always opaque, and Swatch's
+ * alpha-composited title and body colors reduce to the polarity choice: one of white or black
+ * always reaches 4.5:1 because their ratios against any background multiply to 21. See
+ * THIRD_PARTY_NOTICES.md.
  */
 package com.streamarr.server.services.metadata.color;
 
@@ -30,16 +30,13 @@ final class ColorContrast {
 
   static final float MIN_CONTRAST_TITLE_TEXT = 3.0f;
   static final float MIN_CONTRAST_BODY_TEXT = 4.5f;
+  static final int WHITE = 0xFFFFFF;
+  static final int BLACK = 0x000000;
 
-  private static final int WHITE = 0xFFFFFF;
-  private static final int BLACK = 0x000000;
   private static final int OPAQUE_ALPHA = 255;
   private static final int MIN_ALPHA_SEARCH_MAX_ITERATIONS = 10;
   private static final int MIN_ALPHA_SEARCH_PRECISION = 1;
   private static final double LUMINANCE_OFFSET = 0.05;
-
-  /** Opaque text colors that clear the title and body contrast floors over one background. */
-  record TextColors(int title, int body) {}
 
   private ColorContrast() {}
 
@@ -93,19 +90,12 @@ final class ColorContrast {
     return OptionalInt.of(maxAlpha);
   }
 
-  static TextColors textColorsOver(int background) {
-    var lightBodyAlpha = minimumAlpha(WHITE, background, MIN_CONTRAST_BODY_TEXT);
-    if (lightBodyAlpha.isPresent()) {
-      return textColors(WHITE, background, lightBodyAlpha.getAsInt());
+  /** White when it can carry body text over the background, otherwise black. */
+  static int contrastingTextColor(int background) {
+    if (minimumAlpha(WHITE, background, MIN_CONTRAST_BODY_TEXT).isPresent()) {
+      return WHITE;
     }
-    var darkBodyAlpha = minimumAlpha(BLACK, background, MIN_CONTRAST_BODY_TEXT).orElseThrow();
-    return textColors(BLACK, background, darkBodyAlpha);
-  }
-
-  private static TextColors textColors(int text, int background, int bodyAlpha) {
-    var titleAlpha = minimumAlpha(text, background, MIN_CONTRAST_TITLE_TEXT).orElseThrow();
-    return new TextColors(
-        composite(text, titleAlpha, background), composite(text, bodyAlpha, background));
+    return BLACK;
   }
 
   private static int compositeChannel(int foreground, int alpha, int background) {

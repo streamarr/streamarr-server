@@ -12,8 +12,8 @@ The following files contain source code adapted from the AndroidX Palette and Co
 - `src/main/java/com/streamarr/server/services/metadata/color/Swatch.java` — adapted from `Palette.Swatch`
 - `src/main/java/com/streamarr/server/services/metadata/color/Target.java` — adapted from `Target.java`
 - `src/main/java/com/streamarr/server/services/metadata/color/Palette.java` — target scoring and exclusive swatch selection adapted from `Palette.java`
-- `src/main/java/com/streamarr/server/services/metadata/color/ColorContrast.java` — contrast ratio, minimum-alpha search, and compositing adapted from `ColorUtils.java`; title/body text color generation adapted from `Palette.Swatch`
-- `src/main/java/com/streamarr/server/services/metadata/color/ColorConversions.java` — RGB-to-HSL conversion adapted from `ColorUtils.java`
+- `src/main/java/com/streamarr/server/services/metadata/color/ColorContrast.java` — contrast ratio, minimum-alpha search, and compositing adapted from `ColorUtils.java`; light-or-dark text choice adapted from `Palette.Swatch`
+- `src/main/java/com/streamarr/server/services/metadata/color/ColorConversions.java` — RGB-to-HSL and HSL-to-RGB conversions adapted from `ColorUtils.java`
 
 Copyright notices retained from the source files:
 
@@ -29,7 +29,7 @@ Sources (pinned to androidx commit `9748764301e5dce66cbf297f6778fa658768c213`):
 
 License: Apache License 2.0. The complete license text is packaged at `META-INF/LICENSE-APACHE-2.0.txt` from `src/main/resources/META-INF/LICENSE-APACHE-2.0.txt`; the canonical license URI is <https://www.apache.org/licenses/LICENSE-2.0>.
 
-Modifications by Streamarr contributors: ported `android.graphics` and AndroidX types to `java.awt`/plain Java; reduced the six default targets to an enum scored in a fixed order with fixed weights and always-exclusive selection; kept the text-contrast color generation for opaque backgrounds only; removed the `Builder`, asynchronous generation, `Bitmap` resizing, region support, custom targets, and per-target getters; replaced filter arrays with a single filter; removed branches unreachable in this integration; renamed identifiers to project style. Each adapted file's header identifies its specific changes.
+Modifications by Streamarr contributors: ported `android.graphics` and AndroidX types to `java.awt`/plain Java; reduced the six default targets to an enum scored in a fixed order with fixed weights and always-exclusive selection; reduced the text-contrast color generation to a light-or-dark choice over opaque backgrounds; removed the `Builder`, asynchronous generation, `Bitmap` resizing, region support, custom targets, and per-target getters; replaced filter arrays with a single filter; removed branches unreachable in this integration; renamed identifiers to project style. Each adapted file's header identifies its specific changes.
 
 ## UTF-8 decoder capability and stress test
 
