@@ -43,6 +43,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @SpringBootTest(
     classes = {
       ImageFieldResolver.class,
+      AmbientColorsFieldResolver.class,
       ImageDataLoader.class,
       MovieResolver.class,
       SeriesResolver.class,
@@ -126,6 +127,56 @@ class ImageFieldResolverTest {
                   "bottomRight", "#303030",
                   "bottomLeft", "#404040",
                   "primary", "#00a0a0"));
+    }
+
+    @Test
+    @DisplayName("Should derive the ambient theme when resolving ambient colors")
+    void shouldDeriveAmbientThemeWhenResolvingAmbientColors() {
+      var movie = setupMovie();
+      var ambientColors =
+          AmbientColors.builder()
+              .topLeft("#0d322c")
+              .topRight("#0d322c")
+              .bottomRight("#0d322c")
+              .bottomLeft("#0d322c")
+              .primary("#6fe0bf")
+              .darkMuted("#0e3b34")
+              .darkVibrant("#1f6b5a")
+              .build();
+      var image = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER);
+      image.setAmbientColors(Optional.of(ambientColors));
+      when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
+          .thenReturn(List.of(image));
+
+      Map<String, String> theme =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              """
+              {
+                movie(id: "%s") {
+                  images {
+                    ambientColors {
+                      theme {
+                        base
+                        panel
+                        selected
+                        accent
+                        onAccent
+                        textPrimary
+                        textSecondary
+                      }
+                    }
+                  }
+                }
+              }
+              """
+                  .formatted(movie.getId()),
+              "data.movie.images[0].ambientColors.theme");
+
+      assertThat(theme)
+          .containsEntry("base", "#0e3b34")
+          .containsEntry("selected", "#1f6b5a")
+          .containsEntry("accent", "#6fe0bf")
+          .containsKeys("panel", "onAccent", "textPrimary", "textSecondary");
     }
 
     @Test
