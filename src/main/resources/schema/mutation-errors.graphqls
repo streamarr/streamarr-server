@@ -243,3 +243,23 @@ type ReofferHouseholdNotSharedError implements InputMutationError & MutationErro
     message: String!
     inputPath: [String!]!
 }
+
+type AlreadyManagerError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The invitation is unavailable."
+type ManagerInvitationNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type ManagementAlreadyRemovedError implements MutationError {
+    message: String!
+}
+
+type NotAManagerError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}

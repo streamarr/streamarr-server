@@ -33,6 +33,10 @@ record AuthorizationCheck(Action action, EntityUID resource, Map<String, Value> 
     return new AuthorizationCheck(action, CedarIds.share(shareId), Map.of());
   }
 
+  static AuthorizationCheck onManagerInvitation(Action action, UUID invitationId) {
+    return new AuthorizationCheck(action, CedarIds.managerInvitation(invitationId), Map.of());
+  }
+
   static AuthorizationCheck selectProfile(UUID profileId, boolean pinVerified) {
     return new AuthorizationCheck(
         Action.SELECT_PROFILE,

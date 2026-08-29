@@ -1,0 +1,157 @@
+# Direct ProfileManagers (ADR 0024 §ProfileManager; ADR 0026 shapes).
+# Codes are returned exactly once at issuance and are never queryable again.
+
+enum ProfileManagerInvitationStatus {
+    PENDING
+    ACCEPTED
+    DECLINED
+    CANCELED
+    EXPIRED
+    INVALIDATED
+}
+
+type ManagerInvitationDetails {
+    id: ID!
+    profileId: ID
+    profileName: String!
+    inviterAccountId: ID
+    inviterDisplayName: String!
+    recipientAccountId: ID
+    recipientEmail: String!
+    status: ProfileManagerInvitationStatus!
+    expiresAt: String!
+}
+
+type ManagerInvitationConnection {
+    edges: [ManagerInvitationEdge!]!
+    pageInfo: PageInfo!
+}
+
+type ManagerInvitationEdge {
+    node: ManagerInvitationDetails!
+    cursor: String!
+}
+
+input InviteProfileManagerInput {
+    profileId: ID!
+    recipientAccountId: ID!
+}
+
+"The code appears here once and never again."
+type IssuedManagerInvitation {
+    invitation: ManagerInvitationDetails!
+    code: String!
+}
+
+type InviteProfileManagerPayload {
+    issued: IssuedManagerInvitation
+    userErrors: [InviteProfileManagerError!]!
+}
+
+union InviteProfileManagerError =
+    ProfileNotFoundError
+  | AccountNotFoundError
+  | ProfileManagerNotEligibleError
+  | AlreadyManagerError
+
+input CancelManagerInvitationInput {
+    invitationId: ID!
+}
+
+type CancelManagerInvitationPayload {
+    invitation: ManagerInvitationDetails
+    userErrors: [CancelManagerInvitationError!]!
+}
+
+union CancelManagerInvitationError = ManagerInvitationNotFoundError | InvitationNotPendingError
+
+input AcceptManagerInvitationInput {
+    code: String!
+}
+
+type AcceptManagerInvitationPayload {
+    invitation: ManagerInvitationDetails
+    userErrors: [AcceptManagerInvitationError!]!
+}
+
+union AcceptManagerInvitationError =
+    ManagerInvitationNotFoundError
+  | ProfileManagerNotEligibleError
+  | AlreadyManagerError
+
+input DeclineManagerInvitationInput {
+    code: String!
+}
+
+type DeclineManagerInvitationPayload {
+    invitation: ManagerInvitationDetails
+    userErrors: [DeclineManagerInvitationError!]!
+}
+
+union DeclineManagerInvitationError = ManagerInvitationNotFoundError
+
+input RelinquishProfileManagementInput {
+    profileId: ID!
+}
+
+type RelinquishProfileManagementPayload {
+    profileId: ID
+    userErrors: [RelinquishProfileManagementError!]!
+}
+
+union RelinquishProfileManagementError =
+    ProfileNotFoundError
+  | ManagementAlreadyRemovedError
+  | ProfileRequiresEligibleManagerError
+
+input RemoveProfileManagerInput {
+    profileId: ID!
+    accountId: ID!
+}
+
+type RemoveProfileManagerPayload {
+    profileId: ID
+    userErrors: [RemoveProfileManagerError!]!
+}
+
+union RemoveProfileManagerError =
+    ProfileNotFoundError
+  | NotAManagerError
+  | ProfileRequiresEligibleManagerError
+
+input AdministrativelyGrantProfileManagerInput {
+    profileId: ID!
+    accountId: ID!
+    reason: String!
+}
+
+type AdministrativelyGrantProfileManagerPayload {
+    profileId: ID
+    userErrors: [AdministrativelyGrantProfileManagerError!]!
+}
+
+union AdministrativelyGrantProfileManagerError =
+    ProfileNotFoundError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+  | AccountNotFoundError
+  | ProfileManagerNotEligibleError
+  | AlreadyManagerError
+
+input AdministrativelyRemoveProfileManagerInput {
+    profileId: ID!
+    accountId: ID!
+    reason: String!
+}
+
+type AdministrativelyRemoveProfileManagerPayload {
+    profileId: ID
+    userErrors: [AdministrativelyRemoveProfileManagerError!]!
+}
+
+union AdministrativelyRemoveProfileManagerError =
+    ProfileNotFoundError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+  | NotAManagerError
+  | ProfileRequiresEligibleManagerError

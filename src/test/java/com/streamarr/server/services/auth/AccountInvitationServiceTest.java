@@ -26,6 +26,7 @@ import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
+import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
 import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
@@ -71,6 +72,8 @@ class AccountInvitationServiceTest {
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
   private final FakeProfileRepository profiles = new FakeProfileRepository();
   private final FakeProfileManagerRepository managers = new FakeProfileManagerRepository();
+  private final FakeProfileManagerInvitationRepository managerInvitations =
+      new FakeProfileManagerInvitationRepository();
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
@@ -347,6 +350,7 @@ class AccountInvitationServiceTest {
         accountRepository,
         profiles,
         managers,
+        managerInvitations,
         shares,
         reoffers,
         households,
@@ -450,8 +454,8 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should omit a reoffer after Profile removal invalidates its invitation plan")
-  void shouldOmitReofferAfterProfileRemovalInvalidatesInvitationPlan() {
+  @DisplayName("Should omit a reoffer when Profile removal invalidates its invitation plan")
+  void shouldOmitReofferWhenProfileRemovalInvalidatesInvitationPlan() {
     var fixture = linkAcceptanceFixture();
     var removedHouseholdId = fixture.reofferHouseholdIds().getFirst();
     var retainedHouseholdId = fixture.reofferHouseholdIds().getLast();
@@ -475,8 +479,9 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should attribute a restricted Profile reoffer to the invitation issuer")
-  void shouldAttributeRestrictedProfileReofferToInvitationIssuer() {
+  @DisplayName(
+      "Should attribute a restricted Profile reoffer to the invitation issuer when LINK wins")
+  void shouldAttributeRestrictedProfileReofferToInvitationIssuerWhenLinkWins() {
     var fixture = linkAcceptanceFixture();
     profiles.findById(fixture.profileId()).orElseThrow().setKind(ProfileKind.KID);
     var issuerAccountId = invitations.findAll().getFirst().getIssuerAccountId();

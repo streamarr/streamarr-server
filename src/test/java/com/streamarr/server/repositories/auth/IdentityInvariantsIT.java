@@ -249,7 +249,10 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
       race.validate().countDown();
       Awaitility.await()
           .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(blockedConstraintValidationCount()).isOne());
+          .untilAsserted(
+              () ->
+                  assertThat(blockedConstraintValidationCount("chk_user_account_invariants"))
+                      .isOne());
       race.commit().countDown();
       for (var attempt : attempts) {
         awaitServerAdminOutcome(attempt);
@@ -290,6 +293,62 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     var member = join(admin, HouseholdRole.MEMBER);
 
     assertThatCode(() -> restrictUnderSupervision(admin, member)).doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("Should reject one write when a manager grant races Profile restriction (T5)")
+  void shouldRejectOneWriteWhenManagerGrantRacesProfileRestriction() throws Exception {
+    var recipientHome = create();
+    var recipient = join(recipientHome, HouseholdRole.MEMBER);
+    var targetHome = create();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            profileManagerRepository.saveAndFlush(
+                ProfileManager.builder()
+                    .accountId(recipientHome.account().getId())
+                    .profileId(recipient.getPersonalProfileId())
+                    .build()));
+    var race =
+        RestrictedAuthorityRace.builder()
+            .updatesReady(new CountDownLatch(2))
+            .validate(new CountDownLatch(1))
+            .validationsStarted(new CountDownLatch(2))
+            .firstValidationReady(new CountDownLatch(1))
+            .commit(new CountDownLatch(1))
+            .build();
+
+    List<Future<Boolean>> attempts;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      attempts =
+          List.of(
+              executor.submit(
+                  () -> grantManagerAfter(race, recipient.getId(), targetHome.profile().getId())),
+              executor.submit(
+                  () -> restrictPersonalProfileAfter(race, recipient.getPersonalProfileId())));
+      assertThat(race.updatesReady().await(30, TimeUnit.SECONDS)).isTrue();
+      race.validate().countDown();
+      assertThat(race.validationsStarted().await(30, TimeUnit.SECONDS)).isTrue();
+      assertThat(race.firstValidationReady().await(30, TimeUnit.SECONDS)).isTrue();
+      Awaitility.await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(() -> assertThat(blockedConstraintValidationCount("chk_profile")).isOne());
+      race.commit().countDown();
+      for (var attempt : attempts) {
+        awaitRestrictedAuthorityOutcome(attempt);
+      }
+    }
+
+    assertThat(attempts.stream().filter(this::completed).count())
+        .as("one conflicting write should fail after both constraint validations overlap")
+        .isEqualTo(1);
+    assertThat(
+            profileRepository
+                    .findById(recipient.getPersonalProfileId())
+                    .orElseThrow()
+                    .isRestricted()
+                && profileManagerRepository.existsByAccountIdAndProfileId(
+                    recipient.getId(), targetHome.profile().getId()))
+        .isFalse();
   }
 
   @Test
@@ -613,12 +672,60 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
     return true;
   }
 
+  private boolean grantManagerAfter(RestrictedAuthorityRace race, UUID accountId, UUID profileId) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder().accountId(accountId).profileId(profileId).build());
+          race.updatesReady().countDown();
+          await(race.validate());
+          race.validationsStarted().countDown();
+          dsl.execute("SET CONSTRAINTS chk_profile_manager_invariants IMMEDIATE");
+          race.firstValidationReady().countDown();
+          await(race.commit());
+        });
+    return true;
+  }
+
+  private boolean restrictPersonalProfileAfter(RestrictedAuthorityRace race, UUID profileId) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var profile = profileRepository.findById(profileId).orElseThrow();
+          profile.setMaximumAllowedRatingAge(12);
+          profileRepository.saveAndFlush(profile);
+          race.updatesReady().countDown();
+          await(race.validate());
+          race.validationsStarted().countDown();
+          dsl.execute("SET CONSTRAINTS chk_profile_invariants IMMEDIATE");
+          race.firstValidationReady().countDown();
+          await(race.commit());
+        });
+    return true;
+  }
+
+  private void await(CountDownLatch latch) {
+    try {
+      assertThat(latch.await(30, TimeUnit.SECONDS)).isTrue();
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(interrupted);
+    }
+  }
+
   @Builder
   private record HouseholdAdminRace(CountDownLatch updatesReady, CountDownLatch commit) {}
 
   @Builder
   private record ServerAdminRace(
       CountDownLatch updatesReady, CountDownLatch validate, CountDownLatch commit) {}
+
+  @Builder
+  private record RestrictedAuthorityRace(
+      CountDownLatch updatesReady,
+      CountDownLatch validate,
+      CountDownLatch validationsStarted,
+      CountDownLatch firstValidationReady,
+      CountDownLatch commit) {}
 
   /** Waits for the attempt; the losing demotion's constraint violation is the expected outcome. */
   private void awaitOutcome(Future<Boolean> attempt) throws InterruptedException, TimeoutException {
@@ -635,6 +742,16 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
       attempt.get(30, TimeUnit.SECONDS);
     } catch (ExecutionException expectedForLoser) {
       assertThat(constraintName(expectedForLoser)).isEqualTo("chk_enabled_server_admin_remains");
+    }
+  }
+
+  private void awaitRestrictedAuthorityOutcome(Future<Boolean> attempt)
+      throws InterruptedException, TimeoutException {
+    try {
+      attempt.get(30, TimeUnit.SECONDS);
+    } catch (ExecutionException expectedForLoser) {
+      assertThat(constraintName(expectedForLoser))
+          .isEqualTo("chk_restricted_account_holds_no_authority");
     }
   }
 
@@ -681,14 +798,13 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         .count();
   }
 
-  private int blockedConstraintValidationCount() {
+  private int blockedConstraintValidationCount(String constraintNamePrefix) {
     return dsl.fetchCount(
         dsl.selectOne()
             .from("pg_stat_activity")
             .where(DSL.field("wait_event_type", String.class).eq("Lock"))
             .and(
                 DSL.field("query", String.class)
-                    .startsWithIgnoreCase(
-                        "SET CONSTRAINTS chk_user_account_invariants IMMEDIATE")));
+                    .startsWithIgnoreCase("SET CONSTRAINTS " + constraintNamePrefix)));
   }
 }

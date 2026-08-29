@@ -151,8 +151,8 @@ class CredentialAdministrationResolverTest {
   }
 
   @Test
-  @DisplayName("Should expose the Households affected by inviting an existing Profile")
-  void shouldExposeHouseholdsAffectedByInvitingExistingProfile() {
+  @DisplayName("Should expose affected Households when an existing Profile is previewed")
+  void shouldExposeAffectedHouseholdsWhenExistingProfileIsPreviewed() {
     var profileId = UUID.randomUUID();
     var householdId = UUID.randomUUID();
     var affectedHouseholdId = UUID.randomUUID();
@@ -187,8 +187,11 @@ class CredentialAdministrationResolverTest {
         .containsEntry("profileId", profileId.toString())
         .containsEntry("profileName", "Grandpa Joe")
         .containsEntry("householdId", householdId.toString())
-        .containsEntry("householdName", "Home");
-    assertThat(preview.get("affectedHouseholds").toString()).contains("Cabin");
+        .containsEntry("householdName", "Home")
+        .containsEntry(
+            "affectedHouseholds",
+            List.of(
+                Map.of("householdId", affectedHouseholdId.toString(), "householdName", "Cabin")));
   }
 
   @ParameterizedTest(

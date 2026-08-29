@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -233,6 +234,36 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
           share.setStatus(ProfileShareStatus.INVALIDATED);
           share.setInvalidationReason(reason);
           share.setDecidedAt(now);
+          AuditFieldSetter.setLastModifiedOn(share, now);
+        });
+    return pending.size();
+  }
+
+  @Override
+  public int invalidatePendingOffersByProfileIdAndOffererAccountId(
+      UUID profileId, UUID offererAccountId, String reason, Instant now) {
+    database.values().stream()
+        .filter(share -> share.getProfileId().equals(profileId))
+        .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+        .filter(share -> share.statusAt(now) == ProfileShareStatus.EXPIRED)
+        .forEach(
+            share -> {
+              share.setStatus(ProfileShareStatus.EXPIRED);
+              share.setDecidedAt(now);
+              AuditFieldSetter.setLastModifiedOn(share, now);
+            });
+    var pending =
+        database.values().stream()
+            .filter(share -> share.getProfileId().equals(profileId))
+            .filter(share -> offererAccountId.equals(share.getOfferedByAccountId()))
+            .filter(share -> share.statusAt(now) == ProfileShareStatus.PENDING)
+            .toList();
+    pending.forEach(
+        share -> {
+          share.setStatus(ProfileShareStatus.INVALIDATED);
+          share.setInvalidationReason(reason);
+          share.setDecidedAt(now);
+          AuditFieldSetter.setLastModifiedOn(share, now);
         });
     return pending.size();
   }

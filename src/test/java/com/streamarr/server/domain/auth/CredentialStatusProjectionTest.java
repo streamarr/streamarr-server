@@ -49,6 +49,33 @@ class CredentialStatusProjectionTest {
   }
 
   @Test
+  @DisplayName(
+      "Should project a stale pending manager invitation as expired when status is requested")
+  void shouldProjectStalePendingManagerInvitationAsExpiredWhenStatusIsRequested() {
+    var invitation =
+        ProfileManagerInvitation.builder()
+            .status(ProfileManagerInvitationStatus.PENDING)
+            .expiresAt(NOW)
+            .build();
+
+    assertThat(invitation.statusAt(NOW)).isEqualTo(ProfileManagerInvitationStatus.EXPIRED);
+    assertThat(invitation.getStatus()).isEqualTo(ProfileManagerInvitationStatus.PENDING);
+  }
+
+  @ParameterizedTest(name = "Should preserve {0} when a manager-invitation expiry has passed")
+  @EnumSource(
+      value = ProfileManagerInvitationStatus.class,
+      names = {"ACCEPTED", "DECLINED", "CANCELED", "EXPIRED", "INVALIDATED"})
+  @DisplayName("Should preserve a terminal manager-invitation status when its expiry has passed")
+  void shouldPreserveTerminalManagerInvitationStatusWhenItsExpiryHasPassed(
+      ProfileManagerInvitationStatus status) {
+    var invitation =
+        ProfileManagerInvitation.builder().status(status).expiresAt(NOW.minusSeconds(1)).build();
+
+    assertThat(invitation.statusAt(NOW)).isEqualTo(status);
+  }
+
+  @Test
   @DisplayName("Should project a stale pending reset code as expired when status is requested")
   void shouldProjectStalePendingResetCodeAsExpiredWhenStatusIsRequested() {
     var resetCode =

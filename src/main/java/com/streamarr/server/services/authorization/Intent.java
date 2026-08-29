@@ -43,6 +43,9 @@ public sealed interface Intent {
 
   record ViewProfileAdministration(UUID profileId) implements UnitIntent {}
 
+  /** Pending direct-manager invitations: ProfileManagers and live ServerAdmin only. */
+  record ViewManagerInvitations(UUID profileId) implements UnitIntent {}
+
   /** The live playback decision for the selected Profile in the context Household (ADR 0018). */
   record Playback() implements UnitIntent {}
 
@@ -140,4 +143,25 @@ public sealed interface Intent {
 
   /** The ServerAdmin administrative end; requiresFreshReauthentication with a reason. */
   record AdministrativelyEndProfileShare(UUID shareId) implements UnitIntent {}
+
+  /** Propose another eligible Account as a direct ProfileManager (ADR 0024 §ProfileManager). */
+  record InviteProfileManager(UUID profileId) implements UnitIntent {}
+
+  record CancelManagerInvitation(UUID invitationId) implements UnitIntent {}
+
+  record AcceptManagerInvitation(UUID invitationId) implements UnitIntent {}
+
+  record DeclineManagerInvitation(UUID invitationId) implements UnitIntent {}
+
+  /** Give up the principal's own direct manager grant. */
+  record RelinquishProfileManagement(UUID profileId) implements UnitIntent {}
+
+  /** The sovereign Account removes a direct manager of its own Personal Profile. */
+  record RemoveProfileManager(UUID profileId) implements UnitIntent {}
+
+  /** ServerAdmin grants management without recipient consent after fresh reauthentication. */
+  record AdministrativelyGrantProfileManager(UUID profileId) implements UnitIntent {}
+
+  /** ServerAdmin removes management after fresh reauthentication. */
+  record AdministrativelyRemoveProfileManager(UUID profileId) implements UnitIntent {}
 }

@@ -64,8 +64,8 @@ class ProfileHouseholdGuardLockingIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should exclusively lock a pending Share Household for a Profile transition")
-  void shouldExclusivelyLockPendingShareHouseholdForProfileTransition() throws Exception {
+  @DisplayName("Should exclusively lock a pending Share Household when a Profile transitions")
+  void shouldExclusivelyLockPendingShareHouseholdWhenProfileTransitions() throws Exception {
     var source = identity(authTestSupport.createAdminIdentity());
     var target = identity(authTestSupport.createIdentity());
     pendingShare(source.profile().getId(), target.household().getId(), source.account().getId());
@@ -75,8 +75,8 @@ class ProfileHouseholdGuardLockingIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should exclusively lock an explicit reoffer Household for a Profile transition")
-  void shouldExclusivelyLockExplicitReofferHouseholdForProfileTransition() throws Exception {
+  @DisplayName("Should exclusively lock an explicit reoffer Household when a Profile transitions")
+  void shouldExclusivelyLockExplicitReofferHouseholdWhenProfileTransitions() throws Exception {
     var source = identity(authTestSupport.createAdminIdentity());
     var target = identity(authTestSupport.createIdentity());
 
@@ -85,8 +85,8 @@ class ProfileHouseholdGuardLockingIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should exclusively lock an ended Share Household before Profile deletion")
-  void shouldExclusivelyLockEndedShareHouseholdBeforeProfileDeletion() throws Exception {
+  @DisplayName("Should exclusively lock an ended Share Household when a Profile is deleted")
+  void shouldExclusivelyLockEndedShareHouseholdWhenProfileIsDeleted() throws Exception {
     var source = identity(authTestSupport.createAdminIdentity());
     var target = identity(authTestSupport.createIdentity());
     endedShare(source.profile().getId(), target.household().getId());

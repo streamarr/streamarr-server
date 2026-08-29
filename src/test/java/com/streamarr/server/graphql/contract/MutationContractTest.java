@@ -53,8 +53,9 @@ class MutationContractTest {
   private static final TypeDefinitionRegistry SCHEMA = loadSchema();
 
   @Test
-  @DisplayName("Should model Account invitation Profile choices as distinct GraphQL actions")
-  void shouldModelAccountInvitationProfileChoicesAsDistinctGraphqlActions() {
+  @DisplayName(
+      "Should model Account invitation Profile choices as distinct GraphQL actions when the schema is parsed")
+  void shouldModelAccountInvitationProfileChoicesAsDistinctGraphqlActionsWhenSchemaIsParsed() {
     assertThat(SCHEMA.getType("AccountInvitationMode")).isEmpty();
     assertThat(SCHEMA.getType("LinkProfileRequiredError")).isEmpty();
     assertThat(SCHEMA.getType("ProfileNotInHouseholdError")).isEmpty();

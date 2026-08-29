@@ -13,6 +13,7 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
@@ -20,7 +21,6 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfilePinHasher;
 import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfilePolicyTransition;
@@ -61,6 +61,7 @@ public class ProfileAdministrationService {
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
   private final AccountInvitationRepository accountInvitationRepository;
+  private final ProfileManagerInvitationRepository profileManagerInvitationRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final ProfilePinHasher profilePinHasher;
   private final MutationTransactions mutationTransactions;
@@ -413,6 +414,8 @@ public class ProfileAdministrationService {
           profileRepository.lockProfileDeletionAcrossHouseholds(profileId);
           accountInvitationRepository.invalidatePendingByProfileId(
               profileId, "Profile deleted", clock.instant());
+          profileManagerInvitationRepository.invalidatePendingByProfileId(
+              profileId, "Profile deleted", clock.instant());
           profileRepository.deleteById(profileId);
           profileRepository.flush();
           securityAuditEventRepository.append(
@@ -443,6 +446,8 @@ public class ProfileAdministrationService {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
 
+          invalidateRecipientProposalsWhenRestricted(profileId, transition);
+
           // The decision above JPA-loaded this row in this transaction; re-read past the
           // first-level cache or the payload would show the pre-transition state.
           return profileRepository.findRefreshedById(profileId).orElseThrow();
@@ -457,6 +462,26 @@ public class ProfileAdministrationService {
                   Optional.of(new ProfileRejections.HostingHouseholdLacksEligibleAdmin());
               default -> Optional.empty();
             });
+  }
+
+  /**
+   * Restricting a linked Personal Profile ends the person's eligibility (ADR 0024): a pending
+   * manager invitation naming them must not outlive it and later restore authority T5 forbids.
+   */
+  private void invalidateRecipientProposalsWhenRestricted(
+      UUID profileId, ProfilePolicyTransition transition) {
+    var restricted =
+        transition.targetKind() == ProfileKind.KID || transition.targetCeiling() != null;
+    if (!restricted) {
+      return;
+    }
+
+    userAccountRepository
+        .findByPersonalProfileId(profileId)
+        .ifPresent(
+            linked ->
+                profileManagerInvitationRepository.invalidatePendingByRecipientAccountId(
+                    linked.getId(), "recipient became ineligible", clock.instant()));
   }
 
   private ProfilePolicyTransition decideTransition(
@@ -497,25 +522,9 @@ public class ProfileAdministrationService {
       BooleanSupplier mayView,
       Supplier<? extends R> denied,
       Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
-    return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
-      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<AuthorizationUnit>(var reason) ->
-          switch (reason) {
-            case REAUTHENTICATION_REQUIRED ->
-                Optional.of(
-                    reauthenticationRequired
-                        .orElseThrow(AuthorizationUnavailableException::new)
-                        .get());
-            case POLICY -> {
-              if (mayView.getAsBoolean()) {
-                throw new AccessDeniedException("Not allowed.");
-              }
-
-              yield Optional.of(denied.get());
-            }
-          };
-    };
+    return AuthorizationRefusal.from(
+        authorizationService.decide(identity, intent),
+        new AuthorizationRefusal.Response<>(mayView, denied, reauthenticationRequired));
   }
 
   /**

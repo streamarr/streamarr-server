@@ -117,8 +117,8 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should preview the Households affected by inviting an existing Profile")
-  void shouldPreviewHouseholdsAffectedByInvitingExistingProfile() {
+  @DisplayName("Should preview affected Households when an existing Profile is invited")
+  void shouldPreviewAffectedHouseholdsWhenExistingProfileIsInvited() {
     var profile =
         profiles.save(
             ProfileFixture.defaultProfileBuilder()
@@ -146,8 +146,8 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should not preview an existing Profile that already belongs to an Account")
-  void shouldNotPreviewExistingProfileThatAlreadyBelongsToAccount() {
+  @DisplayName("Should not preview an existing Profile when it already belongs to an Account")
+  void shouldNotPreviewExistingProfileWhenItAlreadyBelongsToAccount() {
     var profile =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
@@ -361,8 +361,9 @@ class CredentialIssuanceServiceTest {
   }
 
   @Test
-  @DisplayName("Should issue a code once and replace the older pending invitation")
-  void shouldIssueCodeOnceAndReplaceOlderPendingInvitation() {
+  @DisplayName(
+      "Should issue a code once and replace the older pending invitation when the same email is invited again")
+  void shouldIssueCodeOnceAndReplaceOlderPendingInvitationWhenSameEmailIsInvitedAgain() {
     var first = issued(service.issueAccountInvitation(authorization.currentIdentity(), command()));
     var second = issued(service.issueAccountInvitation(authorization.currentIdentity(), command()));
 

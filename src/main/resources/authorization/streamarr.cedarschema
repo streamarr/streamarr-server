@@ -33,6 +33,8 @@ namespace Streamarr {
     shareFree?: Bool,
     principalSoleManager?: Bool,
     offerableByPrincipal?: Bool,
+    directlyManagedByPrincipal?: Bool,
+    sovereignPersonalProfileOfPrincipal?: Bool,
   };
 
   // One Profile's share into one Household, as the principal relates to it for one decision.
@@ -43,6 +45,12 @@ namespace Streamarr {
     principalAdminOfTarget?: Bool,
     directlyManagedByPrincipal?: Bool,
     sovereignOverProfileByPrincipal?: Bool,
+  };
+
+  // A pending manager invitation's parties relative to the principal for one decision.
+  entity ManagerInvitation {
+    recipientIsPrincipal?: Bool,
+    invitedByPrincipal?: Bool,
   };
 
   // The singleton root resource server-wide authority is granted on.
@@ -250,6 +258,52 @@ namespace Streamarr {
   action administrativelyEndProfileShare in shareAdministration appliesTo {
     principal: Account,
     resource: Share,
+    context: { freshReauthentication: Bool },
+  };
+  action managerAdministration;
+  action inviteProfileManager in managerAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
+  action viewManagerInvitations in managerAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
+  action acceptManagerInvitation in managerAdministration appliesTo {
+    principal: Account,
+    resource: ManagerInvitation,
+    context: {},
+  };
+  action declineManagerInvitation in managerAdministration appliesTo {
+    principal: Account,
+    resource: ManagerInvitation,
+    context: {},
+  };
+  action cancelManagerInvitation in managerAdministration appliesTo {
+    principal: Account,
+    resource: ManagerInvitation,
+    context: {},
+  };
+  action relinquishProfileManagement in managerAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
+  action removeProfileManager in managerAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
+  action administrativelyGrantProfileManager in managerAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: { freshReauthentication: Bool },
+  };
+  action administrativelyRemoveProfileManager in managerAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
     context: { freshReauthentication: Bool },
   };
   action viewProfileAdministration in profileAdministration appliesTo {

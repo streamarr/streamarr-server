@@ -38,6 +38,14 @@ type Mutation {
     cancelProfileShare(input: CancelProfileShareInput!): CancelProfileSharePayload
     endProfileShare(input: EndProfileShareInput!): EndProfileSharePayload
     administrativelyEndProfileShare(input: AdministrativelyEndProfileShareInput!): AdministrativelyEndProfileSharePayload
+    inviteProfileManager(input: InviteProfileManagerInput!): InviteProfileManagerPayload
+    cancelManagerInvitation(input: CancelManagerInvitationInput!): CancelManagerInvitationPayload
+    acceptManagerInvitation(input: AcceptManagerInvitationInput!): AcceptManagerInvitationPayload
+    declineManagerInvitation(input: DeclineManagerInvitationInput!): DeclineManagerInvitationPayload
+    relinquishProfileManagement(input: RelinquishProfileManagementInput!): RelinquishProfileManagementPayload
+    removeProfileManager(input: RemoveProfileManagerInput!): RemoveProfileManagerPayload
+    administrativelyGrantProfileManager(input: AdministrativelyGrantProfileManagerInput!): AdministrativelyGrantProfileManagerPayload
+    administrativelyRemoveProfileManager(input: AdministrativelyRemoveProfileManagerInput!): AdministrativelyRemoveProfileManagerPayload
 }
 
 enum ImageRefreshMode {

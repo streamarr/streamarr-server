@@ -266,6 +266,19 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
+  public int invalidatePendingOffersByProfileIdAndOffererAccountId(
+      UUID profileId, UUID offererAccountId, String reason, Instant now) {
+    materializeExpiredPending(profileId, now);
+    return invalidatePending(
+        PROFILE_HOUSEHOLD_SHARE
+            .PROFILE_ID
+            .eq(profileId)
+            .and(PROFILE_HOUSEHOLD_SHARE.OFFERED_BY_ACCOUNT_ID.eq(offererAccountId)),
+        reason,
+        now);
+  }
+
+  @Override
   public boolean hasActiveOrPendingShares(UUID profileId, Instant now) {
     var pendingAndLive =
         PROFILE_HOUSEHOLD_SHARE
