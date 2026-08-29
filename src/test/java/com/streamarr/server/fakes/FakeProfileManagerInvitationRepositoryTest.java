@@ -122,6 +122,23 @@ class FakeProfileManagerInvitationRepositoryTest {
             invitations.get(3).getId(), invitations.get(2).getId(), invitations.get(1).getId());
   }
 
+  @Test
+  @DisplayName("Should order tied invitation IDs like PostgreSQL when a page is requested")
+  void shouldOrderTiedInvitationIdsLikePostgresWhenPageIsRequested() {
+    var now = Instant.parse("2026-08-21T12:00:00Z");
+    var profileId = UUID.randomUUID();
+    var lowerId = UUID.fromString("7fffffff-ffff-ffff-ffff-ffffffffffff");
+    var higherId = UUID.fromString("80000000-0000-0000-0000-000000000000");
+    saveInvitation(higherId, profileId, now);
+    saveInvitation(lowerId, profileId, now);
+
+    var window = fake.findPendingByProfileId(profileId, now, firstPage(2));
+
+    assertThat(window)
+        .extracting(ProfileManagerInvitation::getId)
+        .containsExactly(lowerId, higherId);
+  }
+
   private List<ProfileManagerInvitation> invitations(Instant now, UUID profileId) {
     return IntStream.range(0, 4)
         .mapToObj(
@@ -143,6 +160,35 @@ class FakeProfileManagerInvitationRepositoryTest {
               return fake.save(invitation);
             })
         .toList();
+  }
+
+  private void saveInvitation(UUID invitationId, UUID profileId, Instant now) {
+    var invitation =
+        ProfileManagerInvitation.builder()
+            .id(invitationId)
+            .profileId(profileId)
+            .profileName("Kids")
+            .inviterAccountId(UUID.randomUUID())
+            .inviterDisplayName("Inviter")
+            .recipientAccountId(UUID.randomUUID())
+            .recipientEmail("recipient@example.com")
+            .status(ProfileManagerInvitationStatus.PENDING)
+            .expiresAt(now.plusSeconds(3600))
+            .publicId(UUID.randomUUID().toString())
+            .secretDigest(new byte[] {1})
+            .build();
+    AuditFieldSetter.setCreatedOn(invitation, now);
+    fake.save(invitation);
+  }
+
+  private static KeysetPaginationOptions firstPage(int limit) {
+    return new KeysetPaginationOptions(
+        null,
+        PaginationOptions.builder()
+            .paginationDirection(PaginationDirection.FORWARD)
+            .cursor(Optional.empty())
+            .limit(limit)
+            .build());
   }
 
   private static KeysetPaginationOptions cursorWindow(

@@ -41,7 +41,7 @@ public class FakeProfileManagerInvitationRepository
             .sorted(
                 Comparator.comparing(ProfileManagerInvitation::getCreatedOn)
                     .reversed()
-                    .thenComparing(ProfileManagerInvitation::getId))
+                    .thenComparing(invitation -> invitation.getId().toString()))
             .toList();
     var cursorIndex =
         options
