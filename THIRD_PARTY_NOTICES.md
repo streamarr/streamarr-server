@@ -7,7 +7,7 @@ This repository contains adapted third-party material (source code and test fixt
 The following files contain source code adapted from the AndroidX Palette and Core libraries:
 
 - `src/main/java/com/streamarr/server/services/metadata/color/ColorCutQuantizer.java` — adapted from `ColorCutQuantizer.java`
-- `src/main/java/com/streamarr/server/services/metadata/color/AmbientColorExtractor.java` — vibrant-target constants and swatch scoring adapted from `Palette.java` and `Target.java`
+- `src/main/java/com/streamarr/server/services/metadata/color/AmbientColorExtractor.java` — default swatch count and sample-area constants adapted from `Palette.java`
 - `src/main/java/com/streamarr/server/services/metadata/color/SwatchFilter.java` — adapted from `Palette.Filter` and its `DEFAULT_FILTER`
 - `src/main/java/com/streamarr/server/services/metadata/color/Swatch.java` — adapted from `Palette.Swatch`
 - `src/main/java/com/streamarr/server/services/metadata/color/Target.java` — adapted from `Target.java`
