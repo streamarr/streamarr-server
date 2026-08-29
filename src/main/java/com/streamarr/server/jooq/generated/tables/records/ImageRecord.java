@@ -304,6 +304,62 @@ public class ImageRecord extends UpdatableRecordImpl<ImageRecord> {
         return (String) get(19);
     }
 
+    /**
+     * Setter for <code>public.image.ambient_dark_vibrant</code>.
+     */
+    public void setAmbientDarkVibrant(String value) {
+        set(20, value);
+    }
+
+    /**
+     * Getter for <code>public.image.ambient_dark_vibrant</code>.
+     */
+    public String getAmbientDarkVibrant() {
+        return (String) get(20);
+    }
+
+    /**
+     * Setter for <code>public.image.ambient_dark_muted</code>.
+     */
+    public void setAmbientDarkMuted(String value) {
+        set(21, value);
+    }
+
+    /**
+     * Getter for <code>public.image.ambient_dark_muted</code>.
+     */
+    public String getAmbientDarkMuted() {
+        return (String) get(21);
+    }
+
+    /**
+     * Setter for <code>public.image.ambient_light_vibrant</code>.
+     */
+    public void setAmbientLightVibrant(String value) {
+        set(22, value);
+    }
+
+    /**
+     * Getter for <code>public.image.ambient_light_vibrant</code>.
+     */
+    public String getAmbientLightVibrant() {
+        return (String) get(22);
+    }
+
+    /**
+     * Setter for <code>public.image.ambient_light_muted</code>.
+     */
+    public void setAmbientLightMuted(String value) {
+        set(23, value);
+    }
+
+    /**
+     * Getter for <code>public.image.ambient_light_muted</code>.
+     */
+    public String getAmbientLightMuted() {
+        return (String) get(23);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -327,7 +383,7 @@ public class ImageRecord extends UpdatableRecordImpl<ImageRecord> {
     /**
      * Create a detached, initialised ImageRecord
      */
-    public ImageRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID entityId, ImageEntityType entityType, ImageType imageType, ImageSize variant, Integer width, Integer height, String blurHash, String path, String ambientTopLeft, String ambientTopRight, String ambientBottomRight, String ambientBottomLeft, String ambientPrimary, String key, String contentSha256) {
+    public ImageRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID entityId, ImageEntityType entityType, ImageType imageType, ImageSize variant, Integer width, Integer height, String blurHash, String path, String ambientTopLeft, String ambientTopRight, String ambientBottomRight, String ambientBottomLeft, String ambientPrimary, String key, String contentSha256, String ambientDarkVibrant, String ambientDarkMuted, String ambientLightVibrant, String ambientLightMuted) {
         super(Image.IMAGE);
 
         setId(id);
@@ -350,6 +406,10 @@ public class ImageRecord extends UpdatableRecordImpl<ImageRecord> {
         setAmbientPrimary(ambientPrimary);
         setKey(key);
         setContentSha256(contentSha256);
+        setAmbientDarkVibrant(ambientDarkVibrant);
+        setAmbientDarkMuted(ambientDarkMuted);
+        setAmbientLightVibrant(ambientLightVibrant);
+        setAmbientLightMuted(ambientLightMuted);
         resetTouchedOnNotNull();
     }
 }

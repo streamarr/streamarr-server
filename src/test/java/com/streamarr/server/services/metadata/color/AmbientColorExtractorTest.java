@@ -31,6 +31,10 @@ class AmbientColorExtractorTest {
   private static final int NEAR_WHITE = OPAQUE | 0xF8F8F8;
   private static final int NEAR_BLACK = OPAQUE | 0x080808;
   private static final int DESATURATED_BLUE = OPAQUE | 0x4080C0;
+  private static final int NAVY = OPAQUE | 0x103070;
+  private static final int DARK_SLATE = OPAQUE | 0x283830;
+  private static final int LIGHT_CYAN = OPAQUE | 0x68F8F8;
+  private static final int PALE_GRAY = OPAQUE | 0xC8D0C8;
 
   @Test
   @DisplayName("Should extract quadrant averages when corners are distinct")
@@ -387,6 +391,43 @@ class AmbientColorExtractorTest {
     var colors = AmbientColorExtractor.extract(image).orElseThrow();
 
     assertThat(colors.primary()).isEqualTo("#00a0a0");
+  }
+
+  @Test
+  @DisplayName("Should extract target swatches when artwork spans dark and light profiles")
+  void shouldExtractTargetSwatchesWhenArtworkSpansDarkAndLightProfiles() {
+    var image =
+        ArtworkCanvas.size(100, 100)
+            .paint(new Rectangle(0, 0, 30, 100), TEAL)
+            .paint(new Rectangle(30, 0, 20, 100), NAVY)
+            .paint(new Rectangle(50, 0, 20, 100), DARK_SLATE)
+            .paint(new Rectangle(70, 0, 15, 100), LIGHT_CYAN)
+            .paint(new Rectangle(85, 0, 15, 100), PALE_GRAY)
+            .image();
+
+    var colors = AmbientColorExtractor.extract(image).orElseThrow();
+
+    assertThat(colors.primary()).isEqualTo("#00a0a0");
+    assertThat(colors.darkVibrant()).isEqualTo("#103070");
+    assertThat(colors.darkMuted()).isEqualTo("#283830");
+    assertThat(colors.lightVibrant()).isEqualTo("#68f8f8");
+    assertThat(colors.lightMuted()).isEqualTo("#c8d0c8");
+  }
+
+  @Test
+  @DisplayName("Should leave target swatches absent when artwork has no matching profile")
+  void shouldLeaveTargetSwatchesAbsentWhenArtworkHasNoMatchingProfile() {
+    var image = ArtworkCanvas.size(100, 100).fill(TEAL).image();
+
+    var colors = AmbientColorExtractor.extract(image).orElseThrow();
+
+    assertThat(colors.primary()).isEqualTo("#00a0a0");
+    assertThat(colors.darkVibrant())
+        .as("teal fits DARK_VIBRANT too, but exclusive selection spent it on VIBRANT")
+        .isNull();
+    assertThat(colors.darkMuted()).isNull();
+    assertThat(colors.lightVibrant()).isNull();
+    assertThat(colors.lightMuted()).isNull();
   }
 
   private static BufferedImage nearNeutralPaletteBeyondSwatchLimit() {
