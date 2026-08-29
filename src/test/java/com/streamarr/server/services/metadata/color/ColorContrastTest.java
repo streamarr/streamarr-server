@@ -1,0 +1,142 @@
+package com.streamarr.server.services.metadata.color;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+@Tag("UnitTest")
+@DisplayName("Color Contrast Tests")
+class ColorContrastTest {
+
+  private static final int WHITE = 0xFFFFFF;
+  private static final int BLACK = 0x000000;
+  private static final int MID_GRAY = 0x808080;
+  private static final int TEAL_BASE = 0x071F1B;
+  private static final int AMBER_FIELD = 0xE9B658;
+
+  @Test
+  @DisplayName("Should return full luminance when color is white")
+  void shouldReturnFullLuminanceWhenColorIsWhite() {
+    assertThat(ColorContrast.relativeLuminance(WHITE)).isCloseTo(1.0, within(1e-9));
+  }
+
+  @Test
+  @DisplayName("Should return zero luminance when color is black")
+  void shouldReturnZeroLuminanceWhenColorIsBlack() {
+    assertThat(ColorContrast.relativeLuminance(BLACK)).isEqualTo(0.0);
+  }
+
+  @Test
+  @DisplayName("Should linearize channels when color is mid gray")
+  void shouldLinearizeChannelsWhenColorIsMidGray() {
+    assertThat(ColorContrast.relativeLuminance(MID_GRAY))
+        .as("sRGB #808080 is about 21.6% linear light, not 50%")
+        .isCloseTo(0.2159, within(0.0005));
+  }
+
+  @Test
+  @DisplayName("Should return maximum ratio when contrasting white with black")
+  void shouldReturnMaximumRatioWhenContrastingWhiteWithBlack() {
+    assertThat(ColorContrast.contrastRatio(WHITE, BLACK)).isCloseTo(21.0, within(1e-9));
+  }
+
+  @Test
+  @DisplayName("Should be symmetric when foreground and background swap")
+  void shouldBeSymmetricWhenForegroundAndBackgroundSwap() {
+    assertThat(ColorContrast.contrastRatio(BLACK, WHITE))
+        .isEqualTo(ColorContrast.contrastRatio(WHITE, BLACK));
+  }
+
+  @Test
+  @DisplayName("Should return unit ratio when colors are identical")
+  void shouldReturnUnitRatioWhenColorsAreIdentical() {
+    assertThat(ColorContrast.contrastRatio(MID_GRAY, MID_GRAY)).isEqualTo(1.0);
+  }
+
+  @Test
+  @DisplayName("Should return the foreground when composited fully opaque")
+  void shouldReturnForegroundWhenCompositedFullyOpaque() {
+    assertThat(ColorContrast.composite(WHITE, 255, TEAL_BASE)).isEqualTo(WHITE);
+  }
+
+  @Test
+  @DisplayName("Should return the background when composited fully transparent")
+  void shouldReturnBackgroundWhenCompositedFullyTransparent() {
+    assertThat(ColorContrast.composite(WHITE, 0, TEAL_BASE)).isEqualTo(TEAL_BASE);
+  }
+
+  @Test
+  @DisplayName("Should return no alpha when opaque foreground cannot reach contrast")
+  void shouldReturnNoAlphaWhenOpaqueForegroundCannotReachContrast() {
+    assertThat(ColorContrast.minimumAlpha(WHITE, MID_GRAY, 4.5f)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should find the lowest passing alpha when opaque foreground exceeds contrast")
+  void shouldFindLowestPassingAlphaWhenOpaqueForegroundExceedsContrast() {
+    var alpha = ColorContrast.minimumAlpha(WHITE, BLACK, 4.5f).orElseThrow();
+
+    assertThat(alpha).isLessThan(255);
+    assertThat(ColorContrast.contrastRatio(ColorContrast.composite(WHITE, alpha, BLACK), BLACK))
+        .isGreaterThanOrEqualTo(4.5);
+    assertThat(ColorContrast.contrastRatio(ColorContrast.composite(WHITE, alpha - 1, BLACK), BLACK))
+        .isLessThan(4.5);
+  }
+
+  @Test
+  @DisplayName("Should choose light text when background is dark")
+  void shouldChooseLightTextWhenBackgroundIsDark() {
+    var text = ColorContrast.textColorsOver(TEAL_BASE);
+    var baseLuminance = ColorContrast.relativeLuminance(TEAL_BASE);
+
+    assertThat(ColorContrast.relativeLuminance(text.body())).isGreaterThan(baseLuminance);
+    assertThat(ColorContrast.relativeLuminance(text.title())).isGreaterThan(baseLuminance);
+    assertThat(ColorContrast.contrastRatio(text.body(), TEAL_BASE)).isGreaterThanOrEqualTo(4.5);
+    assertThat(ColorContrast.contrastRatio(text.title(), TEAL_BASE)).isGreaterThanOrEqualTo(3.0);
+  }
+
+  @Test
+  @DisplayName("Should choose dark text when background is bright")
+  void shouldChooseDarkTextWhenBackgroundIsBright() {
+    var text = ColorContrast.textColorsOver(AMBER_FIELD);
+    var fieldLuminance = ColorContrast.relativeLuminance(AMBER_FIELD);
+
+    assertThat(ColorContrast.relativeLuminance(text.body())).isLessThan(fieldLuminance);
+    assertThat(ColorContrast.relativeLuminance(text.title())).isLessThan(fieldLuminance);
+    assertThat(ColorContrast.contrastRatio(text.body(), AMBER_FIELD)).isGreaterThanOrEqualTo(4.5);
+    assertThat(ColorContrast.contrastRatio(text.title(), AMBER_FIELD)).isGreaterThanOrEqualTo(3.0);
+  }
+
+  @Test
+  @DisplayName("Should soften title text when body text is stronger than needed")
+  void shouldSoftenTitleTextWhenBodyTextIsStrongerThanNeeded() {
+    var text = ColorContrast.textColorsOver(BLACK);
+
+    assertThat(ColorContrast.relativeLuminance(text.title()))
+        .as("title only needs 3:1, so it composites at a lower alpha than body's 4.5:1")
+        .isLessThan(ColorContrast.relativeLuminance(text.body()));
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      ints = {
+        0x000000, 0x1A1A1A, 0x404040, 0x5C5C5C, 0x767676, 0x808080, 0x8A8A8A, 0xA0A0A0, 0xC0C0C0,
+        0xFFFFFF
+      })
+  @DisplayName("Should keep both text colors on one side of the background when gray level varies")
+  void shouldKeepBothTextColorsOnOneSideOfBackgroundWhenGrayLevelVaries(int background) {
+    var text = ColorContrast.textColorsOver(background);
+    var backgroundLuminance = ColorContrast.relativeLuminance(background);
+
+    assertThat(ColorContrast.contrastRatio(text.body(), background)).isGreaterThanOrEqualTo(4.5);
+    assertThat(ColorContrast.contrastRatio(text.title(), background)).isGreaterThanOrEqualTo(3.0);
+    assertThat(ColorContrast.relativeLuminance(text.body()) > backgroundLuminance)
+        .as("body and title never straddle the background")
+        .isEqualTo(ColorContrast.relativeLuminance(text.title()) > backgroundLuminance);
+  }
+}
