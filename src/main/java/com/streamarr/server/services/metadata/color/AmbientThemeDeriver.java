@@ -67,6 +67,7 @@ public final class AmbientThemeDeriver {
       return firstSwatch(colors.lightMuted(), colors.lightVibrant())
           .orElseGet(() -> withLightness(primary(), LIGHT_TARGET_LIGHTNESS));
     }
+
     return firstSwatch(colors.darkMuted(), colors.darkVibrant())
         .orElseGet(() -> withLightness(primary(), DARK_TARGET_LIGHTNESS));
   }
@@ -75,6 +76,7 @@ public final class AmbientThemeDeriver {
     if (!bright) {
       return primary();
     }
+
     return firstSwatch(colors.darkVibrant(), colors.darkMuted())
         .orElseGet(() -> withLightness(primary(), DARK_TARGET_LIGHTNESS));
   }
@@ -90,6 +92,7 @@ public final class AmbientThemeDeriver {
       hsl[2] = Math.clamp(hsl[2] + step, 0f, 1f);
       lifted = ColorConversions.hslToRgb(hsl);
     }
+
     return lifted;
   }
 

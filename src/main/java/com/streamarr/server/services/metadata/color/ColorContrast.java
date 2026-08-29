@@ -85,8 +85,10 @@ final class ColorContrast {
         minAlpha = testAlpha;
         continue;
       }
+
       maxAlpha = testAlpha;
     }
+
     return OptionalInt.of(maxAlpha);
   }
 
@@ -95,6 +97,7 @@ final class ColorContrast {
     if (minimumAlpha(WHITE, background, MIN_CONTRAST_BODY_TEXT).isPresent()) {
       return WHITE;
     }
+
     return BLACK;
   }
 

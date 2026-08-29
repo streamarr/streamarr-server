@@ -40,6 +40,7 @@ final class Palette {
     if (swatches.isEmpty()) {
       throw new IllegalArgumentException("A palette needs at least one swatch");
     }
+
     dominant = swatches.stream().max(Comparator.comparingInt(Swatch::population)).orElseThrow();
     for (var target : Target.values()) {
       select(target, swatches);
@@ -61,10 +62,12 @@ final class Palette {
       if (usedColors.contains(swatch.rgb()) || !target.accepts(swatch.hsl())) {
         continue;
       }
+
       var score = target.score(swatch.hsl(), swatch.population() / (float) dominant.population());
       if (best != null && score <= bestScore) {
         continue;
       }
+
       best = swatch;
       bestScore = score;
     }
@@ -72,6 +75,7 @@ final class Palette {
     if (best == null) {
       return;
     }
+
     selected.put(target, best);
     usedColors.add(best.rgb());
   }
