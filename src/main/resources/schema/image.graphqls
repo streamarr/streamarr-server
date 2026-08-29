@@ -12,6 +12,22 @@ type AmbientColors {
     bottomRight: String!
     bottomLeft: String!
     primary: String!
+    theme: AmbientTheme!
+}
+
+"""
+Role-named theme slots derived from the artwork. A slot maps to the same surface whether the
+theme is dark or bright — a button is always `accent` filled with `onAccent` text — so clients
+never branch on which theme they received.
+"""
+type AmbientTheme {
+    base: String!
+    panel: String!
+    selected: String!
+    accent: String!
+    onAccent: String!
+    textPrimary: String!
+    textSecondary: String!
 }
 
 type ImageVariant {

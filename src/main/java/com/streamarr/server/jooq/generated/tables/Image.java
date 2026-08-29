@@ -160,6 +160,26 @@ public class Image extends TableImpl<ImageRecord> {
      */
     public final TableField<ImageRecord, String> CONTENT_SHA256 = createField(DSL.name("content_sha256"), SQLDataType.CLOB, this, "");
 
+    /**
+     * The column <code>public.image.ambient_dark_vibrant</code>.
+     */
+    public final TableField<ImageRecord, String> AMBIENT_DARK_VIBRANT = createField(DSL.name("ambient_dark_vibrant"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.image.ambient_dark_muted</code>.
+     */
+    public final TableField<ImageRecord, String> AMBIENT_DARK_MUTED = createField(DSL.name("ambient_dark_muted"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.image.ambient_light_vibrant</code>.
+     */
+    public final TableField<ImageRecord, String> AMBIENT_LIGHT_VIBRANT = createField(DSL.name("ambient_light_vibrant"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.image.ambient_light_muted</code>.
+     */
+    public final TableField<ImageRecord, String> AMBIENT_LIGHT_MUTED = createField(DSL.name("ambient_light_muted"), SQLDataType.CLOB, this, "");
+
     private Image(Name alias, Table<ImageRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -207,7 +227,9 @@ public class Image extends TableImpl<ImageRecord> {
     @Override
     public List<Check<ImageRecord>> getChecks() {
         return Arrays.asList(
-            Internal.createCheck(this, DSL.name("image_content_sha256_format_check"), "(((content_sha256 IS NULL) OR (content_sha256 ~ '^[0-9a-f]{64}$'::text)))", true)
+            Internal.createCheck(this, DSL.name("chk_image_ambient_colors_complete"), "((num_nonnulls(ambient_top_left, ambient_top_right, ambient_bottom_right, ambient_bottom_left, ambient_primary) = ANY (ARRAY[0, 5])))", true),
+            Internal.createCheck(this, DSL.name("chk_image_ambient_swatches_require_primary"), "(((ambient_primary IS NOT NULL) OR (num_nonnulls(ambient_dark_vibrant, ambient_dark_muted, ambient_light_vibrant, ambient_light_muted) = 0)))", true),
+            Internal.createCheck(this, DSL.name("image_content_sha256_format_check"), "(((content_sha256 IS NULL) OR (content_sha256 ~ '^[0-9a-f]{64}$'::text))) NOT VALID", true)
         );
     }
 
