@@ -162,9 +162,10 @@ class ProfileManagerAdministrationServiceTest {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
     authorization.denyAll();
+    var caller = recipientIdentity();
+    var invitationId = issued.invitation().getId();
 
-    assertThatThrownBy(
-            () -> service.cancelManagerInvitation(recipientIdentity(), issued.invitation().getId()))
+    assertThatThrownBy(() -> service.cancelManagerInvitation(caller, invitationId))
         .isInstanceOf(AccessDeniedException.class);
   }
 
@@ -219,9 +220,11 @@ class ProfileManagerAdministrationServiceTest {
             intent instanceof Intent.ViewProfileAdministration
                 ? new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE)
                 : new Decision.Denied<>(Decision.DenialReason.POLICY));
+    var caller = identity();
+    var profileId = orphan.getId();
+    var recipientId = recipient.getId();
 
-    assertThatThrownBy(
-            () -> service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()))
+    assertThatThrownBy(() -> service.inviteProfileManager(caller, profileId, recipientId))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -259,8 +262,10 @@ class ProfileManagerAdministrationServiceTest {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var caller = recipientIdentity();
+    var code = issued.code();
 
-    assertThatThrownBy(() -> service.acceptManagerInvitation(recipientIdentity(), issued.code()))
+    assertThatThrownBy(() -> service.acceptManagerInvitation(caller, code))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -391,8 +396,10 @@ class ProfileManagerAdministrationServiceTest {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var caller = recipientIdentity();
+    var code = issued.code();
 
-    assertThatThrownBy(() -> service.declineManagerInvitation(recipientIdentity(), issued.code()))
+    assertThatThrownBy(() -> service.declineManagerInvitation(caller, code))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -672,11 +679,12 @@ class ProfileManagerAdministrationServiceTest {
   @DisplayName("Should surface authorization unavailable when invitation listing cannot decide")
   void shouldSurfaceAuthorizationUnavailableWhenInvitationListingCannotDecide() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var caller = identity();
+    var profileId = orphan.getId();
+    var options = paginationOptions();
 
     assertThatThrownBy(
-            () ->
-                service.pendingManagerInvitationsForProfile(
-                    identity(), orphan.getId(), paginationOptions()))
+            () -> service.pendingManagerInvitationsForProfile(caller, profileId, options))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 

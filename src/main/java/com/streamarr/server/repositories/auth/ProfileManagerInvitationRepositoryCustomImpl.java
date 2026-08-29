@@ -102,7 +102,7 @@ public class ProfileManagerInvitationRepositoryCustomImpl
             .from(PROFILE_MANAGER_INVITATION)
             .where(scope)
             .and(PROFILE_MANAGER_INVITATION.ID.eq(cursorId))
-            .fetchOptional(record -> new InvitationCursor(record.value1(), record.value2()))
+            .fetchOptional(row -> new InvitationCursor(row.value1(), row.value2()))
             .orElseThrow(
                 () -> new InvalidPaginationCursorException("Cursor no longer identifies an item."));
     var sameCreatedOn = PROFILE_MANAGER_INVITATION.CREATED_ON.eq(cursor.createdOn());
