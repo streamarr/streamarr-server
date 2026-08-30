@@ -18,8 +18,8 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * A TV registered to one Household context (ADR 0024 §Devices): the winning poll creates it, and it
- * lives while its authorizing Account may still use that Household and the ESN is unblocked (T9).
- * Revocation keeps the row for reporting.
+ * remains active while its authorizing Account may still use that Household and the ESN is
+ * unblocked. Revocation keeps the row for reporting.
  */
 @Entity
 @Table(name = "device_registration")

@@ -23,6 +23,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.crypto.Mac;
@@ -239,7 +240,7 @@ class RefreshTokenServiceTest {
                 .accountId(accountId)
                 .deviceName("Kitchen TV")
                 .contextHouseholdId(UUID.randomUUID())
-                .registrationId(registrationId)
+                .registrationId(Optional.of(registrationId))
                 .build());
 
     var loggedOut = service.logout(issued.rawToken());
@@ -248,7 +249,7 @@ class RefreshTokenServiceTest {
         .hasValueSatisfying(
             session -> {
               assertThat(session.accountId()).isEqualTo(accountId);
-              assertThat(session.registrationId()).isEqualTo(registrationId);
+              assertThat(session.registrationId()).contains(registrationId);
             });
   }
 

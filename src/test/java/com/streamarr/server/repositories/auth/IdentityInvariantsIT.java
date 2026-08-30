@@ -552,10 +552,10 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         .isEqualTo("chk_profile_pin_hash_not_blank");
   }
 
-  // ---- T9 ---------------------------------------------------------------------------------------
+  // ---- Active Device registration support ------------------------------------------------------
 
   @Test
-  @DisplayName("Should refuse an active Device registration when its Household is missing (T9)")
+  @DisplayName("Should refuse an active Device registration when its Household is missing")
   void shouldRefuseActiveDeviceRegistrationWhenHouseholdMissing() {
     var identity = create();
 
@@ -640,10 +640,10 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
         .isNotNull();
   }
 
-  // ---- T10 --------------------------------------------------------------------------------------
+  // ---- ESN block exclusion ---------------------------------------------------------------------
 
   @Test
-  @DisplayName("Should refuse an ESN block when a matching registration remains active (T10)")
+  @DisplayName("Should refuse an ESN block when a matching registration remains active")
   void shouldRefuseEsnBlockWhenMatchingRegistrationRemainsActive() {
     var identity = create();
     registrationRepository.saveAndFlush(
@@ -670,7 +670,7 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse an ESN block when a matching Device session remains live (T10)")
+  @DisplayName("Should refuse an ESN block when a matching Device session remains live")
   void shouldRefuseEsnBlockWhenMatchingDeviceSessionRemainsLive() {
     var identity = create();
     var registration =

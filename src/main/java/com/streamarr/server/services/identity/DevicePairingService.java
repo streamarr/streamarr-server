@@ -16,6 +16,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
@@ -62,7 +63,8 @@ public class DevicePairingService {
             .build());
   }
 
-  private void validateBinding(AuthenticatedIdentity identity, UUID householdId, String esn) {
+  private void validateBinding(
+      AuthenticatedIdentity identity, UUID householdId, Optional<String> esn) {
     if (householdId == null) {
       throw new HouseholdRequiredException();
     }
@@ -71,11 +73,14 @@ public class DevicePairingService {
       throw new HouseholdAccessDeniedException();
     }
 
-    if (esn != null
-        && (esnBlockRepository.existsByEsnAndHouseholdIdIsNull(esn)
-            || esnBlockRepository.existsByEsnAndHouseholdId(esn, householdId))) {
+    if (esn.filter(value -> isEsnBlocked(value, householdId)).isPresent()) {
       throw new EsnBlockedException();
     }
+  }
+
+  private boolean isEsnBlocked(String esn, UUID householdId) {
+    return esnBlockRepository.existsByEsnAndHouseholdIdIsNull(esn)
+        || esnBlockRepository.existsByEsnAndHouseholdId(esn, householdId);
   }
 
   private List<EligibleHouseholdDetails> eligibleHouseholds(AuthenticatedIdentity identity) {

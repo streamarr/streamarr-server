@@ -68,7 +68,7 @@ public class RefreshTokenService {
                 .deviceName(command.deviceName())
                 .contextHouseholdId(command.contextHouseholdId())
                 .selectedProfileId(command.selectedProfileId())
-                .registrationId(command.registrationId())
+                .registrationId(command.registrationId().orElse(null))
                 .build());
 
     var rawToken = generateRawToken();
@@ -89,7 +89,8 @@ public class RefreshTokenService {
             .findById(sessionId.orElseThrow())
             .map(
                 session ->
-                    new LoggedOutSession(session.getAccountId(), session.getRegistrationId()));
+                    new LoggedOutSession(
+                        session.getAccountId(), Optional.ofNullable(session.getRegistrationId())));
     logout(sessionId.orElseThrow());
     return loggedOut;
   }

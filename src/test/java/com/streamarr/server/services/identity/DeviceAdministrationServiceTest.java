@@ -41,7 +41,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Device administration over fakes: revocation ends sessions with the registration, a block revokes
- * every matching registration first (T10's shape), and the reads scope by visibility.
+ * every matching registration first, and the reads scope by visibility.
  */
 @Tag("UnitTest")
 @DisplayName("Device Administration Service Tests")

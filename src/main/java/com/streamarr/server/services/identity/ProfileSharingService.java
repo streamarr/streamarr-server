@@ -350,7 +350,6 @@ public class ProfileSharingService {
                   visitor -> {
                     authSessionRepository.clearHouseholdContextFromAccountSessions(
                         visitor.getId(), share.getHouseholdId(), now);
-                    // T9: the visit carried the visitor's TVs there; they end with it.
                     registrationLifecycle.revokeAllByAccountAndHousehold(
                         visitor.getId(), share.getHouseholdId(), "share ended", now);
                   });

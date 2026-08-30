@@ -21,6 +21,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -123,6 +125,25 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
     assertThat(authorizationRepository.findAll())
         .singleElement()
         .satisfies(row -> assertThat(row.getDeviceName()).isEqualTo("Unknown device"));
+  }
+
+  @Test
+  @DisplayName("Should reject an ESN that cannot be indexed as a registration identity")
+  void shouldRejectEsnThatCannotBeIndexedAsRegistrationIdentity() throws Exception {
+    var oversizedEsn =
+        Stream.generate(() -> UUID.randomUUID().toString())
+            .limit(256)
+            .collect(Collectors.joining());
+
+    mockMvc
+        .perform(
+            post("/api/auth/device/code")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        new DeviceCodeRequest("Living Room TV", oversizedEsn))))
+        .andExpect(status().isBadRequest())
+        .andExpect(uncacheable());
   }
 
   @ParameterizedTest(name = "Should reject unreadable required body [{index}]")

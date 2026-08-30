@@ -10,7 +10,6 @@ import com.streamarr.server.exceptions.DeviceCodeExpiredException;
 import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.exceptions.DevicePairingNotConfiguredException;
-import com.streamarr.server.exceptions.EsnRequiredException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
@@ -29,6 +28,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -73,10 +73,7 @@ public class DeviceAuthorizationService {
       throw new DevicePairingNotConfiguredException();
     }
 
-    if (esn == null || esn.isBlank()) {
-      // The registration the winning poll creates is keyed by hardware identity (ADR 0024).
-      throw new EsnRequiredException();
-    }
+    var validatedEsn = Esn.requireValid(esn);
 
     var now = clock.instant();
     var interval = properties.pollIntervalSeconds();
@@ -85,7 +82,7 @@ public class DeviceAuthorizationService {
       var deviceCode = deviceCodeGenerator.generate();
       try {
         var userCode =
-            saveWithUniqueUserCode(deviceCode, rawDeviceName, esn.strip(), interval, now);
+            saveWithUniqueUserCode(deviceCode, rawDeviceName, validatedEsn, interval, now);
         return IssuedDeviceCode.builder()
             .deviceCode(deviceCode)
             .userCode(UserCode.forDisplay(userCode))
@@ -163,7 +160,9 @@ public class DeviceAuthorizationService {
     }
 
     return new ResolvedGrant(
-        authorization.getId(), authorization.getEsn(), authorization.getDeviceName());
+        authorization.getId(),
+        Optional.ofNullable(authorization.getEsn()),
+        authorization.getDeviceName());
   }
 
   /**
@@ -233,9 +232,7 @@ public class DeviceAuthorizationService {
       return new DevicePollResult.Expired();
     }
 
-    if (authorization.getEsn() == null || isEsnBlocked(authorization.getEsn(), household)) {
-      // No hardware identity, no registration, no session: an ESN-less grant (pre-V059 rows)
-      // would mint an unbound "device" session that dodges the device forbid.
+    if (!mayRegisterDevice(authorization, household)) {
       return new DevicePollResult.Expired();
     }
 
@@ -250,7 +247,7 @@ public class DeviceAuthorizationService {
                 .accountId(account.getId())
                 .deviceName(authorization.getDeviceName())
                 .contextHouseholdId(household)
-                .registrationId(registrationId.get())
+                .registrationId(registrationId)
                 .build());
     var accessToken = accessTokenIssuer.issue(TokenContext.of(account, issued.session()));
 
@@ -283,6 +280,10 @@ public class DeviceAuthorizationService {
                     .authorizationId(authorization.getId())
                     .build())
             .getId());
+  }
+
+  private boolean mayRegisterDevice(DeviceAuthorization authorization, UUID householdId) {
+    return authorization.getEsn() != null && !isEsnBlocked(authorization.getEsn(), householdId);
   }
 
   private boolean isEsnBlocked(String esn, UUID householdId) {
@@ -467,5 +468,5 @@ public class DeviceAuthorizationService {
   }
 
   /** The grant the ceremony authorizes; never the code, never poll credentials. */
-  public record ResolvedGrant(UUID grantId, String esn, String deviceName) {}
+  public record ResolvedGrant(UUID grantId, @NonNull Optional<String> esn, String deviceName) {}
 }

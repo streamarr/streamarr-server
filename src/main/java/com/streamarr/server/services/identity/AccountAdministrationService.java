@@ -134,7 +134,6 @@ public class AccountAdministrationService {
                 () -> {
                   authSessionRepository.revokeAllForAccount(
                       accountId, SessionRevocationReason.ADMIN_REVOCATION, clock.instant());
-                  // T9: a disabled Account supports no registration; revoke before commit.
                   registrationLifecycle.revokeAllByAccount(
                       accountId, "authorizing Account disabled", clock.instant());
                   invalidateIssuedCredentials(accountId, IssuerAuthorityLoss.ACCOUNT_DISABLED);

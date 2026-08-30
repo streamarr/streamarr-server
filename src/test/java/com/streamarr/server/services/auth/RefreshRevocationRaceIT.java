@@ -22,6 +22,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -130,7 +131,7 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
                 .accountId(account.getId())
                 .deviceName("TV")
                 .contextHouseholdId(account.getHouseholdId())
-                .registrationId(registration.getId())
+                .registrationId(Optional.of(registration.getId()))
                 .build());
     var gate = holdRefreshRotation();
 

@@ -7,4 +7,4 @@ import com.streamarr.server.graphql.mutation.MutationError;
  * by.
  */
 public sealed interface UnblockEsnServerWideError extends MutationError
-    permits EsnRequiredError, EsnBlockNotFoundError {}
+    permits EsnRequiredError, EsnInvalidError, EsnBlockNotFoundError {}

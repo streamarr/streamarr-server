@@ -1326,7 +1326,7 @@ class CedarIdentityPoliciesTest {
         .contextHouseholdId(base.contextHouseholdId())
         .profileId(base.profileId())
         .reauthenticatedAt(base.reauthenticatedAt())
-        .registrationId(UUID.randomUUID())
+        .registrationId(Optional.of(UUID.randomUUID()))
         .build();
   }
 

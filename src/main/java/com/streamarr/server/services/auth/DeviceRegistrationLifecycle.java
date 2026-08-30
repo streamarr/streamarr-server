@@ -11,8 +11,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * Revoking a Device registration and its sessions is one move (ADR 0024 §Devices): a registration
- * without refresh authority is how "removes device access at refresh" is kept true, and T10 refuses
- * any ESN block that leaves either behind.
+ * without refresh authority is how "removes device access at refresh" is kept true. Block mutations
+ * use this lifecycle so neither a matching registration nor its sessions remain live.
  */
 @Service
 @RequiredArgsConstructor

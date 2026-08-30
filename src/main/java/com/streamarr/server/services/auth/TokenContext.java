@@ -28,8 +28,8 @@ public record TokenContext(
   }
 
   /** Device-bound means the session was born from a Device registration. */
-  public UUID registrationId() {
-    return session.getRegistrationId();
+  public Optional<UUID> registrationId() {
+    return Optional.ofNullable(session.getRegistrationId());
   }
 
   /** The session's remembered context: membership Household unless the session switched. */

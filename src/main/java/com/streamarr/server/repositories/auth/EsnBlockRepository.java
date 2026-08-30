@@ -8,7 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface EsnBlockRepository extends JpaRepository<EsnBlock, UUID> {
+public interface EsnBlockRepository
+    extends JpaRepository<EsnBlock, UUID>, EsnBlockRepositoryCustom {
 
   List<EsnBlock> findByHouseholdId(UUID householdId);
 

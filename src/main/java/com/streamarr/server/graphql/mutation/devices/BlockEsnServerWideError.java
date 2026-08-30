@@ -8,6 +8,7 @@ import com.streamarr.server.graphql.mutation.MutationError;
  */
 public sealed interface BlockEsnServerWideError extends MutationError
     permits EsnRequiredError,
+        EsnInvalidError,
         ReasonRequiredError,
         EsnAlreadyBlockedError,
         ReauthenticationRequiredError {}

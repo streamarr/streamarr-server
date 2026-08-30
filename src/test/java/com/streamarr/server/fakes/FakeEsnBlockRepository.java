@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.repositories.auth.EsnBlockRepository;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;
@@ -12,6 +13,19 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 public class FakeEsnBlockRepository extends FakeJpaRepository<EsnBlock>
     implements EsnBlockRepository {
+
+  @Override
+  public List<EsnBlock> findPageByHouseholdId(
+      UUID householdId, KeysetPaginationOptions paginationOptions) {
+    return FakeAuditableEntityPage.find(
+        database.values(), block -> householdId.equals(block.getHouseholdId()), paginationOptions);
+  }
+
+  @Override
+  public List<EsnBlock> findPageByHouseholdIdIsNull(KeysetPaginationOptions paginationOptions) {
+    return FakeAuditableEntityPage.find(
+        database.values(), block -> block.getHouseholdId() == null, paginationOptions);
+  }
 
   @Override
   public <S extends EsnBlock> S save(S entity) {

@@ -12,7 +12,7 @@ import lombok.experimental.SuperBuilder;
 
 /**
  * A refused ESN (ADR 0024 §Devices): scoped to one Household, or server-wide when householdId is
- * null. T10 guarantees a block admits no active registration or refreshable device session.
+ * null. A block admits no active registration or refreshable device session in its scope.
  */
 @Entity
 @Table(name = "esn_block")

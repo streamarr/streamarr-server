@@ -6,6 +6,7 @@ import com.streamarr.server.exceptions.DeviceBoundSessionException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -25,7 +26,7 @@ class ReauthenticationServiceTest {
   void shouldRejectBeforePasswordWorkWhenSessionDeviceBound() {
     var device =
         AuthenticatedIdentityFixture.accountScopedBuilder()
-            .registrationId(UUID.randomUUID())
+            .registrationId(Optional.of(UUID.randomUUID()))
             .build();
 
     // The null verifier proves the gate fires first: reaching verification would NPE instead.

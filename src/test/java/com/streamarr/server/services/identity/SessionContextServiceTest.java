@@ -23,6 +23,7 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -137,7 +138,7 @@ class SessionContextServiceTest {
             .authSessionId(session.getId())
             .householdId(account.getHouseholdId())
             .contextHouseholdId(account.getHouseholdId())
-            .registrationId(UUID.randomUUID())
+            .registrationId(Optional.of(UUID.randomUUID()))
             .build();
 
     assertThatThrownBy(() -> households.selectHousehold(identity, visitedHouseholdId))

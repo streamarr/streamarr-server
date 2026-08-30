@@ -267,7 +267,7 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
     approve(issued.get("userCode").asString(), approver.household().getId());
     var tokens = pollSuccessfully(issued.get("deviceCode").asString());
 
-    // Blocking revokes the registration and its sessions in the same transaction (T10).
+    // Blocking revokes the registration and its sessions in the same transaction.
     graphql(
             authTestSupport.accountBearer(approver),
             """
@@ -322,6 +322,25 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
                 .content("{\"deviceCode\": \"%s\"}".formatted(raced.get("deviceCode").asString())))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("expired_token"));
+  }
+
+  @Test
+  @DisplayName("Should reject an oversized ESN before creating a Household block")
+  void shouldRejectOversizedEsnBeforeCreatingHouseholdBlock() throws Exception {
+    graphql(
+            authTestSupport.accountBearer(approver),
+            """
+            mutation { blockEsn(input: {householdId: "%s", esn: "%s", reason: "stolen"}) {
+              block { esn }
+              userErrors { __typename ... on InputMutationError { inputPath } }
+            } }
+            """
+                .formatted(approver.household().getId(), "x".repeat(256)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.blockEsn.block").doesNotExist())
+        .andExpect(jsonPath("$.data.blockEsn.userErrors[0].__typename").value("EsnInvalidError"))
+        .andExpect(jsonPath("$.data.blockEsn.userErrors[0].inputPath[0]").value("esn"));
   }
 
   @Test

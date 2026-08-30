@@ -24,6 +24,7 @@ public final class DeviceErrors {
     return switch (rejection) {
       case DeviceRejections.HouseholdNotFound _ -> householdNotFound();
       case DeviceRejections.EsnRequired _ -> esnRequired();
+      case DeviceRejections.EsnInvalid _ -> esnInvalid();
       case DeviceRejections.ReasonRequired _ -> reasonRequired();
       case DeviceRejections.AlreadyBlocked _ -> alreadyBlocked();
     };
@@ -33,6 +34,7 @@ public final class DeviceErrors {
       DeviceRejections.BlockServerWide rejection) {
     return switch (rejection) {
       case DeviceRejections.EsnRequired _ -> esnRequired();
+      case DeviceRejections.EsnInvalid _ -> esnInvalid();
       case DeviceRejections.ReasonRequired _ -> reasonRequired();
       case DeviceRejections.AlreadyBlocked _ -> alreadyBlocked();
       case DeviceRejections.ReauthenticationRequired _ ->
@@ -44,6 +46,7 @@ public final class DeviceErrors {
     return switch (rejection) {
       case DeviceRejections.HouseholdNotFound _ -> householdNotFound();
       case DeviceRejections.EsnRequired _ -> esnRequired();
+      case DeviceRejections.EsnInvalid _ -> esnInvalid();
       case DeviceRejections.BlockNotFound _ -> blockNotFound();
     };
   }
@@ -52,6 +55,7 @@ public final class DeviceErrors {
       DeviceRejections.UnblockServerWide rejection) {
     return switch (rejection) {
       case DeviceRejections.EsnRequired _ -> esnRequired();
+      case DeviceRejections.EsnInvalid _ -> esnInvalid();
       case DeviceRejections.BlockNotFound _ -> blockNotFound();
     };
   }
@@ -62,6 +66,10 @@ public final class DeviceErrors {
 
   private static EsnRequiredError esnRequired() {
     return new EsnRequiredError("Enter the device's ESN.", InputPath.of(ESN));
+  }
+
+  private static EsnInvalidError esnInvalid() {
+    return new EsnInvalidError("The ESN is too long.", InputPath.of(ESN));
   }
 
   private static ReasonRequiredError reasonRequired() {

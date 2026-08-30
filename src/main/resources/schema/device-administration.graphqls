@@ -69,6 +69,7 @@ type BlockEsnPayload {
 union BlockEsnError =
     HouseholdNotFoundError
   | EsnRequiredError
+  | EsnInvalidError
   | ReasonRequiredError
   | EsnAlreadyBlockedError
 
@@ -84,6 +85,7 @@ type BlockEsnServerWidePayload {
 
 union BlockEsnServerWideError =
     EsnRequiredError
+  | EsnInvalidError
   | ReasonRequiredError
   | EsnAlreadyBlockedError
   | ReauthenticationRequiredError
@@ -98,7 +100,8 @@ type UnblockEsnPayload {
     userErrors: [UnblockEsnError!]!
 }
 
-union UnblockEsnError = HouseholdNotFoundError | EsnRequiredError | EsnBlockNotFoundError
+union UnblockEsnError =
+    HouseholdNotFoundError | EsnRequiredError | EsnInvalidError | EsnBlockNotFoundError
 
 input UnblockEsnServerWideInput {
     esn: String!
@@ -109,4 +112,4 @@ type UnblockEsnServerWidePayload {
     userErrors: [UnblockEsnServerWideError!]!
 }
 
-union UnblockEsnServerWideError = EsnRequiredError | EsnBlockNotFoundError
+union UnblockEsnServerWideError = EsnRequiredError | EsnInvalidError | EsnBlockNotFoundError

@@ -21,7 +21,7 @@ public class LogoutService {
         .ifPresent(
             session ->
                 deviceRegistrationLifecycle.revoke(
-                    session.registrationId(),
+                    session.registrationId().orElseThrow(),
                     session.accountId(),
                     "device signed out",
                     clock.instant()));

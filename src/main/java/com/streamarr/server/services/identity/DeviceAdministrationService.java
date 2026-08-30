@@ -12,6 +12,7 @@ import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.Esn;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -24,7 +25,6 @@ import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -86,8 +86,10 @@ public class DeviceAdministrationService {
 
   public Outcome<EsnBlock, DeviceRejections.Block> blockEsn(
       AuthenticatedIdentity identity, UUID householdId, String esn, String reason) {
-    if (isBlank(esn)) {
-      return Outcome.rejected(new DeviceRejections.EsnRequired());
+    Optional<DeviceRejections.Block> invalidEsn =
+        esnRejection(esn, DeviceRejections.EsnRequired::new, DeviceRejections.EsnInvalid::new);
+    if (invalidEsn.isPresent()) {
+      return Outcome.rejected(invalidEsn.get());
     }
 
     if (isBlank(reason)) {
@@ -113,7 +115,7 @@ public class DeviceAdministrationService {
         BlockWrite.builder()
             .identity(identity)
             .householdId(householdId)
-            .esn(esn.strip())
+            .esn(Esn.normalize(esn))
             .reason(reason)
             .operation("blockEsn")
             .build(),
@@ -122,8 +124,10 @@ public class DeviceAdministrationService {
 
   public Outcome<EsnBlock, DeviceRejections.BlockServerWide> blockEsnServerWide(
       AuthenticatedIdentity identity, String esn, String reason) {
-    if (isBlank(esn)) {
-      return Outcome.rejected(new DeviceRejections.EsnRequired());
+    Optional<DeviceRejections.BlockServerWide> invalidEsn =
+        esnRejection(esn, DeviceRejections.EsnRequired::new, DeviceRejections.EsnInvalid::new);
+    if (invalidEsn.isPresent()) {
+      return Outcome.rejected(invalidEsn.get());
     }
 
     if (isBlank(reason)) {
@@ -146,7 +150,7 @@ public class DeviceAdministrationService {
     return writeBlock(
         BlockWrite.builder()
             .identity(identity)
-            .esn(esn.strip())
+            .esn(Esn.normalize(esn))
             .reason(reason)
             .operation("blockEsnServerWide")
             .build(),
@@ -155,9 +159,13 @@ public class DeviceAdministrationService {
 
   public Outcome<String, DeviceRejections.Unblock> unblockEsn(
       AuthenticatedIdentity identity, UUID householdId, String esn) {
-    if (isBlank(esn)) {
-      return Outcome.rejected(new DeviceRejections.EsnRequired());
+    Optional<DeviceRejections.Unblock> invalidEsn =
+        esnRejection(esn, DeviceRejections.EsnRequired::new, DeviceRejections.EsnInvalid::new);
+    if (invalidEsn.isPresent()) {
+      return Outcome.rejected(invalidEsn.get());
     }
+
+    var normalizedEsn = Esn.normalize(esn);
 
     Optional<DeviceRejections.Unblock> refusal =
         refusalOf(
@@ -172,22 +180,25 @@ public class DeviceAdministrationService {
 
     return removeBlock(
         identity,
-        esn.strip(),
-        () -> esnBlockRepository.findByEsnAndHouseholdId(esn.strip(), householdId),
+        normalizedEsn,
+        () -> esnBlockRepository.findByEsnAndHouseholdId(normalizedEsn, householdId),
         "unblockEsn");
   }
 
   public Outcome<String, DeviceRejections.UnblockServerWide> unblockEsnServerWide(
       AuthenticatedIdentity identity, String esn) {
-    if (isBlank(esn)) {
-      return Outcome.rejected(new DeviceRejections.EsnRequired());
+    Optional<DeviceRejections.UnblockServerWide> invalidEsn =
+        esnRejection(esn, DeviceRejections.EsnRequired::new, DeviceRejections.EsnInvalid::new);
+    if (invalidEsn.isPresent()) {
+      return Outcome.rejected(invalidEsn.get());
     }
 
+    var normalizedEsn = Esn.normalize(esn);
     authorizationService.requireAllowed(identity, new Intent.UnblockEsnServerWide());
     return removeBlock(
         identity,
-        esn.strip(),
-        () -> esnBlockRepository.findByEsnAndHouseholdIdIsNull(esn.strip()),
+        normalizedEsn,
+        () -> esnBlockRepository.findByEsnAndHouseholdIdIsNull(normalizedEsn),
         "unblockEsnServerWide");
   }
 
@@ -199,8 +210,8 @@ public class DeviceAdministrationService {
     }
 
     return page(
-        registrationRepository.findByHouseholdIdAndStatus(
-            householdId, DeviceRegistrationStatus.ACTIVE),
+        registrationRepository.findPageByHouseholdIdAndStatus(
+            householdId, DeviceRegistrationStatus.ACTIVE, options),
         options);
   }
 
@@ -210,7 +221,7 @@ public class DeviceAdministrationService {
       return page(List.<EsnBlock>of(), options);
     }
 
-    return page(esnBlockRepository.findByHouseholdId(householdId), options);
+    return page(esnBlockRepository.findPageByHouseholdId(householdId, options), options);
   }
 
   public MediaPage<EsnBlock> serverEsnBlocks(
@@ -219,21 +230,14 @@ public class DeviceAdministrationService {
       return page(List.<EsnBlock>of(), options);
     }
 
-    return page(esnBlockRepository.findByHouseholdIdIsNull(), options);
+    return page(esnBlockRepository.findPageByHouseholdIdIsNull(options), options);
   }
 
   private <T extends BaseAuditableEntity<T>> MediaPage<T> page(
       List<T> values, KeysetPaginationOptions options) {
-    var items =
-        values.stream()
-            .sorted(
-                Comparator.comparing(
-                        (T value) -> value.getCreatedOn(),
-                        Comparator.nullsLast(Comparator.reverseOrder()))
-                    .thenComparing(BaseAuditableEntity::getId))
-            .map(value -> new PageItem<>(value, value.getCreatedOn()))
-            .toList();
-    return paginationService.buildKeysetPage(items, options, BaseAuditableEntity::getId);
+    var items = values.stream().map(value -> new PageItem<>(value, value.getCreatedOn())).toList();
+    return paginationService.buildMediaPage(
+        items, options.getPaginationOptions(), options.getCursorId());
   }
 
   private <R> Outcome<EsnBlock, R> writeBlock(
@@ -328,6 +332,19 @@ public class DeviceAdministrationService {
 
   private static boolean isBlank(String value) {
     return value == null || value.isBlank();
+  }
+
+  private static <R> Optional<R> esnRejection(
+      String esn, Supplier<? extends R> required, Supplier<? extends R> invalid) {
+    if (Esn.isMissing(esn)) {
+      return Optional.of(required.get());
+    }
+
+    if (Esn.exceedsMaximum(Esn.normalize(esn))) {
+      return Optional.of(invalid.get());
+    }
+
+    return Optional.empty();
   }
 
   private <R> Optional<R> refusalOf(

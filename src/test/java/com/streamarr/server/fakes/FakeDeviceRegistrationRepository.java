@@ -3,6 +3,7 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
 import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -10,6 +11,16 @@ import java.util.function.Predicate;
 
 public class FakeDeviceRegistrationRepository extends FakeJpaRepository<DeviceRegistration>
     implements DeviceRegistrationRepository {
+
+  @Override
+  public List<DeviceRegistration> findPageByHouseholdIdAndStatus(
+      UUID householdId, DeviceRegistrationStatus status, KeysetPaginationOptions options) {
+    return FakeAuditableEntityPage.find(
+        database.values(),
+        registration ->
+            householdId.equals(registration.getHouseholdId()) && registration.getStatus() == status,
+        options);
+  }
 
   @Override
   public List<DeviceRegistration> findByHouseholdIdAndStatus(

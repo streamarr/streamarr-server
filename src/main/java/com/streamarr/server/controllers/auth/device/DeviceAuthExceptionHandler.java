@@ -10,6 +10,7 @@ import com.streamarr.server.exceptions.EsnRequiredException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidDecisionException;
+import com.streamarr.server.exceptions.InvalidEsnException;
 import com.streamarr.server.exceptions.InvalidUserCodeException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import java.time.Duration;
@@ -38,6 +39,11 @@ public class DeviceAuthExceptionHandler {
   @ExceptionHandler(EsnRequiredException.class)
   public ResponseEntity<AuthErrorResponse> handleEsnRequired(EsnRequiredException e) {
     return respond(HttpStatus.BAD_REQUEST, "ESN_REQUIRED", e);
+  }
+
+  @ExceptionHandler(InvalidEsnException.class)
+  public ResponseEntity<AuthErrorResponse> handleInvalidEsn(InvalidEsnException e) {
+    return respond(HttpStatus.BAD_REQUEST, "INVALID_ESN", e);
   }
 
   @ExceptionHandler(HouseholdRequiredException.class)

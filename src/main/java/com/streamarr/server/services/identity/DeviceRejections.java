@@ -8,14 +8,15 @@ public final class DeviceRejections {
   public sealed interface Revoke permits RegistrationNotFound, RegistrationNotActive {}
 
   public sealed interface Block
-      permits HouseholdNotFound, EsnRequired, ReasonRequired, AlreadyBlocked {}
+      permits HouseholdNotFound, EsnRequired, EsnInvalid, ReasonRequired, AlreadyBlocked {}
 
   public sealed interface BlockServerWide
-      permits EsnRequired, ReasonRequired, AlreadyBlocked, ReauthenticationRequired {}
+      permits EsnRequired, EsnInvalid, ReasonRequired, AlreadyBlocked, ReauthenticationRequired {}
 
-  public sealed interface Unblock permits HouseholdNotFound, EsnRequired, BlockNotFound {}
+  public sealed interface Unblock
+      permits HouseholdNotFound, EsnRequired, EsnInvalid, BlockNotFound {}
 
-  public sealed interface UnblockServerWide permits EsnRequired, BlockNotFound {}
+  public sealed interface UnblockServerWide permits EsnRequired, EsnInvalid, BlockNotFound {}
 
   public record RegistrationNotFound() implements Revoke {}
 
@@ -24,6 +25,8 @@ public final class DeviceRejections {
   public record HouseholdNotFound() implements Block, Unblock {}
 
   public record EsnRequired() implements Block, BlockServerWide, Unblock, UnblockServerWide {}
+
+  public record EsnInvalid() implements Block, BlockServerWide, Unblock, UnblockServerWide {}
 
   public record ReasonRequired() implements Block, BlockServerWide {}
 

@@ -1,7 +1,12 @@
 package com.streamarr.server.repositories.auth;
 
 import static com.streamarr.server.jooq.generated.tables.DeviceRegistration.DEVICE_REGISTRATION;
+import static org.jooq.impl.DSL.inline;
 
+import com.streamarr.server.domain.auth.DeviceRegistration;
+import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -20,7 +25,29 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
   private static final int ESN_LOCK_NAMESPACE = 0x5354524D;
 
   private final DSLContext dsl;
+  private final EntityManager entityManager;
   private final AuditorAware<UUID> auditorAware;
+
+  @Override
+  public List<DeviceRegistration> findPageByHouseholdIdAndStatus(
+      UUID householdId, DeviceRegistrationStatus status, KeysetPaginationOptions options) {
+    return AuditableEntityPageQuery.findPage(
+        dsl,
+        entityManager,
+        DEVICE_REGISTRATION,
+        DEVICE_REGISTRATION.CREATED_ON,
+        DEVICE_REGISTRATION.ID,
+        DEVICE_REGISTRATION
+            .HOUSEHOLD_ID
+            .eq(householdId)
+            .and(
+                DEVICE_REGISTRATION.STATUS.eq(
+                    inline(
+                        com.streamarr.server.jooq.generated.enums.DeviceRegistrationStatus.valueOf(
+                            status.name())))),
+        options,
+        DeviceRegistration.class);
+  }
 
   @Override
   public boolean tryRevoke(UUID registrationId, UUID actorAccountId, String reason, Instant now) {

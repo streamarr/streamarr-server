@@ -1,10 +1,16 @@
 package com.streamarr.server.repositories.auth;
 
+import com.streamarr.server.domain.auth.DeviceRegistration;
+import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
+import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 public interface DeviceRegistrationRepositoryCustom {
+
+  List<DeviceRegistration> findPageByHouseholdIdAndStatus(
+      UUID householdId, DeviceRegistrationStatus status, KeysetPaginationOptions options);
 
   /** Revokes one ACTIVE registration; false when already revoked or missing. */
   boolean tryRevoke(UUID registrationId, UUID actorAccountId, String reason, Instant now);

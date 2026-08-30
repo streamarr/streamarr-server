@@ -1,13 +1,14 @@
--- Devices (ADR 0024 §Devices; server PR #316). ADR 0021's pairing transport contract is unchanged:
--- codes, budgets, poll cadence, and expiry stay as they are. This adds what ADR 0024 binds to the
--- pairing: the TV's ESN, the chosen Household, the durable registration the winning poll creates,
--- and ESN blocks. T9: a registered Device's authorizing Account may still use its Household and
--- the ESN is not blocked. T10: an ESN block leaves no matching registered Device or refreshable
--- device session.
+-- Device-to-Household binding (ADR 0024 §Devices). ADR 0021's pairing transport contract is
+-- unchanged: codes, budgets, poll cadence, and expiry stay as they are. Pairing now records the
+-- TV's ESN and chosen Household, and the winning poll creates a durable registration. An active
+-- registration requires Household access and an unblocked ESN; an ESN block leaves no matching
+-- registration or refreshable device session.
 
 ALTER TABLE device_authorization
     ADD COLUMN esn                 TEXT,
     ADD COLUMN chosen_household_id UUID,
+    ADD CONSTRAINT chk_device_authorization_esn_length
+        CHECK (esn IS NULL OR char_length(esn) <= 255),
     ADD CONSTRAINT fk_device_authorization_chosen_household FOREIGN KEY (chosen_household_id)
         REFERENCES household (id) ON DELETE SET NULL;
 
@@ -31,6 +32,7 @@ CREATE TABLE device_registration
     revocation_reason     TEXT,
     last_used_at          TIMESTAMP WITH TIME ZONE,
     CONSTRAINT device_registration_pkey PRIMARY KEY (id),
+    CONSTRAINT chk_device_registration_esn_length CHECK (char_length(esn) <= 255),
     CONSTRAINT fk_device_registration_household FOREIGN KEY (household_id)
         REFERENCES household (id) ON DELETE SET NULL,
     CONSTRAINT fk_device_registration_account FOREIGN KEY (authorizing_account_id)
@@ -44,7 +46,9 @@ CREATE TABLE device_registration
 -- One TV, one live Household context.
 CREATE UNIQUE INDEX uq_device_registration_live ON device_registration (esn)
     WHERE status = 'ACTIVE';
-CREATE INDEX idx_device_registration_household ON device_registration (household_id);
+CREATE INDEX idx_device_registration_household_created_id
+    ON device_registration (household_id, created_on DESC, id)
+    WHERE status = 'ACTIVE';
 CREATE INDEX idx_device_registration_account ON device_registration (authorizing_account_id);
 
 CREATE FUNCTION revoke_device_registrations_before_account_delete()
@@ -84,10 +88,13 @@ CREATE TABLE esn_block
     household_id     UUID,
     reason           TEXT                     NOT NULL,
     CONSTRAINT esn_block_pkey PRIMARY KEY (id),
+    CONSTRAINT chk_esn_block_esn_length CHECK (char_length(esn) <= 255),
     CONSTRAINT fk_esn_block_household FOREIGN KEY (household_id)
         REFERENCES household (id) ON DELETE CASCADE,
     CONSTRAINT uq_esn_block_scope UNIQUE NULLS NOT DISTINCT (esn, household_id)
 );
+CREATE INDEX idx_esn_block_household_created_id
+    ON esn_block (household_id, created_on DESC, id);
 
 ALTER TABLE auth_session
     ADD COLUMN registration_id UUID,
@@ -141,7 +148,7 @@ SELECT EXISTS (SELECT 1
                  AND (b.household_id IS NULL OR b.household_id = candidate_household_id))
 $$;
 
--- T9: every ACTIVE registration keeps a live path — its authorizing Account enabled and still
+-- Every ACTIVE registration keeps a live path — its authorizing Account enabled and still
 -- able to use the registered Household (member, or visitor via an active Personal Profile
 -- share), and its ESN unblocked there.
 CREATE FUNCTION assert_device_registrations_supported(candidate_account_id UUID)
@@ -185,7 +192,7 @@ BEGIN
 END;
 $$;
 
--- T10: a block admits no matching ACTIVE registration and no refreshable device session.
+-- A block admits no matching ACTIVE registration and no refreshable device session.
 CREATE FUNCTION enforce_esn_block_invariants()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -220,7 +227,7 @@ CREATE CONSTRAINT TRIGGER trg_esn_block_invariants
     FOR EACH ROW
 EXECUTE FUNCTION enforce_esn_block_invariants();
 
--- The registration trigger re-checks T9 for the touched authorizing Account.
+-- Registration writes re-check support for the touched authorizing Account.
 CREATE FUNCTION enforce_device_registration_invariants()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -241,8 +248,8 @@ CREATE CONSTRAINT TRIGGER trg_device_registration_invariants
     FOR EACH ROW
 EXECUTE FUNCTION enforce_device_registration_invariants();
 
--- Account changes (disable, demotion, deletion) re-check T9: the disable/transfer paths revoke
--- affected registrations in the same transaction, and this refuses any path that forgot.
+-- Account changes re-check active registration support. Disable and transfer paths revoke affected
+-- registrations in the same transaction; this refuses any path that omitted the revocation.
 CREATE OR REPLACE FUNCTION enforce_user_account_invariants()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -286,8 +293,8 @@ BEGIN
 END;
 $$;
 
--- Ending a visit re-checks T9 for the visiting Account: the unshare path revokes that
--- Household's registrations authorized through the ended share, and this refuses a miss.
+-- Ending a visit re-checks active registration support for the visiting Account. The unshare path
+-- revokes registrations authorized through that visit; this refuses an omitted revocation.
 CREATE OR REPLACE FUNCTION enforce_profile_household_share_invariants()
     RETURNS TRIGGER
     LANGUAGE plpgsql

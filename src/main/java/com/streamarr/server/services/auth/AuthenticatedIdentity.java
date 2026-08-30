@@ -27,11 +27,12 @@ public record AuthenticatedIdentity(
     UUID profileId,
     UUID streamSessionId,
     @NonNull Optional<Instant> reauthenticatedAt,
-    UUID registrationId) {
+    @NonNull Optional<UUID> registrationId) {
 
   @SuppressWarnings("java:S1068") // Lombok builder default — field is used by generated code
   public static class AuthenticatedIdentityBuilder {
     private Optional<Instant> reauthenticatedAt = Optional.empty();
+    private Optional<UUID> registrationId = Optional.empty();
   }
 
   public AuthenticatedIdentity {
@@ -64,13 +65,13 @@ public record AuthenticatedIdentity(
         .streamSessionId(uuidClaim(jwt, TokenClaims.STREAM_SESSION_ID))
         .reauthenticatedAt(
             Optional.ofNullable(jwt.getClaimAsInstant(TokenClaims.REAUTHENTICATED_AT)))
-        .registrationId(uuidClaim(jwt, TokenClaims.REGISTRATION_ID))
+        .registrationId(optionalUuidClaim(jwt, TokenClaims.REGISTRATION_ID))
         .build();
   }
 
   /** A device-bound session administers nothing and never switches Household (ADR 0024). */
   public boolean deviceBound() {
-    return registrationId != null;
+    return registrationId.isPresent();
   }
 
   /** The selected Profile in the context Household; absent in Account scope. */
@@ -94,5 +95,9 @@ public record AuthenticatedIdentity(
     }
 
     return UUID.fromString(value);
+  }
+
+  private static Optional<UUID> optionalUuidClaim(Jwt jwt, String claim) {
+    return Optional.ofNullable(uuidClaim(jwt, claim));
   }
 }

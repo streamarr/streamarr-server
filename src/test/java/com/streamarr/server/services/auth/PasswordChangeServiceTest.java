@@ -20,6 +20,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -69,7 +70,7 @@ class PasswordChangeServiceTest {
   void shouldRejectPasswordChangeWhenIdentityIsDeviceBound() {
     var identity =
         AuthenticatedIdentityFixture.accountScopedBuilder()
-            .registrationId(UUID.randomUUID())
+            .registrationId(Optional.of(UUID.randomUUID()))
             .build();
     var command = commandBuilder().build();
 
