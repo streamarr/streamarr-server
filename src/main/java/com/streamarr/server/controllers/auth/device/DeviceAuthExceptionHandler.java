@@ -5,7 +5,12 @@ import com.streamarr.server.exceptions.DeviceCodeExpiredException;
 import com.streamarr.server.exceptions.DeviceCodeNotFoundException;
 import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.exceptions.DevicePairingNotConfiguredException;
+import com.streamarr.server.exceptions.EsnBlockedException;
+import com.streamarr.server.exceptions.EsnRequiredException;
+import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
+import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidDecisionException;
+import com.streamarr.server.exceptions.InvalidEsnException;
 import com.streamarr.server.exceptions.InvalidUserCodeException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import java.time.Duration;
@@ -29,6 +34,31 @@ public class DeviceAuthExceptionHandler {
     return ResponseEntity.badRequest()
         .body(
             new AuthErrorResponse("INVALID_REQUEST", "The request body is missing or malformed."));
+  }
+
+  @ExceptionHandler(EsnRequiredException.class)
+  public ResponseEntity<AuthErrorResponse> handleEsnRequired(EsnRequiredException e) {
+    return respond(HttpStatus.BAD_REQUEST, "ESN_REQUIRED", e);
+  }
+
+  @ExceptionHandler(InvalidEsnException.class)
+  public ResponseEntity<AuthErrorResponse> handleInvalidEsn(InvalidEsnException e) {
+    return respond(HttpStatus.BAD_REQUEST, "INVALID_ESN", e);
+  }
+
+  @ExceptionHandler(HouseholdRequiredException.class)
+  public ResponseEntity<AuthErrorResponse> handleHouseholdRequired(HouseholdRequiredException e) {
+    return respond(HttpStatus.BAD_REQUEST, "HOUSEHOLD_REQUIRED", e);
+  }
+
+  @ExceptionHandler(HouseholdAccessDeniedException.class)
+  public ResponseEntity<AuthErrorResponse> handleHouseholdDenied(HouseholdAccessDeniedException e) {
+    return respond(HttpStatus.FORBIDDEN, "HOUSEHOLD_ACCESS_DENIED", e);
+  }
+
+  @ExceptionHandler(EsnBlockedException.class)
+  public ResponseEntity<AuthErrorResponse> handleEsnBlocked(EsnBlockedException e) {
+    return respond(HttpStatus.FORBIDDEN, "ESN_BLOCKED", e);
   }
 
   @ExceptionHandler(DevicePairingNotConfiguredException.class)
@@ -74,6 +104,7 @@ public class DeviceAuthExceptionHandler {
     if (retryAfter == null || retryAfter.isNegative() || retryAfter.isZero()) {
       return 1;
     }
+
     return retryAfter.plusNanos(999_999_999L).toSeconds();
   }
 

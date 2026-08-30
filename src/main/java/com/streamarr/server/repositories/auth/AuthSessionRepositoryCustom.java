@@ -4,6 +4,7 @@ import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -33,6 +34,10 @@ public interface AuthSessionRepositoryCustom {
    * membership Household at the next token issuance.
    */
   int clearHouseholdContextFromAccountSessions(UUID accountId, UUID householdId, Instant now);
+
+  /** Revoking a Device registration ends its sessions' refresh authority immediately. */
+  int revokeAllForRegistrations(
+      List<UUID> registrationIds, SessionRevocationReason reason, Instant now);
 
   /**
    * Persists only the remembered context Household and selected Profile when the session is still

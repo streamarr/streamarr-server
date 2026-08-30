@@ -82,6 +82,10 @@ public class AccessTokenIssuer {
         .ifPresent(
             reauthenticatedAt ->
                 claims.claim(TokenClaims.REAUTHENTICATED_AT, reauthenticatedAt.getEpochSecond()));
+    context
+        .registrationId()
+        .ifPresent(
+            registrationId -> claims.claim(TokenClaims.REGISTRATION_ID, registrationId.toString()));
 
     var jwt =
         jwtEncoder.encode(

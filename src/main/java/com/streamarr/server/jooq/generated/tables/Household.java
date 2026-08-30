@@ -9,6 +9,9 @@ import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.AccountInvitation.AccountInvitationPath;
 import com.streamarr.server.jooq.generated.tables.AccountInvitationReoffer.AccountInvitationReofferPath;
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
+import com.streamarr.server.jooq.generated.tables.DeviceAuthorization.DeviceAuthorizationPath;
+import com.streamarr.server.jooq.generated.tables.DeviceRegistration.DeviceRegistrationPath;
+import com.streamarr.server.jooq.generated.tables.EsnBlock.EsnBlockPath;
 import com.streamarr.server.jooq.generated.tables.HouseholdGuard.HouseholdGuardPath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
@@ -207,6 +210,45 @@ public class Household extends TableImpl<HouseholdRecord> {
             _authSession = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_CONTEXT_HOUSEHOLD.getInverseKey());
 
         return _authSession;
+    }
+
+    private transient DeviceAuthorizationPath _deviceAuthorization;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.device_authorization</code> table
+     */
+    public DeviceAuthorizationPath deviceAuthorization() {
+        if (_deviceAuthorization == null)
+            _deviceAuthorization = new DeviceAuthorizationPath(this, null, Keys.DEVICE_AUTHORIZATION__FK_DEVICE_AUTHORIZATION_CHOSEN_HOUSEHOLD.getInverseKey());
+
+        return _deviceAuthorization;
+    }
+
+    private transient DeviceRegistrationPath _deviceRegistration;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.device_registration</code> table
+     */
+    public DeviceRegistrationPath deviceRegistration() {
+        if (_deviceRegistration == null)
+            _deviceRegistration = new DeviceRegistrationPath(this, null, Keys.DEVICE_REGISTRATION__FK_DEVICE_REGISTRATION_HOUSEHOLD.getInverseKey());
+
+        return _deviceRegistration;
+    }
+
+    private transient EsnBlockPath _esnBlock;
+
+    /**
+     * Get the implicit to-many join path to the <code>public.esn_block</code>
+     * table
+     */
+    public EsnBlockPath esnBlock() {
+        if (_esnBlock == null)
+            _esnBlock = new EsnBlockPath(this, null, Keys.ESN_BLOCK__FK_ESN_BLOCK_HOUSEHOLD.getInverseKey());
+
+        return _esnBlock;
     }
 
     private transient HouseholdGuardPath _householdGuard;

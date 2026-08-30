@@ -29,5 +29,7 @@ enum FactRequirement {
   /** The resource Share's structural flag and the principal's relationships to it, read live. */
   SHARE_FACTS,
   /** The resource manager invitation's parties relative to the principal, read live. */
-  MANAGER_INVITATION_FACTS
+  MANAGER_INVITATION_FACTS,
+  /** The resource Device registration's Household relative to the principal, read live. */
+  REGISTRATION_FACTS
 }

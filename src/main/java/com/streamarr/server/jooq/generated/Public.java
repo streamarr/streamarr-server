@@ -10,7 +10,9 @@ import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
 import com.streamarr.server.jooq.generated.tables.DeviceAuthorization;
+import com.streamarr.server.jooq.generated.tables.DeviceRegistration;
 import com.streamarr.server.jooq.generated.tables.Episode;
+import com.streamarr.server.jooq.generated.tables.EsnBlock;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
@@ -100,9 +102,19 @@ public class Public extends SchemaImpl {
     public final DeviceAuthorization DEVICE_AUTHORIZATION = DeviceAuthorization.DEVICE_AUTHORIZATION;
 
     /**
+     * The table <code>public.device_registration</code>.
+     */
+    public final DeviceRegistration DEVICE_REGISTRATION = DeviceRegistration.DEVICE_REGISTRATION;
+
+    /**
      * The table <code>public.episode</code>.
      */
     public final Episode EPISODE = Episode.EPISODE;
+
+    /**
+     * The table <code>public.esn_block</code>.
+     */
+    public final EsnBlock ESN_BLOCK = EsnBlock.ESN_BLOCK;
 
     /**
      * The table <code>public.external_identifier</code>.
@@ -301,7 +313,9 @@ public class Public extends SchemaImpl {
             BaseCollectable.BASE_COLLECTABLE,
             Company.COMPANY,
             DeviceAuthorization.DEVICE_AUTHORIZATION,
+            DeviceRegistration.DEVICE_REGISTRATION,
             Episode.EPISODE,
+            EsnBlock.ESN_BLOCK,
             ExternalIdentifier.EXTERNAL_IDENTIFIER,
             FileProcessingTask.FILE_PROCESSING_TASK,
             Genre.GENRE,

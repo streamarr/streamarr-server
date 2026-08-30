@@ -9,6 +9,7 @@ public record DeviceAuthorizationInsertCommand(
     String deviceCodeDigest,
     String userCode,
     String deviceName,
+    String esn,
     Instant expiresAt,
     Instant nextPollAt,
     int pollIntervalSeconds,

@@ -34,6 +34,12 @@ public class DeviceAuthorization extends BaseAuditableEntity<DeviceAuthorization
 
   private String deviceName;
 
+  /** The TV's hardware identity, presented at the code request (ADR 0024 §Devices). */
+  private String esn;
+
+  /** The Household the approver bound this TV to; null until approved. */
+  private UUID chosenHouseholdId;
+
   private UUID decidedByAccountId;
 
   private Instant expiresAt;

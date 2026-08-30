@@ -18,6 +18,7 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Optional;
 import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -67,6 +68,7 @@ public class RefreshTokenService {
                 .deviceName(command.deviceName())
                 .contextHouseholdId(command.contextHouseholdId())
                 .selectedProfileId(command.selectedProfileId())
+                .registrationId(command.registrationId().orElse(null))
                 .build());
 
     var rawToken = generateRawToken();
@@ -76,12 +78,30 @@ public class RefreshTokenService {
   }
 
   @Transactional
-  public void logout(String rawToken) {
-    tokenRepository.findSessionIdByDigest(digestOf(rawToken)).ifPresent(this::logout);
+  public Optional<LoggedOutSession> logout(String rawToken) {
+    var sessionId = tokenRepository.findSessionIdByDigest(digestOf(rawToken));
+    if (sessionId.isEmpty()) {
+      return Optional.empty();
+    }
+
+    var resolvedSessionId = sessionId.orElseThrow();
+    var loggedOut =
+        sessionRepository
+            .findById(resolvedSessionId)
+            .map(
+                session ->
+                    new LoggedOutSession(
+                        session.getAccountId(), Optional.ofNullable(session.getRegistrationId())));
+    revokeForLogout(resolvedSessionId);
+    return loggedOut;
   }
 
   @Transactional
   public void logout(UUID sessionId) {
+    revokeForLogout(sessionId);
+  }
+
+  private void revokeForLogout(UUID sessionId) {
     var now = clock.instant();
     sessionRepository.revoke(sessionId, SessionRevocationReason.LOGOUT, now);
     tokenRepository.revokeAllForSession(sessionId, now);

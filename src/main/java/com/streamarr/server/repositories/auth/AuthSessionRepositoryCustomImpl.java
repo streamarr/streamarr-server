@@ -9,6 +9,7 @@ import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -71,6 +72,28 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
         .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
         .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(AUTH_SESSION.ACCOUNT_ID.eq(accountId))
+        .and(AUTH_SESSION.REVOKED_AT.isNull())
+        .execute();
+  }
+
+  @Override
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  public int revokeAllForRegistrations(
+      List<UUID> registrationIds, SessionRevocationReason reason, Instant now) {
+    if (registrationIds.isEmpty()) {
+      return 0;
+    }
+
+    var nowOffset = now.atOffset(ZoneOffset.UTC);
+    return dsl.update(AUTH_SESSION)
+        .set(AUTH_SESSION.REVOKED_AT, nowOffset)
+        .set(
+            AUTH_SESSION.REVOKED_REASON,
+            com.streamarr.server.jooq.generated.enums.SessionRevocationReason.valueOf(
+                reason.name()))
+        .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
+        .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+        .where(AUTH_SESSION.REGISTRATION_ID.in(registrationIds))
         .and(AUTH_SESSION.REVOKED_AT.isNull())
         .execute();
   }

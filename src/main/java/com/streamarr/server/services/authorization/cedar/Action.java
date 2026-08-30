@@ -212,7 +212,52 @@ enum Action {
       "administrativelyRemoveProfileManager",
       ResourceKind.PROFILE,
       FreshReauthentication.REQUIRED,
-      FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  LINK_DEVICE(
+      "linkDevice",
+      ResourceKind.GRANT,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.SIGNED_PRINCIPAL_CONTEXT),
+  REVOKE_DEVICE_REGISTRATION(
+      "revokeDeviceRegistration",
+      ResourceKind.REGISTRATION,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.SIGNED_PRINCIPAL_CONTEXT,
+      FactRequirement.REGISTRATION_FACTS),
+  BLOCK_ESN(
+      "blockEsn",
+      ResourceKind.HOUSEHOLD,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.SIGNED_PRINCIPAL_CONTEXT,
+      FactRequirement.LIVE_PRINCIPAL_HOUSEHOLD),
+  BLOCK_ESN_SERVER_WIDE(
+      "blockEsnServerWide",
+      ResourceKind.SERVER,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.SIGNED_PRINCIPAL_CONTEXT),
+  UNBLOCK_ESN(
+      "unblockEsn",
+      ResourceKind.HOUSEHOLD,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.SIGNED_PRINCIPAL_CONTEXT,
+      FactRequirement.LIVE_PRINCIPAL_HOUSEHOLD),
+  UNBLOCK_ESN_SERVER_WIDE(
+      "unblockEsnServerWide",
+      ResourceKind.SERVER,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.SIGNED_PRINCIPAL_CONTEXT),
+  VIEW_DEVICE_ADMINISTRATION(
+      "viewDeviceAdministration",
+      ResourceKind.HOUSEHOLD,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.SIGNED_PRINCIPAL_CONTEXT,
+      FactRequirement.LIVE_PRINCIPAL_HOUSEHOLD),
+  VIEW_SERVER_DEVICE_ADMINISTRATION(
+      "viewServerDeviceAdministration",
+      ResourceKind.SERVER,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.SIGNED_PRINCIPAL_CONTEXT);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 
@@ -270,6 +315,8 @@ enum Action {
     ACCOUNT,
     PROFILE,
     SHARE,
-    MANAGER_INVITATION
+    MANAGER_INVITATION,
+    GRANT,
+    REGISTRATION
   }
 }

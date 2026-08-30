@@ -1,7 +1,9 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.exceptions.DeviceBoundSessionException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenContext;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -23,9 +25,14 @@ public class HouseholdContextService {
   private final SessionContextService sessionContextService;
 
   @Transactional
-  public TokenContext selectHousehold(UUID accountId, UUID sessionId, UUID householdId) {
+  public TokenContext selectHousehold(AuthenticatedIdentity identity, UUID householdId) {
+    if (identity.deviceBound()) {
+      throw new DeviceBoundSessionException();
+    }
+
+    var accountId = identity.accountId();
     var account = liveSessions.loadAccount(accountId);
-    var session = liveSessions.lockLiveSession(accountId, sessionId);
+    var session = liveSessions.lockLiveSession(accountId, identity.authSessionId());
 
     if (!userAccountRepository.mayUseHousehold(accountId, householdId)) {
       throw new HouseholdAccessDeniedException();
