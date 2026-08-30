@@ -281,12 +281,14 @@ class DeviceAdministrationServiceTest {
   @DisplayName("Should fail closed when authorization cannot decide a device read")
   void shouldFailClosedWhenAuthorizationCannotDecideDeviceRead() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var currentIdentity = identity();
+    var options = paginationOptions();
 
-    assertThatThrownBy(() -> service.householdDevices(identity(), householdId, paginationOptions()))
+    assertThatThrownBy(() -> service.householdDevices(currentIdentity, householdId, options))
         .isInstanceOf(AuthorizationUnavailableException.class);
-    assertThatThrownBy(() -> service.esnBlocks(identity(), householdId, paginationOptions()))
+    assertThatThrownBy(() -> service.esnBlocks(currentIdentity, householdId, options))
         .isInstanceOf(AuthorizationUnavailableException.class);
-    assertThatThrownBy(() -> service.serverEsnBlocks(identity(), paginationOptions()))
+    assertThatThrownBy(() -> service.serverEsnBlocks(currentIdentity, options))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -297,16 +299,18 @@ class DeviceAdministrationServiceTest {
     blocks.save(EsnBlock.builder().esn("esn-2").householdId(householdId).reason("x").build());
     blocks.save(EsnBlock.builder().esn("esn-3").reason("x").build());
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var currentIdentity = identity();
+    var registrationId = registration.getId();
 
-    assertThatThrownBy(() -> service.revokeDeviceRegistration(identity(), registration.getId()))
+    assertThatThrownBy(() -> service.revokeDeviceRegistration(currentIdentity, registrationId))
         .isInstanceOf(AuthorizationUnavailableException.class);
-    assertThatThrownBy(() -> service.blockEsn(identity(), householdId, "esn-4", "x"))
+    assertThatThrownBy(() -> service.blockEsn(currentIdentity, householdId, "esn-4", "x"))
         .isInstanceOf(AuthorizationUnavailableException.class);
-    assertThatThrownBy(() -> service.blockEsnServerWide(identity(), "esn-4", "x"))
+    assertThatThrownBy(() -> service.blockEsnServerWide(currentIdentity, "esn-4", "x"))
         .isInstanceOf(AuthorizationUnavailableException.class);
-    assertThatThrownBy(() -> service.unblockEsn(identity(), householdId, "esn-2"))
+    assertThatThrownBy(() -> service.unblockEsn(currentIdentity, householdId, "esn-2"))
         .isInstanceOf(AuthorizationUnavailableException.class);
-    assertThatThrownBy(() -> service.unblockEsnServerWide(identity(), "esn-3"))
+    assertThatThrownBy(() -> service.unblockEsnServerWide(currentIdentity, "esn-3"))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 

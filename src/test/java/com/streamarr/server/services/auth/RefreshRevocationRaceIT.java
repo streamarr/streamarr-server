@@ -164,7 +164,8 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
     assertThat(
             authSessionRepository.findById(issued.session().getId()).orElseThrow().getRevokedAt())
         .isNotNull();
-    assertThatThrownBy(() -> refreshTokenService.redeem(rotated.rawRefreshToken()))
+    var successorToken = rotated.rawRefreshToken();
+    assertThatThrownBy(() -> refreshTokenService.redeem(successorToken))
         .isInstanceOf(TokenReuseDetectedException.class);
   }
 

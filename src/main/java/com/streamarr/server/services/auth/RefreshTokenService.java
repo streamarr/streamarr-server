@@ -84,19 +84,24 @@ public class RefreshTokenService {
       return Optional.empty();
     }
 
+    var resolvedSessionId = sessionId.orElseThrow();
     var loggedOut =
         sessionRepository
-            .findById(sessionId.orElseThrow())
+            .findById(resolvedSessionId)
             .map(
                 session ->
                     new LoggedOutSession(
                         session.getAccountId(), Optional.ofNullable(session.getRegistrationId())));
-    logout(sessionId.orElseThrow());
+    revokeForLogout(resolvedSessionId);
     return loggedOut;
   }
 
   @Transactional
   public void logout(UUID sessionId) {
+    revokeForLogout(sessionId);
+  }
+
+  private void revokeForLogout(UUID sessionId) {
     var now = clock.instant();
     sessionRepository.revoke(sessionId, SessionRevocationReason.LOGOUT, now);
     tokenRepository.revokeAllForSession(sessionId, now);

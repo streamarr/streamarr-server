@@ -3,6 +3,7 @@ package com.streamarr.server.repositories.auth;
 import static com.streamarr.server.jooq.generated.tables.EsnBlock.ESN_BLOCK;
 
 import com.streamarr.server.domain.auth.EsnBlock;
+import com.streamarr.server.jooq.generated.tables.records.EsnBlockRecord;
 import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import jakarta.persistence.EntityManager;
 import java.util.List;
@@ -29,14 +30,15 @@ public class EsnBlockRepositoryCustomImpl implements EsnBlockRepositoryCustom {
   }
 
   private List<EsnBlock> findPage(Condition scope, KeysetPaginationOptions paginationOptions) {
-    return AuditableEntityPageQuery.findPage(
-        dsl,
-        entityManager,
-        ESN_BLOCK,
-        ESN_BLOCK.CREATED_ON,
-        ESN_BLOCK.ID,
-        scope,
-        paginationOptions,
-        EsnBlock.class);
+    var request =
+        AuditableEntityPageQuery.PageRequest.<EsnBlockRecord, EsnBlock>builder()
+            .table(ESN_BLOCK)
+            .createdOn(ESN_BLOCK.CREATED_ON)
+            .id(ESN_BLOCK.ID)
+            .scope(scope)
+            .options(paginationOptions)
+            .entityType(EsnBlock.class)
+            .build();
+    return new AuditableEntityPageQuery(dsl, entityManager).findPage(request);
   }
 }

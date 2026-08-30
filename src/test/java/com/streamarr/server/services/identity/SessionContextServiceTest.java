@@ -165,9 +165,9 @@ class SessionContextServiceTest {
     var session = session(account.getHouseholdId(), null);
     var accountId = account.getId();
     var sessionId = session.getId();
+    var currentIdentity = identity(accountId, sessionId);
 
-    assertThatThrownBy(
-            () -> households.selectHousehold(identity(accountId, sessionId), visitedHouseholdId))
+    assertThatThrownBy(() -> households.selectHousehold(currentIdentity, visitedHouseholdId))
         .isInstanceOf(HouseholdAccessDeniedException.class);
   }
 
@@ -179,17 +179,15 @@ class SessionContextServiceTest {
     var accountId = account.getId();
     var sessionId = session.getId();
     var membershipHouseholdId = account.getHouseholdId();
+    var currentIdentity = identity(accountId, sessionId);
 
-    assertThatThrownBy(
-            () -> households.selectHousehold(identity(accountId, sessionId), membershipHouseholdId))
+    assertThatThrownBy(() -> households.selectHousehold(currentIdentity, membershipHouseholdId))
         .isInstanceOf(AuthenticationRequiredException.class);
 
     var foreign = sessions.save(AuthSession.builder().accountId(UUID.randomUUID()).build());
     var foreignSessionId = foreign.getId();
-    assertThatThrownBy(
-            () ->
-                households.selectHousehold(
-                    identity(accountId, foreignSessionId), membershipHouseholdId))
+    var foreignIdentity = identity(accountId, foreignSessionId);
+    assertThatThrownBy(() -> households.selectHousehold(foreignIdentity, membershipHouseholdId))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 

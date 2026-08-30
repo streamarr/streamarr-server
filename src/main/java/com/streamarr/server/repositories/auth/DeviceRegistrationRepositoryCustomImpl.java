@@ -5,6 +5,7 @@ import static org.jooq.impl.DSL.inline;
 
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
+import com.streamarr.server.jooq.generated.tables.records.DeviceRegistrationRecord;
 import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
@@ -31,22 +32,24 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
   @Override
   public List<DeviceRegistration> findPageByHouseholdIdAndStatus(
       UUID householdId, DeviceRegistrationStatus status, KeysetPaginationOptions options) {
-    return AuditableEntityPageQuery.findPage(
-        dsl,
-        entityManager,
-        DEVICE_REGISTRATION,
-        DEVICE_REGISTRATION.CREATED_ON,
-        DEVICE_REGISTRATION.ID,
-        DEVICE_REGISTRATION
-            .HOUSEHOLD_ID
-            .eq(householdId)
-            .and(
-                DEVICE_REGISTRATION.STATUS.eq(
-                    inline(
-                        com.streamarr.server.jooq.generated.enums.DeviceRegistrationStatus.valueOf(
-                            status.name())))),
-        options,
-        DeviceRegistration.class);
+    var request =
+        AuditableEntityPageQuery.PageRequest.<DeviceRegistrationRecord, DeviceRegistration>builder()
+            .table(DEVICE_REGISTRATION)
+            .createdOn(DEVICE_REGISTRATION.CREATED_ON)
+            .id(DEVICE_REGISTRATION.ID)
+            .scope(
+                DEVICE_REGISTRATION
+                    .HOUSEHOLD_ID
+                    .eq(householdId)
+                    .and(
+                        DEVICE_REGISTRATION.STATUS.eq(
+                            inline(
+                                com.streamarr.server.jooq.generated.enums.DeviceRegistrationStatus
+                                    .valueOf(status.name())))))
+            .options(options)
+            .entityType(DeviceRegistration.class)
+            .build();
+    return new AuditableEntityPageQuery(dsl, entityManager).findPage(request);
   }
 
   @Override
