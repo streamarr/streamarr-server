@@ -229,6 +229,7 @@ public class AccountLifecycleService {
       deleteAccountRow(account);
       accountInvitationRepository.invalidatePendingByProfileId(profileId, "Profile deleted", now);
       managerInvitationRepository.invalidatePendingByProfileId(profileId, "Profile deleted", now);
+      shareRepository.invalidatePendingByProfileId(profileId, "Profile deleted", now);
       clearSelectionsEverywhere(profileId, now);
       profileRepository.deleteById(profileId);
       profileRepository.flush();

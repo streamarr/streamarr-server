@@ -369,6 +369,14 @@ class AccountLifecycleServiceTest {
                     .recipientId(UUID.randomUUID())
                     .inviterId(UUID.randomUUID())
                     .build()));
+    var profileShareOffer =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(mover.getPersonalProfileId())
+                .householdId(UUID.randomUUID())
+                .status(ProfileShareStatus.PENDING)
+                .offeredByAccountId(UUID.randomUUID())
+                .build());
     var issuedReset =
         resetCodes.save(
             PasswordResetCode.builder()
@@ -424,6 +432,8 @@ class AccountLifecycleServiceTest {
     assertThat(
             managerInvitations.findById(profileManagerInvitation.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(shares.findById(profileShareOffer.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.INVALIDATED);
     assertThat(resetCodes.findById(issuedReset.getId()).orElseThrow().getStatus())
         .isEqualTo(PasswordResetCodeStatus.INVALIDATED);
     assertThat(sessions.findById(sourceViewer.getId()).orElseThrow().getSelectedProfileId())
