@@ -426,6 +426,9 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
                 .formatted(orphan.getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.administrativelyDeleteProfile.profileId")
+                .value(orphan.getId().toString()))
         .andExpect(jsonPath("$.data.administrativelyDeleteProfile.userErrors").isEmpty());
     assertThat(profileRepository.findById(orphan.getId())).isEmpty();
   }
