@@ -317,24 +317,23 @@ class LifecycleErrorsTest {
   }
 
   private static Stream<Arguments> replacementEligibilityCases() {
+    var accountDeletion =
+        (ProfileManagerNotEligibleError)
+            LifecycleErrors.toDeleteAccountError(
+                new TransferRejections.ReplacementManagerNotEligible());
+    var profileTransfer =
+        (ProfileManagerNotEligibleError)
+            LifecycleErrors.toTransferProfileError(
+                new TransferRejections.ReplacementManagerNotEligible());
+
     return Stream.of(
         Arguments.of(
             "Account deletion",
-            (Supplier<List<String>>)
-                () ->
-                    ((ProfileManagerNotEligibleError)
-                            LifecycleErrors.toDeleteAccountError(
-                                new TransferRejections.ReplacementManagerNotEligible()))
-                        .inputPath(),
+            (Supplier<List<String>>) accountDeletion::inputPath,
             "replacementManagerAccountId"),
         Arguments.of(
             "Profile transfer",
-            (Supplier<List<String>>)
-                () ->
-                    ((ProfileManagerNotEligibleError)
-                            LifecycleErrors.toTransferProfileError(
-                                new TransferRejections.ReplacementManagerNotEligible()))
-                        .inputPath(),
+            (Supplier<List<String>>) profileTransfer::inputPath,
             "profileManagerAccountId"));
   }
 

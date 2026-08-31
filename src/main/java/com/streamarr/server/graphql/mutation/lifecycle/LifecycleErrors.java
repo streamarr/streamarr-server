@@ -10,6 +10,7 @@ public final class LifecycleErrors {
   private static final String PROFILE_ID = "profileId";
   private static final String DESTINATION = "destinationHouseholdId";
   private static final String PROFILE_MANAGER = "profileManagerAccountId";
+  private static final String REPLACEMENT_MANAGER = "replacementManagerAccountId";
   private static final String NO_SUCH_ACCOUNT = "No such Account.";
 
   private LifecycleErrors() {}
@@ -44,11 +45,11 @@ public final class LifecycleErrors {
       case TransferRejections.ReplacementManagerRequired _ ->
           new ReplacementManagerRequiredError(
               "Keeping the Profile requires a replacement Profile manager.",
-              InputPath.of("replacementManagerAccountId"));
+              InputPath.of(REPLACEMENT_MANAGER));
       case TransferRejections.ReplacementManagerNotFound _ ->
-          new AccountNotFoundError(NO_SUCH_ACCOUNT, InputPath.of("replacementManagerAccountId"));
+          new AccountNotFoundError(NO_SUCH_ACCOUNT, InputPath.of(REPLACEMENT_MANAGER));
       case TransferRejections.ReplacementManagerNotEligible _ ->
-          replacementNotEligible("replacementManagerAccountId");
+          replacementNotEligible(REPLACEMENT_MANAGER);
       case TransferRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
       case TransferRejections.NoEligibleAdmin _ -> noEligibleAdmin();
     };

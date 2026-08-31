@@ -5,7 +5,6 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
@@ -29,8 +28,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.BooleanSupplier;
-import java.util.function.Supplier;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
@@ -48,6 +45,8 @@ public class AccountLifecycleService {
   private static final String CHK_HOSTING_ADMIN = "chk_hosting_household_retains_eligible_admin";
   private static final String CHK_RESTRICTED_AUTHORITY =
       "chk_restricted_account_holds_no_authority";
+  private static final String ACCOUNT_ID = "accountId";
+  private static final String PROFILE_DELETED = "Profile deleted";
 
   private final AuthorizationService authorizationService;
   private final UserAccountRepository userAccountRepository;
@@ -67,12 +66,12 @@ public class AccountLifecycleService {
   public Outcome<UserAccount, TransferRejections.TransferAccount> transferAccount(
       AuthenticatedIdentity identity, TransferAccountCommand command) {
     Optional<TransferRejections.TransferAccount> refusal =
-        refusalOf(
-            identity,
-            new Intent.TransferAccount(command.accountId()),
-            () -> mayViewAccount(identity, command.accountId()),
-            TransferRejections.AccountNotFound::new,
-            Optional.empty());
+        AuthorizationRefusal.from(
+            authorizationService.decide(identity, new Intent.TransferAccount(command.accountId())),
+            new AuthorizationRefusal.Response<>(
+                () -> mayViewAccount(identity, command.accountId()),
+                TransferRejections.AccountNotFound::new,
+                Optional.empty()));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -117,7 +116,7 @@ public class AccountLifecycleService {
           moveHomeAvailability(command, sourceHouseholdId, profileId, now);
           shareRepository.ensureActiveMembershipShare(
               profileId, command.destinationHouseholdId(), now);
-          audit(identity, "transferAccount", "accountId", command.accountId(), command.reason());
+          audit(identity, "transferAccount", ACCOUNT_ID, command.accountId(), command.reason());
           // The refusal checks JPA-loaded this row in this transaction; re-read past the
           // first-level cache or the payload would show the pre-transfer state.
           return userAccountRepository.findByIdAndRefresh(command.accountId()).orElseThrow();
@@ -132,12 +131,12 @@ public class AccountLifecycleService {
     }
 
     Optional<TransferRejections.DeleteAccount> refusal =
-        refusalOf(
-            identity,
-            new Intent.DeleteAccount(command.accountId()),
-            () -> mayViewAccount(identity, command.accountId()),
-            TransferRejections.AccountNotFound::new,
-            Optional.of(TransferRejections.ReauthenticationRequired::new));
+        AuthorizationRefusal.from(
+            authorizationService.decide(identity, new Intent.DeleteAccount(command.accountId())),
+            new AuthorizationRefusal.Response<>(
+                () -> mayViewAccount(identity, command.accountId()),
+                TransferRejections.AccountNotFound::new,
+                Optional.of(TransferRejections.ReauthenticationRequired::new)));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -154,8 +153,8 @@ public class AccountLifecycleService {
 
     return mutationTransactions.write(
         () -> {
-          erase(identity, account.get(), command);
-          audit(identity, "deleteAccount", "accountId", account.get().getId(), command.reason());
+          erase(account.get(), command);
+          audit(identity, "deleteAccount", ACCOUNT_ID, account.get().getId(), command.reason());
           return command.accountId();
         },
         this::deletionConstraint);
@@ -168,15 +167,15 @@ public class AccountLifecycleService {
     }
 
     Optional<TransferRejections.DeleteMyAccount> refusal =
-        refusalOf(
-            identity,
-            new Intent.DeleteMyAccount(),
-            // The caller always sees their own Account: an authority denial stays FORBIDDEN.
-            () -> true,
-            () -> {
-              throw new AccessDeniedException("Not allowed.");
-            },
-            Optional.of(TransferRejections.ReauthenticationRequired::new));
+        AuthorizationRefusal.from(
+            authorizationService.decide(identity, new Intent.DeleteMyAccount()),
+            new AuthorizationRefusal.Response<>(
+                // The caller always sees their own Account: an authority denial stays FORBIDDEN.
+                () -> true,
+                () -> {
+                  throw new AccessDeniedException("Not allowed.");
+                },
+                Optional.of(TransferRejections.ReauthenticationRequired::new)));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -185,21 +184,19 @@ public class AccountLifecycleService {
     return mutationTransactions.write(
         () -> {
           erase(
-              identity,
               account,
               DeleteAccountCommand.builder()
                   .accountId(account.getId())
                   .profileDisposition(ProfileDisposition.ERASE)
                   .reason("self-deletion")
                   .build());
-          audit(identity, "deleteMyAccount", "accountId", account.getId(), "self-deletion");
+          audit(identity, "deleteMyAccount", ACCOUNT_ID, account.getId(), "self-deletion");
           return account.getId();
         },
         this::selfDeletionConstraint);
   }
 
-  private void erase(
-      AuthenticatedIdentity identity, UserAccount account, DeleteAccountCommand command) {
+  private void erase(UserAccount account, DeleteAccountCommand command) {
     var now = clock.instant();
     if (userAccountRepository.findByHouseholdId(account.getHouseholdId()).size() <= 1) {
       throw new MutationRejection(new TransferRejections.FinalAccount());
@@ -227,9 +224,9 @@ public class AccountLifecycleService {
       deleteAccountRow(account);
     } else {
       deleteAccountRow(account);
-      accountInvitationRepository.invalidatePendingByProfileId(profileId, "Profile deleted", now);
-      managerInvitationRepository.invalidatePendingByProfileId(profileId, "Profile deleted", now);
-      shareRepository.invalidatePendingByProfileId(profileId, "Profile deleted", now);
+      accountInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
+      managerInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
+      shareRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
       clearSelectionsEverywhere(profileId, now);
       profileRepository.deleteById(profileId);
       profileRepository.flush();
@@ -364,33 +361,6 @@ public class AccountLifecycleService {
 
   private static boolean isBlank(String value) {
     return value == null || value.isBlank();
-  }
-
-  private <R> Optional<R> refusalOf(
-      AuthenticatedIdentity identity,
-      Intent.UnitIntent intent,
-      BooleanSupplier mayView,
-      Supplier<? extends R> denied,
-      Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
-    return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
-      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<AuthorizationUnit>(var reason) ->
-          switch (reason) {
-            case REAUTHENTICATION_REQUIRED ->
-                Optional.of(
-                    reauthenticationRequired
-                        .orElseThrow(AuthorizationUnavailableException::new)
-                        .get());
-            case POLICY -> {
-              if (mayView.getAsBoolean()) {
-                throw new AccessDeniedException("Not allowed.");
-              }
-
-              yield Optional.of(denied.get());
-            }
-          };
-    };
   }
 
   /** Access retained in the Account's former Household after transfer. */

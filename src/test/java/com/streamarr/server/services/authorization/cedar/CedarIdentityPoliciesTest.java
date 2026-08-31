@@ -1391,15 +1391,6 @@ class CedarIdentityPoliciesTest {
     }
   }
 
-  private ProfileHouseholdShare pendingShare(UUID profileId, UUID householdId) {
-    return shares.save(
-        ProfileHouseholdShare.builder()
-            .profileId(profileId)
-            .householdId(householdId)
-            .status(ProfileShareStatus.PENDING)
-            .build());
-  }
-
   private AuthenticatedIdentity withReauthenticatedAt(AuthenticatedIdentity base, Instant at) {
     return AuthenticatedIdentity.builder()
         .accountId(base.accountId())

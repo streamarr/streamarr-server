@@ -5,7 +5,6 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
@@ -27,11 +26,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.BooleanSupplier;
-import java.util.function.Supplier;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -60,12 +56,12 @@ public class ProfileLifecycleService {
   public Outcome<Profile, TransferRejections.TransferProfile> transferProfile(
       AuthenticatedIdentity identity, TransferProfileCommand command) {
     Optional<TransferRejections.TransferProfile> refusal =
-        refusalOf(
-            identity,
-            new Intent.TransferProfile(command.profileId()),
-            () -> mayViewProfile(identity, command.profileId()),
-            TransferRejections.ProfileNotFound::new,
-            Optional.empty());
+        AuthorizationRefusal.from(
+            authorizationService.decide(identity, new Intent.TransferProfile(command.profileId())),
+            new AuthorizationRefusal.Response<>(
+                () -> mayViewProfile(identity, command.profileId()),
+                TransferRejections.ProfileNotFound::new,
+                Optional.empty()));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -138,12 +134,13 @@ public class ProfileLifecycleService {
     }
 
     Optional<TransferRejections.AdministrativelyDeleteProfile> refusal =
-        refusalOf(
-            identity,
-            new Intent.AdministrativelyDeleteProfile(profileId),
-            () -> mayViewProfile(identity, profileId),
-            TransferRejections.ProfileNotFound::new,
-            Optional.of(TransferRejections.ReauthenticationRequired::new));
+        AuthorizationRefusal.from(
+            authorizationService.decide(
+                identity, new Intent.AdministrativelyDeleteProfile(profileId)),
+            new AuthorizationRefusal.Response<>(
+                () -> mayViewProfile(identity, profileId),
+                TransferRejections.ProfileNotFound::new,
+                Optional.of(TransferRejections.ReauthenticationRequired::new)));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -268,33 +265,6 @@ public class ProfileLifecycleService {
 
   private static boolean isBlank(String value) {
     return value == null || value.isBlank();
-  }
-
-  private <R> Optional<R> refusalOf(
-      AuthenticatedIdentity identity,
-      Intent.UnitIntent intent,
-      BooleanSupplier mayView,
-      Supplier<? extends R> denied,
-      Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
-    return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
-      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<AuthorizationUnit>(var reason) ->
-          switch (reason) {
-            case REAUTHENTICATION_REQUIRED ->
-                Optional.of(
-                    reauthenticationRequired
-                        .orElseThrow(AuthorizationUnavailableException::new)
-                        .get());
-            case POLICY -> {
-              if (mayView.getAsBoolean()) {
-                throw new AccessDeniedException("Not allowed.");
-              }
-
-              yield Optional.of(denied.get());
-            }
-          };
-    };
   }
 
   @Builder
