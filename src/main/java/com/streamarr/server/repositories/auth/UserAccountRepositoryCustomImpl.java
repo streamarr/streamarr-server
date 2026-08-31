@@ -263,7 +263,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   }
 
   @Override
-  public Optional<com.streamarr.server.domain.auth.UserAccount> findRefreshedById(UUID accountId) {
+  public Optional<com.streamarr.server.domain.auth.UserAccount> findByIdAndRefresh(UUID accountId) {
     var entity = entityManager.find(com.streamarr.server.domain.auth.UserAccount.class, accountId);
     if (entity == null) {
       return Optional.empty();

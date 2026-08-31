@@ -145,7 +145,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public Optional<ProfileHouseholdShare> findRefreshedById(UUID shareId) {
+  public Optional<ProfileHouseholdShare> findByIdAndRefresh(UUID shareId) {
     return findById(shareId);
   }
 
@@ -240,16 +240,14 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public boolean tryDemoteStructural(UUID profileId, UUID householdId, Instant now) {
-    var structural =
-        database.values().stream()
-            .filter(share -> share.getProfileId().equals(profileId))
-            .filter(share -> share.getHouseholdId().equals(householdId))
-            .filter(ProfileHouseholdShare::isStructural)
-            .filter(share -> share.getStatus() == ProfileShareStatus.ACTIVE)
-            .findFirst();
-    structural.ifPresent(share -> share.setStructural(false));
-    return structural.isPresent();
+  public void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId, Instant now) {
+    database.values().stream()
+        .filter(share -> share.getProfileId().equals(profileId))
+        .filter(share -> share.getHouseholdId().equals(householdId))
+        .filter(ProfileHouseholdShare::isStructural)
+        .filter(share -> share.getStatus() == ProfileShareStatus.ACTIVE)
+        .findFirst()
+        .ifPresent(share -> share.setStructural(false));
   }
 
   @Override

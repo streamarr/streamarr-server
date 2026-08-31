@@ -130,7 +130,7 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   }
 
   @Override
-  public Optional<Profile> findRefreshedById(UUID profileId) {
+  public Optional<Profile> findByIdAndRefresh(UUID profileId) {
     return findById(profileId);
   }
 

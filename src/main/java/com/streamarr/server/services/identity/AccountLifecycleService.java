@@ -120,7 +120,7 @@ public class AccountLifecycleService {
           audit(identity, "transferAccount", "accountId", command.accountId(), command.reason());
           // The refusal checks JPA-loaded this row in this transaction; re-read past the
           // first-level cache or the payload would show the pre-transfer state.
-          return userAccountRepository.findRefreshedById(command.accountId()).orElseThrow();
+          return userAccountRepository.findByIdAndRefresh(command.accountId()).orElseThrow();
         },
         this::transferConstraint);
   }
@@ -222,7 +222,8 @@ public class AccountLifecycleService {
     if (command.profileDisposition() == ProfileDisposition.KEEP) {
       profileManagerRepository.tryGrantDirectManagement(
           command.replacementManagerAccountId(), profileId);
-      shareRepository.tryDemoteStructural(profileId, account.getHouseholdId(), now);
+      shareRepository.convertMembershipShareToVisitorShare(
+          profileId, account.getHouseholdId(), now);
       deleteAccountRow(account);
     } else {
       deleteAccountRow(account);
@@ -243,7 +244,7 @@ public class AccountLifecycleService {
   private void moveHomeAvailability(
       TransferAccountCommand command, UUID sourceHouseholdId, UUID profileId, Instant now) {
     if (command.sourceAccess() == SourceAccess.KEEP_AS_VISITOR) {
-      shareRepository.tryDemoteStructural(profileId, sourceHouseholdId, now);
+      shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId, now);
       authSessionRepository.clearProfileSelectionFromLiveSessions(
           profileId, sourceHouseholdId, now);
       return;

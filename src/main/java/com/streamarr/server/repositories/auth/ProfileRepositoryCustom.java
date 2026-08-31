@@ -78,5 +78,5 @@ public interface ProfileRepositoryCustom {
    * inside this transaction already JPA-loaded the row, and after the jOOQ write the managed copy
    * is stale (the hybrid footgun).
    */
-  Optional<Profile> findRefreshedById(UUID profileId);
+  Optional<Profile> findByIdAndRefresh(UUID profileId);
 }

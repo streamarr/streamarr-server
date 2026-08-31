@@ -92,7 +92,7 @@ public interface UserAccountRepositoryCustom {
    * decision JPA-loaded the row in this transaction, and after the jOOQ write the managed copy is
    * stale (the hybrid footgun).
    */
-  Optional<UserAccount> findRefreshedById(UUID accountId);
+  Optional<UserAccount> findByIdAndRefresh(UUID accountId);
 
   /**
    * The conditional transfer write: household and role move together, and only when the row is

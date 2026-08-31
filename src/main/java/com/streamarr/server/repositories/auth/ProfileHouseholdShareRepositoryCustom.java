@@ -41,7 +41,7 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /**
    * Re-reads the share past the first-level cache after jOOQ DML changed it in this transaction.
    */
-  Optional<ProfileHouseholdShare> findRefreshedById(UUID shareId);
+  Optional<ProfileHouseholdShare> findByIdAndRefresh(UUID shareId);
 
   /** PENDING and unexpired becomes ACTIVE; a raced decision has exactly one winner. */
   boolean tryActivatePending(UUID shareId, Instant now);
@@ -72,7 +72,7 @@ public interface ProfileHouseholdShareRepositoryCustom {
    * KEEP_AS_VISITOR and KEEP-deletion turn the old structural availability into an ordinary visitor
    * share instead of ending it.
    */
-  boolean tryDemoteStructural(UUID profileId, UUID householdId, Instant now);
+  void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId, Instant now);
 
   /** The leaving manager's own PENDING shares of the Profile become INVALIDATED. */
   int invalidatePendingOffersByProfileIdAndOffererAccountId(

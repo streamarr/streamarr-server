@@ -192,7 +192,7 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
-  public Optional<UserAccount> findRefreshedById(UUID accountId) {
+  public Optional<UserAccount> findByIdAndRefresh(UUID accountId) {
     return findById(accountId);
   }
 

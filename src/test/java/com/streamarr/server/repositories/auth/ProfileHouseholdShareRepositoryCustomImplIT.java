@@ -101,7 +101,7 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
 
     shareRepository.ensureActiveMembershipShare(profile.getId(), household.getId(), now);
 
-    var preservedOffer = shareRepository.findRefreshedById(expiredOffer.getId()).orElseThrow();
+    var preservedOffer = shareRepository.findByIdAndRefresh(expiredOffer.getId()).orElseThrow();
     var structuralShare =
         shareRepository
             .findByProfileIdAndHouseholdIdAndStatus(
