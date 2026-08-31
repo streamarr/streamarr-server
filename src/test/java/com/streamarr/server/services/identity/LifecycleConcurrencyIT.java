@@ -40,6 +40,7 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
@@ -239,6 +240,22 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
       var firstGrantReached = new CountDownLatch(1);
       var releaseFirstGrant = new CountDownLatch(1);
       var firstGrant = new AtomicBoolean(true);
+      var secondTransactionReached = new CountDownLatch(1);
+      var transferTransactions = new AtomicInteger();
+      var transactionSpy =
+          AopTestUtils.<MutationTransactions>getUltimateTargetObject(mutationTransactions);
+      var transactionAnswer =
+          mockingDetails(transactionSpy).getMockCreationSettings().getDefaultAnswer();
+      doAnswer(
+              invocation -> {
+                if (transferTransactions.incrementAndGet() == 2) {
+                  secondTransactionReached.countDown();
+                }
+
+                return transactionAnswer.answer(invocation);
+              })
+          .when(transactionSpy)
+          .write(any(), any());
       var repositorySpy =
           AopTestUtils.<ProfileManagerRepository>getUltimateTargetObject(managerRepository);
       var repositoryAnswer =
@@ -281,6 +298,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                                     .destinationHouseholdId(secondDestination.household().getId())
                                     .localManagerAccountId(secondDestination.account().getId())
                                     .build())));
+        assertThat(secondTransactionReached.await(10, TimeUnit.SECONDS)).isTrue();
         releaseFirstGrant.countDown();
         firstAttempt = pendingFirst.get(20, TimeUnit.SECONDS);
         secondAttempt = pendingSecond.get(20, TimeUnit.SECONDS);
