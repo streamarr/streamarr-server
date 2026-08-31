@@ -88,7 +88,7 @@ type LastServerAdminError implements MutationError {
     message: String!
 }
 
-"A Household always keeps at least one HouseholdAdmin until teardown."
+"After its first Account, a Household must keep at least one HouseholdAdmin until the Household is deleted."
 type LastHouseholdAdminError implements MutationError {
     message: String!
 }
@@ -298,12 +298,12 @@ type SameHouseholdError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"The last Account in a Household must be handled through Household teardown."
+"The last Account can be removed only by deleting the Household."
 type LastHouseholdAccountError implements MutationError {
     message: String!
 }
 
-"The Profile belongs to an Account; transfer or delete the Account instead."
+"The Profile belongs to an Account. Transfer or delete the Account instead."
 type ProfileBelongsToAccountError implements MutationError {
     message: String!
 }

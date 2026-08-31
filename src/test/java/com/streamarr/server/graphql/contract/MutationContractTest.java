@@ -53,6 +53,28 @@ class MutationContractTest {
   private static final TypeDefinitionRegistry SCHEMA = loadSchema();
 
   @Test
+  @DisplayName("Should describe when a Household must retain an administrator")
+  void shouldDescribeWhenHouseholdMustRetainAdministrator() {
+    assertThat(descriptionOf("LastHouseholdAdminError"))
+        .isEqualTo(
+            "After its first Account, a Household must keep at least one HouseholdAdmin until the Household is deleted.");
+  }
+
+  @Test
+  @DisplayName("Should describe final Account removal as Household deletion")
+  void shouldDescribeFinalAccountRemovalAsHouseholdDeletion() {
+    assertThat(descriptionOf("LastHouseholdAccountError"))
+        .isEqualTo("The last Account can be removed only by deleting the Household.");
+  }
+
+  @Test
+  @DisplayName("Should describe linked Profile handling in two sentences")
+  void shouldDescribeLinkedProfileHandlingInTwoSentences() {
+    assertThat(descriptionOf("ProfileBelongsToAccountError"))
+        .isEqualTo("The Profile belongs to an Account. Transfer or delete the Account instead.");
+  }
+
+  @Test
   @DisplayName(
       "Should model Account invitation Profile choices as distinct GraphQL actions when the schema is parsed")
   void shouldModelAccountInvitationProfileChoicesAsDistinctGraphqlActionsWhenSchemaIsParsed() {
@@ -472,6 +494,14 @@ class MutationContractTest {
 
   private static List<String> interfaceNames(List<Type> implemented) {
     return implemented.stream().map(type -> ((TypeName) type).getName()).toList();
+  }
+
+  private static String descriptionOf(String typeName) {
+    return SCHEMA
+        .getType(typeName, ObjectTypeDefinition.class)
+        .orElseThrow()
+        .getDescription()
+        .getContent();
   }
 
   private static String capitalize(String name) {

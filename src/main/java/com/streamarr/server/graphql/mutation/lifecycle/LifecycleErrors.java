@@ -118,15 +118,16 @@ public final class LifecycleErrors {
 
   private static LastHouseholdAccountError finalAccount() {
     return new LastHouseholdAccountError(
-        "The last Account in a Household must be handled through Household teardown.");
+        "The last Account can be removed only by deleting the Household.");
   }
 
   private static LastHouseholdAdminError lastHouseholdAdmin() {
-    return new LastHouseholdAdminError("A Household with Accounts always keeps a HouseholdAdmin.");
+    return new LastHouseholdAdminError(
+        "A Household with Accounts must keep at least one HouseholdAdmin.");
   }
 
   private static LastServerAdminError lastServerAdmin() {
-    return new LastServerAdminError("At least one enabled ServerAdmin remains.");
+    return new LastServerAdminError("At least one enabled ServerAdmin must remain.");
   }
 
   private static RestrictedProfileRequiresHouseholdAdminError noEligibleAdmin() {
@@ -152,7 +153,7 @@ public final class LifecycleErrors {
 
   private static ProfileBelongsToAccountError profileLinked() {
     return new ProfileBelongsToAccountError(
-        "This Profile belongs to an Account; transfer or delete the Account instead.");
+        "This Profile belongs to an Account. Transfer or delete the Account instead.");
   }
 
   private static ReasonRequiredError reasonRequired() {

@@ -44,7 +44,8 @@ public final class AdministrationErrors {
     return switch (rejection) {
       case AdministrationRejections.AccountNotFound _ -> accountNotFound();
       case AdministrationRejections.LastHouseholdAdmin _ ->
-          new LastHouseholdAdminError("A Household keeps at least one HouseholdAdmin.");
+          new LastHouseholdAdminError(
+              "A Household with Accounts must keep at least one HouseholdAdmin.");
     };
   }
 

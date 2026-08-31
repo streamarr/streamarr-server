@@ -33,6 +33,59 @@ class LifecycleErrorsTest {
                     .isEqualTo("The Profile needs an eligible Profile manager in its Household."));
   }
 
+  @Test
+  @DisplayName("Should direct a linked Profile mutation through its Account")
+  void shouldDirectLinkedProfileMutationThroughItsAccount() {
+    var error = LifecycleErrors.toTransferProfileError(new TransferRejections.ProfileLinked());
+
+    assertThat(error)
+        .isInstanceOfSatisfying(
+            ProfileBelongsToAccountError.class,
+            linked ->
+                assertThat(linked.message())
+                    .isEqualTo(
+                        "This Profile belongs to an Account. Transfer or delete the Account instead."));
+  }
+
+  @Test
+  @DisplayName("Should require an enabled ServerAdmin to remain")
+  void shouldRequireEnabledServerAdminToRemain() {
+    var error = LifecycleErrors.toDeleteAccountError(new TransferRejections.LastServerAdmin());
+
+    assertThat(error)
+        .isInstanceOfSatisfying(
+            LastServerAdminError.class,
+            last ->
+                assertThat(last.message())
+                    .isEqualTo("At least one enabled ServerAdmin must remain."));
+  }
+
+  @Test
+  @DisplayName("Should require a Household with Accounts to keep an administrator")
+  void shouldRequireHouseholdWithAccountsToKeepAdministrator() {
+    var error = LifecycleErrors.toTransferAccountError(new TransferRejections.LastHouseholdAdmin());
+
+    assertThat(error)
+        .isInstanceOfSatisfying(
+            LastHouseholdAdminError.class,
+            last ->
+                assertThat(last.message())
+                    .isEqualTo("A Household with Accounts must keep at least one HouseholdAdmin."));
+  }
+
+  @Test
+  @DisplayName("Should direct final Account removal through Household deletion")
+  void shouldDirectFinalAccountRemovalThroughHouseholdDeletion() {
+    var error = LifecycleErrors.toDeleteAccountError(new TransferRejections.FinalAccount());
+
+    assertThat(error)
+        .isInstanceOfSatisfying(
+            LastHouseholdAccountError.class,
+            last ->
+                assertThat(last.message())
+                    .isEqualTo("The last Account can be removed only by deleting the Household."));
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("transferErrorCases")
   @DisplayName("Should map each transfer rejection to its schema error")
