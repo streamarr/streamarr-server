@@ -97,6 +97,7 @@ public class ProfileLifecycleService {
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
+          lockUnlinkedProfileForTransfer(command.profileId());
           profileManagerRepository.tryGrantDirectManagement(
               command.localManagerAccountId(), command.profileId());
           if (!profileRepository.tryRehome(
@@ -118,6 +119,16 @@ public class ProfileLifecycleService {
                   Optional.of(new TransferRejections.ReplacementManagerNotEligible());
               default -> Optional.empty();
             });
+  }
+
+  private void lockUnlinkedProfileForTransfer(UUID profileId) {
+    if (!profileRepository.lockById(profileId)) {
+      throw new MutationRejection(new TransferRejections.ProfileNotFound());
+    }
+
+    if (userAccountRepository.findByPersonalProfileId(profileId).isPresent()) {
+      throw new MutationRejection(new TransferRejections.ProfileLinked());
+    }
   }
 
   public Outcome<UUID, TransferRejections.AdministrativelyDeleteProfile>

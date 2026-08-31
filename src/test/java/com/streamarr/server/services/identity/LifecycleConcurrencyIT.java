@@ -28,6 +28,7 @@ import com.streamarr.server.services.identity.AccountLifecycleService.ProfileDis
 import com.streamarr.server.services.identity.AccountLifecycleService.SourceAccess;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
 import com.streamarr.server.services.identity.ProfileLifecycleService.TransferProfileCommand;
+import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
@@ -62,6 +63,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
   @MockitoSpyBean private ProfileManagerRepository managerRepository;
   @MockitoSpyBean private AccountInvitationRepository invitationRepository;
   @MockitoSpyBean private DeviceRegistrationLifecycle registrationLifecycle;
+  @MockitoSpyBean private MutationTransactions mutationTransactions;
   @Autowired private TransactionTemplate transactionTemplate;
 
   @Test
@@ -268,17 +270,20 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                                     .localManagerAccountId(firstDestination.account().getId())
                                     .build())));
         assertThat(firstGrantReached.await(10, TimeUnit.SECONDS)).isTrue();
-        secondAttempt =
-            outcomeOf(
+        var pendingSecond =
+            executor.submit(
                 () ->
-                    profileLifecycleService.transferProfile(
-                        authenticated(actor),
-                        transferProfileBuilder(orphan)
-                            .destinationHouseholdId(secondDestination.household().getId())
-                            .localManagerAccountId(secondDestination.account().getId())
-                            .build()));
+                    outcomeOf(
+                        () ->
+                            profileLifecycleService.transferProfile(
+                                authenticated(actor),
+                                transferProfileBuilder(orphan)
+                                    .destinationHouseholdId(secondDestination.household().getId())
+                                    .localManagerAccountId(secondDestination.account().getId())
+                                    .build())));
         releaseFirstGrant.countDown();
         firstAttempt = pendingFirst.get(20, TimeUnit.SECONDS);
+        secondAttempt = pendingSecond.get(20, TimeUnit.SECONDS);
       }
 
       var attempts = List.of(firstAttempt, secondAttempt);
@@ -332,6 +337,68 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
     } finally {
       authTestSupport.deleteIdentity(firstDestination);
       authTestSupport.deleteIdentity(secondDestination);
+      authTestSupport.deleteIdentity(source);
+      authTestSupport.deleteIdentity(actor);
+    }
+  }
+
+  @Test
+  @DisplayName("Should reject Profile transfer when Account linking commits after preflight")
+  void shouldRejectProfileTransferWhenAccountLinkingCommitsAfterPreflight() throws Exception {
+    var actor = authTestSupport.createAdminIdentity();
+    var source = authTestSupport.createIdentity();
+    var destination = authTestSupport.createIdentity();
+    var orphan = orphanOf(source);
+    try {
+      var transactionReached = new CountDownLatch(1);
+      var releaseTransaction = new CountDownLatch(1);
+      var transactionSpy =
+          AopTestUtils.<MutationTransactions>getUltimateTargetObject(mutationTransactions);
+      var transactionAnswer =
+          mockingDetails(transactionSpy).getMockCreationSettings().getDefaultAnswer();
+      doAnswer(
+              invocation -> {
+                transactionReached.countDown();
+                if (!releaseTransaction.await(10, TimeUnit.SECONDS)) {
+                  throw new AssertionError("Timed out releasing Profile transfer");
+                }
+
+                return transactionAnswer.answer(invocation);
+              })
+          .when(transactionSpy)
+          .write(any(), any());
+
+      Object transfer;
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var pendingTransfer =
+            executor.submit(
+                () ->
+                    outcomeOf(
+                        () ->
+                            profileLifecycleService.transferProfile(
+                                authenticated(actor),
+                                transferProfileBuilder(orphan)
+                                    .destinationHouseholdId(destination.household().getId())
+                                    .localManagerAccountId(destination.account().getId())
+                                    .build())));
+        assertThat(transactionReached.await(10, TimeUnit.SECONDS)).isTrue();
+        linkProfile(orphan, source.household().getId());
+        releaseTransaction.countDown();
+        transfer = pendingTransfer.get(20, TimeUnit.SECONDS);
+      }
+
+      assertThat(transfer).isInstanceOf(Outcome.Rejected.class);
+      assertThat(((Outcome.Rejected<?, ?>) transfer).rejections())
+          .singleElement()
+          .isInstanceOf(TransferRejections.ProfileLinked.class);
+      assertThat(profileRepository.findById(orphan.getId()).orElseThrow().getHouseholdId())
+          .isEqualTo(source.household().getId());
+      assertThat(
+              managerRepository.existsByAccountIdAndProfileId(
+                  destination.account().getId(), orphan.getId()))
+          .isFalse();
+    } finally {
+      authTestSupport.deleteIdentity(destination);
       authTestSupport.deleteIdentity(source);
       authTestSupport.deleteIdentity(actor);
     }
