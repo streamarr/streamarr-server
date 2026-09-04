@@ -86,6 +86,50 @@ class LifecycleErrorsTest {
                     .isEqualTo("The last Account can be removed only by deleting the Household."));
   }
 
+  @Test
+  @DisplayName("Should ask to select a destination manager when one is required")
+  void shouldAskToSelectDestinationManagerWhenOneIsRequired() {
+    var error =
+        LifecycleErrors.toTransferProfileError(new TransferRejections.LocalManagerRequired());
+
+    assertThat(error)
+        .isInstanceOfSatisfying(
+            EligibleProfileManagerRequiredError.class,
+            required ->
+                assertThat(required.message())
+                    .isEqualTo("Select an eligible Profile manager in the destination Household."));
+  }
+
+  @Test
+  @DisplayName("Should explain the unrestricted first Account requirement in two sentences")
+  void shouldExplainUnrestrictedFirstAccountRequirementInTwoSentences() {
+    var error =
+        LifecycleErrors.toTransferAccountError(new TransferRejections.RestrictedFirstAccount());
+
+    assertThat(error)
+        .isInstanceOfSatisfying(
+            RestrictedFirstAccountError.class,
+            restricted ->
+                assertThat(restricted.message())
+                    .isEqualTo(
+                        "The first Account of an empty Household becomes HouseholdAdmin. It cannot be restricted."));
+  }
+
+  @Test
+  @DisplayName("Should require selecting a replacement manager before keeping a Profile")
+  void shouldRequireSelectingReplacementManagerBeforeKeepingProfile() {
+    var error =
+        LifecycleErrors.toDeleteAccountError(new TransferRejections.ReplacementManagerRequired());
+
+    assertThat(error)
+        .isInstanceOfSatisfying(
+            ReplacementManagerRequiredError.class,
+            required ->
+                assertThat(required.message())
+                    .isEqualTo(
+                        "Keeping this Profile first requires selecting a replacement Profile manager."));
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("transferErrorCases")
   @DisplayName("Should map to the expected schema error when an Account transfer is rejected")

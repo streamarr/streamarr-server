@@ -32,7 +32,7 @@ public final class LifecycleErrors {
       case TransferRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
       case TransferRejections.RestrictedFirstAccount _ ->
           new RestrictedFirstAccountError(
-              "The first Account of an empty Household becomes HouseholdAdmin; it cannot be"
+              "The first Account of an empty Household becomes HouseholdAdmin. It cannot be"
                   + " restricted.");
     };
   }
@@ -48,7 +48,7 @@ public final class LifecycleErrors {
       case TransferRejections.LastServerAdmin _ -> lastServerAdmin();
       case TransferRejections.ReplacementManagerRequired _ ->
           new ReplacementManagerRequiredError(
-              "Keeping the Profile requires a replacement Profile manager.",
+              "Keeping this Profile first requires selecting a replacement Profile manager.",
               InputPath.of(REPLACEMENT_MANAGER));
       case TransferRejections.ReplacementManagerNotFound _ ->
           new AccountNotFoundError(NO_SUCH_ACCOUNT, InputPath.of(REPLACEMENT_MANAGER));
@@ -83,7 +83,7 @@ public final class LifecycleErrors {
       case TransferRejections.ProfileLinked _ -> profileLinked();
       case TransferRejections.LocalManagerRequired _ ->
           new EligibleProfileManagerRequiredError(
-              "Name an eligible Profile manager in the destination Household.",
+              "Select an eligible Profile manager in the destination Household.",
               InputPath.of(PROFILE_MANAGER));
       case TransferRejections.LocalManagerNotFound _ ->
           new AccountNotFoundError(NO_SUCH_ACCOUNT, InputPath.of(PROFILE_MANAGER));
