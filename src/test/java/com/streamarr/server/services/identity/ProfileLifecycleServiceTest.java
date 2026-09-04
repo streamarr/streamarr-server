@@ -322,9 +322,10 @@ class ProfileLifecycleServiceTest {
             intent instanceof Intent.ViewProfileAdministration
                 ? new Decision.Allowed<>(AuthorizationUnit.INSTANCE)
                 : new Decision.Denied<>(Decision.DenialReason.POLICY));
+    var actor = identity();
+    var profileId = orphan.getId();
 
-    assertThatThrownBy(
-            () -> service.administrativelyDeleteProfile(identity(), orphan.getId(), "cleanup"))
+    assertThatThrownBy(() -> service.administrativelyDeleteProfile(actor, profileId, "cleanup"))
         .isInstanceOf(AccessDeniedException.class);
     assertThat(profiles.findById(orphan.getId())).isPresent();
   }

@@ -29,21 +29,12 @@ class CheckstyleConfigurationTest {
 
   @TempDir private Path tempDirectory;
 
-  @Test
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  @DisplayName("Should reject fully qualified name when import can express dependency")
-  void shouldRejectFullyQualifiedNameWhenImportCanExpressDependency() throws Exception {
-    var violations =
-        violationsOf(
-            """
-            package example;
-
-            final class InlineFullyQualifiedName {
-              private final java.time.Instant timestamp = java.time.Instant.EPOCH;
-            }
-            """);
-
-    assertThat(violations).isOne();
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("configuredRuleViolations")
+  @DisplayName("Should report one violation when source breaks a configured rule")
+  void shouldReportOneViolationWhenSourceBreaksConfiguredRule(String scenario, String source)
+      throws Exception {
+    assertThat(violationsOf(source)).as(scenario).isOne();
   }
 
   @Test
@@ -68,24 +59,6 @@ class CheckstyleConfigurationTest {
 
   @Test
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  @DisplayName("Should reject fully qualified name suppression on a class")
-  void shouldRejectFullyQualifiedNameSuppressionOnClass() throws Exception {
-    var violations =
-        violationsOf(
-            """
-            package example;
-
-            @SuppressWarnings("checkstyle:fullyQualifiedName")
-            final class InlineFullyQualifiedName {
-              private final java.time.Instant timestamp = java.time.Instant.EPOCH;
-            }
-            """);
-
-    assertThat(violations).isOne();
-  }
-
-  @Test
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @DisplayName("Should allow fully qualified name in import declaration")
   void shouldAllowFullyQualifiedNameInImportDeclaration() throws Exception {
     var violations =
@@ -101,30 +74,6 @@ class CheckstyleConfigurationTest {
             """);
 
     assertThat(violations).isZero();
-  }
-
-  @Test
-  @DisplayName("Should reject nested conditional blocks")
-  void shouldRejectNestedConditionalBlocks() throws Exception {
-    var violations =
-        violationsOf(
-            """
-            package example;
-
-            final class NestedConditional {
-              void run(boolean enabled, boolean authorized) {
-                if (enabled) {
-                  if (authorized) {
-                    start();
-                  }
-                }
-              }
-
-              private void start() {}
-            }
-            """);
-
-    assertThat(violations).isOne();
   }
 
   @Test
@@ -247,6 +196,47 @@ class CheckstyleConfigurationTest {
         .singleElement()
         .asString()
         .contains("src/main/java/Unlisted.java");
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static Stream<Arguments> configuredRuleViolations() {
+    return Stream.of(
+        Arguments.of(
+            "fully qualified name when an import can express the dependency",
+            """
+            package example;
+
+            final class InlineFullyQualifiedName {
+              private final java.time.Instant timestamp = java.time.Instant.EPOCH;
+            }
+            """),
+        Arguments.of(
+            "fully qualified name suppression on a class",
+            """
+            package example;
+
+            @SuppressWarnings("checkstyle:fullyQualifiedName")
+            final class InlineFullyQualifiedName {
+              private final java.time.Instant timestamp = java.time.Instant.EPOCH;
+            }
+            """),
+        Arguments.of(
+            "nested conditional blocks",
+            """
+            package example;
+
+            final class NestedConditional {
+              void run(boolean enabled, boolean authorized) {
+                if (enabled) {
+                  if (authorized) {
+                    start();
+                  }
+                }
+              }
+
+              private void start() {}
+            }
+            """));
   }
 
   private static Stream<Arguments> unseparatedControlFlowBlocks() {

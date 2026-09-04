@@ -560,16 +560,15 @@ class AccountLifecycleServiceTest {
             intent instanceof Intent.ViewAccountAdministration
                 ? new Decision.Allowed<>(AuthorizationUnit.INSTANCE)
                 : new Decision.Denied<>(Decision.DenialReason.POLICY));
+    var actor = identity();
+    var command =
+        DeleteAccountCommand.builder()
+            .accountId(mover.getId())
+            .profileDisposition(ProfileDisposition.ERASE)
+            .reason("dispute")
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.deleteAccount(
-                    identity(),
-                    DeleteAccountCommand.builder()
-                        .accountId(mover.getId())
-                        .profileDisposition(ProfileDisposition.ERASE)
-                        .reason("dispute")
-                        .build()))
+    assertThatThrownBy(() -> service.deleteAccount(actor, command))
         .isInstanceOf(AccessDeniedException.class);
     assertThat(accounts.findById(mover.getId())).isPresent();
   }
