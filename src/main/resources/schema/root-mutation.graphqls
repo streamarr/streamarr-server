@@ -52,7 +52,7 @@ type Mutation {
     unblockEsn(input: UnblockEsnInput!): UnblockEsnPayload
     unblockEsnServerWide(input: UnblockEsnServerWideInput!): UnblockEsnServerWidePayload
     transferAccount(input: TransferAccountInput!): TransferAccountPayload
-    deleteAccount(input: DeleteAccountInput!): DeleteAccountPayload
+    administrativelyDeleteAccount(input: AdministrativelyDeleteAccountInput!): AdministrativelyDeleteAccountPayload
     deleteMyAccount(input: DeleteMyAccountInput!): DeleteMyAccountPayload
     transferProfile(input: TransferProfileInput!): TransferProfilePayload
     administrativelyDeleteProfile(input: AdministrativelyDeleteProfileInput!): AdministrativelyDeleteProfilePayload

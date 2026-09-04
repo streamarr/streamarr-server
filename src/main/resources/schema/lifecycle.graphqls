@@ -37,7 +37,7 @@ union TransferAccountError =
   | ProfileRequiresEligibleManagerError
   | RestrictedFirstAccountError
 
-input DeleteAccountInput {
+input AdministrativelyDeleteAccountInput {
     accountId: ID!
     profileDisposition: ProfileDisposition!
     "Required for KEEP: an eligible replacement manager for the preserved Profile."
@@ -45,12 +45,12 @@ input DeleteAccountInput {
     reason: String!
 }
 
-type DeleteAccountPayload {
+type AdministrativelyDeleteAccountPayload {
     accountId: ID
-    userErrors: [DeleteAccountError!]!
+    userErrors: [AdministrativelyDeleteAccountError!]!
 }
 
-union DeleteAccountError =
+union AdministrativelyDeleteAccountError =
     AccountNotFoundError
   | InvalidIdError
   | ReasonRequiredError

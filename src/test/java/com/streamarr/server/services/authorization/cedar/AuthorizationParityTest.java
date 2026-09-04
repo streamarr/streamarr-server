@@ -263,7 +263,7 @@ class AuthorizationParityTest {
           UNBLOCK_ESN,
           VIEW_DEVICE_ADMINISTRATION,
           TRANSFER_ACCOUNT,
-          DELETE_ACCOUNT,
+          ADMINISTRATIVELY_DELETE_ACCOUNT,
           DELETE_MY_ACCOUNT,
           TRANSFER_PROFILE,
           ADMINISTRATIVELY_DELETE_PROFILE ->
@@ -347,7 +347,7 @@ class AuthorizationParityTest {
         new Intent.ViewDeviceAdministration(id),
         new Intent.ViewServerDeviceAdministration(),
         new Intent.TransferAccount(id),
-        new Intent.DeleteAccount(id),
+        new Intent.AdministrativelyDeleteAccount(id),
         new Intent.DeleteMyAccount(),
         new Intent.TransferProfile(id),
         new Intent.AdministrativelyDeleteProfile(id));

@@ -692,13 +692,13 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
       graphql(
               authTestSupport.freshAccountBearer(otherAdmin),
               """
-              mutation { deleteAccount(input: {accountId: "%s", profileDisposition: ERASE,
+              mutation { administrativelyDeleteAccount(input: {accountId: "%s", profileDisposition: ERASE,
                 reason: "issuer left"}) { accountId userErrors { __typename } } }
               """
                   .formatted(serverAdmin.account().getId()))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.errors").doesNotExist())
-          .andExpect(jsonPath("$.data.deleteAccount.userErrors").isEmpty());
+          .andExpect(jsonPath("$.data.administrativelyDeleteAccount.userErrors").isEmpty());
 
       mockMvc
           .perform(

@@ -152,8 +152,8 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onServer(Action.VIEW_SERVER_DEVICE_ADMINISTRATION));
       case Intent.TransferAccount(var accountId) ->
           unitPlan(AuthorizationCheck.onAccount(Action.TRANSFER_ACCOUNT, accountId));
-      case Intent.DeleteAccount(var accountId) ->
-          unitPlan(AuthorizationCheck.onAccount(Action.DELETE_ACCOUNT, accountId));
+      case Intent.AdministrativelyDeleteAccount(var accountId) ->
+          unitPlan(AuthorizationCheck.onAccount(Action.ADMINISTRATIVELY_DELETE_ACCOUNT, accountId));
       case Intent.DeleteMyAccount _ ->
           unitPlan(AuthorizationCheck.onAccount(Action.DELETE_MY_ACCOUNT, identity.accountId()));
       case Intent.TransferProfile(var profileId) ->

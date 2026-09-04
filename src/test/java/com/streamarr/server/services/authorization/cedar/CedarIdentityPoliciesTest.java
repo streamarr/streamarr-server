@@ -1328,17 +1328,21 @@ class CedarIdentityPoliciesTest {
     @DisplayName("Should require a fresh ServerAdmin when an Account or Profile is deleted")
     void shouldRequireFreshServerAdminWhenAccountOrProfileIsDeleted() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
-      var deleteAccount = new Intent.DeleteAccount(UUID.randomUUID());
+      var administrativeAccountDeletion =
+          new Intent.AdministrativelyDeleteAccount(UUID.randomUUID());
       var administrativeDeletion = new Intent.AdministrativelyDeleteProfile(orphan.getId());
 
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deleteAccount))
+      assertThat(
+              decide(withReauthenticatedAt(atHome(), Instant.now()), administrativeAccountDeletion))
           .isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decide(atHome(), deleteAccount)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(atHome(), administrativeAccountDeletion))
+          .isEqualTo(REAUTHENTICATION_REQUIRED);
       assertThat(decide(atHome(), administrativeDeletion)).isEqualTo(REAUTHENTICATION_REQUIRED);
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deleteAccount))
+      assertThat(
+              decide(withReauthenticatedAt(atHome(), Instant.now()), administrativeAccountDeletion))
           .isEqualTo(ALLOWED);
       assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), administrativeDeletion))
           .isEqualTo(ALLOWED);
@@ -1353,7 +1357,8 @@ class CedarIdentityPoliciesTest {
       accounts.save(account);
       var fresh = withReauthenticatedAt(atHome(), Instant.now());
 
-      assertThat(decide(fresh, new Intent.DeleteAccount(UUID.randomUUID()))).isEqualTo(DENIED);
+      assertThat(decide(fresh, new Intent.AdministrativelyDeleteAccount(UUID.randomUUID())))
+          .isEqualTo(DENIED);
       assertThat(decide(fresh, new Intent.AdministrativelyDeleteProfile(orphan.getId())))
           .isEqualTo(DENIED);
     }

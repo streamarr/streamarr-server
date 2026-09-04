@@ -16,7 +16,7 @@ public final class TransferRejections {
           EligibleManagerRequired,
           RestrictedFirstAccount {}
 
-  public sealed interface DeleteAccount
+  public sealed interface AdministrativelyDeleteAccount
       permits AccountNotFound,
           ReasonRequired,
           ReauthenticationRequired,
@@ -52,7 +52,7 @@ public final class TransferRejections {
   public sealed interface AdministrativelyDeleteProfile
       permits ProfileNotFound, ReasonRequired, ReauthenticationRequired, ProfileLinked {}
 
-  public record AccountNotFound() implements TransferAccount, DeleteAccount {}
+  public record AccountNotFound() implements TransferAccount, AdministrativelyDeleteAccount {}
 
   public record ProfileNotFound() implements TransferProfile, AdministrativelyDeleteProfile {}
 
@@ -61,19 +61,21 @@ public final class TransferRejections {
   public record SameHousehold() implements TransferAccount, TransferProfile {}
 
   /** The final Account of a Household moves only through teardown. */
-  public record FinalAccount() implements TransferAccount, DeleteAccount, DeleteMyAccount {}
+  public record FinalAccount()
+      implements TransferAccount, AdministrativelyDeleteAccount, DeleteMyAccount {}
 
-  public record LastHouseholdAdmin() implements TransferAccount, DeleteAccount, DeleteMyAccount {}
+  public record LastHouseholdAdmin()
+      implements TransferAccount, AdministrativelyDeleteAccount, DeleteMyAccount {}
 
-  public record LastServerAdmin() implements DeleteAccount, DeleteMyAccount {}
+  public record LastServerAdmin() implements AdministrativelyDeleteAccount, DeleteMyAccount {}
 
   public record NoEligibleAdmin()
-      implements TransferAccount, DeleteAccount, DeleteMyAccount, TransferProfile {}
+      implements TransferAccount, AdministrativelyDeleteAccount, DeleteMyAccount, TransferProfile {}
 
   public record NameConflict() implements TransferAccount, TransferProfile {}
 
   public record EligibleManagerRequired()
-      implements TransferAccount, DeleteAccount, DeleteMyAccount {}
+      implements TransferAccount, AdministrativelyDeleteAccount, DeleteMyAccount {}
 
   /** The first Account becomes HouseholdAdmin, and a restricted Account holds no authority. */
   public record RestrictedFirstAccount() implements TransferAccount {}
@@ -82,11 +84,12 @@ public final class TransferRejections {
   public record ConfirmationRequired() implements DeleteMyAccount {}
 
   /** KEEP preserves the Profile only with an eligible replacement manager named up front. */
-  public record ReplacementManagerRequired() implements DeleteAccount {}
+  public record ReplacementManagerRequired() implements AdministrativelyDeleteAccount {}
 
-  public record ReplacementManagerNotFound() implements DeleteAccount {}
+  public record ReplacementManagerNotFound() implements AdministrativelyDeleteAccount {}
 
-  public record ReplacementManagerNotEligible() implements DeleteAccount, TransferProfile {}
+  public record ReplacementManagerNotEligible()
+      implements AdministrativelyDeleteAccount, TransferProfile {}
 
   public record LocalManagerRequired() implements TransferProfile {}
 
@@ -94,8 +97,9 @@ public final class TransferRejections {
 
   public record ProfileLinked() implements TransferProfile, AdministrativelyDeleteProfile {}
 
-  public record ReasonRequired() implements DeleteAccount, AdministrativelyDeleteProfile {}
+  public record ReasonRequired()
+      implements AdministrativelyDeleteAccount, AdministrativelyDeleteProfile {}
 
   public record ReauthenticationRequired()
-      implements DeleteAccount, DeleteMyAccount, AdministrativelyDeleteProfile {}
+      implements AdministrativelyDeleteAccount, DeleteMyAccount, AdministrativelyDeleteProfile {}
 }

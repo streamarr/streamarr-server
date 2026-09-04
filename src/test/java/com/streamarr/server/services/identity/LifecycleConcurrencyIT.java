@@ -24,7 +24,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.auth.TokenScope;
-import com.streamarr.server.services.identity.AccountLifecycleService.DeleteAccountCommand;
+import com.streamarr.server.services.identity.AccountLifecycleService.AdministrativelyDeleteAccountCommand;
 import com.streamarr.server.services.identity.AccountLifecycleService.ProfileDisposition;
 import com.streamarr.server.services.identity.AccountLifecycleService.SourceAccess;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
@@ -190,9 +190,9 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                 () ->
                     outcomeOf(
                         () ->
-                            accountLifecycleService.deleteAccount(
+                            accountLifecycleService.administrativelyDeleteAccount(
                                 authenticated(actor),
-                                DeleteAccountCommand.builder()
+                                AdministrativelyDeleteAccountCommand.builder()
                                     .accountId(mover.getId())
                                     .profileDisposition(ProfileDisposition.KEEP)
                                     .replacementManagerAccountId(source.account().getId())
@@ -603,14 +603,14 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                 () ->
                     outcomeOf(
                         () ->
-                            accountLifecycleService.deleteAccount(
+                            accountLifecycleService.administrativelyDeleteAccount(
                                 authenticated(actor), erase(household.account().getId()))));
         var other =
             executor.submit(
                 () ->
                     outcomeOf(
                         () ->
-                            accountLifecycleService.deleteAccount(
+                            accountLifecycleService.administrativelyDeleteAccount(
                                 authenticated(actor), erase(second.getId()))));
         firstAttempt = first.get(20, TimeUnit.SECONDS);
         secondAttempt = other.get(20, TimeUnit.SECONDS);
@@ -696,7 +696,8 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
         assertThat(selfDeletionReached.await(10, TimeUnit.SECONDS)).isTrue();
 
         var otherDeletion =
-            accountLifecycleService.deleteAccount(authenticated(actor), erase(other.getId()));
+            accountLifecycleService.administrativelyDeleteAccount(
+                authenticated(actor), erase(other.getId()));
         assertThat(otherDeletion).isInstanceOf(Outcome.Accepted.class);
 
         releaseSelfDeletion.countDown();
@@ -1017,8 +1018,8 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
     return TransferProfileCommand.builder().profileId(profile.getId()).reason("recovery");
   }
 
-  private static DeleteAccountCommand erase(UUID accountId) {
-    return DeleteAccountCommand.builder()
+  private static AdministrativelyDeleteAccountCommand erase(UUID accountId) {
+    return AdministrativelyDeleteAccountCommand.builder()
         .accountId(accountId)
         .profileDisposition(ProfileDisposition.ERASE)
         .reason("departed")

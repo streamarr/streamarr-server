@@ -126,15 +126,17 @@ public class AccountLifecycleService {
         this::transferConstraint);
   }
 
-  public Outcome<UUID, TransferRejections.DeleteAccount> deleteAccount(
-      AuthenticatedIdentity identity, DeleteAccountCommand command) {
+  public Outcome<UUID, TransferRejections.AdministrativelyDeleteAccount>
+      administrativelyDeleteAccount(
+          AuthenticatedIdentity identity, AdministrativelyDeleteAccountCommand command) {
     if (isBlank(command.reason())) {
       return Outcome.rejected(new TransferRejections.ReasonRequired());
     }
 
-    Optional<TransferRejections.DeleteAccount> refusal =
+    Optional<TransferRejections.AdministrativelyDeleteAccount> refusal =
         AuthorizationRefusal.from(
-            authorizationService.decide(identity, new Intent.DeleteAccount(command.accountId())),
+            authorizationService.decide(
+                identity, new Intent.AdministrativelyDeleteAccount(command.accountId())),
             new AuthorizationRefusal.Response<>(
                 () -> mayViewAccount(identity, command.accountId()),
                 TransferRejections.AccountNotFound::new,
@@ -156,7 +158,12 @@ public class AccountLifecycleService {
     return mutationTransactions.write(
         () -> {
           erase(account.get(), command);
-          audit(identity, "deleteAccount", ACCOUNT_ID, account.get().getId(), command.reason());
+          audit(
+              identity,
+              "administrativelyDeleteAccount",
+              ACCOUNT_ID,
+              account.get().getId(),
+              command.reason());
           return command.accountId();
         },
         this::deletionConstraint);
@@ -187,7 +194,7 @@ public class AccountLifecycleService {
         () -> {
           erase(
               account,
-              DeleteAccountCommand.builder()
+              AdministrativelyDeleteAccountCommand.builder()
                   .accountId(account.getId())
                   .profileDisposition(ProfileDisposition.ERASE)
                   .reason("self-deletion")
@@ -198,7 +205,7 @@ public class AccountLifecycleService {
         this::selfDeletionConstraint);
   }
 
-  private void erase(UserAccount account, DeleteAccountCommand command) {
+  private void erase(UserAccount account, AdministrativelyDeleteAccountCommand command) {
     var now = clock.instant();
     if (userAccountRepository.findByHouseholdId(account.getHouseholdId()).size() <= 1) {
       throw new MutationRejection(new TransferRejections.FinalAccount());
@@ -270,8 +277,8 @@ public class AccountLifecycleService {
                     profileId, share.getHouseholdId(), now));
   }
 
-  private Optional<TransferRejections.DeleteAccount> replacementRefusal(
-      DeleteAccountCommand command, UserAccount account) {
+  private Optional<TransferRejections.AdministrativelyDeleteAccount> replacementRefusal(
+      AdministrativelyDeleteAccountCommand command, UserAccount account) {
     if (command.profileDisposition() != ProfileDisposition.KEEP) {
       return Optional.empty();
     }
@@ -320,7 +327,8 @@ public class AccountLifecycleService {
     };
   }
 
-  private Optional<TransferRejections.DeleteAccount> deletionConstraint(String constraint) {
+  private Optional<TransferRejections.AdministrativelyDeleteAccount> deletionConstraint(
+      String constraint) {
     return switch (constraint) {
       case CHK_RETAINS_ACCOUNT -> Optional.of(new TransferRejections.FinalAccount());
       case CHK_RETAINS_ADMIN -> Optional.of(new TransferRejections.LastHouseholdAdmin());
@@ -383,7 +391,7 @@ public class AccountLifecycleService {
       UUID accountId, UUID destinationHouseholdId, SourceAccess sourceAccess, String reason) {}
 
   @Builder
-  public record DeleteAccountCommand(
+  public record AdministrativelyDeleteAccountCommand(
       UUID accountId,
       ProfileDisposition profileDisposition,
       UUID replacementManagerAccountId,

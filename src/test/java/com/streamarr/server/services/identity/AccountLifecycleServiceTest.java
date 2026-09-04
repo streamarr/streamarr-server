@@ -40,7 +40,7 @@ import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
-import com.streamarr.server.services.identity.AccountLifecycleService.DeleteAccountCommand;
+import com.streamarr.server.services.identity.AccountLifecycleService.AdministrativelyDeleteAccountCommand;
 import com.streamarr.server.services.identity.AccountLifecycleService.ProfileDisposition;
 import com.streamarr.server.services.identity.AccountLifecycleService.SourceAccess;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
@@ -412,9 +412,9 @@ class AccountLifecycleServiceTest {
                 .build());
 
     var deleted =
-        service.deleteAccount(
+        service.administrativelyDeleteAccount(
             identity(),
-            DeleteAccountCommand.builder()
+            AdministrativelyDeleteAccountCommand.builder()
                 .accountId(mover.getId())
                 .profileDisposition(ProfileDisposition.ERASE)
                 .reason("household dispute")
@@ -450,7 +450,7 @@ class AccountLifecycleServiceTest {
     assertThat(audit.entries())
         .containsExactly(
             SecurityAuditEntry.builder()
-                .operation("deleteAccount")
+                .operation("administrativelyDeleteAccount")
                 .actorAccountId(identity().accountId())
                 .reason("household dispute")
                 .resource("accountId", mover.getId())
@@ -507,9 +507,9 @@ class AccountLifecycleServiceTest {
   void shouldRequireReasonBeforeReauthenticationWhenDeletionIsRequested() {
     assertThat(
             rejectionOf(
-                service.deleteAccount(
+                service.administrativelyDeleteAccount(
                     identity(),
-                    DeleteAccountCommand.builder()
+                    AdministrativelyDeleteAccountCommand.builder()
                         .accountId(mover.getId())
                         .profileDisposition(ProfileDisposition.ERASE)
                         .reason(" ")
@@ -519,14 +519,14 @@ class AccountLifecycleServiceTest {
 
     authorization.decideUnitWith(
         intent ->
-            intent instanceof Intent.DeleteAccount
+            intent instanceof Intent.AdministrativelyDeleteAccount
                 ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
                 : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
     assertThat(
             rejectionOf(
-                service.deleteAccount(
+                service.administrativelyDeleteAccount(
                     identity(),
-                    DeleteAccountCommand.builder()
+                    AdministrativelyDeleteAccountCommand.builder()
                         .accountId(mover.getId())
                         .profileDisposition(ProfileDisposition.ERASE)
                         .reason("dispute")
@@ -541,9 +541,9 @@ class AccountLifecycleServiceTest {
 
     assertThat(
             rejectionOf(
-                service.deleteAccount(
+                service.administrativelyDeleteAccount(
                     identity(),
-                    DeleteAccountCommand.builder()
+                    AdministrativelyDeleteAccountCommand.builder()
                         .accountId(mover.getId())
                         .profileDisposition(ProfileDisposition.ERASE)
                         .reason("dispute")
@@ -562,13 +562,13 @@ class AccountLifecycleServiceTest {
                 : new Decision.Denied<>(Decision.DenialReason.POLICY));
     var actor = identity();
     var command =
-        DeleteAccountCommand.builder()
+        AdministrativelyDeleteAccountCommand.builder()
             .accountId(mover.getId())
             .profileDisposition(ProfileDisposition.ERASE)
             .reason("dispute")
             .build();
 
-    assertThatThrownBy(() -> service.deleteAccount(actor, command))
+    assertThatThrownBy(() -> service.administrativelyDeleteAccount(actor, command))
         .isInstanceOf(AccessDeniedException.class);
     assertThat(accounts.findById(mover.getId())).isPresent();
   }
@@ -650,10 +650,11 @@ class AccountLifecycleServiceTest {
     assertThat(accounts.findById(mover.getId())).isPresent();
   }
 
-  private Outcome<UUID, TransferRejections.DeleteAccount> deleteKeeping(UUID replacement) {
-    return service.deleteAccount(
+  private Outcome<UUID, TransferRejections.AdministrativelyDeleteAccount> deleteKeeping(
+      UUID replacement) {
+    return service.administrativelyDeleteAccount(
         identity(),
-        DeleteAccountCommand.builder()
+        AdministrativelyDeleteAccountCommand.builder()
             .accountId(mover.getId())
             .profileDisposition(ProfileDisposition.KEEP)
             .replacementManagerAccountId(replacement)

@@ -188,7 +188,7 @@ public sealed interface Intent {
   record TransferAccount(UUID accountId) implements UnitIntent {}
 
   /** ServerAdmin deletion of an Account; fresh-reauthenticated, with an audited reason. */
-  record DeleteAccount(UUID accountId) implements UnitIntent {}
+  record AdministrativelyDeleteAccount(UUID accountId) implements UnitIntent {}
 
   /** Self-deletion by an enabled Account with an unrestricted Adult Personal Profile. */
   record DeleteMyAccount() implements UnitIntent {}

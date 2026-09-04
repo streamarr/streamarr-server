@@ -1,7 +1,0 @@
-package com.streamarr.server.graphql.mutation.lifecycle;
-
-import com.streamarr.server.graphql.mutation.InputMutationError;
-import java.util.List;
-
-public record ReasonRequiredError(String message, List<String> inputPath)
-    implements DeleteAccountError, AdministrativelyDeleteProfileError, InputMutationError {}

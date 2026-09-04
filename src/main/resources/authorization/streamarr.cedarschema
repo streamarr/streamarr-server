@@ -361,7 +361,7 @@ namespace Streamarr {
     resource: Account,
     context: {},
   };
-  action deleteAccount in accountAdministration appliesTo {
+  action administrativelyDeleteAccount in accountAdministration appliesTo {
     principal: Account,
     resource: Account,
     context: { freshReauthentication: Bool },

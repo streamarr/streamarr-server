@@ -77,6 +77,15 @@ class MutationContractTest {
 
   @Test
   @DisplayName(
+      "Should expose only administrative Account deletion when mutation names are inspected")
+  void shouldExposeOnlyAdministrativeAccountDeletionWhenMutationNamesAreInspected() {
+    assertThat(mutationFields().stream().map(FieldDefinition::getName))
+        .contains("administrativelyDeleteAccount")
+        .doesNotContain("deleteAccount");
+  }
+
+  @Test
+  @DisplayName(
       "Should model Account invitation Profile choices as distinct GraphQL actions when the schema is parsed")
   void shouldModelAccountInvitationProfileChoicesAsDistinctGraphqlActionsWhenSchemaIsParsed() {
     assertThat(SCHEMA.getType("AccountInvitationMode")).isEmpty();

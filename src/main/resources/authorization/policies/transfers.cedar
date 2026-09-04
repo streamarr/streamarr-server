@@ -23,7 +23,7 @@ when {
 permit (
   principal,
   action in
-    [Streamarr::Action::"deleteAccount",
+    [Streamarr::Action::"administrativelyDeleteAccount",
      Streamarr::Action::"administrativelyDeleteProfile"],
   resource
 )

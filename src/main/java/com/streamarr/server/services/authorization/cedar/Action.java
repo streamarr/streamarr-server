@@ -260,8 +260,8 @@ enum Action {
       FactRequirement.SIGNED_PRINCIPAL_CONTEXT),
   TRANSFER_ACCOUNT(
       "transferAccount", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
-  DELETE_ACCOUNT(
-      "deleteAccount",
+  ADMINISTRATIVELY_DELETE_ACCOUNT(
+      "administrativelyDeleteAccount",
       ResourceKind.ACCOUNT,
       FreshReauthentication.REQUIRED,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
