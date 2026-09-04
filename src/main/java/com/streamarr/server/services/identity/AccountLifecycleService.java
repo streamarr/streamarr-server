@@ -308,6 +308,7 @@ public class AccountLifecycleService {
 
   private Optional<TransferRejections.TransferAccount> transferConstraint(String constraint) {
     return switch (constraint) {
+      case CHK_RETAINS_ACCOUNT -> Optional.of(new TransferRejections.FinalAccount());
       case CHK_RETAINS_ADMIN -> Optional.of(new TransferRejections.LastHouseholdAdmin());
       case CHK_HOSTING_ADMIN -> Optional.of(new TransferRejections.NoEligibleAdmin());
       case CHK_NAMES_UNIQUE -> Optional.of(new TransferRejections.NameConflict());

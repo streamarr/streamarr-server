@@ -15,6 +15,10 @@ public final class LifecycleErrors {
 
   private LifecycleErrors() {}
 
+  public static InvalidIdError invalidId(String inputName) {
+    return new InvalidIdError("Enter a valid ID.", InputPath.of(inputName));
+  }
+
   public static TransferAccountError toTransferAccountError(
       TransferRejections.TransferAccount rejection) {
     return switch (rejection) {

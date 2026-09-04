@@ -7,6 +7,7 @@ import com.streamarr.server.graphql.mutation.MutationError;
  */
 public sealed interface TransferAccountError extends MutationError
     permits AccountNotFoundError,
+        InvalidIdError,
         HouseholdNotFoundError,
         SameHouseholdError,
         LastHouseholdAccountError,

@@ -8,6 +8,7 @@ import com.streamarr.server.graphql.mutation.MutationError;
  */
 public sealed interface AdministrativelyDeleteProfileError extends MutationError
     permits ProfileNotFoundError,
+        InvalidIdError,
         ReasonRequiredError,
         ReauthenticationRequiredError,
         ProfileBelongsToAccountError {}

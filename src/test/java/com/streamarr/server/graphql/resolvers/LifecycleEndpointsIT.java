@@ -15,7 +15,9 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -23,6 +25,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 import lombok.Builder;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -30,6 +33,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -50,6 +55,7 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private HouseholdRepository householdRepository;
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
@@ -208,6 +214,40 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should return restricted Profile supervision and roll back when a restricted Account enters an empty Household")
+  void
+      shouldReturnRestrictedProfileSupervisionAndRollBackWhenRestrictedAccountEntersEmptyHousehold()
+          throws Exception {
+    var mover =
+        residentOf(
+            ResidentSpec.builder()
+                .householdId(admin.household().getId())
+                .displayName("Restricted mover")
+                .role(HouseholdRole.MEMBER)
+                .build());
+    restrictUnderSupervision(mover);
+    var emptyHousehold =
+        householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+
+    try {
+      graphql(
+              authTestSupport.accountBearer(admin),
+              transferMutation(mover.getId(), emptyHousehold.getId()))
+          .andExpect(status().isOk())
+          .andExpect(
+              jsonPath("$.data.transferAccount.userErrors[0].__typename")
+                  .value("RestrictedProfileRequiresHouseholdAdminError"));
+
+      assertThat(userAccountRepository.findById(mover.getId()).orElseThrow().getHouseholdId())
+          .isEqualTo(admin.household().getId());
+      assertThat(userAccountRepository.findByHouseholdId(emptyHousehold.getId())).isEmpty();
+    } finally {
+      householdRepository.deleteById(emptyHousehold.getId());
+    }
+  }
+
+  @Test
   @DisplayName("Should return LastServerAdmin when deletion would remove the final ServerAdmin")
   void shouldReturnLastServerAdminWhenDeletionWouldRemoveFinalServerAdmin() throws Exception {
     residentOf(
@@ -275,6 +315,42 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
                 admin.account().getId(), preserved.getId()))
         .isTrue();
     assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should return eligible manager required and roll back when deletion removes a restricted Profile manager")
+  void shouldReturnEligibleManagerRequiredAndRollBackWhenDeletionRemovesRestrictedProfileManager()
+      throws Exception {
+    var doomed =
+        residentOf(
+            ResidentSpec.builder()
+                .householdId(admin.household().getId())
+                .displayName("Doomed manager")
+                .role(HouseholdRole.ADMIN)
+                .build());
+    var restricted = restrictedProfileManagedBy(doomed);
+
+    graphql(
+            authTestSupport.freshAccountBearer(admin),
+            """
+            mutation { deleteAccount(input: {accountId: "%s", profileDisposition: ERASE,
+              reason: "leaving"}) { accountId userErrors { __typename } } }
+            """
+                .formatted(doomed.getId()))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.deleteAccount.userErrors[0].__typename")
+                .value("ProfileRequiresEligibleManagerError"));
+
+    assertThat(userAccountRepository.findById(doomed.getId())).isPresent();
+    assertThat(profileRepository.findById(doomed.getPersonalProfileId())).isPresent();
+    assertThat(profileRepository.findById(restricted.getId())).isPresent();
+    assertThat(
+            profileManagerRepository.existsByAccountIdAndProfileId(
+                doomed.getId(), restricted.getId()))
+        .isTrue();
+    assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isZero();
   }
 
   @Test
@@ -433,6 +509,30 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
     assertThat(profileRepository.findById(orphan.getId())).isEmpty();
   }
 
+  @ParameterizedTest(name = "Should return an input error when {0} is malformed")
+  @MethodSource("malformedLifecycleIds")
+  @DisplayName("Should return an input error when a lifecycle mutation ID is malformed")
+  void shouldReturnInputErrorWhenLifecycleMutationIdIsMalformed(MalformedLifecycleIdCase testCase)
+      throws Exception {
+    var mutation =
+        testCase
+            .mutationTemplate()
+            .formatted(admin.account().getId(), host.household().getId(), host.profile().getId());
+
+    graphql(authTestSupport.freshAccountBearer(admin), mutation)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.%s.%s".formatted(testCase.operation(), testCase.resource()))
+                .doesNotExist())
+        .andExpect(
+            jsonPath("$.data.%s.userErrors[0].__typename".formatted(testCase.operation()))
+                .value("InvalidIdError"))
+        .andExpect(
+            jsonPath("$.data.%s.userErrors[0].inputPath[0]".formatted(testCase.operation()))
+                .value(testCase.inputPath()));
+  }
+
   private String transferMutation(UUID accountId, UUID destinationHouseholdId) {
     return """
            mutation { transferAccount(input: {accountId: "%s",
@@ -498,11 +598,150 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
         });
   }
 
+  private void restrictUnderSupervision(UserAccount account) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(admin.account().getId())
+                  .profileId(account.getPersonalProfileId())
+                  .build());
+          var profile = profileRepository.findById(account.getPersonalProfileId()).orElseThrow();
+          profile.setMaximumAllowedRatingAge(12);
+          profileRepository.saveAndFlush(profile);
+        });
+  }
+
+  private Profile restrictedProfileManagedBy(UserAccount manager) {
+    return transactionTemplate.execute(
+        _ -> {
+          var profile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.kidProfileBuilder()
+                      .householdId(manager.getHouseholdId())
+                      .name("Managed child")
+                      .build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(manager.getId())
+                  .profileId(profile.getId())
+                  .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(manager.getHouseholdId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .build());
+          return profile;
+        });
+  }
+
   private ResultActions graphql(String bearer, String query) throws Exception {
     return mockMvc.perform(
         post("/graphql")
             .contentType(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
             .content(objectMapper.writeValueAsString(Map.of("query", query))));
+  }
+
+  static Stream<MalformedLifecycleIdCase> malformedLifecycleIds() {
+    return Stream.of(
+        MalformedLifecycleIdCase.builder()
+            .operation("transferAccount")
+            .resource("account")
+            .inputPath("accountId")
+            .mutationTemplate(
+                lifecycleMutation(
+                    "transferAccount(input: {accountId: \"not-a-uuid\", destinationHouseholdId: \"%2$s\"})",
+                    "account"))
+            .build(),
+        MalformedLifecycleIdCase.builder()
+            .operation("transferAccount")
+            .resource("account")
+            .inputPath("destinationHouseholdId")
+            .mutationTemplate(
+                lifecycleMutation(
+                    "transferAccount(input: {accountId: \"%1$s\", destinationHouseholdId: \"not-a-uuid\"})",
+                    "account"))
+            .build(),
+        MalformedLifecycleIdCase.builder()
+            .operation("deleteAccount")
+            .resource("accountId")
+            .inputPath("accountId")
+            .mutationTemplate(
+                lifecycleMutation(
+                    "deleteAccount(input: {accountId: \"not-a-uuid\", profileDisposition: ERASE, reason: \"reason\"})",
+                    "accountId"))
+            .build(),
+        MalformedLifecycleIdCase.builder()
+            .operation("deleteAccount")
+            .resource("accountId")
+            .inputPath("replacementManagerAccountId")
+            .mutationTemplate(
+                lifecycleMutation(
+                    "deleteAccount(input: {accountId: \"%1$s\", profileDisposition: KEEP, replacementManagerAccountId: \"not-a-uuid\", reason: \"reason\"})",
+                    "accountId"))
+            .build(),
+        MalformedLifecycleIdCase.builder()
+            .operation("transferProfile")
+            .resource("profile")
+            .inputPath("profileId")
+            .mutationTemplate(
+                lifecycleMutation(
+                    "transferProfile(input: {profileId: \"not-a-uuid\", destinationHouseholdId: \"%2$s\", profileManagerAccountId: \"%1$s\"})",
+                    "profile"))
+            .build(),
+        MalformedLifecycleIdCase.builder()
+            .operation("transferProfile")
+            .resource("profile")
+            .inputPath("destinationHouseholdId")
+            .mutationTemplate(
+                lifecycleMutation(
+                    "transferProfile(input: {profileId: \"%3$s\", destinationHouseholdId: \"not-a-uuid\", profileManagerAccountId: \"%1$s\"})",
+                    "profile"))
+            .build(),
+        MalformedLifecycleIdCase.builder()
+            .operation("transferProfile")
+            .resource("profile")
+            .inputPath("profileManagerAccountId")
+            .mutationTemplate(
+                lifecycleMutation(
+                    "transferProfile(input: {profileId: \"%3$s\", destinationHouseholdId: \"%2$s\", profileManagerAccountId: \"not-a-uuid\"})",
+                    "profile"))
+            .build(),
+        MalformedLifecycleIdCase.builder()
+            .operation("administrativelyDeleteProfile")
+            .resource("profileId")
+            .inputPath("profileId")
+            .mutationTemplate(
+                lifecycleMutation(
+                    "administrativelyDeleteProfile(input: {profileId: \"not-a-uuid\", reason: \"reason\"})",
+                    "profileId"))
+            .build());
+  }
+
+  private static String lifecycleMutation(String invocation, String resource) {
+    var resourceSelection =
+        switch (resource) {
+          case "account", "profile" -> resource + " { id }";
+          default -> resource;
+        };
+    return """
+        mutation { %s {
+          %s
+          userErrors { __typename ... on InputMutationError { message inputPath } }
+        } }
+        """
+        .formatted(invocation, resourceSelection);
+  }
+
+  @Builder
+  private record MalformedLifecycleIdCase(
+      String operation, String resource, String inputPath, String mutationTemplate) {
+
+    @Override
+    public String toString() {
+      return operation + "." + inputPath;
+    }
   }
 }

@@ -221,6 +221,16 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
       assertThat(((Outcome.Rejected<?, ?>) deletion).rejections())
           .singleElement()
           .isInstanceOf(TransferRejections.AccountNotFound.class);
+      assertThat(accountRepository.findById(mover.getId()).orElseThrow().getHouseholdId())
+          .isEqualTo(destination.household().getId());
+      assertThat(
+              managerRepository.existsByAccountIdAndProfileId(
+                  source.account().getId(), mover.getPersonalProfileId()))
+          .isFalse();
+      assertThat(
+              managerRepository.existsByAccountIdAndProfileId(
+                  destination.account().getId(), mover.getPersonalProfileId()))
+          .isTrue();
     } finally {
       authTestSupport.deleteIdentity(destination);
       authTestSupport.deleteIdentity(source);
@@ -478,6 +488,12 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
       assertThat(((Outcome.Rejected<?, ?>) deletion).rejections())
           .singleElement()
           .isInstanceOf(TransferRejections.ProfileLinked.class);
+      assertThat(profileRepository.findById(orphan.getId())).isPresent();
+      assertThat(accountRepository.findByPersonalProfileId(orphan.getId())).isPresent();
+      assertThat(
+              shareRepository.findByProfileIdAndHouseholdIdAndStatus(
+                  orphan.getId(), home.household().getId(), ProfileShareStatus.ACTIVE))
+          .isPresent();
     } finally {
       authTestSupport.deleteIdentity(home);
       authTestSupport.deleteIdentity(actor);
@@ -542,8 +558,122 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
       assertThat(rejected.rejections())
           .singleElement()
           .isInstanceOf(TransferRejections.FinalAccount.class);
+      var deletedAccountId =
+          (UUID)
+              ((Outcome.Accepted<?, ?>)
+                      attempts.stream()
+                          .filter(result -> result instanceof Outcome.Accepted<?, ?>)
+                          .findFirst()
+                          .orElseThrow())
+                  .result();
+      var remainingAccountId =
+          deletedAccountId.equals(household.account().getId())
+              ? second.getId()
+              : household.account().getId();
+      assertThat(accountRepository.findById(deletedAccountId)).isEmpty();
+      assertThat(accountRepository.findById(remainingAccountId)).isPresent();
+      assertThat(accountRepository.findByHouseholdId(household.household().getId()))
+          .singleElement()
+          .extracting(UserAccount::getId)
+          .isEqualTo(remainingAccountId);
     } finally {
       authTestSupport.deleteAccount(household.account().getId());
+      authTestSupport.deleteAccount(second.getId());
+      authTestSupport.deleteIdentity(actor);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should return FinalAccount and keep one resident when all Accounts transfer concurrently")
+  void shouldReturnFinalAccountAndKeepOneResidentWhenAllAccountsTransferConcurrently()
+      throws Exception {
+    var actor = authTestSupport.createAdminIdentity();
+    var source = authTestSupport.createIdentity();
+    var second = residentOf(source.household().getId(), HouseholdRole.ADMIN);
+    var firstDestination = authTestSupport.createIdentity();
+    var secondDestination = authTestSupport.createIdentity();
+    try {
+      var bothPastPreflight = new CyclicBarrier(2);
+      var repositorySpy =
+          AopTestUtils.<UserAccountRepository>getUltimateTargetObject(accountRepository);
+      var repositoryAnswer =
+          mockingDetails(repositorySpy).getMockCreationSettings().getDefaultAnswer();
+      doAnswer(
+              invocation -> {
+                bothPastPreflight.await(10, TimeUnit.SECONDS);
+                return repositoryAnswer.answer(invocation);
+              })
+          .when(repositorySpy)
+          .tryTransfer(
+              any(UUID.class),
+              eq(source.household().getId()),
+              any(UUID.class),
+              any(HouseholdRole.class));
+
+      Object firstAttempt;
+      Object secondAttempt;
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var first =
+            executor.submit(
+                () ->
+                    outcomeOf(
+                        () ->
+                            accountLifecycleService.transferAccount(
+                                authenticated(actor),
+                                transferTo(source.account(), firstDestination))));
+        var other =
+            executor.submit(
+                () ->
+                    outcomeOf(
+                        () ->
+                            accountLifecycleService.transferAccount(
+                                authenticated(actor), transferTo(second, secondDestination))));
+        firstAttempt = first.get(20, TimeUnit.SECONDS);
+        secondAttempt = other.get(20, TimeUnit.SECONDS);
+      }
+
+      var attempts = List.of(firstAttempt, secondAttempt);
+      assertThat(attempts)
+          .filteredOn(result -> result instanceof Outcome.Accepted<?, ?>)
+          .singleElement();
+      assertThat(attempts)
+          .filteredOn(result -> result instanceof Outcome.Rejected<?, ?>)
+          .singleElement()
+          .satisfies(
+              rejected ->
+                  assertThat(((Outcome.Rejected<?, ?>) rejected).rejections())
+                      .singleElement()
+                      .isInstanceOf(TransferRejections.FinalAccount.class));
+      var movedAccount =
+          (UserAccount)
+              ((Outcome.Accepted<?, ?>)
+                      attempts.stream()
+                          .filter(result -> result instanceof Outcome.Accepted<?, ?>)
+                          .findFirst()
+                          .orElseThrow())
+                  .result();
+      var remainingAccountId =
+          movedAccount.getId().equals(source.account().getId())
+              ? second.getId()
+              : source.account().getId();
+      assertThat(accountRepository.findByHouseholdId(source.household().getId()))
+          .singleElement()
+          .extracting(UserAccount::getId)
+          .isEqualTo(remainingAccountId);
+      var persistedMover = accountRepository.findById(movedAccount.getId()).orElseThrow();
+      assertThat(persistedMover.getHouseholdId())
+          .isIn(firstDestination.household().getId(), secondDestination.household().getId());
+      assertThat(
+              profileRepository
+                  .findById(movedAccount.getPersonalProfileId())
+                  .orElseThrow()
+                  .getHouseholdId())
+          .isEqualTo(persistedMover.getHouseholdId());
+    } finally {
+      authTestSupport.deleteIdentity(firstDestination);
+      authTestSupport.deleteIdentity(secondDestination);
+      authTestSupport.deleteIdentity(source);
       authTestSupport.deleteAccount(second.getId());
       authTestSupport.deleteIdentity(actor);
     }

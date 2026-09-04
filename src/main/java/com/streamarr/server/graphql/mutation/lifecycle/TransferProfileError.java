@@ -7,6 +7,7 @@ import com.streamarr.server.graphql.mutation.MutationError;
  */
 public sealed interface TransferProfileError extends MutationError
     permits ProfileNotFoundError,
+        InvalidIdError,
         HouseholdNotFoundError,
         SameHouseholdError,
         ProfileBelongsToAccountError,

@@ -12,6 +12,7 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
@@ -155,8 +156,13 @@ class ProfileLifecycleServiceTest {
         .isEqualTo(ProfileShareStatus.ACTIVE);
     assertThat(sessions.findById(watching.getId()).orElseThrow().getSelectedProfileId()).isNull();
     assertThat(audit.entries())
-        .extracting(entry -> entry.operation())
-        .containsExactly("transferProfile");
+        .containsExactly(
+            SecurityAuditEntry.builder()
+                .operation("transferProfile")
+                .actorAccountId(identity().accountId())
+                .reason("recovery")
+                .resource("profileId", orphan.getId())
+                .build());
   }
 
   @Test
@@ -256,8 +262,13 @@ class ProfileLifecycleServiceTest {
     assertThat(managerInvitations.findById(managerInvitation.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(audit.entries())
-        .extracting(entry -> entry.operation())
-        .containsExactly("administrativelyDeleteProfile");
+        .containsExactly(
+            SecurityAuditEntry.builder()
+                .operation("administrativelyDeleteProfile")
+                .actorAccountId(identity().accountId())
+                .reason("abuse report")
+                .resource("profileId", orphan.getId())
+                .build());
   }
 
   @Test

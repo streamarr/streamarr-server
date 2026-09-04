@@ -27,6 +27,7 @@ type TransferAccountPayload {
 
 union TransferAccountError =
     AccountNotFoundError
+  | InvalidIdError
   | HouseholdNotFoundError
   | SameHouseholdError
   | LastHouseholdAccountError
@@ -51,6 +52,7 @@ type DeleteAccountPayload {
 
 union DeleteAccountError =
     AccountNotFoundError
+  | InvalidIdError
   | ReasonRequiredError
   | ReauthenticationRequiredError
   | LastHouseholdAccountError
@@ -95,6 +97,7 @@ type TransferProfilePayload {
 
 union TransferProfileError =
     ProfileNotFoundError
+  | InvalidIdError
   | HouseholdNotFoundError
   | SameHouseholdError
   | ProfileBelongsToAccountError
@@ -116,6 +119,7 @@ type AdministrativelyDeleteProfilePayload {
 
 union AdministrativelyDeleteProfileError =
     ProfileNotFoundError
+  | InvalidIdError
   | ReasonRequiredError
   | ReauthenticationRequiredError
   | ProfileBelongsToAccountError

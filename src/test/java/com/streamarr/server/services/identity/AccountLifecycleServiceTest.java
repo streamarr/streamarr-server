@@ -15,6 +15,7 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
@@ -157,8 +158,13 @@ class AccountLifecycleServiceTest {
     assertThat(sessions.findById(watching.getId()).orElseThrow().getSelectedProfileId()).isNull();
     assertThat(sessions.findById(watching.getId()).orElseThrow().getContextHouseholdId()).isNull();
     assertThat(audit.entries())
-        .extracting(entry -> entry.operation())
-        .containsExactly("transferAccount");
+        .containsExactly(
+            SecurityAuditEntry.builder()
+                .operation("transferAccount")
+                .actorAccountId(identity().accountId())
+                .reason("support")
+                .resource("accountId", mover.getId())
+                .build());
   }
 
   @Test
@@ -440,8 +446,13 @@ class AccountLifecycleServiceTest {
     assertThat(sessions.findById(destinationViewer.getId()).orElseThrow().getSelectedProfileId())
         .isNull();
     assertThat(audit.entries())
-        .extracting(entry -> entry.operation())
-        .containsExactly("deleteAccount");
+        .containsExactly(
+            SecurityAuditEntry.builder()
+                .operation("deleteAccount")
+                .actorAccountId(identity().accountId())
+                .reason("household dispute")
+                .resource("accountId", mover.getId())
+                .build());
   }
 
   @Test
@@ -557,8 +568,13 @@ class AccountLifecycleServiceTest {
     assertThat(managerInvitations.findById(managerInvitation.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(audit.entries())
-        .extracting(entry -> entry.operation())
-        .containsExactly("deleteMyAccount");
+        .containsExactly(
+            SecurityAuditEntry.builder()
+                .operation("deleteMyAccount")
+                .actorAccountId(mover.getId())
+                .reason("self-deletion")
+                .resource("accountId", mover.getId())
+                .build());
   }
 
   @Test
