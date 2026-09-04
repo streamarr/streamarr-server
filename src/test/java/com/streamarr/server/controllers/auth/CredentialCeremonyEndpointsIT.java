@@ -830,27 +830,27 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.accountBearer(serverAdmin),
             """
-            mutation { issueAccountInvitation(input: {recipientEmail: "%s",
+            mutation { issueAccountInvitationWithNewProfile(input: {recipientEmail: "%s",
               householdId: "%s", householdRole: MEMBER, profileName: "Twin", profileKind: ADULT}) {
               issued { code } userErrors { __typename } } }
             """
                 .formatted(serverAdmin.account().getEmail(), serverAdmin.household().getId()))
         .andExpect(status().isOk())
         .andExpect(
-            jsonPath("$.data.issueAccountInvitation.userErrors[0].__typename")
+            jsonPath("$.data.issueAccountInvitationWithNewProfile.userErrors[0].__typename")
                 .value("EmailAlreadyUsedError"));
 
     graphql(
             authTestSupport.accountBearer(serverAdmin),
             """
-            mutation { issueAccountInvitation(input: {recipientEmail: "kid@example.com",
+            mutation { issueAccountInvitationWithNewProfile(input: {recipientEmail: "kid@example.com",
               householdId: "%s", householdRole: MEMBER, profileName: "Kid", profileKind: KID}) {
               issued { code } userErrors { __typename } } }
             """
                 .formatted(serverAdmin.household().getId()))
         .andExpect(status().isOk())
         .andExpect(
-            jsonPath("$.data.issueAccountInvitation.userErrors[0].__typename")
+            jsonPath("$.data.issueAccountInvitationWithNewProfile.userErrors[0].__typename")
                 .value("EligibleProfileManagerRequiredError"));
   }
 

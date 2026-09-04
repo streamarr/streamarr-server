@@ -20,8 +20,8 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
-import com.streamarr.server.services.identity.AccountLifecycleService.ProfileDisposition;
-import com.streamarr.server.services.identity.AccountLifecycleService.SourceAccess;
+import com.streamarr.server.services.identity.AccountLifecycleService.ProfileCleanup;
+import com.streamarr.server.services.identity.AccountLifecycleService.SourceHouseholdAccess;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
@@ -234,14 +234,17 @@ public class HouseholdTeardownService {
             resident.getPersonalProfileId(),
             disposition.destinationHouseholdId(),
             destinationEmpty,
-            SourceAccess.END,
+            SourceHouseholdAccess.END,
             now);
       }
 
-      case DELETE -> accountRemoval.erase(resident, ProfileDisposition.ERASE, null, now);
+      case DELETE -> accountRemoval.erase(resident, ProfileCleanup.ERASE_PROFILE, null, now);
       case DELETE_KEEPING_PROFILE -> {
         accountRemoval.erase(
-            resident, ProfileDisposition.KEEP, disposition.replacementManagerAccountId(), now);
+            resident,
+            ProfileCleanup.PRESERVE_PROFILE,
+            disposition.replacementManagerAccountId(),
+            now);
         // The preserved Profile cannot stay in a Household about to vanish: it moves behind
         // its named anchor.
         profileRepository.tryRehome(
@@ -254,9 +257,9 @@ public class HouseholdTeardownService {
                 resident.getHouseholdId(),
                 ProfileShareStatus.ACTIVE)
             .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
-        shareRepository.upsertStructural(
+        shareRepository.ensureActiveMembershipShare(
             resident.getPersonalProfileId(), disposition.destinationHouseholdId(), now);
-        shareRepository.tryDemoteStructural(
+        shareRepository.convertMembershipShareToVisitorShare(
             resident.getPersonalProfileId(), disposition.destinationHouseholdId(), now);
       }
     }
