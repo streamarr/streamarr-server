@@ -8,6 +8,7 @@ import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.InterfaceTypeDefinition;
 import graphql.language.ListType;
+import graphql.language.NamedNode;
 import graphql.language.NonNullType;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.Type;
@@ -106,7 +107,7 @@ class MutationContractTest {
                 .orElseThrow()
                 .getEnumValueDefinitions()
                 .stream()
-                .map(value -> value.getName()))
+                .map(NamedNode::getName))
         .containsExactly("END", "KEEP_AS_VISITOR");
     assertThat(transferInput.getInputValueDefinitions().stream().map(InputValueDefinition::getName))
         .doesNotContain("sourceAccess");
@@ -134,7 +135,7 @@ class MutationContractTest {
                 .orElseThrow()
                 .getEnumValueDefinitions()
                 .stream()
-                .map(value -> value.getName()))
+                .map(NamedNode::getName))
         .containsExactly("ERASE_PROFILE", "PRESERVE_PROFILE");
     assertThat(deletionInput.getInputValueDefinitions().stream().map(InputValueDefinition::getName))
         .doesNotContain("profileDisposition");
