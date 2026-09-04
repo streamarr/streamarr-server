@@ -20,7 +20,6 @@ import java.nio.file.Path;
 import java.util.UUID;
 
 // Domain and protobuf contracts intentionally share simple names.
-@SuppressWarnings("checkstyle:fullyQualifiedName")
 final class RemoteVariantJobMapper {
 
   private final UUID sourceNamespaceId;
@@ -61,6 +60,7 @@ final class RemoteVariantJobMapper {
         .build();
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.TranscodeDecision decision(TranscodeRequest request) {
     var decision = request.transcodeDecision();
     return com.streamarr.transcode.v1.TranscodeDecision.newBuilder()
@@ -73,6 +73,7 @@ final class RemoteVariantJobMapper {
         .build();
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.AudioDecision audio(AudioDecision decision) {
     var audio =
         com.streamarr.transcode.v1.AudioDecision.newBuilder()
@@ -85,6 +86,7 @@ final class RemoteVariantJobMapper {
     return audio.build();
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.SubtitleDecision subtitle(SubtitleDecision decision) {
     var subtitle =
         com.streamarr.transcode.v1.SubtitleDecision.newBuilder()
@@ -113,6 +115,7 @@ final class RemoteVariantJobMapper {
         .build();
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.TranscodeMode mode(TranscodeMode mode) {
     return switch (mode) {
       case REMUX -> com.streamarr.transcode.v1.TranscodeMode.TRANSCODE_MODE_REMUX;
@@ -124,6 +127,7 @@ final class RemoteVariantJobMapper {
     };
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.AudioMode audioMode(AudioMode mode) {
     return switch (mode) {
       case COPY -> com.streamarr.transcode.v1.AudioMode.AUDIO_MODE_COPY;
@@ -132,6 +136,7 @@ final class RemoteVariantJobMapper {
     };
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.SubtitleMode subtitleMode(SubtitleMode mode) {
     return switch (mode) {
       case EXCLUDE -> com.streamarr.transcode.v1.SubtitleMode.SUBTITLE_MODE_EXCLUDE;
@@ -142,6 +147,7 @@ final class RemoteVariantJobMapper {
     };
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.ContainerFormat container(ContainerFormat format) {
     return switch (format) {
       case MPEGTS -> com.streamarr.transcode.v1.ContainerFormat.CONTAINER_FORMAT_MPEG_TS;

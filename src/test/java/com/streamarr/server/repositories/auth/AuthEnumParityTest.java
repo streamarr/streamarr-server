@@ -17,10 +17,10 @@ import org.junit.jupiter.api.Test;
 /** Prevents the name-based jOOQ ↔ Java enum bridge from drifting. */
 @Tag("UnitTest")
 @DisplayName("Auth Enum Parity Tests")
-@SuppressWarnings("checkstyle:fullyQualifiedName")
 class AuthEnumParityTest {
 
   @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @DisplayName("Should keep session revocation reason literals in sync")
   void shouldKeepSessionRevocationReasonInSync() {
     assertParity(
@@ -29,6 +29,7 @@ class AuthEnumParityTest {
   }
 
   @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @DisplayName("Should keep refresh token status literals in sync")
   void shouldKeepRefreshTokenStatusInSync() {
     assertParity(
@@ -37,6 +38,7 @@ class AuthEnumParityTest {
   }
 
   @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @DisplayName("Should keep profile kind literals in sync when parity is checked")
   void shouldKeepProfileKindInSyncWhenParityIsChecked() {
     assertParity(
@@ -45,6 +47,7 @@ class AuthEnumParityTest {
   }
 
   @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @DisplayName("Should keep profile share status literals in sync when parity is checked")
   void shouldKeepProfileShareStatusInSyncWhenParityIsChecked() {
     assertParity(
@@ -53,6 +56,7 @@ class AuthEnumParityTest {
   }
 
   @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @DisplayName("Should keep household role literals in sync")
   void shouldKeepHouseholdRoleInSync() {
     assertParity(

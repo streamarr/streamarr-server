@@ -25,7 +25,6 @@ import org.jooq.Field;
 import org.jooq.impl.DSL;
 import org.springframework.data.domain.AuditorAware;
 
-@SuppressWarnings("checkstyle:fullyQualifiedName")
 @RequiredArgsConstructor
 public class ProfileHouseholdShareRepositoryCustomImpl
     implements ProfileHouseholdShareRepositoryCustom {
@@ -91,7 +90,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public Optional<ProfileHouseholdShare> findRefreshedById(UUID shareId) {
+  public Optional<ProfileHouseholdShare> findByIdAndReloadFromDatabase(UUID shareId) {
     var found = Optional.ofNullable(entityManager.find(ProfileHouseholdShare.class, shareId));
     found.ifPresent(entityManager::refresh);
     return found;
@@ -168,6 +167,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   public boolean tryDeclinePending(
       UUID shareId, com.streamarr.server.domain.auth.ProfileShareStatus target, Instant now)
       throws IllegalArgumentException {
@@ -263,6 +263,20 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
     materializeExpiredPending(profileId, now);
     return invalidatePending(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId), reason, now);
+  }
+
+  @Override
+  public void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId, Instant now) {
+    dsl.update(PROFILE_HOUSEHOLD_SHARE)
+        .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, false)
+        .set(PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
+        .set(
+            PROFILE_HOUSEHOLD_SHARE.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+        .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
+        .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
+        .and(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL.isTrue())
+        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE))
+        .execute();
   }
 
   @Override

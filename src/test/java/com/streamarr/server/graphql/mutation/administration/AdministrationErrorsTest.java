@@ -30,7 +30,8 @@ class AdministrationErrorsTest {
   private static final LastServerAdminError LAST_SERVER_ADMIN =
       new LastServerAdminError("At least one enabled ServerAdmin must remain.");
   private static final LastHouseholdAdminError LAST_HOUSEHOLD_ADMIN =
-      new LastHouseholdAdminError("A Household keeps at least one HouseholdAdmin.");
+      new LastHouseholdAdminError(
+          "A Household with Accounts must keep at least one HouseholdAdmin.");
   private static final DisplayNameRequiredError DISPLAY_NAME_REQUIRED =
       new DisplayNameRequiredError("Enter a display name.", List.of("displayName"));
   private static final HouseholdNameRequiredError HOUSEHOLD_NAME_REQUIRED =

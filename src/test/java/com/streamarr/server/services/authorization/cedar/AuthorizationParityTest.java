@@ -11,7 +11,6 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Intent;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -66,9 +65,31 @@ class AuthorizationParityTest {
   }
 
   @Test
-  @DisplayName(
-      "Should plan every concrete schema action from at least one intent when intent parity is checked")
-  void shouldPlanEveryConcreteSchemaActionWhenIntentParityIsChecked() throws Exception {
+  @DisplayName("Should cover every concrete schema action when intent planning parity is checked")
+  void shouldCoverEveryConcreteSchemaActionWhenIntentPlanningParityIsChecked() throws Exception {
+    assertThat(plannedActions())
+        .containsOnlyElementsOf(concreteSchemaActions())
+        .containsAll(concreteSchemaActions());
+  }
+
+  @Test
+  @DisplayName("Should preserve intentional edit fan-in when intent planning parity is checked")
+  void shouldPreserveIntentionalEditFanInWhenIntentPlanningParityIsChecked() {
+    var planned = plannedActions();
+
+    assertThat(planned).filteredOn("editProfile"::equals).hasSize(6);
+    assertThat(planned).filteredOn(action -> !"editProfile".equals(action)).doesNotHaveDuplicates();
+  }
+
+  @Test
+  @DisplayName("Should match Java actions when concrete schema action parity is checked")
+  void shouldMatchJavaActionsWhenConcreteSchemaActionParityIsChecked() throws Exception {
+    assertThat(Action.values())
+        .extracting(Action::cedarName)
+        .containsExactlyInAnyOrderElementsOf(concreteSchemaActions());
+  }
+
+  private static List<String> concreteSchemaActions() throws Exception {
     var concrete = new ArrayList<String>();
     schemaActions()
         .properties()
@@ -79,18 +100,18 @@ class AuthorizationParityTest {
                 concrete.add(entry.getKey());
               }
             });
+    return List.copyOf(concrete);
+  }
+
+  private static List<String> plannedActions() {
     var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
     var planner = new IntentPlanner(new ProfilePolicyPlanner(new FakeProfileRepository()));
-    var planned = new LinkedHashSet<String>();
+    var planned = new ArrayList<String>();
     allIntents().stream()
         .map(intent -> planner.plan(identity, intent).check().action().cedarName())
         .forEach(planned::add);
     planned.addAll(policyChangeActions());
-
-    assertThat(planned).containsExactlyInAnyOrderElementsOf(concrete);
-    assertThat(Action.values())
-        .extracting(Action::cedarName)
-        .containsExactlyInAnyOrderElementsOf(concrete);
+    return List.copyOf(planned);
   }
 
   @Test
@@ -240,7 +261,12 @@ class AuthorizationParityTest {
           REVOKE_DEVICE_REGISTRATION,
           BLOCK_ESN,
           UNBLOCK_ESN,
-          VIEW_DEVICE_ADMINISTRATION ->
+          VIEW_DEVICE_ADMINISTRATION,
+          TRANSFER_ACCOUNT,
+          ADMINISTRATIVELY_DELETE_ACCOUNT,
+          DELETE_MY_ACCOUNT,
+          TRANSFER_PROFILE,
+          ADMINISTRATIVELY_DELETE_PROFILE ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
@@ -319,6 +345,11 @@ class AuthorizationParityTest {
         new Intent.UnblockEsn(id),
         new Intent.UnblockEsnServerWide(),
         new Intent.ViewDeviceAdministration(id),
-        new Intent.ViewServerDeviceAdministration());
+        new Intent.ViewServerDeviceAdministration(),
+        new Intent.TransferAccount(id),
+        new Intent.AdministrativelyDeleteAccount(id),
+        new Intent.DeleteMyAccount(),
+        new Intent.TransferProfile(id),
+        new Intent.AdministrativelyDeleteProfile(id));
   }
 }

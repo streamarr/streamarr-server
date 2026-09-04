@@ -214,7 +214,7 @@ public class ProfileAdministrationService {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
 
-          return profileRepository.findRefreshedById(profileId).orElseThrow();
+          return profileRepository.findByIdAndReloadFromDatabase(profileId).orElseThrow();
         },
         constraint ->
             CHK_NAMES_UNIQUE.equals(constraint)
@@ -239,7 +239,7 @@ public class ProfileAdministrationService {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
 
-          return profileRepository.findRefreshedById(profileId).orElseThrow();
+          return profileRepository.findByIdAndReloadFromDatabase(profileId).orElseThrow();
         },
         _ -> Optional.empty());
   }
@@ -298,7 +298,7 @@ public class ProfileAdministrationService {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
 
-          return profileRepository.findRefreshedById(profileId).orElseThrow();
+          return profileRepository.findByIdAndReloadFromDatabase(profileId).orElseThrow();
         },
         _ -> Optional.empty());
   }
@@ -325,7 +325,7 @@ public class ProfileAdministrationService {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
 
-          return profileRepository.findRefreshedById(profileId).orElseThrow();
+          return profileRepository.findByIdAndReloadFromDatabase(profileId).orElseThrow();
         },
         _ -> Optional.empty());
   }
@@ -386,7 +386,7 @@ public class ProfileAdministrationService {
                   .reason(reason)
                   .resource("profileId", profileId)
                   .build());
-          return profileRepository.findRefreshedById(profileId).orElseThrow();
+          return profileRepository.findByIdAndReloadFromDatabase(profileId).orElseThrow();
         },
         _ -> Optional.empty());
   }
@@ -450,7 +450,7 @@ public class ProfileAdministrationService {
 
           // The decision above JPA-loaded this row in this transaction; re-read past the
           // first-level cache or the payload would show the pre-transition state.
-          return profileRepository.findRefreshedById(profileId).orElseThrow();
+          return profileRepository.findByIdAndReloadFromDatabase(profileId).orElseThrow();
         },
         constraint ->
             switch (constraint) {

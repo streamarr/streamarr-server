@@ -28,7 +28,6 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import lombok.Builder;
 import lombok.NonNull;
@@ -61,12 +60,13 @@ public class DeviceAdministrationService {
   public Outcome<UUID, DeviceRejections.Revoke> revokeDeviceRegistration(
       AuthenticatedIdentity identity, UUID registrationId) {
     Optional<DeviceRejections.Revoke> refusal =
-        refusalOf(
-            identity,
-            new Intent.RevokeDeviceRegistration(registrationId),
-            () -> mayViewRegistration(identity, registrationId),
-            DeviceRejections.RegistrationNotFound::new,
-            Optional.empty());
+        AuthorizationRefusal.from(
+            authorizationService.decide(
+                identity, new Intent.RevokeDeviceRegistration(registrationId)),
+            new AuthorizationRefusal.Response<>(
+                () -> mayViewRegistration(identity, registrationId),
+                DeviceRejections.RegistrationNotFound::new,
+                Optional.empty()));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -97,12 +97,12 @@ public class DeviceAdministrationService {
     }
 
     Optional<DeviceRejections.Block> refusal =
-        refusalOf(
-            identity,
-            new Intent.BlockEsn(householdId),
-            () -> mayViewDevices(identity, householdId),
-            DeviceRejections.HouseholdNotFound::new,
-            Optional.empty());
+        AuthorizationRefusal.from(
+            authorizationService.decide(identity, new Intent.BlockEsn(householdId)),
+            new AuthorizationRefusal.Response<>(
+                () -> mayViewDevices(identity, householdId),
+                DeviceRejections.HouseholdNotFound::new,
+                Optional.empty()));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -135,14 +135,14 @@ public class DeviceAdministrationService {
     }
 
     Optional<DeviceRejections.BlockServerWide> refusal =
-        refusalOf(
-            identity,
-            new Intent.BlockEsnServerWide(),
-            () -> false,
-            () -> {
-              throw new AccessDeniedException("Not allowed.");
-            },
-            Optional.of(DeviceRejections.ReauthenticationRequired::new));
+        AuthorizationRefusal.from(
+            authorizationService.decide(identity, new Intent.BlockEsnServerWide()),
+            new AuthorizationRefusal.Response<>(
+                () -> false,
+                () -> {
+                  throw new AccessDeniedException("Not allowed.");
+                },
+                Optional.of(DeviceRejections.ReauthenticationRequired::new)));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -168,12 +168,12 @@ public class DeviceAdministrationService {
     var normalizedEsn = Esn.normalize(esn);
 
     Optional<DeviceRejections.Unblock> refusal =
-        refusalOf(
-            identity,
-            new Intent.UnblockEsn(householdId),
-            () -> mayViewDevices(identity, householdId),
-            DeviceRejections.HouseholdNotFound::new,
-            Optional.empty());
+        AuthorizationRefusal.from(
+            authorizationService.decide(identity, new Intent.UnblockEsn(householdId)),
+            new AuthorizationRefusal.Response<>(
+                () -> mayViewDevices(identity, householdId),
+                DeviceRejections.HouseholdNotFound::new,
+                Optional.empty()));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -345,33 +345,6 @@ public class DeviceAdministrationService {
     }
 
     return Optional.empty();
-  }
-
-  private <R> Optional<R> refusalOf(
-      AuthenticatedIdentity identity,
-      Intent.UnitIntent intent,
-      BooleanSupplier mayView,
-      Supplier<? extends R> denied,
-      Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
-    return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
-      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<AuthorizationUnit>(var reason) ->
-          switch (reason) {
-            case REAUTHENTICATION_REQUIRED ->
-                Optional.of(
-                    reauthenticationRequired
-                        .orElseThrow(AuthorizationUnavailableException::new)
-                        .get());
-            case POLICY -> {
-              if (mayView.getAsBoolean()) {
-                throw new AccessDeniedException("Not allowed.");
-              }
-
-              yield Optional.of(denied.get());
-            }
-          };
-    };
   }
 
   @Builder

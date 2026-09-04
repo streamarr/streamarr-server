@@ -2,10 +2,13 @@ package com.streamarr.server.graphql.contract;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import graphql.language.EnumTypeDefinition;
 import graphql.language.FieldDefinition;
+import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.InterfaceTypeDefinition;
 import graphql.language.ListType;
+import graphql.language.NamedNode;
 import graphql.language.NonNullType;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.Type;
@@ -51,6 +54,93 @@ class MutationContractTest {
   private static final Set<String> INPUT_ERROR_UNIONS = Set.of("AddLibraryError");
 
   private static final TypeDefinitionRegistry SCHEMA = loadSchema();
+
+  @Test
+  @DisplayName(
+      "Should describe the administrator requirement when Household retention is documented")
+  void shouldDescribeAdministratorRequirementWhenHouseholdRetentionIsDocumented() {
+    assertThat(descriptionOf("LastHouseholdAdminError"))
+        .isEqualTo(
+            "After its first Account, a Household must keep at least one HouseholdAdmin until the Household is deleted.");
+  }
+
+  @Test
+  @DisplayName("Should describe Household deletion when final Account removal is documented")
+  void shouldDescribeHouseholdDeletionWhenFinalAccountRemovalIsDocumented() {
+    assertThat(descriptionOf("LastHouseholdAccountError"))
+        .isEqualTo("The last Account can be removed only by deleting the Household.");
+  }
+
+  @Test
+  @DisplayName("Should use two sentences when linked Profile handling is described")
+  void shouldUseTwoSentencesWhenLinkedProfileHandlingIsDescribed() {
+    assertThat(descriptionOf("ProfileBelongsToAccountError"))
+        .isEqualTo("The Profile belongs to an Account. Transfer or delete the Account instead.");
+  }
+
+  @Test
+  @DisplayName(
+      "Should expose only administrative Account deletion when mutation names are inspected")
+  void shouldExposeOnlyAdministrativeAccountDeletionWhenMutationNamesAreInspected() {
+    assertThat(mutationFields().stream().map(FieldDefinition::getName))
+        .contains("administrativelyDeleteAccount")
+        .doesNotContain("deleteAccount");
+  }
+
+  @Test
+  @DisplayName(
+      "Should name source Household access explicitly when Account transfer input is inspected")
+  void shouldNameSourceHouseholdAccessExplicitlyWhenAccountTransferInputIsInspected() {
+    var transferInput =
+        SCHEMA.getType("TransferAccountInput", InputObjectTypeDefinition.class).orElseThrow();
+    var sourceHouseholdAccess =
+        transferInput.getInputValueDefinitions().stream()
+            .filter(field -> "sourceHouseholdAccess".equals(field.getName()))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(((TypeName) sourceHouseholdAccess.getType()).getName())
+        .isEqualTo("SourceHouseholdAccess");
+    assertThat(
+            SCHEMA
+                .getType("SourceHouseholdAccess", EnumTypeDefinition.class)
+                .orElseThrow()
+                .getEnumValueDefinitions()
+                .stream()
+                .map(NamedNode::getName))
+        .containsExactly("END", "KEEP_AS_VISITOR");
+    assertThat(transferInput.getInputValueDefinitions().stream().map(InputValueDefinition::getName))
+        .doesNotContain("sourceAccess");
+    assertThat(SCHEMA.getType("SourceAccess")).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should describe Profile cleanup plainly when administrative Account deletion input is inspected")
+  void shouldDescribeProfileCleanupPlainlyWhenAdministrativeAccountDeletionInputIsInspected() {
+    var deletionInput =
+        SCHEMA
+            .getType("AdministrativelyDeleteAccountInput", InputObjectTypeDefinition.class)
+            .orElseThrow();
+    var profileCleanup =
+        deletionInput.getInputValueDefinitions().stream()
+            .filter(field -> "profileCleanup".equals(field.getName()))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(isRequiredNamed(profileCleanup, "ProfileCleanup")).isTrue();
+    assertThat(
+            SCHEMA
+                .getType("ProfileCleanup", EnumTypeDefinition.class)
+                .orElseThrow()
+                .getEnumValueDefinitions()
+                .stream()
+                .map(NamedNode::getName))
+        .containsExactly("ERASE_PROFILE", "PRESERVE_PROFILE");
+    assertThat(deletionInput.getInputValueDefinitions().stream().map(InputValueDefinition::getName))
+        .doesNotContain("profileDisposition");
+    assertThat(SCHEMA.getType("ProfileDisposition")).isEmpty();
+  }
 
   @Test
   @DisplayName(
@@ -108,6 +198,24 @@ class MutationContractTest {
   @DisplayName("Should require shared interfaces when mutation error types are declared")
   void shouldRequireSharedInterfacesWhenMutationErrorTypesAreDeclared() {
     assertThat(errorInterfaceViolations(SCHEMA)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should require unique member types when mutation error unions are declared")
+  void shouldRequireUniqueMemberTypesWhenMutationErrorUnionsAreDeclared() {
+    var duplicateMemberUnions =
+        errorUnions(SCHEMA).stream()
+            .filter(
+                union ->
+                    union.getMemberTypes().stream()
+                            .map(type -> ((TypeName) type).getName())
+                            .distinct()
+                            .count()
+                        != union.getMemberTypes().size())
+            .map(UnionTypeDefinition::getName)
+            .toList();
+
+    assertThat(duplicateMemberUnions).isEmpty();
   }
 
   @Test
@@ -454,6 +562,14 @@ class MutationContractTest {
 
   private static List<String> interfaceNames(List<Type> implemented) {
     return implemented.stream().map(type -> ((TypeName) type).getName()).toList();
+  }
+
+  private static String descriptionOf(String typeName) {
+    return SCHEMA
+        .getType(typeName, ObjectTypeDefinition.class)
+        .orElseThrow()
+        .getDescription()
+        .getContent();
   }
 
   private static String capitalize(String name) {

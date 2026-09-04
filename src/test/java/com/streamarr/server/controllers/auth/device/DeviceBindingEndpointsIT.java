@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
@@ -98,7 +99,7 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
     approve(userCode, host.household().getId());
     var tokens = pollSuccessfully(issued.get("deviceCode").asString());
 
-    var registration = registrationRepository.findAll().getFirst();
+    var registration = activeRegistrationFor(host.household().getId());
     assertThat(registration.getEsn()).isEqualTo("esn-bind");
     assertThat(registration.getHouseholdId()).isEqualTo(host.household().getId());
     assertThat(registration.getStatus()).isEqualTo(DeviceRegistrationStatus.ACTIVE);
@@ -180,7 +181,7 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
     var issued = issueCode("Bedroom TV", "esn-revoke");
     approve(issued.get("userCode").asString(), approver.household().getId());
     var tokens = pollSuccessfully(issued.get("deviceCode").asString());
-    var registration = registrationRepository.findAll().getFirst();
+    var registration = activeRegistrationFor(approver.household().getId());
 
     graphql(
             authTestSupport.accountBearer(approver),
@@ -211,7 +212,7 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
     var issued = issueCode("Kitchen TV", "esn-logout");
     approve(issued.get("userCode").asString(), approver.household().getId());
     var tokens = pollSuccessfully(issued.get("deviceCode").asString());
-    var registration = registrationRepository.findAll().getFirst();
+    var registration = activeRegistrationFor(approver.household().getId());
 
     mockMvc
         .perform(
@@ -249,7 +250,7 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
       removeRegistrationRevocationFailureTrigger();
     }
 
-    assertThat(registrationRepository.findAll().getFirst().getStatus())
+    assertThat(activeRegistrationFor(approver.household().getId()).getStatus())
         .isEqualTo(DeviceRegistrationStatus.ACTIVE);
     mockMvc
         .perform(
@@ -266,6 +267,7 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
     var issued = issueCode("Hall TV", "esn-block");
     approve(issued.get("userCode").asString(), approver.household().getId());
     var tokens = pollSuccessfully(issued.get("deviceCode").asString());
+    var registration = activeRegistrationFor(approver.household().getId());
 
     // Blocking revokes the registration and its sessions in the same transaction.
     graphql(
@@ -279,7 +281,7 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.blockEsn.userErrors").isEmpty());
 
-    assertThat(registrationRepository.findAll().getFirst().getStatus())
+    assertThat(registrationRepository.findById(registration.getId()).orElseThrow().getStatus())
         .isEqualTo(DeviceRegistrationStatus.REVOKED);
     mockMvc
         .perform(
@@ -350,7 +352,7 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
     var issued = issueCode("Cabin TV", "esn-visit");
     approve(issued.get("userCode").asString(), host.household().getId());
     var tokens = pollSuccessfully(issued.get("deviceCode").asString());
-    var registration = registrationRepository.findAll().getFirst();
+    var registration = activeRegistrationFor(host.household().getId());
 
     graphql(
             authTestSupport.accountBearer(approver),
@@ -543,6 +545,14 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
             .getResponse()
             .getContentAsString();
     return objectMapper.readTree(response);
+  }
+
+  private DeviceRegistration activeRegistrationFor(UUID householdId) {
+    var registrations =
+        registrationRepository.findByHouseholdIdAndStatus(
+            householdId, DeviceRegistrationStatus.ACTIVE);
+    assertThat(registrations).singleElement();
+    return registrations.getFirst();
   }
 
   private ResultActions graphql(String bearer, String query) throws Exception {

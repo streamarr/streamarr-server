@@ -19,13 +19,13 @@ import org.xml.sax.SAXException;
 
 @Tag("UnitTest")
 @DisplayName("Procfile Tests")
-// The Procfile is a literal external contract: launcher class names appear as text.
-@SuppressWarnings("checkstyle:fullyQualifiedName")
 class ProcfileTest {
 
   private static final String NATIVE_ACCESS = "--enable-native-access=ALL-UNNAMED";
 
   @Test
+  // The Procfile is a literal external contract: launcher class names appear as text.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @DisplayName("Should ship separate server and transcode worker process types")
   void shouldShipSeparateServerAndTranscodeWorkerProcessTypes() throws IOException {
     var processes = processes();

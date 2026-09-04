@@ -1,5 +1,8 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.INVALIDATED;
+import static com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.PENDING;
+import static com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.valueOf;
 import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 import static org.jooq.impl.DSL.inline;
 
@@ -22,9 +25,6 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.springframework.data.domain.AuditorAware;
 
-// checkstyle:fullyQualifiedName suppressed for the class: the domain and generated jOOQ status
-// enums share a simple name, an unavoidable collision.
-@SuppressWarnings("checkstyle:fullyQualifiedName")
 @RequiredArgsConstructor
 public class ProfileManagerInvitationRepositoryCustomImpl
     implements ProfileManagerInvitationRepositoryCustom {
@@ -187,6 +187,12 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   }
 
   @Override
+  public int invalidatePendingInvitedBy(UUID inviterAccountId, String reason, Instant now) {
+    return invalidate(
+        PROFILE_MANAGER_INVITATION.INVITER_ACCOUNT_ID.eq(inviterAccountId), reason, now);
+  }
+
+  @Override
   public int invalidatePendingByRecipientAccountId(
       UUID recipientAccountId, String reason, Instant now) {
     return invalidate(
@@ -196,9 +202,7 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   private int invalidate(Condition scope, String reason, Instant now) {
     materializeExpiredPending(scope, now);
     return dsl.update(PROFILE_MANAGER_INVITATION)
-        .set(
-            PROFILE_MANAGER_INVITATION.STATUS,
-            com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.INVALIDATED)
+        .set(PROFILE_MANAGER_INVITATION.STATUS, INVALIDATED)
         .set(PROFILE_MANAGER_INVITATION.INVALIDATION_REASON, reason)
         .set(PROFILE_MANAGER_INVITATION.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
         .set(PROFILE_MANAGER_INVITATION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
@@ -226,13 +230,13 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   }
 
   private static Condition pending() {
-    return PROFILE_MANAGER_INVITATION.STATUS.eq(
-        com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.PENDING);
+    return PROFILE_MANAGER_INVITATION.STATUS.eq(PENDING);
   }
 
+  // The domain and generated jOOQ status enums share a simple name.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus
       jooqStatus(ProfileManagerInvitationStatus status) {
-    return com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.valueOf(
-        status.name());
+    return valueOf(status.name());
   }
 }

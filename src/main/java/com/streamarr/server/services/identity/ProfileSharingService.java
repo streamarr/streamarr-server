@@ -255,7 +255,7 @@ public class ProfileSharingService {
             throw new MutationRejection(new ShareRejections.ShareNotPending());
           }
 
-          return shareRepository.findRefreshedById(shareId).orElseThrow();
+          return shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
         },
         _ -> Optional.empty());
   }
@@ -289,7 +289,7 @@ public class ProfileSharingService {
       throw new MutationRejection(notPending(shareId));
     }
 
-    return shareRepository.findRefreshedById(shareId).orElseThrow();
+    return shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
   }
 
   private ProfileHouseholdShare invalidateUnauthorizedOffer(UUID shareId) {
@@ -298,13 +298,13 @@ public class ProfileSharingService {
       throw new MutationRejection(notPending(shareId));
     }
 
-    return shareRepository.findRefreshedById(shareId).orElseThrow();
+    return shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
   }
 
   /** An offer that is no longer pending explains a withdrawal; any other state is just decided. */
   private ShareRejections.Accept notPending(UUID shareId) {
     return shareRepository
-        .findRefreshedById(shareId)
+        .findByIdAndReloadFromDatabase(shareId)
         .flatMap(ProfileSharingService::withdrawal)
         .<ShareRejections.Accept>map(withdrawn -> withdrawn)
         .orElseGet(ShareRejections.ShareNotPending::new);
@@ -339,7 +339,7 @@ public class ProfileSharingService {
             throw new MutationRejection(refusals.notActive().get());
           }
 
-          var share = shareRepository.findRefreshedById(shareId).orElseThrow();
+          var share = shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
           // Unsharing returns affected sessions to the picker; a visitor whose Personal
           // Profile's share ended also loses the Household context itself.
           authSessionRepository.clearProfileSelectionFromLiveSessions(

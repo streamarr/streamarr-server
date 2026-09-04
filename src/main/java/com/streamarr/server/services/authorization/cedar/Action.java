@@ -257,7 +257,27 @@ enum Action {
       "viewServerDeviceAdministration",
       ResourceKind.SERVER,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
-      FactRequirement.SIGNED_PRINCIPAL_CONTEXT);
+      FactRequirement.SIGNED_PRINCIPAL_CONTEXT),
+  TRANSFER_ACCOUNT(
+      "transferAccount", ResourceKind.ACCOUNT, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  ADMINISTRATIVELY_DELETE_ACCOUNT(
+      "administrativelyDeleteAccount",
+      ResourceKind.ACCOUNT,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  DELETE_MY_ACCOUNT(
+      "deleteMyAccount",
+      ResourceKind.ACCOUNT,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PRINCIPAL_ELIGIBILITY),
+  TRANSFER_PROFILE(
+      "transferProfile", ResourceKind.PROFILE, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  ADMINISTRATIVELY_DELETE_PROFILE(
+      "administrativelyDeleteProfile",
+      ResourceKind.PROFILE,
+      FreshReauthentication.REQUIRED,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 

@@ -88,7 +88,7 @@ type LastServerAdminError implements MutationError {
     message: String!
 }
 
-"A Household always keeps at least one HouseholdAdmin until teardown."
+"After its first Account, a Household must keep at least one HouseholdAdmin until the Household is deleted."
 type LastHouseholdAdminError implements MutationError {
     message: String!
 }
@@ -289,6 +289,32 @@ type EsnAlreadyBlockedError implements InputMutationError & MutationError {
 }
 
 type EsnBlockNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+type SameHouseholdError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The last Account can be removed only by deleting the Household."
+type LastHouseholdAccountError implements MutationError {
+    message: String!
+}
+
+"The Profile belongs to an Account. Transfer or delete the Account instead."
+type ProfileBelongsToAccountError implements MutationError {
+    message: String!
+}
+
+type ReplacementManagerRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"Self-deletion is irreversible; the caller types the confirmation word deliberately."
+type ConfirmationRequiredError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }

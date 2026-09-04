@@ -1294,6 +1294,109 @@ class CedarIdentityPoliciesTest {
     }
   }
 
+  @Nested
+  @DisplayName("Transfers and deletion")
+  class TransfersAndDeletion {
+
+    @Test
+    @DisplayName("Should require a live ServerAdmin when an Account or Profile is transferred")
+    void shouldRequireLiveServerAdminWhenAccountOrProfileIsTransferred() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+
+      assertThat(decide(atHome(), new Intent.TransferAccount(account.getId()))).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.TransferProfile(orphan.getId()))).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.TransferAccount(account.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), new Intent.TransferProfile(orphan.getId()))).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny transfers when the ServerAdmin Account is disabled")
+    void shouldDenyTransfersWhenServerAdminAccountIsDisabled() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      account.setServerAdmin(true);
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(decide(atHome(), new Intent.TransferAccount(account.getId()))).isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.TransferProfile(orphan.getId()))).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should require a fresh ServerAdmin when an Account or Profile is deleted")
+    void shouldRequireFreshServerAdminWhenAccountOrProfileIsDeleted() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var administrativeAccountDeletion =
+          new Intent.AdministrativelyDeleteAccount(UUID.randomUUID());
+      var administrativeDeletion = new Intent.AdministrativelyDeleteProfile(orphan.getId());
+
+      assertThat(
+              decide(withReauthenticatedAt(atHome(), Instant.now()), administrativeAccountDeletion))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), administrativeAccountDeletion))
+          .isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(atHome(), administrativeDeletion)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(
+              decide(withReauthenticatedAt(atHome(), Instant.now()), administrativeAccountDeletion))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), administrativeDeletion))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny deletions when the ServerAdmin Account is disabled")
+    void shouldDenyDeletionsWhenServerAdminAccountIsDisabled() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      account.setServerAdmin(true);
+      account.setEnabled(false);
+      accounts.save(account);
+      var fresh = withReauthenticatedAt(atHome(), Instant.now());
+
+      assertThat(decide(fresh, new Intent.AdministrativelyDeleteAccount(UUID.randomUUID())))
+          .isEqualTo(DENIED);
+      assertThat(decide(fresh, new Intent.AdministrativelyDeleteProfile(orphan.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should require fresh reauthentication when an eligible person deletes their own Account")
+    void shouldRequireFreshReauthenticationWhenEligiblePersonDeletesOwnAccount() {
+      var selfDeletion = new Intent.DeleteMyAccount();
+
+      assertThat(decide(atHome(), selfDeletion)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), selfDeletion))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny self-deletion when the Personal Profile is restricted")
+    void shouldDenySelfDeletionWhenPersonalProfileIsRestricted() {
+      var selfDeletion = new Intent.DeleteMyAccount();
+
+      personal.setMaximumAllowedRatingAge(12);
+      profiles.save(personal);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), selfDeletion))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should deny self-deletion when the Account is disabled")
+    void shouldDenySelfDeletionWhenAccountIsDisabled() {
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(
+              decide(withReauthenticatedAt(atHome(), Instant.now()), new Intent.DeleteMyAccount()))
+          .isEqualTo(DENIED);
+    }
+  }
+
   private AuthenticatedIdentity withReauthenticatedAt(AuthenticatedIdentity base, Instant at) {
     return AuthenticatedIdentity.builder()
         .accountId(base.accountId())

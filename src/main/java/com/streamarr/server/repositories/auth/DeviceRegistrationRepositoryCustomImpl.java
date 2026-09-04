@@ -1,5 +1,8 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.jooq.generated.enums.DeviceRegistrationStatus.ACTIVE;
+import static com.streamarr.server.jooq.generated.enums.DeviceRegistrationStatus.REVOKED;
+import static com.streamarr.server.jooq.generated.enums.DeviceRegistrationStatus.valueOf;
 import static com.streamarr.server.jooq.generated.tables.DeviceRegistration.DEVICE_REGISTRATION;
 import static org.jooq.impl.DSL.inline;
 
@@ -17,9 +20,6 @@ import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.springframework.data.domain.AuditorAware;
 
-// checkstyle:fullyQualifiedName suppressed for the class: the domain and generated jOOQ status
-// enums share a simple name, an unavoidable collision.
-@SuppressWarnings("checkstyle:fullyQualifiedName")
 @RequiredArgsConstructor
 public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistrationRepositoryCustom {
 
@@ -41,11 +41,7 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
                 DEVICE_REGISTRATION
                     .HOUSEHOLD_ID
                     .eq(householdId)
-                    .and(
-                        DEVICE_REGISTRATION.STATUS.eq(
-                            inline(
-                                com.streamarr.server.jooq.generated.enums.DeviceRegistrationStatus
-                                    .valueOf(status.name())))))
+                    .and(DEVICE_REGISTRATION.STATUS.eq(inline(valueOf(status.name())))))
             .options(options)
             .entityType(DeviceRegistration.class)
             .build();
@@ -94,18 +90,14 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
 
   private List<UUID> revokeWhere(Condition scope, UUID actorAccountId, String reason, Instant now) {
     return dsl.update(DEVICE_REGISTRATION)
-        .set(
-            DEVICE_REGISTRATION.STATUS,
-            com.streamarr.server.jooq.generated.enums.DeviceRegistrationStatus.REVOKED)
+        .set(DEVICE_REGISTRATION.STATUS, REVOKED)
         .set(DEVICE_REGISTRATION.REVOKED_AT, now.atOffset(ZoneOffset.UTC))
         .set(DEVICE_REGISTRATION.REVOKED_BY_ACCOUNT_ID, actorAccountId)
         .set(DEVICE_REGISTRATION.REVOCATION_REASON, reason)
         .set(DEVICE_REGISTRATION.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
         .set(DEVICE_REGISTRATION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(scope)
-        .and(
-            DEVICE_REGISTRATION.STATUS.eq(
-                com.streamarr.server.jooq.generated.enums.DeviceRegistrationStatus.ACTIVE))
+        .and(DEVICE_REGISTRATION.STATUS.eq(ACTIVE))
         .returning(DEVICE_REGISTRATION.ID)
         .fetch(DEVICE_REGISTRATION.ID);
   }

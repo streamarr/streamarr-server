@@ -711,33 +711,19 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should use the default reverse Household page when only before is provided")
   void shouldUseDefaultReverseHouseholdPageWhenOnlyBeforeProvided() throws Exception {
     var overflow =
-        IntStream.range(0, 99)
+        IntStream.range(0, 100)
             .<Household>mapToObj(
                 index -> Household.builder().name("Reverse page overflow " + index).build())
             .toList();
     householdRepository.saveAllAndFlush(overflow);
 
     try {
-      var lastPageResponse =
-          graphql(
-                  authTestSupport.accountBearer(serverAdmin),
-                  """
-                  query { households(last: 1) { edges { cursor } } }
-                  """)
-              .andExpect(status().isOk())
-              .andExpect(jsonPath("$.errors").doesNotExist())
-              .andReturn()
-              .getResponse()
-              .getContentAsString();
+      var hundredth = householdPage(100, null);
+      var hundredthCursor =
+          hundredth.path("data").path("households").path("pageInfo").path("endCursor").asString();
+      var nextPage = householdPage(1, hundredthCursor);
       var before =
-          objectMapper
-              .readTree(lastPageResponse)
-              .path("data")
-              .path("households")
-              .path("edges")
-              .get(0)
-              .path("cursor")
-              .asString();
+          nextPage.path("data").path("households").path("edges").get(0).path("cursor").asString();
 
       graphql(
               authTestSupport.accountBearer(serverAdmin),

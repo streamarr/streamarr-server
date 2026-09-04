@@ -1,0 +1,83 @@
+enum SourceHouseholdAccess {
+    "End the old Household's membership-required share, registrations, and sessions."
+    END
+    "Keep the old share as an ordinary visit; warn when the Profile is restricted."
+    KEEP_AS_VISITOR
+}
+
+enum ProfileCleanup {
+    "Delete the Account and Profile pair."
+    ERASE_PROFILE
+    "Preserve and unlink the Profile with a named replacement manager."
+    PRESERVE_PROFILE
+}
+
+input TransferAccountInput {
+    accountId: ID!
+    destinationHouseholdId: ID!
+    "Defaults to END."
+    sourceHouseholdAccess: SourceHouseholdAccess
+    reason: String
+}
+
+type TransferAccountPayload {
+    account: AccountAdministration
+    userErrors: [TransferAccountError!]!
+}
+
+union TransferAccountError =
+    AccountNotFoundError
+  | InvalidIdError
+  | HouseholdNotFoundError
+  | SameHouseholdError
+  | LastHouseholdAccountError
+  | LastHouseholdAdminError
+  | RestrictedProfileRequiresHouseholdAdminError
+  | ProfileNameTakenError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedFirstAccountError
+
+input AdministrativelyDeleteAccountInput {
+    accountId: ID!
+    profileCleanup: ProfileCleanup!
+    "Required for PRESERVE_PROFILE: an eligible replacement manager for the preserved Profile."
+    replacementManagerAccountId: ID
+    reason: String!
+}
+
+type AdministrativelyDeleteAccountPayload {
+    accountId: ID
+    userErrors: [AdministrativelyDeleteAccountError!]!
+}
+
+union AdministrativelyDeleteAccountError =
+    AccountNotFoundError
+  | InvalidIdError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+  | LastHouseholdAccountError
+  | LastHouseholdAdminError
+  | LastServerAdminError
+  | ReplacementManagerRequiredError
+  | ProfileManagerNotEligibleError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedProfileRequiresHouseholdAdminError
+
+input DeleteMyAccountInput {
+    "Type the literal word DELETE."
+    confirmation: String!
+}
+
+type DeleteMyAccountPayload {
+    accountId: ID
+    userErrors: [DeleteMyAccountError!]!
+}
+
+union DeleteMyAccountError =
+    ConfirmationRequiredError
+  | ReauthenticationRequiredError
+  | LastHouseholdAccountError
+  | LastHouseholdAdminError
+  | LastServerAdminError
+  | ProfileRequiresEligibleManagerError
+  | RestrictedProfileRequiresHouseholdAdminError
