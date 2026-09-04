@@ -1299,8 +1299,8 @@ class CedarIdentityPoliciesTest {
   class TransfersAndDeletion {
 
     @Test
-    @DisplayName("Should reserve transfers for a live ServerAdmin")
-    void shouldReserveTransfersForLiveServerAdmin() {
+    @DisplayName("Should require a live ServerAdmin when an Account or Profile is transferred")
+    void shouldRequireLiveServerAdminWhenAccountOrProfileIsTransferred() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
 
       assertThat(decide(atHome(), new Intent.TransferAccount(account.getId()))).isEqualTo(DENIED);
@@ -1325,8 +1325,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should reserve deletions for a fresh ServerAdmin")
-    void shouldReserveDeletionsForFreshServerAdmin() {
+    @DisplayName("Should require a fresh ServerAdmin when an Account or Profile is deleted")
+    void shouldRequireFreshServerAdminWhenAccountOrProfileIsDeleted() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var deleteAccount = new Intent.DeleteAccount(UUID.randomUUID());
       var administrativeDeletion = new Intent.AdministrativelyDeleteProfile(orphan.getId());
@@ -1359,8 +1359,9 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should require freshness for an eligible person deleting their own Account")
-    void shouldRequireFreshnessForEligiblePersonDeletingTheirOwnAccount() {
+    @DisplayName(
+        "Should require fresh reauthentication when an eligible person deletes their own Account")
+    void shouldRequireFreshReauthenticationWhenEligiblePersonDeletesOwnAccount() {
       var selfDeletion = new Intent.DeleteMyAccount();
 
       assertThat(decide(atHome(), selfDeletion)).isEqualTo(REAUTHENTICATION_REQUIRED);

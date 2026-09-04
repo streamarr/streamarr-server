@@ -718,8 +718,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should require the ceremony to issue a reset and audit the winner")
-  void shouldRequireCeremonyToIssueResetAndAuditWinner() throws Exception {
+  @DisplayName("Should require the ceremony and audit the winner when a password reset is issued")
+  void shouldRequireCeremonyAndAuditWinnerWhenPasswordResetIsIssued() throws Exception {
     var target = authTestSupport.createIdentity();
     try {
       graphql(

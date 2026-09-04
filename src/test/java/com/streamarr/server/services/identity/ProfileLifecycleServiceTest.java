@@ -98,8 +98,9 @@ class ProfileLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should move the Profile behind its new anchor and reset every proposal")
-  void shouldMoveProfileBehindItsNewAnchorAndResetEveryProposal() {
+  @DisplayName(
+      "Should move the Profile and reset proposals when the destination anchor is eligible")
+  void shouldMoveProfileAndResetProposalsWhenDestinationAnchorIsEligible() {
     var pendingOffer =
         shares.save(
             ProfileHouseholdShare.builder()
@@ -159,8 +160,8 @@ class ProfileLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should demand a valid destination anchor before moving anything")
-  void shouldDemandValidDestinationAnchorBeforeMovingAnything() {
+  @DisplayName("Should reject the transfer when the destination anchor is invalid")
+  void shouldRejectTransferWhenDestinationAnchorIsInvalid() {
     assertThat(rejectionOf(transferWithAnchor(null)))
         .isInstanceOf(TransferRejections.LocalManagerRequired.class);
     assertThat(rejectionOf(transferWithAnchor(UUID.randomUUID())))
@@ -180,8 +181,8 @@ class ProfileLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should reserve linked Profiles for their Account's own operations")
-  void shouldReserveLinkedProfilesForTheirAccountsOwnOperations() {
+  @DisplayName("Should reserve the Profile for Account operations when the Profile is linked")
+  void shouldReserveProfileForAccountOperationsWhenProfileIsLinked() {
     var linked = residentOf(source);
 
     assertThat(
@@ -202,16 +203,17 @@ class ProfileLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should require a reason before administratively deleting a Profile")
-  void shouldRequireReasonBeforeAdministrativelyDeletingProfile() {
+  @DisplayName("Should require a reason when a Profile is administratively deleted")
+  void shouldRequireReasonWhenProfileIsAdministrativelyDeleted() {
     assertThat(rejectionOf(service.administrativelyDeleteProfile(identity(), orphan.getId(), " ")))
         .isInstanceOf(TransferRejections.ReasonRequired.class);
     assertThat(profiles.findById(orphan.getId())).isPresent();
   }
 
   @Test
-  @DisplayName("Should administratively delete a Profile and clear its dependent state")
-  void shouldAdministrativelyDeleteProfileAndClearItsDependentState() {
+  @DisplayName(
+      "Should delete the Profile and dependent state when administrative deletion succeeds")
+  void shouldDeleteProfileAndDependentStateWhenAdministrativeDeletionSucceeds() {
     var otherHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     shares.share(orphan.getId(), otherHousehold.getId(), false);
     var homeViewer =
@@ -259,8 +261,8 @@ class ProfileLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should report a Profile as missing after it was administratively deleted")
-  void shouldReportProfileAsMissingAfterItWasAdministrativelyDeleted() {
+  @DisplayName("Should return ProfileNotFound when the Profile was already deleted")
+  void shouldReturnProfileNotFoundWhenProfileWasAlreadyDeleted() {
     assertThat(service.administrativelyDeleteProfile(identity(), orphan.getId(), "cleanup"))
         .isInstanceOf(Outcome.Accepted.class);
     assertThat(
@@ -269,8 +271,8 @@ class ProfileLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should read hidden Profiles as not found under the oracle rule")
-  void shouldReadHiddenProfilesAsNotFoundUnderOracleRule() {
+  @DisplayName("Should hide the Profile when transfer is unauthorized")
+  void shouldHideProfileWhenTransferIsUnauthorized() {
     authorization.denyAll();
     assertThat(rejectionOf(transferWithAnchor(destinationAnchor.getId())))
         .isInstanceOf(TransferRejections.ProfileNotFound.class);
@@ -292,8 +294,8 @@ class ProfileLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject a Profile transfer to an unknown Household")
-  void shouldRejectProfileTransferToUnknownHousehold() {
+  @DisplayName("Should return HouseholdNotFound when the transfer destination does not exist")
+  void shouldReturnHouseholdNotFoundWhenTransferDestinationDoesNotExist() {
     assertThat(
             rejectionOf(
                 service.transferProfile(
@@ -307,8 +309,8 @@ class ProfileLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject a Profile transfer to its current Household")
-  void shouldRejectProfileTransferToItsCurrentHousehold() {
+  @DisplayName("Should reject the transfer when the destination is the current Household")
+  void shouldRejectTransferWhenDestinationIsCurrentHousehold() {
     assertThat(
             rejectionOf(
                 service.transferProfile(

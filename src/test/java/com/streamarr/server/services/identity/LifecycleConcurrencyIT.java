@@ -68,8 +68,8 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
   @Autowired private TransactionTemplate transactionTemplate;
 
   @Test
-  @DisplayName("Should preserve a password change committed while an Account transfer is paused")
-  void shouldPreservePasswordChangeCommittedWhileAccountTransferIsPaused() throws Exception {
+  @DisplayName("Should preserve a password change when an Account transfer commits after it")
+  void shouldPreservePasswordChangeWhenAccountTransferCommitsAfterIt() throws Exception {
     var actor = authTestSupport.createAdminIdentity();
     var source = authTestSupport.createIdentity();
     var destination = authTestSupport.createIdentity();
@@ -110,8 +110,8 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should preserve a rename committed while an Account transfer is paused")
-  void shouldPreserveRenameCommittedWhileAccountTransferIsPaused() throws Exception {
+  @DisplayName("Should preserve a rename when an Account transfer commits after it")
+  void shouldPreserveRenameWhenAccountTransferCommitsAfterIt() throws Exception {
     var actor = authTestSupport.createAdminIdentity();
     var source = authTestSupport.createIdentity();
     var destination = authTestSupport.createIdentity();
@@ -229,8 +229,8 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should allow exactly one concurrent transfer of an unlinked Profile")
-  void shouldAllowExactlyOneConcurrentTransferOfUnlinkedProfile() throws Exception {
+  @DisplayName("Should allow exactly one winner when unlinked Profile transfers race")
+  void shouldAllowExactlyOneWinnerWhenUnlinkedProfileTransfersRace() throws Exception {
     var actor = authTestSupport.createAdminIdentity();
     var source = authTestSupport.createIdentity();
     var firstDestination = authTestSupport.createIdentity();
@@ -485,8 +485,8 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should translate the concurrent final-Account loser into a typed rejection")
-  void shouldTranslateConcurrentFinalAccountLoserIntoTypedRejection() throws Exception {
+  @DisplayName("Should return FinalAccount when concurrent deletions leave one resident")
+  void shouldReturnFinalAccountWhenConcurrentDeletionsLeaveOneResident() throws Exception {
     var actor = authTestSupport.createAdminIdentity();
     var household = authTestSupport.createIdentity();
     var second = residentOf(household.household().getId(), HouseholdRole.ADMIN);

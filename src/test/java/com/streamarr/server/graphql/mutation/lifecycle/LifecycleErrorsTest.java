@@ -20,8 +20,8 @@ class LifecycleErrorsTest {
 
   @Test
   @DisplayName(
-      "Should describe the eligible Profile manager requirement without implementation detail")
-  void shouldDescribeEligibleProfileManagerRequirementWithoutImplementationDetail() {
+      "Should omit implementation detail when the eligible Profile manager requirement is described")
+  void shouldOmitImplementationDetailWhenEligibleProfileManagerRequirementIsDescribed() {
     var error =
         LifecycleErrors.toTransferAccountError(new TransferRejections.EligibleManagerRequired());
 
@@ -34,8 +34,8 @@ class LifecycleErrorsTest {
   }
 
   @Test
-  @DisplayName("Should direct a linked Profile mutation through its Account")
-  void shouldDirectLinkedProfileMutationThroughItsAccount() {
+  @DisplayName("Should direct the mutation through its Account when a Profile is linked")
+  void shouldDirectMutationThroughAccountWhenProfileIsLinked() {
     var error = LifecycleErrors.toTransferProfileError(new TransferRejections.ProfileLinked());
 
     assertThat(error)
@@ -48,8 +48,8 @@ class LifecycleErrorsTest {
   }
 
   @Test
-  @DisplayName("Should require an enabled ServerAdmin to remain")
-  void shouldRequireEnabledServerAdminToRemain() {
+  @DisplayName("Should require an enabled ServerAdmin when the final ServerAdmin is changed")
+  void shouldRequireEnabledServerAdminWhenFinalServerAdminIsChanged() {
     var error = LifecycleErrors.toDeleteAccountError(new TransferRejections.LastServerAdmin());
 
     assertThat(error)
@@ -61,8 +61,8 @@ class LifecycleErrorsTest {
   }
 
   @Test
-  @DisplayName("Should require a Household with Accounts to keep an administrator")
-  void shouldRequireHouseholdWithAccountsToKeepAdministrator() {
+  @DisplayName("Should require a HouseholdAdmin when a Household has Accounts")
+  void shouldRequireHouseholdAdminWhenHouseholdHasAccounts() {
     var error = LifecycleErrors.toTransferAccountError(new TransferRejections.LastHouseholdAdmin());
 
     assertThat(error)
@@ -74,8 +74,8 @@ class LifecycleErrorsTest {
   }
 
   @Test
-  @DisplayName("Should direct final Account removal through Household deletion")
-  void shouldDirectFinalAccountRemovalThroughHouseholdDeletion() {
+  @DisplayName("Should direct to Household deletion when the final Account is removed")
+  void shouldDirectToHouseholdDeletionWhenFinalAccountIsRemoved() {
     var error = LifecycleErrors.toDeleteAccountError(new TransferRejections.FinalAccount());
 
     assertThat(error)
@@ -88,8 +88,8 @@ class LifecycleErrorsTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("transferErrorCases")
-  @DisplayName("Should map each transfer rejection to its schema error")
-  void shouldMapEachTransferRejectionToItsSchemaError(
+  @DisplayName("Should map to the expected schema error when an Account transfer is rejected")
+  void shouldMapToExpectedSchemaErrorWhenAccountTransferIsRejected(
       String caseName, Supplier<Object> mapping, Class<?> expectedType) {
     assertThat(mapping.get()).isInstanceOf(expectedType);
   }
@@ -185,8 +185,8 @@ class LifecycleErrorsTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("deletionErrorCases")
-  @DisplayName("Should map each deletion rejection to its schema error")
-  void shouldMapEachDeletionRejectionToItsSchemaError(
+  @DisplayName("Should map to the expected schema error when an Account deletion is rejected")
+  void shouldMapToExpectedSchemaErrorWhenAccountDeletionIsRejected(
       String caseName, Supplier<Object> mapping, Class<?> expectedType) {
     assertThat(mapping.get()).isInstanceOf(expectedType);
   }
@@ -310,8 +310,8 @@ class LifecycleErrorsTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("replacementEligibilityCases")
-  @DisplayName("Should map replacement eligibility to the mutation input field")
-  void shouldMapReplacementEligibilityToMutationInputField(
+  @DisplayName("Should map to the mutation input field when a replacement is ineligible")
+  void shouldMapToMutationInputFieldWhenReplacementIsIneligible(
       String caseName, Supplier<List<String>> inputPath, String expectedField) {
     assertThat(inputPath.get()).containsExactly(expectedField);
   }

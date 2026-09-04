@@ -75,8 +75,8 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should move the Account with its Profile while credentials survive untouched")
-  void shouldMoveAccountWithItsProfileWhileCredentialsSurviveUntouched() throws Exception {
+  @DisplayName("Should preserve credentials when an Account moves with its Profile")
+  void shouldPreserveCredentialsWhenAccountMovesWithProfile() throws Exception {
     var mover =
         residentOf(
             ResidentSpec.builder()
@@ -122,8 +122,8 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should default omitted source access to ending the old Household visit")
-  void shouldDefaultOmittedSourceAccessToEndingOldHouseholdVisit() throws Exception {
+  @DisplayName("Should end the old Household visit when source access is omitted")
+  void shouldEndOldHouseholdVisitWhenSourceAccessIsOmitted() throws Exception {
     var mover =
         residentOf(
             ResidentSpec.builder()
@@ -150,8 +150,8 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should translate the retained HouseholdAdmin judgment to a typed rejection")
-  void shouldTranslateRetainedHouseholdAdminJudgmentToTypedRejection() throws Exception {
+  @DisplayName("Should return LastHouseholdAdmin when transfer would remove the final admin")
+  void shouldReturnLastHouseholdAdminWhenTransferWouldRemoveFinalAdmin() throws Exception {
     residentOf(
         ResidentSpec.builder()
             .householdId(admin.household().getId())
@@ -168,8 +168,8 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should translate the unique Profile name judgment to a typed rejection")
-  void shouldTranslateUniqueProfileNameJudgmentToTypedRejection() throws Exception {
+  @DisplayName("Should return ProfileNameTaken when an Account transfer causes a name collision")
+  void shouldReturnProfileNameTakenWhenAccountTransferCausesNameCollision() throws Exception {
     var mover =
         residentOf(
             ResidentSpec.builder()
@@ -208,8 +208,8 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should translate the retained ServerAdmin judgment to a typed rejection")
-  void shouldTranslateRetainedServerAdminJudgmentToTypedRejection() throws Exception {
+  @DisplayName("Should return LastServerAdmin when deletion would remove the final ServerAdmin")
+  void shouldReturnLastServerAdminWhenDeletionWouldRemoveFinalServerAdmin() throws Exception {
     residentOf(
         ResidentSpec.builder()
             .householdId(admin.household().getId())
@@ -234,8 +234,8 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should erase an Account and keep its Profile with a replacement Profile manager")
-  void shouldEraseAccountAndKeepProfileWithReplacementProfileManager() throws Exception {
+  @DisplayName("Should keep the Profile with a replacement manager when an Account is deleted")
+  void shouldKeepProfileWithReplacementManagerWhenAccountIsDeleted() throws Exception {
     var doomed =
         residentOf(
             ResidentSpec.builder()
@@ -278,8 +278,8 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should let a fresh person delete their own Account after typing DELETE")
-  void shouldLetFreshPersonDeleteTheirOwnAccountAfterTypingDelete() throws Exception {
+  @DisplayName("Should delete their own Account when a fresh person types DELETE")
+  void shouldDeleteOwnAccountWhenFreshPersonTypesDelete() throws Exception {
     var buddyId =
         residentOf(
                 ResidentSpec.builder()
@@ -326,8 +326,8 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should move an unlinked Profile to its new Profile manager")
-  void shouldMoveUnlinkedProfileToNewProfileManager() throws Exception {
+  @DisplayName("Should move an unlinked Profile when the destination manager is eligible")
+  void shouldMoveUnlinkedProfileWhenDestinationManagerIsEligible() throws Exception {
     var orphan = managedOrphan();
 
     graphql(
@@ -356,8 +356,8 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should map an omitted local manager to the required input error")
-  void shouldMapOmittedLocalManagerToRequiredInputError() throws Exception {
+  @DisplayName("Should return eligible manager required when the Profile manager is omitted")
+  void shouldReturnEligibleManagerRequiredWhenProfileManagerIsOmitted() throws Exception {
     var orphan = managedOrphan();
 
     graphql(
@@ -375,8 +375,8 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should translate a Profile transfer name collision to a typed rejection")
-  void shouldTranslateProfileTransferNameCollisionToTypedRejection() throws Exception {
+  @DisplayName("Should return ProfileNameTaken when a Profile transfer causes a name collision")
+  void shouldReturnProfileNameTakenWhenProfileTransferCausesNameCollision() throws Exception {
     var orphan = managedOrphan();
     transactionTemplate.executeWithoutResult(
         _ -> {
@@ -414,8 +414,8 @@ class LifecycleEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should administratively delete an unlinked Profile after fresh reauthentication")
-  void shouldAdministrativelyDeleteUnlinkedProfileAfterFreshReauthentication() throws Exception {
+  @DisplayName("Should delete an unlinked Profile when a ServerAdmin is freshly reauthenticated")
+  void shouldDeleteUnlinkedProfileWhenServerAdminIsFreshlyReauthenticated() throws Exception {
     var orphan = managedOrphan();
     graphql(
             authTestSupport.freshAccountBearer(admin),

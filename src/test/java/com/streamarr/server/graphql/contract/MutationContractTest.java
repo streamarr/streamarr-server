@@ -53,23 +53,24 @@ class MutationContractTest {
   private static final TypeDefinitionRegistry SCHEMA = loadSchema();
 
   @Test
-  @DisplayName("Should describe when a Household must retain an administrator")
-  void shouldDescribeWhenHouseholdMustRetainAdministrator() {
+  @DisplayName(
+      "Should describe the administrator requirement when Household retention is documented")
+  void shouldDescribeAdministratorRequirementWhenHouseholdRetentionIsDocumented() {
     assertThat(descriptionOf("LastHouseholdAdminError"))
         .isEqualTo(
             "After its first Account, a Household must keep at least one HouseholdAdmin until the Household is deleted.");
   }
 
   @Test
-  @DisplayName("Should describe final Account removal as Household deletion")
-  void shouldDescribeFinalAccountRemovalAsHouseholdDeletion() {
+  @DisplayName("Should describe Household deletion when final Account removal is documented")
+  void shouldDescribeHouseholdDeletionWhenFinalAccountRemovalIsDocumented() {
     assertThat(descriptionOf("LastHouseholdAccountError"))
         .isEqualTo("The last Account can be removed only by deleting the Household.");
   }
 
   @Test
-  @DisplayName("Should describe linked Profile handling in two sentences")
-  void shouldDescribeLinkedProfileHandlingInTwoSentences() {
+  @DisplayName("Should use two sentences when linked Profile handling is described")
+  void shouldUseTwoSentencesWhenLinkedProfileHandlingIsDescribed() {
     assertThat(descriptionOf("ProfileBelongsToAccountError"))
         .isEqualTo("The Profile belongs to an Account. Transfer or delete the Account instead.");
   }

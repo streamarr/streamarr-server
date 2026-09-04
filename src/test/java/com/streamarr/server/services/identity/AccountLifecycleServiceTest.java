@@ -113,8 +113,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should move the Account with its Personal Profile and structural share")
-  void shouldMoveAccountWithItsPersonalProfileAndStructuralShare() {
+  @DisplayName("Should move the Account and Personal Profile when source access ends")
+  void shouldMoveAccountAndPersonalProfileWhenSourceAccessEnds() {
     var registration =
         registrations.save(
             DeviceRegistration.builder()
@@ -162,8 +162,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should join a populated destination as a HouseholdMember")
-  void shouldJoinPopulatedDestinationAsHouseholdMember() {
+  @DisplayName("Should assign HouseholdMember when the destination has Accounts")
+  void shouldAssignHouseholdMemberWhenDestinationHasAccounts() {
     residentOf(destination, HouseholdRole.ADMIN);
 
     var moved =
@@ -181,9 +181,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Should keep the old Household context while clearing its obsolete Profile selection")
-  void shouldKeepOldHouseholdAsOrdinaryVisitWhenAsked() {
+  @DisplayName("Should keep the old Household visit when source access is retained")
+  void shouldKeepOldHouseholdVisitWhenSourceAccessIsRetained() {
     var registration =
         registrations.save(
             DeviceRegistration.builder()
@@ -226,8 +225,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject an Account transfer to its current Household")
-  void shouldRejectAccountTransferToItsCurrentHousehold() {
+  @DisplayName("Should reject the transfer when the destination is the current Household")
+  void shouldRejectTransferWhenDestinationIsCurrentHousehold() {
     assertThat(
             rejectionOf(
                 service.transferAccount(
@@ -241,8 +240,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject an Account transfer to an unknown Household")
-  void shouldRejectAccountTransferToUnknownHousehold() {
+  @DisplayName("Should return HouseholdNotFound when the transfer destination does not exist")
+  void shouldReturnHouseholdNotFoundWhenTransferDestinationDoesNotExist() {
     assertThat(
             rejectionOf(
                 service.transferAccount(
@@ -256,8 +255,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should reserve the final Account for Household teardown")
-  void shouldReserveFinalAccountForHouseholdTeardown() {
+  @DisplayName("Should reserve the final Account when transfer would empty the Household")
+  void shouldReserveFinalAccountWhenTransferWouldEmptyHousehold() {
     var loner =
         residentOf(
             households.save(HouseholdFixture.defaultHouseholdBuilder().build()),
@@ -275,8 +274,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should hide an unauthorized Account behind the oracle rule")
-  void shouldHideUnauthorizedAccountBehindOracleRule() {
+  @DisplayName("Should hide the Account when transfer is unauthorized")
+  void shouldHideAccountWhenTransferIsUnauthorized() {
     authorization.denyAll();
     assertThat(
             rejectionOf(
@@ -306,8 +305,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should erase the Account and Profile pair leaving no proposal behind")
-  void shouldEraseAccountAndProfilePairLeavingNoProposalBehind() {
+  @DisplayName("Should erase the Account, Profile, and artifacts when ERASE is requested")
+  void shouldEraseAccountProfileAndArtifactsWhenEraseIsRequested() {
     var registration =
         registrations.save(
             DeviceRegistration.builder()
@@ -446,8 +445,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should keep the Profile only with a valid replacement anchor")
-  void shouldKeepProfileOnlyWithValidReplacementAnchor() {
+  @DisplayName("Should keep the Profile when the replacement manager is eligible")
+  void shouldKeepProfileWhenReplacementManagerIsEligible() {
     assertThat(rejectionOf(deleteKeeping(null)))
         .isInstanceOf(TransferRejections.ReplacementManagerRequired.class);
     assertThat(rejectionOf(deleteKeeping(UUID.randomUUID())))
@@ -474,15 +473,15 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject the deleted Account as its own replacement manager")
-  void shouldRejectDeletedAccountAsItsOwnReplacementManager() {
+  @DisplayName("Should reject the replacement when the deleted Account is named")
+  void shouldRejectReplacementWhenDeletedAccountIsNamed() {
     assertThat(rejectionOf(deleteKeeping(mover.getId())))
         .isInstanceOf(TransferRejections.ReplacementManagerNotEligible.class);
   }
 
   @Test
-  @DisplayName("Should require a HouseholdAdmin replacement for a restricted Profile")
-  void shouldRequireHouseholdAdminReplacementForRestrictedProfile() {
+  @DisplayName("Should require a HouseholdAdmin replacement when the Profile is restricted")
+  void shouldRequireHouseholdAdminReplacementWhenProfileIsRestricted() {
     profiles.findById(mover.getPersonalProfileId()).orElseThrow().setMaximumAllowedRatingAge(13);
     var member = residentOf(source, HouseholdRole.MEMBER);
 
@@ -491,8 +490,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should require the reason and classify the missing ceremony first")
-  void shouldRequireReasonAndClassifyMissingCeremonyFirst() {
+  @DisplayName("Should require a reason before reauthentication when deletion is requested")
+  void shouldRequireReasonBeforeReauthenticationWhenDeletionIsRequested() {
     assertThat(
             rejectionOf(
                 service.deleteAccount(
@@ -523,8 +522,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should erase the caller's Account and every Profile-bound artifact")
-  void shouldEraseCallersAccountAndEveryProfileBoundArtifact() {
+  @DisplayName("Should erase the Account and artifacts when a person deletes their own Account")
+  void shouldEraseAccountAndArtifactsWhenPersonDeletesOwnAccount() {
     var self = AuthenticatedIdentityFixture.accountScopedBuilder().accountId(mover.getId()).build();
     var session =
         sessions.save(AuthSession.builder().accountId(mover.getId()).deviceName("web").build());
@@ -563,8 +562,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should reserve the final Account from self-deletion")
-  void shouldReserveFinalAccountFromSelfDeletion() {
+  @DisplayName("Should reserve the final Account when a person deletes their own Account")
+  void shouldReserveFinalAccountWhenPersonDeletesOwnAccount() {
     var lonerHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var loner = residentOf(lonerHousehold, HouseholdRole.ADMIN);
     var lonerIdentity =
@@ -574,8 +573,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse self-deletion without the literal confirmation")
-  void shouldRefuseSelfDeletionWithoutLiteralConfirmation() {
+  @DisplayName("Should require literal confirmation when a person deletes their own Account")
+  void shouldRequireLiteralConfirmationWhenPersonDeletesOwnAccount() {
     var self = AuthenticatedIdentityFixture.accountScopedBuilder().accountId(mover.getId()).build();
 
     assertThat(rejectionOf(service.deleteMyAccount(self, "delete")))
