@@ -41,7 +41,7 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /**
    * Re-reads the share past the first-level cache after jOOQ DML changed it in this transaction.
    */
-  Optional<ProfileHouseholdShare> findByIdAndRefresh(UUID shareId);
+  Optional<ProfileHouseholdShare> findByIdAndReloadFromDatabase(UUID shareId);
 
   /** PENDING and unexpired becomes ACTIVE; a raced decision has exactly one winner. */
   boolean tryActivatePending(UUID shareId, Instant now);

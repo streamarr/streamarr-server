@@ -91,7 +91,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public Optional<ProfileHouseholdShare> findByIdAndRefresh(UUID shareId) {
+  public Optional<ProfileHouseholdShare> findByIdAndReloadFromDatabase(UUID shareId) {
     var found = Optional.ofNullable(entityManager.find(ProfileHouseholdShare.class, shareId));
     found.ifPresent(entityManager::refresh);
     return found;

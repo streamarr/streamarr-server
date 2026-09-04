@@ -105,7 +105,7 @@ public class ProfileLifecycleService {
           invalidateProfileBoundArtifacts(command.profileId(), PROFILE_TRANSFERRED, now);
           makeAvailableAtHome(command.profileId(), command.destinationHouseholdId(), now);
           audit(identity, "transferProfile", command.profileId(), command.reason());
-          return profileRepository.findByIdAndRefresh(command.profileId()).orElseThrow();
+          return profileRepository.findByIdAndReloadFromDatabase(command.profileId()).orElseThrow();
         },
         constraint ->
             switch (constraint) {

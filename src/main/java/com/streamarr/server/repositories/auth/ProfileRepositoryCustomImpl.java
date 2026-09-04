@@ -232,7 +232,7 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
   }
 
   @Override
-  public Optional<Profile> findByIdAndRefresh(UUID profileId) {
+  public Optional<Profile> findByIdAndReloadFromDatabase(UUID profileId) {
     var entity = entityManager.find(Profile.class, profileId);
     if (entity == null) {
       return Optional.empty();

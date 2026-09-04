@@ -1,5 +1,8 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.jooq.generated.enums.HouseholdRole.ADMIN;
+import static com.streamarr.server.jooq.generated.enums.HouseholdRole.MEMBER;
+import static com.streamarr.server.jooq.generated.enums.HouseholdRole.valueOf;
 import static com.streamarr.server.jooq.generated.tables.HouseholdGuard.HOUSEHOLD_GUARD;
 import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
@@ -13,9 +16,9 @@ import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
 import com.streamarr.server.domain.auth.AccountShareFacts;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileManagerEligibility;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
 import com.streamarr.server.jooq.generated.tables.records.UserAccountRecord;
 import com.streamarr.server.repositories.JooqQueryHelper;
@@ -147,9 +150,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
         .fetchOptional(
             row ->
                 new AccountShareFacts(
-                    row.value1(),
-                    com.streamarr.server.domain.auth.HouseholdRole.valueOf(row.value2().name()),
-                    row.value3()));
+                    row.value1(), HouseholdRole.valueOf(row.value2().name()), row.value3()));
   }
 
   @Override
@@ -215,19 +216,13 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   @Override
   public boolean tryPromoteToHouseholdAdmin(UUID accountId) {
     return transition(
-        accountId,
-        USER_ACCOUNT.HOUSEHOLD_ROLE,
-        HouseholdRole.ADMIN,
-        USER_ACCOUNT.HOUSEHOLD_ROLE.ne(HouseholdRole.ADMIN));
+        accountId, USER_ACCOUNT.HOUSEHOLD_ROLE, ADMIN, USER_ACCOUNT.HOUSEHOLD_ROLE.ne(ADMIN));
   }
 
   @Override
   public boolean tryDemoteToHouseholdMember(UUID accountId) {
     return transition(
-        accountId,
-        USER_ACCOUNT.HOUSEHOLD_ROLE,
-        HouseholdRole.MEMBER,
-        USER_ACCOUNT.HOUSEHOLD_ROLE.ne(HouseholdRole.MEMBER));
+        accountId, USER_ACCOUNT.HOUSEHOLD_ROLE, MEMBER, USER_ACCOUNT.HOUSEHOLD_ROLE.ne(MEMBER));
   }
 
   @Override
@@ -263,8 +258,8 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   }
 
   @Override
-  public Optional<com.streamarr.server.domain.auth.UserAccount> findByIdAndRefresh(UUID accountId) {
-    var entity = entityManager.find(com.streamarr.server.domain.auth.UserAccount.class, accountId);
+  public Optional<UserAccount> findByIdAndReloadFromDatabase(UUID accountId) {
+    var entity = entityManager.find(UserAccount.class, accountId);
     if (entity == null) {
       return Optional.empty();
     }
@@ -275,13 +270,10 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
 
   @Override
   public boolean tryTransfer(
-      UUID accountId,
-      UUID expectedHouseholdId,
-      UUID destinationHouseholdId,
-      com.streamarr.server.domain.auth.HouseholdRole role) {
+      UUID accountId, UUID expectedHouseholdId, UUID destinationHouseholdId, HouseholdRole role) {
     return dsl.update(USER_ACCOUNT)
             .set(USER_ACCOUNT.HOUSEHOLD_ID, destinationHouseholdId)
-            .set(USER_ACCOUNT.HOUSEHOLD_ROLE, HouseholdRole.valueOf(role.name()))
+            .set(USER_ACCOUNT.HOUSEHOLD_ROLE, valueOf(role.name()))
             .set(USER_ACCOUNT.LAST_MODIFIED_ON, clock.instant().atOffset(ZoneOffset.UTC))
             .set(USER_ACCOUNT.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
             .where(USER_ACCOUNT.ID.eq(accountId))
@@ -330,8 +322,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   }
 
   @Override
-  public Optional<com.streamarr.server.domain.auth.HouseholdRole> roleForNewAccount(
-      UUID householdId, com.streamarr.server.domain.auth.HouseholdRole requestedRole) {
+  public Optional<HouseholdRole> roleForNewAccount(UUID householdId, HouseholdRole requestedRole) {
     var locked =
         dsl.select(HOUSEHOLD_GUARD.HOUSEHOLD_ID)
             .from(HOUSEHOLD_GUARD)
@@ -346,8 +337,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     var householdHasAccount =
         dsl.fetchExists(
             dsl.selectOne().from(USER_ACCOUNT).where(USER_ACCOUNT.HOUSEHOLD_ID.eq(householdId)));
-    return Optional.of(
-        householdHasAccount ? requestedRole : com.streamarr.server.domain.auth.HouseholdRole.ADMIN);
+    return Optional.of(householdHasAccount ? requestedRole : HouseholdRole.ADMIN);
   }
 
   @Override
@@ -360,7 +350,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
             .and(USER_ACCOUNT.HOUSEHOLD_ID.eq(householdId))
             .and(PROFILE.RESTRICTED.isFalse());
     if (eligibility == ProfileManagerEligibility.HOUSEHOLD_ADMIN) {
-      eligible = eligible.and(USER_ACCOUNT.HOUSEHOLD_ROLE.eq(HouseholdRole.ADMIN));
+      eligible = eligible.and(USER_ACCOUNT.HOUSEHOLD_ROLE.eq(ADMIN));
     }
 
     return dsl.fetchExists(

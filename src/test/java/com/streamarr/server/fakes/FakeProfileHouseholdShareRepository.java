@@ -145,7 +145,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public Optional<ProfileHouseholdShare> findByIdAndRefresh(UUID shareId) {
+  public Optional<ProfileHouseholdShare> findByIdAndReloadFromDatabase(UUID shareId) {
     return findById(shareId);
   }
 

@@ -119,7 +119,9 @@ public class AccountLifecycleService {
           audit(identity, "transferAccount", ACCOUNT_ID, command.accountId(), command.reason());
           // The refusal checks JPA-loaded this row in this transaction; re-read past the
           // first-level cache or the payload would show the pre-transfer state.
-          return userAccountRepository.findByIdAndRefresh(command.accountId()).orElseThrow();
+          return userAccountRepository
+              .findByIdAndReloadFromDatabase(command.accountId())
+              .orElseThrow();
         },
         this::transferConstraint);
   }
