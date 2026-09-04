@@ -25,7 +25,6 @@ import org.jooq.Field;
 import org.jooq.impl.DSL;
 import org.springframework.data.domain.AuditorAware;
 
-@SuppressWarnings("checkstyle:fullyQualifiedName")
 @RequiredArgsConstructor
 public class ProfileHouseholdShareRepositoryCustomImpl
     implements ProfileHouseholdShareRepositoryCustom {
@@ -168,6 +167,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   public boolean tryDeclinePending(
       UUID shareId, com.streamarr.server.domain.auth.ProfileShareStatus target, Instant now)
       throws IllegalArgumentException {

@@ -15,7 +15,6 @@ import java.util.Optional;
 import java.util.OptionalInt;
 
 // Domain and protobuf contracts intentionally share simple names.
-@SuppressWarnings("checkstyle:fullyQualifiedName")
 final class WorkerVariantJobMapper {
 
   private final WorkerMediaSourceResolver sourceResolver;
@@ -42,6 +41,7 @@ final class WorkerVariantJobMapper {
         .build();
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private TranscodeDecision decision(com.streamarr.transcode.v1.TranscodeDecision decision) {
     return TranscodeDecision.builder()
         .transcodeMode(mode(decision.getMode()))
@@ -53,6 +53,7 @@ final class WorkerVariantJobMapper {
         .build();
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private AudioDecision audio(com.streamarr.transcode.v1.AudioDecision audio) {
     return AudioDecision.builder()
         .mode(audioMode(audio.getMode()))
@@ -62,6 +63,7 @@ final class WorkerVariantJobMapper {
         .build();
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private SubtitleDecision subtitle(com.streamarr.transcode.v1.SubtitleDecision subtitle) {
     return new SubtitleDecision(
         subtitleMode(subtitle.getMode()),
@@ -70,6 +72,7 @@ final class WorkerVariantJobMapper {
         subtitle.hasLanguage() ? Optional.of(subtitle.getLanguage()) : Optional.empty());
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private TranscodeMode mode(com.streamarr.transcode.v1.TranscodeMode mode) {
     return switch (mode) {
       case TRANSCODE_MODE_REMUX -> TranscodeMode.REMUX;
@@ -81,6 +84,7 @@ final class WorkerVariantJobMapper {
     };
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private AudioMode audioMode(com.streamarr.transcode.v1.AudioMode mode) {
     return switch (mode) {
       case AUDIO_MODE_COPY -> AudioMode.COPY;
@@ -91,6 +95,7 @@ final class WorkerVariantJobMapper {
     };
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   private SubtitleMode subtitleMode(com.streamarr.transcode.v1.SubtitleMode mode) {
     return switch (mode) {
       case SUBTITLE_MODE_EXCLUDE -> SubtitleMode.EXCLUDE;
@@ -103,6 +108,7 @@ final class WorkerVariantJobMapper {
     };
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   static ContainerFormat container(com.streamarr.transcode.v1.ContainerFormat container) {
     return switch (container) {
       case CONTAINER_FORMAT_MPEG_TS -> ContainerFormat.MPEGTS;

@@ -47,9 +47,6 @@ import org.jooq.impl.DSL;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-// checkstyle:fullyQualifiedName suppressed for the class: the domain and generated jOOQ role
-// enums share a simple name, an unavoidable collision.
-@SuppressWarnings("checkstyle:fullyQualifiedName")
 @RequiredArgsConstructor
 public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCustom {
 
