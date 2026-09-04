@@ -62,7 +62,7 @@ class AccountLifecycleEndpointsIT extends IdentityLifecycleEndpointTestSupport {
             authTestSupport.accountBearer(admin),
             """
             mutation { transferAccount(input: {accountId: "%s",
-              destinationHouseholdId: "%s", sourceAccess: END, reason: "support"}) {
+              destinationHouseholdId: "%s", sourceHouseholdAccess: END, reason: "support"}) {
               account { householdId householdRole } userErrors { __typename } } }
             """
                 .formatted(mover.getId(), host.household().getId()))
@@ -95,8 +95,8 @@ class AccountLifecycleEndpointsIT extends IdentityLifecycleEndpointTestSupport {
   }
 
   @Test
-  @DisplayName("Should end the old Household visit when source access is omitted")
-  void shouldEndOldHouseholdVisitWhenSourceAccessIsOmitted() throws Exception {
+  @DisplayName("Should end the old Household visit when source Household access is omitted")
+  void shouldEndOldHouseholdVisitWhenSourceHouseholdAccessIsOmitted() throws Exception {
     var mover =
         residentOf(
             ResidentSpec.builder()
@@ -231,7 +231,7 @@ class AccountLifecycleEndpointsIT extends IdentityLifecycleEndpointTestSupport {
             authTestSupport.freshAccountBearer(admin),
             """
             mutation { administrativelyDeleteAccount(input: {accountId: "%s",
-              profileDisposition: ERASE, reason: "retired"}) {
+              profileCleanup: ERASE_PROFILE, reason: "retired"}) {
               accountId userErrors { __typename } } }
             """
                 .formatted(doomed.getId()))
@@ -261,7 +261,7 @@ class AccountLifecycleEndpointsIT extends IdentityLifecycleEndpointTestSupport {
     graphql(
             authTestSupport.freshAccountBearer(admin),
             """
-            mutation { administrativelyDeleteAccount(input: {accountId: "%s", profileDisposition: ERASE,
+            mutation { administrativelyDeleteAccount(input: {accountId: "%s", profileCleanup: ERASE_PROFILE,
               reason: "retired"}) { accountId userErrors { __typename } } }
             """
                 .formatted(admin.account().getId()))
@@ -285,7 +285,7 @@ class AccountLifecycleEndpointsIT extends IdentityLifecycleEndpointTestSupport {
     graphql(
             authTestSupport.freshAccountBearer(admin),
             """
-            mutation { administrativelyDeleteAccount(input: {accountId: "%s", profileDisposition: KEEP,
+            mutation { administrativelyDeleteAccount(input: {accountId: "%s", profileCleanup: PRESERVE_PROFILE,
               reason: "leaving"}) { accountId userErrors { __typename } } }
             """
                 .formatted(doomed.getId()))
@@ -297,7 +297,7 @@ class AccountLifecycleEndpointsIT extends IdentityLifecycleEndpointTestSupport {
     graphql(
             authTestSupport.freshAccountBearer(admin),
             """
-            mutation { administrativelyDeleteAccount(input: {accountId: "%s", profileDisposition: KEEP,
+            mutation { administrativelyDeleteAccount(input: {accountId: "%s", profileCleanup: PRESERVE_PROFILE,
               replacementManagerAccountId: "%s", reason: "leaving"}) {
               accountId userErrors { __typename } } }
             """
@@ -332,7 +332,7 @@ class AccountLifecycleEndpointsIT extends IdentityLifecycleEndpointTestSupport {
     graphql(
             authTestSupport.freshAccountBearer(admin),
             """
-            mutation { administrativelyDeleteAccount(input: {accountId: "%s", profileDisposition: ERASE,
+            mutation { administrativelyDeleteAccount(input: {accountId: "%s", profileCleanup: ERASE_PROFILE,
               reason: "leaving"}) { accountId userErrors { __typename } } }
             """
                 .formatted(doomed.getId()))
@@ -426,7 +426,7 @@ class AccountLifecycleEndpointsIT extends IdentityLifecycleEndpointTestSupport {
   private String transferMutation(UUID accountId, UUID destinationHouseholdId) {
     return """
            mutation { transferAccount(input: {accountId: "%s",
-             destinationHouseholdId: "%s", sourceAccess: END}) {
+             destinationHouseholdId: "%s", sourceHouseholdAccess: END}) {
              account { id } userErrors { __typename } } }
            """
         .formatted(accountId, destinationHouseholdId);
@@ -528,7 +528,7 @@ class AccountLifecycleEndpointsIT extends IdentityLifecycleEndpointTestSupport {
             .inputPath("accountId")
             .mutationTemplate(
                 lifecycleMutation(
-                    "administrativelyDeleteAccount(input: {accountId: \"not-a-uuid\", profileDisposition: ERASE, reason: \"reason\"})",
+                    "administrativelyDeleteAccount(input: {accountId: \"not-a-uuid\", profileCleanup: ERASE_PROFILE, reason: \"reason\"})",
                     "accountId"))
             .build(),
         MalformedLifecycleIdCase.builder()
@@ -537,7 +537,7 @@ class AccountLifecycleEndpointsIT extends IdentityLifecycleEndpointTestSupport {
             .inputPath("replacementManagerAccountId")
             .mutationTemplate(
                 lifecycleMutation(
-                    "administrativelyDeleteAccount(input: {accountId: \"%1$s\", profileDisposition: KEEP, replacementManagerAccountId: \"not-a-uuid\", reason: \"reason\"})",
+                    "administrativelyDeleteAccount(input: {accountId: \"%1$s\", profileCleanup: PRESERVE_PROFILE, replacementManagerAccountId: \"not-a-uuid\", reason: \"reason\"})",
                     "accountId"))
             .build());
   }

@@ -692,7 +692,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
       graphql(
               authTestSupport.freshAccountBearer(otherAdmin),
               """
-              mutation { administrativelyDeleteAccount(input: {accountId: "%s", profileDisposition: ERASE,
+              mutation { administrativelyDeleteAccount(input: {accountId: "%s", profileCleanup: ERASE_PROFILE,
                 reason: "issuer left"}) { accountId userErrors { __typename } } }
               """
                   .formatted(serverAdmin.account().getId()))

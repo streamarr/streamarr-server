@@ -25,8 +25,8 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.identity.AccountLifecycleService.AdministrativelyDeleteAccountCommand;
-import com.streamarr.server.services.identity.AccountLifecycleService.ProfileDisposition;
-import com.streamarr.server.services.identity.AccountLifecycleService.SourceAccess;
+import com.streamarr.server.services.identity.AccountLifecycleService.ProfileCleanup;
+import com.streamarr.server.services.identity.AccountLifecycleService.SourceHouseholdAccess;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
 import com.streamarr.server.services.identity.ProfileLifecycleService.TransferProfileCommand;
 import com.streamarr.server.services.mutation.MutationTransactions;
@@ -194,7 +194,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                                 authenticated(actor),
                                 AdministrativelyDeleteAccountCommand.builder()
                                     .accountId(mover.getId())
-                                    .profileDisposition(ProfileDisposition.KEEP)
+                                    .profileCleanup(ProfileCleanup.PRESERVE_PROFILE)
                                     .replacementManagerAccountId(source.account().getId())
                                     .reason("departed")
                                     .build())));
@@ -210,7 +210,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                 TransferAccountCommand.builder()
                     .accountId(mover.getId())
                     .destinationHouseholdId(destination.household().getId())
-                    .sourceAccess(SourceAccess.END)
+                    .sourceHouseholdAccess(SourceHouseholdAccess.END)
                     .reason("relocated")
                     .build());
         assertThat(transfer).isInstanceOf(Outcome.Accepted.class);
@@ -966,7 +966,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
     return TransferAccountCommand.builder()
         .accountId(mover.getId())
         .destinationHouseholdId(destination.household().getId())
-        .sourceAccess(SourceAccess.END)
+        .sourceHouseholdAccess(SourceHouseholdAccess.END)
         .reason("relocated")
         .build();
   }
@@ -1021,7 +1021,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
   private static AdministrativelyDeleteAccountCommand erase(UUID accountId) {
     return AdministrativelyDeleteAccountCommand.builder()
         .accountId(accountId)
-        .profileDisposition(ProfileDisposition.ERASE)
+        .profileCleanup(ProfileCleanup.ERASE_PROFILE)
         .reason("departed")
         .build();
   }

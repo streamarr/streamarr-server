@@ -196,7 +196,7 @@ public class AccountLifecycleService {
               account,
               AdministrativelyDeleteAccountCommand.builder()
                   .accountId(account.getId())
-                  .profileDisposition(ProfileDisposition.ERASE)
+                  .profileCleanup(ProfileCleanup.ERASE_PROFILE)
                   .reason("self-deletion")
                   .build());
           audit(identity, "deleteMyAccount", ACCOUNT_ID, account.getId(), "self-deletion");
@@ -225,21 +225,22 @@ public class AccountLifecycleService {
     shareRepository.invalidatePendingOfferedBy(account.getId(), "offering manager deleted", now);
 
     var profileId = account.getPersonalProfileId();
-    if (command.profileDisposition() == ProfileDisposition.KEEP) {
+    if (command.profileCleanup() == ProfileCleanup.PRESERVE_PROFILE) {
       profileManagerRepository.tryGrantDirectManagement(
           command.replacementManagerAccountId(), profileId);
       shareRepository.convertMembershipShareToVisitorShare(
           profileId, account.getHouseholdId(), now);
       deleteAccountRow(account);
-    } else {
-      deleteAccountRow(account);
-      accountInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
-      managerInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
-      shareRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
-      clearSelectionsEverywhere(profileId, now);
-      profileRepository.deleteById(profileId);
-      profileRepository.flush();
+      return;
     }
+
+    deleteAccountRow(account);
+    accountInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
+    managerInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
+    shareRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
+    clearSelectionsEverywhere(profileId, now);
+    profileRepository.deleteById(profileId);
+    profileRepository.flush();
   }
 
   private void deleteAccountRow(UserAccount account) {
@@ -250,7 +251,7 @@ public class AccountLifecycleService {
 
   private void moveHomeAvailability(
       TransferAccountCommand command, UUID sourceHouseholdId, UUID profileId, Instant now) {
-    if (command.sourceAccess() == SourceAccess.KEEP_AS_VISITOR) {
+    if (command.sourceHouseholdAccess() == SourceHouseholdAccess.KEEP_AS_VISITOR) {
       shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId, now);
       authSessionRepository.clearProfileSelectionFromLiveSessions(
           profileId, sourceHouseholdId, now);
@@ -279,7 +280,7 @@ public class AccountLifecycleService {
 
   private Optional<TransferRejections.AdministrativelyDeleteAccount> replacementRefusal(
       AdministrativelyDeleteAccountCommand command, UserAccount account) {
-    if (command.profileDisposition() != ProfileDisposition.KEEP) {
+    if (command.profileCleanup() != ProfileCleanup.PRESERVE_PROFILE) {
       return Optional.empty();
     }
 
@@ -375,25 +376,28 @@ public class AccountLifecycleService {
   }
 
   /** Access retained in the Account's former Household after transfer. */
-  public enum SourceAccess {
+  public enum SourceHouseholdAccess {
     END,
     KEEP_AS_VISITOR
   }
 
-  /** Fate of the Personal Profile when its Account is deleted. */
-  public enum ProfileDisposition {
-    KEEP,
-    ERASE
+  /** Cleanup applied to the Personal Profile when its Account is deleted. */
+  public enum ProfileCleanup {
+    ERASE_PROFILE,
+    PRESERVE_PROFILE
   }
 
   @Builder
   public record TransferAccountCommand(
-      UUID accountId, UUID destinationHouseholdId, SourceAccess sourceAccess, String reason) {}
+      UUID accountId,
+      UUID destinationHouseholdId,
+      SourceHouseholdAccess sourceHouseholdAccess,
+      String reason) {}
 
   @Builder
   public record AdministrativelyDeleteAccountCommand(
       UUID accountId,
-      ProfileDisposition profileDisposition,
+      ProfileCleanup profileCleanup,
       UUID replacementManagerAccountId,
       String reason) {}
 }

@@ -41,8 +41,8 @@ import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.identity.AccountLifecycleService.AdministrativelyDeleteAccountCommand;
-import com.streamarr.server.services.identity.AccountLifecycleService.ProfileDisposition;
-import com.streamarr.server.services.identity.AccountLifecycleService.SourceAccess;
+import com.streamarr.server.services.identity.AccountLifecycleService.ProfileCleanup;
+import com.streamarr.server.services.identity.AccountLifecycleService.SourceHouseholdAccess;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
@@ -116,8 +116,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should move the Account and Personal Profile when source access ends")
-  void shouldMoveAccountAndPersonalProfileWhenSourceAccessEnds() {
+  @DisplayName("Should move the Account and Personal Profile when source Household access ends")
+  void shouldMoveAccountAndPersonalProfileWhenSourceHouseholdAccessEnds() {
     var registration =
         registrations.save(
             DeviceRegistration.builder()
@@ -140,7 +140,7 @@ class AccountLifecycleServiceTest {
             TransferAccountCommand.builder()
                 .accountId(mover.getId())
                 .destinationHouseholdId(destination.getId())
-                .sourceAccess(SourceAccess.END)
+                .sourceHouseholdAccess(SourceHouseholdAccess.END)
                 .reason("support")
                 .build());
 
@@ -180,7 +180,7 @@ class AccountLifecycleServiceTest {
             TransferAccountCommand.builder()
                 .accountId(mover.getId())
                 .destinationHouseholdId(destination.getId())
-                .sourceAccess(SourceAccess.END)
+                .sourceHouseholdAccess(SourceHouseholdAccess.END)
                 .build());
 
     assertThat(moved).isInstanceOf(Outcome.Accepted.class);
@@ -189,8 +189,8 @@ class AccountLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should keep the old Household visit when source access is retained")
-  void shouldKeepOldHouseholdVisitWhenSourceAccessIsRetained() {
+  @DisplayName("Should keep the old Household visit when source Household access is retained")
+  void shouldKeepOldHouseholdVisitWhenSourceHouseholdAccessIsRetained() {
     var registration =
         registrations.save(
             DeviceRegistration.builder()
@@ -214,7 +214,7 @@ class AccountLifecycleServiceTest {
             TransferAccountCommand.builder()
                 .accountId(mover.getId())
                 .destinationHouseholdId(destination.getId())
-                .sourceAccess(SourceAccess.KEEP_AS_VISITOR)
+                .sourceHouseholdAccess(SourceHouseholdAccess.KEEP_AS_VISITOR)
                 .build());
 
     assertThat(moved).isInstanceOf(Outcome.Accepted.class);
@@ -242,7 +242,7 @@ class AccountLifecycleServiceTest {
                     TransferAccountCommand.builder()
                         .accountId(mover.getId())
                         .destinationHouseholdId(source.getId())
-                        .sourceAccess(SourceAccess.END)
+                        .sourceHouseholdAccess(SourceHouseholdAccess.END)
                         .build())))
         .isInstanceOf(TransferRejections.SameHousehold.class);
   }
@@ -257,7 +257,7 @@ class AccountLifecycleServiceTest {
                     TransferAccountCommand.builder()
                         .accountId(mover.getId())
                         .destinationHouseholdId(UUID.randomUUID())
-                        .sourceAccess(SourceAccess.END)
+                        .sourceHouseholdAccess(SourceHouseholdAccess.END)
                         .build())))
         .isInstanceOf(TransferRejections.HouseholdNotFound.class);
   }
@@ -276,7 +276,7 @@ class AccountLifecycleServiceTest {
                     TransferAccountCommand.builder()
                         .accountId(loner.getId())
                         .destinationHouseholdId(destination.getId())
-                        .sourceAccess(SourceAccess.END)
+                        .sourceHouseholdAccess(SourceHouseholdAccess.END)
                         .build())))
         .isInstanceOf(TransferRejections.FinalAccount.class);
   }
@@ -292,7 +292,7 @@ class AccountLifecycleServiceTest {
                     TransferAccountCommand.builder()
                         .accountId(mover.getId())
                         .destinationHouseholdId(destination.getId())
-                        .sourceAccess(SourceAccess.END)
+                        .sourceHouseholdAccess(SourceHouseholdAccess.END)
                         .build())))
         .isInstanceOf(TransferRejections.AccountNotFound.class);
   }
@@ -307,14 +307,14 @@ class AccountLifecycleServiceTest {
                     TransferAccountCommand.builder()
                         .accountId(UUID.randomUUID())
                         .destinationHouseholdId(destination.getId())
-                        .sourceAccess(SourceAccess.END)
+                        .sourceHouseholdAccess(SourceHouseholdAccess.END)
                         .build())))
         .isInstanceOf(TransferRejections.AccountNotFound.class);
   }
 
   @Test
-  @DisplayName("Should erase the Account, Profile, and artifacts when ERASE is requested")
-  void shouldEraseAccountProfileAndArtifactsWhenEraseIsRequested() {
+  @DisplayName("Should erase the Account, Profile, and artifacts when Profile cleanup is requested")
+  void shouldEraseAccountProfileAndArtifactsWhenProfileCleanupIsRequested() {
     var registration =
         registrations.save(
             DeviceRegistration.builder()
@@ -416,7 +416,7 @@ class AccountLifecycleServiceTest {
             identity(),
             AdministrativelyDeleteAccountCommand.builder()
                 .accountId(mover.getId())
-                .profileDisposition(ProfileDisposition.ERASE)
+                .profileCleanup(ProfileCleanup.ERASE_PROFILE)
                 .reason("household dispute")
                 .build());
 
@@ -511,7 +511,7 @@ class AccountLifecycleServiceTest {
                     identity(),
                     AdministrativelyDeleteAccountCommand.builder()
                         .accountId(mover.getId())
-                        .profileDisposition(ProfileDisposition.ERASE)
+                        .profileCleanup(ProfileCleanup.ERASE_PROFILE)
                         .reason(" ")
                         .build())))
         .isInstanceOf(TransferRejections.ReasonRequired.class);
@@ -528,7 +528,7 @@ class AccountLifecycleServiceTest {
                     identity(),
                     AdministrativelyDeleteAccountCommand.builder()
                         .accountId(mover.getId())
-                        .profileDisposition(ProfileDisposition.ERASE)
+                        .profileCleanup(ProfileCleanup.ERASE_PROFILE)
                         .reason("dispute")
                         .build())))
         .isInstanceOf(TransferRejections.ReauthenticationRequired.class);
@@ -545,7 +545,7 @@ class AccountLifecycleServiceTest {
                     identity(),
                     AdministrativelyDeleteAccountCommand.builder()
                         .accountId(mover.getId())
-                        .profileDisposition(ProfileDisposition.ERASE)
+                        .profileCleanup(ProfileCleanup.ERASE_PROFILE)
                         .reason("dispute")
                         .build())))
         .isInstanceOf(TransferRejections.AccountNotFound.class);
@@ -564,7 +564,7 @@ class AccountLifecycleServiceTest {
     var command =
         AdministrativelyDeleteAccountCommand.builder()
             .accountId(mover.getId())
-            .profileDisposition(ProfileDisposition.ERASE)
+            .profileCleanup(ProfileCleanup.ERASE_PROFILE)
             .reason("dispute")
             .build();
 
@@ -656,7 +656,7 @@ class AccountLifecycleServiceTest {
         identity(),
         AdministrativelyDeleteAccountCommand.builder()
             .accountId(mover.getId())
-            .profileDisposition(ProfileDisposition.KEEP)
+            .profileCleanup(ProfileCleanup.PRESERVE_PROFILE)
             .replacementManagerAccountId(replacement)
             .reason("moving on")
             .build());

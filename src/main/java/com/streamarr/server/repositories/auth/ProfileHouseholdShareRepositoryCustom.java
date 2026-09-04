@@ -69,8 +69,8 @@ public interface ProfileHouseholdShareRepositoryCustom {
   int invalidatePendingByProfileId(UUID profileId, String reason, Instant now);
 
   /**
-   * KEEP_AS_VISITOR and KEEP-deletion turn the old structural availability into an ordinary visitor
-   * share instead of ending it.
+   * KEEP_AS_VISITOR and PRESERVE_PROFILE cleanup turn the old structural availability into an
+   * ordinary visitor share instead of ending it.
    */
   void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId, Instant now);
 

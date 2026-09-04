@@ -30,10 +30,10 @@ public class AccountLifecycleResolver {
   public TransferAccountPayload transferAccount(@InputArgument TransferAccountInput input) {
     var command =
         TransferAccountCommand.builder()
-            .sourceAccess(
-                input.sourceAccess() == null
-                    ? AccountLifecycleService.SourceAccess.END
-                    : input.sourceAccess())
+            .sourceHouseholdAccess(
+                input.sourceHouseholdAccess() == null
+                    ? AccountLifecycleService.SourceHouseholdAccess.END
+                    : input.sourceHouseholdAccess())
             .reason(input.reason());
     return MutationPayloads.withUuid(
         input.accountId(),
@@ -62,7 +62,7 @@ public class AccountLifecycleResolver {
       @InputArgument AdministrativelyDeleteAccountInput input) {
     var command =
         AdministrativelyDeleteAccountCommand.builder()
-            .profileDisposition(input.profileDisposition())
+            .profileCleanup(input.profileCleanup())
             .reason(input.reason());
     return MutationPayloads.withUuid(
         input.accountId(),

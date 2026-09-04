@@ -83,7 +83,7 @@ public final class TransferRejections {
   /** Self-deletion is irreversible; the caller types the confirmation word deliberately. */
   public record ConfirmationRequired() implements DeleteMyAccount {}
 
-  /** KEEP preserves the Profile only with an eligible replacement manager named up front. */
+  /** PRESERVE_PROFILE requires an eligible replacement manager named up front. */
   public record ReplacementManagerRequired() implements AdministrativelyDeleteAccount {}
 
   public record ReplacementManagerNotFound() implements AdministrativelyDeleteAccount {}

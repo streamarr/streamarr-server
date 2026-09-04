@@ -2,7 +2,9 @@ package com.streamarr.server.graphql.contract;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import graphql.language.EnumTypeDefinition;
 import graphql.language.FieldDefinition;
+import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.InterfaceTypeDefinition;
 import graphql.language.ListType;
@@ -82,6 +84,61 @@ class MutationContractTest {
     assertThat(mutationFields().stream().map(FieldDefinition::getName))
         .contains("administrativelyDeleteAccount")
         .doesNotContain("deleteAccount");
+  }
+
+  @Test
+  @DisplayName(
+      "Should name source Household access explicitly when Account transfer input is inspected")
+  void shouldNameSourceHouseholdAccessExplicitlyWhenAccountTransferInputIsInspected() {
+    var transferInput =
+        SCHEMA.getType("TransferAccountInput", InputObjectTypeDefinition.class).orElseThrow();
+    var sourceHouseholdAccess =
+        transferInput.getInputValueDefinitions().stream()
+            .filter(field -> "sourceHouseholdAccess".equals(field.getName()))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(((TypeName) sourceHouseholdAccess.getType()).getName())
+        .isEqualTo("SourceHouseholdAccess");
+    assertThat(
+            SCHEMA
+                .getType("SourceHouseholdAccess", EnumTypeDefinition.class)
+                .orElseThrow()
+                .getEnumValueDefinitions()
+                .stream()
+                .map(value -> value.getName()))
+        .containsExactly("END", "KEEP_AS_VISITOR");
+    assertThat(transferInput.getInputValueDefinitions().stream().map(InputValueDefinition::getName))
+        .doesNotContain("sourceAccess");
+    assertThat(SCHEMA.getType("SourceAccess")).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should describe Profile cleanup plainly when administrative Account deletion input is inspected")
+  void shouldDescribeProfileCleanupPlainlyWhenAdministrativeAccountDeletionInputIsInspected() {
+    var deletionInput =
+        SCHEMA
+            .getType("AdministrativelyDeleteAccountInput", InputObjectTypeDefinition.class)
+            .orElseThrow();
+    var profileCleanup =
+        deletionInput.getInputValueDefinitions().stream()
+            .filter(field -> "profileCleanup".equals(field.getName()))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(isRequiredNamed(profileCleanup, "ProfileCleanup")).isTrue();
+    assertThat(
+            SCHEMA
+                .getType("ProfileCleanup", EnumTypeDefinition.class)
+                .orElseThrow()
+                .getEnumValueDefinitions()
+                .stream()
+                .map(value -> value.getName()))
+        .containsExactly("ERASE_PROFILE", "PRESERVE_PROFILE");
+    assertThat(deletionInput.getInputValueDefinitions().stream().map(InputValueDefinition::getName))
+        .doesNotContain("profileDisposition");
+    assertThat(SCHEMA.getType("ProfileDisposition")).isEmpty();
   }
 
   @Test
