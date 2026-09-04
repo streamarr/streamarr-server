@@ -1,6 +1,7 @@
 package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
@@ -30,6 +31,9 @@ import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
+import com.streamarr.server.services.authorization.Decision;
+import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.identity.ProfileLifecycleService.TransferProfileCommand;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
@@ -41,6 +45,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
 
 /**
  * Unlinked-Profile transfers and force-deletion over fakes: the destination anchor is named up
@@ -166,6 +171,22 @@ class ProfileLifecycleServiceTest {
   }
 
   @Test
+  @DisplayName("Should reuse the active visit when its Household becomes the Profile home")
+  void shouldReuseActiveVisitWhenHouseholdBecomesProfileHome() {
+    var activeVisit = shares.share(orphan.getId(), destination.getId(), false);
+
+    var moved = transferWithAnchor(destinationAnchor.getId());
+
+    assertThat(moved).isInstanceOf(Outcome.Accepted.class);
+    assertThat(
+            shares.findByProfileIdAndStatus(orphan.getId(), ProfileShareStatus.ACTIVE).stream()
+                .filter(share -> share.getHouseholdId().equals(destination.getId())))
+        .singleElement()
+        .extracting(ProfileHouseholdShare::getId)
+        .isEqualTo(activeVisit.getId());
+  }
+
+  @Test
   @DisplayName("Should reject the transfer when the destination anchor is invalid")
   void shouldRejectTransferWhenDestinationAnchorIsInvalid() {
     assertThat(rejectionOf(transferWithAnchor(null)))
@@ -279,6 +300,49 @@ class ProfileLifecycleServiceTest {
     assertThat(
             rejectionOf(service.administrativelyDeleteProfile(identity(), orphan.getId(), "again")))
         .isInstanceOf(TransferRejections.ProfileNotFound.class);
+  }
+
+  @Test
+  @DisplayName("Should hide the Profile when administrative deletion is unauthorized")
+  void shouldHideProfileWhenAdministrativeDeletionIsUnauthorized() {
+    authorization.denyAll();
+
+    assertThat(
+            rejectionOf(
+                service.administrativelyDeleteProfile(identity(), orphan.getId(), "cleanup")))
+        .isInstanceOf(TransferRejections.ProfileNotFound.class);
+    assertThat(profiles.findById(orphan.getId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should forbid deletion when the unauthorized Profile remains visible")
+  void shouldForbidDeletionWhenUnauthorizedProfileRemainsVisible() {
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.ViewProfileAdministration
+                ? new Decision.Allowed<>(AuthorizationUnit.INSTANCE)
+                : new Decision.Denied<>(Decision.DenialReason.POLICY));
+
+    assertThatThrownBy(
+            () -> service.administrativelyDeleteProfile(identity(), orphan.getId(), "cleanup"))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(profiles.findById(orphan.getId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should require reauthentication when a Profile is administratively deleted")
+  void shouldRequireReauthenticationWhenProfileIsAdministrativelyDeleted() {
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.AdministrativelyDeleteProfile
+                ? new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED)
+                : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+
+    assertThat(
+            rejectionOf(
+                service.administrativelyDeleteProfile(identity(), orphan.getId(), "cleanup")))
+        .isInstanceOf(TransferRejections.ReauthenticationRequired.class);
+    assertThat(profiles.findById(orphan.getId())).isPresent();
   }
 
   @Test

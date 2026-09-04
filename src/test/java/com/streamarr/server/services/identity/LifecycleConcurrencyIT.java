@@ -16,6 +16,7 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
+import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -61,6 +62,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
   @MockitoSpyBean private UserAccountRepository accountRepository;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
+  @Autowired private AuthSessionRepository sessionRepository;
   @MockitoSpyBean private ProfileManagerRepository managerRepository;
   @MockitoSpyBean private AccountInvitationRepository invitationRepository;
   @MockitoSpyBean private DeviceRegistrationLifecycle registrationLifecycle;
@@ -432,6 +434,79 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should return ProfileNotFound when administrative deletion commits after transfer preflight")
+  void shouldReturnProfileNotFoundWhenAdministrativeDeletionCommitsAfterTransferPreflight()
+      throws Exception {
+    var actor = authTestSupport.createAdminIdentity();
+    var source = authTestSupport.createIdentity();
+    var destination = authTestSupport.createIdentity();
+    var orphan = orphanOf(source);
+    try {
+      var transferReached = new CountDownLatch(1);
+      var releaseTransfer = new CountDownLatch(1);
+      var gateNextTransaction = new AtomicBoolean(true);
+      var transactionSpy =
+          AopTestUtils.<MutationTransactions>getUltimateTargetObject(mutationTransactions);
+      var transactionAnswer =
+          mockingDetails(transactionSpy).getMockCreationSettings().getDefaultAnswer();
+      doAnswer(
+              invocation -> {
+                if (gateNextTransaction.compareAndSet(true, false)) {
+                  transferReached.countDown();
+                  awaitProfileTransferRelease(releaseTransfer);
+                }
+
+                return transactionAnswer.answer(invocation);
+              })
+          .when(transactionSpy)
+          .write(any(), any());
+
+      Object transfer;
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var pendingTransfer =
+            executor.submit(
+                () ->
+                    outcomeOf(
+                        () ->
+                            profileLifecycleService.transferProfile(
+                                authenticated(actor),
+                                transferProfileBuilder(orphan)
+                                    .destinationHouseholdId(destination.household().getId())
+                                    .localManagerAccountId(destination.account().getId())
+                                    .build())));
+        assertThat(transferReached.await(10, TimeUnit.SECONDS)).isTrue();
+
+        var deletion =
+            profileLifecycleService.administrativelyDeleteProfile(
+                authenticated(actor), orphan.getId(), "cleanup");
+        assertThat(deletion).isInstanceOf(Outcome.Accepted.class);
+
+        releaseTransfer.countDown();
+        transfer = pendingTransfer.get(20, TimeUnit.SECONDS);
+      }
+
+      assertThat(transfer).isInstanceOf(Outcome.Rejected.class);
+      assertThat(((Outcome.Rejected<?, ?>) transfer).rejections())
+          .singleElement()
+          .isInstanceOf(TransferRejections.ProfileNotFound.class);
+      assertThat(profileRepository.findById(orphan.getId())).isEmpty();
+      assertThat(
+              managerRepository.existsByAccountIdAndProfileId(
+                  destination.account().getId(), orphan.getId()))
+          .isFalse();
+      assertThat(
+              shareRepository.findByProfileIdAndHouseholdIdAndStatus(
+                  orphan.getId(), destination.household().getId(), ProfileShareStatus.ACTIVE))
+          .isEmpty();
+    } finally {
+      authTestSupport.deleteIdentity(destination);
+      authTestSupport.deleteIdentity(source);
+      authTestSupport.deleteIdentity(actor);
+    }
+  }
+
   private static void awaitProfileTransferRelease(CountDownLatch releaseFirstGrant)
       throws InterruptedException {
     if (!releaseFirstGrant.await(10, TimeUnit.SECONDS)) {
@@ -584,6 +659,70 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return FinalAccount when self-deletion loses a concurrent deletion race")
+  void shouldReturnFinalAccountWhenSelfDeletionLosesConcurrentDeletionRace() throws Exception {
+    var actor = authTestSupport.createAdminIdentity();
+    var household = authTestSupport.createIdentity();
+    var other = residentOf(household.household().getId(), HouseholdRole.ADMIN);
+    try {
+      var selfDeletionReached = new CountDownLatch(1);
+      var releaseSelfDeletion = new CountDownLatch(1);
+      var lifecycleSpy =
+          AopTestUtils.<DeviceRegistrationLifecycle>getUltimateTargetObject(registrationLifecycle);
+      var lifecycleAnswer =
+          mockingDetails(lifecycleSpy).getMockCreationSettings().getDefaultAnswer();
+      doAnswer(
+              invocation -> {
+                selfDeletionReached.countDown();
+                if (!releaseSelfDeletion.await(10, TimeUnit.SECONDS)) {
+                  throw new AssertionError("Timed out releasing self-deletion");
+                }
+
+                return lifecycleAnswer.answer(invocation);
+              })
+          .when(lifecycleSpy)
+          .revokeAllByAccount(
+              eq(household.account().getId()), any(String.class), any(Instant.class));
+
+      Object selfDeletion;
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var pendingSelfDeletion =
+            executor.submit(
+                () ->
+                    outcomeOf(
+                        () ->
+                            accountLifecycleService.deleteMyAccount(
+                                authenticated(household), "DELETE")));
+        assertThat(selfDeletionReached.await(10, TimeUnit.SECONDS)).isTrue();
+
+        var otherDeletion =
+            accountLifecycleService.deleteAccount(authenticated(actor), erase(other.getId()));
+        assertThat(otherDeletion).isInstanceOf(Outcome.Accepted.class);
+
+        releaseSelfDeletion.countDown();
+        selfDeletion = pendingSelfDeletion.get(20, TimeUnit.SECONDS);
+      }
+
+      assertThat(selfDeletion).isInstanceOf(Outcome.Rejected.class);
+      assertThat(((Outcome.Rejected<?, ?>) selfDeletion).rejections())
+          .singleElement()
+          .isInstanceOf(TransferRejections.FinalAccount.class);
+      assertThat(accountRepository.findById(household.account().getId())).isPresent();
+      assertThat(profileRepository.findById(household.account().getPersonalProfileId()))
+          .isPresent();
+      assertThat(
+              sessionRepository.findById(household.session().getId()).orElseThrow().getRevokedAt())
+          .as("self-deletion side effects must roll back with the rejected mutation")
+          .isNull();
+      assertThat(accountRepository.findById(other.getId())).isEmpty();
+    } finally {
+      authTestSupport.deleteAccount(other.getId());
+      authTestSupport.deleteIdentity(household);
+      authTestSupport.deleteIdentity(actor);
+    }
+  }
+
+  @Test
   @DisplayName(
       "Should return FinalAccount and keep one resident when all Accounts transfer concurrently")
   void shouldReturnFinalAccountAndKeepOneResidentWhenAllAccountsTransferConcurrently()
@@ -675,6 +814,95 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
       authTestSupport.deleteIdentity(secondDestination);
       authTestSupport.deleteIdentity(source);
       authTestSupport.deleteAccount(second.getId());
+      authTestSupport.deleteIdentity(actor);
+    }
+  }
+
+  @Test
+  @DisplayName("Should allow exactly one winner when transfers of the same Account race")
+  void shouldAllowExactlyOneWinnerWhenTransfersOfSameAccountRace() throws Exception {
+    var actor = authTestSupport.createAdminIdentity();
+    var source = authTestSupport.createIdentity();
+    var mover = residentOf(source.household().getId(), HouseholdRole.MEMBER);
+    var firstDestination = authTestSupport.createIdentity();
+    var secondDestination = authTestSupport.createIdentity();
+    try {
+      var bothAtConditionalWrite = new CyclicBarrier(2);
+      var repositorySpy =
+          AopTestUtils.<UserAccountRepository>getUltimateTargetObject(accountRepository);
+      var repositoryAnswer =
+          mockingDetails(repositorySpy).getMockCreationSettings().getDefaultAnswer();
+      doAnswer(
+              invocation -> {
+                bothAtConditionalWrite.await(10, TimeUnit.SECONDS);
+                return repositoryAnswer.answer(invocation);
+              })
+          .when(repositorySpy)
+          .tryTransfer(
+              eq(mover.getId()),
+              eq(source.household().getId()),
+              any(UUID.class),
+              any(HouseholdRole.class));
+
+      Object firstAttempt;
+      Object secondAttempt;
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var first =
+            executor.submit(
+                () ->
+                    outcomeOf(
+                        () ->
+                            accountLifecycleService.transferAccount(
+                                authenticated(actor), transferTo(mover, firstDestination))));
+        var second =
+            executor.submit(
+                () ->
+                    outcomeOf(
+                        () ->
+                            accountLifecycleService.transferAccount(
+                                authenticated(actor), transferTo(mover, secondDestination))));
+        firstAttempt = first.get(20, TimeUnit.SECONDS);
+        secondAttempt = second.get(20, TimeUnit.SECONDS);
+      }
+
+      var attempts = List.of(firstAttempt, secondAttempt);
+      var accepted =
+          (Outcome.Accepted<?, ?>)
+              attempts.stream()
+                  .filter(result -> result instanceof Outcome.Accepted<?, ?>)
+                  .findFirst()
+                  .orElseThrow();
+      assertThat(attempts)
+          .filteredOn(result -> result instanceof Outcome.Accepted<?, ?>)
+          .as("the Account home transition must have a single winner")
+          .hasSize(1);
+      assertThat(attempts)
+          .filteredOn(result -> result instanceof Outcome.Rejected<?, ?>)
+          .singleElement()
+          .satisfies(
+              rejected ->
+                  assertThat(((Outcome.Rejected<?, ?>) rejected).rejections())
+                      .singleElement()
+                      .isInstanceOf(TransferRejections.AccountNotFound.class));
+
+      var returnedAccount = (UserAccount) accepted.result();
+      var storedAccount = accountRepository.findById(mover.getId()).orElseThrow();
+      assertThat(returnedAccount.getHouseholdId()).isEqualTo(storedAccount.getHouseholdId());
+      assertThat(storedAccount.getHouseholdId())
+          .isIn(firstDestination.household().getId(), secondDestination.household().getId());
+      assertThat(profileRepository.findById(mover.getPersonalProfileId()).orElseThrow())
+          .extracting(Profile::getHouseholdId)
+          .isEqualTo(storedAccount.getHouseholdId());
+      assertThat(
+              shareRepository.findByProfileIdAndStatus(
+                  mover.getPersonalProfileId(), ProfileShareStatus.ACTIVE))
+          .singleElement()
+          .extracting(ProfileHouseholdShare::getHouseholdId)
+          .isEqualTo(storedAccount.getHouseholdId());
+    } finally {
+      authTestSupport.deleteIdentity(firstDestination);
+      authTestSupport.deleteIdentity(secondDestination);
+      authTestSupport.deleteIdentity(source);
       authTestSupport.deleteIdentity(actor);
     }
   }

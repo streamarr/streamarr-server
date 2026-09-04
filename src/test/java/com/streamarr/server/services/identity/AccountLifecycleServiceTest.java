@@ -1,6 +1,7 @@
 package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
@@ -55,6 +56,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
 
 /**
  * Account transfers and deletion over fakes: the Account and its Personal Profile move together,
@@ -530,6 +532,57 @@ class AccountLifecycleServiceTest {
                         .reason("dispute")
                         .build())))
         .isInstanceOf(TransferRejections.ReauthenticationRequired.class);
+  }
+
+  @Test
+  @DisplayName("Should hide the Account when deletion is unauthorized")
+  void shouldHideAccountWhenDeletionIsUnauthorized() {
+    authorization.denyAll();
+
+    assertThat(
+            rejectionOf(
+                service.deleteAccount(
+                    identity(),
+                    DeleteAccountCommand.builder()
+                        .accountId(mover.getId())
+                        .profileDisposition(ProfileDisposition.ERASE)
+                        .reason("dispute")
+                        .build())))
+        .isInstanceOf(TransferRejections.AccountNotFound.class);
+    assertThat(accounts.findById(mover.getId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should forbid deletion when the unauthorized Account remains visible")
+  void shouldForbidDeletionWhenUnauthorizedAccountRemainsVisible() {
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.ViewAccountAdministration
+                ? new Decision.Allowed<>(AuthorizationUnit.INSTANCE)
+                : new Decision.Denied<>(Decision.DenialReason.POLICY));
+
+    assertThatThrownBy(
+            () ->
+                service.deleteAccount(
+                    identity(),
+                    DeleteAccountCommand.builder()
+                        .accountId(mover.getId())
+                        .profileDisposition(ProfileDisposition.ERASE)
+                        .reason("dispute")
+                        .build()))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(accounts.findById(mover.getId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should forbid self-deletion when authorization is denied by policy")
+  void shouldForbidSelfDeletionWhenAuthorizationIsDeniedByPolicy() {
+    var self = AuthenticatedIdentityFixture.accountScopedBuilder().accountId(mover.getId()).build();
+    authorization.denyAll();
+
+    assertThatThrownBy(() -> service.deleteMyAccount(self, "DELETE"))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(accounts.findById(mover.getId())).isPresent();
   }
 
   @Test
