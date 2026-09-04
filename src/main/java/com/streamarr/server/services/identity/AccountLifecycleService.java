@@ -189,10 +189,7 @@ public class AccountLifecycleService {
     }
 
     accountRemoval.erase(
-        account,
-        command.profileCleanup(),
-        command.replacementManagerAccountId(),
-        clock.instant());
+        account, command.profileCleanup(), command.replacementManagerAccountId(), clock.instant());
   }
 
   private Optional<TransferRejections.AdministrativelyDeleteAccount> replacementRefusal(
