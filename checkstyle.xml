@@ -6,6 +6,13 @@
   <module name="SuppressWarningsFilter"/>
   <module name="TreeWalker">
     <module name="SuppressWarningsHolder"/>
+    <module name="SuppressWarnings">
+      <property name="format" value="^checkstyle:fullyQualifiedName$"/>
+      <property name="tokens"
+                value="CLASS_DEF,INTERFACE_DEF,ENUM_DEF,ANNOTATION_DEF,RECORD_DEF"/>
+      <message key="suppressed.warning.not.allowed"
+               value="Localize fully qualified name suppressions to the declaration that requires them."/>
+    </module>
     <module name="AvoidStarImport"/>
     <module name="NestedIfDepth">
       <property name="max" value="0"/>

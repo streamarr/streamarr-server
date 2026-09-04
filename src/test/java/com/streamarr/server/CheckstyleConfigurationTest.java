@@ -48,8 +48,28 @@ class CheckstyleConfigurationTest {
 
   @Test
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  @DisplayName("Should allow fully qualified name when explicitly suppressed")
+  @DisplayName("Should allow fully qualified name when suppressed on its method")
   void shouldAllowFullyQualifiedNameWhenExplicitlySuppressed() throws Exception {
+    var violations =
+        violationsOf(
+            """
+            package example;
+
+            final class InlineFullyQualifiedName {
+              @SuppressWarnings("checkstyle:fullyQualifiedName")
+              void run() {
+                var timestamp = java.time.Instant.EPOCH;
+              }
+            }
+            """);
+
+    assertThat(violations).isZero();
+  }
+
+  @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @DisplayName("Should reject fully qualified name suppression on a class")
+  void shouldRejectFullyQualifiedNameSuppressionOnClass() throws Exception {
     var violations =
         violationsOf(
             """
@@ -61,7 +81,7 @@ class CheckstyleConfigurationTest {
             }
             """);
 
-    assertThat(violations).isZero();
+    assertThat(violations).isOne();
   }
 
   @Test
