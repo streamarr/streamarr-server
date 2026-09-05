@@ -1397,6 +1397,54 @@ class CedarIdentityPoliciesTest {
     }
   }
 
+  @Nested
+  @DisplayName("Household deletion and audit")
+  class HouseholdDeletionAndAudit {
+
+    @Test
+    @DisplayName("Should allow Household deletion only for a fresh enabled ServerAdmin")
+    void shouldAllowHouseholdDeletionOnlyForFreshEnabledServerAdmin() {
+      var deletion = new Intent.DeleteHousehold(visitedHouseholdId);
+
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deletion))
+          .isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), deletion)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deletion))
+          .isEqualTo(ALLOWED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deletion))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should allow the security audit only when the caller is an enabled ServerAdmin")
+    void shouldAllowSecurityAuditOnlyWhenCallerIsEnabledServerAdmin() {
+      assertThat(decide(atHome(), new Intent.ViewSecurityAudit())).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.ViewSecurityAudit())).isEqualTo(ALLOWED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.ViewSecurityAudit())).isEqualTo(DENIED);
+    }
+  }
+
+  private ProfileHouseholdShare pendingShare(UUID profileId, UUID householdId) {
+    return shares.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profileId)
+            .householdId(householdId)
+            .status(ProfileShareStatus.PENDING)
+            .build());
+  }
+
   private AuthenticatedIdentity withReauthenticatedAt(AuthenticatedIdentity base, Instant at) {
     return AuthenticatedIdentity.builder()
         .accountId(base.accountId())

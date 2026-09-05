@@ -1,22 +1,13 @@
 package com.streamarr.server.services.identity;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
-import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
-import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.repositories.auth.AccountInvitationRepository;
-import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
-import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
-import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
-import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
-import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -25,7 +16,6 @@ import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
-import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
@@ -46,19 +36,12 @@ public class AccountLifecycleService {
   private static final String CHK_RESTRICTED_AUTHORITY =
       "chk_restricted_account_holds_no_authority";
   private static final String ACCOUNT_ID = "accountId";
-  private static final String PROFILE_DELETED = "Profile deleted";
 
   private final AuthorizationService authorizationService;
+  private final AccountRemoval accountRemoval;
   private final UserAccountRepository userAccountRepository;
   private final ProfileRepository profileRepository;
-  private final ProfileHouseholdShareRepository shareRepository;
   private final HouseholdRepository householdRepository;
-  private final ProfileManagerRepository profileManagerRepository;
-  private final ProfileManagerInvitationRepository managerInvitationRepository;
-  private final AccountInvitationRepository accountInvitationRepository;
-  private final PasswordResetCodeRepository passwordResetCodeRepository;
-  private final AuthSessionRepository authSessionRepository;
-  private final DeviceRegistrationLifecycle registrationLifecycle;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final MutationTransactions mutationTransactions;
   private final Clock clock;
@@ -100,22 +83,17 @@ public class AccountLifecycleService {
 
           var destinationEmpty =
               userAccountRepository.findByHouseholdId(command.destinationHouseholdId()).isEmpty();
-          if (!userAccountRepository.tryTransfer(
+          if (!accountRemoval.move(
               command.accountId(),
               sourceHouseholdId,
+              profileId,
               command.destinationHouseholdId(),
-              destinationEmpty ? HouseholdRole.ADMIN : HouseholdRole.MEMBER)) {
+              destinationEmpty,
+              command.sourceHouseholdAccess(),
+              now)) {
             throw new MutationRejection(new TransferRejections.AccountNotFound());
           }
 
-          if (!profileRepository.tryRehome(
-              profileId, sourceHouseholdId, command.destinationHouseholdId())) {
-            throw new MutationRejection(new TransferRejections.AccountNotFound());
-          }
-
-          moveHomeAvailability(command, sourceHouseholdId, profileId, now);
-          shareRepository.ensureActiveMembershipShare(
-              profileId, command.destinationHouseholdId(), now);
           audit(identity, "transferAccount", ACCOUNT_ID, command.accountId(), command.reason());
           // The refusal checks JPA-loaded this row in this transaction; re-read past the
           // first-level cache or the payload would show the pre-transfer state.
@@ -206,76 +184,12 @@ public class AccountLifecycleService {
   }
 
   private void erase(UserAccount account, AdministrativelyDeleteAccountCommand command) {
-    var now = clock.instant();
     if (userAccountRepository.findByHouseholdId(account.getHouseholdId()).size() <= 1) {
       throw new MutationRejection(new TransferRejections.FinalAccount());
     }
 
-    registrationLifecycle.revokeAllByAccount(account.getId(), "Account deleted", now);
-    authSessionRepository.revokeAllForAccount(
-        account.getId(), SessionRevocationReason.ADMIN_REVOCATION, now);
-    accountInvitationRepository.invalidatePendingInvitationsIssuedBy(
-        account.getId(), "issuer deleted", now);
-    passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
-        account.getId(), "issuer deleted", now);
-    managerInvitationRepository.invalidatePendingByRecipientAccountId(
-        account.getId(), "recipient deleted", now);
-    managerInvitationRepository.invalidatePendingInvitedBy(
-        account.getId(), "inviting manager deleted", now);
-    shareRepository.invalidatePendingOfferedBy(account.getId(), "offering manager deleted", now);
-
-    var profileId = account.getPersonalProfileId();
-    if (command.profileCleanup() == ProfileCleanup.PRESERVE_PROFILE) {
-      profileManagerRepository.tryGrantDirectManagement(
-          command.replacementManagerAccountId(), profileId);
-      shareRepository.convertMembershipShareToVisitorShare(
-          profileId, account.getHouseholdId(), now);
-      deleteAccountRow(account);
-      return;
-    }
-
-    deleteAccountRow(account);
-    accountInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
-    managerInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
-    shareRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
-    clearSelectionsEverywhere(profileId, now);
-    profileRepository.deleteById(profileId);
-    profileRepository.flush();
-  }
-
-  private void deleteAccountRow(UserAccount account) {
-    if (!userAccountRepository.tryDelete(account.getId(), account.getHouseholdId())) {
-      throw new MutationRejection(new TransferRejections.AccountNotFound());
-    }
-  }
-
-  private void moveHomeAvailability(
-      TransferAccountCommand command, UUID sourceHouseholdId, UUID profileId, Instant now) {
-    if (command.sourceHouseholdAccess() == SourceHouseholdAccess.KEEP_AS_VISITOR) {
-      shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId, now);
-      authSessionRepository.clearProfileSelectionFromLiveSessions(
-          profileId, sourceHouseholdId, now);
-      return;
-    }
-
-    shareRepository
-        .findByProfileIdAndHouseholdIdAndStatus(
-            profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
-        .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
-    authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId, now);
-    authSessionRepository.clearHouseholdContextFromAccountSessions(
-        command.accountId(), sourceHouseholdId, now);
-    registrationLifecycle.revokeAllByAccountAndHousehold(
-        command.accountId(), sourceHouseholdId, "old Household access ended", now);
-  }
-
-  private void clearSelectionsEverywhere(UUID profileId, Instant now) {
-    shareRepository
-        .findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE)
-        .forEach(
-            share ->
-                authSessionRepository.clearProfileSelectionFromLiveSessions(
-                    profileId, share.getHouseholdId(), now));
+    accountRemoval.erase(
+        account, command.profileCleanup(), command.replacementManagerAccountId(), clock.instant());
   }
 
   private Optional<TransferRejections.AdministrativelyDeleteAccount> replacementRefusal(

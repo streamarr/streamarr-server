@@ -88,16 +88,19 @@ class AccountLifecycleServiceTest {
   private final AccountLifecycleService service =
       new AccountLifecycleService(
           authorization,
+          new AccountRemoval(
+              accounts,
+              profiles,
+              shares,
+              managers,
+              managerInvitations,
+              accountInvitations,
+              resetCodes,
+              sessions,
+              new DeviceRegistrationLifecycle(registrations, sessions)),
           accounts,
           profiles,
-          shares,
           households,
-          managers,
-          managerInvitations,
-          accountInvitations,
-          resetCodes,
-          sessions,
-          new DeviceRegistrationLifecycle(registrations, sessions),
           audit,
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
