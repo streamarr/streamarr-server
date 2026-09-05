@@ -1,8 +1,8 @@
-release=autobuild-2026-08-23-13-03
-version=n8.1.2-44-g7c533d0f86
-source_revision=7c533d0f86f13a06ec93968f6194349665b3536a
+release=autobuild-2026-09-05-13-10
+version=n8.1.2-50-g1a748fe2cd
+source_revision=1a748fe2cd43e3ead22fafb1b5b7d77f153898a8
 asset_variant=gpl-8.1
-amd64_asset=ffmpeg-n8.1.2-44-g7c533d0f86-linux64-gpl-8.1.tar.xz
-amd64_sha256=fb1f9326d203d038f249d5399efb34f4597836f54ad0bcffcc7040af25576493
-arm64_asset=ffmpeg-n8.1.2-44-g7c533d0f86-linuxarm64-gpl-8.1.tar.xz
-arm64_sha256=508e7a30f72702f8e87ab933247d0863d647508b2e51df1268da8de5fcb2de57
+amd64_asset=ffmpeg-n8.1.2-50-g1a748fe2cd-linux64-gpl-8.1.tar.xz
+amd64_sha256=e7482e68273ba94f6be2f6721f95c782c38ba757aa4e1e2f50403f8fc91ad5f4
+arm64_asset=ffmpeg-n8.1.2-50-g1a748fe2cd-linuxarm64-gpl-8.1.tar.xz
+arm64_sha256=d94a84c042fa7b32b9ebb739c9262be9560aa08c63504fa2a558caff418ba970
