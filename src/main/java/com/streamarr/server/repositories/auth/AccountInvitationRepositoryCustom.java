@@ -28,7 +28,7 @@ public interface AccountInvitationRepositoryCustom {
    */
   Optional<AccountInvitation> cancelIfPendingAndUnexpired(UUID invitationId, Instant now);
 
-  /** Invalidates every PENDING, unexpired invitation into the Household (torn down). */
+  /** Invalidates every PENDING, unexpired invitation into a deleted Household. */
   int invalidatePendingByHouseholdId(UUID householdId, String reason, Instant now);
 
   /** Invalidates every PENDING, unexpired invitation bound to the Profile. */

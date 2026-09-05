@@ -113,8 +113,8 @@ public class AuthTestSupport {
 
   /**
    * Deletes an Account's whole Household in one transaction — T1 forbids a Household losing its
-   * final Account except inside teardown, so every Account and Profile of the Household goes with
-   * it (a teardown in miniature). Manager rows, shares, and guard rows cascade.
+   * final Account except inside Household deletion, so every Account and Profile of the Household
+   * goes with it (a deletion in miniature). Manager rows, shares, and guard rows cascade.
    */
   public void deleteAccount(UUID accountId) {
     transactionTemplate.executeWithoutResult(

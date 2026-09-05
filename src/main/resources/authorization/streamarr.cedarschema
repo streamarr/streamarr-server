@@ -381,7 +381,7 @@ namespace Streamarr {
     resource: Profile,
     context: { freshReauthentication: Bool },
   };
-  action tearDownHousehold in householdAdministration appliesTo {
+  action deleteHousehold in householdAdministration appliesTo {
     principal: Account,
     resource: Household,
     context: { freshReauthentication: Bool },

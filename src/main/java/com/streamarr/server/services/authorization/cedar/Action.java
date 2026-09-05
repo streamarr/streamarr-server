@@ -278,8 +278,8 @@ enum Action {
       ResourceKind.PROFILE,
       FreshReauthentication.REQUIRED,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
-  TEAR_DOWN_HOUSEHOLD(
-      "tearDownHousehold",
+  DELETE_HOUSEHOLD(
+      "deleteHousehold",
       ResourceKind.HOUSEHOLD,
       FreshReauthentication.REQUIRED,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY),

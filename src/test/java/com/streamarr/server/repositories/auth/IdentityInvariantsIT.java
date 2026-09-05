@@ -101,8 +101,8 @@ class IdentityInvariantsIT extends AbstractIntegrationTest {
   // ---- T1 ---------------------------------------------------------------------------------------
 
   @Test
-  @DisplayName("Should refuse removing the final Account when outside Household teardown (T1)")
-  void shouldRefuseRemovingFinalAccountWhenOutsideHouseholdTeardown() {
+  @DisplayName("Should refuse removing the final Account when outside Household deletion (T1)")
+  void shouldRefuseRemovingFinalAccountWhenOutsideHouseholdDeletion() {
     var identity = create();
 
     assertThatThrownBy(

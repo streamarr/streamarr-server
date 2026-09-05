@@ -28,6 +28,6 @@ public interface DeviceRegistrationRepositoryCustom {
 
   List<UUID> revokeAllByAccount(UUID authorizingAccountId, String reason, Instant now);
 
-  /** Revokes every ACTIVE registration bound to the Household (teardown). */
+  /** Revokes every ACTIVE registration bound to a deleted Household. */
   List<UUID> revokeAllByHousehold(UUID householdId, String reason, Instant now);
 }

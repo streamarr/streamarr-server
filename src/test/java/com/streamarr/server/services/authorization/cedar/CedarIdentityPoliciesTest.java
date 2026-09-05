@@ -1398,26 +1398,26 @@ class CedarIdentityPoliciesTest {
   }
 
   @Nested
-  @DisplayName("Teardown and audit")
-  class TeardownAndAudit {
+  @DisplayName("Household deletion and audit")
+  class HouseholdDeletionAndAudit {
 
     @Test
-    @DisplayName("Should allow teardown only when the caller is a fresh enabled ServerAdmin")
-    void shouldAllowTeardownOnlyWhenCallerIsFreshEnabledServerAdmin() {
-      var teardown = new Intent.TearDownHousehold(visitedHouseholdId);
+    @DisplayName("Should allow Household deletion only for a fresh enabled ServerAdmin")
+    void shouldAllowHouseholdDeletionOnlyForFreshEnabledServerAdmin() {
+      var deletion = new Intent.DeleteHousehold(visitedHouseholdId);
 
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), teardown))
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deletion))
           .isEqualTo(DENIED);
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decide(atHome(), teardown)).isEqualTo(REAUTHENTICATION_REQUIRED);
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), teardown))
+      assertThat(decide(atHome(), deletion)).isEqualTo(REAUTHENTICATION_REQUIRED);
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deletion))
           .isEqualTo(ALLOWED);
 
       account.setEnabled(false);
       accounts.save(account);
-      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), teardown))
+      assertThat(decide(withReauthenticatedAt(atHome(), Instant.now()), deletion))
           .isEqualTo(DENIED);
     }
 

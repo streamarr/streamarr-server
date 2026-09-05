@@ -1,0 +1,133 @@
+# Household deletion, the security audit, and Profile activity (ADR 0024 §Household deletion, §Audit).
+
+input DeleteEmptyHouseholdInput {
+    householdId: ID!
+    reason: String!
+}
+
+type DeleteEmptyHouseholdPayload {
+    deletedHouseholdId: ID
+    userErrors: [DeleteEmptyHouseholdError!]!
+}
+
+union DeleteEmptyHouseholdError =
+    HouseholdNotFoundError
+  | InvalidIdError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+  | AccountsRemainError
+
+input TransferLastAccountAndDeleteHouseholdInput {
+    householdId: ID!
+    destinationHouseholdId: ID!
+    reason: String!
+}
+
+type TransferLastAccountAndDeleteHouseholdPayload {
+    deletedHouseholdId: ID
+    userErrors: [TransferLastAccountAndDeleteHouseholdError!]!
+}
+
+union TransferLastAccountAndDeleteHouseholdError =
+    HouseholdNotFoundError
+  | InvalidIdError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+  | AccountsRemainError
+  | LastAccountNotFoundError
+  | DestinationNotFoundError
+
+input DeleteLastAccountAndHouseholdInput {
+    householdId: ID!
+    reason: String!
+}
+
+type DeleteLastAccountAndHouseholdPayload {
+    deletedHouseholdId: ID
+    userErrors: [DeleteLastAccountAndHouseholdError!]!
+}
+
+union DeleteLastAccountAndHouseholdError =
+    HouseholdNotFoundError
+  | InvalidIdError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+  | AccountsRemainError
+  | LastAccountNotFoundError
+  | LastServerAdminError
+
+input DeleteLastAccountAndHouseholdPreservingPersonalProfileInput {
+    householdId: ID!
+    destinationHouseholdId: ID!
+    replacementManagerAccountId: ID!
+    reason: String!
+}
+
+type DeleteLastAccountAndHouseholdPreservingPersonalProfilePayload {
+    deletedHouseholdId: ID
+    userErrors: [DeleteLastAccountAndHouseholdPreservingPersonalProfileError!]!
+}
+
+union DeleteLastAccountAndHouseholdPreservingPersonalProfileError =
+    HouseholdNotFoundError
+  | InvalidIdError
+  | ReasonRequiredError
+  | ReauthenticationRequiredError
+  | AccountsRemainError
+  | LastAccountNotFoundError
+  | DestinationNotFoundError
+  | AccountNotFoundError
+  | ProfileManagerNotEligibleError
+  | LastServerAdminError
+
+type ProfileDeletionPreview {
+    id: ID!
+    name: String!
+}
+
+"What deletion will take with it; null for whoever may not view the Household."
+type HouseholdDeletionPreview {
+    accountCount: Int!
+    profilesToDelete: [ProfileDeletionPreview!]!
+    visitingProfileCount: Int!
+}
+
+type SecurityAuditEventDetails {
+    id: ID!
+    occurredAt: String!
+    actorAccountId: ID
+    operation: String!
+    outcome: String!
+    reason: String
+    "The audited resource ids as stored JSON text."
+    resources: String!
+}
+
+type SecurityAuditEventConnection {
+    edges: [SecurityAuditEventEdge!]!
+    pageInfo: PageInfo!
+}
+
+type SecurityAuditEventEdge {
+    node: SecurityAuditEventDetails!
+    cursor: String!
+}
+
+type ProfileActivityDetails {
+    id: ID!
+    mediaFileId: ID!
+    positionSeconds: Int!
+    percentComplete: Float!
+    durationSeconds: Int!
+    watchedAt: String!
+}
+
+type ProfileActivityConnection {
+    edges: [ProfileActivityEdge!]!
+    pageInfo: PageInfo!
+}
+
+type ProfileActivityEdge {
+    node: ProfileActivityDetails!
+    cursor: String!
+}

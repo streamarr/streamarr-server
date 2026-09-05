@@ -17,7 +17,7 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * A portable viewing identity (ADR 0024). {@code householdId} is {@code belongsTo}: the canonical
- * Household and teardown boundary — it does not make the Profile available or grant authority;
+ * Household and deletion boundary — it does not make the Profile available or grant authority;
  * shares do that.
  */
 @Entity
