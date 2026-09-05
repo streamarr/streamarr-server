@@ -163,6 +163,20 @@ class MutationContractTest {
   }
 
   @Test
+  @DisplayName(
+      "Should model Household deletion choices as distinct GraphQL actions when the schema is parsed")
+  void shouldModelHouseholdDeletionChoicesAsDistinctGraphqlActionsWhenSchemaIsParsed() {
+    assertThat(mutationFields().stream().map(FieldDefinition::getName))
+        .contains(
+            "deleteEmptyHousehold",
+            "transferLastAccountAndDeleteHousehold",
+            "deleteLastAccountAndHousehold",
+            "deleteLastAccountAndHouseholdPreservingPersonalProfile");
+    assertThat(SCHEMA.getType("LastAccountAction")).isEmpty();
+    assertThat(SCHEMA.getType("LastAccountInput")).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should report no shape violations when non-legacy mutations conform to ADR 0026")
   void shouldReportNoShapeViolationsWhenNonLegacyMutationsConformToAdr0026() {
     var violations = new ArrayList<String>();

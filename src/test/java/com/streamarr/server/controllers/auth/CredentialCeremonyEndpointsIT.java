@@ -799,14 +799,14 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
       graphql(
               authTestSupport.freshAccountBearer(survivingAdmin),
               """
-              mutation { tearDownHousehold(input: {householdId: "%s", reason: "closing",
-                lastAccount: {choice: DELETE}}) {
-                householdId userErrors { __typename } } }
+              mutation { deleteLastAccountAndHousehold(input: {
+                householdId: "%s", reason: "closing"
+              }) { deletedHouseholdId userErrors { __typename } } }
               """
                   .formatted(serverAdmin.household().getId()))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.errors").doesNotExist())
-          .andExpect(jsonPath("$.data.tearDownHousehold.userErrors").isEmpty());
+          .andExpect(jsonPath("$.data.deleteLastAccountAndHousehold.userErrors").isEmpty());
 
       mockMvc
           .perform(

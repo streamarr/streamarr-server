@@ -60,7 +60,7 @@ public final class TransferRejections {
 
   public record SameHousehold() implements TransferAccount, TransferProfile {}
 
-  /** The final Account of a Household moves only through teardown. */
+  /** The final Account of a Household moves only through Household deletion. */
   public record FinalAccount()
       implements TransferAccount, AdministrativelyDeleteAccount, DeleteMyAccount {}
 

@@ -268,7 +268,7 @@ class AuthorizationParityTest {
           DELETE_MY_ACCOUNT,
           TRANSFER_PROFILE,
           ADMINISTRATIVELY_DELETE_PROFILE,
-          TEAR_DOWN_HOUSEHOLD ->
+          DELETE_HOUSEHOLD ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
@@ -353,7 +353,7 @@ class AuthorizationParityTest {
         new Intent.DeleteMyAccount(),
         new Intent.TransferProfile(id),
         new Intent.AdministrativelyDeleteProfile(id),
-        new Intent.TearDownHousehold(id),
+        new Intent.DeleteHousehold(id),
         new Intent.ViewSecurityAudit());
   }
 }

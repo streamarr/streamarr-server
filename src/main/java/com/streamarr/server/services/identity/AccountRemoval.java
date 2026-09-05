@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * The mechanics of removing an Account from a Household — by move or by deletion — shared by the
- * lifecycle mutations and by Household teardown, which disposes of the final Account the guarded
+ * lifecycle mutations and by Household deletion, which disposes of the final Account the guarded
  * mutations refuse. Callers own the guards, the authorization, and the audit record; every step
  * here runs inside the caller's transaction and the deferred invariants judge the result.
  */

@@ -324,17 +324,8 @@ type AccountsRemainError implements MutationError {
     message: String!
 }
 
-type LastAccountActionRequiredError implements MutationError {
+type LastAccountNotFoundError implements MutationError {
     message: String!
-}
-
-type LastAccountActionNotAllowedError implements MutationError {
-    message: String!
-}
-
-type DestinationRequiredError implements InputMutationError & MutationError {
-    message: String!
-    inputPath: [String!]!
 }
 
 type DestinationNotFoundError implements InputMutationError & MutationError {
