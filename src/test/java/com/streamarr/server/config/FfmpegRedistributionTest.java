@@ -40,6 +40,16 @@ class FfmpegRedistributionTest {
   }
 
   @Test
+  @DisplayName("Should retain the json11 notice when shipping x265 HDR10 support")
+  void shouldRetainJson11NoticeWhenShippingX265Hdr10Support() throws IOException {
+    var inventory = Files.readString(NOTICES.resolve("sources.json"));
+
+    assertThat(inventory).contains("x265/source/dynamicHDR10/json11/LICENSE.txt");
+    assertThat(Files.readString(NOTICES.resolve("x265/source/dynamicHDR10/json11/LICENSE.txt")))
+        .contains("Copyright (c) 2013 Dropbox, Inc.", "Permission is hereby granted");
+  }
+
+  @Test
   @DisplayName("Should provide source access for every inventoried component")
   void shouldProvideSourceAccessForEveryInventoriedComponent() throws IOException {
     var inventory = new ObjectMapper().readTree(Files.readString(NOTICES.resolve("sources.json")));

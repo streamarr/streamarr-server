@@ -413,7 +413,7 @@ x264 (amd64, arm64)
   Notices: notices/x264/
 
 x265 (amd64, arm64)
-  Static HEVC encoder (--enable-libx265).
+  Static HEVC encoder (--enable-libx265), including the json11 parser in the enabled HDR10+ builds.
   Repository: https://bitbucket.org/multicoreware/x265_git
   Revision: e444744c03978c1fb4e037168967020cf2648427
   Recipe: builder/scripts.d/50-x265.sh

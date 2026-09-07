@@ -1219,12 +1219,17 @@
       "amd64",
       "arm64"
     ],
-    "role": "Static HEVC encoder (--enable-libx265).",
+    "role": "Static HEVC encoder (--enable-libx265), including the json11 parser in the enabled HDR10+ builds.",
     "notices": [
       {
         "url": "https://bitbucket.org/multicoreware/x265_git/raw/e444744c03978c1fb4e037168967020cf2648427/COPYING",
         "sha256": "d8afb1bcc7a2cfc603683b168d6987ef0a48e59e0da3693bf55c5d33b67e2b49",
         "file": "x265/COPYING.txt"
+      },
+      {
+        "file": "x265/source/dynamicHDR10/json11/LICENSE.txt",
+        "url": "https://bitbucket.org/multicoreware/x265_git/raw/e444744c03978c1fb4e037168967020cf2648427/source/dynamicHDR10/json11/LICENSE.txt",
+        "sha256": "950e288a2548cb33f6a90d23958806b0803f510ab17c600d661619a73ae3a6c8"
       }
     ]
   },
