@@ -403,8 +403,8 @@ class FfmpegPackagingScriptsTest {
   }
 
   @Test
-  @DisplayName("Should resolve an exact-tag FFmpeg build to its full source revision")
-  void shouldResolveExactTagFfmpegBuildToItsFullSourceRevision() throws Exception {
+  @DisplayName("Should resolve Jellyfin release tag to its full source revision")
+  void shouldResolveJellyfinReleaseTagToItsFullSourceRevision() throws Exception {
     var updater = lockUpdater();
     var fullRevision = "1234567890abcdef1234567890abcdef12345678";
 
@@ -817,6 +817,24 @@ class FfmpegPackagingScriptsTest {
   @Test
   @DisplayName("Should reject nonfree runtime when verifying packaged image")
   void shouldRejectNonfreeRuntimeWhenVerifyingPackagedImage() throws Exception {
+    var verifier = imageVerifier();
+    writeCommand(
+        verifier.runtime(),
+        "ffmpeg",
+        """
+        printf '%s\\n' \\
+          'ffmpeg version 8.2.0-Jellyfin Copyright' \\
+          'configuration: --enable-gpl --disable-libfdk-aac --enable-nonfree'
+        """);
+    writeCommand(verifier.runtime(), "ffprobe", ":");
+
+    var result = verifier.command().execute();
+
+    assertThat(result.exitCode()).isEqualTo(1);
+    assertThat(result.output()).contains("FFmpeg must not include nonfree components");
+  }
+
+  private ImageVerifierFixture imageVerifier() throws IOException {
     var verifierRoot = Files.createDirectories(temporaryDirectory.resolve("verifier"));
     var verifierDirectory =
         Files.createDirectories(verifierRoot.resolve(".github/actions/pack-build"));
@@ -848,29 +866,15 @@ class FfmpegPackagingScriptsTest {
         fi
         PATH="${FAKE_FFMPEG_ROOT}/bin:${PATH}" exec /bin/bash -euo pipefail -s
         """);
-    writeCommand(
+    return new ImageVerifierFixture(
         runtime,
-        "ffmpeg",
-        """
-        printf '%%s\\n' \\
-          'ffmpeg version %s-Jellyfin Copyright' \\
-          'configuration: --enable-gpl --disable-libfdk-aac --enable-nonfree'
-        """
-            .formatted(futureVersion.substring(0, futureVersion.lastIndexOf('-'))));
-    writeCommand(runtime, "ffprobe", ":");
-
-    var result =
         command(imageVerifier)
             .argument("streamarr/streamarr-server:test")
             .argument("test")
             .argument("https://github.com/streamarr/streamarr-server")
             .argument("abc123")
             .prependPath(commands)
-            .environment("FAKE_FFMPEG_ROOT", runtime.getParent().toString())
-            .execute();
-
-    assertThat(result.exitCode()).isEqualTo(1);
-    assertThat(result.output()).contains("FFmpeg must not include nonfree components");
+            .environment("FAKE_FFMPEG_ROOT", runtime.getParent().toString()));
   }
 
   @Test
@@ -957,6 +961,8 @@ class FfmpegPackagingScriptsTest {
   private record ExecutionResult(int exitCode, String output) {}
 
   private record LockUpdaterFixture(Path lock, Path releaseJson, CommandFixture command) {}
+
+  private record ImageVerifierFixture(Path runtime, CommandFixture command) {}
 
   private record BuildpackFixture(
       Path layers, Path layer, Path tarArguments, CommandFixture command) {

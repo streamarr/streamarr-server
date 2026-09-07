@@ -83,8 +83,8 @@ class FfmpegLockWorkflowTest {
   }
 
   @Test
-  @DisplayName("Should verify canonical FFmpeg metadata before building release images")
-  void shouldVerifyCanonicalFfmpegMetadataBeforeBuildingReleaseImages() throws IOException {
+  @DisplayName("Should validate FFmpeg lock offline before building release images")
+  void shouldValidateFfmpegLockOfflineBeforeBuildingReleaseImages() throws IOException {
     var workflow = yaml(".github/workflows/publish-release.yml");
     var release = map(map(workflow.get("jobs")).get("build_release_images"));
     var steps = listOfMaps(release.get("steps"));
