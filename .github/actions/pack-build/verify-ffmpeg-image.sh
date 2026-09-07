@@ -15,6 +15,7 @@ lock_file="${repository_root}/buildpacks/ffmpeg/ffmpeg.lock"
 
 ffmpeg_lock_validate "${lock_file}"
 expected_ffmpeg_version="$(ffmpeg_lock_value "${lock_file}" version)"
+expected_ffmpeg_version="${expected_ffmpeg_version%-*}-Jellyfin"
 
 if ! docker image inspect "${image}" >/dev/null 2>&1; then
   docker pull "${image}" >/dev/null
@@ -45,9 +46,8 @@ EXPECTED_FFMPEG_VERSION="${expected_ffmpeg_version}" \
   ffprobe="$(command -v ffprobe)"
 
   version_output="$(${ffmpeg} -version 2>&1)"
-  grep -F "ffmpeg version ${EXPECTED_FFMPEG_VERSION}-" <<<"${version_output}" >/dev/null
+  grep -F "ffmpeg version ${EXPECTED_FFMPEG_VERSION} " <<<"${version_output}" >/dev/null
   grep -F -- "--enable-gpl" <<<"${version_output}" >/dev/null
-  grep -F -- "--disable-libfdk-aac" <<<"${version_output}" >/dev/null
   if grep -F -- "--enable-nonfree" <<<"${version_output}"; then
     echo "FFmpeg must not include nonfree components" >&2
     exit 1
@@ -88,6 +88,14 @@ EXPECTED_FFMPEG_VERSION="${expected_ffmpeg_version}" \
     -of default=noprint_wrappers=1 \
     "${output_dir}/playlist.m3u8" \
     | grep -F "format_name=hls"
+
+  "${ffmpeg}" -hide_banner -loglevel error \
+    -f lavfi -i testsrc2=size=160x90:rate=10 -t 1 \
+    -c:v libsvtav1 -preset 9 -svtav1-params lp=2 \
+    "${output_dir}/av1.mp4"
+  "${ffprobe}" -v error -select_streams v:0 \
+    -show_entries stream=codec_name -of default=noprint_wrappers=1 \
+    "${output_dir}/av1.mp4" | grep -Fx 'codec_name=av1'
 SCRIPT
 
 docker run --rm --entrypoint /cnb/lifecycle/launcher "${image}" \

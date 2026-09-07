@@ -90,22 +90,21 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         working-directory: proposed
         env:
-          APP_TOKEN: ${{ steps.lock_bot.outputs.token }}
+          GH_TOKEN: ${{ steps.lock_bot.outputs.token }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           LOCK_BLOB: ${{ steps.changes.outputs.lock-blob }}
         run: |
-          git config user.name 'streamarr-ffmpeg-lock[bot]'
-          git config user.email 'streamarr-ffmpeg-lock[bot]@users.noreply.github.com'
-          git update-index --add --cacheinfo \
-            "100644,${LOCK_BLOB},buildpacks/ffmpeg/ffmpeg.lock"
-          staged_files="$(git diff --cached --name-only)"
-          if [[ "${staged_files}" != "buildpacks/ffmpeg/ffmpeg.lock" ]]; then
-            echo "Refusing to commit unexpected files: ${staged_files}" >&2
-            exit 1
-          fi
-          git diff --cached --check
-          git commit -m 'behavioral: synchronize FFmpeg lock'
-          git remote set-url origin \
-            "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          trap 'git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"' EXIT
-          git push origin "HEAD:refs/heads/${HEAD_REF}"
+          contents="$(git cat-file blob "${LOCK_BLOB}" | base64 -w 0)"
+          jq -n \
+            --arg repository "${GITHUB_REPOSITORY}" \
+            --arg branch "${HEAD_REF}" \
+            --arg expectedHead "${EXPECTED_HEAD_SHA}" \
+            --arg contents "${contents}" \
+            '{query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid url } } }",
+              variables: {input: {
+                branch: {repositoryNameWithOwner: $repository, branchName: $branch},
+                expectedHeadOid: $expectedHead,
+                message: {headline: "behavioral: synchronize FFmpeg lock"},
+                fileChanges: {additions: [{path: "buildpacks/ffmpeg/ffmpeg.lock", contents: $contents}]}
+              }}}' | gh api graphql --input -

@@ -42,7 +42,15 @@ class FfmpegLockWorkflowTest {
             "- '.github/workflows/ci.yml'");
     assertThat(offline).doesNotContainKeys("if", "env");
     assertThat((String) offline.get("run")).contains("--check").doesNotContain("--verify-upstream");
-    assertThat(upstream).containsEntry("if", "needs.changes.outputs.packaging == 'true'");
+    var filters = yamlFilters(filter);
+    assertThat(filters.get("ffmpeg"))
+        .isEqualTo(
+            List.of(
+                "buildpacks/ffmpeg/release",
+                "buildpacks/ffmpeg/ffmpeg.lock",
+                "buildpacks/ffmpeg/bin/update-lock",
+                "buildpacks/ffmpeg/lib/**"));
+    assertThat(upstream).containsEntry("if", "needs.changes.outputs.ffmpeg == 'true'");
     assertThat((String) upstream.get("run")).contains("--verify-upstream");
     assertThat(map(upstream.get("env"))).containsEntry("GITHUB_TOKEN", "${{ github.token }}");
   }
@@ -84,8 +92,12 @@ class FfmpegLockWorkflowTest {
 
     assertThat(steps.stream().map(step -> step.get("name")))
         .containsSubsequence("Verify FFmpeg lock", "Docker Metadata");
-    assertThat((String) verify.get("run")).contains("--verify-upstream");
-    assertThat(map(verify.get("env"))).containsEntry("GITHUB_TOKEN", "${{ github.token }}");
+    assertThat((String) verify.get("run")).contains("--check").doesNotContain("--verify-upstream");
+    assertThat(verify).doesNotContainKeys("env");
+  }
+
+  private static Map<String, Object> yamlFilters(Map<String, Object> step) {
+    return new Yaml().load(map(step.get("with")).get("filters").toString());
   }
 
   private static Map<String, Object> yaml(String file) throws IOException {

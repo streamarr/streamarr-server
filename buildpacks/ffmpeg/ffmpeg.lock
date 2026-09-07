@@ -1,8 +1,8 @@
-release=autobuild-2026-08-23-13-03
-version=n8.1.2-44-g7c533d0f86
-source_revision=7c533d0f86f13a06ec93968f6194349665b3536a
-asset_variant=gpl-8.1
-amd64_asset=ffmpeg-n8.1.2-44-g7c533d0f86-linux64-gpl-8.1.tar.xz
-amd64_sha256=fb1f9326d203d038f249d5399efb34f4597836f54ad0bcffcc7040af25576493
-arm64_asset=ffmpeg-n8.1.2-44-g7c533d0f86-linuxarm64-gpl-8.1.tar.xz
-arm64_sha256=508e7a30f72702f8e87ab933247d0863d647508b2e51df1268da8de5fcb2de57
+release=v8.1.2-4
+version=8.1.2-4
+source_revision=6c051dec38eb0e88d2d4d3c54b13014bf69f9799
+asset_variant=gpl
+amd64_asset=jellyfin-ffmpeg_8.1.2-4_portable_linux64-gpl.tar.xz
+amd64_sha256=6e7150c358f9817a04ce82c62d81135cb4535d8525047393f4b296fff3d7a664
+arm64_asset=jellyfin-ffmpeg_8.1.2-4_portable_linuxarm64-gpl.tar.xz
+arm64_sha256=ceb9642ee513491d0440bc0027dfa33f2fc6c9966cabb0ec69f43edcbb853e84

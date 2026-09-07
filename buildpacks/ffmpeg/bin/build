@@ -48,14 +48,14 @@ case "${target_arch}" in
     ;;
 esac
 
-download_url="https://github.com/BtbN/FFmpeg-Builds/releases/download/${release}/${asset}"
+download_url="https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/${release}/${asset}"
 layer="${layers_dir}/ffmpeg"
 layer_metadata="${layers_dir}/ffmpeg.toml"
 cache_key="${release}/${asset}/${checksum}"
 
 if [[ ! -x "${layer}/bin/ffmpeg" ]] || ! grep -Fq "cache_key = \"${cache_key}\"" "${layer_metadata}" 2>/dev/null; then
   rm -rf "${layer}"
-  mkdir -p "${layer}"
+  mkdir -p "${layer}/bin"
 
   download_dir="$(mktemp -d)"
   trap 'rm -rf "${download_dir}"' EXIT
@@ -64,32 +64,27 @@ if [[ ! -x "${layer}/bin/ffmpeg" ]] || ! grep -Fq "cache_key = \"${cache_key}\""
   download "${download_url}" "${archive}"
   printf '%s  %s\n' "${checksum}" "${archive}" | sha256sum --check --strict
 
-  archive_root="${asset%.tar.xz}"
-
   tar \
     --extract \
     --xz \
     --file "${archive}" \
-    --directory "${layer}" \
-    --strip-components=1 \
-    "${archive_root}/bin/ffmpeg" \
-    "${archive_root}/bin/ffprobe" \
-    "${archive_root}/LICENSE.txt"
+    --directory "${layer}/bin" \
+    ffmpeg ffprobe
 fi
 
 rm -rf "${layer}/env.launch"
 
 version_output="$("${layer}/bin/ffmpeg" -version 2>&1)"
-version_line="$(grep -F "ffmpeg version ${version}-" <<<"${version_output}" || true)"
+expected_runtime_version="${version%-*}-Jellyfin"
+version_line="$(grep -F "ffmpeg version ${expected_runtime_version} " <<<"${version_output}" || true)"
 version_line="${version_line%%$'\n'*}"
-if [[ "${version_line}" != "ffmpeg version ${version}-"* ]]; then
-  echo "Expected FFmpeg runtime version ${version}" >&2
+if [[ "${version_line}" != "ffmpeg version ${expected_runtime_version} "* ]]; then
+  echo "Expected Jellyfin FFmpeg runtime version ${expected_runtime_version}" >&2
   exit 1
 fi
 runtime_version="${version_line#ffmpeg version }"
 runtime_version="${runtime_version%% *}"
 grep -F -- "--enable-gpl" <<<"${version_output}" >/dev/null
-grep -F -- "--disable-libfdk-aac" <<<"${version_output}" >/dev/null
 if grep -Fq -- "--enable-nonfree" <<<"${version_output}"; then
   echo "FFmpeg must not include nonfree components" >&2
   exit 1
@@ -97,11 +92,12 @@ fi
 "${layer}/bin/ffmpeg" -hide_banner -h muxer=hls 2>&1 \
   | grep -F -- "-hls_segment_options" >/dev/null
 
+cp "${buildpack_dir}/LICENSE.txt" "${layer}/LICENSE.txt"
+
 printf '%s\n' \
   "FFmpeg ${runtime_version}" \
-  "Binary release: https://github.com/BtbN/FFmpeg-Builds/releases/tag/${release}" \
-  "Build source: https://github.com/BtbN/FFmpeg-Builds/tree/${release}" \
-  "FFmpeg source: https://github.com/FFmpeg/FFmpeg/commit/${source_revision}" \
+  "Binary release: https://github.com/jellyfin/jellyfin-ffmpeg/releases/tag/${release}" \
+  "Build and FFmpeg source: https://github.com/jellyfin/jellyfin-ffmpeg/tree/${source_revision}" \
   >"${layer}/SOURCE.txt"
 
 cat >"${layer_metadata}" <<EOF
@@ -124,10 +120,10 @@ cat >"${layers_dir}/ffmpeg.sbom.cdx.json" <<EOF
   "components": [
     {
       "type": "application",
-      "bom-ref": "pkg:generic/ffmpeg@${version}",
+      "bom-ref": "pkg:github/jellyfin/jellyfin-ffmpeg@${release}",
       "name": "FFmpeg",
       "version": "${version}",
-      "publisher": "BtbN/FFmpeg-Builds",
+      "publisher": "Jellyfin",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -141,7 +137,7 @@ cat >"${layers_dir}/ffmpeg.sbom.cdx.json" <<EOF
           }
         }
       ],
-      "purl": "pkg:generic/ffmpeg@${version}",
+      "purl": "pkg:github/jellyfin/jellyfin-ffmpeg@${release}",
       "externalReferences": [
         {
           "type": "distribution",
@@ -149,7 +145,7 @@ cat >"${layers_dir}/ffmpeg.sbom.cdx.json" <<EOF
         },
         {
           "type": "vcs",
-          "url": "https://github.com/FFmpeg/FFmpeg/commit/${source_revision}"
+          "url": "https://github.com/jellyfin/jellyfin-ffmpeg/commit/${source_revision}"
         }
       ]
     }
