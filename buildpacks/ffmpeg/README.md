@@ -18,15 +18,39 @@ buildpacks/ffmpeg/bin/update-lock --verify-upstream
 The updater requires Bash, `curl`, and `jq`. It accepts only published, non-prerelease tags
 in `vMAJOR.MINOR.PATCH-BUILD` form, requires exactly one portable GPL asset and a GitHub
 SHA-256 digest per architecture, resolves the tag's full fork commit, and writes the lock
-atomically. `--check` validates the lock offline; `--verify-upstream` regenerates canonical
+atomically. `--check` validates the lock and its notice manifest offline; `--verify-upstream` regenerates canonical
 metadata from GitHub and compares it byte-for-byte without modifying the lock.
 
 The buildpack verifies the downloaded archive against the locked checksum before extracting
 its root-level `ffmpeg` and `ffprobe` binaries. Jellyfin's banner omits the packaging revision:
 package `8.1.2-4` reports `8.1.2-Jellyfin`; the checksum pins the exact build. The runtime must
-enable GPL, exclude nonfree components, and support `hls_segment_options`. Jellyfin's GPL
-build uses stripped FDK-AAC, so `--enable-libfdk-aac` alone is not a nonfree-build indicator.
-The layer includes GPLv3 text, release/source attribution, and a CycloneDX SBOM.
+enable GPL, omit the `--enable-nonfree` build flag, and support `hls_segment_options`.
+This flag check does not cover FDK-AAC: Jellyfin's GPL build includes stripped FDK-AAC
+without setting `--enable-nonfree`. Streamarr selects FFmpeg's native `aac` encoder,
+not `libfdk_aac`; the latter is nevertheless present in the distributed binary.
+The layer includes GPLv3 text, bundled-library notices (including FDK's notice),
+source-access instructions, and a CycloneDX SBOM.
+
+## Redistribution materials
+
+[`SOURCE.txt`](SOURCE.txt) supplies Corresponding Source locations, exact upstream
+revisions and build/patch instructions. [`notices/sources.json`](notices/sources.json)
+records the component inventory and the origins/checksums of the vendored notices.
+The inventory starts with each shipped Linux GPL binary's `-buildconf` output, then
+traces transitive static libraries, embedded headers and generated loaders through
+the pinned recipes. It is not a list of every build script or of external GPU drivers.
+
+[`notices/manifest`](notices/manifest) binds that review to the release, source revision
+and both archive digests. Offline validation and the buildpack reject a mismatch.
+After an update, review both binaries and their dependencies, update the notices and
+source instructions, then update the manifest. The lock resolver deliberately does
+not mark new notices as reviewed. Tests check notice contents against the inventory
+and verify their inclusion in fresh and cached layers. Full license texts and
+attribution remain in the image, not just links to them.
+
+Source links use upstream hosting; Streamarr remains responsible for keeping the
+corresponding source available with its binary distributions. Check source access
+before publishing; do not publish a binary whose required source is unavailable.
 
 ## Renovate synchronization
 
@@ -34,7 +58,9 @@ Renovate tracks `jellyfin/jellyfin-ffmpeg` with the `github-releases` datasource
 [regex versioning](https://docs.renovatebot.com/modules/versioning/regex/). The fourth numeric
 component uses the `build` capture group: `-10` sorts after `-9`, and packaging-only fixes
 are stable patch updates, not SemVer prereleases. Updates have their own PR and are not
-automerged.
+automerged. Major-version updates additionally require Dependency Dashboard approval.
+Renovate still proposes eligible minor and packaging updates automatically; their
+notice review must complete before CI and image packaging can pass.
 
 `.github/workflows/sync-ffmpeg-lock.yml` uses `pull_request_target` only for same-repository
 Renovate PRs. It executes resolver code from the trusted PR base, reads the proposed release
@@ -65,13 +91,18 @@ the release, lock, resolver, or shared resolver libraries change. Ordinary read-
 this is distinct from the privileged synchronization workflow's trusted-base boundary.
 Release builds use offline metadata validation and verify the binary checksum at download time.
 
-HLS recovery smoke tests use the same locked runtime as production on every PR. Packaging
-changes additionally build and verify both native architectures, including H.264/fMP4,
-AV1 encoding, and the HLS recovery tests. The required `build` status aggregates all applicable
-checks.
+The `SmokeTest` group (including `HlsStreamingSmokeTest`) uses the locked runtime in
+the amd64 application job. Packaging changes also run that group on an arm64 host;
+the packaging matrix does not repeat the amd64 host run. Separately, both native
+images are built and verified in-container for runtime identity, H.264/AAC fMP4 HLS
+and AV1 encoding. The required `build` status aggregates all applicable checks.
 
 Numbered Jellyfin releases avoid BtbN's rolling daily-build expiry. They are still upstream
 assets, not a guarantee of immutable or permanent storage: a missing asset fails the build,
 and a replaced asset fails checksum verification. CI caches are accelerators, not dependency
-storage. A Streamarr-owned archive would be needed for rebuilds independent of upstream
-retention; that is not part of this migration.
+storage. Jellyfin also publishes the versioned binaries at its
+[FFmpeg mirror](https://repo.jellyfin.org/files/ffmpeg/linux/), using paths such as
+`8.x/8.1.2-4/amd64/<asset>`. This is an available second upstream source, not yet an
+automatic buildpack fallback. Neither channel provides portable-tarball signatures
+or a permanent-retention promise. A Streamarr-owned archive would be needed for
+rebuilds independent of both upstream channels; that is not part of this migration.

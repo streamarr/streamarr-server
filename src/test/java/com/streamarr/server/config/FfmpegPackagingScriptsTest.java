@@ -40,6 +40,21 @@ class FfmpegPackagingScriptsTest {
   @TempDir Path temporaryDirectory;
 
   @Test
+  @DisplayName("Should reject stale notice inventory when validating the FFmpeg lock offline")
+  void shouldRejectStaleNoticeInventoryWhenValidatingFfmpegLockOffline() throws Exception {
+    var updater = lockUpdater();
+    assertThat(updater.command().execute().exitCode()).isZero();
+    var manifest = updater.lock().getParent().resolve("notices/manifest");
+    Files.writeString(
+        manifest, Files.readString(manifest).replace("source_revision=", "source_revision=stale"));
+
+    var result = updater.command().argument("--check").execute();
+
+    assertThat(result.exitCode()).isEqualTo(1);
+    assertThat(result.output()).contains("FFmpeg notice inventory is stale", "source_revision");
+  }
+
+  @Test
   @DisplayName("Should validate the checked-in FFmpeg release lock without upstream access")
   void shouldValidateCheckedInFfmpegReleaseLockWithoutUpstreamAccess() throws Exception {
     assertThat(LOCK_UPDATER).exists().isExecutable();
@@ -457,6 +472,16 @@ class FfmpegPackagingScriptsTest {
     var arm64Digest = "b".repeat(64);
     var repository = Files.createDirectories(temporaryDirectory.resolve("repository"));
     var buildpack = Files.createDirectories(repository.resolve("buildpacks/ffmpeg"));
+    copyRedistributionFiles(buildpack);
+    Files.writeString(
+        buildpack.resolve("notices/manifest"),
+        """
+        release=%s
+        source_revision=%s
+        amd64_sha256=%s
+        arm64_sha256=%s
+        """
+            .formatted(release, fullRevision, amd64Digest, arm64Digest));
     Files.writeString(buildpack.resolve("release"), release + "\n");
     var lock = buildpack.resolve("ffmpeg.lock");
     Files.writeString(lock, "stale\n");
@@ -563,6 +588,17 @@ class FfmpegPackagingScriptsTest {
     var futureVersion = "8.2.0-1";
     var futureLock = lockWithVersion(futureVersion, "abcdef1234" + "0".repeat(30));
     Files.writeString(buildpackRoot.resolve("ffmpeg.lock"), futureLock);
+    Files.writeString(
+        buildpackRoot.resolve("notices/manifest"),
+        String.join(
+                "\n",
+                futureLock
+                    .lines()
+                    .filter(
+                        line ->
+                            line.matches("(release|source_revision|amd64_sha256|arm64_sha256)=.*"))
+                    .toList())
+            + "\n");
     var buildpack = buildpack(buildpackScript);
 
     var result = buildpack.execute();
@@ -697,6 +733,61 @@ class FfmpegPackagingScriptsTest {
   }
 
   @Test
+  @DisplayName("Should ship bundled notices and source access with the FFmpeg layer")
+  void shouldShipBundledNoticesAndSourceAccessWithFfmpegLayer() throws Exception {
+    var buildpack = buildpack();
+
+    var result = buildpack.execute();
+
+    assertThat(result.exitCode()).isZero();
+    var notices = Path.of("buildpacks/ffmpeg/notices");
+    try (var paths = Files.walk(notices)) {
+      for (var source : paths.filter(Files::isRegularFile).toList()) {
+        var installed = buildpack.layer().resolve("notices").resolve(notices.relativize(source));
+        assertThat(installed).hasBinaryContent(Files.readAllBytes(source));
+      }
+    }
+
+    assertThat(buildpack.layer().resolve("SOURCE.txt"))
+        .hasSameTextualContentAs(Path.of("buildpacks/ffmpeg/SOURCE.txt"));
+    assertThat(Files.readString(buildpack.layer().resolve("SOURCE.txt")))
+        .contains("Corresponding Source", "fdk-aac-stripped", "builder/patches");
+  }
+
+  @Test
+  @DisplayName("Should restore notices when the FFmpeg binary layer is reused from cache")
+  void shouldRestoreNoticesWhenFfmpegBinaryLayerIsReusedFromCache() throws Exception {
+    var buildpack = buildpack();
+    assertThat(buildpack.execute().exitCode()).isZero();
+    var notice = buildpack.layer().resolve("notices/fdk-aac-stripped/NOTICE.txt");
+    Files.writeString(notice, "outdated notice");
+
+    var result = buildpack.execute();
+
+    assertThat(result.exitCode()).isZero();
+    assertThat(notice)
+        .hasSameTextualContentAs(Path.of("buildpacks/ffmpeg/notices/fdk-aac-stripped/NOTICE.txt"));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"release", "source_revision", "amd64_sha256", "arm64_sha256"})
+  @DisplayName("Should reject stale notice inventory before extracting the FFmpeg archive")
+  void shouldRejectStaleNoticeInventoryBeforeExtractingFfmpegArchive(String key) throws Exception {
+    var buildpackRoot = Files.createDirectories(temporaryDirectory.resolve("stale-notices"));
+    var script = copyBuildpackScript(buildpackRoot);
+    Files.copy(Path.of("buildpacks/ffmpeg/ffmpeg.lock"), buildpackRoot.resolve("ffmpeg.lock"));
+    var manifest = buildpackRoot.resolve("notices/manifest");
+    Files.writeString(manifest, Files.readString(manifest).replace(key + "=", key + "=stale"));
+    var buildpack = buildpack(script);
+
+    var result = buildpack.execute();
+
+    assertThat(result.exitCode()).isEqualTo(1);
+    assertThat(result.output()).contains("FFmpeg notice inventory is stale", key);
+    assertThat(buildpack.tarArguments()).doesNotExist();
+  }
+
+  @Test
   @DisplayName("Should stop before extraction when the archive checksum is incorrect")
   void shouldStopBeforeExtractionWhenArchiveChecksumIsIncorrect() throws Exception {
     var buildpack = buildpack();
@@ -717,11 +808,25 @@ class FfmpegPackagingScriptsTest {
     var buildpackScript = Files.copy(BUILDPACK, buildpackBin.resolve("build"));
     Files.copy(LOCK_LIBRARY, buildpackLibrary.resolve("lock.sh"));
     Files.copy(HTTP_LIBRARY, buildpackLibrary.resolve("http.sh"));
+    Files.copy(Path.of("buildpacks/ffmpeg/lib/notices.sh"), buildpackLibrary.resolve("notices.sh"));
     Files.copy(
         BUILDPACK.getParent().getParent().resolve("LICENSE.txt"),
         buildpackRoot.resolve("LICENSE.txt"));
+    copyRedistributionFiles(buildpackRoot);
     assertThat(buildpackScript.toFile().setExecutable(true)).isTrue();
     return buildpackScript;
+  }
+
+  private static void copyRedistributionFiles(Path buildpackRoot) throws IOException {
+    Files.copy(Path.of("buildpacks/ffmpeg/SOURCE.txt"), buildpackRoot.resolve("SOURCE.txt"));
+    var notices = Path.of("buildpacks/ffmpeg/notices");
+    try (var paths = Files.walk(notices)) {
+      for (var source : paths.filter(Files::isRegularFile).toList()) {
+        var destination = buildpackRoot.resolve("notices").resolve(notices.relativize(source));
+        Files.createDirectories(destination.getParent());
+        Files.copy(source, destination);
+      }
+    }
   }
 
   private BuildpackFixture buildpack(Path buildpackScript) throws IOException {

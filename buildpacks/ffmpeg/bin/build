@@ -12,6 +12,8 @@ lock_file="${buildpack_dir}/ffmpeg.lock"
 . "${buildpack_dir}/lib/http.sh"
 # shellcheck source=../lib/lock.sh
 . "${buildpack_dir}/lib/lock.sh"
+# shellcheck source=../lib/notices.sh
+. "${buildpack_dir}/lib/notices.sh"
 
 download() {
   local url="$1"
@@ -29,6 +31,7 @@ download() {
 }
 
 ffmpeg_lock_validate "${lock_file}"
+ffmpeg_notices_validate "${lock_file}" "${buildpack_dir}"
 release="$(ffmpeg_lock_value "${lock_file}" release)"
 version="$(ffmpeg_lock_value "${lock_file}" version)"
 source_revision="$(ffmpeg_lock_value "${lock_file}" source_revision)"
@@ -82,8 +85,6 @@ if [[ "${version_line}" != "ffmpeg version ${expected_runtime_version} "* ]]; th
   echo "Expected Jellyfin FFmpeg runtime version ${expected_runtime_version}" >&2
   exit 1
 fi
-runtime_version="${version_line#ffmpeg version }"
-runtime_version="${runtime_version%% *}"
 grep -F -- "--enable-gpl" <<<"${version_output}" >/dev/null
 if grep -Fq -- "--enable-nonfree" <<<"${version_output}"; then
   echo "FFmpeg must not include nonfree components" >&2
@@ -93,12 +94,9 @@ fi
   | grep -F -- "-hls_segment_options" >/dev/null
 
 cp "${buildpack_dir}/LICENSE.txt" "${layer}/LICENSE.txt"
-
-printf '%s\n' \
-  "FFmpeg ${runtime_version}" \
-  "Binary release: https://github.com/jellyfin/jellyfin-ffmpeg/releases/tag/${release}" \
-  "Build and FFmpeg source: https://github.com/jellyfin/jellyfin-ffmpeg/tree/${source_revision}" \
-  >"${layer}/SOURCE.txt"
+cp "${buildpack_dir}/SOURCE.txt" "${layer}/SOURCE.txt"
+rm -rf "${layer}/notices"
+cp -R "${buildpack_dir}/notices" "${layer}/notices"
 
 cat >"${layer_metadata}" <<EOF
 [types]

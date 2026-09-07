@@ -9,6 +9,8 @@ repository_root="$(cd "${script_dir}/../../.." && pwd)"
 . "${script_dir}/../lib/http.sh"
 # shellcheck source=../lib/lock.sh
 . "${script_dir}/../lib/lock.sh"
+# shellcheck source=../lib/notices.sh
+. "${script_dir}/../lib/notices.sh"
 check_only=false
 verify_upstream=false
 requested_release=
@@ -85,6 +87,7 @@ fi
 
 if [[ "${check_only}" == true ]]; then
   ffmpeg_lock_validate "${lock_file}"
+  ffmpeg_notices_validate "${lock_file}" "${repository_root}/buildpacks/ffmpeg"
   locked_release="$(ffmpeg_lock_value "${lock_file}" release)"
   if [[ "${locked_release}" == "${release}" ]]; then
     exit 0
