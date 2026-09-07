@@ -574,14 +574,13 @@ class HouseholdDeletionServiceTest {
   void shouldForbidSecurityAuditWhenCallerMayNotViewIt() {
     authorization.denyAll();
     var identity = identity();
-    assertThatThrownBy(
-            () ->
-                service.securityAuditEvents(
-                    identity,
-                    HouseholdDeletionService.SecurityAuditPageRequest.builder()
-                        .direction(PaginationDirection.FORWARD)
-                        .limit(10)
-                        .build()))
+    var request =
+        HouseholdDeletionService.SecurityAuditPageRequest.builder()
+            .direction(PaginationDirection.FORWARD)
+            .limit(10)
+            .build();
+
+    assertThatThrownBy(() -> service.securityAuditEvents(identity, request))
         .isInstanceOf(AccessDeniedException.class);
   }
 
@@ -589,8 +588,10 @@ class HouseholdDeletionServiceTest {
   @DisplayName("Should fail closed when deletion preflight authorization is unavailable")
   void shouldFailClosedWhenDeletionPreflightAuthorizationIsUnavailable() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var identity = identity();
+    var householdId = doomed.getId();
 
-    assertThatThrownBy(() -> service.deletionPreflight(identity(), doomed.getId()))
+    assertThatThrownBy(() -> service.deletionPreflight(identity, householdId))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -598,9 +599,11 @@ class HouseholdDeletionServiceTest {
   @DisplayName("Should fail closed when Profile activity authorization is unavailable")
   void shouldFailClosedWhenProfileActivityAuthorizationIsUnavailable() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var identity = identity();
+    var profileId = UUID.randomUUID();
+    var options = paginationOptions();
 
-    assertThatThrownBy(
-            () -> service.profileActivity(identity(), UUID.randomUUID(), paginationOptions()))
+    assertThatThrownBy(() -> service.profileActivity(identity, profileId, options))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -621,15 +624,14 @@ class HouseholdDeletionServiceTest {
   @DisplayName("Should fail closed when security-audit authorization is unavailable")
   void shouldFailClosedWhenSecurityAuditAuthorizationIsUnavailable() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var identity = identity();
+    var request =
+        HouseholdDeletionService.SecurityAuditPageRequest.builder()
+            .direction(PaginationDirection.FORWARD)
+            .limit(10)
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                service.securityAuditEvents(
-                    identity(),
-                    HouseholdDeletionService.SecurityAuditPageRequest.builder()
-                        .direction(PaginationDirection.FORWARD)
-                        .limit(10)
-                        .build()))
+    assertThatThrownBy(() -> service.securityAuditEvents(identity, request))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 

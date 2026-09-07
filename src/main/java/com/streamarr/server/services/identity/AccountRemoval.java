@@ -31,6 +31,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 class AccountRemoval {
 
+  private static final String PROFILE_DELETED = "Profile deleted";
+
   private final UserAccountRepository userAccountRepository;
   private final ProfileRepository profileRepository;
   private final ProfileHouseholdShareRepository shareRepository;
@@ -109,9 +111,9 @@ class AccountRemoval {
 
   /** Deletes an unlinked Profile with its selections and pending Profile-bound artifacts. */
   void deleteProfile(UUID profileId, Instant now) {
-    accountInvitationRepository.invalidatePendingByProfileId(profileId, "Profile deleted", now);
-    managerInvitationRepository.invalidatePendingByProfileId(profileId, "Profile deleted", now);
-    shareRepository.invalidatePendingByProfileId(profileId, "Profile deleted", now);
+    accountInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
+    managerInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
+    shareRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
     shareRepository
         .findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE)
         .forEach(

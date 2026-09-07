@@ -153,50 +153,53 @@ public class HouseholdDeletionService {
 
     var now = clock.instant();
     return mutationTransactions.write(
-        () -> {
-          if (!householdRepository.lockById(request.householdId())) {
-            throw new MutationRejection(new HouseholdDeletionRejections.HouseholdNotFound());
-          }
-
-          var residents = userAccountRepository.findByHouseholdId(request.householdId());
-          if (residents.size() > 1) {
-            throw new MutationRejection(new HouseholdDeletionRejections.AccountsRemain());
-          }
-
-          if (residents.size() == 1 && request.finalAccount() == null) {
-            throw new MutationRejection(new HouseholdDeletionRejections.AccountsRemain());
-          }
-
-          if (residents.isEmpty() && request.finalAccount() != null) {
-            throw new MutationRejection(new HouseholdDeletionRejections.LastAccountNotFound());
-          }
-
-          residents.stream()
-              .findFirst()
-              .ifPresent(resident -> dispose(resident, request.finalAccount(), now));
-
-          // The TVs and every pending way into the Household fall before the rows do.
-          registrationLifecycle.revokeAllByHousehold(
-              request.householdId(), HOUSEHOLD_DELETED_REASON, now);
-          accountInvitationRepository.invalidatePendingByHouseholdId(
-              request.householdId(), HOUSEHOLD_DELETED_REASON, now);
-          endHostedVisits(request.householdId(), now);
-          deleteResidentProfiles(request.householdId(), now);
-          householdRepository.deleteById(request.householdId());
-          householdRepository.flush();
-          securityAuditEventRepository.append(
-              SecurityAuditEntry.builder()
-                  .operation(request.operation())
-                  .actorAccountId(identity.accountId())
-                  .reason(request.reason())
-                  .resource("householdId", request.householdId())
-                  .build());
-          return request.householdId();
-        },
+        () -> deleteHouseholdWithinTransaction(identity, request, now),
         constraint ->
             CHK_SERVER_ADMIN_REMAINS.equals(constraint)
                 ? Optional.of(new HouseholdDeletionRejections.LastServerAdmin())
                 : Optional.empty());
+  }
+
+  private UUID deleteHouseholdWithinTransaction(
+      AuthenticatedIdentity identity, HouseholdDeletionRequest request, Instant now) {
+    if (!householdRepository.lockById(request.householdId())) {
+      throw new MutationRejection(new HouseholdDeletionRejections.HouseholdNotFound());
+    }
+
+    var residents = userAccountRepository.findByHouseholdId(request.householdId());
+    if (residents.size() > 1) {
+      throw new MutationRejection(new HouseholdDeletionRejections.AccountsRemain());
+    }
+
+    if (residents.size() == 1 && request.finalAccount() == null) {
+      throw new MutationRejection(new HouseholdDeletionRejections.AccountsRemain());
+    }
+
+    if (residents.isEmpty() && request.finalAccount() != null) {
+      throw new MutationRejection(new HouseholdDeletionRejections.LastAccountNotFound());
+    }
+
+    residents.stream()
+        .findFirst()
+        .ifPresent(resident -> dispose(resident, request.finalAccount(), now));
+
+    // The TVs and every pending way into the Household fall before the rows do.
+    registrationLifecycle.revokeAllByHousehold(
+        request.householdId(), HOUSEHOLD_DELETED_REASON, now);
+    accountInvitationRepository.invalidatePendingByHouseholdId(
+        request.householdId(), HOUSEHOLD_DELETED_REASON, now);
+    endHostedVisits(request.householdId(), now);
+    deleteResidentProfiles(request.householdId(), now);
+    householdRepository.deleteById(request.householdId());
+    householdRepository.flush();
+    securityAuditEventRepository.append(
+        SecurityAuditEntry.builder()
+            .operation(request.operation())
+            .actorAccountId(identity.accountId())
+            .reason(request.reason())
+            .resource("householdId", request.householdId())
+            .build());
+    return request.householdId();
   }
 
   /** What deletion will do, for whoever may view the Household's administration. */

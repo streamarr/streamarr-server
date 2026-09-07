@@ -48,6 +48,7 @@ import lombok.RequiredArgsConstructor;
 public class HouseholdDeletionResolver {
 
   private static final int DEFAULT_PAGE_SIZE = 100;
+  private static final String HOUSEHOLD_ID = "householdId";
 
   private final AuthorizationService authorizationService;
   private final HouseholdDeletionService householdDeletionService;
@@ -72,7 +73,7 @@ public class HouseholdDeletionResolver {
                     .map(UUID::toString),
                 HouseholdDeletionErrors::toDeleteEmptyHouseholdError,
                 DeleteEmptyHouseholdPayload::new),
-        () -> invalidDeleteEmptyHousehold("householdId"));
+        () -> invalidDeleteEmptyHousehold(HOUSEHOLD_ID));
   }
 
   @DgsMutation
@@ -81,7 +82,7 @@ public class HouseholdDeletionResolver {
     return MutationPayloads.withUuid(
         input.householdId(),
         householdId -> transferLastAccountAndDeleteHousehold(input, householdId),
-        () -> invalidTransferLastAccountAndDeleteHousehold("householdId"));
+        () -> invalidTransferLastAccountAndDeleteHousehold(HOUSEHOLD_ID));
   }
 
   private TransferLastAccountAndDeleteHouseholdPayload transferLastAccountAndDeleteHousehold(
@@ -121,7 +122,7 @@ public class HouseholdDeletionResolver {
                     .map(UUID::toString),
                 HouseholdDeletionErrors::toDeleteLastAccountAndHouseholdError,
                 DeleteLastAccountAndHouseholdPayload::new),
-        () -> invalidDeleteLastAccountAndHousehold("householdId"));
+        () -> invalidDeleteLastAccountAndHousehold(HOUSEHOLD_ID));
   }
 
   @DgsMutation
@@ -131,7 +132,7 @@ public class HouseholdDeletionResolver {
     return MutationPayloads.withUuid(
         input.householdId(),
         householdId -> deleteLastAccountAndHouseholdPreservingPersonalProfile(input, householdId),
-        () -> invalidDeleteLastAccountAndHouseholdPreservingPersonalProfile("householdId"));
+        () -> invalidDeleteLastAccountAndHouseholdPreservingPersonalProfile(HOUSEHOLD_ID));
   }
 
   private DeleteLastAccountAndHouseholdPreservingPersonalProfilePayload

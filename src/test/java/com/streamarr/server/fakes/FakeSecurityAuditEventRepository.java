@@ -14,7 +14,7 @@ public class FakeSecurityAuditEventRepository implements SecurityAuditEventRepos
 
   private static final Comparator<SecurityAuditEventRecordView> NEWEST_FIRST =
       Comparator.comparing(SecurityAuditEventRecordView::occurredAt)
-          .thenComparing(record -> record.id().toString())
+          .thenComparing(auditEvent -> auditEvent.id().toString())
           .reversed();
   private static final Comparator<SecurityAuditEventRecordView> OLDEST_FIRST =
       NEWEST_FIRST.reversed();
