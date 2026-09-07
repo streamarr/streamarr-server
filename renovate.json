@@ -37,7 +37,7 @@
     },
     {
       "customType": "regex",
-      "description": "Track pinned Jellyfin FFmpeg releases including packaging revisions",
+      "description": "Compare Jellyfin's fourth numeric component as a stable packaging revision; default SemVer treats the hyphen suffix as a prerelease",
       "managerFilePatterns": [
         "/^buildpacks/ffmpeg/release$/"
       ],
@@ -66,6 +66,12 @@
       "matchDepNames": ["jellyfin/jellyfin-ffmpeg"],
       "groupName": "FFmpeg runtime",
       "automerge": false
+    },
+    {
+      "description": "Require explicit dashboard approval before proposing a new FFmpeg major",
+      "matchDepNames": ["jellyfin/jellyfin-ffmpeg"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
     },
     {
       "description": "Cedar bundles a native engine: every upgrade is a deliberate PR that re-runs the multi-arch image self-check and CedarDependencyAlignmentTest, never an automerge",

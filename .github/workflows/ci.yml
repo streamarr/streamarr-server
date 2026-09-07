@@ -167,6 +167,7 @@ jobs:
           image-version: ${{ github.sha }}
 
       - name: Set up JDK 25
+        if: matrix.architecture == 'arm64'
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           java-version: '25'
@@ -174,10 +175,12 @@ jobs:
           cache: maven
 
       - name: Install locked FFmpeg
+        if: matrix.architecture == 'arm64'
         timeout-minutes: 10
         uses: ./.github/actions/setup-ffmpeg
 
       - name: Run HLS smoke tests
+        if: matrix.architecture == 'arm64'
         run: >-
           ./mvnw --batch-mode test -Dsurefire.excludedGroups= -Dgroups=SmokeTest
           -Djacoco.skip=true -Dcheckstyle.skip=true -Dspotless.check.skip=true

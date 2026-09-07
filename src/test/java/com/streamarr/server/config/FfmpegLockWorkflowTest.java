@@ -35,6 +35,8 @@ class FfmpegLockWorkflowTest {
         .containsEntry("needs", "changes")
         .containsEntry("permissions", Map.of("contents", "read"));
     assertThat(lock.toString()).doesNotContain("secrets.");
+    assertThat(map(changes.get("outputs")))
+        .containsEntry("ffmpeg", "${{ steps.filter.outputs.ffmpeg }}");
     assertThat(map(filter.get("with")).get("filters").toString())
         .contains(
             "- 'buildpacks/**'",

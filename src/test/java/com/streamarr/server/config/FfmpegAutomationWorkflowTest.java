@@ -15,6 +15,8 @@ import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.yaml.snakeyaml.Yaml;
 
 @Tag("UnitTest")
@@ -64,7 +66,38 @@ class FfmpegAutomationWorkflowTest {
     assertThat(ffmpegRule.path("automerge").isBoolean()).isTrue();
     assertThat(ffmpegRule.path("automerge").asBoolean()).isFalse();
     assertThat(strings(renovate.path("gitIgnoredAuthors")))
-        .contains(LOCK_BOT_EMAIL, "streamarr-ffmpeg-lock[bot]@users.noreply.github.com");
+        .containsExactlyInAnyOrder(
+            LOCK_BOT_EMAIL, "streamarr-ffmpeg-lock[bot]@users.noreply.github.com");
+  }
+
+  @ParameterizedTest
+  @CsvSource({"patch,false", "minor,false", "major,true"})
+  @DisplayName(
+      "Should apply isolated reviewed FFmpeg update policy when package rules are combined")
+  void shouldApplyIsolatedReviewedFfmpegUpdatePolicyWhenPackageRulesAreCombined(
+      String updateType, boolean approvalRequired) throws IOException {
+    var mapper = new ObjectMapper();
+    var renovate = mapper.readTree(Files.readString(Path.of("renovate.json")));
+    var policy = mapper.createObjectNode();
+
+    nodes(renovate.path("packageRules"))
+        .filter(rule -> matchesRule(rule.path("matchDepNames"), DEPENDENCY))
+        .filter(rule -> matchesRule(rule.path("matchPackageNames"), DEPENDENCY))
+        .filter(rule -> matchesRule(rule.path("matchUpdateTypes"), updateType))
+        .forEach(
+            rule ->
+                Stream.of("groupName", "automerge", "dependencyDashboardApproval")
+                    .filter(rule::has)
+                    .forEach(property -> policy.set(property, rule.get(property))));
+
+    assertThat(policy.path("groupName").asText()).isEqualTo("FFmpeg runtime");
+    assertThat(policy.path("automerge").isBoolean()).isTrue();
+    assertThat(policy.path("automerge").asBoolean()).isFalse();
+    assertThat(policy.path("dependencyDashboardApproval").asBoolean()).isEqualTo(approvalRequired);
+  }
+
+  private static boolean matchesRule(JsonNode matcher, String value) {
+    return matcher.isMissingNode() || strings(matcher).anyMatch(value::equals);
   }
 
   @Test
@@ -87,6 +120,8 @@ class FfmpegAutomationWorkflowTest {
 
     assertThat(source).contains("pull_request_target:", "- 'buildpacks/ffmpeg/release'");
     assertThat(map(workflow.get("permissions"))).containsOnly(Map.entry("contents", "read"));
+    assertThat(workflow).containsKey("defaults");
+    assertThat(map(map(workflow.get("defaults")).get("run"))).containsEntry("shell", "bash");
     assertThat((String) job.get("if"))
         .contains(
             "github.event.pull_request.user.login == 'renovate[bot]'",
@@ -182,6 +217,16 @@ class FfmpegAutomationWorkflowTest {
           .contains("-Dgroups=SmokeTest", "-Dsurefire.excludedGroups=");
       assertThat(steps.toString()).doesNotContain("apt-get install", "apt-mirrors");
     }
+
+    var applicationSteps = listOfMaps(map(jobs.get("application")).get("steps"));
+    assertThat(stepNamed(applicationSteps, "Run HLS smoke tests")).doesNotContainKey("if");
+    var packagingSteps = listOfMaps(map(jobs.get("package_image")).get("steps"));
+    assertThat(List.of("Set up JDK 25", "Install locked FFmpeg", "Run HLS smoke tests"))
+        .allSatisfy(
+            name ->
+                assertThat(stepNamed(packagingSteps, name))
+                    .containsEntry("if", "matrix.architecture == 'arm64'"));
+    assertThat(stepNamed(packagingSteps, "Build and verify package image")).doesNotContainKey("if");
 
     var actionRuns = map(yaml(".github/actions/setup-ffmpeg/action.yml").get("runs"));
     var install = stepNamed(listOfMaps(actionRuns.get("steps")), "Install locked FFmpeg");

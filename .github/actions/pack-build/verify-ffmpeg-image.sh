@@ -58,6 +58,7 @@ EXPECTED_FFMPEG_VERSION="${expected_ffmpeg_version}" \
 
   output_dir="$(mktemp -d)"
   "${ffmpeg}" \
+    -nostdin \
     -hide_banner \
     -loglevel error \
     -f lavfi \
@@ -89,7 +90,7 @@ EXPECTED_FFMPEG_VERSION="${expected_ffmpeg_version}" \
     "${output_dir}/playlist.m3u8" \
     | grep -F "format_name=hls"
 
-  "${ffmpeg}" -hide_banner -loglevel error \
+  "${ffmpeg}" -nostdin -hide_banner -loglevel error \
     -f lavfi -i testsrc2=size=160x90:rate=10 -t 1 \
     -c:v libsvtav1 -preset 9 -svtav1-params lp=2 \
     "${output_dir}/av1.mp4"

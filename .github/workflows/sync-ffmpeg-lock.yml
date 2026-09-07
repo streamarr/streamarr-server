@@ -13,6 +13,10 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   sync_ffmpeg_lock:
     name: Synchronize FFmpeg lock
@@ -107,4 +111,4 @@ jobs:
                 expectedHeadOid: $expectedHead,
                 message: {headline: "behavioral: synchronize FFmpeg lock"},
                 fileChanges: {additions: [{path: "buildpacks/ffmpeg/ffmpeg.lock", contents: $contents}]}
-              }}}' | gh api graphql --input -
+              }}}' | gh api graphql --input - --jq '.data.createCommitOnBranch.commit | {oid, url}'

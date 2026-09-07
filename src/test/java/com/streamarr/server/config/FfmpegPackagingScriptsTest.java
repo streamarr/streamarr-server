@@ -18,6 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.ObjectMapper;
 
 @Tag("UnitTest")
@@ -266,6 +267,19 @@ class FfmpegPackagingScriptsTest {
   }
 
   @Test
+  @DisplayName("Should preserve a coherent FFmpeg lock when verifying upstream metadata")
+  void shouldPreserveCoherentFfmpegLockWhenVerifyingUpstreamMetadata() throws Exception {
+    var updater = lockUpdater();
+    assertThat(updater.command().execute().exitCode()).isZero();
+    var lock = Files.readString(updater.lock());
+
+    var result = updater.command().argument("--verify-upstream").execute();
+
+    assertThat(result.exitCode()).as(result.output()).isZero();
+    assertThat(Files.readString(updater.lock())).isEqualTo(lock);
+  }
+
+  @Test
   @DisplayName("Should reject FFmpeg lock that differs from canonical upstream metadata")
   void shouldRejectFfmpegLockThatDiffersFromCanonicalUpstreamMetadata() throws Exception {
     var updater = lockUpdater();
@@ -345,6 +359,8 @@ class FfmpegPackagingScriptsTest {
 
   private static Stream<Arguments> incoherentLockValues() {
     return Stream.of(
+        Arguments.of(
+            "version=8.1.2-4", "version=8.1.2-5", "FFmpeg lock version contradicts release"),
         Arguments.of(
             "source_revision=9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b",
             "source_revision=not-a-commit",
@@ -676,7 +692,8 @@ class FfmpegPackagingScriptsTest {
     assertThat(Files.readString(buildpack.tarArguments()))
         .contains("ffmpeg ffprobe")
         .doesNotContain("--strip-components", "/bin/ffmpeg");
-    assertThat(buildpack.layer().resolve("LICENSE.txt")).exists();
+    assertThat(Files.readString(buildpack.layer().resolve("LICENSE.txt")))
+        .isEqualTo(Files.readString(Path.of("buildpacks/ffmpeg/LICENSE.txt")));
   }
 
   @Test
@@ -763,7 +780,6 @@ class FfmpegPackagingScriptsTest {
         SCRIPT
         cp "${FAKE_FFMPEG_LAYER}/bin/ffmpeg" "${FAKE_FFMPEG_LAYER}/bin/ffprobe"
         chmod +x "${FAKE_FFMPEG_LAYER}/bin/ffmpeg" "${FAKE_FFMPEG_LAYER}/bin/ffprobe"
-        printf '%s\n' 'GNU General Public License' >"${FAKE_FFMPEG_LAYER}/LICENSE.txt"
         """);
 
     return new BuildpackFixture(
@@ -875,6 +891,54 @@ class FfmpegPackagingScriptsTest {
             .argument("abc123")
             .prependPath(commands)
             .environment("FAKE_FFMPEG_ROOT", runtime.getParent().toString()));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"libx264", "libsvtav1"})
+  @DisplayName("Should complete every image check when FFmpeg would otherwise consume shell input")
+  void shouldCompleteEveryImageCheckWhenFfmpegWouldOtherwiseConsumeShellInput(String encoder)
+      throws Exception {
+    var verifier = imageVerifier();
+    var probes = temporaryDirectory.resolve("completed-probes");
+    writeCommand(
+        verifier.runtime(),
+        "ffmpeg",
+        """
+        case " $* " in
+          *' -version '*)
+            printf '%s\\n' 'ffmpeg version 8.2.0-Jellyfin Copyright' 'configuration: --enable-gpl'
+            exit 0 ;;
+          *' muxer=hls '*) echo '-hls_segment_options'; exit 0 ;;
+        esac
+        if [[ " $* " == *" -c:v ${STDIN_ENCODER} "* && " $* " != *' -nostdin '* ]]; then
+          cat >/dev/null
+        fi
+        output="${!#}"
+        directory="$(dirname "${output}")"
+        printf '%s\\n' '#EXT-X-MAP:URI="init.mp4"' 'segment0.m4s' >"${output}"
+        printf segment >"${directory}/init.mp4"
+        printf segment >"${directory}/segment0.m4s"
+        """);
+    writeCommand(
+        verifier.runtime(),
+        "ffprobe",
+        """
+        case "${!#}" in
+          */playlist.m3u8) echo hls >>"${COMPLETED_PROBES}"; echo 'format_name=hls' ;;
+          */av1.mp4) echo av1 >>"${COMPLETED_PROBES}"; echo 'codec_name=av1' ;;
+        esac
+        """);
+
+    var result =
+        verifier
+            .command()
+            .environment("STDIN_ENCODER", encoder)
+            .environment("COMPLETED_PROBES", probes.toString())
+            .execute();
+
+    assertThat(result.exitCode()).as(result.output()).isZero();
+    assertThat(probes).exists();
+    assertThat(Files.readAllLines(probes)).containsExactly("hls", "av1");
   }
 
   @Test
