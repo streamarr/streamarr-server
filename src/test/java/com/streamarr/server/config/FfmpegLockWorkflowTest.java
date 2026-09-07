@@ -45,8 +45,9 @@ class FfmpegLockWorkflowTest {
     assertThat(offline).doesNotContainKeys("if", "env");
     assertThat((String) offline.get("run")).contains("--check").doesNotContain("--verify-upstream");
     var filters = yamlFilters(filter);
-    assertThat(filters.get("ffmpeg"))
-        .isEqualTo(
+    assertThat(filters)
+        .containsEntry(
+            "ffmpeg",
             List.of(
                 "buildpacks/ffmpeg/release",
                 "buildpacks/ffmpeg/ffmpeg.lock",
