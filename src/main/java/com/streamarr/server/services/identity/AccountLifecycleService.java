@@ -4,6 +4,7 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.AccountRemovalConflictException;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
@@ -75,32 +76,34 @@ public class AccountLifecycleService {
 
     var sourceHouseholdId = account.get().getHouseholdId();
     var now = clock.instant();
-    return mutationTransactions.write(
-        () -> {
-          if (userAccountRepository.findByHouseholdId(sourceHouseholdId).size() <= 1) {
-            throw new MutationRejection(new TransferRejections.FinalAccount());
-          }
+    try {
+      return mutationTransactions.write(
+          () -> {
+            if (userAccountRepository.findByHouseholdId(sourceHouseholdId).size() <= 1) {
+              throw new MutationRejection(new TransferRejections.FinalAccount());
+            }
 
-          if (!accountRemoval.move(
-              AccountRemoval.Transfer.builder()
-                  .accountId(account.get().getId())
-                  .sourceHouseholdId(sourceHouseholdId)
-                  .profileId(account.get().getPersonalProfileId())
-                  .destinationHouseholdId(command.destinationHouseholdId())
-                  .sourceHouseholdAccess(command.sourceHouseholdAccess())
-                  .now(now)
-                  .build())) {
-            throw new MutationRejection(new TransferRejections.AccountNotFound());
-          }
+            accountRemoval.move(
+                AccountRemoval.Transfer.builder()
+                    .accountId(account.get().getId())
+                    .sourceHouseholdId(sourceHouseholdId)
+                    .profileId(account.get().getPersonalProfileId())
+                    .destinationHouseholdId(command.destinationHouseholdId())
+                    .sourceHouseholdAccess(command.sourceHouseholdAccess())
+                    .now(now)
+                    .build());
 
-          audit(identity, "transferAccount", ACCOUNT_ID, command.accountId(), command.reason());
-          // The refusal checks JPA-loaded this row in this transaction; re-read past the
-          // first-level cache or the payload would show the pre-transfer state.
-          return userAccountRepository
-              .findByIdAndReloadFromDatabase(command.accountId())
-              .orElseThrow();
-        },
-        this::transferConstraint);
+            audit(identity, "transferAccount", ACCOUNT_ID, command.accountId(), command.reason());
+            // The refusal checks JPA-loaded this row in this transaction; re-read past the
+            // first-level cache or the payload would show the pre-transfer state.
+            return userAccountRepository
+                .findByIdAndReloadFromDatabase(command.accountId())
+                .orElseThrow();
+          },
+          this::transferConstraint);
+    } catch (AccountRemovalConflictException _) {
+      return Outcome.rejected(new TransferRejections.AccountNotFound());
+    }
   }
 
   public Outcome<UUID, TransferRejections.AdministrativelyDeleteAccount>
@@ -132,18 +135,22 @@ public class AccountLifecycleService {
       return Outcome.rejected(replacementRefusal.get());
     }
 
-    return mutationTransactions.write(
-        () -> {
-          erase(account.get(), command);
-          audit(
-              identity,
-              "administrativelyDeleteAccount",
-              ACCOUNT_ID,
-              account.get().getId(),
-              command.reason());
-          return command.accountId();
-        },
-        this::deletionConstraint);
+    try {
+      return mutationTransactions.write(
+          () -> {
+            erase(account.get(), command);
+            audit(
+                identity,
+                "administrativelyDeleteAccount",
+                ACCOUNT_ID,
+                account.get().getId(),
+                command.reason());
+            return command.accountId();
+          },
+          this::deletionConstraint);
+    } catch (AccountRemovalConflictException _) {
+      return Outcome.rejected(new TransferRejections.AccountNotFound());
+    }
   }
 
   public Outcome<UUID, TransferRejections.DeleteMyAccount> deleteMyAccount(

@@ -5,6 +5,8 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.AccountRemovalConflictException;
+import com.streamarr.server.exceptions.ProfileRehomeFailedException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
@@ -14,7 +16,6 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
-import com.streamarr.server.services.mutation.MutationRejection;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.Builder;
@@ -44,8 +45,11 @@ class AccountRemoval {
   private final AuthSessionRepository authSessionRepository;
   private final DeviceRegistrationLifecycle registrationLifecycle;
 
-  /** Moves the Account and its Personal Profile; false when the row already moved on. */
-  boolean move(Transfer transfer) {
+  /**
+   * Moves the Account and its Personal Profile inside the caller's transaction; throws if either
+   * required row change fails so the caller rolls back the entire operation.
+   */
+  void move(Transfer transfer) {
     var sourceHouseholdId = transfer.sourceHouseholdId();
     var profileId = transfer.profileId();
     var destinationHouseholdId = transfer.destinationHouseholdId();
@@ -57,12 +61,10 @@ class AccountRemoval {
         sourceHouseholdId,
         destinationHouseholdId,
         destinationEmpty ? HouseholdRole.ADMIN : HouseholdRole.MEMBER)) {
-      return false;
+      throw new AccountRemovalConflictException();
     }
 
-    if (!profileRepository.tryRehome(profileId, sourceHouseholdId, destinationHouseholdId)) {
-      return false;
-    }
+    rehomeProfile(profileId, sourceHouseholdId, destinationHouseholdId);
 
     if (transfer.sourceHouseholdAccess() == SourceHouseholdAccess.KEEP_AS_VISITOR) {
       shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId, now);
@@ -73,10 +75,12 @@ class AccountRemoval {
     }
 
     shareRepository.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
-    return true;
   }
 
-  /** Deletes the Account, disposing of its Personal Profile as chosen. No final-Account guard. */
+  /**
+   * Deletes the Account and completes its chosen Personal Profile disposition inside the caller's
+   * transaction; throws if a required row change fails. No final-Account guard.
+   */
   void erase(Deletion deletion) {
     var account = deletion.account();
     var now = deletion.now();
@@ -117,13 +121,19 @@ class AccountRemoval {
       return;
     }
 
-    profileRepository.tryRehome(profileId, sourceHouseholdId, destinationHouseholdId);
+    rehomeProfile(profileId, sourceHouseholdId, destinationHouseholdId);
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
         .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
     shareRepository.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
     shareRepository.convertMembershipShareToVisitorShare(profileId, destinationHouseholdId, now);
+  }
+
+  private void rehomeProfile(UUID profileId, UUID sourceHouseholdId, UUID destinationHouseholdId) {
+    if (!profileRepository.tryRehome(profileId, sourceHouseholdId, destinationHouseholdId)) {
+      throw new ProfileRehomeFailedException();
+    }
   }
 
   /** Deletes an unlinked Profile with its selections and pending Profile-bound artifacts. */
@@ -159,7 +169,7 @@ class AccountRemoval {
 
   private void deleteAccountRow(UserAccount account) {
     if (!userAccountRepository.tryDelete(account.getId(), account.getHouseholdId())) {
-      throw new MutationRejection(new TransferRejections.AccountNotFound());
+      throw new AccountRemovalConflictException();
     }
   }
 
