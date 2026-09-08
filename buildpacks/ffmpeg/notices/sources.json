@@ -31,7 +31,7 @@
       {
         "url": "https://raw.githubusercontent.com/acoustid/chromaprint/6b13ce3a81ae931e7477c4856a86bece99157cd8/LICENSE.md",
         "sha256": "562cfe59627e0c4e8e3b066f3ff2e9736f83811ffe4c6c2c7796595aa7595ebd",
-        "file": "chromaprint/LICENSE.md.txt"
+        "file": "chromaprint/LICENSE.md"
       }
     ]
   },
@@ -108,7 +108,7 @@
       {
         "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/LICENSE.md",
         "sha256": "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af",
-        "file": "ffmpeg/LICENSE.md.txt"
+        "file": "ffmpeg/LICENSE.md"
       },
       {
         "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/COPYING.GPLv2",
@@ -163,19 +163,19 @@
       {
         "url": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/451da99614412a7f9526ef301a5ee0c7a6f9ad76/include/ffnvcodec/dynlink_cuda.h",
         "sha256": "6f0d5ad2609c6fda3e0fb07fa286e7b46c2ea7b87ab12d926ab7a82c69ffe09d",
-        "file": "ffnvcodec/include/ffnvcodec/dynlink_cuda.h.txt",
+        "file": "ffnvcodec/include/ffnvcodec/dynlink_loader.h.txt",
         "excerpt": true
       },
       {
         "url": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/451da99614412a7f9526ef301a5ee0c7a6f9ad76/include/ffnvcodec/dynlink_cuviddec.h",
         "sha256": "04b2307536706a130608b063817566affa567786d7428764c82535a29f7f905c",
-        "file": "ffnvcodec/include/ffnvcodec/dynlink_cuviddec.h.txt",
+        "file": "ffnvcodec/include/ffnvcodec/nvEncodeAPI.h.txt",
         "excerpt": true
       },
       {
         "url": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/451da99614412a7f9526ef301a5ee0c7a6f9ad76/include/ffnvcodec/dynlink_nvcuvid.h",
         "sha256": "04b2307536706a130608b063817566affa567786d7428764c82535a29f7f905c",
-        "file": "ffnvcodec/include/ffnvcodec/dynlink_nvcuvid.h.txt",
+        "file": "ffnvcodec/include/ffnvcodec/nvEncodeAPI.h.txt",
         "excerpt": true
       }
     ]
@@ -240,17 +240,17 @@
       {
         "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/LICENSE.TXT",
         "sha256": "bd36c8b474855fa294c2ec5c184544478ef3720aad37d65a6296a4f264fd2d3b",
-        "file": "freetype/LICENSE.TXT.txt"
+        "file": "freetype/LICENSE.TXT"
       },
       {
         "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/docs/FTL.TXT",
         "sha256": "5a5ee54c5001bbad1cdc1a57cc3dd4c42199b2da09d39c7ee41fab002d02967f",
-        "file": "freetype/docs/FTL.TXT.txt"
+        "file": "freetype/docs/FTL.TXT"
       },
       {
         "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/docs/GPLv2.TXT",
         "sha256": "c4120c6752c910c299e3bd9cb3a46ff262c268303ca2069b61f92f10a5656c18",
-        "file": "freetype/docs/GPLv2.TXT.txt"
+        "file": "freetype/docs/GPLv2.TXT"
       },
       {
         "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/src/bdf/README",
@@ -301,7 +301,7 @@
       {
         "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-15.2.0/COPYING3",
         "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
-        "file": "gcc-runtime/COPYING3.txt"
+        "file": "ffmpeg/COPYING.GPLv3.txt"
       },
       {
         "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-15.2.0/COPYING.RUNTIME",
@@ -406,7 +406,7 @@
       {
         "url": "https://raw.githubusercontent.com/BtbN/gmplib/9994908f090c694f8a152d660dc6852e0c48557a/COPYINGv2",
         "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
-        "file": "gmp/COPYINGv2.txt"
+        "file": "ffmpeg/COPYING.GPLv2.txt"
       },
       {
         "url": "https://raw.githubusercontent.com/BtbN/gmplib/9994908f090c694f8a152d660dc6852e0c48557a/COPYINGv3",
@@ -582,7 +582,7 @@
       {
         "url": "https://skia.googlesource.com/third_party/libiconv/+/v1.19/COPYING.LIB?format=TEXT",
         "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95",
-        "file": "libiconv/COPYING.LIB.txt"
+        "file": "gnulib/doc/COPYING.LESSERv2.txt"
       },
       {
         "url": "https://skia.googlesource.com/third_party/libiconv/+/v1.19/AUTHORS?format=TEXT",
@@ -696,7 +696,7 @@
       {
         "url": "https://code.videolan.org/videolan/libplacebo/-/raw/cee9b076f2c63104ccfd497fa79c39a867293ec4/LICENSE",
         "sha256": "b3aa400aca6d2ba1f0bd03bd98d03d1fe7489a3bbb26969d72016360af8a5c9d",
-        "file": "libplacebo/LICENSE.txt"
+        "file": "libbluray/COPYING.txt"
       }
     ]
   },
@@ -742,7 +742,7 @@
       {
         "url": "https://code.videolan.org/videolan/libudfread/-/raw/139a2194525f2745b98a98e4d8fa627d07440176/COPYING",
         "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
-        "file": "libudfread/COPYING.txt"
+        "file": "glibc-startup/COPYING.LIB.txt"
       }
     ]
   },
@@ -760,7 +760,7 @@
       {
         "url": "https://raw.githubusercontent.com/adah1972/libunibreak/3ce4bfa3129ff3738046a44a6db533d2ce25af2b/README.md",
         "sha256": "09ddab4e128a5b3ecb7715a5f2a2eb3beff413a63d59f6fcea2f478fa65aadda",
-        "file": "libunibreak/README.md.txt"
+        "file": "libunibreak/README.md"
       }
     ]
   },
@@ -851,7 +851,7 @@
       {
         "url": "https://chromium.googlesource.com/webm/libwebp/+/4fa21912338357f89e4fd51cf2368325b59e9bd9/PATENTS?format=TEXT",
         "sha256": "cc3273e0694ea5896145e0677699b53471b03ea43021ddc50e7923fbb9f5023c",
-        "file": "libwebp/PATENTS.txt"
+        "file": "libvpx/PATENTS.txt"
       },
       {
         "url": "https://chromium.googlesource.com/webm/libwebp/+/4fa21912338357f89e4fd51cf2368325b59e9bd9/AUTHORS?format=TEXT",
@@ -934,7 +934,7 @@
       {
         "url": "https://raw.githubusercontent.com/OpenMPT/openmpt/11363ff11ba021b1cf1533da17d9fdf20c8d883c/src/mpt/LICENSE.BSD-3-Clause.txt",
         "sha256": "ceabc562c8cfb3af0d51e94182947c23bde6c18274e2b21585bdde22d2031e9d",
-        "file": "openmpt/src/mpt/LICENSE.BSD-3-Clause.txt"
+        "file": "openmpt/LICENSE.txt"
       },
       {
         "url": "https://raw.githubusercontent.com/OpenMPT/openmpt/11363ff11ba021b1cf1533da17d9fdf20c8d883c/src/mpt/LICENSE.BSL-1.0.txt",
@@ -967,7 +967,7 @@
       {
         "url": "https://raw.githubusercontent.com/openssl/openssl/openssl-3.6.3/AUTHORS.md",
         "sha256": "b9f638dfc06b59c2d3b808186c3b30f713805a5db390f5b77b1703ac58acb83e",
-        "file": "openssl/AUTHORS.md.txt"
+        "file": "openssl/AUTHORS.md"
       }
     ]
   },
@@ -1034,7 +1034,7 @@
       {
         "url": "https://raw.githubusercontent.com/google/shaderc/d5f08ae5c5a9a45165578445cbd0f9adf0223448/LICENSE",
         "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
-        "file": "shaderc/LICENSE.txt"
+        "file": "opencl-icd-loader/LICENSE.txt"
       },
       {
         "url": "https://raw.githubusercontent.com/google/shaderc/d5f08ae5c5a9a45165578445cbd0f9adf0223448/AUTHORS",
@@ -1095,7 +1095,7 @@
       {
         "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Tools/c1cb30bb04e2bf911755a40df1242cc6e3d83e26/LICENSE",
         "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-        "file": "spirv-tools/LICENSE.txt"
+        "file": "opencl/LICENSE.txt"
       }
     ]
   },
@@ -1137,12 +1137,12 @@
       {
         "url": "https://gitlab.com/AOMediaCodec/SVT-AV1/-/raw/c04f951541ad600e0d9c10836f2ab7b9bc69816d/LICENSE.md",
         "sha256": "0acc2fcb27472bdc9aaf8b71f37055bbdac4f54671b7d922f241bd7fcd0dd3e6",
-        "file": "svtav1/LICENSE.md.txt"
+        "file": "svtav1/LICENSE.md"
       },
       {
         "url": "https://gitlab.com/AOMediaCodec/SVT-AV1/-/raw/c04f951541ad600e0d9c10836f2ab7b9bc69816d/PATENTS.md",
         "sha256": "20678ab10402659106dc4c147c97b2a6e94b5c0695415e15a8f195ebc3547922",
-        "file": "svtav1/PATENTS.md.txt"
+        "file": "svtav1/PATENTS.md"
       }
     ]
   },
@@ -1160,12 +1160,12 @@
       {
         "url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Headers/v1.4.355/LICENSE.md",
         "sha256": "ac24e5ea920e4318e4d02c4086ae51f53cfb03feed06c18df1019e7ada1ec7bc",
-        "file": "vulkan-headers/LICENSE.md.txt"
+        "file": "vulkan-headers/LICENSE.md"
       },
       {
         "url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Headers/v1.4.355/LICENSES/Apache-2.0.txt",
         "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-        "file": "vulkan-headers/LICENSES/Apache-2.0.txt"
+        "file": "opencl/LICENSE.txt"
       },
       {
         "url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Headers/v1.4.355/LICENSES/MIT.txt",
@@ -1311,7 +1311,7 @@
       {
         "url": "https://raw.githubusercontent.com/zapping-vbi/zvbi/41477c97c8edf7a01f1594b2a95b94f0117eed21/COPYING.md",
         "sha256": "01b41f9b6e262bb62063151f15988a236296bbb5eeb9752692fc7dc2fb27ec45",
-        "file": "zvbi/COPYING.md.txt"
+        "file": "zvbi/COPYING.md"
       },
       {
         "url": "https://raw.githubusercontent.com/zapping-vbi/zvbi/41477c97c8edf7a01f1594b2a95b94f0117eed21/AUTHORS",

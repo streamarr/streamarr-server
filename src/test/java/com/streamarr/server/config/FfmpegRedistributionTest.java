@@ -61,7 +61,7 @@ class FfmpegRedistributionTest {
           .contains(
               component.path("repository").asString(),
               component.path("revision").asString(),
-              "notices/" + component.path("id").asString() + "/");
+              "notices/sources.json (" + component.path("id").asString() + ")");
     }
 
     assertThat(sourceAccess)
