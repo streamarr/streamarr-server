@@ -52,6 +52,7 @@ import org.mockito.stubbing.OngoingStubbing;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -139,6 +140,40 @@ class HouseholdDeletionResolverTest {
         .isEqualTo(mapper.valueToTree(List.of(invalid.field())));
   }
 
+  @ParameterizedTest
+  @EnumSource(Action.class)
+  @DisplayName("Should sanitize the top-level error when a deletion action fails unexpectedly")
+  void shouldSanitizeTopLevelErrorWhenDeletionActionFailsUnexpectedly(Action action) {
+    stubbingFor(action).thenThrow(new IllegalStateException("private failure detail"));
+    assertSanitizedFailure(mutate(action, Map.of()), action);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("undeclaredRejections")
+  @DisplayName(
+      "Should reject an undeclared union member when the service returns an incompatible rejection")
+  void shouldRejectUndeclaredUnionMemberWhenServiceReturnsIncompatibleRejection(
+      UnexpectedRejection unexpected) {
+    stubOutcome(unexpected.action(), Outcome.rejected(unexpected.rejection()));
+    assertSanitizedFailure(mutate(unexpected.action(), Map.of()), unexpected.action());
+  }
+
+  private void assertSanitizedFailure(JsonNode response, Action action) {
+    assertThat(response.at("/data/" + action.operation).isNull()).isTrue();
+    assertThat(response.path("errors").size()).isEqualTo(1);
+    var error = response.at("/errors/0");
+    assertThat(error.path("message").asString()).isEqualTo("The request could not be completed.");
+    assertThat(error.path("path")).isEqualTo(mapper.valueToTree(List.of(action.operation)));
+    assertThat(error.path("extensions").size())
+        .as("extensions: %s", error.path("extensions"))
+        .isEqualTo(3);
+    assertThat(error.at("/extensions/errorType").asString()).isEqualTo("INTERNAL");
+    assertThat(error.at("/extensions/code").asString()).isEqualTo("INTERNAL");
+    assertThat(error.at("/extensions/requestId").asString()).matches("req-[0-9a-f]{8}");
+    assertThat(response.toString())
+        .doesNotContain("private failure detail", "IllegalStateException");
+  }
+
   private static Stream<InvalidIdCase> invalidIds() {
     return Stream.concat(
         Stream.of(Action.values()).map(action -> new InvalidIdCase(action, "householdId")),
@@ -148,7 +183,18 @@ class HouseholdDeletionResolverTest {
             new InvalidIdCase(Action.PRESERVE, "replacementManagerAccountId")));
   }
 
+  private static Stream<UnexpectedRejection> undeclaredRejections() {
+    return Stream.of(
+        new UnexpectedRejection(
+            Action.EMPTY, new HouseholdDeletionRejections.DestinationNotFound()),
+        new UnexpectedRejection(Action.TRANSFER, new HouseholdDeletionRejections.LastServerAdmin()),
+        new UnexpectedRejection(
+            Action.DELETE, new HouseholdDeletionRejections.DestinationNotFound()));
+  }
+
   private record InvalidIdCase(Action action, String field) {}
+
+  private record UnexpectedRejection(Action action, HouseholdDeletionRejections.Delete rejection) {}
 
   @ParameterizedTest
   @ValueSource(booleans = {true, false})
@@ -354,6 +400,26 @@ class HouseholdDeletionResolverTest {
     assertThat(response.at("/errors/0/extensions/errorType").asString()).isEqualTo("BAD_REQUEST");
     assertThat(response.at("/errors/0/path"))
         .isEqualTo(mapper.valueToTree(List.of("securityAuditEvents")));
+  }
+
+  @Test
+  @DisplayName("Should expose a forbidden top-level error when audit access is denied")
+  void shouldExposeForbiddenTopLevelErrorWhenAuditAccessIsDenied() {
+    when(service.securityAuditEvents(
+            identity,
+            SecurityAuditPageRequest.builder()
+                .direction(PaginationDirection.FORWARD)
+                .limit(2)
+                .build()))
+        .thenThrow(new AccessDeniedException("Access denied."));
+    var response = query("query { securityAuditEvents(first: 2) { edges { node { id } } } }");
+    assertThat(response.path("data").isNull()).isTrue();
+    assertThat(response.path("errors").size()).isEqualTo(1);
+    assertThat(response.at("/errors/0/extensions/code").asString()).isEqualTo("FORBIDDEN");
+    assertThat(response.at("/errors/0/extensions/errorType").asString())
+        .isEqualTo("PERMISSION_DENIED");
+    assertThat(response.at("/errors/0/extensions/requestId").asString()).matches("req-[0-9a-f]{8}");
+    assertThat(response.at("/errors/0/extensions").size()).isEqualTo(3);
   }
 
   private static Stream<String> invalidAuditCursors() {

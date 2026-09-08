@@ -98,6 +98,14 @@ class StreamarrDataFetcherExceptionHandlerTest {
   }
 
   @Test
+  @DisplayName("Should preserve only the contract extensions when a failure is serialized")
+  void shouldPreserveOnlyContractExtensionsWhenFailureIsSerialized() {
+    var error = errorFor(new IllegalStateException("private failure detail"));
+
+    assertThat(error.toSpecification().get("extensions")).isEqualTo(error.getExtensions());
+  }
+
+  @Test
   @DisplayName("Should sanitize and stamp the contract keys when an exception is unrecognized")
   void shouldSanitizeAndStampContractKeysWhenExceptionIsUnrecognized() {
     var error = errorFor(new IllegalStateException("jdbc: connection refused to 10.0.0.7"));

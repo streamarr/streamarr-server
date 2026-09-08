@@ -15,12 +15,15 @@ import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
+import graphql.ErrorClassification;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
 import graphql.execution.DataFetcherExceptionHandler;
 import graphql.execution.DataFetcherExceptionHandlerParameters;
 import graphql.execution.DataFetcherExceptionHandlerResult;
+import graphql.language.SourceLocation;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -71,7 +74,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
                   extensions(ErrorType.INTERNAL.name(), ErrorType.INTERNAL.name(), requestId))
               .build();
       return CompletableFuture.completedFuture(
-          DataFetcherExceptionHandlerResult.newResult().error(error).build());
+          DataFetcherExceptionHandlerResult.newResult().error(new ResponseError(error)).build());
     }
 
     if (classification == null) {
@@ -97,7 +100,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
         handlerParameters.getPath(),
         classification.code());
     return CompletableFuture.completedFuture(
-        DataFetcherExceptionHandlerResult.newResult().error(error).build());
+        DataFetcherExceptionHandlerResult.newResult().error(new ResponseError(error)).build());
   }
 
   private DataFetcherExceptionHandlerResult sanitized(
@@ -118,11 +121,12 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
       }
 
       builder.error(
-          GraphqlErrorBuilder.newError(handlerParameters.getDataFetchingEnvironment())
-              .message(internal ? SANITIZED_MESSAGE : delegatedError.getMessage())
-              .errorType(ErrorType.valueOf(errorType))
-              .extensions(extensions(errorType, errorType, requestId))
-              .build());
+          new ResponseError(
+              GraphqlErrorBuilder.newError(handlerParameters.getDataFetchingEnvironment())
+                  .message(internal ? SANITIZED_MESSAGE : delegatedError.getMessage())
+                  .errorType(ErrorType.valueOf(errorType))
+                  .extensions(extensions(errorType, errorType, requestId))
+                  .build()));
     }
 
     return builder.build();
@@ -199,6 +203,42 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
 
   private static String newRequestId() {
     return "req-" + UUID.randomUUID().toString().substring(0, 8);
+  }
+
+  private record ResponseError(GraphQLError delegate) implements GraphQLError {
+
+    @Override
+    public String getMessage() {
+      return delegate.getMessage();
+    }
+
+    @Override
+    public List<SourceLocation> getLocations() {
+      return delegate.getLocations();
+    }
+
+    @Override
+    public ErrorClassification getErrorType() {
+      return delegate.getErrorType();
+    }
+
+    @Override
+    public List<Object> getPath() {
+      return delegate.getPath();
+    }
+
+    @Override
+    public Map<String, Object> getExtensions() {
+      return delegate.getExtensions();
+    }
+
+    @Override
+    public Map<String, Object> toSpecification() {
+      var specification = new LinkedHashMap<>(delegate.toSpecification());
+      // graphql-java adds classification during serialization; ADR 0026 exposes errorType instead.
+      specification.put("extensions", getExtensions());
+      return specification;
+    }
   }
 
   private record Classification(ErrorType type, String code) {
