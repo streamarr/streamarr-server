@@ -55,6 +55,7 @@ import org.springframework.stereotype.Service;
 public class HouseholdDeletionService {
 
   private static final String CHK_SERVER_ADMIN_REMAINS = "chk_enabled_server_admin_remains";
+  private static final String CHK_NAMES_UNIQUE = "chk_household_profile_names_unique";
   private static final String HOUSEHOLD_DELETED_REASON = "Household deleted";
 
   private final AuthorizationService authorizationService;
@@ -155,9 +156,12 @@ public class HouseholdDeletionService {
     return mutationTransactions.write(
         () -> deleteHouseholdWithinTransaction(identity, request, now),
         constraint ->
-            CHK_SERVER_ADMIN_REMAINS.equals(constraint)
-                ? Optional.of(new HouseholdDeletionRejections.LastServerAdmin())
-                : Optional.empty());
+            switch (constraint) {
+              case CHK_SERVER_ADMIN_REMAINS ->
+                  Optional.of(new HouseholdDeletionRejections.LastServerAdmin());
+              case CHK_NAMES_UNIQUE -> Optional.of(new HouseholdDeletionRejections.NameConflict());
+              default -> Optional.empty();
+            });
   }
 
   private UUID deleteHouseholdWithinTransaction(

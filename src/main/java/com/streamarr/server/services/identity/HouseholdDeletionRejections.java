@@ -12,6 +12,7 @@ public final class HouseholdDeletionRejections {
           AccountsRemain,
           LastAccountNotFound,
           DestinationNotFound,
+          NameConflict,
           ReplacementManagerNotFound,
           ReplacementManagerNotEligible,
           LastServerAdmin {}
@@ -29,6 +30,8 @@ public final class HouseholdDeletionRejections {
   public record LastAccountNotFound() implements Delete {}
 
   public record DestinationNotFound() implements Delete {}
+
+  public record NameConflict() implements Delete {}
 
   public record ReplacementManagerNotFound() implements Delete {}
 

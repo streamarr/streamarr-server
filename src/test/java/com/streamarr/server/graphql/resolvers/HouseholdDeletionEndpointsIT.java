@@ -219,6 +219,79 @@ class HouseholdDeletionEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should return a name conflict when transfer-and-delete finds a destination collision")
+  void shouldReturnNameConflictWhenTransferAndDeleteFindsDestinationCollision() throws Exception {
+    var profile = profileRepository.findById(doomed.profile().getId()).orElseThrow();
+    profile.setName(admin.profile().getName());
+    profileRepository.saveAndFlush(profile);
+
+    graphql(
+            authTestSupport.freshAccountBearer(admin),
+            """
+            mutation { transferLastAccountAndDeleteHousehold(input: {
+              householdId: "%s", destinationHouseholdId: "%s", reason: "closing Household"
+            }) { deletedHouseholdId userErrors {
+              __typename ... on InputMutationError { message inputPath }
+            } } }
+            """
+                .formatted(doomed.household().getId(), admin.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.transferLastAccountAndDeleteHousehold.deletedHouseholdId").isEmpty())
+        .andExpect(
+            jsonPath("$.data.transferLastAccountAndDeleteHousehold.userErrors[0].__typename")
+                .value("ProfileNameTakenError"))
+        .andExpect(
+            jsonPath("$.data.transferLastAccountAndDeleteHousehold.userErrors[0].inputPath")
+                .value(contains("destinationHouseholdId")))
+        .andExpect(
+            jsonPath("$.data.transferLastAccountAndDeleteHousehold.userErrors[0].message")
+                .value("Another Profile in that Household already uses that name."));
+  }
+
+  @Test
+  @DisplayName(
+      "Should return a name conflict when preserving a Profile finds a destination collision")
+  void shouldReturnNameConflictWhenPreservingProfileFindsDestinationCollision() throws Exception {
+    var profile = profileRepository.findById(doomed.profile().getId()).orElseThrow();
+    profile.setName(admin.profile().getName());
+    profileRepository.saveAndFlush(profile);
+
+    graphql(
+            authTestSupport.freshAccountBearer(admin),
+            """
+            mutation { deleteLastAccountAndHouseholdPreservingPersonalProfile(input: {
+              householdId: "%s", destinationHouseholdId: "%s", replacementManagerAccountId: "%s",
+              reason: "closing Household"
+            }) { deletedHouseholdId userErrors {
+              __typename ... on InputMutationError { message inputPath }
+            } } }
+            """
+                .formatted(
+                    doomed.household().getId(), admin.household().getId(), admin.account().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath(
+                    "$.data.deleteLastAccountAndHouseholdPreservingPersonalProfile.deletedHouseholdId")
+                .isEmpty())
+        .andExpect(
+            jsonPath(
+                    "$.data.deleteLastAccountAndHouseholdPreservingPersonalProfile.userErrors[0].__typename")
+                .value("ProfileNameTakenError"))
+        .andExpect(
+            jsonPath(
+                    "$.data.deleteLastAccountAndHouseholdPreservingPersonalProfile.userErrors[0].inputPath")
+                .value(contains("destinationHouseholdId")))
+        .andExpect(
+            jsonPath(
+                    "$.data.deleteLastAccountAndHouseholdPreservingPersonalProfile.userErrors[0].message")
+                .value("Another Profile in that Household already uses that name."));
+  }
+
+  @Test
   @DisplayName("Should return the destination input path when its ID is malformed")
   void shouldReturnDestinationInputPathWhenIdIsMalformed() throws Exception {
     graphql(

@@ -70,6 +70,10 @@ public final class HouseholdDeletionErrors {
       case HouseholdDeletionRejections.DestinationNotFound _ ->
           new DestinationNotFoundError(
               "No such Household.", InputPath.of("destinationHouseholdId"));
+      case HouseholdDeletionRejections.NameConflict _ ->
+          new ProfileNameTakenError(
+              "Another Profile in that Household already uses that name.",
+              InputPath.of("destinationHouseholdId"));
       case HouseholdDeletionRejections.ReplacementManagerNotFound _ ->
           new AccountNotFoundError("No such Account.", InputPath.of("replacementManagerAccountId"));
       case HouseholdDeletionRejections.ReplacementManagerNotEligible _ ->

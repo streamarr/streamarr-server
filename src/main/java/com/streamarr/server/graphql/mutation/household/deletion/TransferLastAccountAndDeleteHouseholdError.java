@@ -9,4 +9,5 @@ public sealed interface TransferLastAccountAndDeleteHouseholdError extends Mutat
         ReauthenticationRequiredError,
         AccountsRemainError,
         LastAccountNotFoundError,
-        DestinationNotFoundError {}
+        DestinationNotFoundError,
+        ProfileNameTakenError {}

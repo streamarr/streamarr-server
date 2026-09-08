@@ -11,6 +11,7 @@ public sealed interface DeleteLastAccountAndHouseholdPreservingPersonalProfileEr
         AccountsRemainError,
         LastAccountNotFoundError,
         DestinationNotFoundError,
+        ProfileNameTakenError,
         AccountNotFoundError,
         ProfileManagerNotEligibleError,
         LastServerAdminError {}
