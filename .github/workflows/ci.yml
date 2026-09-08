@@ -42,6 +42,8 @@ jobs:
               - 'buildpacks/**'
               - '.github/actions/pack-build/**'
               - '.github/actions/setup-ffmpeg/**'
+              - '.github/actions/prepare-ffmpeg/**'
+              - '.nvmrc'
               - '.github/workflows/ci.yml'
               - 'Procfile'
               - 'pom.xml'
@@ -63,7 +65,7 @@ jobs:
           persist-credentials: false
 
       - name: Validate FFmpeg lock offline
-        run: buildpacks/ffmpeg/bin/update-lock --check
+        uses: ./.github/actions/prepare-ffmpeg
 
       - name: Verify FFmpeg lock against upstream
         if: needs.changes.outputs.ffmpeg == 'true'
@@ -90,6 +92,9 @@ jobs:
           java-version: '25'
           distribution: 'zulu'
           cache: maven
+
+      - name: Prepare FFmpeg tooling
+        uses: ./.github/actions/prepare-ffmpeg
 
       - name: Set up Buf
         uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0

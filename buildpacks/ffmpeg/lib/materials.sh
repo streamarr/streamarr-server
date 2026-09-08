@@ -8,19 +8,28 @@ ffmpeg_materials_validate() (
     return 1
   fi
 
-  local required
-  for required in ffmpeg.lock LICENSE.txt SOURCE.txt notices/sources.json \
-    notices/buildconf-amd64.txt notices/buildconf-arm64.txt \
-    generated/THIRD-PARTY-NOTICES.txt generated/ffmpeg.amd64.cdx.json \
-    generated/ffmpeg.arm64.cdx.json generated/review-inputs.json; do
-    if ! grep -Eq "^[0-9a-f]{64}  ${required//./\\.}$" "${sums}"; then
-      echo "FFmpeg redistribution checksum missing: ${required}" >&2
-      return 1
-    fi
-  done
+  if [[ -n "$(find notices generated -type l -print)" ]]; then
+    echo "FFmpeg redistribution materials must not contain symlinks" >&2
+    return 1
+  fi
 
-  if ! sha256sum --check --strict "${sums}" >/dev/null; then
-    echo "FFmpeg redistribution materials are stale; review inputs and run bin/generate-notices.mjs" >&2
+  local expected
+  expected="$(
+    printf '%s\n' ffmpeg.lock LICENSE.txt SOURCE.txt \
+      generated/THIRD-PARTY-NOTICES.txt generated/ffmpeg.amd64.cdx.json \
+      generated/ffmpeg.arm64.cdx.json generated/review-inputs.json
+    find notices -type f -print
+  )" || return
+  if ! diff -u <(printf '%s\n' "${expected}" | LC_ALL=C sort) \
+    <(cut -d ' ' -f3- "${sums}" | LC_ALL=C sort) >&2; then
+    echo "FFmpeg redistribution checksum inventory mismatch; every input must be covered exactly once" >&2
+    return 1
+  fi
+
+  local verification
+  if ! verification="$(ffmpeg_sha256_check --check --strict "${sums}" 2>&1)"; then
+    printf '%s\n' "${verification}" >&2
+    echo "FFmpeg redistribution materials are stale; review inputs and run buildpacks/ffmpeg/bin/prepare" >&2
     return 1
   fi
 )

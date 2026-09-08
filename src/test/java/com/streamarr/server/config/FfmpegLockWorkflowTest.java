@@ -43,7 +43,7 @@ class FfmpegLockWorkflowTest {
             "- '.github/actions/pack-build/**'",
             "- '.github/workflows/ci.yml'");
     assertThat(offline).doesNotContainKeys("if", "env");
-    assertThat((String) offline.get("run")).contains("--check").doesNotContain("--verify-upstream");
+    assertThat(offline).containsEntry("uses", "./.github/actions/prepare-ffmpeg");
     var filters = yamlFilters(filter);
     assertThat(filters)
         .containsEntry(
@@ -95,8 +95,34 @@ class FfmpegLockWorkflowTest {
 
     assertThat(steps.stream().map(step -> step.get("name")))
         .containsSubsequence("Verify FFmpeg lock", "Docker Metadata");
-    assertThat((String) verify.get("run")).contains("--check").doesNotContain("--verify-upstream");
+    assertThat(verify).containsEntry("uses", "./.github/actions/prepare-ffmpeg");
     assertThat(verify).doesNotContainKeys("env");
+  }
+
+  @Test
+  @DisplayName("Should prepare ephemeral redistribution materials with the declared Node toolchain")
+  void shouldPrepareEphemeralRedistributionMaterialsWithDeclaredNodeToolchain() throws IOException {
+    var prepare =
+        listOfMaps(map(yaml(".github/actions/prepare-ffmpeg/action.yml").get("runs")).get("steps"));
+    var node = prepare.getFirst();
+    assertThat(node.get("uses").toString()).startsWith("actions/setup-node@");
+    assertThat(map(node.get("with"))).containsEntry("node-version-file", ".nvmrc");
+    var commands =
+        stepNamed(prepare, "Prepare reviewed redistribution materials").get("run").toString();
+    assertThat(commands)
+        .contains("buildpacks/ffmpeg/bin/update-lock --check", "buildpacks/ffmpeg/bin/prepare")
+        .doesNotContain("--verify-upstream");
+    for (var action : List.of("pack-build", "setup-ffmpeg")) {
+      var steps =
+          listOfMaps(
+              map(yaml(".github/actions/" + action + "/action.yml").get("runs")).get("steps"));
+      assertThat(steps.getFirst()).containsEntry("uses", "./.github/actions/prepare-ffmpeg");
+    }
+
+    var application = map(map(yaml(".github/workflows/ci.yml").get("jobs")).get("application"));
+    var steps = listOfMaps(application.get("steps"));
+    assertThat(steps.stream().map(step -> step.get("name")))
+        .containsSubsequence("Prepare FFmpeg tooling", "Build and test");
   }
 
   private static Map<String, Object> yamlFilters(Map<String, Object> step) {

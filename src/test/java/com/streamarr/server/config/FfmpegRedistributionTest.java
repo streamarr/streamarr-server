@@ -19,6 +19,18 @@ class FfmpegRedistributionTest {
   private static final Path NOTICES = Path.of("buildpacks/ffmpeg/notices");
 
   @Test
+  @DisplayName("Should preserve hashed input bytes across platform checkouts")
+  void shouldPreserveHashedInputBytesAcrossPlatformCheckouts() throws IOException {
+    var attributes = Files.readString(Path.of(".gitattributes"));
+
+    assertThat(attributes)
+        .contains(
+            "buildpacks/ffmpeg/notices/** -text", "buildpacks/ffmpeg/LICENSE.txt -text",
+            "buildpacks/ffmpeg/SOURCE.txt text eol=lf",
+                "buildpacks/ffmpeg/ffmpeg.lock text eol=lf");
+  }
+
+  @Test
   @DisplayName("Should retain every inventoried notice with its reviewed contents")
   void shouldRetainEveryInventoriedNoticeWithItsReviewedContents() throws Exception {
     var inventory = new ObjectMapper().readTree(Files.readString(NOTICES.resolve("sources.json")));

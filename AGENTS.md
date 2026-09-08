@@ -1,6 +1,7 @@
 # Streamarr Server - Project Guidelines
 
 ## Commands
+- Prerequisites: install the Node.js version in `.nvmrc` (`nvm install && nvm use`); Maven tests enforce the FFmpeg notice-generator contract and coverage with this toolchain.
 - `./mvnw verify` — full build: unit tests (Surefire, `*Test`) + integration tests (Failsafe, `*IT`) + Checkstyle + Spotless
 - `./mvnw test` — unit tests only
 - `./mvnw spotless:apply` — format before committing

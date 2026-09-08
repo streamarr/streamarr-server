@@ -197,7 +197,11 @@ class FfmpegAutomationWorkflowTest {
     assertThat(map(checkout.get("with")))
         .containsEntry("persist-credentials", false)
         .doesNotContainKeys("ref");
-    assertThat((String) offline.get("run")).isEqualTo("buildpacks/ffmpeg/bin/update-lock --check");
+    assertThat(offline).containsEntry("uses", "./.github/actions/prepare-ffmpeg");
+    var preparation = Files.readString(Path.of(".github/actions/prepare-ffmpeg/action.yml"));
+    assertThat(preparation)
+        .contains("buildpacks/ffmpeg/bin/update-lock --check")
+        .doesNotContain("secrets.", "pull_request_target");
     assertThat(steps.toString()).doesNotContain("secrets.");
   }
 

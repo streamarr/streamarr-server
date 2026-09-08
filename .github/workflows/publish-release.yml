@@ -30,7 +30,7 @@ jobs:
           persist-credentials: false
 
       - name: Verify FFmpeg lock
-        run: buildpacks/ffmpeg/bin/update-lock --check
+        uses: ./.github/actions/prepare-ffmpeg
 
       - name: Docker Metadata
         id: meta

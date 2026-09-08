@@ -16,6 +16,8 @@ lock_file="${buildpack_dir}/ffmpeg.lock"
 . "${buildpack_dir}/lib/notices.sh"
 # shellcheck source=../lib/materials.sh
 . "${buildpack_dir}/lib/materials.sh"
+# shellcheck source=../lib/checksum.sh
+. "${buildpack_dir}/lib/checksum.sh"
 
 download() {
   local url="$1"
@@ -70,7 +72,7 @@ if [[ ! -x "${layer}/bin/ffmpeg" ]] || ! grep -Fq "cache_key = \"${cache_key}\""
   archive="${download_dir}/${asset}"
 
   download "${download_url}" "${archive}"
-  printf '%s  %s\n' "${checksum}" "${archive}" | sha256sum --check --strict
+  printf '%s  %s\n' "${checksum}" "${archive}" | ffmpeg_sha256_check --check --strict
 
   tar \
     --extract \

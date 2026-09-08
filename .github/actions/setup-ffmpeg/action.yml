@@ -3,6 +3,9 @@ description: Install the same verified Jellyfin runtime used in the package imag
 runs:
   using: composite
   steps:
+    - name: Prepare FFmpeg redistribution materials
+      uses: ./.github/actions/prepare-ffmpeg
+
     - name: Install locked FFmpeg
       shell: bash
       run: |

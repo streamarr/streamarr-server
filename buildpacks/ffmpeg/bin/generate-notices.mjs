@@ -10,10 +10,11 @@ const { values } = parseArgs({
         root: { type: "string" },
         check: { type: "boolean" },
         compare: { type: "string" },
+        validate: { type: "boolean" },
     },
 });
-if (values.check && values.compare)
-    throw new Error("Choose --check or --compare");
+if ([values.check, values.compare, values.validate].filter(Boolean).length > 1)
+    throw new Error("Choose --check, --compare or --validate");
 const root = path.resolve(
     values.root ?? fileURLToPath(new URL("..", import.meta.url)),
 );
@@ -105,6 +106,7 @@ const inputFiles = new Set([
     "SOURCE.txt",
     "LICENSE.txt",
     "notices/sources.json",
+    "notices/manifest",
     "notices/buildconf-amd64.txt",
     "notices/buildconf-arm64.txt",
     ...components.flatMap((component) =>
@@ -120,6 +122,32 @@ const inputs = Object.fromEntries(
         ]),
 );
 const review = { lock, components, inputs };
+if (values.validate) {
+    const source = readInput("SOURCE.txt").toString();
+    for (const component of components) {
+        if (
+            !source.includes(component.repository) ||
+            !source.includes(component.revision)
+        )
+            throw new Error(
+                `SOURCE.txt is missing source access for ${component.id}`,
+            );
+    }
+    const approval = spawnSync(
+        "bash",
+        [
+            "-c",
+            '. "$1/lock.sh"; . "$1/notices.sh"; ffmpeg_notices_validate "$2/ffmpeg.lock" "$2"',
+            "--",
+            fileURLToPath(new URL("../lib", import.meta.url)),
+            root,
+        ],
+        { encoding: "utf8", timeout: 15000 },
+    );
+    if (approval.error || approval.status !== 0)
+        throw new Error(approval.error?.message ?? approval.stderr);
+    process.exit(0);
+}
 if (values.compare) {
     const previous = JSON.parse(fs.readFileSync(values.compare, "utf8"));
     reportChanges(previous, review);

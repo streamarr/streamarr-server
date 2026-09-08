@@ -8,6 +8,16 @@ ffmpeg_notices_validate() {
     return 1
   fi
 
+  local line
+  local count=0
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    ((count += 1))
+  done <"${manifest}"
+  if (( count != 4 )); then
+    echo "FFmpeg notice manifest must contain exactly four entries" >&2
+    return 1
+  fi
+
   local key
   local expected
   local actual

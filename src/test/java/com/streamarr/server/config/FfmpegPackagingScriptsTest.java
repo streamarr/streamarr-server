@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,29 @@ class FfmpegPackagingScriptsTest {
       Path.of(".github/actions/verify-required-checks.sh").toAbsolutePath();
 
   @TempDir Path temporaryDirectory;
+
+  @BeforeAll
+  static void prepareRedistributionMaterials() throws Exception {
+    FfmpegTestToolchain.requireNode();
+    var process =
+        new ProcessBuilder("buildpacks/ffmpeg/bin/prepare").redirectErrorStream(true).start();
+    var output = new String(process.getInputStream().readAllBytes());
+    assertThat(process.waitFor()).as(output).isZero();
+  }
+
+  @Test
+  @DisplayName("Should validate a clean checkout without generated redistribution files")
+  void shouldValidateCleanCheckoutWithoutGeneratedRedistributionFiles() throws Exception {
+    var updater = lockUpdater();
+    assertThat(updater.command().execute().exitCode()).isZero();
+    var generated = updater.lock().getParent().resolve("generated");
+    Files.move(generated, generated.resolveSibling("unused-output"));
+
+    var result = updater.command().argument("--check").execute();
+
+    assertThat(result.exitCode()).as(result.output()).isZero();
+    assertThat(generated).doesNotExist();
+  }
 
   @Test
   @DisplayName("Should reject stale notice inventory when validating the FFmpeg lock offline")
@@ -752,6 +776,9 @@ class FfmpegPackagingScriptsTest {
     assertThat(result.exitCode()).isZero();
     var notices = Path.of("buildpacks/ffmpeg/notices");
     var document = Files.readString(buildpack.layer().resolve("THIRD-PARTY-NOTICES.txt"));
+    assertThat(buildpack.layer().resolve("THIRD-PARTY-NOTICES.txt"))
+        .hasBinaryContent(
+            Files.readAllBytes(Path.of("buildpacks/ffmpeg/generated/THIRD-PARTY-NOTICES.txt")));
     var inventory = new ObjectMapper().readTree(Files.readString(notices.resolve("sources.json")));
     for (var component : inventory) {
       for (var notice : component.path("notices")) {
@@ -761,6 +788,22 @@ class FfmpegPackagingScriptsTest {
     }
 
     assertThat(buildpack.layer().resolve("notices/ffmpeg")).doesNotExist();
+    var installedNotices = buildpack.layer().resolve("notices");
+    try (var files = Files.walk(installedNotices)) {
+      assertThat(
+              files
+                  .filter(Files::isRegularFile)
+                  .map(installedNotices::relativize)
+                  .map(Path::toString)
+                  .toList())
+          .containsExactlyInAnyOrder(
+              "manifest",
+              "sources.json",
+              "buildconf-amd64.txt",
+              "buildconf-arm64.txt",
+              "fdk-aac-stripped/NOTICE.txt",
+              "fdk-aac-stripped/README.fedora.txt");
+    }
     assertThat(buildpack.layer().resolve("notices/buildconf-amd64.txt"))
         .hasSameTextualContentAs(notices.resolve("buildconf-amd64.txt"));
     assertThat(buildpack.layer().resolve("notices/buildconf-arm64.txt"))
@@ -794,6 +837,8 @@ class FfmpegPackagingScriptsTest {
   @ValueSource(
       strings = {
         "SOURCE.txt",
+        "LICENSE.txt",
+        "notices/fdk-aac-stripped/NOTICE.txt",
         "notices/sources.json",
         "notices/buildconf-arm64.txt",
         "generated/THIRD-PARTY-NOTICES.txt",
@@ -813,14 +858,14 @@ class FfmpegPackagingScriptsTest {
         buildpack.command().environment("FAKE_CURL_ATTEMPTS", attempts.toString()).execute();
 
     assertThat(result.exitCode()).as(result.output()).isEqualTo(1);
-    assertThat(result.output()).contains("FFmpeg redistribution materials are stale");
+    assertThat(result.output()).contains("FFmpeg redistribution materials are stale", file);
     assertThat(attempts).doesNotExist();
     assertThat(buildpack.tarArguments()).doesNotExist();
   }
 
   @Test
-  @DisplayName("Should reject stale generated materials when validating the lock offline")
-  void shouldRejectStaleGeneratedMaterialsWhenValidatingLockOffline() throws Exception {
+  @DisplayName("Should reject stale source access when validating the lock offline")
+  void shouldRejectStaleSourceAccessWhenValidatingLockOffline() throws Exception {
     var updater = lockUpdater();
     assertThat(updater.command().execute().exitCode()).isZero();
     Files.writeString(updater.lock().getParent().resolve("SOURCE.txt"), "stale");
@@ -828,7 +873,46 @@ class FfmpegPackagingScriptsTest {
     var result = updater.command().argument("--check").execute();
 
     assertThat(result.exitCode()).isEqualTo(1);
-    assertThat(result.output()).contains("FFmpeg redistribution materials are stale");
+    assertThat(result.output()).contains("SOURCE.txt is missing source access");
+  }
+
+  @Test
+  @DisplayName("Should reject an omitted notice checksum before downloading FFmpeg")
+  void shouldRejectOmittedNoticeChecksumBeforeDownloadingFfmpeg() throws Exception {
+    var root = Files.createDirectories(temporaryDirectory.resolve("omitted-notice"));
+    var script = copyBuildpackScript(root);
+    Files.copy(Path.of("buildpacks/ffmpeg/ffmpeg.lock"), root.resolve("ffmpeg.lock"));
+    var notice = "notices/fdk-aac-stripped/NOTICE.txt";
+    var sums = root.resolve("generated/SHA256SUMS");
+    Files.writeString(sums, Files.readString(sums).replaceAll("(?m)^.*  " + notice + "\\n", ""));
+    Files.writeString(root.resolve(notice), "incorrect notice");
+    var buildpack = buildpack(script);
+
+    var result = buildpack.execute();
+
+    assertThat(result.exitCode()).as(result.output()).isEqualTo(1);
+    assertThat(result.output()).contains(notice);
+    assertThat(buildpack.tarArguments()).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should reject a missing required output checksum before downloading FFmpeg")
+  void shouldRejectMissingRequiredOutputChecksumBeforeDownloadingFfmpeg() throws Exception {
+    var root = Files.createDirectories(temporaryDirectory.resolve("missing-output-checksum"));
+    var script = copyBuildpackScript(root);
+    Files.copy(Path.of("buildpacks/ffmpeg/ffmpeg.lock"), root.resolve("ffmpeg.lock"));
+    var output = "generated/THIRD-PARTY-NOTICES.txt";
+    var sums = root.resolve("generated/SHA256SUMS");
+    var entries = Files.readAllLines(sums);
+    assertThat(entries.stream().filter(line -> line.endsWith("  " + output))).hasSize(1);
+    Files.write(sums, entries.stream().filter(line -> !line.endsWith("  " + output)).toList());
+    var buildpack = buildpack(script);
+
+    var result = buildpack.execute();
+
+    assertThat(result.exitCode()).as(result.output()).isEqualTo(1);
+    assertThat(result.output()).contains("checksum inventory mismatch", output);
+    assertThat(buildpack.tarArguments()).doesNotExist();
   }
 
   @Test
@@ -838,12 +922,42 @@ class FfmpegPackagingScriptsTest {
     assertThat(buildpack.execute().exitCode()).isZero();
     var notice = buildpack.layer().resolve("notices/fdk-aac-stripped/NOTICE.txt");
     Files.writeString(notice, "outdated notice");
+    var document = buildpack.layer().resolve("THIRD-PARTY-NOTICES.txt");
+    var sbom = buildpack.layers().resolve("ffmpeg.sbom.cdx.json");
+    Files.writeString(document, "outdated document");
+    Files.writeString(sbom, "outdated SBOM");
+    var obsolete = buildpack.layer().resolve("notices/obsolete.txt");
+    Files.writeString(obsolete, "obsolete cached notice");
 
     var result = buildpack.execute();
 
     assertThat(result.exitCode()).isZero();
     assertThat(notice)
         .hasSameTextualContentAs(Path.of("buildpacks/ffmpeg/notices/fdk-aac-stripped/NOTICE.txt"));
+    assertThat(document)
+        .hasBinaryContent(
+            Files.readAllBytes(Path.of("buildpacks/ffmpeg/generated/THIRD-PARTY-NOTICES.txt")));
+    assertThat(sbom)
+        .hasBinaryContent(
+            Files.readAllBytes(Path.of("buildpacks/ffmpeg/generated/ffmpeg.amd64.cdx.json")));
+    assertThat(obsolete).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should reject a missing checksum manifest before downloading FFmpeg")
+  void shouldRejectMissingChecksumManifestBeforeDownloadingFfmpeg() throws Exception {
+    var root = Files.createDirectories(temporaryDirectory.resolve("missing-checksums"));
+    var script = copyBuildpackScript(root);
+    Files.copy(Path.of("buildpacks/ffmpeg/ffmpeg.lock"), root.resolve("ffmpeg.lock"));
+    Files.delete(root.resolve("generated/SHA256SUMS"));
+    var buildpack = buildpack(script);
+
+    var result = buildpack.execute();
+
+    assertThat(result.exitCode()).as(result.output()).isEqualTo(1);
+    assertThat(result.output())
+        .contains("Expected regular FFmpeg redistribution checksums", "SHA256SUMS");
+    assertThat(buildpack.tarArguments()).doesNotExist();
   }
 
   @ParameterizedTest
@@ -888,6 +1002,8 @@ class FfmpegPackagingScriptsTest {
     Files.copy(Path.of("buildpacks/ffmpeg/lib/notices.sh"), buildpackLibrary.resolve("notices.sh"));
     Files.copy(
         Path.of("buildpacks/ffmpeg/lib/materials.sh"), buildpackLibrary.resolve("materials.sh"));
+    Files.copy(
+        Path.of("buildpacks/ffmpeg/lib/checksum.sh"), buildpackLibrary.resolve("checksum.sh"));
     Files.copy(
         BUILDPACK.getParent().getParent().resolve("LICENSE.txt"),
         buildpackRoot.resolve("LICENSE.txt"));
@@ -951,7 +1067,7 @@ class FfmpegPackagingScriptsTest {
         "sha256sum",
         """
         if [[ "$*" == *"generated/SHA256SUMS"* ]]; then
-          PATH="${PATH#*:}" exec sha256sum "$@"
+          exec shasum -a 256 "$@"
         fi
         cat >/dev/null
         exit "${FAKE_SHA256_EXIT:-0}"
@@ -1008,9 +1124,16 @@ class FfmpegPackagingScriptsTest {
   private void generateFixtureMaterials(Path root) throws Exception {
     var inventory = root.resolve("notices/sources.json");
     var currentRevision = lockValue(Path.of("buildpacks/ffmpeg/ffmpeg.lock"), "source_revision");
+    var original = Files.readString(inventory);
+    assertThat(original).contains(currentRevision);
     Files.writeString(
         inventory,
-        Files.readString(inventory)
+        original.replace(
+            currentRevision, lockValue(root.resolve("ffmpeg.lock"), "source_revision")));
+    var source = root.resolve("SOURCE.txt");
+    Files.writeString(
+        source,
+        Files.readString(source)
             .replace(currentRevision, lockValue(root.resolve("ffmpeg.lock"), "source_revision")));
     var result =
         command(Path.of("node"))

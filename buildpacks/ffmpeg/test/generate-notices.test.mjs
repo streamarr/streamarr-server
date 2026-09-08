@@ -61,11 +61,11 @@ function fixture(t) {
     );
     fs.writeFileSync(
         path.join(root, "notices/manifest"),
-        "reviewed release: do not overwrite\n",
+        `release=v8.1.2-4\nsource_revision=${"1".repeat(40)}\namd64_sha256=${"a".repeat(64)}\narm64_sha256=${"b".repeat(64)}\n`,
     );
     fs.writeFileSync(
         path.join(root, "SOURCE.txt"),
-        "Corresponding Source: https://example.org\n",
+        `Corresponding Source: ${component.repository} ${component.revision}\n`,
     );
     fs.writeFileSync(path.join(root, "LICENSE.txt"), "GPL license text\n");
     for (const arch of ["amd64", "arm64"]) {
@@ -108,6 +108,115 @@ test("Should preserve verbatim notices once and normalize redundant document ext
     assert.match(document, /example/);
     assert.match(document, /COPYING\.md/);
     assert.doesNotMatch(document, /\.md\.txt/);
+});
+
+for (const version of [null, "v20.20.2"]) {
+    test(`Should explain the Node prerequisite when the available version is ${version ?? "missing"}`, (t) => {
+        const { root } = fixture(t);
+        const commands = path.join(root, "commands");
+        fs.mkdirSync(commands);
+        if (version) {
+            fs.writeFileSync(
+                path.join(commands, "node"),
+                `#!/bin/bash\necho ${version}\n`,
+                { mode: 0o755 },
+            );
+        }
+        const prepare = fileURLToPath(
+            new URL("../bin/prepare", import.meta.url),
+        );
+
+        const result = spawnSync("/bin/bash", [prepare, "--validate"], {
+            encoding: "utf8",
+            timeout: 15000,
+            env: { ...process.env, PATH: commands },
+        });
+
+        assert.ifError(result.error);
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, /FFmpeg tooling requires Node.js/);
+        assert.match(result.stderr, /nvm install && nvm use/);
+    });
+}
+
+test("Should verify checksums with shasum when GNU sha256sum is unavailable", (t) => {
+    const { root, text } = fixture(t);
+    const commands = path.join(root, "commands");
+    fs.mkdirSync(commands);
+    const lookup = spawnSync("/bin/bash", ["-c", "command -v shasum"], {
+        encoding: "utf8",
+    });
+    assert.equal(
+        lookup.status,
+        0,
+        "Expected the portable host checksum utility shasum",
+    );
+    fs.symlinkSync(lookup.stdout.trim(), path.join(commands, "shasum"));
+    const sums = path.join(root, "SHA256SUMS");
+    fs.writeFileSync(
+        sums,
+        `${checksum(text)}  ${path.join(root, "notices/COPYING.md.txt")}\n`,
+    );
+    const helper = fileURLToPath(
+        new URL("../lib/checksum.sh", import.meta.url),
+    );
+    const command = [
+        "-c",
+        '. "$1"; ffmpeg_sha256_check --check --strict "$2"',
+        "--",
+        helper,
+        sums,
+    ];
+
+    const result = spawnSync("/bin/bash", command, {
+        encoding: "utf8",
+        timeout: 15000,
+        env: { ...process.env, PATH: commands },
+    });
+
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /COPYING.md.txt: OK/);
+    fs.unlinkSync(path.join(commands, "shasum"));
+    const missing = spawnSync("/bin/bash", command, {
+        encoding: "utf8",
+        timeout: 15000,
+        env: { ...process.env, PATH: commands },
+    });
+    assert.notEqual(missing.status, 0);
+    assert.match(missing.stderr, /requires sha256sum or shasum/);
+});
+
+test("Should validate source inputs without requiring or writing generated artifacts", (t) => {
+    const { root } = fixture(t);
+    const manifest =
+        [
+            "release=v8.1.2-4",
+            `source_revision=${"1".repeat(40)}`,
+            `amd64_sha256=${"a".repeat(64)}`,
+            `arm64_sha256=${"b".repeat(64)}`,
+        ].join("\n") + "\n";
+    fs.writeFileSync(path.join(root, "notices/manifest"), manifest);
+
+    const result = run(root, "--validate");
+
+    assert.equal(result.status, 0, result.output);
+    assert.equal(fs.existsSync(path.join(root, "generated")), false);
+    assert.equal(
+        fs.readFileSync(path.join(root, "notices/manifest"), "utf8"),
+        manifest,
+    );
+});
+
+test("Should reject missing source-access instructions during offline validation", (t) => {
+    const { root } = fixture(t);
+    fs.writeFileSync(path.join(root, "SOURCE.txt"), "stale instructions");
+
+    const result = run(root, "--validate");
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.output, /SOURCE.txt.*ffmpeg/);
+    assert.equal(fs.existsSync(path.join(root, "generated")), false);
 });
 
 test("Should reject changed notice contents before writing redistribution materials", (t) => {
@@ -349,6 +458,41 @@ test("Should report recipe and build-configuration changes without updating revi
         fs.readFileSync(path.join(root, "notices/manifest")),
         manifest,
     );
+});
+
+test("Should compare added and removed components and changed lock fields without writing outputs", (t) => {
+    const { root, components, writeInventory } = fixture(t);
+    assert.equal(run(root).status, 0);
+    const snapshot = path.join(root, "generated/review-inputs.json");
+    const before = fs.readFileSync(snapshot);
+    components[1] = { ...components[1], id: "new-component" };
+    writeInventory();
+    const lock = path.join(root, "ffmpeg.lock");
+    fs.writeFileSync(
+        lock,
+        fs.readFileSync(lock, "utf8").replace("a".repeat(64), "c".repeat(64)),
+    );
+
+    const result = run(root, "--compare", snapshot);
+
+    assert.equal(result.status, 0, result.output);
+    assert.match(result.output, /Added component: new-component/);
+    assert.match(result.output, /Removed component: example/);
+    assert.match(result.output, /Changed lock: amd64_sha256/);
+    assert.deepEqual(fs.readFileSync(snapshot), before);
+});
+
+test("Should reject unrecognized approval-manifest entries during offline validation", (t) => {
+    const { root } = fixture(t);
+    fs.appendFileSync(
+        path.join(root, "notices/manifest"),
+        "extra=unreviewed\n",
+    );
+
+    const result = run(root, "--validate");
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.output, /notice manifest.*four entries/);
 });
 
 test("Should map component declarations and exact source notices in both generated formats", (t) => {

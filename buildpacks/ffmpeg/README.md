@@ -15,10 +15,13 @@ buildpacks/ffmpeg/bin/update-lock --check
 buildpacks/ffmpeg/bin/update-lock --verify-upstream
 ```
 
-The updater requires Bash, `curl`, `jq`, and `sha256sum`. It accepts only published, non-prerelease tags
+The resolver requires Bash, `curl`, and `jq`. Offline input validation also requires
+the Node.js toolchain declared in the repository's `.nvmrc`. It accepts only published, non-prerelease tags
 in `vMAJOR.MINOR.PATCH-BUILD` form, requires exactly one portable GPL asset and a GitHub
 SHA-256 digest per architecture, resolves the tag's full fork commit, and writes the lock
-atomically. `--check` validates the lock, notice manifest and redistribution checksums offline; `--verify-upstream` regenerates canonical
+atomically. `--check` validates the lock, independent review manifest, source-access
+instructions and all inventoried notice bytes offline, without requiring or writing generated
+artifacts; `--verify-upstream` regenerates canonical
 metadata from GitHub and compares it byte-for-byte without modifying the lock.
 
 The buildpack verifies the downloaded archive against the locked checksum before extracting
@@ -51,30 +54,47 @@ not mark new notices as reviewed. Neither does the notice generator: it never wr
 inclusion in fresh and cached layers. Full license texts and attribution remain in
 the image, not just links to them.
 
-With Node.js 20 or newer (developer/CI tooling only; not required by the buildpack):
+Install the Node.js version declared in `.nvmrc` with `nvm install && nvm use`.
+CI selects that exact version; local tooling accepts the same major. Node is
+developer/CI tooling only, not a requirement inside the buildpack.
 
 ```bash
-# Save the previous generated/review-inputs.json before changing the reviewed inputs.
-node buildpacks/ffmpeg/bin/generate-notices.mjs --compare /path/to/previous-review-inputs.json
-node buildpacks/ffmpeg/bin/generate-notices.mjs
-node buildpacks/ffmpeg/bin/generate-notices.mjs --check
+buildpacks/ffmpeg/bin/update-lock --check
+buildpacks/ffmpeg/bin/prepare
+# Save generated/review-inputs.json before changing the reviewed inputs.
+buildpacks/ffmpeg/bin/prepare --compare /path/to/previous-review-inputs.json
+buildpacks/ffmpeg/bin/prepare --check
 node --test buildpacks/ffmpeg/test/generate-notices.test.mjs
 ```
 
-Commit the inputs and generated outputs together. Generation makes no network calls
-and does not fetch, classify or approve new dependencies. `--compare` reports changes
+Commit the reviewed inputs, not the reproducible outputs: `generated/` is Git-ignored.
+The shared CI preparation action validates those inputs and generates artifacts before
+each image build and host-runtime installation. A direct local `bin/build` invocation
+needs `bin/prepare` first; checksum validation requires `sha256sum` or `shasum`.
+Generation makes no network calls and does not fetch, classify or approve new dependencies.
+`--compare` reports changes
 to component metadata (including recipes), the lock and input checksums, including
 both build configurations. It does not replace reviewing actual linked dependencies
-and upstream license changes. `--check` is read-only and runs with the generator
-contract tests in the normal Maven build. The shell-only buildpack and offline lock
-check verify generated checksums before using the materials.
+and upstream license changes. To recover a prior snapshot, check out that Git revision
+in a separate worktree and run the current generator with `--root` pointing at that
+worktree's `buildpacks/ffmpeg` directory. Then compare its locally generated snapshot.
+Do not substitute regeneration for human review of `notices/manifest`.
+
+The generator's `--check` verifies prepared artifacts without modifying them.
+The normal Maven build proves clean-input generation and reproducibility, runs the
+generator contract tests, and enforces at least 90% line/function and 85% branch coverage.
+The shell-only buildpack requires the checksum list to cover every notice/input and
+expected output exactly once, then verifies every listed digest before use. This
+detects incomplete or stale preparation; it is not a signature or substitute for
+reviewing the source inventory and upstream release.
 
 `licenseExpression` records SPDX identifiers/expressions where the inventoried terms
 can be represented accurately. A `LicenseRef-<component>` refers to that component's
 preserved notice bundle, not a new license or a compatibility conclusion. Unique
 texts (including FDK, glslang, FreeType and patent notices) are not paraphrased.
-Only byte-identical texts are shared; redundant document suffixes such as `.md.txt`
-are normalized in generated display names. Source-code excerpts retain `.h.txt` or
+Only byte-identical texts are shared. Current inputs already use canonical document
+suffixes; the generator also normalizes redundant suffixes such as `.md.txt` in
+display names if a future imported notice has one. Source-code excerpts retain `.h.txt` or
 `.c.txt` to distinguish the excerpt from a compilable source file.
 
 SBOMs include runtime and embedded inputs for their architecture; build-only inputs
