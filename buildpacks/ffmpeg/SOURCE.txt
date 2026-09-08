@@ -37,15 +37,19 @@ the stripped FDK code from the redistributed executables.
 
 License and inventory information
 =================================
-LICENSE.txt contains GPLv3. notices/ffmpeg/ includes FFmpeg's license overview,
-GPL/LGPL texts and per-file copyright information from the locked fork revision.
-Other notices/ subdirectories retain bundled-component licenses and attribution.
-These components retain their own copyright notices and license terms.
+LICENSE.txt contains GPLv3. THIRD-PARTY-NOTICES.txt reproduces the inventoried
+licenses and attribution verbatim, including FFmpeg's license overview, GPL/LGPL
+texts and per-file copyright information from the locked fork revision. Identical
+texts are reproduced once and referenced by SHA-256 from each component's entry.
+These components retain their own copyright notices and license terms. The FDK
+notice and modification notice are also retained at the paths given above.
 
 notices/manifest binds this inventory to the source revision and both archive
 checksums. notices/sources.json records component roles, architecture scope,
 source revisions, build recipes, notice origins and notice SHA-256 checksums.
-Checksums there describe the installed notice files, not the binary archives.
+The file paths and checksums there identify vendored inputs in Streamarr's source
+repository, not binary archives. Those texts appear by SHA-256 in the installed
+THIRD-PARTY-NOTICES.txt; the individual input files are not all installed.
 Header-license excerpts are marked; text may have a normalized final newline.
 The two buildconf files record the binaries' configure flags used as the starting
 point for the inventory; transitive static code and generated loaders were then

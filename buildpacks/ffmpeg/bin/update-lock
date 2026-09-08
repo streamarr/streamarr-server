@@ -11,6 +11,8 @@ repository_root="$(cd "${script_dir}/../../.." && pwd)"
 . "${script_dir}/../lib/lock.sh"
 # shellcheck source=../lib/notices.sh
 . "${script_dir}/../lib/notices.sh"
+# shellcheck source=../lib/materials.sh
+. "${script_dir}/../lib/materials.sh"
 check_only=false
 verify_upstream=false
 requested_release=
@@ -90,6 +92,7 @@ if [[ "${check_only}" == true ]]; then
   ffmpeg_notices_validate "${lock_file}" "${repository_root}/buildpacks/ffmpeg"
   locked_release="$(ffmpeg_lock_value "${lock_file}" release)"
   if [[ "${locked_release}" == "${release}" ]]; then
+    ffmpeg_materials_validate "${repository_root}/buildpacks/ffmpeg"
     exit 0
   fi
   echo "FFmpeg lock is stale; run buildpacks/ffmpeg/bin/update-lock" >&2

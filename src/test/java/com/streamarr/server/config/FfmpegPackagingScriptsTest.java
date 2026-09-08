@@ -484,6 +484,15 @@ class FfmpegPackagingScriptsTest {
             .formatted(release, fullRevision, amd64Digest, arm64Digest));
     Files.writeString(buildpack.resolve("release"), release + "\n");
     var lock = buildpack.resolve("ffmpeg.lock");
+    Files.copy(Path.of("buildpacks/ffmpeg/LICENSE.txt"), buildpack.resolve("LICENSE.txt"));
+    Files.writeString(
+        lock,
+        lockWithVersion(version, fullRevision)
+            .replace(
+                lockValue(Path.of("buildpacks/ffmpeg/ffmpeg.lock"), "amd64_sha256"), amd64Digest)
+            .replace(
+                lockValue(Path.of("buildpacks/ffmpeg/ffmpeg.lock"), "arm64_sha256"), arm64Digest));
+    generateFixtureMaterials(buildpack);
     Files.writeString(lock, "stale\n");
     var upstream = Files.createDirectory(temporaryDirectory.resolve("upstream"));
     var releaseJson = upstream.resolve("release.json");
@@ -599,6 +608,7 @@ class FfmpegPackagingScriptsTest {
                             line.matches("(release|source_revision|amd64_sha256|arm64_sha256)=.*"))
                     .toList())
             + "\n");
+    generateFixtureMaterials(buildpackRoot);
     var buildpack = buildpack(buildpackScript);
 
     var result = buildpack.execute();
@@ -741,17 +751,84 @@ class FfmpegPackagingScriptsTest {
 
     assertThat(result.exitCode()).isZero();
     var notices = Path.of("buildpacks/ffmpeg/notices");
-    try (var paths = Files.walk(notices)) {
-      for (var source : paths.filter(Files::isRegularFile).toList()) {
-        var installed = buildpack.layer().resolve("notices").resolve(notices.relativize(source));
-        assertThat(installed).hasBinaryContent(Files.readAllBytes(source));
+    var document = Files.readString(buildpack.layer().resolve("THIRD-PARTY-NOTICES.txt"));
+    var inventory = new ObjectMapper().readTree(Files.readString(notices.resolve("sources.json")));
+    for (var component : inventory) {
+      for (var notice : component.path("notices")) {
+        assertThat(document)
+            .contains(Files.readString(notices.resolve(notice.path("file").asString())));
       }
     }
 
+    assertThat(buildpack.layer().resolve("notices/ffmpeg")).doesNotExist();
+    assertThat(buildpack.layer().resolve("notices/buildconf-amd64.txt"))
+        .hasSameTextualContentAs(notices.resolve("buildconf-amd64.txt"));
+    assertThat(buildpack.layer().resolve("notices/buildconf-arm64.txt"))
+        .hasSameTextualContentAs(notices.resolve("buildconf-arm64.txt"));
     assertThat(buildpack.layer().resolve("SOURCE.txt"))
         .hasSameTextualContentAs(Path.of("buildpacks/ffmpeg/SOURCE.txt"));
     assertThat(Files.readString(buildpack.layer().resolve("SOURCE.txt")))
         .contains("Corresponding Source", "fdk-aac-stripped", "builder/patches");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"amd64", "arm64", "x86_64", "aarch64"})
+  @DisplayName("Should install the generated SBOM for the requested architecture")
+  void shouldInstallGeneratedSbomForRequestedArchitecture(String architecture) throws Exception {
+    var buildpack = buildpack();
+
+    var result = buildpack.command().environment("CNB_TARGET_ARCH", architecture).execute();
+
+    assertThat(result.exitCode()).as(result.output()).isZero();
+    var canonical =
+        switch (architecture) {
+          case "amd64", "x86_64" -> "amd64";
+          default -> "arm64";
+        };
+    assertThat(buildpack.layers().resolve("ffmpeg.sbom.cdx.json"))
+        .hasSameTextualContentAs(
+            Path.of("buildpacks/ffmpeg/generated/ffmpeg." + canonical + ".cdx.json"));
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "SOURCE.txt",
+        "notices/sources.json",
+        "notices/buildconf-arm64.txt",
+        "generated/THIRD-PARTY-NOTICES.txt",
+        "generated/ffmpeg.amd64.cdx.json"
+      })
+  @DisplayName("Should reject stale redistribution materials before downloading FFmpeg")
+  void shouldRejectStaleRedistributionMaterialsBeforeDownloadingFfmpeg(String file)
+      throws Exception {
+    var root = Files.createDirectories(temporaryDirectory.resolve("stale-materials"));
+    var script = copyBuildpackScript(root);
+    Files.copy(Path.of("buildpacks/ffmpeg/ffmpeg.lock"), root.resolve("ffmpeg.lock"));
+    Files.writeString(root.resolve(file), "stale", StandardOpenOption.APPEND);
+    var buildpack = buildpack(script);
+    var attempts = temporaryDirectory.resolve("download-attempts");
+
+    var result =
+        buildpack.command().environment("FAKE_CURL_ATTEMPTS", attempts.toString()).execute();
+
+    assertThat(result.exitCode()).as(result.output()).isEqualTo(1);
+    assertThat(result.output()).contains("FFmpeg redistribution materials are stale");
+    assertThat(attempts).doesNotExist();
+    assertThat(buildpack.tarArguments()).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should reject stale generated materials when validating the lock offline")
+  void shouldRejectStaleGeneratedMaterialsWhenValidatingLockOffline() throws Exception {
+    var updater = lockUpdater();
+    assertThat(updater.command().execute().exitCode()).isZero();
+    Files.writeString(updater.lock().getParent().resolve("SOURCE.txt"), "stale");
+
+    var result = updater.command().argument("--check").execute();
+
+    assertThat(result.exitCode()).isEqualTo(1);
+    assertThat(result.output()).contains("FFmpeg redistribution materials are stale");
   }
 
   @Test
@@ -810,6 +887,8 @@ class FfmpegPackagingScriptsTest {
     Files.copy(HTTP_LIBRARY, buildpackLibrary.resolve("http.sh"));
     Files.copy(Path.of("buildpacks/ffmpeg/lib/notices.sh"), buildpackLibrary.resolve("notices.sh"));
     Files.copy(
+        Path.of("buildpacks/ffmpeg/lib/materials.sh"), buildpackLibrary.resolve("materials.sh"));
+    Files.copy(
         BUILDPACK.getParent().getParent().resolve("LICENSE.txt"),
         buildpackRoot.resolve("LICENSE.txt"));
     copyRedistributionFiles(buildpackRoot);
@@ -819,10 +898,15 @@ class FfmpegPackagingScriptsTest {
 
   private static void copyRedistributionFiles(Path buildpackRoot) throws IOException {
     Files.copy(Path.of("buildpacks/ffmpeg/SOURCE.txt"), buildpackRoot.resolve("SOURCE.txt"));
-    var notices = Path.of("buildpacks/ffmpeg/notices");
-    try (var paths = Files.walk(notices)) {
-      for (var source : paths.filter(Files::isRegularFile).toList()) {
-        var destination = buildpackRoot.resolve("notices").resolve(notices.relativize(source));
+    var root = Path.of("buildpacks/ffmpeg");
+    try (var paths = Files.walk(root)) {
+      var materials =
+          paths.filter(
+              source ->
+                  source.startsWith(root.resolve("notices"))
+                      || source.startsWith(root.resolve("generated")));
+      for (var source : materials.filter(Files::isRegularFile).toList()) {
+        var destination = buildpackRoot.resolve(root.relativize(source));
         Files.createDirectories(destination.getParent());
         Files.copy(source, destination);
       }
@@ -862,7 +946,16 @@ class FfmpegPackagingScriptsTest {
         done
         : > "${archive}"
         """);
-    writeCommand(commands, "sha256sum", "cat >/dev/null; exit \"${FAKE_SHA256_EXIT:-0}\"");
+    writeCommand(
+        commands,
+        "sha256sum",
+        """
+        if [[ "$*" == *"generated/SHA256SUMS"* ]]; then
+          PATH="${PATH#*:}" exec sha256sum "$@"
+        fi
+        cat >/dev/null
+        exit "${FAKE_SHA256_EXIT:-0}"
+        """);
     writeCommand(
         commands,
         "tar",
@@ -910,6 +1003,22 @@ class FfmpegPackagingScriptsTest {
     assertThat(values).as("exactly one %s entry in %s", key, lock).hasSize(1);
     assertThat(values.getFirst()).as("non-empty %s entry in %s", key, lock).isNotEmpty();
     return values.getFirst();
+  }
+
+  private void generateFixtureMaterials(Path root) throws Exception {
+    var inventory = root.resolve("notices/sources.json");
+    var currentRevision = lockValue(Path.of("buildpacks/ffmpeg/ffmpeg.lock"), "source_revision");
+    Files.writeString(
+        inventory,
+        Files.readString(inventory)
+            .replace(currentRevision, lockValue(root.resolve("ffmpeg.lock"), "source_revision")));
+    var result =
+        command(Path.of("node"))
+            .argument("buildpacks/ffmpeg/bin/generate-notices.mjs")
+            .argument("--root")
+            .argument(root.toString())
+            .execute();
+    assertThat(result.exitCode()).as(result.output()).isZero();
   }
 
   private static String lockWithVersion(String version, String sourceRevision) throws IOException {

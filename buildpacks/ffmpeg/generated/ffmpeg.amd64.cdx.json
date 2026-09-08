@@ -1,0 +1,2259 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "components": [
+    {
+      "type": "application",
+      "bom-ref": "pkg:github/jellyfin/jellyfin-ffmpeg@v8.1.2-4",
+      "name": "FFmpeg",
+      "description": "FFmpeg and ffprobe executables, including Jellyfin patches.",
+      "licenses": [
+        {
+          "expression": "GPL-3.0-or-later",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/jellyfin/jellyfin-ffmpeg"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/LICENSE.md",
+          "comment": "Verbatim notice 2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/COPYING.GPLv2",
+          "comment": "Verbatim notice 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/COPYING.GPLv3",
+          "comment": "Verbatim notice 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/COPYING.LGPLv2.1",
+          "comment": "Verbatim notice 246041b6ecf9bc32d718a62c57877c78b5eb397b6467e74ed7ae2626ab189c30 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/COPYING.LGPLv3",
+          "comment": "Verbatim notice da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-ffmpeg/6c051dec38eb0e88d2d4d3c54b13014bf69f9799/debian/copyright",
+          "comment": "Verbatim notice 1dcbd4a0573defb2b6b44010c96eabe026d06d9cf2a86eaf7782aa80f76ed2f2 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "distribution",
+          "url": "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v8.1.2-4/jellyfin-ffmpeg_8.1.2-4_portable_linux64-gpl.tar.xz"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "6c051dec38eb0e88d2d4d3c54b13014bf69f9799"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder"
+        }
+      ],
+      "version": "8.1.2-4",
+      "publisher": "Jellyfin",
+      "purl": "pkg:github/jellyfin/jellyfin-ffmpeg@v8.1.2-4",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "6e7150c358f9817a04ce82c62d81135cb4535d8525047393f4b296fff3d7a664"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:amf",
+      "name": "amf",
+      "description": "AMD AMF API headers (--enable-amf); proprietary driver runtime is not bundled.",
+      "licenses": [
+        {
+          "expression": "MIT",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/GPUOpen-LibrariesAndSDKs/AMF"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/AMF/eadd00804d5f7e5cd8c85d540073198312870776/LICENSE.txt",
+          "comment": "Verbatim notice eb856e5f25dda1a6f79012c6f4e77800ccce934e7d549416b930b4eed0a8c0ea in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "embedded"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "eadd00804d5f7e5cd8c85d540073198312870776"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-amf.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:chromaprint",
+      "name": "chromaprint",
+      "description": "Static audio fingerprinting library (--enable-chromaprint).",
+      "licenses": [
+        {
+          "expression": "LicenseRef-chromaprint",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/acoustid/chromaprint"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/acoustid/chromaprint/6b13ce3a81ae931e7477c4856a86bece99157cd8/LICENSE.md",
+          "comment": "Verbatim notice 562cfe59627e0c4e8e3b066f3ff2e9736f83811ffe4c6c2c7796595aa7595ebd in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "6b13ce3a81ae931e7477c4856a86bece99157cd8"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-chromaprint.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:dav1d",
+      "name": "dav1d",
+      "description": "Static AV1 decoder (--enable-libdav1d).",
+      "licenses": [
+        {
+          "expression": "BSD-2-Clause",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://code.videolan.org/videolan/dav1d"
+        },
+        {
+          "type": "license",
+          "url": "https://code.videolan.org/videolan/dav1d/-/raw/b546257f770768b2c88258c533da38b91a06f737/COPYING",
+          "comment": "Verbatim notice dd92c3c2247c5651606fc23a5e2d6a1ebc5ace9a3e49cbde0e12f05ad1cb1ee5 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "b546257f770768b2c88258c533da38b91a06f737"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-dav1d.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:fast-float",
+      "name": "fast-float",
+      "description": "Header-only numeric parser compiled into libplacebo.",
+      "licenses": [
+        {
+          "expression": "MIT",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/fastfloat/fast_float"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/fastfloat/fast_float/97b54ca9e75f5303507699d27c6b4f4efe4641a1/LICENSE-MIT",
+          "comment": "Verbatim notice e562f3f974ced7e69dd1db77b820b36bcf8f30377f1aa105723fba449c53c4e6 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "embedded"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "97b54ca9e75f5303507699d27c6b4f4efe4641a1"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "libplacebo/3rdparty/fast_float (gitlink)"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:fdk-aac-stripped",
+      "name": "fdk-aac-stripped",
+      "description": "Static stripped FDK AAC library (--enable-libfdk-aac). Streamarr selects the native aac encoder, not libfdk_aac.",
+      "licenses": [
+        {
+          "expression": "FDK-AAC",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://gitlab.freedesktop.org/wtaymans/fdk-aac-stripped"
+        },
+        {
+          "type": "license",
+          "url": "https://gitlab.freedesktop.org/wtaymans/fdk-aac-stripped/-/raw/529b87452cd33d45e1d0a5066d20b64f10b38845/NOTICE",
+          "comment": "Verbatim notice 95ec80da40b4af12ad4c4f3158c9cfb80f2479f3246e4260cb600827cc8c7836 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://gitlab.freedesktop.org/wtaymans/fdk-aac-stripped/-/raw/529b87452cd33d45e1d0a5066d20b64f10b38845/README.fedora",
+          "comment": "Verbatim notice e2fb30b7a7e24cef17589c40540866ff22929f1d9329a49b01cdd9552e2aaec2 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "529b87452cd33d45e1d0a5066d20b64f10b38845"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-fdk-aac-stripped.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:ffnvcodec",
+      "name": "ffnvcodec",
+      "description": "NVIDIA codec API headers and inline loaders; NVIDIA driver/CUDA runtime libraries are not bundled.",
+      "licenses": [
+        {
+          "expression": "MIT",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/FFmpeg/nv-codec-headers"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/451da99614412a7f9526ef301a5ee0c7a6f9ad76/include/ffnvcodec/dynlink_loader.h",
+          "comment": "Verbatim notice 6f0d5ad2609c6fda3e0fb07fa286e7b46c2ea7b87ab12d926ab7a82c69ffe09d in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/451da99614412a7f9526ef301a5ee0c7a6f9ad76/include/ffnvcodec/nvEncodeAPI.h",
+          "comment": "Verbatim notice 04b2307536706a130608b063817566affa567786d7428764c82535a29f7f905c in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/451da99614412a7f9526ef301a5ee0c7a6f9ad76/include/ffnvcodec/dynlink_cuda.h",
+          "comment": "Verbatim notice 6f0d5ad2609c6fda3e0fb07fa286e7b46c2ea7b87ab12d926ab7a82c69ffe09d in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/451da99614412a7f9526ef301a5ee0c7a6f9ad76/include/ffnvcodec/dynlink_cuviddec.h",
+          "comment": "Verbatim notice 04b2307536706a130608b063817566affa567786d7428764c82535a29f7f905c in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/451da99614412a7f9526ef301a5ee0c7a6f9ad76/include/ffnvcodec/dynlink_nvcuvid.h",
+          "comment": "Verbatim notice 04b2307536706a130608b063817566affa567786d7428764c82535a29f7f905c in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "embedded"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "451da99614412a7f9526ef301a5ee0c7a6f9ad76"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-ffnvcodec.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:fftw3f",
+      "name": "fftw3f",
+      "description": "Static FFT dependency of Chromaprint (FFT_LIB=fftw3f).",
+      "licenses": [
+        {
+          "expression": "GPL-2.0-or-later",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/FFTW/fftw3"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/FFTW/fftw3/4fca9817e68f77c118e4704562d63e45c02d38bf/COPYING",
+          "comment": "Verbatim notice 231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/FFTW/fftw3/4fca9817e68f77c118e4704562d63e45c02d38bf/COPYRIGHT",
+          "comment": "Verbatim notice 8a74b35d541d93fdf58a22a3d3baa48ae3edbf6d715edfeb6457c21968ae43ac in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/FFTW/fftw3/4fca9817e68f77c118e4704562d63e45c02d38bf/AUTHORS",
+          "comment": "Verbatim notice 14e1b1c6a7d84613c85a4c457b4167fb4927ce239ec45123e85ba5eefca4e7bb in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "4fca9817e68f77c118e4704562d63e45c02d38bf"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/25-fftw3f.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:fontconfig",
+      "name": "fontconfig",
+      "description": "Static font configuration library (--enable-fontconfig).",
+      "licenses": [
+        {
+          "expression": "LicenseRef-fontconfig",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://chromium.googlesource.com/external/fontconfig"
+        },
+        {
+          "type": "license",
+          "url": "https://chromium.googlesource.com/external/fontconfig/+/6d0a98982ec351c165c9224c8b7dbdfca3010e47/COPYING?format=TEXT",
+          "comment": "Verbatim notice 51a51aa9823704fd90bccc616cdd17ebabb5b2b3e9cbde886ca02c7002288067 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "6d0a98982ec351c165c9224c8b7dbdfca3010e47"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/35-fontconfig.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:freetype",
+      "name": "freetype",
+      "description": "Static font rasterization library (--enable-libfreetype).",
+      "licenses": [
+        {
+          "expression": "LicenseRef-freetype",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/freetype/freetype"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/LICENSE.TXT",
+          "comment": "Verbatim notice bd36c8b474855fa294c2ec5c184544478ef3720aad37d65a6296a4f264fd2d3b in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/docs/FTL.TXT",
+          "comment": "Verbatim notice 5a5ee54c5001bbad1cdc1a57cc3dd4c42199b2da09d39c7ee41fab002d02967f in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/docs/GPLv2.TXT",
+          "comment": "Verbatim notice c4120c6752c910c299e3bd9cb3a46ff262c268303ca2069b61f92f10a5656c18 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/src/bdf/README",
+          "comment": "Verbatim notice 7984455e7e5a9faba3797c8bf095fbe10cc846316b7320aff8c58402e22b82fe in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/freetype/freetype/1803559c4ee407d0bcbf2a67dbe96690cee869d2/src/pcf/README",
+          "comment": "Verbatim notice 18d9782898d9eac04476e2f744678137b2a889689ed3e923e052fc396a86f86b in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "1803559c4ee407d0bcbf2a67dbe96690cee869d2"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/25-freetype.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:fribidi",
+      "name": "fribidi",
+      "description": "Static bidirectional-text library (--enable-libfribidi).",
+      "licenses": [
+        {
+          "expression": "LGPL-2.1-or-later",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/fribidi/fribidi"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/fribidi/fribidi/5c85a174650ab8ef106ce85f13bcf2950d3fc65f/COPYING",
+          "comment": "Verbatim notice 32434afcc8666ba060e111d715bfdb6c2d5dd8a35fa4d3ab8ad67d8f850d2f2b in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/fribidi/fribidi/5c85a174650ab8ef106ce85f13bcf2950d3fc65f/AUTHORS",
+          "comment": "Verbatim notice cb173f55c9514c8f38f4647ac3fedd5f8611358d331e65ab955da931e826861c in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "5c85a174650ab8ef106ce85f13bcf2950d3fc65f"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/25-fribidi.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:gcc-runtime",
+      "name": "gcc-runtime",
+      "description": "Statically linked GCC 15.2.0 runtime libraries (libgcc/libstdc++), with GCC Runtime Library Exception.",
+      "licenses": [
+        {
+          "expression": "GPL-3.0-or-later WITH GCC-exception-3.1",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/gcc-mirror/gcc"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-15.2.0/COPYING3",
+          "comment": "Verbatim notice 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-15.2.0/COPYING.RUNTIME",
+          "comment": "Verbatim notice 9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-15.2.0/libgcc/libgcc2.c",
+          "comment": "Verbatim notice 412607822941a2d2cb1b0025658a967aa1196b8c4e3874ad5e51d00858bab4a9 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-15.2.0/libstdc%2B%2B-v3/include/bits/c%2B%2Bconfig",
+          "comment": "Verbatim notice ca89866f69d738602eba7eb4ab75ebac5fe666d2b222feead209a92243667f84 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "embedded"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "releases/gcc-15.2.0"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/images/base-linux64/ct-ng-config; builder/images/base-linuxarm64/ct-ng-config"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:glad",
+      "name": "glad",
+      "description": "Generated OpenGL/EGL loader code compiled into libplacebo; excludes generator-only Python dependencies.",
+      "licenses": [
+        {
+          "expression": "LicenseRef-glad",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/Dav1dde/glad"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/Dav1dde/glad/73db193f853e2ee079bf3ca8a64aa2eaf6459043/LICENSE",
+          "comment": "Verbatim notice cbb325cd4ac5bd06717ffa34a322b984f9d285e4c67c8ca1b7380d6ef08c2a77 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "embedded"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "73db193f853e2ee079bf3ca8a64aa2eaf6459043"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "libplacebo/3rdparty/glad (gitlink)"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:glibc-startup",
+      "name": "glibc-startup",
+      "description": "glibc startup/nonshared support from the cross-toolchain; shared glibc libraries and the dynamic loader are supplied by the base system.",
+      "licenses": [
+        {
+          "expression": "LicenseRef-glibc-startup",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/bminor/glibc"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/bminor/glibc/glibc-2.28/COPYING.LIB",
+          "comment": "Verbatim notice dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/bminor/glibc/glibc-2.28/LICENSES",
+          "comment": "Verbatim notice 35bdb41dc0bcb10702ddacbd51ec4c0fe6fb3129f734e8c85fc02e4d3eb0ce3f in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/bminor/glibc/glibc-2.28/csu/libc-start.c",
+          "comment": "Verbatim notice 14330df39e2442852024838d34c06deac90249bda409c11053dd213559a6b373 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "embedded"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "glibc-2.28"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/images/base-linux64/ct-ng-config; builder/images/base-linuxarm64/ct-ng-config"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:glslang",
+      "name": "glslang",
+      "description": "Static shader language compiler within shaderc_combined; pin from shaderc DEPS.",
+      "licenses": [
+        {
+          "expression": "LicenseRef-glslang",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/KhronosGroup/glslang"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/KhronosGroup/glslang/5ed4003a18a10a9d1bd7e43aaf1664499abffa83/LICENSE.txt",
+          "comment": "Verbatim notice 17e70c676e1521ff3e4686f04a2053d93a7e28a33be8de7ec37ab0ff72feb677 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "5ed4003a18a10a9d1bd7e43aaf1664499abffa83"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "shaderc/DEPS"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:gmp",
+      "name": "gmp",
+      "description": "Static arithmetic library (--enable-gmp).",
+      "licenses": [
+        {
+          "expression": "LGPL-3.0-or-later OR GPL-2.0-or-later",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/BtbN/gmplib"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/BtbN/gmplib/9994908f090c694f8a152d660dc6852e0c48557a/COPYING.LESSERv3",
+          "comment": "Verbatim notice a853c2ffec17057872340eee242ae4d96cbf2b520ae27d903e1b2fef1a5f9d1c in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/BtbN/gmplib/9994908f090c694f8a152d660dc6852e0c48557a/COPYINGv2",
+          "comment": "Verbatim notice 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/BtbN/gmplib/9994908f090c694f8a152d660dc6852e0c48557a/COPYINGv3",
+          "comment": "Verbatim notice e6037104443f9a7829b2aa7c5370d0789a7bda3ca65a0b904cdc0c2e285d9195 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/BtbN/gmplib/9994908f090c694f8a152d660dc6852e0c48557a/AUTHORS",
+          "comment": "Verbatim notice da5870e2f0482c5dc15b4cfed8bbfb51ce1279c8f8fc52bdb8c13c7cee949c32 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "9994908f090c694f8a152d660dc6852e0c48557a"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/25-gmp.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:harfbuzz",
+      "name": "harfbuzz",
+      "description": "Static text shaping library (--enable-libharfbuzz).",
+      "licenses": [
+        {
+          "expression": "LicenseRef-harfbuzz",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/harfbuzz/harfbuzz"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/harfbuzz/harfbuzz/56feae4035bdd48f62ba2b8d8c16232d4d89b3a4/COPYING",
+          "comment": "Verbatim notice ba8f810f2455c2f08e2d56bb49b72f37fcf68f1f4fade38977cfd7372050ad64 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/harfbuzz/harfbuzz/56feae4035bdd48f62ba2b8d8c16232d4d89b3a4/AUTHORS",
+          "comment": "Verbatim notice 19bfe8f5ed100636cd24ab0c90a3f71c21d8b02d9ba00719447a0faab364d49f in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/harfbuzz/harfbuzz/56feae4035bdd48f62ba2b8d8c16232d4d89b3a4/src/ms-use/COPYING",
+          "comment": "Verbatim notice c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "56feae4035bdd48f62ba2b8d8c16232d4d89b3a4"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/45-harfbuzz.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:implib",
+      "name": "implib",
+      "description": "Generated lazy import-loader code embedded for system libraries; upstream does not pin the generator checkout.",
+      "licenses": [
+        {
+          "expression": "MIT",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/yugr/Implib.so"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/yugr/Implib.so/a3e167cf978a5b8a38ec0f710d8c4331e8dcdd9a/LICENSE.txt",
+          "comment": "Verbatim notice 3ce4e4bc862f11fd50735454e524c009923ff82131090847234dc2aa9893eda5 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "embedded"
+        },
+        {
+          "name": "streamarr:notice-source-revision",
+          "value": "a3e167cf978a5b8a38ec0f710d8c4331e8dcdd9a"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/images/base-linux64/Dockerfile; builder/images/base-linuxarm64/Dockerfile"
+        },
+        {
+          "name": "streamarr:version-note",
+          "value": "Upstream clones an unpinned default branch. This revision identifies the notice source, not a proven binary build revision."
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libass",
+      "name": "libass",
+      "description": "Static subtitle renderer (--enable-libass).",
+      "licenses": [
+        {
+          "expression": "ISC",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/libass/libass"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/libass/libass/4a05d8127f525943ebf45fdc6497c9e665947f0d/COPYING",
+          "comment": "Verbatim notice f7e30699d02798351e7f839e3d3bfeb29ce65e44efa7735c225464c4fd7dfe9c in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "4a05d8127f525943ebf45fdc6497c9e665947f0d"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-libass.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libbluray",
+      "name": "libbluray",
+      "description": "Static Blu-ray access library (--enable-libbluray).",
+      "licenses": [
+        {
+          "expression": "LGPL-2.1-or-later",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://code.videolan.org/videolan/libbluray"
+        },
+        {
+          "type": "license",
+          "url": "https://code.videolan.org/videolan/libbluray/-/raw/4dfb9b0123b006ce5d66592dc8058f61e5c0cdc8/COPYING",
+          "comment": "Verbatim notice b3aa400aca6d2ba1f0bd03bd98d03d1fe7489a3bbb26969d72016360af8a5c9d in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "4dfb9b0123b006ce5d66592dc8058f61e5c0cdc8"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-libbluray.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libdrm",
+      "name": "libdrm",
+      "description": "DRM API headers used with generated import shims; system libdrm and GPU drivers are not bundled.",
+      "licenses": [
+        {
+          "expression": "MIT",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://gitlab.freedesktop.org/mesa/drm"
+        },
+        {
+          "type": "license",
+          "url": "https://gitlab.freedesktop.org/mesa/drm/-/raw/6bfcfc725fbe0ece0918535556d61ee567b1ffff/xf86drm.h",
+          "comment": "Verbatim notice f661a74247bb3d96da5d360dfffceb94f0dd422d744f192ac86c63068063001a in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://gitlab.freedesktop.org/mesa/drm/-/raw/6bfcfc725fbe0ece0918535556d61ee567b1ffff/xf86drmMode.h",
+          "comment": "Verbatim notice 070c3ce3b107c92234a16aa69e0c020969f7ccc93bee46865d39b2cc01febb18 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://gitlab.freedesktop.org/mesa/drm/-/raw/6bfcfc725fbe0ece0918535556d61ee567b1ffff/include/drm/drm.h",
+          "comment": "Verbatim notice ee82e1a7c7f52ec6a72823376cba8396d4f5ed3bb906f3f74fe9cfca68f7ab3c in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://gitlab.freedesktop.org/mesa/drm/-/raw/6bfcfc725fbe0ece0918535556d61ee567b1ffff/include/drm/drm_fourcc.h",
+          "comment": "Verbatim notice fba2df38a39f63d9bcb7c696ef09924d3130679e660949a618f9c7081b59e15d in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "embedded"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "6bfcfc725fbe0ece0918535556d61ee567b1ffff"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-vaapi/40-libdrm.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libiconv",
+      "name": "libiconv",
+      "description": "Static character conversion library (--enable-iconv).",
+      "licenses": [
+        {
+          "expression": "LGPL-2.1-or-later",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://skia.googlesource.com/third_party/libiconv"
+        },
+        {
+          "type": "license",
+          "url": "https://skia.googlesource.com/third_party/libiconv/+/v1.19/COPYING.LIB?format=TEXT",
+          "comment": "Verbatim notice 20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://skia.googlesource.com/third_party/libiconv/+/v1.19/AUTHORS?format=TEXT",
+          "comment": "Verbatim notice ed10ef2a01effb12849006d43262ffde5cf72a7d5423bbc8aa66fc6959774c0c in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "v1.19"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/20-libiconv.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libmp3lame",
+      "name": "libmp3lame",
+      "description": "Static MP3 encoder (--enable-libmp3lame).",
+      "licenses": [
+        {
+          "expression": "LGPL-2.0-or-later",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://svn.code.sf.net/p/lame/svn/trunk/lame"
+        },
+        {
+          "type": "license",
+          "url": "https://svn.code.sf.net/p/lame/svn/!svn/bc/6531/trunk/lame/COPYING",
+          "comment": "Verbatim notice e64f9c5a18f56828c10a575df13ade641aa3af4512a7afe6c411256943b57aaf in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "6531"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-libmp3lame.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libogg",
+      "name": "libogg",
+      "description": "Static container dependency of Vorbis and Theora.",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/xiph/ogg"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/xiph/ogg/06a5e0262cdc28aa4ae6797627a783b5010440f0/COPYING",
+          "comment": "Verbatim notice d2ab5758336489da61c12cc5bb757da5339c4ae9001f9bb0562b4370249af814 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/xiph/ogg/06a5e0262cdc28aa4ae6797627a783b5010440f0/AUTHORS",
+          "comment": "Verbatim notice 6fcb33d0cdd60b5054e7df820916388b590427514288c2bab01c626bb8ae9506 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "06a5e0262cdc28aa4ae6797627a783b5010440f0"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/25-libogg.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libopus",
+      "name": "libopus",
+      "description": "Static Opus audio codec (--enable-libopus).",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/xiph/opus"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/xiph/opus/788cc89ce4f2c42025d8c70ec1b4457dc89cd50f/COPYING",
+          "comment": "Verbatim notice 01e1167d54a096d123cf6dfbbeb19587278845c6481d2d66d545669846079551 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/xiph/opus/788cc89ce4f2c42025d8c70ec1b4457dc89cd50f/LICENSE_PLEASE_READ.txt",
+          "comment": "Verbatim notice 7efb4989e0cd1b256229bdf2f09300c5d14e35db0e7476bfb87fac243498273d in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/xiph/opus/788cc89ce4f2c42025d8c70ec1b4457dc89cd50f/AUTHORS",
+          "comment": "Verbatim notice f9fd849e652219ce98e008303370b352d37663d0ffb27b8dc514ad93c9c7438b in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "788cc89ce4f2c42025d8c70ec1b4457dc89cd50f"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-libopus.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libplacebo",
+      "name": "libplacebo",
+      "description": "Static rendering library (--enable-libplacebo), including Jellyfin's builder/patches/libplacebo patches.",
+      "licenses": [
+        {
+          "expression": "LGPL-2.1-or-later",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://code.videolan.org/videolan/libplacebo"
+        },
+        {
+          "type": "license",
+          "url": "https://code.videolan.org/videolan/libplacebo/-/raw/cee9b076f2c63104ccfd497fa79c39a867293ec4/LICENSE",
+          "comment": "Verbatim notice b3aa400aca6d2ba1f0bd03bd98d03d1fe7489a3bbb26969d72016360af8a5c9d in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "cee9b076f2c63104ccfd497fa79c39a867293ec4"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-libplacebo.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libtheora",
+      "name": "libtheora",
+      "description": "Static Theora codec (--enable-libtheora).",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/xiph/theora"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/xiph/theora/014bc312d05241ff2d06fd52ee7cbbec3768bfd6/COPYING",
+          "comment": "Verbatim notice 8417fad7da775735564e209484a2e011e0fa201e94f01fdbee6e4977e478e6fc in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/xiph/theora/014bc312d05241ff2d06fd52ee7cbbec3768bfd6/LICENSE",
+          "comment": "Verbatim notice 2c902950c73a63cd285dc0c36573de9c5fefe66d49312949c51d941f33e92932 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/xiph/theora/014bc312d05241ff2d06fd52ee7cbbec3768bfd6/AUTHORS",
+          "comment": "Verbatim notice ef0ba8da05924cf4e2f9acf782076892ed477c01a6d4cc9f5d107652cf84da8c in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "014bc312d05241ff2d06fd52ee7cbbec3768bfd6"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-libtheora.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libudfread",
+      "name": "libudfread",
+      "description": "Static UDF dependency of libbluray.",
+      "licenses": [
+        {
+          "expression": "LGPL-2.1-or-later",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://code.videolan.org/videolan/libudfread"
+        },
+        {
+          "type": "license",
+          "url": "https://code.videolan.org/videolan/libudfread/-/raw/139a2194525f2745b98a98e4d8fa627d07440176/COPYING",
+          "comment": "Verbatim notice dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "139a2194525f2745b98a98e4d8fa627d07440176"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/45-libudfread.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libunibreak",
+      "name": "libunibreak",
+      "description": "Static Unicode line-breaking dependency of libass.",
+      "licenses": [
+        {
+          "expression": "LicenseRef-libunibreak",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/adah1972/libunibreak"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/adah1972/libunibreak/3ce4bfa3129ff3738046a44a6db533d2ce25af2b/README.md",
+          "comment": "Verbatim notice 09ddab4e128a5b3ecb7715a5f2a2eb3beff413a63d59f6fcea2f478fa65aadda in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/adah1972/libunibreak/3ce4bfa3129ff3738046a44a6db533d2ce25af2b/LICENCE",
+          "comment": "Verbatim notice 0c57e2ec42ece17791a75d2f9b2f8e0663181be008667a507f765b3ef22522db in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "3ce4bfa3129ff3738046a44a6db533d2ce25af2b"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/45-libunibreak.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libvorbis",
+      "name": "libvorbis",
+      "description": "Static audio codec (--enable-libvorbis).",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/xiph/vorbis"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/xiph/vorbis/68a7fc2246e734f1a311b06083fc1249551c4412/COPYING",
+          "comment": "Verbatim notice ec1815db59fcd302846df949d7424876cb2e2dc5ed1606c5fb0b36787b1cf43a in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/xiph/vorbis/68a7fc2246e734f1a311b06083fc1249551c4412/AUTHORS",
+          "comment": "Verbatim notice f5cab9f16035f770f50299f85cf2938c06dc3a9a30425961067788102ec896d3 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "68a7fc2246e734f1a311b06083fc1249551c4412"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/45-libvorbis.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libvpl",
+      "name": "libvpl",
+      "description": "Static oneVPL dispatcher (--enable-libvpl); Intel media driver implementation is not bundled.",
+      "licenses": [
+        {
+          "expression": "MIT",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/intel/libvpl"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/intel/libvpl/d77f9195cf495b937631607333288fd917ae8939/LICENSE",
+          "comment": "Verbatim notice bf1cfac2e2792b6e1e995ce103d70796aecaf2ec7e4c5fe5474f7acec7b4a677 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "d77f9195cf495b937631607333288fd917ae8939"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-libvpl.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libvpx",
+      "name": "libvpx",
+      "description": "Static VP8/VP9 codecs (--enable-libvpx).",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://chromium.googlesource.com/webm/libvpx"
+        },
+        {
+          "type": "license",
+          "url": "https://chromium.googlesource.com/webm/libvpx/+/1024874c5919305883187e2953de8fcb4c3d7fa6/LICENSE?format=TEXT",
+          "comment": "Verbatim notice 8267348d5af1262c11d1a08de2f5afc77457755f1ac658627dd9acf71011d615 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://chromium.googlesource.com/webm/libvpx/+/1024874c5919305883187e2953de8fcb4c3d7fa6/PATENTS?format=TEXT",
+          "comment": "Verbatim notice cc3273e0694ea5896145e0677699b53471b03ea43021ddc50e7923fbb9f5023c in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://chromium.googlesource.com/webm/libvpx/+/1024874c5919305883187e2953de8fcb4c3d7fa6/AUTHORS?format=TEXT",
+          "comment": "Verbatim notice fd2d1ac03d9d3c864bd98c2042de2d8f7fbd78b298c8d9c506076b6c6a9de889 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "1024874c5919305883187e2953de8fcb4c3d7fa6"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-libvpx.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libwebp",
+      "name": "libwebp",
+      "description": "Static WebP codec (--enable-libwebp).",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://chromium.googlesource.com/webm/libwebp"
+        },
+        {
+          "type": "license",
+          "url": "https://chromium.googlesource.com/webm/libwebp/+/4fa21912338357f89e4fd51cf2368325b59e9bd9/COPYING?format=TEXT",
+          "comment": "Verbatim notice 5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://chromium.googlesource.com/webm/libwebp/+/4fa21912338357f89e4fd51cf2368325b59e9bd9/PATENTS?format=TEXT",
+          "comment": "Verbatim notice cc3273e0694ea5896145e0677699b53471b03ea43021ddc50e7923fbb9f5023c in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://chromium.googlesource.com/webm/libwebp/+/4fa21912338357f89e4fd51cf2368325b59e9bd9/AUTHORS?format=TEXT",
+          "comment": "Verbatim notice f251be89fd442bd9d701360730aea163cc8e2076ff03528f59267dc2c4f8b60a in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "4fa21912338357f89e4fd51cf2368325b59e9bd9"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-libwebp.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:libxml2",
+      "name": "libxml2",
+      "description": "Static XML library (--enable-libxml2).",
+      "licenses": [
+        {
+          "expression": "MIT",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/GNOME/libxml2"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/GNOME/libxml2/a7511af09f99995cdf81994db21f4eba564276b5/Copyright",
+          "comment": "Verbatim notice 5d4873884a890122a4b9b20ad56ac6f7da1d796a5bfcf04a427970ac96217626 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "a7511af09f99995cdf81994db21f4eba564276b5"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/25-libxml2.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:opencl",
+      "name": "opencl",
+      "description": "OpenCL API headers; vendor OpenCL implementations are not bundled.",
+      "licenses": [
+        {
+          "expression": "Apache-2.0",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/KhronosGroup/OpenCL-Headers"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/KhronosGroup/OpenCL-Headers/4c82e9cfaaad18c340f48af3cf5d09ff33e8c1b7/LICENSE",
+          "comment": "Verbatim notice cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "embedded"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "4c82e9cfaaad18c340f48af3cf5d09ff33e8c1b7"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/45-opencl.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:opencl-icd-loader",
+      "name": "opencl-icd-loader",
+      "description": "Static OpenCL ICD loader (--enable-opencl); loads external vendor implementations.",
+      "licenses": [
+        {
+          "expression": "Apache-2.0",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/KhronosGroup/OpenCL-ICD-Loader"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/KhronosGroup/OpenCL-ICD-Loader/2cde5d09953a041786d1cfdcb1c08704a82cb904/LICENSE",
+          "comment": "Verbatim notice c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "2cde5d09953a041786d1cfdcb1c08704a82cb904"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/45-opencl.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:openmpt",
+      "name": "openmpt",
+      "description": "Static module decoder (--enable-libopenmpt), including minimp3 and mpt utility code. Uses external zlib/ogg/vorbis; excludes fallback miniz/stb_vorbis and tracker-only components.",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause AND BSL-1.0 AND CC0-1.0",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/OpenMPT/openmpt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/OpenMPT/openmpt/11363ff11ba021b1cf1533da17d9fdf20c8d883c/LICENSE",
+          "comment": "Verbatim notice ceabc562c8cfb3af0d51e94182947c23bde6c18274e2b21585bdde22d2031e9d in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/OpenMPT/openmpt/11363ff11ba021b1cf1533da17d9fdf20c8d883c/src/mpt/LICENSE.BSD-3-Clause.txt",
+          "comment": "Verbatim notice ceabc562c8cfb3af0d51e94182947c23bde6c18274e2b21585bdde22d2031e9d in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/OpenMPT/openmpt/11363ff11ba021b1cf1533da17d9fdf20c8d883c/src/mpt/LICENSE.BSL-1.0.txt",
+          "comment": "Verbatim notice c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/OpenMPT/openmpt/11363ff11ba021b1cf1533da17d9fdf20c8d883c/include/minimp3/LICENSE",
+          "comment": "Verbatim notice 6a1ee543e5282cd9061881edf462e6fdab181f328da71fc2c9a6950a80e94d01 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "11363ff11ba021b1cf1533da17d9fdf20c8d883c"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-openmpt.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:openssl",
+      "name": "openssl",
+      "description": "Static TLS/cryptography library (--enable-openssl).",
+      "licenses": [
+        {
+          "expression": "Apache-2.0",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/openssl/openssl"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/openssl/openssl/openssl-3.6.3/LICENSE.txt",
+          "comment": "Verbatim notice 7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/openssl/openssl/openssl-3.6.3/AUTHORS.md",
+          "comment": "Verbatim notice b9f638dfc06b59c2d3b808186c3b30f713805a5db390f5b77b1703ac58acb83e in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "openssl-3.6.3"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/25-openssl.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:shaderc",
+      "name": "shaderc",
+      "description": "Static shader compiler (--enable-libshaderc, shaderc_combined).",
+      "licenses": [
+        {
+          "expression": "Apache-2.0",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/google/shaderc"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/google/shaderc/d5f08ae5c5a9a45165578445cbd0f9adf0223448/LICENSE",
+          "comment": "Verbatim notice c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/google/shaderc/d5f08ae5c5a9a45165578445cbd0f9adf0223448/AUTHORS",
+          "comment": "Verbatim notice 9fb4b067e4c9a1f91ea1c26465b3d1c6b515cb24860e0dbb719879925a5a1248 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/google/shaderc/d5f08ae5c5a9a45165578445cbd0f9adf0223448/third_party/LICENSE.glslang",
+          "comment": "Verbatim notice b5a00e94f058edc87e05978329b55730d8689abe61205d9018443d03de4f07da in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/google/shaderc/d5f08ae5c5a9a45165578445cbd0f9adf0223448/third_party/LICENSE.spirv-tools",
+          "comment": "Verbatim notice 47e20ce182bc68fab1a0cfb129b03c326aaf4f2b6b7905aa9d376d31018bd29f in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "d5f08ae5c5a9a45165578445cbd0f9adf0223448"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/47-vulkan/50-shaderc.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:spirv-headers",
+      "name": "spirv-headers",
+      "description": "SPIR-V headers used by shaderc/glslang/SPIRV-Tools; pin from shaderc DEPS.",
+      "licenses": [
+        {
+          "expression": "LicenseRef-spirv-headers",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/KhronosGroup/SPIRV-Headers"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/ad9184e76a66b1001c29db9b0a3e87f646c64de0/LICENSE",
+          "comment": "Verbatim notice ea43b1de38a6f90c488800d66dec1ed671e68cda530266bc96951fb5b6307613 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/ad9184e76a66b1001c29db9b0a3e87f646c64de0/LICENSES/MIT.txt",
+          "comment": "Verbatim notice 6d7c9e9d7d12c8d3753bdb24417b84819ba4d6c2f025c37948113d86dc81eef9 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/ad9184e76a66b1001c29db9b0a3e87f646c64de0/LICENSES/CC-BY-4.0.txt",
+          "comment": "Verbatim notice d557539df68e771cc1eedcc91d13f70fca930e508d11eedcafa4b15db49e3744 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "embedded"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "ad9184e76a66b1001c29db9b0a3e87f646c64de0"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "shaderc/DEPS"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:spirv-tools",
+      "name": "spirv-tools",
+      "description": "Static SPIR-V optimization/validation code within shaderc_combined; pin from shaderc DEPS.",
+      "licenses": [
+        {
+          "expression": "Apache-2.0",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/KhronosGroup/SPIRV-Tools"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Tools/c1cb30bb04e2bf911755a40df1242cc6e3d83e26/LICENSE",
+          "comment": "Verbatim notice cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "c1cb30bb04e2bf911755a40df1242cc6e3d83e26"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "shaderc/DEPS"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:srt",
+      "name": "srt",
+      "description": "Static SRT transport library (--enable-libsrt), including UDT-derived code.",
+      "licenses": [
+        {
+          "expression": "MPL-2.0 AND BSD-3-Clause",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/Haivision/srt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/Haivision/srt/b6b4ae990daa8193625a4ddeaeaed03023b23125/LICENSE",
+          "comment": "Verbatim notice fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/Haivision/srt/b6b4ae990daa8193625a4ddeaeaed03023b23125/srtcore/core.h",
+          "comment": "Verbatim notice 26342bc602959daaf1a9228cecc2144dad53ae02a8362b6d94854380d3c6fe26 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "b6b4ae990daa8193625a4ddeaeaed03023b23125"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-srt.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:svtav1",
+      "name": "svtav1",
+      "description": "Static AV1 encoder (--enable-libsvtav1).",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause-Clear",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://gitlab.com/AOMediaCodec/SVT-AV1"
+        },
+        {
+          "type": "license",
+          "url": "https://gitlab.com/AOMediaCodec/SVT-AV1/-/raw/c04f951541ad600e0d9c10836f2ab7b9bc69816d/LICENSE.md",
+          "comment": "Verbatim notice 0acc2fcb27472bdc9aaf8b71f37055bbdac4f54671b7d922f241bd7fcd0dd3e6 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://gitlab.com/AOMediaCodec/SVT-AV1/-/raw/c04f951541ad600e0d9c10836f2ab7b9bc69816d/PATENTS.md",
+          "comment": "Verbatim notice 20678ab10402659106dc4c147c97b2a6e94b5c0695415e15a8f195ebc3547922 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "c04f951541ad600e0d9c10836f2ab7b9bc69816d"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-svtav1.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:vulkan-headers",
+      "name": "vulkan-headers",
+      "description": "Vulkan API headers and registry used by libplacebo.",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/KhronosGroup/Vulkan-Headers"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Headers/v1.4.355/LICENSE.md",
+          "comment": "Verbatim notice ac24e5ea920e4318e4d02c4086ae51f53cfb03feed06c18df1019e7ada1ec7bc in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Headers/v1.4.355/LICENSES/Apache-2.0.txt",
+          "comment": "Verbatim notice cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Headers/v1.4.355/LICENSES/MIT.txt",
+          "comment": "Verbatim notice 1ca3502222d967f3be5751c55f6b7ee735b5383909c3b501495f54b216dbf227 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "embedded"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "v1.4.355"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/47-vulkan/45-vulkan-headers.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:vulkan-loader",
+      "name": "vulkan-loader",
+      "description": "Static Vulkan shim loader (--enable-vulkan); the system Vulkan loader and drivers are not bundled.",
+      "licenses": [
+        {
+          "expression": "MIT",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/BtbN/Vulkan-Shim-Loader"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/BtbN/Vulkan-Shim-Loader/65b3936528cd92eb4ea3de485d03f858a3850484/LICENSE",
+          "comment": "Verbatim notice 8d4d279343d72e5b9e06bbe38c1ad8660fa8eabc217164a5b482ddf4ab0dba9d in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "65b3936528cd92eb4ea3de485d03f858a3850484"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/47-vulkan/45-vulkan-loader.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:x264",
+      "name": "x264",
+      "description": "Static H.264 encoder (--enable-libx264).",
+      "licenses": [
+        {
+          "expression": "GPL-2.0-or-later",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://code.videolan.org/videolan/x264"
+        },
+        {
+          "type": "license",
+          "url": "https://code.videolan.org/videolan/x264/-/raw/0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee/COPYING",
+          "comment": "Verbatim notice 32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-x264.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:x265",
+      "name": "x265",
+      "description": "Static HEVC encoder (--enable-libx265), including the json11 parser in the enabled HDR10+ builds.",
+      "licenses": [
+        {
+          "expression": "GPL-2.0-or-later AND MIT",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://bitbucket.org/multicoreware/x265_git"
+        },
+        {
+          "type": "license",
+          "url": "https://bitbucket.org/multicoreware/x265_git/raw/e444744c03978c1fb4e037168967020cf2648427/COPYING",
+          "comment": "Verbatim notice d8afb1bcc7a2cfc603683b168d6987ef0a48e59e0da3693bf55c5d33b67e2b49 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://bitbucket.org/multicoreware/x265_git/raw/e444744c03978c1fb4e037168967020cf2648427/source/dynamicHDR10/json11/LICENSE.txt",
+          "comment": "Verbatim notice 950e288a2548cb33f6a90d23958806b0803f510ab17c600d661619a73ae3a6c8 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "e444744c03978c1fb4e037168967020cf2648427"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-x265.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:xz",
+      "name": "xz",
+      "description": "Static liblzma compression library (--enable-lzma); xz command-line programs are not bundled.",
+      "licenses": [
+        {
+          "expression": "0BSD",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/tukaani-project/xz"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/tukaani-project/xz/v5.8.3/COPYING",
+          "comment": "Verbatim notice 616a3ad264ce29b8f1cb97e53037b139d406899ca8d1f799651e17bfa09830b8 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/tukaani-project/xz/v5.8.3/COPYING.0BSD",
+          "comment": "Verbatim notice 0b01625d853911cd0e2e088dcfb743261034a091bb379246cb25a14cc4c74bf1 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/tukaani-project/xz/v5.8.3/AUTHORS",
+          "comment": "Verbatim notice 01e6df90d71d591f4307db3f397a5a4fac93b18533f5a3862156f1a0a7dc8610 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "v5.8.3"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/25-xz.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:zimg",
+      "name": "zimg",
+      "description": "Static image scaling/conversion library (--enable-libzimg).",
+      "licenses": [
+        {
+          "expression": "WTFPL",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/sekrit-twc/zimg"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/sekrit-twc/zimg/5e8c32222569edf3a712f83d7cff80ad4dd9ab6e/COPYING",
+          "comment": "Verbatim notice 7637386b5f81e8a719ca336233149005e5fa28b5e6054ea7b67de49355b0ad40 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "5e8c32222569edf3a712f83d7cff80ad4dd9ab6e"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-zimg.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:zlib",
+      "name": "zlib",
+      "description": "Static compression library (--enable-zlib).",
+      "licenses": [
+        {
+          "expression": "Zlib",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/madler/zlib"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/madler/zlib/f9dd6009be3ed32415edf1e89d1bc38380ecb95d/LICENSE",
+          "comment": "Verbatim notice e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "f9dd6009be3ed32415edf1e89d1bc38380ecb95d"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/20-zlib.sh"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "streamarr:ffmpeg:amd64:zvbi",
+      "name": "zvbi",
+      "description": "Static VBI library (--enable-libzvbi).",
+      "licenses": [
+        {
+          "expression": "LicenseRef-zvbi",
+          "acknowledgement": "declared"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/zapping-vbi/zvbi"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/zapping-vbi/zvbi/41477c97c8edf7a01f1594b2a95b94f0117eed21/COPYING.md",
+          "comment": "Verbatim notice 01b41f9b6e262bb62063151f15988a236296bbb5eeb9752692fc7dc2fb27ec45 in THIRD-PARTY-NOTICES.txt"
+        },
+        {
+          "type": "license",
+          "url": "https://raw.githubusercontent.com/zapping-vbi/zvbi/41477c97c8edf7a01f1594b2a95b94f0117eed21/AUTHORS",
+          "comment": "Verbatim notice 349107750f8e6a3555e9ad47f625806e70ce6dd108926eb158528b27c2c03586 in THIRD-PARTY-NOTICES.txt"
+        }
+      ],
+      "properties": [
+        {
+          "name": "streamarr:distribution",
+          "value": "runtime"
+        },
+        {
+          "name": "streamarr:source-revision",
+          "value": "41477c97c8edf7a01f1594b2a95b94f0117eed21"
+        },
+        {
+          "name": "streamarr:recipe",
+          "value": "builder/scripts.d/50-zvbi.sh"
+        }
+      ]
+    }
+  ],
+  "formulation": [
+    {
+      "components": [
+        {
+          "type": "library",
+          "bom-ref": "streamarr:ffmpeg:amd64:gnulib",
+          "name": "gnulib",
+          "description": "Pinned libiconv bootstrap source input; this entry does not assert that the entire gnulib project is linked.",
+          "licenses": [
+            {
+              "expression": "LicenseRef-gnulib",
+              "acknowledgement": "declared"
+            }
+          ],
+          "externalReferences": [
+            {
+              "type": "vcs",
+              "url": "https://github.com/coreutils/gnulib"
+            },
+            {
+              "type": "license",
+              "url": "https://raw.githubusercontent.com/coreutils/gnulib/5926e89900ffe4c850dd026fb634c15bf3cee526/COPYING",
+              "comment": "Verbatim notice 438610ba3d10f492dff9e17f7d53a5316e3f4b4adc5f79a33ac7110d5a5ee210 in THIRD-PARTY-NOTICES.txt"
+            },
+            {
+              "type": "license",
+              "url": "https://raw.githubusercontent.com/coreutils/gnulib/5926e89900ffe4c850dd026fb634c15bf3cee526/doc/COPYING.LESSERv2",
+              "comment": "Verbatim notice 20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95 in THIRD-PARTY-NOTICES.txt"
+            },
+            {
+              "type": "license",
+              "url": "https://raw.githubusercontent.com/coreutils/gnulib/5926e89900ffe4c850dd026fb634c15bf3cee526/doc/COPYING.LESSERv3",
+              "comment": "Verbatim notice e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118 in THIRD-PARTY-NOTICES.txt"
+            }
+          ],
+          "properties": [
+            {
+              "name": "streamarr:distribution",
+              "value": "build-input"
+            },
+            {
+              "name": "streamarr:source-revision",
+              "value": "5926e89900ffe4c850dd026fb634c15bf3cee526"
+            },
+            {
+              "name": "streamarr:recipe",
+              "value": "builder/scripts.d/20-libiconv.sh"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

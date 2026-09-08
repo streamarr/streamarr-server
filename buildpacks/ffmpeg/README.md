@@ -15,10 +15,10 @@ buildpacks/ffmpeg/bin/update-lock --check
 buildpacks/ffmpeg/bin/update-lock --verify-upstream
 ```
 
-The updater requires Bash, `curl`, and `jq`. It accepts only published, non-prerelease tags
+The updater requires Bash, `curl`, `jq`, and `sha256sum`. It accepts only published, non-prerelease tags
 in `vMAJOR.MINOR.PATCH-BUILD` form, requires exactly one portable GPL asset and a GitHub
 SHA-256 digest per architecture, resolves the tag's full fork commit, and writes the lock
-atomically. `--check` validates the lock and its notice manifest offline; `--verify-upstream` regenerates canonical
+atomically. `--check` validates the lock, notice manifest and redistribution checksums offline; `--verify-upstream` regenerates canonical
 metadata from GitHub and compares it byte-for-byte without modifying the lock.
 
 The buildpack verifies the downloaded archive against the locked checksum before extracting
@@ -35,7 +35,9 @@ source-access instructions, and a CycloneDX SBOM.
 
 [`SOURCE.txt`](SOURCE.txt) supplies Corresponding Source locations, exact upstream
 revisions and build/patch instructions. [`notices/sources.json`](notices/sources.json)
-records the component inventory and the origins/checksums of the vendored notices.
+is the component metadata authority, including the origins/checksums of vendored
+notice text inputs. The offline generator produces a consolidated notice document,
+architecture-specific CycloneDX SBOMs, an input snapshot and checksums under `generated/`.
 The inventory starts with each shipped Linux GPL binary's `-buildconf` output, then
 traces transitive static libraries, embedded headers and generated loaders through
 the pinned recipes. It is not a list of every build script or of external GPU drivers.
@@ -44,9 +46,44 @@ the pinned recipes. It is not a list of every build script or of external GPU dr
 and both archive digests. Offline validation and the buildpack reject a mismatch.
 After an update, review both binaries and their dependencies, update the notices and
 source instructions, then update the manifest. The lock resolver deliberately does
-not mark new notices as reviewed. Tests check notice contents against the inventory
-and verify their inclusion in fresh and cached layers. Full license texts and
-attribution remain in the image, not just links to them.
+not mark new notices as reviewed. Neither does the notice generator: it never writes
+`notices/manifest`. Tests check notice contents against the inventory and verify their
+inclusion in fresh and cached layers. Full license texts and attribution remain in
+the image, not just links to them.
+
+With Node.js 20 or newer (developer/CI tooling only; not required by the buildpack):
+
+```bash
+# Save the previous generated/review-inputs.json before changing the reviewed inputs.
+node buildpacks/ffmpeg/bin/generate-notices.mjs --compare /path/to/previous-review-inputs.json
+node buildpacks/ffmpeg/bin/generate-notices.mjs
+node buildpacks/ffmpeg/bin/generate-notices.mjs --check
+node --test buildpacks/ffmpeg/test/generate-notices.test.mjs
+```
+
+Commit the inputs and generated outputs together. Generation makes no network calls
+and does not fetch, classify or approve new dependencies. `--compare` reports changes
+to component metadata (including recipes), the lock and input checksums, including
+both build configurations. It does not replace reviewing actual linked dependencies
+and upstream license changes. `--check` is read-only and runs with the generator
+contract tests in the normal Maven build. The shell-only buildpack and offline lock
+check verify generated checksums before using the materials.
+
+`licenseExpression` records SPDX identifiers/expressions where the inventoried terms
+can be represented accurately. A `LicenseRef-<component>` refers to that component's
+preserved notice bundle, not a new license or a compatibility conclusion. Unique
+texts (including FDK, glslang, FreeType and patent notices) are not paraphrased.
+Only byte-identical texts are shared; redundant document suffixes such as `.md.txt`
+are normalized in generated display names. Source-code excerpts retain `.h.txt` or
+`.c.txt` to distinguish the excerpt from a compilable source file.
+
+SBOMs include runtime and embedded inputs for their architecture; build-only inputs
+are separate in `formulation`. Source revisions are recorded as provenance rather
+than invented release versions. Implib's revision is explicitly notice-source-only.
+The layer ships `THIRD-PARTY-NOTICES.txt`, `SOURCE.txt`, GPLv3 text, the inventory,
+review manifest and both buildconf captures. FDK's standalone notices are also kept.
+Other raw text inputs remain in the repository; their verbatim content is consolidated
+in the installed document. The matching SBOM is contributed through the CNB SBOM path.
 
 Source links use upstream hosting; Streamarr remains responsible for keeping the
 corresponding source available with its binary distributions. Check source access

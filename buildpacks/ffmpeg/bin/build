@@ -14,6 +14,8 @@ lock_file="${buildpack_dir}/ffmpeg.lock"
 . "${buildpack_dir}/lib/lock.sh"
 # shellcheck source=../lib/notices.sh
 . "${buildpack_dir}/lib/notices.sh"
+# shellcheck source=../lib/materials.sh
+. "${buildpack_dir}/lib/materials.sh"
 
 download() {
   local url="$1"
@@ -32,16 +34,19 @@ download() {
 
 ffmpeg_lock_validate "${lock_file}"
 ffmpeg_notices_validate "${lock_file}" "${buildpack_dir}"
+ffmpeg_materials_validate "${buildpack_dir}"
 release="$(ffmpeg_lock_value "${lock_file}" release)"
 version="$(ffmpeg_lock_value "${lock_file}" version)"
 source_revision="$(ffmpeg_lock_value "${lock_file}" source_revision)"
 
 case "${target_arch}" in
   amd64 | x86_64)
+    sbom_arch=amd64
     asset="$(ffmpeg_lock_value "${lock_file}" amd64_asset)"
     checksum="$(ffmpeg_lock_value "${lock_file}" amd64_sha256)"
     ;;
   arm64 | aarch64)
+    sbom_arch=arm64
     asset="$(ffmpeg_lock_value "${lock_file}" arm64_asset)"
     checksum="$(ffmpeg_lock_value "${lock_file}" arm64_sha256)"
     ;;
@@ -95,8 +100,13 @@ fi
 
 cp "${buildpack_dir}/LICENSE.txt" "${layer}/LICENSE.txt"
 cp "${buildpack_dir}/SOURCE.txt" "${layer}/SOURCE.txt"
+cp "${buildpack_dir}/generated/THIRD-PARTY-NOTICES.txt" "${layer}/THIRD-PARTY-NOTICES.txt"
 rm -rf "${layer}/notices"
-cp -R "${buildpack_dir}/notices" "${layer}/notices"
+mkdir -p "${layer}/notices"
+cp "${buildpack_dir}/notices/manifest" "${buildpack_dir}/notices/sources.json" \
+  "${buildpack_dir}/notices/buildconf-amd64.txt" "${buildpack_dir}/notices/buildconf-arm64.txt" \
+  "${layer}/notices/"
+cp -R "${buildpack_dir}/notices/fdk-aac-stripped" "${layer}/notices/fdk-aac-stripped"
 
 cat >"${layer_metadata}" <<EOF
 [types]
@@ -110,43 +120,4 @@ release = "${release}"
 source_revision = "${source_revision}"
 EOF
 
-cat >"${layers_dir}/ffmpeg.sbom.cdx.json" <<EOF
-{
-  "bomFormat": "CycloneDX",
-  "specVersion": "1.6",
-  "version": 1,
-  "components": [
-    {
-      "type": "application",
-      "bom-ref": "pkg:github/jellyfin/jellyfin-ffmpeg@${release}",
-      "name": "FFmpeg",
-      "version": "${version}",
-      "publisher": "Jellyfin",
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "${checksum}"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "GPL-3.0-or-later"
-          }
-        }
-      ],
-      "purl": "pkg:github/jellyfin/jellyfin-ffmpeg@${release}",
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "${download_url}"
-        },
-        {
-          "type": "vcs",
-          "url": "https://github.com/jellyfin/jellyfin-ffmpeg/commit/${source_revision}"
-        }
-      ]
-    }
-  ]
-}
-EOF
+cp "${buildpack_dir}/generated/ffmpeg.${sbom_arch}.cdx.json" "${layers_dir}/ffmpeg.sbom.cdx.json"

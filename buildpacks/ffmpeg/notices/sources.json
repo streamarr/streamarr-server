@@ -15,7 +15,10 @@
         "file": "amf/LICENSE.txt",
         "upstreamSha256": "eb297397aaa455b5668ab67d216b83828466152dab123fa92384c6ec16b74170"
       }
-    ]
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
   },
   {
     "id": "chromaprint",
@@ -33,7 +36,10 @@
         "sha256": "562cfe59627e0c4e8e3b066f3ff2e9736f83811ffe4c6c2c7796595aa7595ebd",
         "file": "chromaprint/LICENSE.md"
       }
-    ]
+    ],
+    "licenseExpression": "LicenseRef-chromaprint",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "dav1d",
@@ -51,7 +57,10 @@
         "sha256": "dd92c3c2247c5651606fc23a5e2d6a1ebc5ace9a3e49cbde0e12f05ad1cb1ee5",
         "file": "dav1d/COPYING.txt"
       }
-    ]
+    ],
+    "licenseExpression": "BSD-2-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "fast-float",
@@ -69,7 +78,10 @@
         "sha256": "e562f3f974ced7e69dd1db77b820b36bcf8f30377f1aa105723fba449c53c4e6",
         "file": "fast-float/LICENSE-MIT.txt"
       }
-    ]
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
   },
   {
     "id": "fdk-aac-stripped",
@@ -92,7 +104,10 @@
         "sha256": "e2fb30b7a7e24cef17589c40540866ff22929f1d9329a49b01cdd9552e2aaec2",
         "file": "fdk-aac-stripped/README.fedora.txt"
       }
-    ]
+    ],
+    "licenseExpression": "FDK-AAC",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "ffmpeg",
@@ -135,7 +150,10 @@
         "sha256": "1dcbd4a0573defb2b6b44010c96eabe026d06d9cf2a86eaf7782aa80f76ed2f2",
         "file": "ffmpeg/debian/copyright.txt"
       }
-    ]
+    ],
+    "licenseExpression": "GPL-3.0-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "ffnvcodec",
@@ -178,7 +196,10 @@
         "file": "ffnvcodec/include/ffnvcodec/nvEncodeAPI.h.txt",
         "excerpt": true
       }
-    ]
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
   },
   {
     "id": "fftw3f",
@@ -206,7 +227,10 @@
         "sha256": "14e1b1c6a7d84613c85a4c457b4167fb4927ce239ec45123e85ba5eefca4e7bb",
         "file": "fftw3f/AUTHORS.txt"
       }
-    ]
+    ],
+    "licenseExpression": "GPL-2.0-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "fontconfig",
@@ -224,7 +248,10 @@
         "sha256": "51a51aa9823704fd90bccc616cdd17ebabb5b2b3e9cbde886ca02c7002288067",
         "file": "fontconfig/COPYING.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LicenseRef-fontconfig",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "freetype",
@@ -262,7 +289,10 @@
         "sha256": "18d9782898d9eac04476e2f744678137b2a889689ed3e923e052fc396a86f86b",
         "file": "freetype/src/pcf/README.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LicenseRef-freetype",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "fribidi",
@@ -285,7 +315,10 @@
         "sha256": "cb173f55c9514c8f38f4647ac3fedd5f8611358d331e65ab955da931e826861c",
         "file": "fribidi/AUTHORS.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LGPL-2.1-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "gcc-runtime",
@@ -320,7 +353,10 @@
         "file": "gcc-runtime/libstdc++-v3/include/bits/c++config.txt",
         "excerpt": true
       }
-    ]
+    ],
+    "licenseExpression": "GPL-3.0-or-later WITH GCC-exception-3.1",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
   },
   {
     "id": "glad",
@@ -338,7 +374,10 @@
         "sha256": "cbb325cd4ac5bd06717ffa34a322b984f9d285e4c67c8ca1b7380d6ef08c2a77",
         "file": "glad/LICENSE.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LicenseRef-glad",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
   },
   {
     "id": "glibc-startup",
@@ -367,7 +406,10 @@
         "file": "glibc-startup/csu/libc-start.c.txt",
         "excerpt": true
       }
-    ]
+    ],
+    "licenseExpression": "LicenseRef-glibc-startup",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
   },
   {
     "id": "glslang",
@@ -385,7 +427,10 @@
         "sha256": "17e70c676e1521ff3e4686f04a2053d93a7e28a33be8de7ec37ab0ff72feb677",
         "file": "glslang/LICENSE.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LicenseRef-glslang",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "gmp",
@@ -418,7 +463,10 @@
         "sha256": "da5870e2f0482c5dc15b4cfed8bbfb51ce1279c8f8fc52bdb8c13c7cee949c32",
         "file": "gmp/AUTHORS.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LGPL-3.0-or-later OR GPL-2.0-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "gnulib",
@@ -446,7 +494,10 @@
         "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118",
         "file": "gnulib/doc/COPYING.LESSERv3.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LicenseRef-gnulib",
+    "distribution": "build-input",
+    "revisionEvidence": "source"
   },
   {
     "id": "harfbuzz",
@@ -474,7 +525,10 @@
         "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
         "file": "harfbuzz/src/ms-use/COPYING.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LicenseRef-harfbuzz",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "implib",
@@ -493,7 +547,10 @@
         "sha256": "3ce4e4bc862f11fd50735454e524c009923ff82131090847234dc2aa9893eda5",
         "file": "implib/LICENSE.txt"
       }
-    ]
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "embedded",
+    "revisionEvidence": "notice-only"
   },
   {
     "id": "libass",
@@ -511,7 +568,10 @@
         "sha256": "f7e30699d02798351e7f839e3d3bfeb29ce65e44efa7735c225464c4fd7dfe9c",
         "file": "libass/COPYING.txt"
       }
-    ]
+    ],
+    "licenseExpression": "ISC",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libbluray",
@@ -529,7 +589,10 @@
         "sha256": "b3aa400aca6d2ba1f0bd03bd98d03d1fe7489a3bbb26969d72016360af8a5c9d",
         "file": "libbluray/COPYING.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LGPL-2.1-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libdrm",
@@ -566,7 +629,10 @@
         "file": "libdrm/include/drm/drm_fourcc.h.txt",
         "excerpt": true
       }
-    ]
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
   },
   {
     "id": "libiconv",
@@ -589,7 +655,10 @@
         "sha256": "ed10ef2a01effb12849006d43262ffde5cf72a7d5423bbc8aa66fc6959774c0c",
         "file": "libiconv/AUTHORS.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LGPL-2.1-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libmp3lame",
@@ -607,7 +676,10 @@
         "sha256": "e64f9c5a18f56828c10a575df13ade641aa3af4512a7afe6c411256943b57aaf",
         "file": "libmp3lame/COPYING.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LGPL-2.0-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libne10",
@@ -629,7 +701,10 @@
         "sha256": "376b0e9a39ad33d01068deeebac424f62f534699931bd15c27df1481edda33ff",
         "file": "libne10/doc/NOTICE.txt"
       }
-    ]
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libogg",
@@ -652,7 +727,10 @@
         "sha256": "6fcb33d0cdd60b5054e7df820916388b590427514288c2bab01c626bb8ae9506",
         "file": "libogg/AUTHORS.txt"
       }
-    ]
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libopus",
@@ -680,7 +758,10 @@
         "sha256": "f9fd849e652219ce98e008303370b352d37663d0ffb27b8dc514ad93c9c7438b",
         "file": "libopus/AUTHORS.txt"
       }
-    ]
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libplacebo",
@@ -698,7 +779,10 @@
         "sha256": "b3aa400aca6d2ba1f0bd03bd98d03d1fe7489a3bbb26969d72016360af8a5c9d",
         "file": "libbluray/COPYING.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LGPL-2.1-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libtheora",
@@ -726,7 +810,10 @@
         "sha256": "ef0ba8da05924cf4e2f9acf782076892ed477c01a6d4cc9f5d107652cf84da8c",
         "file": "libtheora/AUTHORS.txt"
       }
-    ]
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libudfread",
@@ -744,7 +831,10 @@
         "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
         "file": "glibc-startup/COPYING.LIB.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LGPL-2.1-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libunibreak",
@@ -761,8 +851,16 @@
         "url": "https://raw.githubusercontent.com/adah1972/libunibreak/3ce4bfa3129ff3738046a44a6db533d2ce25af2b/README.md",
         "sha256": "09ddab4e128a5b3ecb7715a5f2a2eb3beff413a63d59f6fcea2f478fa65aadda",
         "file": "libunibreak/README.md"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/adah1972/libunibreak/3ce4bfa3129ff3738046a44a6db533d2ce25af2b/LICENCE",
+        "sha256": "0c57e2ec42ece17791a75d2f9b2f8e0663181be008667a507f765b3ef22522db",
+        "file": "libunibreak/LICENCE"
       }
-    ]
+    ],
+    "licenseExpression": "LicenseRef-libunibreak",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libvorbis",
@@ -785,7 +883,10 @@
         "sha256": "f5cab9f16035f770f50299f85cf2938c06dc3a9a30425961067788102ec896d3",
         "file": "libvorbis/AUTHORS.txt"
       }
-    ]
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libvpl",
@@ -802,7 +903,10 @@
         "sha256": "bf1cfac2e2792b6e1e995ce103d70796aecaf2ec7e4c5fe5474f7acec7b4a677",
         "file": "libvpl/LICENSE.txt"
       }
-    ]
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libvpx",
@@ -830,7 +934,10 @@
         "sha256": "fd2d1ac03d9d3c864bd98c2042de2d8f7fbd78b298c8d9c506076b6c6a9de889",
         "file": "libvpx/AUTHORS.txt"
       }
-    ]
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libwebp",
@@ -858,7 +965,10 @@
         "sha256": "f251be89fd442bd9d701360730aea163cc8e2076ff03528f59267dc2c4f8b60a",
         "file": "libwebp/AUTHORS.txt"
       }
-    ]
+    ],
+    "licenseExpression": "BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "libxml2",
@@ -876,7 +986,10 @@
         "sha256": "5d4873884a890122a4b9b20ad56ac6f7da1d796a5bfcf04a427970ac96217626",
         "file": "libxml2/Copyright.txt"
       }
-    ]
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "opencl",
@@ -894,7 +1007,10 @@
         "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
         "file": "opencl/LICENSE.txt"
       }
-    ]
+    ],
+    "licenseExpression": "Apache-2.0",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
   },
   {
     "id": "opencl-icd-loader",
@@ -912,7 +1028,10 @@
         "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
         "file": "opencl-icd-loader/LICENSE.txt"
       }
-    ]
+    ],
+    "licenseExpression": "Apache-2.0",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "openmpt",
@@ -946,7 +1065,10 @@
         "sha256": "6a1ee543e5282cd9061881edf462e6fdab181f328da71fc2c9a6950a80e94d01",
         "file": "openmpt/include/minimp3/LICENSE.txt"
       }
-    ]
+    ],
+    "licenseExpression": "BSD-3-Clause AND BSL-1.0 AND CC0-1.0",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "openssl",
@@ -969,7 +1091,10 @@
         "sha256": "b9f638dfc06b59c2d3b808186c3b30f713805a5db390f5b77b1703ac58acb83e",
         "file": "openssl/AUTHORS.md"
       }
-    ]
+    ],
+    "licenseExpression": "Apache-2.0",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "rkmpp",
@@ -996,7 +1121,10 @@
         "sha256": "17a1c27c8fc2e8af125e052a9dc2d0e9662fef9533d9ea2fe3917473d2c21363",
         "file": "rkmpp/debian/copyright.txt"
       }
-    ]
+    ],
+    "licenseExpression": "Apache-2.0 AND MIT",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "rkrga",
@@ -1018,7 +1146,10 @@
         "sha256": "0096542cf3d7e435b6dd3bbdc63141b37acf106ce944275aa5472729f603430d",
         "file": "rkrga/debian/copyright.txt"
       }
-    ]
+    ],
+    "licenseExpression": "Apache-2.0",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "shaderc",
@@ -1051,7 +1182,10 @@
         "sha256": "47e20ce182bc68fab1a0cfb129b03c326aaf4f2b6b7905aa9d376d31018bd29f",
         "file": "shaderc/third_party/LICENSE.spirv-tools.txt"
       }
-    ]
+    ],
+    "licenseExpression": "Apache-2.0",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "spirv-headers",
@@ -1079,7 +1213,10 @@
         "sha256": "d557539df68e771cc1eedcc91d13f70fca930e508d11eedcafa4b15db49e3744",
         "file": "spirv-headers/LICENSES/CC-BY-4.0.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LicenseRef-spirv-headers",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
   },
   {
     "id": "spirv-tools",
@@ -1097,7 +1234,10 @@
         "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
         "file": "opencl/LICENSE.txt"
       }
-    ]
+    ],
+    "licenseExpression": "Apache-2.0",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "srt",
@@ -1121,7 +1261,10 @@
         "file": "srt/srtcore/core.h.txt",
         "excerpt": true
       }
-    ]
+    ],
+    "licenseExpression": "MPL-2.0 AND BSD-3-Clause",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "svtav1",
@@ -1144,7 +1287,10 @@
         "sha256": "20678ab10402659106dc4c147c97b2a6e94b5c0695415e15a8f195ebc3547922",
         "file": "svtav1/PATENTS.md"
       }
-    ]
+    ],
+    "licenseExpression": "BSD-3-Clause-Clear",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "vulkan-headers",
@@ -1172,7 +1318,10 @@
         "sha256": "1ca3502222d967f3be5751c55f6b7ee735b5383909c3b501495f54b216dbf227",
         "file": "vulkan-headers/LICENSES/MIT.txt"
       }
-    ]
+    ],
+    "licenseExpression": "Apache-2.0 OR MIT",
+    "distribution": "embedded",
+    "revisionEvidence": "source"
   },
   {
     "id": "vulkan-loader",
@@ -1190,7 +1339,10 @@
         "sha256": "8d4d279343d72e5b9e06bbe38c1ad8660fa8eabc217164a5b482ddf4ab0dba9d",
         "file": "vulkan-loader/LICENSE.txt"
       }
-    ]
+    ],
+    "licenseExpression": "MIT",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "x264",
@@ -1208,7 +1360,10 @@
         "sha256": "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670",
         "file": "x264/COPYING.txt"
       }
-    ]
+    ],
+    "licenseExpression": "GPL-2.0-or-later",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "x265",
@@ -1231,7 +1386,10 @@
         "url": "https://bitbucket.org/multicoreware/x265_git/raw/e444744c03978c1fb4e037168967020cf2648427/source/dynamicHDR10/json11/LICENSE.txt",
         "sha256": "950e288a2548cb33f6a90d23958806b0803f510ab17c600d661619a73ae3a6c8"
       }
-    ]
+    ],
+    "licenseExpression": "GPL-2.0-or-later AND MIT",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "xz",
@@ -1259,7 +1417,10 @@
         "sha256": "01e6df90d71d591f4307db3f397a5a4fac93b18533f5a3862156f1a0a7dc8610",
         "file": "xz/AUTHORS.txt"
       }
-    ]
+    ],
+    "licenseExpression": "0BSD",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "zimg",
@@ -1277,7 +1438,10 @@
         "sha256": "7637386b5f81e8a719ca336233149005e5fa28b5e6054ea7b67de49355b0ad40",
         "file": "zimg/COPYING.txt"
       }
-    ]
+    ],
+    "licenseExpression": "WTFPL",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "zlib",
@@ -1295,7 +1459,10 @@
         "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2",
         "file": "zlib/LICENSE.txt"
       }
-    ]
+    ],
+    "licenseExpression": "Zlib",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   },
   {
     "id": "zvbi",
@@ -1318,6 +1485,9 @@
         "sha256": "349107750f8e6a3555e9ad47f625806e70ce6dd108926eb158528b27c2c03586",
         "file": "zvbi/AUTHORS.txt"
       }
-    ]
+    ],
+    "licenseExpression": "LicenseRef-zvbi",
+    "distribution": "runtime",
+    "revisionEvidence": "source"
   }
 ]
