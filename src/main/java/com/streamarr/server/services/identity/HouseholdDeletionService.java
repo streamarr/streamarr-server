@@ -3,6 +3,7 @@ package com.streamarr.server.services.identity;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SecurityAuditEventRecordView;
+import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
@@ -20,8 +21,6 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
-import com.streamarr.server.services.identity.AccountLifecycleService.ProfileCleanup;
-import com.streamarr.server.services.identity.AccountLifecycleService.SourceHouseholdAccess;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
@@ -294,43 +293,33 @@ public class HouseholdDeletionService {
 
   private void dispose(UserAccount resident, FinalAccountDisposition disposition, Instant now) {
     switch (disposition.choice()) {
-      case TRANSFER -> {
-        var destinationEmpty =
-            userAccountRepository.findByHouseholdId(disposition.destinationHouseholdId()).isEmpty();
-        accountRemoval.move(
-            resident.getId(),
-            resident.getHouseholdId(),
-            resident.getPersonalProfileId(),
-            disposition.destinationHouseholdId(),
-            destinationEmpty,
-            SourceHouseholdAccess.END,
-            now);
-      }
-
-      case DELETE -> accountRemoval.erase(resident, ProfileCleanup.ERASE_PROFILE, null, now);
-      case DELETE_KEEPING_PROFILE -> {
-        accountRemoval.erase(
-            resident,
-            ProfileCleanup.PRESERVE_PROFILE,
-            disposition.replacementManagerAccountId(),
-            now);
-        // The preserved Profile cannot stay in a Household about to vanish: it moves behind
-        // its named anchor.
-        profileRepository.tryRehome(
-            resident.getPersonalProfileId(),
-            resident.getHouseholdId(),
-            disposition.destinationHouseholdId());
-        shareRepository
-            .findByProfileIdAndHouseholdIdAndStatus(
-                resident.getPersonalProfileId(),
-                resident.getHouseholdId(),
-                ProfileShareStatus.ACTIVE)
-            .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
-        shareRepository.ensureActiveMembershipShare(
-            resident.getPersonalProfileId(), disposition.destinationHouseholdId(), now);
-        shareRepository.convertMembershipShareToVisitorShare(
-            resident.getPersonalProfileId(), disposition.destinationHouseholdId(), now);
-      }
+      case TRANSFER ->
+          accountRemoval.move(
+              AccountRemoval.Transfer.builder()
+                  .accountId(resident.getId())
+                  .sourceHouseholdId(resident.getHouseholdId())
+                  .profileId(resident.getPersonalProfileId())
+                  .destinationHouseholdId(disposition.destinationHouseholdId())
+                  .sourceHouseholdAccess(SourceHouseholdAccess.END)
+                  .now(now)
+                  .build());
+      case DELETE ->
+          accountRemoval.erase(
+              AccountRemoval.Deletion.builder()
+                  .account(resident)
+                  .profileDisposition(new AccountRemoval.ErasePersonalProfile())
+                  .now(now)
+                  .build());
+      case DELETE_KEEPING_PROFILE ->
+          accountRemoval.erase(
+              AccountRemoval.Deletion.builder()
+                  .account(resident)
+                  .profileDisposition(
+                      new AccountRemoval.PreservePersonalProfile(
+                          disposition.replacementManagerAccountId(),
+                          disposition.destinationHouseholdId()))
+                  .now(now)
+                  .build());
     }
   }
 

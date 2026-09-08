@@ -3,6 +3,7 @@ package com.streamarr.server.services.identity;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -13,11 +14,11 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
-import com.streamarr.server.services.identity.AccountLifecycleService.ProfileCleanup;
-import com.streamarr.server.services.identity.AccountLifecycleService.SourceHouseholdAccess;
 import com.streamarr.server.services.mutation.MutationRejection;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.Builder;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -44,16 +45,15 @@ class AccountRemoval {
   private final DeviceRegistrationLifecycle registrationLifecycle;
 
   /** Moves the Account and its Personal Profile; false when the row already moved on. */
-  boolean move(
-      UUID accountId,
-      UUID sourceHouseholdId,
-      UUID profileId,
-      UUID destinationHouseholdId,
-      boolean destinationEmpty,
-      SourceHouseholdAccess sourceHouseholdAccess,
-      Instant now) {
+  boolean move(Transfer transfer) {
+    var sourceHouseholdId = transfer.sourceHouseholdId();
+    var profileId = transfer.profileId();
+    var destinationHouseholdId = transfer.destinationHouseholdId();
+    var now = transfer.now();
+    var destinationEmpty =
+        userAccountRepository.findByHouseholdId(destinationHouseholdId).isEmpty();
     if (!userAccountRepository.tryTransfer(
-        accountId,
+        transfer.accountId(),
         sourceHouseholdId,
         destinationHouseholdId,
         destinationEmpty ? HouseholdRole.ADMIN : HouseholdRole.MEMBER)) {
@@ -64,12 +64,12 @@ class AccountRemoval {
       return false;
     }
 
-    if (sourceHouseholdAccess == SourceHouseholdAccess.KEEP_AS_VISITOR) {
+    if (transfer.sourceHouseholdAccess() == SourceHouseholdAccess.KEEP_AS_VISITOR) {
       shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId, now);
       authSessionRepository.clearProfileSelectionFromLiveSessions(
           profileId, sourceHouseholdId, now);
     } else {
-      endSourceHouseholdAccess(accountId, profileId, sourceHouseholdId, now);
+      endSourceHouseholdAccess(transfer);
     }
 
     shareRepository.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
@@ -77,11 +77,9 @@ class AccountRemoval {
   }
 
   /** Deletes the Account, disposing of its Personal Profile as chosen. No final-Account guard. */
-  void erase(
-      UserAccount account,
-      ProfileCleanup profileCleanup,
-      UUID replacementManagerAccountId,
-      Instant now) {
+  void erase(Deletion deletion) {
+    var account = deletion.account();
+    var now = deletion.now();
     registrationLifecycle.revokeAllByAccount(account.getId(), "Account deleted", now);
     authSessionRepository.revokeAllForAccount(
         account.getId(), SessionRevocationReason.ADMIN_REVOCATION, now);
@@ -95,18 +93,37 @@ class AccountRemoval {
         account.getId(), "inviting manager deleted", now);
     shareRepository.invalidatePendingOfferedBy(account.getId(), "offering manager deleted", now);
 
+    switch (deletion.profileDisposition()) {
+      case ErasePersonalProfile() -> {
+        deleteAccountRow(account);
+        deleteProfile(account.getPersonalProfileId(), now);
+      }
+      case PreservePersonalProfile(var managerId, var destinationHouseholdId) ->
+          preserveProfile(deletion, managerId, destinationHouseholdId);
+    }
+  }
+
+  private void preserveProfile(
+      Deletion deletion, UUID replacementManagerAccountId, UUID destinationHouseholdId) {
+    var account = deletion.account();
     var profileId = account.getPersonalProfileId();
-    if (profileCleanup == ProfileCleanup.PRESERVE_PROFILE) {
-      // The preserved Profile needs its replacement anchor before the person leaves it behind.
-      profileManagerRepository.tryGrantDirectManagement(replacementManagerAccountId, profileId);
-      shareRepository.convertMembershipShareToVisitorShare(
-          profileId, account.getHouseholdId(), now);
-      deleteAccountRow(account);
+    var sourceHouseholdId = account.getHouseholdId();
+    var now = deletion.now();
+    // The preserved Profile needs its replacement anchor before the person leaves it behind.
+    profileManagerRepository.tryGrantDirectManagement(replacementManagerAccountId, profileId);
+    shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId, now);
+    deleteAccountRow(account);
+    if (sourceHouseholdId.equals(destinationHouseholdId)) {
       return;
     }
 
-    deleteAccountRow(account);
-    deleteProfile(profileId, now);
+    profileRepository.tryRehome(profileId, sourceHouseholdId, destinationHouseholdId);
+    shareRepository
+        .findByProfileIdAndHouseholdIdAndStatus(
+            profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
+        .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
+    shareRepository.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
+    shareRepository.convertMembershipShareToVisitorShare(profileId, destinationHouseholdId, now);
   }
 
   /** Deletes an unlinked Profile with its selections and pending Profile-bound artifacts. */
@@ -124,8 +141,11 @@ class AccountRemoval {
     profileRepository.flush();
   }
 
-  private void endSourceHouseholdAccess(
-      UUID accountId, UUID profileId, UUID sourceHouseholdId, Instant now) {
+  private void endSourceHouseholdAccess(Transfer transfer) {
+    var accountId = transfer.accountId();
+    var profileId = transfer.profileId();
+    var sourceHouseholdId = transfer.sourceHouseholdId();
+    var now = transfer.now();
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
@@ -142,4 +162,27 @@ class AccountRemoval {
       throw new MutationRejection(new TransferRejections.AccountNotFound());
     }
   }
+
+  @Builder
+  record Transfer(
+      @NonNull UUID accountId,
+      @NonNull UUID sourceHouseholdId,
+      @NonNull UUID profileId,
+      @NonNull UUID destinationHouseholdId,
+      @NonNull SourceHouseholdAccess sourceHouseholdAccess,
+      @NonNull Instant now) {}
+
+  @Builder
+  record Deletion(
+      @NonNull UserAccount account,
+      @NonNull ProfileDisposition profileDisposition,
+      @NonNull Instant now) {}
+
+  sealed interface ProfileDisposition permits ErasePersonalProfile, PreservePersonalProfile {}
+
+  record ErasePersonalProfile() implements ProfileDisposition {}
+
+  record PreservePersonalProfile(
+      @NonNull UUID replacementManagerAccountId, @NonNull UUID destinationHouseholdId)
+      implements ProfileDisposition {}
 }

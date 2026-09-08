@@ -2,6 +2,7 @@ package com.streamarr.server.services.identity;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
+import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -73,7 +74,6 @@ public class AccountLifecycleService {
     }
 
     var sourceHouseholdId = account.get().getHouseholdId();
-    var profileId = account.get().getPersonalProfileId();
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
@@ -81,16 +81,15 @@ public class AccountLifecycleService {
             throw new MutationRejection(new TransferRejections.FinalAccount());
           }
 
-          var destinationEmpty =
-              userAccountRepository.findByHouseholdId(command.destinationHouseholdId()).isEmpty();
           if (!accountRemoval.move(
-              command.accountId(),
-              sourceHouseholdId,
-              profileId,
-              command.destinationHouseholdId(),
-              destinationEmpty,
-              command.sourceHouseholdAccess(),
-              now)) {
+              AccountRemoval.Transfer.builder()
+                  .accountId(account.get().getId())
+                  .sourceHouseholdId(sourceHouseholdId)
+                  .profileId(account.get().getPersonalProfileId())
+                  .destinationHouseholdId(command.destinationHouseholdId())
+                  .sourceHouseholdAccess(command.sourceHouseholdAccess())
+                  .now(now)
+                  .build())) {
             throw new MutationRejection(new TransferRejections.AccountNotFound());
           }
 
@@ -188,8 +187,19 @@ public class AccountLifecycleService {
       throw new MutationRejection(new TransferRejections.FinalAccount());
     }
 
+    var profileDisposition =
+        switch (command.profileCleanup()) {
+          case ERASE_PROFILE -> new AccountRemoval.ErasePersonalProfile();
+          case PRESERVE_PROFILE ->
+              new AccountRemoval.PreservePersonalProfile(
+                  command.replacementManagerAccountId(), account.getHouseholdId());
+        };
     accountRemoval.erase(
-        account, command.profileCleanup(), command.replacementManagerAccountId(), clock.instant());
+        AccountRemoval.Deletion.builder()
+            .account(account)
+            .profileDisposition(profileDisposition)
+            .now(clock.instant())
+            .build());
   }
 
   private Optional<TransferRejections.AdministrativelyDeleteAccount> replacementRefusal(
@@ -287,12 +297,6 @@ public class AccountLifecycleService {
 
   private static boolean isBlank(String value) {
     return value == null || value.isBlank();
-  }
-
-  /** Access retained in the Account's former Household after transfer. */
-  public enum SourceHouseholdAccess {
-    END,
-    KEEP_AS_VISITOR
   }
 
   /** Cleanup applied to the Personal Profile when its Account is deleted. */

@@ -1,6 +1,6 @@
 package com.streamarr.server.graphql.inputs;
 
-import com.streamarr.server.services.identity.AccountLifecycleService.SourceHouseholdAccess;
+import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 
 public record TransferAccountInput(
     String accountId,
