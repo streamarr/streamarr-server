@@ -100,13 +100,26 @@ class FfmpegLockWorkflowTest {
   }
 
   @Test
+  @DisplayName("Should keep tooling version markers out of application buildpack detection")
+  void shouldKeepToolingVersionMarkersOutOfApplicationBuildpackDetection() {
+    assertThat(Path.of(".nvmrc"))
+        .as("Paketo Node Engine self-requires Node for a root .nvmrc")
+        .doesNotExist();
+    assertThat(Path.of(".node-version"))
+        .as("Paketo Node Engine also detects a root .node-version")
+        .doesNotExist();
+    assertThat(Path.of("buildpacks/ffmpeg/.nvmrc")).isRegularFile();
+  }
+
+  @Test
   @DisplayName("Should prepare ephemeral redistribution materials with the declared Node toolchain")
   void shouldPrepareEphemeralRedistributionMaterialsWithDeclaredNodeToolchain() throws IOException {
     var prepare =
         listOfMaps(map(yaml(".github/actions/prepare-ffmpeg/action.yml").get("runs")).get("steps"));
     var node = prepare.getFirst();
     assertThat(node.get("uses").toString()).startsWith("actions/setup-node@");
-    assertThat(map(node.get("with"))).containsEntry("node-version-file", ".nvmrc");
+    assertThat(map(node.get("with")))
+        .containsEntry("node-version-file", "buildpacks/ffmpeg/.nvmrc");
     var commands =
         stepNamed(prepare, "Prepare reviewed redistribution materials").get("run").toString();
     assertThat(commands)

@@ -135,7 +135,10 @@ for (const version of [null, "v20.20.2"]) {
         assert.ifError(result.error);
         assert.notEqual(result.status, 0);
         assert.match(result.stderr, /FFmpeg tooling requires Node.js/);
-        assert.match(result.stderr, /nvm install && nvm use/);
+        assert.match(
+            result.stderr,
+            /nvm install \d+\.\d+\.\d+ && nvm use \d+\.\d+\.\d+/,
+        );
     });
 }
 

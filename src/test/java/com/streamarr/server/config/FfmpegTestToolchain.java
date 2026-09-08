@@ -11,20 +11,17 @@ final class FfmpegTestToolchain {
   private FfmpegTestToolchain() {}
 
   static void requireNode() throws IOException, InterruptedException {
-    var expected = Files.readString(Path.of(".nvmrc")).trim();
+    var expected = Files.readString(Path.of("buildpacks/ffmpeg/.nvmrc")).trim();
+    var instructions =
+        "FFmpeg tooling requires Node.js %1$s; run nvm install %1$s && nvm use %1$s"
+            .formatted(expected);
     try {
       var process = new ProcessBuilder("node", "--version").redirectErrorStream(true).start();
       var version = new String(process.getInputStream().readAllBytes()).trim();
       assertThat(process.waitFor()).as("Unable to read Node.js version").isZero();
-      assertThat(version)
-          .as("FFmpeg tooling requires Node.js %s; run nvm install && nvm use", expected)
-          .startsWith("v" + expected.split("\\.")[0] + ".");
+      assertThat(version).as(instructions).startsWith("v" + expected.split("\\.")[0] + ".");
     } catch (IOException cause) {
-      throw new IOException(
-          "FFmpeg tooling requires Node.js "
-              + expected
-              + "; run nvm install && nvm use before ./mvnw verify",
-          cause);
+      throw new IOException(instructions, cause);
     }
   }
 }

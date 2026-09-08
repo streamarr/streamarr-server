@@ -16,7 +16,7 @@ buildpacks/ffmpeg/bin/update-lock --verify-upstream
 ```
 
 The resolver requires Bash, `curl`, and `jq`. Offline input validation also requires
-the Node.js toolchain declared in the repository's `.nvmrc`. It accepts only published, non-prerelease tags
+the Node.js toolchain declared in `buildpacks/ffmpeg/.nvmrc`. It accepts only published, non-prerelease tags
 in `vMAJOR.MINOR.PATCH-BUILD` form, requires exactly one portable GPL asset and a GitHub
 SHA-256 digest per architecture, resolves the tag's full fork commit, and writes the lock
 atomically. `--check` validates the lock, independent review manifest, source-access
@@ -54,11 +54,19 @@ not mark new notices as reviewed. Neither does the notice generator: it never wr
 inclusion in fresh and cached layers. Full license texts and attribution remain in
 the image, not just links to them.
 
-Install the Node.js version declared in `.nvmrc` with `nvm install && nvm use`.
-CI selects that exact version; local tooling accepts the same major. Node is
-developer/CI tooling only, not a requirement inside the buildpack.
+The [tooling pin](.nvmrc) selects Node.js 24 LTS as the tested toolchain. CI selects
+that exact version; local tooling accepts the same major. The generator itself
+does not require Node 24, but Maven enforces native test-coverage thresholds whose
+[CLI flags were introduced in Node 22.8](https://nodejs.org/docs/latest-v24.x/api/cli.html#--test-coverage-linesthreshold).
+That API floor is not a claim that we test every subsequent Node release.
+Node is developer/CI tooling only, not a requirement inside the FFmpeg buildpack
+or the server image. Keep the pin here, not at the application root:
+[Paketo Node Engine](https://github.com/paketo-buildpacks/node-engine/blob/v8.5.2/detect.go)
+self-requires Node for a root `.nvmrc` or `.node-version`.
 
 ```bash
+nvm install "$(cat buildpacks/ffmpeg/.nvmrc)"
+nvm use "$(cat buildpacks/ffmpeg/.nvmrc)"
 buildpacks/ffmpeg/bin/update-lock --check
 buildpacks/ffmpeg/bin/prepare
 # Save generated/review-inputs.json before changing the reviewed inputs.
@@ -87,6 +95,8 @@ The shell-only buildpack requires the checksum list to cover every notice/input 
 expected output exactly once, then verifies every listed digest before use. This
 detects incomplete or stale preparation; it is not a signature or substitute for
 reviewing the source inventory and upstream release.
+The notice directory must contain only inventoried inputs: stray files such as
+macOS `.DS_Store` also cause an inventory mismatch and must be removed before packaging.
 
 `licenseExpression` records SPDX identifiers/expressions where the inventoried terms
 can be represented accurately. A `LicenseRef-<component>` refers to that component's
