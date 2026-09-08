@@ -26,11 +26,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 @Tag("IntegrationTest")
 @DisplayName("Household Deletion Completion Integration Tests")
+@Isolated("Compares shared PostgreSQL audit state")
 class HouseholdDeletionCompletionIT extends AbstractIntegrationTest {
 
   @Autowired private HouseholdDeletionService deletion;

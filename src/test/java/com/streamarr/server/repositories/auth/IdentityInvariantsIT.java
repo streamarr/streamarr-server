@@ -45,6 +45,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.postgresql.util.PSQLException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
@@ -58,6 +59,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Tag("IntegrationTest")
 @DisplayName("Identity Invariants Integration Tests")
+@Isolated("Changes shared PostgreSQL bootstrap and registration state")
 @Import(AuthTestSupportConfig.class)
 class IdentityInvariantsIT extends AbstractIntegrationTest {
 

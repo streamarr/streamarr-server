@@ -4,19 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.AuditFieldSetter;
-import com.streamarr.server.domain.auth.AccountInvitation;
-import com.streamarr.server.domain.auth.AccountInvitationStatus;
-import com.streamarr.server.domain.auth.AuthSession;
-import com.streamarr.server.domain.auth.DeviceRegistration;
-import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
-import com.streamarr.server.domain.auth.ProfileKind;
-import com.streamarr.server.domain.auth.ProfileManagerInvitation;
-import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
-import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
-import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
@@ -56,19 +46,17 @@ import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.List;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.access.AccessDeniedException;
 
 /**
@@ -80,11 +68,13 @@ import org.springframework.security.access.AccessDeniedException;
 @DisplayName("Household Deletion Service Tests")
 class HouseholdDeletionServiceTest {
 
+  private static final Instant NOW = Instant.parse("2026-08-15T12:00:00Z");
+
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
   private final RefusingProfileRepository profiles = new RefusingProfileRepository(shares);
   private final RefusingAccountRepository accounts = new RefusingAccountRepository(shares);
-  private final PausingHouseholdRepository households = new PausingHouseholdRepository();
+  private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final FakeProfileManagerRepository managers = new FakeProfileManagerRepository();
   private final FakeProfileManagerInvitationRepository managerInvitations =
       new FakeProfileManagerInvitationRepository();
@@ -113,12 +103,60 @@ class HouseholdDeletionServiceTest {
     refugeAnchor = residentOf(refuge, HouseholdRole.ADMIN);
   }
 
+  @ParameterizedTest
+  @NullAndEmptySource
+  @ValueSource(strings = {" ", "\t\n"})
+  @DisplayName("Should preserve the Household when the deletion reason is missing")
+  void shouldPreserveHouseholdWhenDeletionReasonIsMissing(String reason) {
+    assertThat(deleteEmptyHousehold(reason))
+        .isEqualTo(Outcome.rejected(new HouseholdDeletionRejections.ReasonRequired()));
+    assertThat(households.findById(doomed.getId())).isPresent();
+    assertThat(audit.entries()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @EnumSource(DeletionAction.class)
+  @DisplayName("Should preserve all residents when more than one Account remains")
+  void shouldPreserveAllResidentsWhenMoreThanOneAccountRemains(DeletionAction action) {
+    var first = residentOf(doomed, HouseholdRole.ADMIN);
+    var second = residentOf(doomed, HouseholdRole.MEMBER);
+    assertThat(attempt(action))
+        .isEqualTo(Outcome.rejected(new HouseholdDeletionRejections.AccountsRemain()));
+    assertThat(accounts.findByHouseholdId(doomed.getId()))
+        .extracting(UserAccount::getId)
+        .containsExactlyInAnyOrder(first.getId(), second.getId());
+    assertThat(households.findById(doomed.getId())).isPresent();
+    assertThat(audit.entries()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @EnumSource(value = DeletionAction.class, names = "EMPTY", mode = EnumSource.Mode.EXCLUDE)
+  @DisplayName("Should reject a final-Account disposition when its source has no Account")
+  void shouldRejectFinalAccountDispositionWhenSourceHasNoAccount(DeletionAction action) {
+    assertThat(attempt(action))
+        .isEqualTo(Outcome.rejected(new HouseholdDeletionRejections.LastAccountNotFound()));
+    assertThat(households.findById(doomed.getId())).isPresent();
+    assertThat(audit.entries()).isEmpty();
+  }
+
   @Test
-  @DisplayName("Should reject without authorizing when the deletion reason is blank")
-  void shouldRejectWithoutAuthorizingWhenDeletionReasonIsBlank() {
-    assertThat(rejectionOf(deleteEmptyHousehold(" ")))
-        .isInstanceOf(HouseholdDeletionRejections.ReasonRequired.class);
-    assertThat(authorization.recordedIntents()).isEmpty();
+  @DisplayName("Should fail closed when the deletion decision is unavailable")
+  void shouldFailClosedWhenDeletionDecisionIsUnavailable() {
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.DeleteHousehold
+                ? new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE)
+                : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+    assertThatThrownBy(() -> deleteEmptyHousehold("closing"))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+    assertThat(households.findById(doomed.getId())).isPresent();
+    assertThat(audit.entries()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return no preview when an authorized Household does not exist")
+  void shouldReturnNoPreviewWhenAuthorizedHouseholdDoesNotExist() {
+    assertThat(service.deletionPreflight(identity(), UUID.randomUUID())).isEmpty();
   }
 
   @Test
@@ -135,15 +173,6 @@ class HouseholdDeletionServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject empty-Household deletion when multiple Accounts remain")
-  void shouldRejectEmptyHouseholdDeletionWhenMultipleAccountsRemain() {
-    residentOf(doomed, HouseholdRole.ADMIN);
-    residentOf(doomed, HouseholdRole.MEMBER);
-    assertThat(rejectionOf(deleteEmptyHousehold("closing")))
-        .isInstanceOf(HouseholdDeletionRejections.AccountsRemain.class);
-  }
-
-  @Test
   @DisplayName("Should reject empty-Household deletion when one Account remains")
   void shouldRejectEmptyHouseholdDeletionWhenOneAccountRemains() {
     var single = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
@@ -157,20 +186,6 @@ class HouseholdDeletionServiceTest {
                         .reason("closing")
                         .build())))
         .isInstanceOf(HouseholdDeletionRejections.AccountsRemain.class);
-  }
-
-  @Test
-  @DisplayName("Should reject final-Account deletion when the Household is empty")
-  void shouldRejectFinalAccountDeletionWhenHouseholdIsEmpty() {
-    assertThat(
-            rejectionOf(
-                service.deleteLastAccountAndHousehold(
-                    identity(),
-                    DeleteLastAccountAndHouseholdCommand.builder()
-                        .householdId(doomed.getId())
-                        .reason("closing")
-                        .build())))
-        .isInstanceOf(HouseholdDeletionRejections.LastAccountNotFound.class);
   }
 
   @Test
@@ -231,46 +246,12 @@ class HouseholdDeletionServiceTest {
   }
 
   @Test
-  @DisplayName("Should leave nothing behind when an empty Household is deleted")
-  void shouldLeaveNothingBehindWhenEmptyHouseholdIsDeleted() {
-    var orphan =
-        profiles.save(ProfileFixture.defaultProfileBuilder().householdId(doomed.getId()).build());
-    shares.share(orphan.getId(), doomed.getId(), false);
-    var visit = shares.share(refugeAnchor.getPersonalProfileId(), doomed.getId(), false);
-    var invitation =
-        accountInvitations.save(
-            AccountInvitation.builder()
-                .recipientEmail("late@example.com")
-                .householdId(doomed.getId())
-                .householdName("Doomed")
-                .householdRole(HouseholdRole.MEMBER)
-                .profileName("Late")
-                .profileKind(ProfileKind.ADULT)
-                .issuerAccountId(UUID.randomUUID())
-                .expiresAt(Instant.now().plusSeconds(3600))
-                .publicId("pub-household-deletion")
-                .secretDigest(new byte[] {1})
-                .build());
-    var registration =
-        registrations.save(
-            DeviceRegistration.builder()
-                .esn("esn-doomed")
-                .displayName("TV")
-                .householdId(doomed.getId())
-                .authorizingAccountId(refugeAnchor.getId())
-                .build());
+  @DisplayName("Should return a receipt and record the actor when deleting an empty Household")
+  void shouldReturnReceiptAndRecordActorWhenDeletingEmptyHousehold() {
+    assertThat(deleteEmptyHousehold("closing shop")).isEqualTo(Outcome.accepted(doomed.getId()));
 
-    var outcome = deleteEmptyHousehold("closing shop");
-
-    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(households.findById(doomed.getId())).isEmpty();
-    assertThat(profiles.findById(orphan.getId())).isEmpty();
-    assertThat(shares.findById(visit.getId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileShareStatus.ENDED);
-    assertThat(accountInvitations.findById(invitation.getId()).orElseThrow().getStatus())
-        .isEqualTo(AccountInvitationStatus.INVALIDATED);
-    assertThat(registrations.findById(registration.getId()).orElseThrow().getStatus())
-        .isEqualTo(DeviceRegistrationStatus.REVOKED);
+    assertThat(households.findById(refuge.getId())).isPresent();
     assertThat(audit.entries())
         .containsExactly(
             SecurityAuditEntry.builder()
@@ -279,122 +260,6 @@ class HouseholdDeletionServiceTest {
                 .reason("closing shop")
                 .resource("householdId", doomed.getId())
                 .build());
-  }
-
-  @Test
-  @DisplayName(
-      "Should revoke remote registrations and their sessions when the authorizing Account is deleted")
-  void shouldRevokeRemoteRegistrationsAndSessionsWhenAuthorizingAccountIsDeleted() {
-    var finalAccount = residentOf(doomed, HouseholdRole.ADMIN);
-    var remoteRegistration =
-        registrations.save(
-            DeviceRegistration.builder()
-                .esn("remote-esn")
-                .displayName("Remote TV")
-                .householdId(refuge.getId())
-                .authorizingAccountId(finalAccount.getId())
-                .build());
-    var deviceSession =
-        sessions.save(
-            AuthSession.builder()
-                .accountId(refugeAnchor.getId())
-                .deviceName("Remote TV")
-                .registrationId(remoteRegistration.getId())
-                .contextHouseholdId(refuge.getId())
-                .build());
-
-    var outcome = deleteLastAccountAndHousehold("closing");
-
-    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
-    assertThat(registrations.findById(remoteRegistration.getId()).orElseThrow().getStatus())
-        .isEqualTo(DeviceRegistrationStatus.REVOKED);
-    assertThat(sessions.findById(deviceSession.getId()).orElseThrow().getRevokedReason())
-        .isEqualTo(SessionRevocationReason.ADMIN_REVOCATION);
-  }
-
-  @Test
-  @DisplayName(
-      "Should reset visitor context and revoke visited-Household devices when the Household is deleted")
-  void shouldResetVisitorContextAndRevokeVisitedHouseholdDevicesWhenHouseholdIsDeleted() {
-    shares.share(refugeAnchor.getPersonalProfileId(), doomed.getId(), false);
-    var browserSession =
-        sessions.save(
-            AuthSession.builder()
-                .accountId(refugeAnchor.getId())
-                .deviceName("Browser")
-                .contextHouseholdId(doomed.getId())
-                .selectedProfileId(refugeAnchor.getPersonalProfileId())
-                .build());
-    var visitedRegistration =
-        registrations.save(
-            DeviceRegistration.builder()
-                .esn("visited-esn")
-                .displayName("Visited TV")
-                .householdId(doomed.getId())
-                .authorizingAccountId(refugeAnchor.getId())
-                .build());
-    var deviceSession =
-        sessions.save(
-            AuthSession.builder()
-                .accountId(refugeAnchor.getId())
-                .deviceName("Visited TV")
-                .registrationId(visitedRegistration.getId())
-                .contextHouseholdId(doomed.getId())
-                .build());
-
-    var outcome = deleteEmptyHousehold("closing");
-
-    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
-    var reset = sessions.findById(browserSession.getId()).orElseThrow();
-    assertThat(reset.getContextHouseholdId()).isNull();
-    assertThat(reset.getSelectedProfileId()).isNull();
-    assertThat(registrations.findById(visitedRegistration.getId()).orElseThrow().getStatus())
-        .isEqualTo(DeviceRegistrationStatus.REVOKED);
-    assertThat(sessions.findById(deviceSession.getId()).orElseThrow().getRevokedReason())
-        .isEqualTo(SessionRevocationReason.ADMIN_REVOCATION);
-  }
-
-  @Test
-  @DisplayName("Should invalidate pending Profile artifacts when their Profile is deleted")
-  void shouldInvalidatePendingProfileArtifactsWhenProfileIsDeleted() {
-    var orphan =
-        profiles.save(ProfileFixture.defaultProfileBuilder().householdId(doomed.getId()).build());
-    var accountInvitation =
-        accountInvitations.save(
-            AccountInvitation.builder()
-                .recipientEmail("pending@example.com")
-                .householdId(refuge.getId())
-                .householdName("Refuge")
-                .householdRole(HouseholdRole.MEMBER)
-                .profileId(orphan.getId())
-                .profileName(orphan.getName())
-                .profileKind(ProfileKind.ADULT)
-                .issuerAccountId(refugeAnchor.getId())
-                .expiresAt(Instant.now().plusSeconds(3600))
-                .publicId("pending-account")
-                .secretDigest(new byte[] {1})
-                .build());
-    var managerInvitation =
-        managerInvitations.save(
-            ProfileManagerInvitation.builder()
-                .profileId(orphan.getId())
-                .profileName(orphan.getName())
-                .inviterAccountId(refugeAnchor.getId())
-                .inviterDisplayName("Inviter")
-                .recipientAccountId(UUID.randomUUID())
-                .recipientEmail("manager@example.com")
-                .expiresAt(Instant.now().plusSeconds(3600))
-                .publicId("pending-manager")
-                .secretDigest(new byte[] {2})
-                .build());
-
-    var outcome = deleteEmptyHousehold("closing");
-
-    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
-    assertThat(accountInvitations.findById(accountInvitation.getId()).orElseThrow().getStatus())
-        .isEqualTo(AccountInvitationStatus.INVALIDATED);
-    assertThat(managerInvitations.findById(managerInvitation.getId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
   }
 
   @Test
@@ -419,8 +284,9 @@ class HouseholdDeletionServiceTest {
     residentOf(doomed, HouseholdRole.ADMIN);
 
     var outcome =
-        deleteLastAccountAndHouseholdPreservingPersonalProfile(
-            "closing", refuge.getId(), UUID.randomUUID());
+        service.deleteLastAccountAndHouseholdPreservingPersonalProfile(
+            identity(),
+            preservationCommand().replacementManagerAccountId(UUID.randomUUID()).build());
 
     assertThat(rejectionOf(outcome))
         .isEqualTo(new HouseholdDeletionRejections.ReplacementManagerNotFound());
@@ -435,8 +301,9 @@ class HouseholdDeletionServiceTest {
     var outsideManager = residentOf(elsewhere, HouseholdRole.ADMIN);
 
     var outcome =
-        deleteLastAccountAndHouseholdPreservingPersonalProfile(
-            "closing", refuge.getId(), outsideManager.getId());
+        service.deleteLastAccountAndHouseholdPreservingPersonalProfile(
+            identity(),
+            preservationCommand().replacementManagerAccountId(outsideManager.getId()).build());
 
     assertThat(rejectionOf(outcome))
         .isEqualTo(new HouseholdDeletionRejections.ReplacementManagerNotEligible());
@@ -451,8 +318,8 @@ class HouseholdDeletionServiceTest {
     profiles.save(restricted);
 
     var outcome =
-        deleteLastAccountAndHouseholdPreservingPersonalProfile(
-            "closing", refuge.getId(), refugeAnchor.getId());
+        service.deleteLastAccountAndHouseholdPreservingPersonalProfile(
+            identity(), preservationCommand().build());
 
     assertThat(rejectionOf(outcome))
         .isEqualTo(new HouseholdDeletionRejections.ReplacementManagerNotEligible());
@@ -480,8 +347,8 @@ class HouseholdDeletionServiceTest {
     accounts.refuseDeletion();
 
     var outcome =
-        deleteLastAccountAndHouseholdPreservingPersonalProfile(
-            "closing", refuge.getId(), refugeAnchor.getId());
+        service.deleteLastAccountAndHouseholdPreservingPersonalProfile(
+            identity(), preservationCommand().build());
 
     assertThat(outcome)
         .isEqualTo(Outcome.rejected(new HouseholdDeletionRejections.LastAccountNotFound()));
@@ -513,8 +380,8 @@ class HouseholdDeletionServiceTest {
 
     assertThatThrownBy(
             () ->
-                deleteLastAccountAndHouseholdPreservingPersonalProfile(
-                    "closing", refuge.getId(), refugeAnchor.getId()))
+                service.deleteLastAccountAndHouseholdPreservingPersonalProfile(
+                    identity(), preservationCommand().build()))
         .isInstanceOf(RuntimeException.class)
         .hasMessage("The Personal Profile could not move to the requested Household.");
 
@@ -529,8 +396,8 @@ class HouseholdDeletionServiceTest {
   void shouldPreserveFinalAccountProfileBehindDestinationAnchorWhenRequested() {
     var lastResident = residentOf(doomed, HouseholdRole.ADMIN);
     var outcome =
-        deleteLastAccountAndHouseholdPreservingPersonalProfile(
-            "closing", refuge.getId(), refugeAnchor.getId());
+        service.deleteLastAccountAndHouseholdPreservingPersonalProfile(
+            identity(), preservationCommand().build());
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(accounts.findById(lastResident.getId())).isEmpty();
@@ -608,12 +475,56 @@ class HouseholdDeletionServiceTest {
     var profileId = UUID.randomUUID();
     var older = progress.save(progressFor(profileId));
     var newer = progress.save(progressFor(profileId));
+    var otherProfileActivity = progress.save(progressFor(UUID.randomUUID()));
     AuditFieldSetter.setLastModifiedOn(older, Instant.parse("2026-08-01T00:00:00Z"));
     AuditFieldSetter.setLastModifiedOn(newer, Instant.parse("2026-08-02T00:00:00Z"));
+    AuditFieldSetter.setLastModifiedOn(otherProfileActivity, Instant.parse("2026-08-03T00:00:00Z"));
 
     assertThat(service.profileActivity(identity(), profileId, paginationOptions()).items())
         .extracting(item -> item.item().getId())
         .containsExactly(newer.getId(), older.getId());
+  }
+
+  @Test
+  @DisplayName("Should continue only the requested Profile's activity when its cursor advances")
+  void shouldContinueOnlyRequestedProfileActivityWhenCursorAdvances() {
+    var profileId = UUID.randomUUID();
+    var older = progress.save(progressFor(profileId));
+    var newer = progress.save(progressFor(profileId));
+    var foreign = progress.save(progressFor(UUID.randomUUID()));
+    AuditFieldSetter.setLastModifiedOn(older, NOW);
+    AuditFieldSetter.setLastModifiedOn(newer, NOW.plusSeconds(1));
+    AuditFieldSetter.setLastModifiedOn(foreign, NOW.plusSeconds(2));
+    var oneItem =
+        PaginationOptions.builder()
+            .paginationDirection(PaginationDirection.FORWARD)
+            .cursor(Optional.empty())
+            .limit(1)
+            .build();
+
+    var first =
+        service.profileActivity(identity(), profileId, new KeysetPaginationOptions(null, oneItem));
+    assertThat(first.items())
+        .extracting(item -> item.item().getId())
+        .containsExactly(newer.getId());
+    assertThat(first.hasNextPage()).isTrue();
+    assertThat(first.hasPreviousPage()).isFalse();
+
+    var second =
+        service.profileActivity(
+            identity(), profileId, new KeysetPaginationOptions(newer.getId(), oneItem));
+    assertThat(second.items())
+        .extracting(item -> item.item().getId())
+        .containsExactly(older.getId());
+    assertThat(second.hasNextPage()).isFalse();
+    assertThat(second.hasPreviousPage()).isTrue();
+
+    var terminal =
+        service.profileActivity(
+            identity(), profileId, new KeysetPaginationOptions(older.getId(), oneItem));
+    assertThat(terminal.items()).isEmpty();
+    assertThat(terminal.hasNextPage()).isFalse();
+    assertThat(terminal.hasPreviousPage()).isTrue();
   }
 
   @Test
@@ -700,43 +611,6 @@ class HouseholdDeletionServiceTest {
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
-  @Test
-  @DisplayName("Should allow only one action when final-Account deletion requests race")
-  void shouldAllowOnlyOneActionWhenFinalAccountDeletionRequestsRace() throws Exception {
-    residentOf(doomed, HouseholdRole.ADMIN);
-    households.pauseNextTwoLocks();
-    var transfer =
-        TransferLastAccountAndDeleteHouseholdCommand.builder()
-            .householdId(doomed.getId())
-            .destinationHouseholdId(refuge.getId())
-            .reason("transfer")
-            .build();
-    var delete =
-        DeleteLastAccountAndHouseholdCommand.builder()
-            .householdId(doomed.getId())
-            .reason("delete")
-            .build();
-
-    List<Outcome<UUID, HouseholdDeletionRejections.Delete>> outcomes;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<Callable<Outcome<UUID, HouseholdDeletionRejections.Delete>>> calls =
-          List.of(
-              () -> service.transferLastAccountAndDeleteHousehold(identity(), transfer),
-              () -> service.deleteLastAccountAndHousehold(identity(), delete));
-      outcomes = executor.invokeAll(calls).stream().map(this::completedOutcome).toList();
-    }
-
-    assertThat(outcomes).filteredOn(Outcome.Accepted.class::isInstance).hasSize(1);
-    assertThat(outcomes)
-        .filteredOn(Outcome.Rejected.class::isInstance)
-        .singleElement()
-        .satisfies(
-            outcome ->
-                assertThat(rejectionOf(outcome))
-                    .isEqualTo(new HouseholdDeletionRejections.HouseholdNotFound()));
-    assertThat(audit.entries()).hasSize(1);
-  }
-
   private Outcome<UUID, HouseholdDeletionRejections.Delete> deleteEmptyHousehold(String reason) {
     return service.deleteEmptyHousehold(
         identity(),
@@ -764,17 +638,32 @@ class HouseholdDeletionServiceTest {
             .build());
   }
 
-  private Outcome<UUID, HouseholdDeletionRejections.Delete>
-      deleteLastAccountAndHouseholdPreservingPersonalProfile(
-          String reason, UUID destinationHouseholdId, UUID replacementManagerAccountId) {
-    return service.deleteLastAccountAndHouseholdPreservingPersonalProfile(
-        identity(),
-        DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand.builder()
-            .householdId(doomed.getId())
-            .destinationHouseholdId(destinationHouseholdId)
-            .replacementManagerAccountId(replacementManagerAccountId)
-            .reason(reason)
-            .build());
+  private DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand
+          .DeleteLastAccountAndHouseholdPreservingPersonalProfileCommandBuilder
+      preservationCommand() {
+    return DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand.builder()
+        .householdId(doomed.getId())
+        .destinationHouseholdId(refuge.getId())
+        .replacementManagerAccountId(refugeAnchor.getId())
+        .reason("closing");
+  }
+
+  private Outcome<UUID, HouseholdDeletionRejections.Delete> attempt(DeletionAction action) {
+    return switch (action) {
+      case EMPTY -> deleteEmptyHousehold("closing");
+      case TRANSFER -> transferLastAccountAndDeleteHousehold("closing", refuge.getId());
+      case DELETE -> deleteLastAccountAndHousehold("closing");
+      case PRESERVE ->
+          service.deleteLastAccountAndHouseholdPreservingPersonalProfile(
+              identity(), preservationCommand().build());
+    };
+  }
+
+  private enum DeletionAction {
+    EMPTY,
+    TRANSFER,
+    DELETE,
+    PRESERVE
   }
 
   private UserAccount residentOf(Household household, HouseholdRole role) {
@@ -830,7 +719,7 @@ class HouseholdDeletionServiceTest {
         progress,
         new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator()),
         new PaginationService(),
-        Clock.systemUTC());
+        Clock.fixed(NOW, ZoneOffset.UTC));
   }
 
   private static KeysetPaginationOptions paginationOptions() {
@@ -841,18 +730,6 @@ class HouseholdDeletionServiceTest {
             .cursor(Optional.empty())
             .limit(100)
             .build());
-  }
-
-  private Outcome<UUID, HouseholdDeletionRejections.Delete> completedOutcome(
-      Future<Outcome<UUID, HouseholdDeletionRejections.Delete>> future) {
-    try {
-      return future.get();
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      throw new AssertionError("interrupted while awaiting Household deletion", exception);
-    } catch (ExecutionException exception) {
-      throw new AssertionError("concurrent Household deletion failed", exception.getCause());
-    }
   }
 
   private AuthenticatedIdentity identity() {
@@ -914,29 +791,6 @@ class HouseholdDeletionServiceTest {
         UUID profileId, UUID expectedHouseholdId, UUID destinationHouseholdId) {
       return !refuseRehome
           && super.tryRehome(profileId, expectedHouseholdId, destinationHouseholdId);
-    }
-  }
-
-  private static final class PausingHouseholdRepository extends FakeHouseholdRepository {
-
-    private volatile CyclicBarrier lockBarrier;
-
-    void pauseNextTwoLocks() {
-      lockBarrier = new CyclicBarrier(2);
-    }
-
-    @Override
-    public boolean lockById(UUID householdId) {
-      var barrier = lockBarrier;
-      if (barrier != null) {
-        try {
-          barrier.await(5, TimeUnit.SECONDS);
-        } catch (Exception exception) {
-          throw new AssertionError("deletion did not reach the Household lock", exception);
-        }
-      }
-
-      return super.lockById(householdId);
     }
   }
 }

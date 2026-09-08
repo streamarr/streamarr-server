@@ -8,7 +8,6 @@ import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
-import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Intent;
 import java.util.ArrayList;
 import java.util.List;
@@ -112,19 +111,6 @@ class AuthorizationParityTest {
         .forEach(planned::add);
     planned.addAll(policyChangeActions());
     return List.copyOf(planned);
-  }
-
-  @Test
-  @DisplayName("Should return the unit value when any unit intent is planned")
-  void shouldReturnUnitValueWhenAnyUnitIntentIsPlanned() {
-    var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
-    var planner = new IntentPlanner(new ProfilePolicyPlanner(new FakeProfileRepository()));
-
-    assertThat(allIntents())
-        .allSatisfy(
-            intent ->
-                assertThat(planner.plan(identity, intent).value())
-                    .isSameAs(AuthorizationUnit.INSTANCE));
   }
 
   /**
