@@ -161,6 +161,20 @@ class HouseholdDeletionServiceTest {
 
   @Test
   @DisplayName(
+      "Should allow a corrected disposition when the first attempt leaves an Account behind")
+  void shouldAllowCorrectedDispositionWhenFirstAttemptLeavesAccountBehind() {
+    residentOf(doomed, HouseholdRole.ADMIN);
+    assertThat(deleteEmptyHousehold("closing"))
+        .isEqualTo(Outcome.rejected(new HouseholdDeletionRejections.AccountsRemain()));
+    assertThat(audit.entries()).isEmpty();
+
+    assertThat(deleteLastAccountAndHousehold("closing"))
+        .isEqualTo(Outcome.accepted(doomed.getId()));
+    assertThat(households.findById(doomed.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
       "Should require reauthentication when deletion authorization requests a fresh ceremony")
   void shouldRequireReauthenticationWhenDeletionAuthorizationRequestsFreshCeremony() {
     authorization.decideUnitWith(
