@@ -35,6 +35,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.NonNull;
@@ -171,9 +172,8 @@ public class HouseholdDeletionService {
 
   private UUID deleteHouseholdWithinTransaction(
       AuthenticatedIdentity identity, HouseholdDeletionRequest request, Instant now) {
-    if (!householdRepository.lockById(request.householdId())) {
-      throw new MutationRejection(new HouseholdDeletionRejections.HouseholdNotFound());
-    }
+    lockHouseholds(request);
+    lockReplacementManager(request.finalAccount());
 
     var residents = userAccountRepository.findByHouseholdId(request.householdId());
     if (residents.size() > 1) {
@@ -209,6 +209,40 @@ public class HouseholdDeletionService {
             .resource("householdId", request.householdId())
             .build());
     return request.householdId();
+  }
+
+  private void lockHouseholds(HouseholdDeletionRequest request) {
+    var disposition = request.finalAccount();
+    var householdIds =
+        disposition == null || disposition.destinationHouseholdId() == null
+            ? Set.of(request.householdId())
+            : Set.of(request.householdId(), disposition.destinationHouseholdId());
+    var locked = householdRepository.lockByIds(householdIds);
+    if (!locked.contains(request.householdId())) {
+      throw new MutationRejection(new HouseholdDeletionRejections.HouseholdNotFound());
+    }
+
+    if (!locked.containsAll(householdIds)) {
+      throw new MutationRejection(new HouseholdDeletionRejections.DestinationNotFound());
+    }
+  }
+
+  private void lockReplacementManager(FinalAccountDisposition disposition) {
+    if (disposition == null || disposition.choice() != FinalAccountChoice.DELETE_KEEPING_PROFILE) {
+      return;
+    }
+
+    var replacement =
+        userAccountRepository
+            .findShareFacts(disposition.replacementManagerAccountId())
+            .orElseThrow(
+                () ->
+                    new MutationRejection(
+                        new HouseholdDeletionRejections.ReplacementManagerNotFound()));
+    if (!replacement.householdId().equals(disposition.destinationHouseholdId())
+        || !profileRepository.lockIfUnrestricted(replacement.personalProfileId())) {
+      throw new MutationRejection(new HouseholdDeletionRejections.ReplacementManagerNotEligible());
+    }
   }
 
   /** What deletion will do, for whoever may view the Household's administration. */

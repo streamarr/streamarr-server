@@ -16,6 +16,7 @@ import java.time.Clock;
 import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
@@ -77,6 +78,16 @@ public class HouseholdRepositoryCustomImpl implements HouseholdRepositoryCustom 
     var afterCursor =
         sortOrder == SortOrder.ASC ? fields.greaterThan(cursor) : fields.lessThan(cursor);
     return HOUSEHOLD.ID.eq(cursorId).or(HOUSEHOLD.ID.ne(cursorId).and(afterCursor));
+  }
+
+  @Override
+  public Set<UUID> lockByIds(Set<UUID> householdIds) {
+    return dsl.select(HOUSEHOLD.ID)
+        .from(HOUSEHOLD)
+        .where(HOUSEHOLD.ID.in(householdIds))
+        .orderBy(HOUSEHOLD.ID)
+        .forUpdate()
+        .fetchSet(HOUSEHOLD.ID);
   }
 
   @Override

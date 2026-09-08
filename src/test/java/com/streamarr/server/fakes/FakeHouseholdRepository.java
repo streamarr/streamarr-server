@@ -6,11 +6,18 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class FakeHouseholdRepository extends FakeJpaRepository<Household>
     implements HouseholdRepository {
+
+  @Override
+  public Set<UUID> lockByIds(Set<UUID> householdIds) {
+    return householdIds.stream().filter(this::existsById).collect(Collectors.toUnmodifiableSet());
+  }
 
   @Override
   public boolean lockById(UUID householdId) {
