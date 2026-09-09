@@ -9,4 +9,4 @@ ALTER TABLE image
                 ambient_dark_vibrant,
                 ambient_dark_muted,
                 ambient_light_vibrant,
-                ambient_light_muted) = 0);
+                ambient_light_muted) = 0) NOT VALID;
