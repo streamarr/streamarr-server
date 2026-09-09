@@ -57,11 +57,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.access.AccessDeniedException;
 
-/**
- * Issuing invitations and reset codes over fakes: whole-surface gating, the issue-time validations,
- * replacement invalidating the older pending artifact, and the reset issue's fresh-reauthentication
- * classification and audit.
- */
 @Tag("UnitTest")
 @DisplayName("Credential Issuance Service Tests")
 class CredentialIssuanceServiceTest {

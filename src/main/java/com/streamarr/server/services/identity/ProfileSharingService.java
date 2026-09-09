@@ -302,7 +302,6 @@ public class ProfileSharingService {
     return shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
   }
 
-  /** An offer that is no longer pending explains a withdrawal; any other state is just decided. */
   private ShareRejections.Accept notPending(UUID shareId) {
     return shareRepository
         .findByIdAndReloadFromDatabase(shareId)

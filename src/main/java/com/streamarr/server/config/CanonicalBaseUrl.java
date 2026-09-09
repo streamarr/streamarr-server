@@ -4,16 +4,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Locale;
 
-/**
- * The validated canonical base URL, or the explicit absence of one. Absence is a supported state:
- * the server runs, reports {@code devicePairingEnabled: false}, and refuses to invent an address it
- * cannot know.
- *
- * <p>Validation here is deliberately light. Clients re-normalize every URL they receive before
- * binding credentials, so duplicating their full connection policy on the server would add a second
- * implementation with no consumer. What this check must catch is operator error in the one value
- * every client contract hangs off.
- */
+/** An absent base URL disables device pairing. Clients enforce the full connection policy. */
 public final class CanonicalBaseUrl {
 
   private static final String HTTPS = "https";

@@ -102,6 +102,8 @@ public class ProfileLifecycleService {
           }
 
           endHomeAvailability(command.profileId(), sourceHouseholdId, now);
+          // Invalidate pending offers before creating the destination share to avoid a
+          // uniqueness conflict.
           invalidateProfileBoundArtifacts(command.profileId(), PROFILE_TRANSFERRED, now);
           makeAvailableAtHome(command.profileId(), command.destinationHouseholdId(), now);
           audit(identity, "transferProfile", command.profileId(), command.reason());
@@ -190,7 +192,6 @@ public class ProfileLifecycleService {
     authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId, now);
   }
 
-  /** Pending offers were invalidated just above, so the availability insert cannot collide. */
   private void makeAvailableAtHome(UUID profileId, UUID destinationHouseholdId, Instant now) {
     var alreadyAvailable =
         shareRepository

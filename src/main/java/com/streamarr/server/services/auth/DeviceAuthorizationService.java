@@ -111,8 +111,8 @@ public class DeviceAuthorizationService {
   /**
    * One row-locked transaction. Every poller and the approving writer serialize on the same row, so
    * classification sees state nothing can change mid-decision and exactly one caller creates the
-   * session. Any failure afterwards rolls back and leaves the row APPROVED, so the device simply
-   * polls again.
+   * session. Any failure afterwards rolls back and leaves the row APPROVED, so the device polls
+   * again.
    */
   @Transactional
   public DevicePollResult redeem(String deviceCode) {
@@ -436,10 +436,6 @@ public class DeviceAuthorizationService {
         properties.maxOutstandingCodes());
   }
 
-  /**
-   * A row-count cap has no window to measure, so the honest answer is when the oldest outstanding
-   * code expires — the moment capacity provably frees.
-   */
   private Duration waitUntilCapacityFrees(Instant now) {
     return authorizationRepository
         .findOldestOutstandingExpiry(now)

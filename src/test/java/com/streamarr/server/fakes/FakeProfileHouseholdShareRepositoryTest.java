@@ -25,10 +25,8 @@ class FakeProfileHouseholdShareRepositoryTest {
   private final FakeProfileHouseholdShareRepository fake =
       new FakeProfileHouseholdShareRepository();
 
-  /**
-   * S9 — RED today: UUID.compareTo orders by signed 64-bit halves, so HIGH (negative high half)
-   * sorts first; PostgreSQL orders uuid byte-wise, so LOW comes first — page boundaries diverge.
-   */
+  // Java UUID.compareTo uses signed halves. PostgreSQL compares UUIDs byte by byte, so these
+  // values must sort LOW before HIGH.
   @Test
   @DisplayName(
       "Should order a page by PostgreSQL uuid byte order when ids straddle the signed boundary")

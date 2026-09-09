@@ -39,8 +39,7 @@
              deliberately do not participate (Hibernate-safe identity semantics) -->
         <sonar.issue.ignore.multicriteria.e3.ruleKey>java:S2160</sonar.issue.ignore.multicriteria.e3.ruleKey>
         <sonar.issue.ignore.multicriteria.e3.resourceKey>src/main/java/com/streamarr/server/domain/**</sonar.issue.ignore.multicriteria.e3.resourceKey>
-        <!-- The refresh cookie Path is a fixed security constant that must match the endpoint
-             route exactly; making it a "customizable parameter" would be a footgun, not a fix -->
+        <!-- The refresh cookie path must match its endpoint route, so it is a fixed security constant. -->
         <sonar.issue.ignore.multicriteria.e4.ruleKey>java:S1075</sonar.issue.ignore.multicriteria.e4.ruleKey>
         <sonar.issue.ignore.multicriteria.e4.resourceKey>**/config/security/AuthCookies.java</sonar.issue.ignore.multicriteria.e4.resourceKey>
 

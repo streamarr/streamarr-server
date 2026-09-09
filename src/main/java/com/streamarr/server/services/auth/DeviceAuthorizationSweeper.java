@@ -7,11 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/**
- * Deletes pairing rows past their TTL regardless of terminal status. Nothing reads a consumed or
- * denied row after the flow ends — the durable audit is {@code device_name} on {@code auth_session}
- * — so retention here would only grow the table and the guessable-code surface.
- */
+/** Deletes expired pairing rows in every status. */
 @Slf4j
 @Component
 @RequiredArgsConstructor

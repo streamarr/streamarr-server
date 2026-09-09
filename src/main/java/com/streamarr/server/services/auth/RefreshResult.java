@@ -15,9 +15,6 @@ public sealed interface RefreshResult {
     }
   }
 
-  /**
-   * An honest retry within the rotation grace window; RFC 9700 reserves "replay" for the attack.
-   */
   record GraceRetry(String rawRefreshToken, AuthSession session) implements RefreshResult {
 
     @Override

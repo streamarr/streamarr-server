@@ -792,8 +792,7 @@ class SegmentDeliveryCoordinatorTest {
     var startsBefore = transcodeExecutor.getStartedRequests().size();
     seeker.start();
     transcodeExecutor.awaitStartedRequestCount(startsBefore + 1);
-    // The seeker revived the variant and now polls for segment50; let it settle into that wait
-    // before interrupting so the outcome is a clean Cancelled.
+    // Wait until the resumed seeker is polling before interrupting it.
     awaitLivenessChecks(1);
     seeker.interrupt();
     seeker.join(2000);

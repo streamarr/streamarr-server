@@ -31,11 +31,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/**
- * Transfers and deletion through the GraphQL boundary against real PostgreSQL and Cedar: the
- * Account moves with its Personal Profile, commit-time constraints become typed rejections, a
- * partial transfer write never disturbs credentials, and deletion paths leave nothing behind.
- */
 @Tag("IntegrationTest")
 @DisplayName("Account Lifecycle Endpoints Integration Tests")
 class AccountLifecycleEndpointsIT extends IdentityLifecycleEndpointTestSupport {

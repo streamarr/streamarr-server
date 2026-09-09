@@ -40,8 +40,6 @@ class DeviceAuthorizationSweeperIT extends AbstractIntegrationTest {
 
     sweeper.sweep();
 
-    // Nothing reads a terminal row after the flow ends; retention would only grow the table and
-    // the guessable-code surface.
     assertThat(authorizationRepository.findAll())
         .extracting(DeviceAuthorization::getId)
         .containsExactlyInAnyOrder(livePending, liveApproved);

@@ -53,11 +53,6 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * The sharing lifecycle through the GraphQL boundary against real PostgreSQL and Cedar: offers and
- * their decisions, activation eligibility, name conflicts, membership-required shares,
- * administratively ending after password confirmation, previews, and visitor-session effects.
- */
 @Tag("IntegrationTest")
 @DisplayName("Profile Sharing Endpoints Integration Tests")
 class ProfileSharingEndpointsIT extends AbstractIntegrationTest {

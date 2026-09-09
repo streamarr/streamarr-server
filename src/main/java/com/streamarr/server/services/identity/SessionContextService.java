@@ -115,12 +115,8 @@ public class SessionContextService {
     throw classifyLostSelection(session.getId());
   }
 
-  /**
-   * Zero rows updated has two causes and only one of them is an authentication failure: a revoked
-   * session is genuinely unauthenticated, while a session with no row at all is a caller whose
-   * insert is still queued behind this write. Answering the second as the first told a paired
-   * device to authenticate over a fault it could do nothing about.
-   */
+  // A missing row indicates an unflushed session insert. An existing session that is no longer
+  // live requires authentication.
   private RuntimeException classifyLostSelection(UUID sessionId) {
     if (sessionRepository.hasRow(sessionId)) {
       return new AuthenticationRequiredException();

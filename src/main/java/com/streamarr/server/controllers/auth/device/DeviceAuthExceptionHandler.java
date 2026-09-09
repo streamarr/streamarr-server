@@ -105,7 +105,7 @@ public class DeviceAuthExceptionHandler {
         .body(new AuthErrorResponse("TOO_MANY_ATTEMPTS", e.getMessage()));
   }
 
-  /** Delta-seconds, rounded up: a client that retries a fraction early would just be refused. */
+  // Round up to whole seconds so clients do not retry before the delay expires.
   private static long retryAfterSeconds(Duration retryAfter) {
     if (retryAfter == null || retryAfter.isNegative() || retryAfter.isZero()) {
       return 1;

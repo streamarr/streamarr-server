@@ -54,12 +54,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * The direct-manager lifecycle through the GraphQL boundary against real PostgreSQL and Cedar:
- * invitation and consent (the code appears exactly once), one winner per transition, the eligible
- * manager rule on relinquishing, and the fresh-reauthenticated override killing restorable
- * proposals.
- */
 @Tag("IntegrationTest")
 @DisplayName("Profile Manager Endpoints Integration Tests")
 class ProfileManagerEndpointsIT extends AbstractIntegrationTest {

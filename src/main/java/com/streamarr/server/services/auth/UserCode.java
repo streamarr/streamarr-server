@@ -21,8 +21,8 @@ public final class UserCode {
   private UserCode() {}
 
   /**
-   * Accepts what a person actually types — any case, with or without separators or surrounding
-   * whitespace — and returns the single stored form, or rejects it.
+   * Accepts either case, hyphens, spaces, and surrounding whitespace. Returns a validated uppercase
+   * code.
    */
   public static String normalize(String typed) {
     if (typed == null) {

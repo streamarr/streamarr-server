@@ -65,11 +65,10 @@ public class HlsPlaylistService {
     sb.append("\n");
   }
 
-  // RFC 8216 §4.3.4.2: BANDWIDTH "represents the peak segment bit rate" and AVERAGE-BANDWIDTH
-  // "the average segment bit rate". The rates known here are averages — encoder targets for the
-  // ladder, the probed source rate for direct play — so BANDWIDTH adds headroom for container
-  // overhead and rate variation. Encoded variants are VBV-capped at their target (-maxrate),
-  // which keeps the padded peak honest; probe-derived values remain estimates.
+  // RFC 8216 §4.3.4.2 defines BANDWIDTH as the peak segment bit rate and AVERAGE-BANDWIDTH
+  // as the average. The rates available here are averages, so BANDWIDTH adds headroom for
+  // container overhead and rate variation. Encoded variants are capped with -maxrate.
+  // Probed source rates remain estimates.
   private static final int PEAK_HEADROOM_PERCENT = 20;
 
   private void appendStreamInf(
