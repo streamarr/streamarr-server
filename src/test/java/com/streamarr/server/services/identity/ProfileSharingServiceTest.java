@@ -50,8 +50,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * The sharing lifecycle over fakes: one winner per transition, the oracle rule per seat, and the
- * unshare side effects — selections cleared, a visitor's sessions dropped home.
+ * The sharing lifecycle over fakes: one winner per transition, resource visibility for each
+ * operation, and the unshare side effects — selections cleared, a visitor's sessions dropped home.
  */
 @Tag("UnitTest")
 @DisplayName("Profile Sharing Service Tests")
@@ -121,7 +121,7 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should return not-found when offer targets are hidden by the oracle rule")
+  @DisplayName("Should return not-found when the caller cannot view the offer targets")
   void shouldReturnNotFoundWhenOfferTargetsAreHiddenByOracleRule() {
     authorization.denyAll();
     assertThat(
@@ -302,7 +302,8 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should require reauthentication when the administrative-end ceremony is stale")
+  @DisplayName(
+      "Should require reauthentication when ending a share administratively with stale credentials")
   void shouldRequireReauthenticationWhenAdministrativelyEndCeremonyIsStale() {
     var active = activeShare();
     authorization.decideUnitWith(

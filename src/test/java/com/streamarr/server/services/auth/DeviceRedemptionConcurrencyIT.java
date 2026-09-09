@@ -98,7 +98,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
   @AfterEach
   void deleteSeededRows() {
-    // Unclaim before account deletion: T4 only enforces while a claim exists.
+    // Remove the claim so cleanup can delete the last enabled ServerAdmin.
     authTestSupport.unclaimBootstrap();
     gatedIssuer.reset();
     gatedClock.reset();
@@ -106,7 +106,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     registrationRepository.deleteAll();
     esnBlockRepository.deleteAll();
     for (var accountId : accountIds) {
-      // FK cascades sweep auth_session and refresh_token rows.
+      // Foreign key cascades delete auth_session and refresh_token rows.
       authTestSupport.deleteAccount(accountId);
     }
 

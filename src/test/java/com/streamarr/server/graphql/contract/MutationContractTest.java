@@ -28,8 +28,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * ADR 0026's mutation shape, enforced structurally: one required {@code input} argument typed
- * {@code *Input}, a nullable mutation-specific {@code *Payload} whose {@code userErrors} is a
+ * ADR 0026's mutation schema contract, enforced structurally: one required {@code input} argument
+ * typed {@code *Input}, a nullable mutation-specific {@code *Payload} whose {@code userErrors} is a
  * non-null list of a non-null union, every union member implementing {@code MutationError}, and
  * nothing returned bare. The legacy mutations below predate the ADR and are allowed by name until
  * each migrates; the list can only shrink.
@@ -177,7 +177,7 @@ class MutationContractTest {
   }
 
   @Test
-  @DisplayName("Should report no shape violations when non-legacy mutations conform to ADR 0026")
+  @DisplayName("Should report no schema violations when non-legacy mutations conform to ADR 0026")
   void shouldReportNoShapeViolationsWhenNonLegacyMutationsConformToAdr0026() {
     var violations = new ArrayList<String>();
     for (var mutation : mutationFields()) {

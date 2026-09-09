@@ -110,8 +110,8 @@ class DeviceBindingEndpointsIT extends AbstractIntegrationTest {
 
     var deviceBearer = tokens.get("accessToken").asString();
 
-    // Administration is forbidden wholesale — even for a ServerAdmin's own TV. A whole-surface
-    // gate answers FORBIDDEN; a resource mutation answers through the oracle as not-found.
+    // TV sessions cannot administer resources, even for a ServerAdmin's own TV. The
+    // administration query returns FORBIDDEN; mutations return not-found for hidden resources.
     graphql(
             deviceBearer,
             """

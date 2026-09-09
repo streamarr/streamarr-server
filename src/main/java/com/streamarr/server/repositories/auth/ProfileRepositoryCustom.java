@@ -76,7 +76,7 @@ public interface ProfileRepositoryCustom {
   /**
    * The row re-read from the database, not from Hibernate's first-level cache: a policy decision
    * inside this transaction already JPA-loaded the row, and after the jOOQ write the managed copy
-   * is stale (the hybrid footgun).
+   * is stale because jOOQ writes do not refresh managed entities.
    */
   Optional<Profile> findByIdAndReloadFromDatabase(UUID profileId);
 }

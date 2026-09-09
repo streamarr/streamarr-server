@@ -40,11 +40,13 @@ import org.springframework.stereotype.Service;
 
 /**
  * Profile sharing (ADR 0024 §Profile sharing): a share makes one Profile available to a Household
- * without copying data. Cedar decides every seat; the conditional status transitions give every
- * race exactly one winner; a membership-required share is refused up front with its typed error
- * (Cedar and T3 both refuse it — belt and braces); T7 and T8 judge the final state at commit and
- * roll back into typed errors. Unsharing clears any selection of that Profile there, and ending a
- * Personal Profile's share drops the visitor's sessions back to their membership Household.
+ * without copying data. Cedar authorizes each operation; conditional status transitions allow only
+ * one concurrent request to succeed. Authorization and database constraints both prevent ending a
+ * share required by Account membership. Deferred constraints require an eligible HouseholdAdmin for
+ * hosted restricted Profiles and distinct available Profile names within each Household; violations
+ * roll back the transaction and return typed errors. Unsharing clears selections of that Profile
+ * there. Ending a Personal Profile's share returns the visitor's sessions to their membership
+ * Household.
  */
 @Service
 @RequiredArgsConstructor
@@ -373,9 +375,9 @@ public class ProfileSharingService {
   }
 
   /**
-   * How a verb answers each way authorization can refuse it (ADR 0026 oracle rule): hidden when the
-   * caller may not view the resource, a typed refusal when it may and the resource's own state
-   * explains the denial, FORBIDDEN otherwise.
+   * How an operation reports authorization denials (ADR 0026 resource visibility rules): hidden
+   * when the caller may not view the resource, a typed refusal when it may and the resource's own
+   * state explains the denial, FORBIDDEN otherwise.
    */
   private record Refusals<R>(
       Supplier<? extends R> hidden,
@@ -427,7 +429,7 @@ public class ProfileSharingService {
     };
   }
 
-  /** T3 explained to a viewer: the share is refused for what it is, not for who asks. */
+  /** Explains to an authorized viewer that a share required by Account membership cannot end. */
   private <R> Optional<R> structuralRefusal(UUID shareId, Supplier<? extends R> structural) {
     return shareRepository
         .findById(shareId)

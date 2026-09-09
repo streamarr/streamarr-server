@@ -21,7 +21,7 @@ forbid (
 )
 when { principal has deviceBound && principal.deviceBound };
 
-// Any enabled Account approves its own pairing grant; the ceremony validates the chosen
+// Any enabled Account approves its own pairing grant; pairing approval validates the chosen
 // Household and the ESN block outside Cedar, and the winning poll rechecks them live.
 @id("link-device-as-enabled-account")
 permit (

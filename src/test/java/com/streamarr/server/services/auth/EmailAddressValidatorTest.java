@@ -45,7 +45,7 @@ class EmailAddressValidatorTest {
   @Test
   @DisplayName("Should report malformed without recursing when a many-label domain ends with a dot")
   void shouldReportMalformedWithoutRecursingWhenManyLabelDomainEndsWithDot() {
-    // Deciding the shape must not recurse per label: this input once overflowed the stack.
+    // Validating the email format must not recurse per label: this input once overflowed the stack.
     var candidate = "kai@" + "label.".repeat(100_000);
 
     assertThat(EmailAddressValidator.validate(candidate))

@@ -64,7 +64,7 @@ Transient upload back-pressure is a self-classifying condition: the producer ret
 
 === A playlist structure suite gates the advertised representation
 
-An in-repo HLS conformance suite runs inside the standard build and the continuous-integration gate, asserting playlist structure and the delivery obligations above against generated playlists and a controllable segment-producing fake.
+An HLS conformance suite maintained in this repository runs inside the standard build and the continuous-integration gate, asserting playlist structure and the delivery obligations above against generated playlists and a controllable segment-producing fake.
 Intentional deviations from the standard — advertise-ahead first among them — are recorded in this ADR and exercised by the relevant playlist and delivery tests, so the deviation remains reviewable rather than tribal knowledge.
 A deeper platform-specific stream validator remains an optional local check outside the portable gate.
 

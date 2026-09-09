@@ -172,7 +172,7 @@ class AccessTokenIssuerTest {
   }
 
   @Test
-  @DisplayName("Should expire at the ceremony window end when the source expires later")
+  @DisplayName("Should expire at the reauthentication window end when the source expires later")
   void shouldExpireAtCeremonyWindowEndWhenSourceExpiresLater() {
     var now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
     var fixedIssuer = issuerAt(Clock.fixed(now, ZoneOffset.UTC));

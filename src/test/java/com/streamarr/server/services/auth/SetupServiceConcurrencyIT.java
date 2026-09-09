@@ -56,8 +56,9 @@ class SetupServiceConcurrencyIT extends AbstractIntegrationTest {
     dsl.deleteFrom(SERVER_BOOTSTRAP).execute();
 
     for (var setup : completedSetups) {
-      // Redundant with the profile FK cascade since V047, but kept explicit: stranded watch rows
-      // in the reused container would poison later runs if the cascade ever changed.
+      // Redundant with the profile foreign key cascade since V047, but kept explicit: stranded
+      // watch rows
+      // in the reused container would cause subsequent tests to fail if the cascade ever changed.
       dsl.deleteFrom(WATCH_HISTORY)
           .where(WATCH_HISTORY.PROFILE_ID.eq(setup.profile().getId()))
           .execute();
@@ -163,9 +164,9 @@ class SetupServiceConcurrencyIT extends AbstractIntegrationTest {
   }
 
   /**
-   * Legacy placeholder rows predate the NOT VALID profile FK, so they can no longer be written
-   * through normal inserts — exactly as designed. Recreate the pre-migration state by bypassing
-   * constraint checks for one statement (the container user is a superuser).
+   * Legacy placeholder rows predate the NOT VALID profile foreign key, so they can no longer be
+   * written through normal inserts — exactly as designed. Recreate the pre-migration state by
+   * bypassing constraint checks for one statement (the container user is a superuser).
    */
   private void seedLegacyPlaceholderWatchRow() {
     dsl.connection(

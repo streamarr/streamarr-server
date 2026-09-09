@@ -17,7 +17,7 @@ It also replaces the unmerged `ADR 0018: Direct Fenced Worker Control` reviewed 
 == Context
 
 Streamarr must retire token version counters and support horizontal transcoding without making a small installation operate distributed coordination infrastructure.
-ADR 0017 attempted to replace the counters with a durable playback state machine, cleanup ledger, and parent-deletion choreography.
+ADR 0017 attempted to replace the counters with a durable playback state machine, cleanup ledger, and coordinated parent-deletion steps.
 The unmerged ADR 0018 draft then extended that machinery with inbound worker endpoints, generations, leases, durable command state, and an application-operated certificate authority.
 Those designs solved general multi-replica and crash-recovery problems before one remote variant could play, duplicated state already owned by FFmpeg or a live connection, and changed local playback from independent variant failure to whole-ladder failure.
 

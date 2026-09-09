@@ -15,7 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
-/** Coordinates authorized Household mutations with oracle-safe denial handling. */
+/** Coordinates authorized Household mutations and conceals resources the caller cannot view. */
 @Service
 @RequiredArgsConstructor
 public class HouseholdAdministrationService {

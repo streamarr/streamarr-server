@@ -1,7 +1,7 @@
 // ADR template — copy to NNNN-short-kebab-title.adoc.
 // Before merging, re-check your NNNN against main: parallel branches collide on
 // numbers the same way the two V039 migrations did; renumber yours if taken.
-// Fullest examples of this shape: 0015 (authorization), 0016 (authentication).
+// Fullest examples of this format: 0015 (authorization), 0016 (authentication).
 = ADR NNNN: Title naming the decision, not the topic
 
 == Status

@@ -434,7 +434,8 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should require reauthentication when only the ceremony is missing")
+    @DisplayName(
+        "Should require reauthentication when all other authorization requirements are met")
     void shouldRequireReauthenticationWhenOnlyCeremonyIsMissing() {
       account.setServerAdmin(true);
       accounts.save(account);
@@ -445,7 +446,7 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should report not fresh when the ceremony claim is stale or future-dated")
+    @DisplayName("Should report not fresh when the reauthentication claim is stale or future-dated")
     void shouldReportNotFreshWhenCeremonyClaimStaleOrFutureDated() {
       account.setServerAdmin(true);
       accounts.save(account);

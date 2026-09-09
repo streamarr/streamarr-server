@@ -80,9 +80,9 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * The whole credential loop against real PostgreSQL and Cedar: a ServerAdmin issues through GraphQL
- * (the code appears exactly once), the recipient's REST ceremony looks up, accepts or declines by
- * code alone, and the reset ceremony redeems while disabled — changing the password, revoking
- * refresh authority, creating no session.
+ * (the code appears exactly once), the recipient's REST requests look up, accept or decline by code
+ * alone, and password reset succeeds while the Account is disabled — changing the password,
+ * revoking refresh authority, creating no session.
  */
 @Tag("IntegrationTest")
 @DisplayName("Credential Ceremony Endpoints Integration Tests")
@@ -720,7 +720,8 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should require the ceremony and audit the winner when a password reset is issued")
+  @DisplayName(
+      "Should require reauthentication and audit the successful request when a password reset is issued")
   void shouldRequireCeremonyAndAuditWinnerWhenPasswordResetIsIssued() throws Exception {
     var target = authTestSupport.createIdentity();
     try {

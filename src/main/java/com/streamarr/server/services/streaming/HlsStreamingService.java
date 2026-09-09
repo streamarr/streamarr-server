@@ -154,8 +154,8 @@ public class HlsStreamingService implements StreamingService {
     if (session.isEmpty()) {
       return;
     }
-    // The caller still sees a plain no-op (no existence oracle); the miss is logged so
-    // cross-profile attempts and wrong-owner stamping stay diagnosable server-side.
+    // Leave the session unchanged and return normally to conceal its existence from other
+    // Profiles. Log the ownership mismatch so operators can diagnose incorrect access attempts.
     if (!session.get().isOwnedBy(profileId)) {
       log.warn("Destroy for session {} rejected: profile {} does not own it", sessionId, profileId);
       return;

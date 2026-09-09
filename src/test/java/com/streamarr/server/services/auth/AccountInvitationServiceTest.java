@@ -58,9 +58,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * The principal-less invitation ceremonies over fakes: code resolution (throttled, constant failure
- * answer), the acceptance winner creating the whole identity shape atomically, and the first
- * Account of an empty Household becoming HouseholdAdmin.
+ * Invitation operations authenticated by code, tested with fakes: code resolution (throttled,
+ * constant failure answer), the successful acceptance creating the Account, Profile, and
+ * relationships atomically, and the first Account of an empty Household becoming HouseholdAdmin.
  */
 @Tag("UnitTest")
 @DisplayName("Account Invitation Service Tests")
@@ -103,7 +103,8 @@ class AccountInvitationServiceTest {
   }
 
   @Test
-  @DisplayName("Should create the whole identity shape when an invitation is accepted")
+  @DisplayName(
+      "Should create the Account, Profile, and relationships when an invitation is accepted")
   void shouldCreateWholeIdentityShapeWhenInvitationIsAccepted() {
     // The Household already has a member, so the invited role is honored as-is.
     var localManager = accounts.save(AccountFixture.defaultAccountBuilder().build());
@@ -819,7 +820,10 @@ class AccountInvitationServiceTest {
     }
   }
 
-  /** Answers as if the Household's coordination row had vanished while its FK still resolves. */
+  /**
+   * Answers as if the Household's coordination row had vanished while its foreign key still
+   * resolves.
+   */
   private static final class GuardlessUserAccountRepository extends FakeUserAccountRepository {
 
     @Override

@@ -20,7 +20,8 @@ import org.hibernate.type.SqlTypes;
 @AllArgsConstructor
 public class ExternalIdentifier extends BaseAuditableEntity<ExternalIdentifier> {
 
-  // UUID PK is for JPA identity; composite unique index on (external_source_type, external_id)
+  // UUID primary key is for JPA identity; composite unique index on (external_source_type,
+  // external_id)
   // enforces business-level deduplication at the database layer.
   private UUID entityId;
 

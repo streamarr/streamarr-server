@@ -64,7 +64,7 @@ when {
 };
 
 // Only ServerAdmin proposes, replaces, cancels, or inspects Account invitations
-// (ADR 0024 §Invitations); the recipient's own ceremony authenticates by code, outside Cedar.
+// (ADR 0024 §Invitations); the recipient's requests authenticate by code, outside Cedar.
 @id("account-invitations-are-server-admin-work")
 permit (
   principal,

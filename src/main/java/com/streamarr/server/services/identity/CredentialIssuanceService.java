@@ -229,7 +229,10 @@ public class CredentialIssuanceService {
     return Optional.empty();
   }
 
-  /** The new Profile's shape against its Household: name, restriction, and required manager. */
+  /**
+   * Validates the new Profile against its Household's requirements: name, restriction, and required
+   * manager.
+   */
   private Optional<CredentialRejections.Issue> profileShapeRejection(
       IssueInvitationCommand command, AccountInvitationMode mode, Profile profile) {
     if (mode == AccountInvitationMode.CREATE

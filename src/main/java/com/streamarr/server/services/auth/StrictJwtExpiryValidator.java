@@ -12,7 +12,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
  * mandatory because access-token expiry is the outer bound of the revocation model — the default
  * timestamp validator's clock skew and missing-{@code exp} tolerance would silently extend it.
  *
- * <p>The failure descriptions are load-bearing: {@code RestAuthenticationEntryPoint} maps
+ * <p>The failure descriptions determine the client error: {@code RestAuthenticationEntryPoint} maps
  * descriptions containing the substring "expired" (case-insensitive) to EXPIRED_TOKEN
  * (refresh-and-retry) and everything else to INVALID_TOKEN (route to login), so only the
  * past-expiry failure — here or in any other validator in the chain — may contain that substring.

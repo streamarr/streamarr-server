@@ -128,7 +128,7 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should report the missing ceremony when reauthentication is all that is missing")
+  @DisplayName("Should require reauthentication when all other authorization requirements are met")
   void shouldReportMissingCeremonyWhenReauthenticationIsAllThatIsMissing() {
     authorization.decideUnitWith(
         intent ->

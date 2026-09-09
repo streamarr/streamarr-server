@@ -35,9 +35,10 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * The sharing invariants PostgreSQL holds (T7 and the invalidation pairing) and the share
- * repository's time-aware transitions, judged against a real database. The T1-before-T7 cases pin
- * which constraint raises first, so the account-trigger arm of T7 is documented as dead defense.
+ * PostgreSQL enforcement of eligible administrators for hosted restricted Profiles, offer
+ * invalidation details, and time-dependent share transitions. Account demotion and deletion tests
+ * verify that the Household administrator constraint rejects the write before the hosting
+ * supervision check can run.
  */
 @Tag("IntegrationTest")
 @DisplayName("Profile Sharing Invariants Integration Tests")
@@ -204,9 +205,12 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     assertThat(page).isEmpty();
   }
 
-  // ---- I6 / I2: which T7 arms are reachable -----------------------------------------------------
+  // Hosting supervision checks and constraint evaluation order.
 
-  /** The profile-trigger arm of T7: the path the policy changes translate. */
+  /**
+   * Restricting a Profile triggers the hosting supervision constraint translated by the policy
+   * service.
+   */
   @Test
   @DisplayName(
       "Should raise hosting supervision when a shared Profile becomes restricted in an accountless Household")
@@ -224,7 +228,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
         .isEqualTo(CHK_HOSTING_ADMIN);
   }
 
-  /** T1 fires before T7 in the same trigger loop: the demotion arm of T7 is dead defense. */
+  /** The Household administrator check rejects demotion before hosting supervision is checked. */
   @Test
   @DisplayName(
       "Should raise Household retains admin before hosting supervision when the last admin is demoted")
@@ -242,7 +246,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
         .isEqualTo(CHK_HOUSEHOLD_ADMIN);
   }
 
-  /** With a member remaining, deleting the sole admin trips T1 before T7. */
+  /** With a member remaining, the Household administrator check rejects deletion first. */
   @Test
   @DisplayName(
       "Should raise Household retains admin before hosting supervision when the last admin is deleted")
@@ -317,7 +321,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
         });
   }
 
-  /** A Kid at the admin's home with the admin as its direct manager (T6-valid). */
+  /** A Kid Profile with an eligible HouseholdAdmin as its direct manager in its home Household. */
   private Profile createKid(AuthTestSupport.TestIdentity admin) {
     return createManagedOrphan(admin, ProfileFixture.kidProfileBuilder());
   }

@@ -491,7 +491,7 @@ class DeviceAuthorizationServiceTest {
     var userCode = issued.userCode();
     var approverId = approver.getId();
 
-    // A probe deserves no oracle detail; the poll answers expired_token for the same state.
+    // Approval requests conceal expired grants as not-found; polling returns expired_token.
     assertThatThrownBy(() -> service.lookup(userCode, approverId))
         .isInstanceOf(DeviceCodeNotFoundException.class);
   }

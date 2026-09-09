@@ -7,7 +7,7 @@ import lombok.NonNull;
 /**
  * Every expected reason a Profile administration mutation refuses (ADR 0026): one sealed union per
  * mutation, members shared where mutations refuse for the same reason. Hidden resources refuse as
- * not-found under the oracle rule.
+ * not-found to conceal their existence.
  */
 public final class ProfileRejections {
 
@@ -66,9 +66,7 @@ public final class ProfileRejections {
 
   public record RestrictedAccountAuthority() implements ChangeProfilePolicy {}
 
-  /**
-   * T7: every Household hosting the Profile must keep an eligible HouseholdAdmin once restricted.
-   */
+  /** Every Household hosting the Profile must keep an eligible HouseholdAdmin once restricted. */
   public record HostingHouseholdLacksEligibleAdmin() implements ChangeProfilePolicy {}
 
   public record MaximumAllowedRatingAgeInvalid() implements CreateProfile, ChangeProfilePolicy {}

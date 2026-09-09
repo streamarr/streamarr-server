@@ -60,8 +60,8 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
 
   @AfterEach
   void restoreBaseline() {
-    // Unclaim first: T4 only enforces while a claim exists, and the deletions below may remove
-    // the database's last enabled ServerAdmin.
+    // Remove the bootstrap claim before cleanup can delete the last enabled ServerAdmin.
+    // The database requires an enabled ServerAdmin while a claim exists.
     authTestSupport.unclaimBootstrap();
     deleteSeededRows();
   }
@@ -78,8 +78,8 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
     var approver = seedAccount();
     var bearer = bearerFor(approver);
 
-    // Lookup is the enumeration oracle, so its attempts and decision's come from one budget —
-    // two budgets would hand an attacker twice the tries against the same code.
+    // Lookup responses reveal whether a pairing code exists, so lookup and decision attempts
+    // share one limit. Separate limits would double the attempts available to guess the code.
     for (var attempt = 0; attempt < properties.maxGuessAttempts(); attempt++) {
       mockMvc.perform(lookup(bearer, "BCDF-GHJK")).andExpect(status().isNotFound());
     }

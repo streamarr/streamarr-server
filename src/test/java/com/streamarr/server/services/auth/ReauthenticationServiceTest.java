@@ -12,7 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-/** The ceremony's device gate: a TV never steps up, before any session or password work. */
+/** TV reauthentication is rejected before any session lookup or password verification. */
 @Tag("UnitTest")
 @DisplayName("Reauthentication Service Tests")
 class ReauthenticationServiceTest {

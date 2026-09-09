@@ -24,8 +24,8 @@ class LiveSessions {
   }
 
   /**
-   * A missing, foreign, or revoked session reads identically as unauthenticated (oracle-free). The
-   * row is locked FOR UPDATE so a concurrent revoke cannot interleave between this read and the
+   * Missing, foreign, and revoked sessions all return unauthenticated to conceal their existence.
+   * The row is locked FOR UPDATE so a concurrent revoke cannot interleave between this read and the
    * selection's write: the revoke has either already committed (revokedAt set — rejected here) or
    * it blocks until this transaction commits and then applies on top.
    */

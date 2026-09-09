@@ -113,7 +113,8 @@ class PlaybackAuthorizationServiceIT extends AbstractIntegrationTest {
   void shouldDenyPlaybackWhenSelectedProfileIsUnsharedFromContextHousehold() {
     host = authTestSupport.createIdentity();
     // An unlinked Profile the host manages, available in the host's Household — created in one
-    // transaction because the deferred home-anchor trigger checks the whole shape at commit.
+    // transaction because the deferred home-anchor trigger checks the Profile and its management
+    // relationships at commit.
     var managedShare =
         transactionTemplate.execute(
             _ -> {

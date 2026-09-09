@@ -230,8 +230,8 @@ public class AccountInvitationService {
   }
 
   /**
-   * The deferred Household invariants judge the accepted shape at commit; each one the issuance
-   * pre-checks can be raced is answered with a typed conflict instead of a bare 500.
+   * Deferred Household constraints validate the accepted identity at commit. Known conflicts caused
+   * by concurrent changes return typed errors instead of 500.
    */
   private RuntimeException translateAcceptanceFailure(DataIntegrityViolationException exception) {
     var constraint = constraintViolationTranslator.constraintName(exception).orElse("");

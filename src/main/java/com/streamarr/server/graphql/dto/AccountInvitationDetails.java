@@ -8,8 +8,8 @@ import java.util.UUID;
 import lombok.Builder;
 
 /**
- * The ServerAdmin-facing projection of an invitation: target, Profile shape, projected status, and
- * expiry. The public id and secret digest are never exposed.
+ * The ServerAdmin-facing projection of an invitation: target, Profile configuration, projected
+ * status, and expiry. The public id and secret digest are never exposed.
  */
 @Builder
 public record AccountInvitationDetails(

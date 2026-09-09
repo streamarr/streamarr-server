@@ -111,7 +111,7 @@ GraphQL is authenticated by default: unauthenticated requests, including schema 
 Streaming REST endpoints enforce the same profile-scoped tokens through the playback-URL delivery link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] defines — the same token model with a different carrier, since playlist-driven players cannot attach headers to segment requests — and development runs with the same authentication as production rather than a bypass.
 
 Authorization lives behind a Streamarr-owned, hexagonal `AuthorizationService` facade in its own package.
-Spring Security stays the security spine — request authentication, method security, factors, sessions, and security-context propagation — while Streamarr domain policy decides membership, profile selection, content visibility, activity access, and future policy features.
+Spring Security stays the security framework — request authentication, method security, factors, sessions, and security-context propagation — while Streamarr domain policy decides membership, profile selection, content visibility, activity access, and future policy features.
 V1 runs this policy in-process, but the facade stays adapter-shaped so an external engine (Topaz, OpenFGA, SpiceDB, Cedar, Cerbos, or OPA/Rego) could later back point decisions without rewriting media queries or callers.
 
 If a hostile client, replayed request, forged token, or bare `curl` call could bypass a control, that control belongs on the server.

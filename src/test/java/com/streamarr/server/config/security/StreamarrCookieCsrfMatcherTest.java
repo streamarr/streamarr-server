@@ -62,8 +62,8 @@ class StreamarrCookieCsrfMatcherTest {
   @Test
   @DisplayName("Should not require csrf when no cookies ride the request")
   void shouldNotRequireCsrfWhenNoCookiesRideTheRequest() {
-    // The native/TV shape: body credentials, no cookie jar for this origin, nothing ambient to
-    // forge. Device pairing polls arrive this way too.
+    // Native/TV clients send credentials in the body and store no cookies for this origin.
+    // A forged request has no authentication cookies. Device pairing polls use the same flow.
     var request = new MockHttpServletRequest("POST", "/api/auth/login");
 
     assertThat(matcher.matches(request)).isFalse();

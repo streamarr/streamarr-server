@@ -22,8 +22,8 @@
 
 ### Root Cause First
 - Before fixing a bug, reproduce it and explain the mechanism. A fix that adds a retry, sleep, widened timeout, defensive check, or call-site special case without a stated mechanism is a symptom patch, not a fix.
-- If the mechanism lives in a lower layer, fix it there rather than working around it in the caller — the workaround becomes load-bearing and hides the bug from the next caller.
-- "It's a flake" is a claim that needs evidence; assume an intermittent failure is a real race until proven otherwise — single-thread happy paths hide races, concurrency tests surface them.
+- If the mechanism lives in a lower layer, fix it there rather than working around it in the caller — correct behavior becomes dependent on the workaround and the underlying bug remains hidden from the next caller.
+- Dismissing an intermittent failure as unrelated to the implementation requires evidence; assume an intermittent failure is a real race until proven otherwise — single-thread happy paths hide races, concurrency tests surface them.
 - State the root cause in the PR description so reviewers can check the diagnosis, not just the patch.
 
 ### Tidy First (Kent Beck)
@@ -37,7 +37,7 @@
 ### Commit Discipline
 - Only commit when ALL tests pass and ALL warnings are resolved
 - Each commit is a single logical unit of work
-- Commit subjects start with the lowercase prefix `structural:` or `behavioral:` (e.g. `structural: extract password verifier`); this is the server repo's casing — streamarr-web uses the same lowercase prefixes
+- Commit subjects start with the lowercase prefix `structural:` or `behavioral:` (e.g. `structural: extract password verifier`); this is the server repository's casing — streamarr-web uses the same lowercase prefixes
 - Small, frequent commits over large, infrequent ones
 - Commit messages must be under 200 words
 - Always use signed commits (`git commit -S`)
@@ -75,7 +75,7 @@ Choose the simplest mechanism that fits the operation:
   JPA's `AuditingEntityListener`.
   See `GenreRepositoryCustomImpl`, `SessionProgressRepositoryCustomImpl`.
 - **In-memory mutex** (`MutexFactory`): guard multi-step check-then-act sequences that can't
-  be expressed as a single SQL statement — e.g., read DB → call external API → conditionally
+  be expressed as a single SQL statement — e.g., read the database → call an external API → conditionally
   create multiple entities. Single-JVM only — ineffective across multiple instances.
   See `MovieFileProcessor.enrichMovieMetadata()`.
 - **Database locks** (`SELECT FOR UPDATE … skipLocked`): coordinate across multiple application
@@ -85,7 +85,7 @@ Choose the simplest mechanism that fits the operation:
   bound the wait with a transaction-local `lock_timeout`, and keep external calls, file I/O, and
   retry/backoff outside the transaction. Every writer for that logical resource must follow the
   same cooperative lock protocol. See [ADR 0022](docs/adr/0022-transaction-scoped-artwork-replacement-locking.adoc).
-- **Outbound HTTP throttling/retry**: use the client's native interceptors (Methanol `RetryInterceptor` + `RateLimitingInterceptor`) — never a hand-rolled `Semaphore` + sleep loop. Never hold a permit, lock, or DB connection across a retry backoff sleep; that pattern caused cascading Hikari pool exhaustion (four fix PRs in ten days).
+- **Outbound HTTP throttling/retry**: use the client's native interceptors (Methanol `RetryInterceptor` + `RateLimitingInterceptor`) — never a hand-rolled `Semaphore` + sleep loop. Never hold a permit, lock, or database connection across a retry backoff sleep; that pattern caused cascading Hikari pool exhaustion (four fix PRs in ten days).
 - **Virtual threads are the async model**: `Executors.newVirtualThreadPerTaskExecutor()` in try-with-resources, plus `spring.threads.virtual.enabled: true`. No `@Async`, no reactive/actor frameworks.
 - **Async boundary policy**: library-mutating GraphQL mutations (scan/refresh) are async and return immediately. Apply this uniformly — don't flip individual mutations between sync and async.
 
@@ -196,14 +196,14 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - **Outbound HTTP**: Methanol over JDK `HttpClient` with interceptors (retry, rate limit, cache). Don't introduce `RestTemplate`/`RestClient`/`WebClient`.
 - **Delivery protocol**: GraphQL only. A complete REST/JSON:API layer was built and deleted within 24 hours — keep transport experiments on spike branches; extract protocol-agnostic services (`MediaPage`/`PageItem` pattern) but don't merge speculative protocol surfaces.
 - **Sonar config** lives in `pom.xml` properties, not a `sonar-project.properties` file (tried and reverted).
-- **`LibraryManagementService` is a thin orchestrator** — it's the repo's #1 churn file. New scanning/refresh/watching/cleanup behavior goes in dedicated collaborators (`*FileProcessor`, event listeners) wired via events, not more injected dependencies.
+- **`LibraryManagementService` is a thin orchestrator** — it is the repository's most frequently changed file. New scanning/refresh/watching/cleanup behavior goes in dedicated collaborators (`*FileProcessor`, event listeners) wired via events, not more injected dependencies.
 
 ## Persistence (JPA + jOOQ Hybrid)
-- Spring Data JPA repositories own CRUD; complex or conflict-handling queries use jOOQ via the Spring Data fragment convention: `{Repository}Custom` interface + `{Repository}CustomImpl` class with an injected `DSLContext` — Spring Data auto-discovers the impl by naming convention
+- Spring Data JPA repositories own CRUD; complex or conflict-handling queries use jOOQ via the Spring Data fragment convention: `{Repository}Custom` interface + `{Repository}CustomImpl` class with an injected `DSLContext` — Spring Data auto-discovers the implementation by naming convention
 - **No `@Query` JPQL**: every repository query is either a derived method (`findBySeriesIdOrderBySeasonNumber`) or jOOQ on the `{Repository}Custom` fragment. JPQL strings break silently on entity refactors; derived signatures are validated at startup and jOOQ at compile time
 - **Reads**: jOOQ builds the SQL, but execute through `JooqQueryHelper.nativeQuery(…)` (JPA `EntityManager` native query) so results map to JPA entities — don't `context.fetch*()` for entity reads
 - **Writes**: execute jOOQ DSL directly (`context.update(…).returning()`, `INSERT … ON CONFLICT`) and map records to entities manually
-- **First-level-cache staleness (hybrid footgun)**: Hibernate's persistence context is not invalidated by jOOQ DML. Within one transaction, a JPA read of a row you (or a concurrently-committed transaction) mutated via jOOQ returns the *stale managed copy* — Hibernate keeps the first-loaded field state and won't refresh it on re-query, even though the SQL fetched fresh values. `JooqQueryHelper.nativeQuery` does **not** escape this (native entity queries still return the already-managed instance). So don't JPA-load a row you're about to jOOQ-mutate and then JPA-re-read it in the same transaction expecting fresh state — read the discriminating value (id, status) with a jOOQ **scalar** fetch (see `RefreshTokenService.redeem` → `RefreshTokenRepositoryCustom.findSessionIdByDigest`, which avoids caching the token it then rotates via jOOQ), or `em.refresh()` it. Not statically enforceable (temporal data-flow, not structural); the safety net is concurrency ITs (`RefreshRotationConcurrencyIT`, `RefreshRevocationRaceIT`). Single-thread happy paths hide it; it surfaces under concurrency.
+- **Stale managed entities after jOOQ writes**: Hibernate's persistence context is not invalidated by jOOQ DML. Within one transaction, a JPA read of a row you (or a concurrently-committed transaction) mutated via jOOQ returns the *stale managed copy* — Hibernate keeps the first-loaded field state and won't refresh it on re-query, even though the SQL fetched fresh values. `JooqQueryHelper.nativeQuery` does **not** escape this (native entity queries still return the already-managed instance). So don't JPA-load a row you're about to jOOQ-mutate and then JPA-re-read it in the same transaction expecting fresh state — read the discriminating value (id, status) with a jOOQ **scalar** fetch (see `RefreshTokenService.redeem` → `RefreshTokenRepositoryCustom.findSessionIdByDigest`, which avoids caching the token it then rotates via jOOQ), or `em.refresh()` it. Not statically enforceable (temporal data-flow, not structural); the safety net is concurrency integration tests (`RefreshRotationConcurrencyIT`, `RefreshRevocationRaceIT`). Single-thread happy paths hide it; it surfaces under concurrency.
 - **Pagination**: keyset/seek (`row(fields)` comparisons, NULLS LAST) fetching `limit + 2` to detect adjacent pages — no OFFSET pagination
 - No optimistic locking (`@Version`); entity equality is id-based with `hashCode() = getClass().hashCode()` (Hibernate-proxy-safe)
 

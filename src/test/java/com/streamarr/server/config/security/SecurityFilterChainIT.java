@@ -201,7 +201,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should exempt a device poll from CSRF when it carries a bearer token")
   void shouldExemptDevicePollFromCsrfWhenBearerTokenPresent() throws Exception {
-    // The TV's own shape: an Authorization header and no cookies, which is never CSRF-able.
+    // The TV authenticates with an Authorization header, without cookies that could authorize a
+    // forged request.
     mockMvc
         .perform(
             post("/api/auth/device/token")
@@ -441,7 +442,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   void shouldPermitBearerModeLoginWhenNoCookiesAndNoCsrfTokenRideIt() throws Exception {
     identity = authTestSupport.createIdentity();
 
-    // The native/tvOS shape. Tokens come back in the body only, so nothing ambient is established.
+    // Native/tvOS login returns tokens only in the response body, without authentication cookies.
     var response =
         mockMvc
             .perform(

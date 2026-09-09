@@ -28,7 +28,7 @@ public interface DeviceAuthorizationRepositoryCustom {
   /** Marks the row consumed once a poll has won it and the session exists. */
   void markConsumed(UUID id, Instant now);
 
-  /** Counts outstanding pending codes — the DB-backed, cross-instance issuance cap. */
+  /** Counts outstanding pending codes to enforce the issuance limit across server instances. */
   int countOutstanding(Instant now);
 
   /**

@@ -41,7 +41,7 @@ public class PlaybackTokenIssuer {
 
     // This is the only place playback capability is minted, so ownership is enforced here
     // rather than trusted to callers: an unowned session must never become a playable token,
-    // and reads as missing (no existence oracle).
+    // and returns the same error as a missing session to conceal its existence.
     if (!streamSession.isOwnedBy(identity.profileId())) {
       throw new SessionNotFoundException(streamSession.getSessionId());
     }

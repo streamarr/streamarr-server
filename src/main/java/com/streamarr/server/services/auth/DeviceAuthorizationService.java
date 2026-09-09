@@ -153,8 +153,8 @@ public class DeviceAuthorizationService {
   }
 
   /**
-   * Resolves a typed code to its pairing grant for the approval ceremony: the guessing budget is
-   * spent here, once per presented code, before Cedar or any validation sees the request.
+   * Resolves a typed code to its pairing grant for pairing approval: the guessing budget is spent
+   * here, once per presented code, before Cedar or any validation sees the request.
    */
   @Transactional(readOnly = true)
   public ResolvedGrant resolveForDecision(String typedUserCode, UUID callerAccountId) {
@@ -177,7 +177,7 @@ public class DeviceAuthorizationService {
 
   /**
    * The conditional decision write. Deliberately not throttled: {@link #resolveForDecision} already
-   * spent the budget for this presentation, and the ceremony calls both in one request.
+   * spent the budget for this presentation, and pairing approval calls both in one request.
    */
   @Transactional
   public DeviceAuthorizationDetails decide(DeviceDecisionCommand command) {
@@ -338,8 +338,8 @@ public class DeviceAuthorizationService {
             .findByUserCode(userCode)
             .orElseThrow(DeviceCodeNotFoundException::new);
 
-    // A probe deserves no oracle: expired collapses into not-found, matching the poll's
-    // expired_token.
+    // Approval requests return not-found for expired grants to conceal whether they existed.
+    // Polling clients receive expired_token for the same state.
     if (authorization.hasExpiredAt(clock.instant())) {
       throw new DeviceCodeNotFoundException();
     }
@@ -477,6 +477,6 @@ public class DeviceAuthorizationService {
     }
   }
 
-  /** The grant the ceremony authorizes; never the code, never poll credentials. */
+  /** The grant resolved for pairing approval; excludes the code and polling credentials. */
   public record ResolvedGrant(UUID grantId, @NonNull Optional<String> esn, String deviceName) {}
 }

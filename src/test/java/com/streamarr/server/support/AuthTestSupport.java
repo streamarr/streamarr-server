@@ -47,7 +47,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Creates a complete ADR 0024 identity for integration tests — Household, unrestricted Adult
  * Personal Profile, HouseholdAdmin Account, structural share, and a session — and mints tokens for
  * it. The identity is created in one transaction because the deferred invariant triggers check the
- * whole shape at commit.
+ * complete identity state at commit.
  */
 @RequiredArgsConstructor
 public class AuthTestSupport {
@@ -69,16 +69,15 @@ public class AuthTestSupport {
   private final TransactionTemplate transactionTemplate;
 
   /**
-   * Fixture-created identities skip the setup ceremony, so the bootstrap claim it would have made
-   * is missing and pairing issuance refuses with SETUP_INCOMPLETE. Idempotent; tests that need an
+   * Fixture-created identities skip the initial setup, so the bootstrap claim it would have made is
+   * missing and pairing issuance refuses with SETUP_INCOMPLETE. Idempotent; tests that need an
    * unclaimed server delete SERVER_BOOTSTRAP themselves, as before.
    */
   private TestIdentity bootstrapAdmin;
 
   public void claimBootstrap() {
-    // Earlier test classes can leave either half behind — a claim whose admins were deleted, or
-    // admins without a claim — so both halves are ensured independently. A claim without an
-    // enabled ServerAdmin is a state production can never reach, and T4 enforces it here too.
+    // Earlier tests may leave a bootstrap claim or enabled ServerAdmin independently. Ensure
+    // both exist: the database requires an enabled ServerAdmin while a claim exists.
     if (bootstrapAdmin == null && !hasEnabledServerAdmin()) {
       bootstrapAdmin = createAdminIdentity();
     }
@@ -94,9 +93,8 @@ public class AuthTestSupport {
   }
 
   /**
-   * Restores the shared database's historical unclaimed baseline. Call before deleting identities:
-   * T4 (an enabled ServerAdmin must remain) only enforces while a claim exists, and fixture cleanup
-   * routinely deletes the last admin.
+   * Restores the shared database's unclaimed baseline. Call before deleting identities: cleanup can
+   * remove the last enabled ServerAdmin, which the database forbids while a claim exists.
    */
   public void unclaimBootstrap() {
     dsl.deleteFrom(SERVER_BOOTSTRAP).execute();
@@ -157,9 +155,9 @@ public class AuthTestSupport {
   }
 
   /**
-   * Deletes an Account's whole Household in one transaction — T1 forbids a Household losing its
-   * final Account except inside Household deletion, so every Account and Profile of the Household
-   * goes with it (a deletion in miniature). Manager rows, shares, and guard rows cascade.
+   * Deletes an Account's Household and all of its Accounts and Profiles in one transaction. The
+   * database permits removing a Household's final Account only when deleting the Household itself.
+   * Foreign key cascades delete manager relationships, shares, and coordination rows.
    */
   public void deleteAccount(UUID accountId) {
     transactionTemplate.executeWithoutResult(
@@ -270,8 +268,9 @@ public class AuthTestSupport {
   }
 
   /**
-   * Deletes everything createIdentity made. The Account goes first (its FK to the Profile and the
-   * deferred T1/T2 triggers are satisfied once the Household is gone in the same transaction).
+   * Deletes everything createIdentity made. Delete the Account before its Personal Profile to
+   * satisfy the foreign key. Deleting the Household in the same transaction also satisfies the
+   * deferred checks for a remaining Account and its Personal Profile's structural share.
    */
   public void deleteIdentity(TestIdentity identity) {
     deleteAccount(identity.account().getId());

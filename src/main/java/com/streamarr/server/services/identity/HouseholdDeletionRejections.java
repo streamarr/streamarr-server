@@ -1,6 +1,6 @@
 package com.streamarr.server.services.identity;
 
-/** Expected refusals of Household deletion (ADR 0026 shapes). */
+/** Expected refusals of Household deletion (ADR 0026 error contracts). */
 public final class HouseholdDeletionRejections {
 
   private HouseholdDeletionRejections() {}
@@ -37,6 +37,6 @@ public final class HouseholdDeletionRejections {
 
   public record ReplacementManagerNotEligible() implements Delete {}
 
-  /** T4: after bootstrap, at least one enabled ServerAdmin remains. */
+  /** After bootstrap, at least one enabled ServerAdmin remains. */
   public record LastServerAdmin() implements Delete {}
 }

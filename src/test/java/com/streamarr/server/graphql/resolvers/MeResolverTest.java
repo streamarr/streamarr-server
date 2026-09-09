@@ -99,7 +99,7 @@ class MeResolverTest {
   }
 
   @Test
-  @DisplayName("Should return the Me shape with paged Households and Profiles when queried")
+  @DisplayName("Should return the Me response with paged Households and Profiles when queried")
   void shouldReturnMeShapeWithPagedHouseholdsAndProfilesWhenQueried() {
     authenticateAtAccountScope();
     var account =

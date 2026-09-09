@@ -17,8 +17,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The principal-less invitation ceremonies (ADR 0024 §Invitations): the recipient has no Account
- * yet, so these are REST, authenticated by the code alone. POST keeps codes out of URLs and logs.
+ * Invitation operations without an authenticated Account (ADR 0024 §Invitations): the recipient has
+ * no Account yet, so these are REST, authenticated by the code alone. POST keeps codes out of URLs
+ * and logs.
  */
 @RestController
 @RequestMapping("/api/auth/invitation")

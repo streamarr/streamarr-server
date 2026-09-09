@@ -190,7 +190,7 @@ class DeviceAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should allow the server-wide block when the fresh ceremony is complete")
+  @DisplayName("Should allow the server-wide block when reauthentication is recent")
   void shouldAllowServerWideBlockWhenFreshCeremonyComplete() {
     authorization.decideUnitWith(
         intent ->

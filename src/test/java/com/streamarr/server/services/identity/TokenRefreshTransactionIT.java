@@ -73,7 +73,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
   void deleteIdentityAndCascades() {
     gatedIssuer.reset();
     if (identity != null) {
-      // FK cascades sweep auth_session and refresh_token rows.
+      // Foreign key cascades delete auth_session and refresh_token rows.
       authTestSupport.deleteIdentity(identity);
     }
   }

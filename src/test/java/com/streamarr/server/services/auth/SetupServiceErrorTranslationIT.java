@@ -42,8 +42,7 @@ class SetupServiceErrorTranslationIT extends AbstractIntegrationTest {
     dsl.deleteFrom(SERVER_BOOTSTRAP).execute();
 
     for (var setup : completedSetups) {
-      // No profile FK exists yet, so remapped watch rows must be swept explicitly before they
-      // strand in the reused container.
+      // Explicitly delete remapped watch rows so they cannot remain in the reused container.
       dsl.deleteFrom(SESSION_PROGRESS)
           .where(SESSION_PROGRESS.PROFILE_ID.eq(setup.profile().getId()))
           .execute();

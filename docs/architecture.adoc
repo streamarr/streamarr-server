@@ -38,7 +38,7 @@ PostgreSQL with UUID primary keys, custom ENUMs, and audit columns (`created_on`
 Entity hierarchy uses JPA JOINED inheritance:
 
 ----
-BaseAuditableEntity (UUID PK, audit columns)
+BaseAuditableEntity (UUID primary key, audit columns)
     └── BaseCollectable (title, summary, release_date)
             ├── Movie
             └── Series
@@ -167,7 +167,7 @@ See link:adr/[Architecture Decision Records] for detailed rationale. Summary:
 | Decision | Rationale
 
 | PostgreSQL over SQLite/H2
-| Production-grade, supports custom ENUMs, UUID PKs, full-text search
+| Production-grade, supports custom ENUMs, UUID primary keys, full-text search
 
 | GraphQL over REST
 | Flexible queries for rich tvOS client, Relay pagination for infinite scroll

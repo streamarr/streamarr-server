@@ -90,7 +90,7 @@ public interface UserAccountRepositoryCustom {
   /**
    * The row re-read from the database, not from Hibernate's first-level cache: the transfer
    * decision JPA-loaded the row in this transaction, and after the jOOQ write the managed copy is
-   * stale (the hybrid footgun).
+   * stale because jOOQ writes do not refresh managed entities.
    */
   Optional<UserAccount> findByIdAndReloadFromDatabase(UUID accountId);
 

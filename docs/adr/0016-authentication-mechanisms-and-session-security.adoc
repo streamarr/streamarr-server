@@ -26,7 +26,7 @@ Password-hashing work factors, MFA requirements, and device-pairing details will
 
 == Decision
 
-Spring Security is Streamarr's authentication and security-context spine: it owns authentication plumbing, request authentication, method-security integration, context propagation, factor authorities, and future OAuth.
+Spring Security is Streamarr's authentication and security-context framework: it owns authentication components, request authentication, method-security integration, context propagation, factor authorities, and future OAuth.
 Streamarr domain authorization stays separate, as link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015] describes.
 
 Local password authentication comes first.
@@ -88,7 +88,7 @@ Revocation runs on two channels, matched to what each surface can tolerate.
 API surfaces accept bounded staleness: access tokens live only minutes, revocation prevents renewal, and access-token expiry bounds the residual API authorization window — an invalidated session's tokens keep ordinary API reach for at most one access-token lifetime, and the strict-expiry rule above makes that bound hard.
 Role and context claims share that bound: they are honored as issued for the token's remaining life, which is current behavior and an accepted trade, not an oversight — content-policy enforcement against authoritative state is a deferred obligation tracked with the content-control work, not something claims-based authorization provides today.
 Playback tolerates no staleness bound, because playback-token validity spans a media traversal plus a retention window; ADR 0018 therefore checks the runtime stream-session binding plus live authorization-session, account, household-membership, and profile-grant authority on every request.
-Membership and profile-grant removal fail closed on the next playback request through that live query, without persisted stream rows or parent-deletion choreography.
+Membership and profile-grant removal fail closed on the next playback request through that live query, without persisted stream rows or coordinated parent-deletion steps.
 A password change immediately invalidates renewal and playback authority while the prior access token retains only its bounded ordinary API window.
 Password change uses revoke-and-replace: every old authorization session and refresh-token family is revoked and exactly one replacement session with fresh credentials is issued for the caller.
 
@@ -105,8 +105,8 @@ Login is why: it carries its credential in the body, so a browser reaches it hol
 The `__Host-XSRF-TOKEN` cookie closes that gap for returning browsers: the filter writes one on a client's first request, so any browser that has already talked to this origin carries it before it can POST a login.
 In secure mode, the browser-enforced prefix binds the double-submit cookie to the exact host: it requires `Secure`, `Path=/`, and no `Domain`, preventing a sibling subdomain from planting the token that Streamarr validates.
 The explicitly insecure development mode cannot satisfy that prefix contract, so it issues and validates only `XSRF-TOKEN`; production never accepts that fallback.
-A first-contact browser has no marker yet, so setup, login, and refresh explicitly accept only JSON and the deployment grants no hostile cross-origin CORS access; both constraints are load-bearing parts of the login-CSRF boundary.
-Bearer-mode login — and the planned device-pairing flow — stays exempt only because native clients keep no cookie jar at all: the Apple clients build every session with cookie storage, acceptance, and sending disabled, and that is a load-bearing client contract rather than an incidental property.
+A first-contact browser has no marker yet, so setup, login, and refresh explicitly accept only JSON and the deployment grants no hostile cross-origin CORS access; both constraints are required to prevent login CSRF.
+Bearer-mode login — and the planned device-pairing flow — stays exempt only because native clients keep no cookie jar at all: the Apple clients build every session with cookie storage, acceptance, and sending disabled, and that client behavior is required for the exemption.
 A cookie-keeping client the server does not know about therefore fails closed with a CSRF `403`, never by silently losing the protection.
 The script-readable CSRF cookie is `SameSite=Lax` and path `/`; it is `Secure` and host-bound except in explicitly insecure development. Its lifetime comes from the same refresh-token property as the auth cookies.
 The repository renews that lifetime whenever the filter realizes a token, including login and refresh, so rotating credentials cannot outlive their guard; removing a token remains a distinct `Max-Age=0` operation.
@@ -198,7 +198,7 @@ Explicitly deferred from v1:
 * CORS configuration for the browser client — the client is same-origin by construction (development tooling proxies API paths; production serves the client from the application origin), so no CORS policy exists and adding one would only widen the attack surface.
 * Sliding or self-renewing access tokens — re-issuing near expiry on the access token's own authority makes the short-lived credential immortal for whoever holds it, yields no rotation theft signal, lets active clients outrun the TTL backstop for missed invalidations, and skips the refresh endpoint's authoritative database checkpoint.
 * Short access-token TTLs as the sole revocation mechanism *for playback* — bounded staleness is accepted for API surfaces, but playback-URL tokens have no refresh channel: playlist-driven players fetch segment URLs once and replay them for hours, so playback validity must ride the stream-session lifetime and only a per-request authority check can revoke it mid-stream; TTL stays a backstop, never the guard.
-* Version counters as the permanent revocation authority — ADR 0018's live playback query replaces their only long-lived-token use; V049 removes the claims, dedicated-listener plumbing, and session-mode-pooler constraint.
+* Version counters as the permanent revocation authority — ADR 0018's live playback query replaces their only long-lived-token use; V049 removes the claims, dedicated listeners, and session-mode-pooler constraint.
 * Scoping the CSRF matcher to the auth cookies alone — it protects only requests that already ride an ambient credential, which is precisely backwards for login: a fresh browser is never challenged while a stale auth cookie blocks the one call that would replace it.
 * Reading `cookieMode` from the request body to decide whether login needs CSRF — it is the exact discriminator, but the CSRF filter runs before body parsing, so it would mean buffering every request body in a security filter to recover a bit that cookie presence already supplies.
 * Fetch metadata (`Sec-Fetch-Site`) as the browser discriminator — strictly sharper, since it also names cross-site requests whose cookies `SameSite` suppressed, but it is a resource-isolation policy rather than a CSRF token check, it exempts any client that omits the header, and it belongs in its own decision instead of inside this matcher.

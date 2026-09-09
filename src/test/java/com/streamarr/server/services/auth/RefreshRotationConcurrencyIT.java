@@ -41,7 +41,7 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
   @AfterEach
   void deleteAccountAndCascades() {
     if (account != null) {
-      // FK cascades sweep auth_session and refresh_token rows.
+      // Foreign key cascades delete auth_session and refresh_token rows.
       authTestSupport.deleteAccount(account.getId());
     }
   }
