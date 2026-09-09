@@ -237,7 +237,7 @@ class DeviceThrottleIT extends AbstractIntegrationTest {
             .andExpect(header().exists(HttpHeaders.RETRY_AFTER))
             .andExpect(jsonPath("$.*", hasSize(2)))
             .andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"))
-            .andExpect(jsonPath("$.message").value("Too many attempts; try again later."))
+            .andExpect(jsonPath("$.message").value("Too many attempts. Try again later."))
             .andReturn()
             .getResponse();
     var retryAfter = response.getHeader(HttpHeaders.RETRY_AFTER);
