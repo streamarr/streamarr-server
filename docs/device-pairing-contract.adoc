@@ -161,7 +161,7 @@ A pure read that *never* returns `409`.
 
 `status` is one of `PENDING`, `APPROVED`, `DENIED`, `CONSUMED`. The response never reveals `deviceCode`.
 
-Errors: `400 INVALID_USER_CODE` (malformed after normalization) · `404 DEVICE_CODE_NOT_FOUND` (unknown *or expired* — both collapse to not-found, matching the poll's `expired_token`) · `429 TOO_MANY_ATTEMPTS` with `Retry-After`.
+Errors: `400 INVALID_USER_CODE` (malformed after normalization) · `404 DEVICE_CODE_NOT_FOUND` (unknown *or expired* — both collapse to not-found, matching the poll's `expired_token`) · `429 TOO_MANY_ATTEMPTS` with `Retry-After` · `503 CREDENTIAL_VERIFICATION_UNAVAILABLE` (credential journal unavailable).
 
 == Decision — `POST /api/auth/device/authorizations/decision` (`SCOPE_ACCOUNT`)
 
@@ -176,7 +176,7 @@ Request `{"userCode": "BCDF-GHJK", "decision": "APPROVE"}`. `decision` is requir
 }
 ----
 
-Errors: `400 INVALID_DECISION` (missing or unknown value — validated *before* any code lookup, so a malformed request never spends guessing budget or reveals whether a code exists) · `400 INVALID_USER_CODE` · `404 DEVICE_CODE_NOT_FOUND` · `400 DEVICE_CODE_EXPIRED` · `409 DEVICE_CODE_NOT_PENDING` (already decided or consumed) · `429 TOO_MANY_ATTEMPTS`.
+Errors: `400 INVALID_DECISION` (missing or unknown value, rejected before code lookup or attempt reservation) · `400 INVALID_USER_CODE` · `404 DEVICE_CODE_NOT_FOUND` · `400 DEVICE_CODE_EXPIRED` · `409 DEVICE_CODE_NOT_PENDING` (already decided or consumed) · `429 TOO_MANY_ATTEMPTS` · `503 CREDENTIAL_VERIFICATION_UNAVAILABLE` (credential journal unavailable).
 
 Lookup returns `404` for unknown or expired codes.
 Decision returns `400 DEVICE_CODE_EXPIRED` for an expired code so the client can prompt the user to request another.

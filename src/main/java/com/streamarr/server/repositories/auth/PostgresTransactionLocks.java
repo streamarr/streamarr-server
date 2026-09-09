@@ -1,6 +1,5 @@
 package com.streamarr.server.repositories.auth;
 
-import com.streamarr.server.config.security.CredentialCodeProperties;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
@@ -13,11 +12,6 @@ import org.springframework.stereotype.Component;
 final class PostgresTransactionLocks {
 
   private final DSLContext dsl;
-  private final CredentialCodeProperties properties;
-
-  void lockNormalizedKey(String namespace, String value) {
-    lockNormalizedKey(namespace, value, properties.replacementLockTimeout());
-  }
 
   void lockNormalizedKey(String namespace, String value, Duration lockTimeout) {
     var normalizedKey = DSL.concat(DSL.inline(namespace + ":"), DSL.lower(DSL.val(value.strip())));

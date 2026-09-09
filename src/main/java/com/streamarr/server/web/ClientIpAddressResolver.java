@@ -7,12 +7,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * The client address journaled with every credential attempt (ADR 0028). It is observational only,
- * so a value PostgreSQL cannot store as {@code inet} degrades to the unspecified address instead of
- * refusing the request: link-local IPv6 peers arrive with a zone suffix, and forwarded headers
- * (when {@code server.forward-headers-strategy} is enabled) may carry {@code unknown} or an
- * obfuscated token. Forwarded headers are never parsed here; the container rewrites {@link
- * HttpServletRequest#getRemoteAddr()} under that setting.
+ * Resolves the client address for credential journaling (ADR 0028). IPv6 zone suffixes are removed
+ * before parsing; missing or invalid addresses become {@code 0.0.0.0}. With trusted proxy handling
+ * enabled, the servlet request supplies the forwarded address through {@link
+ * HttpServletRequest#getRemoteAddr()}.
  */
 @Slf4j
 @Component
