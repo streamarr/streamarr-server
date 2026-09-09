@@ -21,6 +21,11 @@ body:graphql {
         id
         name
       }
+      selectedProfile {
+        id
+        pinConfigured
+        locked
+      }
       selectableProfiles(first: 100) {
         edges {
           node {
@@ -43,9 +48,11 @@ script:post-response {
     const me = res.body.data.me;
     bru.setVar("HOUSEHOLD_ID", me.contextHousehold.id);
     const edges = me.selectableProfiles?.edges ?? [];
-    const usable = edges.filter((edge) => !edge.node.locked && !edge.node.pinConfigured);
-    const profile = usable.find((edge) => edge.node.selected) ?? usable[0];
-    bru.setVar("PROFILE_ID", profile?.node.id ?? "");
+    const profiles = [me.selectedProfile, ...edges.map((edge) => edge.node)];
+    const profile = profiles.find((candidate) =>
+      candidate && !candidate.locked && !candidate.pinConfigured
+    );
+    bru.setVar("PROFILE_ID", profile?.id ?? "");
   }
 }
 
@@ -64,18 +71,20 @@ tests {
   });
 
   test("Should chain only a Profile usable without a PIN", function() {
-    const edges = res.body.data.me.selectableProfiles?.edges ?? [];
+    const me = res.body.data.me;
+    const edges = me.selectableProfiles?.edges ?? [];
+    const profiles = [me.selectedProfile, ...edges.map((edge) => edge.node)].filter(Boolean);
     const profileId = bru.getVar("PROFILE_ID");
     if (!profileId) {
-      expect(edges).to.satisfy((profiles) =>
-        profiles.every((edge) => edge.node.locked || edge.node.pinConfigured)
+      expect(profiles).to.satisfy((candidates) =>
+        candidates.every((profile) => profile.locked || profile.pinConfigured)
       );
       return;
     }
 
-    const chainedEdge = edges.find((edge) => edge.node.id === profileId);
-    expect(chainedEdge).to.not.equal(undefined);
-    expect(chainedEdge.node.locked).to.equal(false);
-    expect(chainedEdge.node.pinConfigured).to.equal(false);
+    const chainedProfile = profiles.find((profile) => profile.id === profileId);
+    expect(chainedProfile).to.not.equal(undefined);
+    expect(chainedProfile.locked).to.equal(false);
+    expect(chainedProfile.pinConfigured).to.equal(false);
   });
 }

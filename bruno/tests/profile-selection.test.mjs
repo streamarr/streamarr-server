@@ -8,7 +8,7 @@ const source = request.match(/^script:post-response \{\n([\s\S]*?)^\}/m)?.[1];
 assert.ok(source, "Get Me must have a post-response script");
 const script = new Script(source);
 
-function selectedProfile(profiles) {
+function selectedProfile(profiles, profile = profiles.find((candidate) => candidate.selected) ?? null) {
   const variables = new Map([["PROFILE_ID", "stale-profile"]]);
   script.runInNewContext({
     res: {
@@ -17,6 +17,7 @@ function selectedProfile(profiles) {
         data: {
           me: {
             contextHousehold: { id: "household" },
+            selectedProfile: profile,
             selectableProfiles: { edges: profiles.map((node) => ({ node })) },
           },
         },
@@ -58,6 +59,25 @@ test("Should prefer the selected Profile when it is usable without a PIN", () =>
   );
 });
 
+test("Should prefer the selected Profile when it is outside the first picker page", () => {
+  const profiles = Array.from({ length: 100 }, (_, index) => ({
+    id: `profile-${index}`,
+    selected: false,
+    locked: false,
+    pinConfigured: false,
+  }));
+
+  assert.equal(
+    selectedProfile(profiles, {
+      id: "selected-outside-page",
+      selected: true,
+      locked: false,
+      pinConfigured: false,
+    }),
+    "selected-outside-page",
+  );
+});
+
 for (const protection of [
   { locked: false, pinConfigured: true },
   { locked: true, pinConfigured: false },
@@ -72,7 +92,39 @@ for (const protection of [
       "usable",
     );
   });
+
+  test(`Should use the first eligible Profile when the off-page selection is ${reason}`, () => {
+    assert.equal(
+      selectedProfile(
+        [{ id: "usable", selected: false, locked: false, pinConfigured: false }],
+        { id: "selected-outside-page", selected: true, ...protection },
+      ),
+      "usable",
+    );
+  });
+
+  test(`Should clear the previous Profile when the off-page selection is ${reason} and no fallback is eligible`, () => {
+    assert.equal(
+      selectedProfile(
+        [{ id: "locked", selected: false, locked: true, pinConfigured: false }],
+        { id: "selected-outside-page", selected: true, ...protection },
+      ),
+      "",
+    );
+  });
 }
+
+test("Should use the selected Profile when the picker page is empty", () => {
+  assert.equal(
+    selectedProfile([], {
+      id: "selected-outside-page",
+      selected: true,
+      locked: false,
+      pinConfigured: false,
+    }),
+    "selected-outside-page",
+  );
+});
 
 test("Should clear the previous Profile when the picker is empty", () => {
   assert.equal(selectedProfile([]), "");
