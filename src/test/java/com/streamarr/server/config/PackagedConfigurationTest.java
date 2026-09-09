@@ -3,6 +3,7 @@ package com.streamarr.server.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.security.Argon2Properties;
+import io.swagger.v3.oas.models.OpenAPI;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -58,6 +59,19 @@ class PackagedConfigurationTest {
 
       assertThat(spring).doesNotContainKey("profiles");
     }
+  }
+
+  /**
+   * The OpenAPI document is a development artifact: the packaged boot never serves it, so the
+   * pinned docs/openapi.json is the only copy a client reads and the REST surface stays
+   * undiscoverable.
+   */
+  @Test
+  @DisplayName("Should not publish the OpenAPI document when packaged configuration loads")
+  void shouldNotPublishOpenApiDocumentWhenPackagedConfigurationLoads() {
+    CONTEXT_RUNNER
+        .withUserConfiguration(OpenApiConfiguration.class)
+        .run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(OpenAPI.class));
   }
 
   @Test

@@ -22,6 +22,7 @@ import com.streamarr.server.services.identity.ProfileSelectionService;
 import com.streamarr.server.services.identity.SelectProfileCommand;
 import com.streamarr.server.services.identity.SessionContextService;
 import com.streamarr.server.services.identity.TokenRefreshService;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -69,6 +70,7 @@ public class AuthController {
                 setupService.isSetupComplete(), deviceAuthorizationService.isPairingEnabled()));
   }
 
+  @ApiResponse(responseCode = "204")
   @PostMapping("/refresh/revoke")
   public ResponseEntity<Void> logout(
       @RequestBody(required = false) RefreshRequest request, HttpServletRequest httpRequest) {
@@ -145,6 +147,7 @@ public class AuthController {
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
+  @ApiResponse(responseCode = "201")
   @PostMapping(value = "/setup", consumes = APPLICATION_JSON_VALUE)
   public ResponseEntity<AuthTokensResponse> setup(
       @Valid @RequestBody SetupRequest request, HttpServletRequest httpRequest) {
