@@ -215,7 +215,6 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .content(loginBody(account.getEmail(), " ")))
         .andExpect(status().isBadRequest());
 
-    // Transport validation answers before the command exists, so the journal never sees them.
     assertThat(journaledAttemptsFrom("198.51.100.43")).isZero();
   }
 

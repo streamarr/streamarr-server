@@ -648,7 +648,6 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
                     """))
         .andExpect(status().isBadRequest());
 
-    // Transport validation answers before the command exists, so the journal never sees them.
     assertThat(journaledAttemptsFrom("198.51.100.71")).isZero();
   }
 

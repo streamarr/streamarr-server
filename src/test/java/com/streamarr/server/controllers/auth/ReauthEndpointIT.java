@@ -186,7 +186,6 @@ class ReauthEndpointIT extends AbstractIntegrationTest {
                 .content("{\"password\": \"  \"}"))
         .andExpect(status().isBadRequest());
 
-    // Transport validation answers before the command exists, so the journal never sees it.
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM credential_attempt WHERE host(ip_address) = ?",

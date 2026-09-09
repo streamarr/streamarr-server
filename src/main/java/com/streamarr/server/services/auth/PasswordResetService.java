@@ -18,10 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Redeeming a password-reset code (ADR 0024 §Account): allowed while the Account is disabled,
- * changes the password, revokes every refresh session, and creates none — a reset never bypasses a
- * disable. Throttled per publicId with one deliberate failure answer; Argon2 runs before the
- * transaction opens, and the Account row lock waits no longer than the configured lock timeout.
+ * Redeems password-reset codes, including for disabled Accounts (ADR 0024 §Account). A reset
+ * changes the password and revokes all refresh sessions. It does not enable the Account or create a
+ * session. Code checks are throttled per credential ID and return the same error for all invalid
+ * codes. Argon2 runs before the transaction; the Account row lock uses the configured lock timeout.
  */
 @Service
 @RequiredArgsConstructor

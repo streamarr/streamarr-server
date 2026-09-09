@@ -5,10 +5,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
- * Mints user codes in the {@link UserCode} grammar. Roughly 34.6 bits — far too little to be a
- * durable secret — so codes are single-use, short-lived, and guessable only inside the approver's
- * journaled attempt limit (ADR 0021, ADR 0028). The entropy only has to make collisions between
- * concurrently outstanding codes negligible.
+ * Generates codes in the {@link UserCode} grammar with about 34.6 bits of entropy. Pairing limits
+ * their use through expiry, single-use redemption, and the approver's attempt limit (ADR 0021, ADR
+ * 0028).
  */
 @Component
 public class UserCodeGenerator {

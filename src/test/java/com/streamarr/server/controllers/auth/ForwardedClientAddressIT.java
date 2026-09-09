@@ -22,10 +22,8 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Behind a trusted reverse proxy the operator sets {@code
- * server.forward-headers-strategy=framework} and the journal must record the client the proxy
- * forwarded, not the proxy itself — otherwise every caller shares one address and the source-keyed
- * budgets collapse into a single bucket.
+ * With framework forwarded-header support enabled, the journal records the forwarded client
+ * address. The address does not affect throttling.
  */
 @Tag("IntegrationTest")
 @DisplayName("Forwarded Client Address Integration Tests")

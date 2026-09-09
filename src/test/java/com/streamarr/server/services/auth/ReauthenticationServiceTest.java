@@ -28,7 +28,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-/** The step-up ceremony at its entry: the device gate, then the shared password checkpoint. */
 @Tag("UnitTest")
 @DisplayName("Reauthentication Service Tests")
 class ReauthenticationServiceTest {

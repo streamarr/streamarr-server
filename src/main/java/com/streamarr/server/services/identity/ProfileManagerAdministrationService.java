@@ -38,14 +38,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * Direct ProfileManagers (ADR 0024 §ProfileManager): durable authority granted by invitation and
- * consent, or by a fresh-reauthenticated ServerAdmin override. Accept, GRANT, and REMOVE share one
- * target-Profile serialization boundary. Accept also locks the inviter's Personal Profile in UUID
- * order so eligibility is rechecked atomically with consent. Each transition is a conditional
- * statement with exactly one winner. Losing management invalidates the leaver's outstanding
- * proposals so a stale invitation or offer can never restore disputed authority. Codes follow the
- * opaque publicId.secret discipline: journaled per invitation, digest-compared, one deliberate
- * answer.
+ * Manages direct ProfileManagers through invitations or ServerAdmin overrides (ADR 0024). Overrides
+ * require reauthentication. Removing a manager invalidates their outstanding invitations and share
+ * offers. Code checks are journaled by invitation ID and return the same error for all invalid
+ * codes.
  */
 @Service
 @RequiredArgsConstructor
@@ -177,7 +173,7 @@ public class ProfileManagerAdministrationService {
     var invitation = resolved.get();
     if (!authorizationService.isAllowed(
         identity, new Intent.AcceptManagerInvitation(invitation.getId()))) {
-      // Whoever is not the named recipient learns nothing beyond the one deliberate answer.
+      // Return the same error as an unknown invitation when the caller is not its recipient.
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
 
@@ -227,6 +223,8 @@ public class ProfileManagerAdministrationService {
   }
 
   private void lockAcceptanceProfiles(ProfileManagerInvitation invitation) {
+    // Lock both Profiles in UUID order to avoid deadlocks while rechecking the inviter's
+    // eligibility.
     var invitationProfileId = invitation.getProfileId();
     var inviterProfileId =
         Optional.ofNullable(invitation.getInviterAccountId())

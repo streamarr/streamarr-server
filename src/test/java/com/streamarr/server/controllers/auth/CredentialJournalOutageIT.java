@@ -27,11 +27,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * ADR 0028 fails closed: while the credential journal cannot be written, every credential ceremony
- * answers 503 {@code CREDENTIAL_VERIFICATION_UNAVAILABLE} instead of verifying without a journal. A
- * side connection holds an {@code ACCESS EXCLUSIVE} lock on the table for the whole test, so the
- * reservation's bounded lock wait is the only thing standing between the caller and an unjournaled
- * verification.
+ * Holds an {@code ACCESS EXCLUSIVE} lock on the journal from a separate connection and checks that
+ * the APIs report credential verification unavailable when the write times out.
  */
 @Tag("IntegrationTest")
 @DisplayName("Credential Journal Outage Integration Tests")

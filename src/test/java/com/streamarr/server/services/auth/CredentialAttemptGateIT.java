@@ -29,7 +29,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @DisplayName("Credential Attempt Gate Integration Tests")
 class CredentialAttemptGateIT extends AbstractIntegrationTest {
 
-  // Long enough that an unbounded wait is unmistakable, short enough to keep a red run honest.
+  // Exceeds the two-second lock timeout. The helper releases the lock if timeout enforcement fails.
   private static final Duration LOCK_HOLD = Duration.ofSeconds(12);
   private static final String IP_ADDRESS = "192.0.2.15";
   private static final String IPV6_ADDRESS = "fe80:0:0:0:0:0:0:1";
@@ -128,7 +128,6 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
       var started = Instant.now();
       assertThatThrownBy(() -> gate.reserve(target))
           .isInstanceOf(CredentialAttemptUnavailableException.class);
-      // The wait is bounded by the two-second lock_timeout, not by the caller's patience.
       assertThat(Duration.between(started, Instant.now()))
           .isGreaterThanOrEqualTo(Duration.ofSeconds(2))
           .isLessThan(Duration.ofSeconds(30));
@@ -278,7 +277,6 @@ class CredentialAttemptGateIT extends AbstractIntegrationTest {
       try {
         var started = Instant.now();
         attempt.run();
-        // The wait is bounded by the two-second lock_timeout, not by the lock holder's patience.
         assertThat(Duration.between(started, Instant.now()))
             .isGreaterThanOrEqualTo(Duration.ofSeconds(2))
             .isLessThan(LOCK_HOLD);

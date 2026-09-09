@@ -539,7 +539,7 @@ class DeviceAuthorizationServiceTest {
     advanceClock(Duration.ofMinutes(11));
 
     var userCode = issued.userCode();
-    // A probe deserves no oracle detail; the poll answers expired_token for the same state.
+    // Lookup returns not-found for expired codes; polling reports expired_token.
     var presentation = presented(userCode);
     assertThatThrownBy(() -> service.lookup(presentation))
         .isInstanceOf(DeviceCodeNotFoundException.class);

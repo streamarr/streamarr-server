@@ -25,10 +25,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * The approval half of pairing (ADR 0024 §Devices): the typed code is resolved to its grant —
- * reserving one credential attempt — before Cedar decides linkDevice, the chosen Household is
- * validated as one the approver may use, and the ESN block is checked for that Household. The
- * winning poll rechecks all of it live; ADR 0021's transport stays in the auth layer untouched.
+ * Authorizes pairing decisions after the code check is journaled. Approval requires access to the
+ * chosen Household and an unblocked ESN. These permissions are checked again when the device polls
+ * for its session (ADR 0024 §Devices).
  */
 @Service
 @RequiredArgsConstructor

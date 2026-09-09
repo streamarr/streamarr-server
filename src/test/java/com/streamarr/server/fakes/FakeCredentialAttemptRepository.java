@@ -22,9 +22,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * An in-memory credential attempt journal. Admission uses the production arithmetic ({@link
- * CredentialAttemptPolicy.Limited#retryAfter}) over the recorded attempts, so service tests prove
- * real limits and resets; {@link #rejectReservations} forces a block regardless of history.
+ * An in-memory journal that evaluates recorded attempts with {@link
+ * CredentialAttemptPolicy.Limited#retryAfter}. {@link #rejectReservations} forces a block
+ * regardless of history.
  */
 public class FakeCredentialAttemptRepository implements CredentialAttemptRepository {
 

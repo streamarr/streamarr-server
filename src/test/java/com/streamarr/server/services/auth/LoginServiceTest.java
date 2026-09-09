@@ -371,8 +371,8 @@ class LoginServiceTest {
   }
 
   @Test
-  @DisplayName("Should forgive earlier failures when a login succeeds")
-  void shouldForgiveEarlierFailuresWhenLoginSucceeds() {
+  @DisplayName("Should reset earlier failures when a login succeeds")
+  void shouldResetEarlierFailuresWhenLoginSucceeds() {
     var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
     for (int i = 0; i < 4; i++) {
       var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();

@@ -1,10 +1,8 @@
 package com.streamarr.server.exceptions;
 
 /**
- * One deliberate answer for every failed code presentation below the guess budget — malformed,
- * unknown, expired, decided, or digest mismatch — so the client learns nothing about the row.
- * Beyond the budget the per-publicId throttle answers instead, which is acceptable because public
- * ids are 72 random bits and not enumerable.
+ * The same response for malformed, unknown, expired, already-used, or mismatched codes. Requests
+ * that exceed the credential's attempt limit receive a throttle error instead.
  */
 public class InvalidOneTimeCodeException extends CredentialVerificationException {
 

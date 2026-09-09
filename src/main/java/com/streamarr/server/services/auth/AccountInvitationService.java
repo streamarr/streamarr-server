@@ -44,12 +44,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * The principal-less invitation ceremonies (ADR 0024 §Invitations): the recipient has no Account
- * yet, so lookup, accept, and decline authenticate by code alone — journaled per invitation, one
- * deliberate failure answer, expiry decided by predicate at presentation. Acceptance atomically
- * consumes the PENDING invitation and creates the Account, its Personal Profile, the structural
- * share, any required manager rows, and the first session; the deferred invariants judge the whole
- * shape at commit. Password hashing runs before the transaction opens.
+ * Invitation operations authenticated by code (ADR 0024 §Invitations). Acceptance consumes the
+ * pending invitation and creates the Account, Personal Profile, structural share, required manager
+ * rows, and first session in one transaction. Deferred constraints validate these records at
+ * commit. Password hashing runs before the transaction opens.
  */
 @Service
 @RequiredArgsConstructor
@@ -414,9 +412,9 @@ public class AccountInvitationService {
       UUID profileId, List<AccountInvitationReoffer> targets, UUID offererAccountId, Instant now) {}
 
   /**
-   * Resolves a presented code to its PENDING, unexpired row: the publicId finds the row, the
-   * attempt is journaled against that row's id around the constant-time digest comparison (an
-   * unknown publicId is journaled with no target), and every miss gets one deliberate answer.
+   * Resolves a code to a pending, unexpired invitation. Digest verification is journaled by
+   * invitation ID; an unknown public ID is journaled without a target. Invalid codes return the
+   * same error regardless of the reason.
    */
   private AccountInvitation resolvePending(String rawCode, String ipAddress) {
     var presented = opaqueCodes.parse(rawCode).orElseThrow(InvalidOneTimeCodeException::new);

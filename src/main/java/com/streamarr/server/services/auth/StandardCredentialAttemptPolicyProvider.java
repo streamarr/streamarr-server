@@ -20,8 +20,8 @@ public class StandardCredentialAttemptPolicyProvider implements CredentialAttemp
       STANDARD_POLICY.toBuilder().resetFailuresOnSuccess(false).build();
 
   /**
-   * Pairing codes are publicly issuable, so presenting a known one cannot forgive the approver's
-   * previous guesses. Other credentials reset their own target's failures on success.
+   * Pairing codes are publicly issuable, so successful checks must not reset the approver's failed
+   * attempts. Other credential kinds reset failures on success.
    */
   @Override
   public CredentialAttemptPolicy policyFor(CredentialKind kind) {

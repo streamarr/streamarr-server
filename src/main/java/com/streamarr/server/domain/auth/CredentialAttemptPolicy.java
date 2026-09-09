@@ -32,10 +32,8 @@ public sealed interface CredentialAttemptPolicy {
     }
 
     /**
-     * Empty when an attempt at {@code now} is admitted, otherwise how long until capacity frees
-     * (ADR 0028): completing the last failure of a full run inside one window begins a lockout for
-     * the throttle duration; until a run completes, each failure inside the window and each fresh
-     * pending reservation holds one slot.
+     * Returns the retry delay when the target's attempt limit is exhausted, or empty when the
+     * attempt can proceed at {@code now}.
      */
     public Optional<Duration> retryAfter(CredentialAttemptHistory history, Instant now) {
       return lockoutEnd(history.failures(), now)
@@ -43,7 +41,6 @@ public sealed interface CredentialAttemptPolicy {
           .map(freesAt -> Duration.between(now, freesAt));
     }
 
-    /** The end of the newest full run of failures inside one window, while it is still running. */
     private Optional<Instant> lockoutEnd(List<Instant> failures, Instant now) {
       for (var last = failures.size() - 1; last >= maximumFailures - 1; last--) {
         var first = failures.get(last - maximumFailures + 1);
@@ -57,7 +54,7 @@ public sealed interface CredentialAttemptPolicy {
           return Optional.of(lockoutEnd);
         }
 
-        // Every earlier run completed earlier, so its lockout ended earlier still.
+        // Earlier failure groups have already completed their lockouts.
         return Optional.empty();
       }
 

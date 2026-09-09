@@ -12,10 +12,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 /**
- * Shared checkpoint for authenticated Account-password verification. It journals the attempt before
- * Argon2 and equalizes disabled or unreadable Accounts. Never call it inside a transaction: Argon2
- * would pin a pooled connection for its whole run, and the journal's REQUIRES_NEW reservation and
- * completion would each need a second connection while the caller's sat suspended.
+ * Applies the Account's attempt limit before password verification. Disabled Accounts and
+ * unreadable hashes perform dummy hashing before returning invalid credentials. Call outside a
+ * transaction: Argon2 must not hold a database connection, and journal reservation and completion
+ * use separate transactions.
  */
 @Component
 @Slf4j
@@ -35,8 +35,8 @@ public class AccountPasswordVerifier {
     credentialAttempts.attempt(
         passwordTarget(account, ipAddress),
         () -> {
-          // Snapshot before the slow comparison: a password correct when verification begins is
-          // sufficient, even if a concurrent change lands on the managed entity meanwhile.
+          // Compare against the hash read at the start, even if the managed entity changes
+          // meanwhile.
           var expectedPasswordHash = account.getPasswordHash();
           if (!account.isEnabled()) {
             timingEqualizer.burn(password);
@@ -69,8 +69,7 @@ public class AccountPasswordVerifier {
     try {
       return passwordEncoder.matches(password, expectedPasswordHash);
     } catch (IllegalArgumentException e) {
-      // An unreadable stored hash must fail like a wrong password, not escape as a raw error
-      // that marks the account's broken state.
+      // Use the same response and dummy hashing as other invalid credentials.
       log.error("Stored password hash for account {} is unreadable.", accountId, e);
       timingEqualizer.burn(password);
       return false;

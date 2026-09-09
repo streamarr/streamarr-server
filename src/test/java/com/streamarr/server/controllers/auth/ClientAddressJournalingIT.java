@@ -37,9 +37,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * ADR 0028: every driving adapter resolves the client address and hands it to the ceremony through
- * its command, so each journaled attempt records the caller rather than a default. One request per
- * surface, each from its own address, so a row's address proves which adapter captured it.
+ * Uses a distinct client address for each endpoint so assertions can identify the attempt created
+ * by that request.
  */
 @Tag("IntegrationTest")
 @DisplayName("Client Address Journaling Integration Tests")

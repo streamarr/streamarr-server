@@ -153,8 +153,8 @@ public class DeviceAuthorizationService {
   }
 
   /**
-   * Resolves a typed code to its pairing grant for the approval ceremony, journaling one attempt
-   * against the approver before Cedar or the existence and expiry checks see the request.
+   * Resolves a pairing code and journals one attempt against the approver before authorization.
+   * Unknown codes return not-found; expired codes return an expiry error.
    */
   public ResolvedGrant resolveForDecision(DeviceCodePresentation presentation) {
     var authorization = findPresented(presentation);
@@ -162,9 +162,7 @@ public class DeviceAuthorizationService {
         approverTarget(presentation),
         () -> {
           requirePresent(authorization);
-          // The approver is mid-flow on a code they demonstrably saw, so expiry earns its own
-          // answer here; a bare not-found would read as a typo. Lookup collapses it to 404 on
-          // purpose.
+          // Decision reports expiry so the client can request a new code; lookup returns not-found.
           if (authorization.hasExpiredAt(clock.instant())) {
             throw new DeviceCodeExpiredException();
           }
@@ -177,8 +175,8 @@ public class DeviceAuthorizationService {
   }
 
   /**
-   * The conditional decision write. It records no attempt because {@link #resolveForDecision}
-   * already recorded this presentation, and pairing approval calls both in one request.
+   * Records the decision after {@link #resolveForDecision} has journaled the code check. Calling
+   * both methods for one request creates one attempt.
    */
   @Transactional
   public DeviceAuthorizationDetails decide(DeviceDecisionCommand command) {
@@ -188,8 +186,7 @@ public class DeviceAuthorizationService {
             .findByUserCode(userCode)
             .orElseThrow(DeviceCodeNotFoundException::new);
 
-    // The approver is mid-flow on a code they demonstrably saw, so expiry earns its own answer
-    // here; a bare not-found would read as a typo. Lookup collapses it to 404 on purpose.
+    // The code may have expired since resolveForDecision checked it.
     var now = clock.instant();
     if (authorization.hasExpiredAt(now)) {
       throw new DeviceCodeExpiredException();

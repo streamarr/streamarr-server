@@ -205,8 +205,8 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should forgive nothing for a locked Profile when a sibling Profile succeeds")
-  void shouldForgiveNothingForLockedProfileWhenSiblingProfileSucceeds() {
+  @DisplayName("Should keep a Profile locked when another Profile's PIN verification succeeds")
+  void shouldKeepProfileLockedWhenAnotherProfilesPinVerificationSucceeds() {
     var accountId = UUID.randomUUID();
     var lockedProfile = pinTarget(accountId, UUID.randomUUID());
     var siblingProfile = pinTarget(accountId, UUID.randomUUID());
@@ -478,7 +478,7 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
       completeAt(reserve(target, NOW), CredentialAttemptResult.FAILED, NOW);
     }
 
-    // "At or before" the latest success: same-instant failures are forgiven too.
+    // The success cutoff also excludes failures completed at the same instant.
     assertThat(admit(target, LIMITED_POLICY, NOW.plusSeconds(1)))
         .isInstanceOf(CredentialAttemptAdmission.Reserved.class);
   }

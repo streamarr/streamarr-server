@@ -168,7 +168,7 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
         dsl.select(DSL.max(CREDENTIAL_ATTEMPT.COMPLETED_AT))
             .from(CREDENTIAL_ATTEMPT)
             .where(targetCondition(target))
-            // Stated explicitly: the partial index on completed rows is only provable from it.
+            // Required for PostgreSQL to use the partial index on completed attempts.
             .and(CREDENTIAL_ATTEMPT.COMPLETED_AT.isNotNull())
             .and(CREDENTIAL_ATTEMPT.RESULT.eq(SUCCEEDED))
             .fetchOne(DSL.max(CREDENTIAL_ATTEMPT.COMPLETED_AT)));
@@ -200,14 +200,8 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
     return column.eq(id);
   }
 
-  /**
-   * The key names exactly the identifiers {@link #targetCondition} matches, so the lock covers the
-   * read set of the admission it serializes; a hash collision only adds serialization.
-   */
-  // A target that names no row has nothing to serialize on, but its journal write still stops
-  // waiting at LOCK_TIMEOUT: a journal outage fails closed (ADR 0028) instead of parking the
-  // request on a pooled connection until the lock clears.
   private void lockTargetOrLimitWait(CredentialAttemptTarget target) {
+    // Unresolved targets skip the advisory lock but still need a lock timeout for journal writes.
     if (!target.isResolved()) {
       transactionLocks.limitLockWait(LOCK_TIMEOUT);
       return;
@@ -217,6 +211,7 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
   }
 
   private void lockTarget(CredentialAttemptTarget target) {
+    // Match targetCondition's identifiers. Hash collisions only serialize unrelated targets.
     var key =
         "%s:%s:%s:%s"
             .formatted(
