@@ -4,6 +4,7 @@ import com.streamarr.server.domain.auth.AccountInvitationMode;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.services.auth.AccountInvitationService.InvitationPreview;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
 import lombok.Builder;
@@ -16,7 +17,7 @@ public record InvitationLookupResponse(
     AccountInvitationMode mode,
     String profileName,
     ProfileKind profileKind,
-    Integer maximumAllowedRatingAge,
+    @Schema(types = {"integer", "null"}) Integer maximumAllowedRatingAge,
     Instant expiresAt,
     List<String> remainingManagers,
     List<String> householdsLosingProfileAccess,

@@ -9,6 +9,9 @@ import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.StreamingService;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/stream")
 @RequiredArgsConstructor
+@PlaybackTokenParameter
 public class StreamController {
 
   private static final MediaType HLS_MEDIA_TYPE =
@@ -38,6 +42,8 @@ public class StreamController {
   private final AuthorizationService authorizationService;
 
   @GetMapping("/{sessionId}/multivariant.m3u8")
+  @ApiResponse(responseCode = "200")
+  @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
   public ResponseEntity<String> getMultivariantPlaylist(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
     if (session.isEmpty()) {
@@ -50,6 +56,8 @@ public class StreamController {
   }
 
   @GetMapping("/{sessionId}/stream.m3u8")
+  @ApiResponse(responseCode = "200")
+  @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
   public ResponseEntity<String> getMediaPlaylist(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
     if (session.isEmpty()) {
@@ -62,6 +70,12 @@ public class StreamController {
   }
 
   @GetMapping("/{sessionId}/init.mp4")
+  @ApiResponse(
+      responseCode = "200",
+      content =
+          @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
+  @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   public ResponseEntity<byte[]> getInitSegment(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
     if (session.isEmpty()) {
@@ -72,6 +86,15 @@ public class StreamController {
   }
 
   @GetMapping("/{sessionId}/{segmentName:.+\\.(?:ts|m4s)}")
+  @ApiResponse(responseCode = "400", description = "Invalid segment path", content = @Content)
+  @ApiResponse(
+      responseCode = "200",
+      content = {
+        @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")),
+        @Content(mediaType = "video/mp2t", schema = @Schema(type = "string", format = "binary"))
+      })
+  @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   public ResponseEntity<byte[]> getSegment(
       @PathVariable UUID sessionId, @PathVariable String segmentName) {
     validatePathSegment(segmentName);
@@ -84,6 +107,9 @@ public class StreamController {
   }
 
   @GetMapping("/{sessionId}/{variantLabel}/stream.m3u8")
+  @ApiResponse(responseCode = "200")
+  @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  @ApiResponse(responseCode = "400", description = "Invalid segment path", content = @Content)
   public ResponseEntity<String> getVariantMediaPlaylist(
       @PathVariable UUID sessionId, @PathVariable String variantLabel) {
     validatePathSegment(variantLabel);
@@ -103,6 +129,13 @@ public class StreamController {
   }
 
   @GetMapping("/{sessionId}/{variantLabel}/init.mp4")
+  @ApiResponse(
+      responseCode = "200",
+      content =
+          @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
+  @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  @ApiResponse(responseCode = "400", description = "Invalid segment path", content = @Content)
+  @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   public ResponseEntity<byte[]> getVariantInitSegment(
       @PathVariable UUID sessionId, @PathVariable String variantLabel) {
     validatePathSegment(variantLabel);
@@ -120,6 +153,15 @@ public class StreamController {
   }
 
   @GetMapping("/{sessionId}/{variantLabel}/{segmentName:.+\\.(?:ts|m4s)}")
+  @ApiResponse(responseCode = "400", description = "Invalid segment path", content = @Content)
+  @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
+  @ApiResponse(
+      responseCode = "200",
+      content = {
+        @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")),
+        @Content(mediaType = "video/mp2t", schema = @Schema(type = "string", format = "binary"))
+      })
+  @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
   public ResponseEntity<byte[]> getVariantSegment(
       @PathVariable UUID sessionId,
       @PathVariable String variantLabel,

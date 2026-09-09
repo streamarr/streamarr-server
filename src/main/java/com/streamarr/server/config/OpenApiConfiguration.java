@@ -40,9 +40,8 @@ public class OpenApiConfiguration {
   }
 
   /**
-   * Every refusal — exception handlers, the security entry point, device-poll states — carries the
-   * same {@code {code, message}} body whatever its status, so it is declared once as each
-   * operation's {@code default} response: one error type for clients to route on.
+   * JSON refusals share the {@code {code, message}} body. Media controllers declare their bodyless
+   * response statuses explicitly, overriding this default for those outcomes.
    */
   @Bean
   OpenApiCustomizer refusalResponseCustomizer() {

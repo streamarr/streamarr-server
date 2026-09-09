@@ -218,7 +218,10 @@
           },
           "maximumAllowedRatingAge": {
             "format": "int32",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "mode": {
             "enum": [
@@ -1059,14 +1062,23 @@
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "image/jpeg": {
                 "schema": {
-                  "format": "byte",
+                  "format": "binary",
                   "type": "string"
                 }
               }
             },
             "description": "OK"
+          },
+          "304": {
+            "description": "Not modified"
+          },
+          "404": {
+            "description": "Image not found"
+          },
+          "500": {
+            "description": "Image could not be read"
           },
           "default": {
             "content": {
@@ -1096,19 +1108,34 @@
               "format": "uuid",
               "type": "string"
             }
+          },
+          {
+            "description": "Playback token bound to this stream session",
+            "in": "query",
+            "name": "t",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "video/mp4": {
                 "schema": {
-                  "format": "byte",
+                  "format": "binary",
                   "type": "string"
                 }
               }
             },
             "description": "OK"
+          },
+          "404": {
+            "description": "Stream resource not found"
+          },
+          "503": {
+            "description": "Segment unavailable"
           },
           "default": {
             "content": {
@@ -1138,6 +1165,15 @@
               "format": "uuid",
               "type": "string"
             }
+          },
+          {
+            "description": "Playback token bound to this stream session",
+            "in": "query",
+            "name": "t",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1150,6 +1186,9 @@
               }
             },
             "description": "OK"
+          },
+          "404": {
+            "description": "Stream resource not found"
           },
           "default": {
             "content": {
@@ -1179,6 +1218,15 @@
               "format": "uuid",
               "type": "string"
             }
+          },
+          {
+            "description": "Playback token bound to this stream session",
+            "in": "query",
+            "name": "t",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1191,6 +1239,9 @@
               }
             },
             "description": "OK"
+          },
+          "404": {
+            "description": "Stream resource not found"
           },
           "default": {
             "content": {
@@ -1228,19 +1279,43 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Playback token bound to this stream session",
+            "in": "query",
+            "name": "t",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "video/mp2t": {
                 "schema": {
-                  "format": "byte",
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "video/mp4": {
+                "schema": {
+                  "format": "binary",
                   "type": "string"
                 }
               }
             },
             "description": "OK"
+          },
+          "400": {
+            "description": "Invalid segment path"
+          },
+          "404": {
+            "description": "Stream resource not found"
+          },
+          "503": {
+            "description": "Segment unavailable"
           },
           "default": {
             "content": {
@@ -1278,19 +1353,37 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Playback token bound to this stream session",
+            "in": "query",
+            "name": "t",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "video/mp4": {
                 "schema": {
-                  "format": "byte",
+                  "format": "binary",
                   "type": "string"
                 }
               }
             },
             "description": "OK"
+          },
+          "400": {
+            "description": "Invalid segment path"
+          },
+          "404": {
+            "description": "Stream resource not found"
+          },
+          "503": {
+            "description": "Segment unavailable"
           },
           "default": {
             "content": {
@@ -1328,6 +1421,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Playback token bound to this stream session",
+            "in": "query",
+            "name": "t",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1340,6 +1442,12 @@
               }
             },
             "description": "OK"
+          },
+          "400": {
+            "description": "Invalid segment path"
+          },
+          "404": {
+            "description": "Stream resource not found"
           },
           "default": {
             "content": {
@@ -1385,19 +1493,43 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Playback token bound to this stream session",
+            "in": "query",
+            "name": "t",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "video/mp2t": {
                 "schema": {
-                  "format": "byte",
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "video/mp4": {
+                "schema": {
+                  "format": "binary",
                   "type": "string"
                 }
               }
             },
             "description": "OK"
+          },
+          "400": {
+            "description": "Invalid segment path"
+          },
+          "404": {
+            "description": "Stream resource not found"
+          },
+          "503": {
+            "description": "Segment unavailable"
           },
           "default": {
             "content": {

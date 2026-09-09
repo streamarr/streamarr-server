@@ -1,6 +1,9 @@
 package com.streamarr.server.controllers;
 
 import com.streamarr.server.services.ImageService;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.UUID;
@@ -34,6 +37,15 @@ public class ImageController {
   private final ImageService imageService;
 
   @GetMapping("/{imageId}")
+  @ApiResponse(
+      responseCode = "200",
+      content =
+          @Content(
+              mediaType = MediaType.IMAGE_JPEG_VALUE,
+              schema = @Schema(type = "string", format = "binary")))
+  @ApiResponse(responseCode = "304", description = "Not modified", content = @Content)
+  @ApiResponse(responseCode = "404", description = "Image not found", content = @Content)
+  @ApiResponse(responseCode = "500", description = "Image could not be read", content = @Content)
   public ResponseEntity<byte[]> getImage(@PathVariable UUID imageId, WebRequest request) {
     var imageOpt = imageService.findById(imageId);
 
