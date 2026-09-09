@@ -3,6 +3,7 @@ package com.streamarr.server.graphql;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.web.ClientIpAddressNormalizer;
 import com.streamarr.server.web.ClientIpAddressResolver;
 import graphql.GraphQLContext;
 import graphql.schema.DataFetchingEnvironmentImpl;
@@ -26,7 +27,8 @@ class ClientIpAddressGraphQlInterceptorTest {
     var servletRequest = new MockHttpServletRequest();
     servletRequest.setRemoteAddr("198.51.100.7");
     var interceptor =
-        new ClientIpAddressGraphQlInterceptor(new ClientIpAddressResolver(servletRequest));
+        new ClientIpAddressGraphQlInterceptor(
+            new ClientIpAddressResolver(servletRequest, new ClientIpAddressNormalizer()));
     var request =
         new WebGraphQlRequest(
             URI.create("/graphql"),

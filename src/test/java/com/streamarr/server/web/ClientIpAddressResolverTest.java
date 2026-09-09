@@ -35,7 +35,7 @@ class ClientIpAddressResolverTest {
   @DisplayName(
       "Should journal the unspecified address and warn when the remote address is not an IP")
   void shouldJournalUnspecifiedAddressAndWarnWhenRemoteAddressIsNotAnIp() {
-    try (var logs = LogCapture.forClass(ClientIpAddressResolver.class)) {
+    try (var logs = LogCapture.forClass(ClientIpAddressNormalizer.class)) {
       assertThat(resolve("unknown")).isEqualTo("0.0.0.0");
 
       assertThat(logs.events())
@@ -55,6 +55,6 @@ class ClientIpAddressResolverTest {
   private static String resolve(String remoteAddress) {
     var request = new MockHttpServletRequest();
     request.setRemoteAddr(remoteAddress);
-    return new ClientIpAddressResolver(request).resolve();
+    return new ClientIpAddressResolver(request, new ClientIpAddressNormalizer()).resolve();
   }
 }
