@@ -29,7 +29,7 @@ Protocol Adapters (GraphQL Resolvers, REST Controllers)
 * *Repositories* use JPA for CRUD and jOOQ for complex queries
 * *Domain* depends on nothing -- pure data model
 
-These rules are enforced by ArchUnit tests (see link:adr/0014-protocol-agnostic-pagination.adoc[ADR 0014] for pagination-specific architecture).
+These rules are enforced by ArchUnit tests (see https://github.com/streamarr/streamarr-adr/blob/main/adr/0014-protocol-agnostic-pagination.adoc[ADR 0014] for pagination-specific architecture).
 
 == Database
 
@@ -85,7 +85,7 @@ removeLibrary()
 
 Side effects triggered by transactional operations use `@TransactionalEventListener(AFTER_COMMIT)` to ensure they only execute after a successful commit. Non-transactional publishers use `@EventListener` for synchronous, same-thread delivery.
 
-See link:adr/0010-spring-application-events.adoc[ADR 0010] for full rationale.
+See https://github.com/streamarr/streamarr-adr/blob/main/adr/0010-spring-application-events.adoc[ADR 0010] for full rationale.
 
 == Streaming Pipeline
 
@@ -107,13 +107,13 @@ StreamingOptions (client)  +  MediaProbe (ffprobe)
             HlsPlaylistService → master + media playlists
 ----
 
-See link:adr/0007-transcode-first-with-smart-remux.adoc[ADR 0007],
-link:adr/0009-h264-plus-av1-codec-strategy.adoc[ADR 0009],
-link:adr/0013-stream-decision-architecture.adoc[ADR 0013].
+See https://github.com/streamarr/streamarr-adr/blob/main/adr/0007-transcode-first-with-smart-remux.adoc[ADR 0007],
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0009-h264-plus-av1-codec-strategy.adoc[ADR 0009],
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0013-stream-decision-architecture.adoc[ADR 0013].
 
 === Distributed Transcoding Direction
 
-link:adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] keeps local playback as the default and preserves independent variant failure through one shared FFmpeg engine.
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] keeps local playback as the default and preserves independent variant failure through one shared FFmpeg engine.
 An optional worker opens an outbound, long-lived mTLS gRPC `WorkerSession`; the live connection owns registration, capacity accounting, commands, and job-attempt fencing.
 Segment uploads use separate bounded HTTP/2 streams over the same channel, and media is addressed by opaque `MediaSourceRef(source_namespace_id, relative_key)` values rather than host paths.
 The initial topology is one Streamarr server and zero or more workers; workers have no database access or inbound listener, and multi-server coordination is deferred.
@@ -121,13 +121,13 @@ The initial topology is one Streamarr server and zero or more workers; workers h
 == Authentication and Invalidation
 
 Identity, sessions, and token security follow
-link:adr/0015-authorization-profiles-and-content-controls.adoc[ADR 0015] and
-link:adr/0016-authentication-mechanisms-and-session-security.adoc[ADR 0016]: ES256-signed access
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0015-authorization-profiles-and-content-controls.adoc[ADR 0015] and
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0016-authentication-mechanisms-and-session-security.adoc[ADR 0016]: ES256-signed access
 tokens with nested scopes, mandatory strict expiry, and digest-only rotating refresh tokens.
 Ordinary API claims remain valid only until their short expiry; refresh revalidates live session,
 account, and context authority. Playback additionally checks live authority on stream creation and
 every playlist and segment request, as
-link:adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] specifies.
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] specifies.
 The browser client is same-origin by construction -- development
 tooling proxies the API paths and production serves the client from the application origin --
 so no CORS configuration exists and none should be added (recorded as a rejected alternative in
@@ -161,7 +161,7 @@ checks the live authorization session and context, and every playback request ch
 
 == Key Design Decisions
 
-See link:adr/[Architecture Decision Records] for detailed rationale. Summary:
+See https://github.com/streamarr/streamarr-adr/tree/main/adr[Architecture Decision Records] for detailed rationale. Summary:
 
 |===
 | Decision | Rationale
@@ -185,8 +185,8 @@ See link:adr/[Architecture Decision Records] for detailed rationale. Summary:
 | Provider interface allows future sources without changing the pipeline
 
 | Spring Application Events
-| Decouples side effects from core operations, eliminates circular dependencies (link:adr/0010-spring-application-events.adoc[ADR 0010])
+| Decouples side effects from core operations, eliminates circular dependencies (https://github.com/streamarr/streamarr-adr/blob/main/adr/0010-spring-application-events.adoc[ADR 0010])
 
 | Stream decision architecture
-| Per-stream decision records compose into TranscodeDecision; mode resolution considers all stream types (link:adr/0013-stream-decision-architecture.adoc[ADR 0013])
+| Per-stream decision records compose into TranscodeDecision; mode resolution considers all stream types (https://github.com/streamarr/streamarr-adr/blob/main/adr/0013-stream-decision-architecture.adoc[ADR 0013])
 |===

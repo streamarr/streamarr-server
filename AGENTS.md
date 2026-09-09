@@ -86,7 +86,7 @@ Choose the simplest mechanism that fits the operation:
   when the logical resource has no stable row to lock. Acquire the advisory lock before row locks,
   bound the wait with a transaction-local `lock_timeout`, and keep external calls, file I/O, and
   retry/backoff outside the transaction. Every writer for that logical resource must follow the
-  same cooperative lock protocol. See [ADR 0022](docs/adr/0022-transaction-scoped-artwork-replacement-locking.adoc).
+  same cooperative lock protocol. See the [transaction-scoped artwork replacement locking ADR](https://github.com/streamarr/streamarr-server/blob/148220d5b3bee2f392d03f381dc1dd1a4e7445c4/docs/adr/0022-transaction-scoped-artwork-replacement-locking.adoc), pending its port to streamarr-adr.
 - **Outbound HTTP throttling/retry**: use the client's native interceptors (Methanol `RetryInterceptor` + `RateLimitingInterceptor`) — never a hand-rolled `Semaphore` + sleep loop. Never hold a permit, lock, or database connection across a retry backoff sleep; that pattern caused cascading Hikari pool exhaustion (four fix PRs in ten days).
 - **Virtual threads are the async model**: `Executors.newVirtualThreadPerTaskExecutor()` in try-with-resources, plus `spring.threads.virtual.enabled: true`. No `@Async`, no reactive/actor frameworks.
 - **Async boundary policy**: library-mutating GraphQL mutations (scan/refresh) are async and return immediately. Apply this uniformly — don't flip individual mutations between sync and async.
@@ -96,7 +96,7 @@ check-then-act race unless the read-check-write is inside a mutex or expressed a
 atomic SQL statement. Prefer pushing the condition into a `WHERE` clause on the upsert/delete.
 
 ### Spring Application Events
-Use Spring's `ApplicationEventPublisher` to decouple side effects from core operations. See [ADR 0010](docs/adr/0010-spring-application-events.adoc) for full rationale.
+Use Spring's `ApplicationEventPublisher` to decouple side effects from core operations. See [ADR 0010](https://github.com/streamarr/streamarr-adr/blob/main/adr/0010-spring-application-events.adoc) for full rationale.
 
 **When to use events:**
 - Breaking circular dependencies between services
@@ -134,7 +134,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
   `toString()` methods as a separate leakage surface; never log builders carrying secrets.
 - Mutable password buffers are justified only as an end-to-end design in which the boundary,
   validation, and hashing APIs avoid immutable copies and every owned buffer is cleared. Revisit
-  [ADR 0016](docs/adr/0016-authentication-mechanisms-and-session-security.adoc) before introducing
+  [ADR 0016](https://github.com/streamarr/streamarr-adr/blob/main/adr/0016-authentication-mechanisms-and-session-security.adoc) before introducing
   that pipeline.
 
 ### Code Style
@@ -190,8 +190,8 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 
 ## Settled Decisions (do not revisit without an ADR)
 - Architectural decisions are recorded in the canonical
-  [`streamarr/streamarr-adr`](https://github.com/streamarr/streamarr-adr) repository, not
-  under this repository's `docs/adr/`. Read the relevant ADR before revisiting a decision,
+  [`streamarr/streamarr-adr`](https://github.com/streamarr/streamarr-adr) repository.
+  Read the relevant ADR before revisiting a decision,
   and record newly settled decisions there using its `adr/template.adoc` and next available
   repository-wide number.
 - **Concurrency runtime**: virtual threads (Loom). Akka and Vert.x were each adopted and removed in 2022 — don't reintroduce reactive/actor frameworks.
