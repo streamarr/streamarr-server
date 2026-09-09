@@ -253,10 +253,10 @@ class PasswordResetServiceTest {
   @Test
   @DisplayName("Should refuse the redemption when the journal blocks the attempt")
   void shouldRefuseRedemptionWhenJournalBlocksAttempt() {
-    var issued = pendingCode();
+    var code = pendingCode().code();
     credentialAttempts.rejectReservations(Duration.ofMinutes(15));
 
-    assertThatThrownBy(() -> redeem(issued.code(), "a brand new passphrase"))
+    assertThatThrownBy(() -> redeem(code, "a brand new passphrase"))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
     assertThat(credentialAttempts.attempts()).isEmpty();
     assertThat(accounts.findById(account.getId()).orElseThrow().getPasswordHash()).isEqualTo("old");
@@ -316,7 +316,8 @@ class PasswordResetServiceTest {
           .isInstanceOf(InvalidOneTimeCodeException.class);
     }
 
-    assertThatThrownBy(() -> redeem(issued.code(), "a brand new passphrase"))
+    var code = issued.code();
+    assertThatThrownBy(() -> redeem(code, "a brand new passphrase"))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
   }
 

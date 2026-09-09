@@ -275,7 +275,6 @@ class AccountPasswordVerifierTest {
 
     private final AtomicInteger completedComparisons = new AtomicInteger();
     private final List<String> comparedAgainst = new ArrayList<>();
-    private Runnable duringNextComparison = () -> {};
 
     @Override
     public String encode(CharSequence rawPassword) {
@@ -287,16 +286,10 @@ class AccountPasswordVerifierTest {
       if (UNREADABLE_HASH.equals(encodedPassword)) {
         throw new IllegalArgumentException("Unreadable test hash");
       }
-      var hook = duringNextComparison;
-      duringNextComparison = () -> {};
-      hook.run();
+
       comparedAgainst.add(encodedPassword);
       completedComparisons.incrementAndGet();
       return encode(rawPassword).equals(encodedPassword);
-    }
-
-    private void onNextComparison(Runnable hook) {
-      duringNextComparison = hook;
     }
 
     private int completedComparisons() {

@@ -13,7 +13,6 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.services.auth.OpaqueOneTimeCodes.PresentedCode;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;
 import java.sql.Connection;

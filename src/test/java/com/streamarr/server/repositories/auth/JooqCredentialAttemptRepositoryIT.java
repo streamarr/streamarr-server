@@ -507,12 +507,12 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
   @DisplayName("Should refuse a result without a completion instant when the row is written")
   void shouldRefuseResultWithoutCompletionInstantWhenRowIsWritten() {
     var reservation = reserve(resolvedTarget(), NOW);
+    var reservationId = reservation.id();
 
     assertThatThrownBy(
             () ->
                 jdbcTemplate.update(
-                    "UPDATE credential_attempt SET result = 'FAILED' WHERE id = ?",
-                    reservation.id()))
+                    "UPDATE credential_attempt SET result = 'FAILED' WHERE id = ?", reservationId))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 

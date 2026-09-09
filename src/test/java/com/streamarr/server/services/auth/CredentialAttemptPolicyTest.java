@@ -42,14 +42,14 @@ class CredentialAttemptPolicyTest {
   @DisplayName("Should reject a limited policy when a bound is not positive or exceeds one day")
   void shouldRejectLimitedPolicyWhenBoundIsNotPositiveOrExceedsOneDay(
       int maximumFailures, Duration failureWindow, Duration throttleDuration, String message) {
-    assertThatThrownBy(
-            () ->
-                CredentialAttemptPolicy.Limited.builder()
-                    .maximumFailures(maximumFailures)
-                    .failureWindow(failureWindow)
-                    .throttleDuration(throttleDuration)
-                    .resetFailuresOnSuccess(true)
-                    .build())
+    var policy =
+        CredentialAttemptPolicy.Limited.builder()
+            .maximumFailures(maximumFailures)
+            .failureWindow(failureWindow)
+            .throttleDuration(throttleDuration)
+            .resetFailuresOnSuccess(true);
+
+    assertThatThrownBy(policy::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage(message);
   }
