@@ -1,0 +1,452 @@
+FFmpeg / Jellyfin binary redistribution materials
+
+Binary release: https://github.com/jellyfin/jellyfin-ffmpeg/releases/tag/v8.1.2-4
+FFmpeg source revision: 6c051dec38eb0e88d2d4d3c54b13014bf69f9799
+Targets: portable Linux GPL, amd64 and arm64
+
+Corresponding Source
+====================
+The source code for FFmpeg, the bundled libraries, and the scripts controlling
+compilation is available without charge at the upstream repositories and exact
+revisions listed below. Obtain FFmpeg and its Jellyfin patches/build recipes at:
+https://github.com/jellyfin/jellyfin-ffmpeg/tree/6c051dec38eb0e88d2d4d3c54b13014bf69f9799
+Source archive:
+https://codeload.github.com/jellyfin/jellyfin-ffmpeg/tar.gz/6c051dec38eb0e88d2d4d3c54b13014bf69f9799
+
+Follow the upstream builder/README.md. From builder/, run ./makeimage.sh linux64 gpl
+and ./build.sh linux64 gpl; use linuxarm64 instead of linux64 for ARM. The
+builder/scripts.d recipes select library revisions, build
+options, generated code, and any changes in builder/patches. These changes are
+part of the Corresponding Source; an unpatched library release alone is not the
+complete source for a patched component. Streamarr redistributes the upstream
+binaries unchanged. Its packaging scripts are in buildpacks/ffmpeg in:
+https://github.com/streamarr/streamarr-server
+
+For a Git source entry below, clone its repository and check out the listed
+revision (git checkout --detach REVISION); initialize submodules when the pinned
+recipe requires them. For LAME, use svn checkout -r 6531 with the listed URL.
+The source entries also identify relevant generated-loader and build-support
+inputs; not all such entries are standalone libraries linked into the binary.
+
+The stripped FDK AAC source, including upstream modifications, is available at:
+https://gitlab.freedesktop.org/wtaymans/fdk-aac-stripped/-/tree/529b87452cd33d45e1d0a5066d20b64f10b38845
+Its license and upstream modification notice are included in
+notices/fdk-aac-stripped/NOTICE.txt and notices/fdk-aac-stripped/README.fedora.txt.
+Streamarr selects FFmpeg's native aac encoder, not libfdk_aac. This does not remove
+the stripped FDK code from the redistributed executables.
+
+License and inventory information
+=================================
+LICENSE.txt contains GPLv3. THIRD-PARTY-NOTICES.txt reproduces the inventoried
+licenses and attribution verbatim, including FFmpeg's license overview, GPL/LGPL
+texts and per-file copyright information from the locked fork revision. Identical
+texts are reproduced once and referenced by SHA-256 from each component's entry.
+These components retain their own copyright notices and license terms. The FDK
+notice and modification notice are also retained at the paths given above.
+
+notices/manifest binds this inventory to the source revision and both archive
+checksums. notices/sources.json records component roles, architecture scope,
+source revisions, build recipes, notice origins and notice SHA-256 checksums.
+The file paths and checksums there identify vendored inputs in Streamarr's source
+repository, not binary archives. Those texts appear by SHA-256 in the installed
+THIRD-PARTY-NOTICES.txt; the individual input files are not all installed.
+Header-license excerpts are marked; text may have a normalized final newline.
+The two buildconf files record the binaries' configure flags used as the starting
+point for the inventory; transitive static code and generated loaders were then
+traced through the locked recipes and submodule/dependency pins.
+
+System glibc shared libraries and optional GPU driver implementations are not in
+the portable tarballs. Their notices belong to the image/base-system packages that
+provide them. glibc startup/nonshared support is inventoried separately. GCC runtime
+code is linked statically and its Runtime Library Exception is
+included here. The upstream builder does not pin Implib.so: its inventory revision
+identifies the notice source, not a proven revision of the binary's generator.
+
+Component source index
+======================
+
+amf (amd64)
+  AMD AMF API headers (--enable-amf); proprietary driver runtime is not bundled.
+  Repository: https://github.com/GPUOpen-LibrariesAndSDKs/AMF
+  Revision: eadd00804d5f7e5cd8c85d540073198312870776
+  Recipe: builder/scripts.d/50-amf.sh
+  Notices: see notices/sources.json (amf)
+
+chromaprint (amd64, arm64)
+  Static audio fingerprinting library (--enable-chromaprint).
+  Repository: https://github.com/acoustid/chromaprint
+  Revision: 6b13ce3a81ae931e7477c4856a86bece99157cd8
+  Recipe: builder/scripts.d/50-chromaprint.sh
+  Notices: see notices/sources.json (chromaprint)
+
+dav1d (amd64, arm64)
+  Static AV1 decoder (--enable-libdav1d).
+  Repository: https://code.videolan.org/videolan/dav1d
+  Revision: b546257f770768b2c88258c533da38b91a06f737
+  Recipe: builder/scripts.d/50-dav1d.sh
+  Notices: see notices/sources.json (dav1d)
+
+fast-float (amd64, arm64)
+  Header-only numeric parser compiled into libplacebo.
+  Repository: https://github.com/fastfloat/fast_float
+  Revision: 97b54ca9e75f5303507699d27c6b4f4efe4641a1
+  Recipe: libplacebo/3rdparty/fast_float (gitlink)
+  Notices: see notices/sources.json (fast-float)
+
+fdk-aac-stripped (amd64, arm64)
+  Static stripped FDK AAC library (--enable-libfdk-aac). Streamarr selects the native aac encoder, not libfdk_aac.
+  Repository: https://gitlab.freedesktop.org/wtaymans/fdk-aac-stripped
+  Revision: 529b87452cd33d45e1d0a5066d20b64f10b38845
+  Recipe: builder/scripts.d/50-fdk-aac-stripped.sh
+  Notices: see notices/sources.json (fdk-aac-stripped)
+
+ffmpeg (amd64, arm64)
+  FFmpeg and ffprobe executables, including Jellyfin patches.
+  Repository: https://github.com/jellyfin/jellyfin-ffmpeg
+  Revision: 6c051dec38eb0e88d2d4d3c54b13014bf69f9799
+  Recipe: builder
+  Notices: see notices/sources.json (ffmpeg)
+
+ffnvcodec (amd64, arm64)
+  NVIDIA codec API headers and inline loaders; NVIDIA driver/CUDA runtime libraries are not bundled.
+  Repository: https://github.com/FFmpeg/nv-codec-headers
+  Revision: 451da99614412a7f9526ef301a5ee0c7a6f9ad76
+  Recipe: builder/scripts.d/50-ffnvcodec.sh
+  Notices: see notices/sources.json (ffnvcodec)
+
+fftw3f (amd64, arm64)
+  Static FFT dependency of Chromaprint (FFT_LIB=fftw3f).
+  Repository: https://github.com/FFTW/fftw3
+  Revision: 4fca9817e68f77c118e4704562d63e45c02d38bf
+  Recipe: builder/scripts.d/25-fftw3f.sh
+  Notices: see notices/sources.json (fftw3f)
+
+fontconfig (amd64, arm64)
+  Static font configuration library (--enable-fontconfig).
+  Repository: https://chromium.googlesource.com/external/fontconfig
+  Revision: 6d0a98982ec351c165c9224c8b7dbdfca3010e47
+  Recipe: builder/scripts.d/35-fontconfig.sh
+  Notices: see notices/sources.json (fontconfig)
+
+freetype (amd64, arm64)
+  Static font rasterization library (--enable-libfreetype).
+  Repository: https://github.com/freetype/freetype
+  Revision: 1803559c4ee407d0bcbf2a67dbe96690cee869d2
+  Recipe: builder/scripts.d/25-freetype.sh
+  Notices: see notices/sources.json (freetype)
+
+fribidi (amd64, arm64)
+  Static bidirectional-text library (--enable-libfribidi).
+  Repository: https://github.com/fribidi/fribidi
+  Revision: 5c85a174650ab8ef106ce85f13bcf2950d3fc65f
+  Recipe: builder/scripts.d/25-fribidi.sh
+  Notices: see notices/sources.json (fribidi)
+
+gcc-runtime (amd64, arm64)
+  Statically linked GCC 15.2.0 runtime libraries (libgcc/libstdc++), with GCC Runtime Library Exception.
+  Repository: https://github.com/gcc-mirror/gcc
+  Revision: releases/gcc-15.2.0
+  Recipe: builder/images/base-linux64/ct-ng-config; builder/images/base-linuxarm64/ct-ng-config
+  Notices: see notices/sources.json (gcc-runtime)
+
+glad (amd64, arm64)
+  Generated OpenGL/EGL loader code compiled into libplacebo; excludes generator-only Python dependencies.
+  Repository: https://github.com/Dav1dde/glad
+  Revision: 73db193f853e2ee079bf3ca8a64aa2eaf6459043
+  Recipe: libplacebo/3rdparty/glad (gitlink)
+  Notices: see notices/sources.json (glad)
+
+glibc-startup (amd64, arm64)
+  glibc startup/nonshared support from the cross-toolchain; shared glibc libraries and the dynamic loader are supplied by the base system.
+  Repository: https://github.com/bminor/glibc
+  Revision: glibc-2.28
+  Recipe: builder/images/base-linux64/ct-ng-config; builder/images/base-linuxarm64/ct-ng-config
+  Notices: see notices/sources.json (glibc-startup)
+
+glslang (amd64, arm64)
+  Static shader language compiler within shaderc_combined; pin from shaderc DEPS.
+  Repository: https://github.com/KhronosGroup/glslang
+  Revision: 5ed4003a18a10a9d1bd7e43aaf1664499abffa83
+  Recipe: shaderc/DEPS
+  Notices: see notices/sources.json (glslang)
+
+gmp (amd64, arm64)
+  Static arithmetic library (--enable-gmp).
+  Repository: https://github.com/BtbN/gmplib
+  Revision: 9994908f090c694f8a152d660dc6852e0c48557a
+  Recipe: builder/scripts.d/25-gmp.sh
+  Notices: see notices/sources.json (gmp)
+
+gnulib (amd64, arm64)
+  Pinned libiconv bootstrap source input; this entry does not assert that the entire gnulib project is linked.
+  Repository: https://github.com/coreutils/gnulib
+  Revision: 5926e89900ffe4c850dd026fb634c15bf3cee526
+  Recipe: builder/scripts.d/20-libiconv.sh
+  Notices: see notices/sources.json (gnulib)
+
+harfbuzz (amd64, arm64)
+  Static text shaping library (--enable-libharfbuzz).
+  Repository: https://github.com/harfbuzz/harfbuzz
+  Revision: 56feae4035bdd48f62ba2b8d8c16232d4d89b3a4
+  Recipe: builder/scripts.d/45-harfbuzz.sh
+  Notices: see notices/sources.json (harfbuzz)
+
+implib (amd64, arm64)
+  Generated lazy import-loader code embedded for system libraries; upstream does not pin the generator checkout.
+  Repository: https://github.com/yugr/Implib.so
+  Revision: a3e167cf978a5b8a38ec0f710d8c4331e8dcdd9a
+  Recipe: builder/images/base-linux64/Dockerfile; builder/images/base-linuxarm64/Dockerfile
+  Notices: see notices/sources.json (implib)
+  Upstream clones an unpinned default branch. This revision identifies the notice source, not a proven binary build revision.
+
+libass (amd64, arm64)
+  Static subtitle renderer (--enable-libass).
+  Repository: https://github.com/libass/libass
+  Revision: 4a05d8127f525943ebf45fdc6497c9e665947f0d
+  Recipe: builder/scripts.d/50-libass.sh
+  Notices: see notices/sources.json (libass)
+
+libbluray (amd64, arm64)
+  Static Blu-ray access library (--enable-libbluray).
+  Repository: https://code.videolan.org/videolan/libbluray
+  Revision: 4dfb9b0123b006ce5d66592dc8058f61e5c0cdc8
+  Recipe: builder/scripts.d/50-libbluray.sh
+  Notices: see notices/sources.json (libbluray)
+
+libdrm (amd64, arm64)
+  DRM API headers used with generated import shims; system libdrm and GPU drivers are not bundled.
+  Repository: https://gitlab.freedesktop.org/mesa/drm
+  Revision: 6bfcfc725fbe0ece0918535556d61ee567b1ffff
+  Recipe: builder/scripts.d/50-vaapi/40-libdrm.sh
+  Notices: see notices/sources.json (libdrm)
+
+libiconv (amd64, arm64)
+  Static character conversion library (--enable-iconv).
+  Repository: https://skia.googlesource.com/third_party/libiconv
+  Revision: v1.19
+  Recipe: builder/scripts.d/20-libiconv.sh
+  Notices: see notices/sources.json (libiconv)
+
+libmp3lame (amd64, arm64)
+  Static MP3 encoder (--enable-libmp3lame).
+  Repository: https://svn.code.sf.net/p/lame/svn/trunk/lame
+  Revision: 6531
+  Recipe: builder/scripts.d/50-libmp3lame.sh
+  Notices: see notices/sources.json (libmp3lame)
+
+libne10 (arm64)
+  Static ARM NEON dependency of Opus.
+  Repository: https://github.com/gnattu/Ne10
+  Revision: 502bbc4ab65fe83114d618363510fd4ffb7a8c46
+  Recipe: builder/scripts.d/45-libne10.sh
+  Notices: see notices/sources.json (libne10)
+
+libogg (amd64, arm64)
+  Static container dependency of Vorbis and Theora.
+  Repository: https://github.com/xiph/ogg
+  Revision: 06a5e0262cdc28aa4ae6797627a783b5010440f0
+  Recipe: builder/scripts.d/25-libogg.sh
+  Notices: see notices/sources.json (libogg)
+
+libopus (amd64, arm64)
+  Static Opus audio codec (--enable-libopus).
+  Repository: https://github.com/xiph/opus
+  Revision: 788cc89ce4f2c42025d8c70ec1b4457dc89cd50f
+  Recipe: builder/scripts.d/50-libopus.sh
+  Notices: see notices/sources.json (libopus)
+
+libplacebo (amd64, arm64)
+  Static rendering library (--enable-libplacebo), including Jellyfin's builder/patches/libplacebo patches.
+  Repository: https://code.videolan.org/videolan/libplacebo
+  Revision: cee9b076f2c63104ccfd497fa79c39a867293ec4
+  Recipe: builder/scripts.d/50-libplacebo.sh
+  Notices: see notices/sources.json (libplacebo)
+
+libtheora (amd64, arm64)
+  Static Theora codec (--enable-libtheora).
+  Repository: https://github.com/xiph/theora
+  Revision: 014bc312d05241ff2d06fd52ee7cbbec3768bfd6
+  Recipe: builder/scripts.d/50-libtheora.sh
+  Notices: see notices/sources.json (libtheora)
+
+libudfread (amd64, arm64)
+  Static UDF dependency of libbluray.
+  Repository: https://code.videolan.org/videolan/libudfread
+  Revision: 139a2194525f2745b98a98e4d8fa627d07440176
+  Recipe: builder/scripts.d/45-libudfread.sh
+  Notices: see notices/sources.json (libudfread)
+
+libunibreak (amd64, arm64)
+  Static Unicode line-breaking dependency of libass.
+  Repository: https://github.com/adah1972/libunibreak
+  Revision: 3ce4bfa3129ff3738046a44a6db533d2ce25af2b
+  Recipe: builder/scripts.d/45-libunibreak.sh
+  Notices: see notices/sources.json (libunibreak)
+
+libvorbis (amd64, arm64)
+  Static audio codec (--enable-libvorbis).
+  Repository: https://github.com/xiph/vorbis
+  Revision: 68a7fc2246e734f1a311b06083fc1249551c4412
+  Recipe: builder/scripts.d/45-libvorbis.sh
+  Notices: see notices/sources.json (libvorbis)
+
+libvpl (amd64)
+  Static oneVPL dispatcher (--enable-libvpl); Intel media driver implementation is not bundled.
+  Repository: https://github.com/intel/libvpl
+  Revision: d77f9195cf495b937631607333288fd917ae8939
+  Recipe: builder/scripts.d/50-libvpl.sh
+  Notices: see notices/sources.json (libvpl)
+
+libvpx (amd64, arm64)
+  Static VP8/VP9 codecs (--enable-libvpx).
+  Repository: https://chromium.googlesource.com/webm/libvpx
+  Revision: 1024874c5919305883187e2953de8fcb4c3d7fa6
+  Recipe: builder/scripts.d/50-libvpx.sh
+  Notices: see notices/sources.json (libvpx)
+
+libwebp (amd64, arm64)
+  Static WebP codec (--enable-libwebp).
+  Repository: https://chromium.googlesource.com/webm/libwebp
+  Revision: 4fa21912338357f89e4fd51cf2368325b59e9bd9
+  Recipe: builder/scripts.d/50-libwebp.sh
+  Notices: see notices/sources.json (libwebp)
+
+libxml2 (amd64, arm64)
+  Static XML library (--enable-libxml2).
+  Repository: https://github.com/GNOME/libxml2
+  Revision: a7511af09f99995cdf81994db21f4eba564276b5
+  Recipe: builder/scripts.d/25-libxml2.sh
+  Notices: see notices/sources.json (libxml2)
+
+opencl (amd64, arm64)
+  OpenCL API headers; vendor OpenCL implementations are not bundled.
+  Repository: https://github.com/KhronosGroup/OpenCL-Headers
+  Revision: 4c82e9cfaaad18c340f48af3cf5d09ff33e8c1b7
+  Recipe: builder/scripts.d/45-opencl.sh
+  Notices: see notices/sources.json (opencl)
+
+opencl-icd-loader (amd64, arm64)
+  Static OpenCL ICD loader (--enable-opencl); loads external vendor implementations.
+  Repository: https://github.com/KhronosGroup/OpenCL-ICD-Loader
+  Revision: 2cde5d09953a041786d1cfdcb1c08704a82cb904
+  Recipe: builder/scripts.d/45-opencl.sh
+  Notices: see notices/sources.json (opencl-icd-loader)
+
+openmpt (amd64, arm64)
+  Static module decoder (--enable-libopenmpt), including minimp3 and mpt utility code. Uses external zlib/ogg/vorbis; excludes fallback miniz/stb_vorbis and tracker-only components.
+  Repository: https://github.com/OpenMPT/openmpt
+  Revision: 11363ff11ba021b1cf1533da17d9fdf20c8d883c
+  Recipe: builder/scripts.d/50-openmpt.sh
+  Notices: see notices/sources.json (openmpt)
+
+openssl (amd64, arm64)
+  Static TLS/cryptography library (--enable-openssl).
+  Repository: https://github.com/openssl/openssl
+  Revision: openssl-3.6.3
+  Recipe: builder/scripts.d/25-openssl.sh
+  Notices: see notices/sources.json (openssl)
+
+rkmpp (arm64)
+  Static Rockchip MPP support library (--enable-rkmpp).
+  Repository: https://github.com/nyanmisaka/rk-mirrors
+  Revision: a9380ef333102ac318628f83b5f7a460d377749e
+  Recipe: builder/scripts.d/50-rkmpp.sh
+  Notices: see notices/sources.json (rkmpp)
+
+rkrga (arm64)
+  Static Rockchip RGA support library (--enable-rkrga).
+  Repository: https://github.com/nyanmisaka/rk-mirrors
+  Revision: 1d330cc28551943bed3380261a5a9c6fbd58ff53
+  Recipe: builder/scripts.d/50-rkrga.sh
+  Notices: see notices/sources.json (rkrga)
+
+shaderc (amd64, arm64)
+  Static shader compiler (--enable-libshaderc, shaderc_combined).
+  Repository: https://github.com/google/shaderc
+  Revision: d5f08ae5c5a9a45165578445cbd0f9adf0223448
+  Recipe: builder/scripts.d/47-vulkan/50-shaderc.sh
+  Notices: see notices/sources.json (shaderc)
+
+spirv-headers (amd64, arm64)
+  SPIR-V headers used by shaderc/glslang/SPIRV-Tools; pin from shaderc DEPS.
+  Repository: https://github.com/KhronosGroup/SPIRV-Headers
+  Revision: ad9184e76a66b1001c29db9b0a3e87f646c64de0
+  Recipe: shaderc/DEPS
+  Notices: see notices/sources.json (spirv-headers)
+
+spirv-tools (amd64, arm64)
+  Static SPIR-V optimization/validation code within shaderc_combined; pin from shaderc DEPS.
+  Repository: https://github.com/KhronosGroup/SPIRV-Tools
+  Revision: c1cb30bb04e2bf911755a40df1242cc6e3d83e26
+  Recipe: shaderc/DEPS
+  Notices: see notices/sources.json (spirv-tools)
+
+srt (amd64, arm64)
+  Static SRT transport library (--enable-libsrt), including UDT-derived code.
+  Repository: https://github.com/Haivision/srt
+  Revision: b6b4ae990daa8193625a4ddeaeaed03023b23125
+  Recipe: builder/scripts.d/50-srt.sh
+  Notices: see notices/sources.json (srt)
+
+svtav1 (amd64, arm64)
+  Static AV1 encoder (--enable-libsvtav1).
+  Repository: https://gitlab.com/AOMediaCodec/SVT-AV1
+  Revision: c04f951541ad600e0d9c10836f2ab7b9bc69816d
+  Recipe: builder/scripts.d/50-svtav1.sh
+  Notices: see notices/sources.json (svtav1)
+
+vulkan-headers (amd64, arm64)
+  Vulkan API headers and registry used by libplacebo.
+  Repository: https://github.com/KhronosGroup/Vulkan-Headers
+  Revision: v1.4.355
+  Recipe: builder/scripts.d/47-vulkan/45-vulkan-headers.sh
+  Notices: see notices/sources.json (vulkan-headers)
+
+vulkan-loader (amd64, arm64)
+  Static Vulkan shim loader (--enable-vulkan); the system Vulkan loader and drivers are not bundled.
+  Repository: https://github.com/BtbN/Vulkan-Shim-Loader
+  Revision: 65b3936528cd92eb4ea3de485d03f858a3850484
+  Recipe: builder/scripts.d/47-vulkan/45-vulkan-loader.sh
+  Notices: see notices/sources.json (vulkan-loader)
+
+x264 (amd64, arm64)
+  Static H.264 encoder (--enable-libx264).
+  Repository: https://code.videolan.org/videolan/x264
+  Revision: 0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee
+  Recipe: builder/scripts.d/50-x264.sh
+  Notices: see notices/sources.json (x264)
+
+x265 (amd64, arm64)
+  Static HEVC encoder (--enable-libx265), including the json11 parser in the enabled HDR10+ builds.
+  Repository: https://bitbucket.org/multicoreware/x265_git
+  Revision: e444744c03978c1fb4e037168967020cf2648427
+  Recipe: builder/scripts.d/50-x265.sh
+  Notices: see notices/sources.json (x265)
+
+xz (amd64, arm64)
+  Static liblzma compression library (--enable-lzma); xz command-line programs are not bundled.
+  Repository: https://github.com/tukaani-project/xz
+  Revision: v5.8.3
+  Recipe: builder/scripts.d/25-xz.sh
+  Notices: see notices/sources.json (xz)
+
+zimg (amd64, arm64)
+  Static image scaling/conversion library (--enable-libzimg).
+  Repository: https://github.com/sekrit-twc/zimg
+  Revision: 5e8c32222569edf3a712f83d7cff80ad4dd9ab6e
+  Recipe: builder/scripts.d/50-zimg.sh
+  Notices: see notices/sources.json (zimg)
+
+zlib (amd64, arm64)
+  Static compression library (--enable-zlib).
+  Repository: https://github.com/madler/zlib
+  Revision: f9dd6009be3ed32415edf1e89d1bc38380ecb95d
+  Recipe: builder/scripts.d/20-zlib.sh
+  Notices: see notices/sources.json (zlib)
+
+zvbi (amd64, arm64)
+  Static VBI library (--enable-libzvbi).
+  Repository: https://github.com/zapping-vbi/zvbi
+  Revision: 41477c97c8edf7a01f1594b2a95b94f0117eed21
+  Recipe: builder/scripts.d/50-zvbi.sh
+  Notices: see notices/sources.json (zvbi)

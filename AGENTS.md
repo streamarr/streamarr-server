@@ -1,6 +1,7 @@
 # Streamarr Server - Project Guidelines
 
 ## Commands
+- Prerequisites: install/select the tested Node.js 24 LTS toolchain from `buildpacks/ffmpeg/.nvmrc` with `nvm install "$(cat buildpacks/ffmpeg/.nvmrc)"` and `nvm use "$(cat buildpacks/ffmpeg/.nvmrc)"`. Maven's FFmpeg coverage thresholds require APIs introduced in Node 22.8; 24.x is the supported/tested major. Keep Node version markers out of the repository root: Paketo treats them as application dependencies.
 - `./mvnw verify` — full build: unit tests (Surefire, `*Test`) + integration tests (Failsafe, `*IT`) + Checkstyle + Spotless
 - `./mvnw test` — unit tests only
 - `./mvnw spotless:apply` — format before committing

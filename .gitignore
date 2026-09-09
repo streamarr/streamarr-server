@@ -62,3 +62,6 @@ src/test/resources/BigBuckBunny_320x180.mp4
 
 ### Local PR review artifacts ###
 /pr-review-handoffs/
+
+### Reproducible FFmpeg redistribution artifacts ###
+/buildpacks/ffmpeg/generated/

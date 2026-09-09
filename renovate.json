@@ -6,7 +6,10 @@
     "schedule:earlyMondays"
   ],
   "labels": ["dependencies"],
-  "gitIgnoredAuthors": ["streamarr-ffmpeg-lock[bot]@users.noreply.github.com"],
+  "gitIgnoredAuthors": [
+    "streamarr-ffmpeg-lock[bot]@users.noreply.github.com",
+    "315986519+streamarr-ffmpeg-lock[bot]@users.noreply.github.com"
+  ],
   "vulnerabilityAlerts": {
     "labels": ["dependencies", "security"],
     "schedule": ["at any time"]
@@ -34,16 +37,16 @@
     },
     {
       "customType": "regex",
-      "description": "Track pinned BtbN FFmpeg runtime releases",
+      "description": "Compare Jellyfin's fourth numeric component as a stable packaging revision; default SemVer treats the hyphen suffix as a prerelease",
       "managerFilePatterns": [
         "/^buildpacks/ffmpeg/release$/"
       ],
       "matchStrings": [
-        "^(?<currentValue>autobuild-\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2})\\n?$"
+        "^(?<currentValue>v\\d+\\.\\d+\\.\\d+-\\d+)\\n?$"
       ],
-      "depNameTemplate": "BtbN/FFmpeg-Builds",
+      "depNameTemplate": "jellyfin/jellyfin-ffmpeg",
       "datasourceTemplate": "github-releases",
-      "versioningTemplate": "regex:^autobuild-(?<major>\\d{4})-(?<minor>\\d{2})-(?<patch>\\d{2})-(?<build>\\d{2})-(?<revision>\\d{2})$"
+      "versioningTemplate": "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-(?<build>\\d+)$"
     }
   ],
   "packageRules": [
@@ -60,9 +63,15 @@
     },
     {
       "description": "Keep FFmpeg runtime updates isolated for lock synchronization",
-      "matchDepNames": ["BtbN/FFmpeg-Builds"],
+      "matchDepNames": ["jellyfin/jellyfin-ffmpeg"],
       "groupName": "FFmpeg runtime",
       "automerge": false
+    },
+    {
+      "description": "Require explicit dashboard approval before proposing a new FFmpeg major",
+      "matchDepNames": ["jellyfin/jellyfin-ffmpeg"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
     },
     {
       "description": "Cedar bundles a native engine: every upgrade is a deliberate PR that re-runs the multi-arch image self-check and CedarDependencyAlignmentTest, never an automerge",

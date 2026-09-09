@@ -1,0 +1,16 @@
+#!/bin/bash
+
+set -euo pipefail
+
+script_dir="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+IFS= read -r node_version <"${script_dir}/../.nvmrc"
+if ! command -v node >/dev/null 2>&1; then
+  echo "FFmpeg tooling requires Node.js ${node_version}; run nvm install ${node_version} && nvm use ${node_version}" >&2
+  exit 1
+fi
+if [[ "$(node --version)" != "v${node_version%%.*}."* ]]; then
+  echo "FFmpeg tooling requires Node.js ${node_version%%.*}.x; run nvm install ${node_version} && nvm use ${node_version}" >&2
+  exit 1
+fi
+
+exec node "${script_dir}/generate-notices.mjs" "$@"
