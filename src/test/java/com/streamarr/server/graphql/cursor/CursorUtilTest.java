@@ -50,6 +50,31 @@ class CursorUtilTest {
     }
 
     @Test
+    @DisplayName("Should preserve an opaque cursor value when round-tripping encode and decode")
+    void shouldPreserveOpaqueCursorValueWhenRoundTrippingEncodeAndDecode() {
+      var value = "2026-08-22T12:00:00Z|00000000-0000-0000-0000-000000000001";
+
+      var encoded = cursorUtil.encodeOpaqueCursor(value);
+
+      assertThat(cursorUtil.decodeOpaqueCursor(encoded.getValue())).isEqualTo(value);
+    }
+
+    @Test
+    @DisplayName("Should use unpadded URL-safe UTF-8 Base64 when encoding an opaque cursor")
+    void shouldUseUnpaddedUrlSafeUtf8Base64WhenEncodingOpaqueCursor() {
+      assertThat(cursorUtil.encodeOpaqueCursor("࠾࠿").getValue()).isEqualTo("4KC-4KC_");
+      assertThat(cursorUtil.encodeOpaqueCursor("日本語 🎬").getValue())
+          .isEqualTo("5pel5pys6KqeIPCfjqw");
+    }
+
+    @Test
+    @DisplayName("Should recover UTF-8 text when decoding a known opaque cursor")
+    void shouldRecoverUtf8TextWhenDecodingKnownOpaqueCursor() {
+      assertThat(cursorUtil.decodeOpaqueCursor("4KC-4KC_")).isEqualTo("࠾࠿");
+      assertThat(cursorUtil.decodeOpaqueCursor("5pel5pys6KqeIPCfjqw")).isEqualTo("日本語 🎬");
+    }
+
+    @Test
     @DisplayName(
         "Should preserve cursorId and all filter dimensions when round-tripping encode and decode")
     void shouldPreserveCursorIdAndAllFilterDimensionsWhenRoundTrippingEncodeAndDecode() {

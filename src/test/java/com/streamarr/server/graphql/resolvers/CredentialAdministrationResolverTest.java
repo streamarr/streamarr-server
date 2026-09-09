@@ -36,6 +36,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import tools.jackson.databind.ObjectMapper;
 
 @Tag("UnitTest")
 @EnableDgsTest
@@ -101,6 +102,7 @@ class CredentialAdministrationResolverTest {
           .formatted(UUID.randomUUID());
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+  @Autowired private ObjectMapper objectMapper;
 
   @MockitoBean private AuthorizationService authorizationService;
 
@@ -133,21 +135,21 @@ class CredentialAdministrationResolverTest {
     when(credentialIssuanceService.issueAccountInvitationWithNewProfile(any(), any()))
         .thenReturn(Outcome.rejected(errorCase.rejection()));
 
-    String type =
-        dgsQueryExecutor.executeAndExtractJsonPath(
-            ISSUE_NEW_PROFILE_INVITATION_MUTATION,
-            "data.issueAccountInvitationWithNewProfile.userErrors[0].__typename");
-
-    assertThat(type).isEqualTo(errorCase.expectedType());
+    var response =
+        objectMapper.valueToTree(
+            dgsQueryExecutor.execute(ISSUE_NEW_PROFILE_INVITATION_MUTATION).toSpecification());
+    assertThat(response.has("errors")).isFalse();
+    var payload = response.at("/data/issueAccountInvitationWithNewProfile");
+    assertThat(payload.path("issued").isNull()).isTrue();
+    assertThat(payload.path("userErrors").size()).isEqualTo(1);
+    assertThat(payload.at("/userErrors/0/__typename").asString())
+        .isEqualTo(errorCase.expectedType());
     if (errorCase.expectedInputPath() == null) {
       return;
     }
 
-    List<String> inputPath =
-        dgsQueryExecutor.executeAndExtractJsonPath(
-            ISSUE_NEW_PROFILE_INVITATION_MUTATION,
-            "data.issueAccountInvitationWithNewProfile.userErrors[0].inputPath");
-    assertThat(inputPath).containsExactlyElementsOf(errorCase.expectedInputPath());
+    assertThat(payload.at("/userErrors/0/inputPath"))
+        .isEqualTo(objectMapper.valueToTree(errorCase.expectedInputPath()));
   }
 
   @Test
@@ -260,7 +262,9 @@ class CredentialAdministrationResolverTest {
             "EmailInvalidError",
             List.of("recipientEmail")),
         new IssuanceErrorCase(
-            new CredentialRejections.EmailAlreadyUsed(), "EmailAlreadyUsedError", null),
+            new CredentialRejections.EmailAlreadyUsed(),
+            "EmailAlreadyUsedError",
+            List.of("recipientEmail")),
         new IssuanceErrorCase(
             new CredentialRejections.ProfileNameRequired(), "ProfileNameRequiredError", null),
         new IssuanceErrorCase(

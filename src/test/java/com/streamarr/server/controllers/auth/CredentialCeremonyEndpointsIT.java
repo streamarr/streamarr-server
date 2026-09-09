@@ -67,6 +67,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -85,6 +86,7 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Tag("IntegrationTest")
 @DisplayName("Credential Ceremony Endpoints Integration Tests")
+@Isolated("Cleans shared PostgreSQL credential fixtures")
 class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
 
   @Autowired private MockMvc mockMvc;

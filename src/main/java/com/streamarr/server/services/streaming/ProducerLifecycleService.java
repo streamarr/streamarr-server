@@ -8,10 +8,13 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
@@ -34,34 +37,238 @@ public class ProducerLifecycleService {
   private final StreamingProperties properties;
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final MutexFactory<UUID> sessionMutex;
+  @Builder.Default private final Clock clock = Clock.systemUTC();
+  private final ConcurrentHashMap<VariantKey, VariantDeliveryState> recoveryStates =
+      new ConcurrentHashMap<>();
+
+  public enum RecoveryResult {
+    WAITING,
+    EXHAUSTED,
+    SESSION_GONE
+  }
+
+  private record VariantKey(UUID sessionId, String variantLabel) {}
+
+  @Builder
+  private record PendingSegment(
+      UUID sessionId, String variantLabel, String segmentName, int requestedIndex) {}
 
   /**
-   * The coordinator's classification of the producer being replaced. The observation is re-verified
-   * under the mutex: a DEAD claim against a producer that is actually running is a stale view and
-   * must supersede, never kill.
+   * Observes progress and decides whether to wait, replace, or exhaust under the same session mutex
+   * as every producer mutation. Recovery bookkeeping is committed before releasing it.
    */
-  public enum ReplacementReason {
+  public RecoveryResult recover(UUID sessionId, String variantLabel, String segmentName) {
+    return withSessionLock(sessionId, () -> doRecover(sessionId, variantLabel, segmentName));
+  }
+
+  public void forgetRecovery(UUID sessionId) {
+    withSessionLock(
+        sessionId,
+        () -> recoveryStates.keySet().removeIf(key -> key.sessionId().equals(sessionId)));
+  }
+
+  private RecoveryResult doRecover(UUID sessionId, String variantLabel, String segmentName) {
+    var session = runtimeRegistry.findById(sessionId).orElse(null);
+    if (session == null) {
+      return RecoveryResult.SESSION_GONE;
+    }
+
+    var handle = session.getVariantHandle(variantLabel).orElse(null);
+    if (handle == null) {
+      return RecoveryResult.SESSION_GONE;
+    }
+
+    if (segmentStore.segmentExists(sessionId, segmentName)) {
+      return RecoveryResult.WAITING;
+    }
+
+    var positioned = tryEnsurePositioned(session, segmentName);
+    handle = session.getVariantHandle(variantLabel).orElseThrow();
+    var state =
+        recoveryStates.computeIfAbsent(
+            new VariantKey(sessionId, variantLabel), _ -> new VariantDeliveryState());
+    var pending =
+        PendingSegment.builder()
+            .sessionId(sessionId)
+            .variantLabel(variantLabel)
+            .segmentName(segmentName)
+            .requestedIndex(SegmentNames.indexOf(segmentName).orElse(handle.startSequenceNumber()))
+            .build();
+    if (handle.status() == TranscodeStatus.FAILED
+        && !state.resetForFreshTargets(
+            transcodeExecutor.executionTargets(), handle, clock.instant())) {
+      return RecoveryResult.EXHAUSTED;
+    }
+
+    return attemptRecovery(state, pending, positioned);
+  }
+
+  private boolean tryEnsurePositioned(StreamSession session, String segmentName) {
+    if (SegmentNames.indexOf(segmentName).isEmpty() && !session.isSuspended()) {
+      return true;
+    }
+
+    try {
+      ensurePositioned(session.getSessionId(), segmentName);
+      return true;
+    } catch (TranscodeException e) {
+      log.warn(
+          "Positioning failed for session {} segment {}: {}",
+          session.getSessionId(),
+          segmentName,
+          e.getMessage());
+      return false;
+    }
+  }
+
+  private RecoveryResult attemptRecovery(
+      VariantDeliveryState state, PendingSegment pending, boolean positioned) {
+    while (true) {
+      var session = runtimeRegistry.findById(pending.sessionId()).orElse(null);
+      if (session == null) {
+        return RecoveryResult.SESSION_GONE;
+      }
+
+      var handle = session.getVariantHandle(pending.variantLabel()).orElseThrow();
+      syncProgress(state, handle, pending);
+      var running = transcodeExecutor.isRunning(pending.sessionId(), pending.variantLabel());
+      if (running && !hasStalled(state)) {
+        return RecoveryResult.WAITING;
+      }
+
+      var reason = replacementReason(running, positioned, session);
+      if (!isReplaceableStatus(handle, session, reason)) {
+        return RecoveryResult.WAITING;
+      }
+
+      var eligibleTargets = transcodeExecutor.executionTargets();
+      // Segment publication is external to the session mutex and may advance during discovery.
+      syncProgress(state, handle, pending);
+      if (noLongerNeedsRecovery(state, pending, running)) {
+        return RecoveryResult.WAITING;
+      }
+
+      var target = state.nextTarget(eligibleTargets);
+      if (target.isEmpty()) {
+        return exhaust(state, pending, handle.attemptId());
+      }
+
+      var command =
+          ReplaceProducerCommand.builder()
+              .sessionId(pending.sessionId())
+              .variantLabel(pending.variantLabel())
+              .segmentName(pending.segmentName())
+              .segmentIndex(pending.requestedIndex())
+              .expectedAttemptId(handle.attemptId())
+              .reason(reason)
+              .target(target.get())
+              .build();
+      var outcome = replaceAndRecord(state, session, command);
+      if (outcome.isPresent()) {
+        return outcome.get();
+      }
+    }
+  }
+
+  private boolean noLongerNeedsRecovery(
+      VariantDeliveryState state, PendingSegment pending, boolean running) {
+    return segmentStore.segmentExists(pending.sessionId(), pending.segmentName())
+        || (running && !hasStalled(state));
+  }
+
+  private RecoveryResult exhaust(
+      VariantDeliveryState state, PendingSegment pending, UUID expectedAttemptId) {
+    if (!doExhaust(pending.sessionId(), pending.variantLabel(), expectedAttemptId)) {
+      return RecoveryResult.WAITING;
+    }
+
+    log.warn(
+        "Recovery exhausted for session {} variant {}: every eligible execution target in {} was tried",
+        pending.sessionId(),
+        pending.variantLabel(),
+        state.attemptedTargets());
+    return RecoveryResult.EXHAUSTED;
+  }
+
+  private Optional<RecoveryResult> replaceAndRecord(
+      VariantDeliveryState state, StreamSession session, ReplaceProducerCommand command) {
+    return switch (doReplace(command)) {
+      case ReplaceResult.Replaced(UUID newAttemptId) -> {
+        state.recordReplacement(
+            command.target(),
+            session.getVariantHandle(command.variantLabel()).orElseThrow(),
+            clock.instant());
+        log.info(
+            "Replaced producer for session {} variant {} on target {} at segment {} (attempt {})",
+            command.sessionId(),
+            command.variantLabel(),
+            command.target().value(),
+            command.segmentIndex(),
+            newAttemptId);
+        yield Optional.of(RecoveryResult.WAITING);
+      }
+      case ReplaceResult.Refused(String refusal) -> {
+        state.recordRefusal(command.target());
+        log.warn(
+            "Execution target {} refused replacement for session {} variant {}: {}",
+            command.target().value(),
+            command.sessionId(),
+            command.variantLabel(),
+            refusal);
+        yield Optional.empty();
+      }
+      case ReplaceResult.Superseded() -> Optional.of(RecoveryResult.WAITING);
+      case ReplaceResult.SessionGone() -> Optional.of(RecoveryResult.SESSION_GONE);
+    };
+  }
+
+  private void syncProgress(
+      VariantDeliveryState state, TranscodeHandle handle, PendingSegment pending) {
+    state.syncProgress(
+        handle,
+        index ->
+            segmentStore.segmentExists(
+                pending.sessionId(), SegmentNames.siblingName(pending.segmentName(), index)),
+        clock.instant());
+  }
+
+  private boolean hasStalled(VariantDeliveryState state) {
+    return state.hasStalled(
+        properties.producerStallThreshold(),
+        properties.producerStallThreshold().plus(properties.targetSegmentDuration()),
+        clock.instant());
+  }
+
+  private static ReplacementReason replacementReason(
+      boolean running, boolean positioned, StreamSession session) {
+    if (running) {
+      return ReplacementReason.STALLED;
+    }
+
+    if (!positioned && session.isSuspended()) {
+      return ReplacementReason.RESUME_FAILED;
+    }
+
+    return ReplacementReason.DEAD;
+  }
+
+  private enum ReplacementReason {
     DEAD,
     STALLED,
     RESUME_FAILED
   }
 
   @Builder
-  public record ReplaceProducerCommand(
+  private record ReplaceProducerCommand(
       UUID sessionId,
       String variantLabel,
       String segmentName,
       int segmentIndex,
       UUID expectedAttemptId,
       ReplacementReason reason,
-      ExecutionTargetId target) {
+      ExecutionTargetId target) {}
 
-    public ReplaceProducerCommand {
-      reason = reason != null ? reason : ReplacementReason.DEAD;
-    }
-  }
-
-  public sealed interface ReplaceResult {
+  private sealed interface ReplaceResult {
     record Replaced(UUID newAttemptId) implements ReplaceResult {}
 
     record Refused(String reason) implements ReplaceResult {}
@@ -146,16 +353,6 @@ public class ProducerLifecycleService {
     withSessionLock(sessionId, () -> transcodeExecutor.stop(sessionId));
   }
 
-  /**
-   * Atomically replaces one variant's producer on the given execution target. The predicate is
-   * checked under the session mutex: the session must still exist, the requested segment must still
-   * be absent, and the variant handle must still carry the expected attempt in a replaceable status
-   * — any miss means another actor won and the caller must re-observe.
-   */
-  public ReplaceResult replaceProducer(ReplaceProducerCommand command) {
-    return withSessionLock(command.sessionId(), () -> doReplace(command));
-  }
-
   private ReplaceResult doReplace(ReplaceProducerCommand command) {
     var session = runtimeRegistry.findById(command.sessionId()).orElse(null);
     if (session == null) {
@@ -195,11 +392,6 @@ public class ProducerLifecycleService {
     session.setVariantHandle(command.variantLabel(), replacement);
     runtimeRegistry.save(session);
     return new ReplaceResult.Replaced(replacement.attemptId());
-  }
-
-  /** Marks a variant's recovery as exhausted; cleared only by a new target or a planned seek. */
-  public boolean tryMarkExhausted(UUID sessionId, String variantLabel, UUID expectedAttemptId) {
-    return withSessionLock(sessionId, () -> doExhaust(sessionId, variantLabel, expectedAttemptId));
   }
 
   private boolean doExhaust(UUID sessionId, String variantLabel, UUID expectedAttemptId) {

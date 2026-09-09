@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.resolvers;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
+import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.graphql.dto.AccountAdministration;
 import com.streamarr.server.graphql.inputs.AdministrativelyDeleteAccountInput;
 import com.streamarr.server.graphql.inputs.DeleteMyAccountInput;
@@ -32,7 +33,7 @@ public class AccountLifecycleResolver {
         TransferAccountCommand.builder()
             .sourceHouseholdAccess(
                 input.sourceHouseholdAccess() == null
-                    ? AccountLifecycleService.SourceHouseholdAccess.END
+                    ? SourceHouseholdAccess.END
                     : input.sourceHouseholdAccess())
             .reason(input.reason());
     return MutationPayloads.withUuid(

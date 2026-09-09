@@ -13,6 +13,14 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
     implements SessionProgressRepository {
 
   @Override
+  public List<SessionProgress> findByProfileIdOrderByLastModifiedOnDesc(UUID profileId) {
+    return database.values().stream()
+        .filter(progress -> profileId.equals(progress.getProfileId()))
+        .sorted(Comparator.comparing(SessionProgress::getLastModifiedOn).reversed())
+        .toList();
+  }
+
+  @Override
   public Optional<SessionProgress> findBySessionId(UUID sessionId) {
     return database.values().stream().filter(sp -> sessionId.equals(sp.getSessionId())).findFirst();
   }
@@ -57,6 +65,7 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
       sp.setDurationSeconds(progress.durationSeconds());
       return true;
     }
+
     save(
         SessionProgress.builder()
             .sessionId(progress.sessionId())

@@ -13,9 +13,11 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,6 +25,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 
 @Tag("UnitTest")
 @DisplayName("Producer Lifecycle Service Tests")
@@ -32,9 +35,11 @@ class ProducerLifecycleServiceTest {
   private FakeSegmentStore segmentStore;
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private ProducerLifecycleService lifecycle;
+  private MutableClock clock;
 
   @BeforeEach
   void setUp() {
+    clock = new MutableClock();
     transcodeExecutor = new FakeTranscodeExecutor();
     segmentStore = new FakeSegmentStore();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
@@ -48,6 +53,7 @@ class ProducerLifecycleServiceTest {
                     .targetSegmentDuration(Duration.ofSeconds(6))
                     .sessionTimeout(Duration.ofSeconds(60))
                     .build())
+            .clock(clock)
             .runtimeRegistry(runtimeRegistry)
             .build()
             .lifecycle();
@@ -347,28 +353,20 @@ class ProducerLifecycleServiceTest {
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.SUSPENDED);
   }
 
-  private ProducerLifecycleService.ReplaceProducerCommand.ReplaceProducerCommandBuilder
-      replaceCommand(StreamSession session) {
-    var handle = session.getHandle().orElse(null);
-    return ProducerLifecycleService.ReplaceProducerCommand.builder()
-        .sessionId(session.getSessionId())
-        .variantLabel(StreamSession.defaultVariant())
-        .segmentName("segment2.ts")
-        .segmentIndex(2)
-        .expectedAttemptId(handle == null ? null : handle.attemptId())
-        .target(ExecutionTargetId.LOCAL);
+  private ProducerLifecycleService.RecoveryResult recover(StreamSession session) {
+    return lifecycle.recover(session.getSessionId(), StreamSession.defaultVariant(), "segment2.ts");
   }
 
   @Test
-  @DisplayName("Should install a fresh attempt at the requested offset when replacing a producer")
-  void shouldInstallFreshAttemptAtTheRequestedOffsetWhenReplacingProducer() {
+  @DisplayName(
+      "Should install a fresh attempt at the requested offset when recovering a dead producer")
+  void shouldInstallFreshAttemptAtRequestedOffsetWhenRecoveringDeadProducer() {
     var session = startedSession();
     var deadAttempt = session.getHandle().orElseThrow().attemptId();
     transcodeExecutor.markDead(session.getSessionId());
 
-    var result = lifecycle.replaceProducer(replaceCommand(session).build());
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
 
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
     var handle = session.getHandle().orElseThrow();
     assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
     assertThat(handle.attemptId()).isNotEqualTo(deadAttempt);
@@ -377,95 +375,70 @@ class ProducerLifecycleServiceTest {
     assertThat(request.seekPosition()).isEqualTo(12);
     assertThat(request.startSequenceNumber()).isEqualTo(2);
     assertThat(request.attemptId()).isEqualTo(handle.attemptId());
-    assertThat(request.attemptId()).isNotEqualTo(deadAttempt);
   }
 
   @Test
-  @DisplayName("Should stop an alive producer before replacing it when the caller observed a stall")
-  void shouldStopAliveProducerBeforeReplacingItWhenTheCallerObservedStall() {
+  @DisplayName("Should stop and replace the producer when its startup budget expires")
+  void shouldStopAndReplaceProducerWhenItsStartupBudgetExpires() {
     var session = startedSession();
+    recover(session);
+    clock.advance(Duration.ofSeconds(16));
 
-    var result =
-        lifecycle.replaceProducer(
-            replaceCommand(session)
-                .reason(ProducerLifecycleService.ReplacementReason.STALLED)
-                .build());
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
 
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
+    assertThat(transcodeExecutor.getStartedTargets()).containsExactly(ExecutionTargetId.LOCAL);
     assertThat(transcodeExecutor.getStoppedVariants())
-        .contains(session.getSessionId() + "/" + StreamSession.defaultVariant());
+        .containsExactly(session.getSessionId() + "/" + StreamSession.defaultVariant());
   }
 
   @Test
-  @DisplayName("Should supersede a death claim when the producer is actually running")
-  void shouldSupersedeDeathClaimWhenTheProducerIsActuallyRunning() {
+  @DisplayName("Should preserve the current attempt when its producer is healthy")
+  void shouldPreserveCurrentAttemptWhenItsProducerIsHealthy() {
     var session = startedSession();
-    var attemptBefore = session.getHandle().orElseThrow().attemptId();
+    var attempt = session.getHandle().orElseThrow().attemptId();
 
-    var result =
-        lifecycle.replaceProducer(
-            replaceCommand(session)
-                .reason(ProducerLifecycleService.ReplacementReason.DEAD)
-                .build());
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
 
-    // A stale death observation — e.g. against another waiter's healthy replacement — must
-    // re-observe, never kill.
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
+    assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attempt);
     assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
-    assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptBefore);
-    assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
-        .isTrue();
   }
 
   @Test
-  @DisplayName("Should replace a suspended handle when the caller's resume attempt failed")
-  void shouldReplaceSuspendedHandleWhenTheCallersResumeAttemptFailed() {
+  @DisplayName("Should recover on an execution target when a suspended session cannot resume")
+  void shouldRecoverOnExecutionTargetWhenSuspendedSessionCannotResume() {
     var session = startedSession();
     lifecycle.suspend(session.getSessionId());
+    transcodeExecutor.failUntargetedStarts();
 
-    var result =
-        lifecycle.replaceProducer(
-            replaceCommand(session)
-                .reason(ProducerLifecycleService.ReplacementReason.RESUME_FAILED)
-                .build());
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
 
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
-  }
-
-  @Test
-  @DisplayName("Should exhaust a suspended handle when the expected attempt matches")
-  void shouldExhaustSuspendedHandleWhenTheExpectedAttemptMatches() {
-    var session = startedSession();
-    lifecycle.suspend(session.getSessionId());
-
-    var result =
-        lifecycle.tryMarkExhausted(
-            session.getSessionId(),
-            StreamSession.defaultVariant(),
-            session.getHandle().orElseThrow().attemptId());
-
-    // Reached only when nothing — not even a resume — can produce the segment.
-    assertThat(result).isTrue();
-    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(transcodeExecutor.getStartedTargets()).containsExactly(ExecutionTargetId.LOCAL);
   }
 
   @Test
   @DisplayName(
-      "Should build the replacement from the variant's own geometry for ABR sessions when managing a producer")
-  void shouldBuildReplacementFromTheVariantsOwnGeometryForAbrSessionsWhenManagingProducer() {
+      "Should exhaust a suspended session when neither resume nor recovery can start a producer")
+  void shouldExhaustSuspendedSessionWhenNeitherResumeNorRecoveryCanStartProducer() {
+    var session = startedSession();
+    lifecycle.suspend(session.getSessionId());
+    transcodeExecutor.failUntargetedStarts();
+    transcodeExecutor.refuseTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
+  }
+
+  @Test
+  @DisplayName("Should retain the variant geometry when recovering one ABR producer")
+  void shouldRetainVariantGeometryWhenRecoveringOneAbrProducer() {
     var session = startedAbrSession();
     transcodeExecutor.markDead(session.getSessionId(), "720p");
-    var command =
-        replaceCommand(session)
-            .variantLabel("720p")
-            .segmentName("720p/segment2.ts")
-            .expectedAttemptId(session.getVariantHandle("720p").orElseThrow().attemptId())
-            .build();
 
-    var result = lifecycle.replaceProducer(command);
+    var result = lifecycle.recover(session.getSessionId(), "720p", "720p/segment2.ts");
 
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     var request = transcodeExecutor.getStartedRequests().getLast();
     assertThat(request.variantLabel()).isEqualTo("720p");
     assertThat(request.width()).isEqualTo(1280);
@@ -476,193 +449,93 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should report session gone when replacing in a destroyed session")
-  void shouldReportSessionGoneWhenReplacingInDestroyedSession() {
+  @DisplayName("Should report session gone when recovery follows destruction")
+  void shouldReportSessionGoneWhenRecoveryFollowsDestruction() {
     var session = startedSession();
-    var command = replaceCommand(session).build();
-    runtimeRegistry.removeById(session.getSessionId());
+    lifecycle.removeSession(session.getSessionId());
 
-    var result = lifecycle.replaceProducer(command);
-
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.SessionGone.class);
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.SESSION_GONE);
   }
 
   @Test
-  @DisplayName("Should report superseded when the requested segment already exists")
-  void shouldReportSupersededWhenTheRequestedSegmentAlreadyExists() {
+  @DisplayName("Should leave the producer alone when the requested segment already exists")
+  void shouldLeaveProducerAloneWhenRequestedSegmentAlreadyExists() {
     var session = startedSession();
+    var attempt = session.getHandle().orElseThrow().attemptId();
     segmentStore.addSegment(session.getSessionId(), "segment2.ts", new byte[] {1});
 
-    var result = lifecycle.replaceProducer(replaceCommand(session).build());
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
 
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
+    assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attempt);
+    assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
   }
 
-  @Test
-  @DisplayName("Should report superseded when the handle carries a different attempt")
-  void shouldReportSupersededWhenTheHandleCarriesDifferentAttempt() {
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeStatus.class,
+      names = {"STOPPED", "STARTING", "SEEKING"})
+  @DisplayName("Should leave a planned transition alone when recovery observes its handle")
+  void shouldLeavePlannedTransitionAloneWhenRecoveryObservesItsHandle(TranscodeStatus status) {
     var session = startedSession();
-    var command = replaceCommand(session).expectedAttemptId(UUID.randomUUID()).build();
-    var startsBefore = transcodeExecutor.getStartedRequests().size();
-
-    var result = lifecycle.replaceProducer(command);
-
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
-    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore);
-  }
-
-  @Test
-  @DisplayName("Should report superseded when a planned suspension fenced the replacement")
-  void shouldReportSupersededWhenPlannedSuspensionFencedTheReplacement() {
-    var session = startedSession();
-    var command = replaceCommand(session).build();
-    lifecycle.suspend(session.getSessionId());
-    var startsBefore = transcodeExecutor.getStartedRequests().size();
-
-    var result = lifecycle.replaceProducer(command);
-
-    // The suspension kept the attempt id; the status fence alone must reject the replacement.
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
-    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.SUSPENDED);
-    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore);
-  }
-
-  @Test
-  @DisplayName("Should supersede exhaustion when the session was destroyed")
-  void shouldSupersedeExhaustionWhenTheSessionWasDestroyed() {
-    var result =
-        lifecycle.tryMarkExhausted(
-            UUID.randomUUID(), StreamSession.defaultVariant(), UUID.randomUUID());
-
-    // A destroy racing recovery must never be reported as a fresh exhaustion.
-    assertThat(result).isFalse();
-  }
-
-  @Test
-  @DisplayName("Should supersede replacement when the handle is mid planned transition")
-  void shouldSupersedeReplacementWhenTheHandleIsMidPlannedTransition() {
-    var session = startedSession();
-    var stopped = session.getHandle().orElseThrow().withStatus(TranscodeStatus.STOPPED);
-    session.setHandle(stopped);
+    var handle = session.getHandle().orElseThrow().withStatus(status);
+    session.setHandle(handle);
     transcodeExecutor.markDead(session.getSessionId());
-    var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var result =
-        lifecycle.replaceProducer(
-            ProducerLifecycleService.ReplaceProducerCommand.builder()
-                .sessionId(session.getSessionId())
-                .variantLabel(StreamSession.defaultVariant())
-                .segmentName("segment2.ts")
-                .segmentIndex(2)
-                .expectedAttemptId(stopped.attemptId())
-                .reason(ProducerLifecycleService.ReplacementReason.DEAD)
-                .target(ExecutionTargetId.LOCAL)
-                .build());
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
 
-    // STOPPED/STARTING/SEEKING are planned transitions another actor owns; recovery must
-    // re-observe instead of starting a competing producer.
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
-    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore);
+    assertThat(session.getHandle()).contains(handle);
+    assertThat(transcodeExecutor.getStartedTargets()).isEmpty();
   }
 
   @Test
-  @DisplayName("Should replace a suspended variant when its siblings keep the session live")
-  void shouldReplaceASuspendedVariantWhenItsSiblingsKeepTheSessionLive() {
+  @DisplayName("Should recover a suspended variant when its siblings keep the session live")
+  void shouldRecoverSuspendedVariantWhenItsSiblingsKeepSessionLive() {
     var session = startedAbrSession();
-    var siblingAttempt = session.getVariantHandle("720p").orElseThrow().attemptId();
+    var sibling = session.getVariantHandle("720p").orElseThrow();
     var suspended =
         session.getVariantHandle("1080p").orElseThrow().withStatus(TranscodeStatus.SUSPENDED);
     session.setVariantHandle("1080p", suspended);
     transcodeExecutor.markDead(session.getSessionId(), "1080p");
 
-    var result =
-        lifecycle.replaceProducer(
-            ProducerLifecycleService.ReplaceProducerCommand.builder()
-                .sessionId(session.getSessionId())
-                .variantLabel("1080p")
-                .segmentName("1080p/segment2.ts")
-                .segmentIndex(2)
-                .expectedAttemptId(suspended.attemptId())
-                .reason(ProducerLifecycleService.ReplacementReason.DEAD)
-                .target(ExecutionTargetId.LOCAL)
-                .build());
+    var result = lifecycle.recover(session.getSessionId(), "1080p", "1080p/segment2.ts");
 
-    // A partial resume failure leaves one variant SUSPENDED while its siblings run; the planned-
-    // suspension fence must not apply, or the variant is permanently unreplaceable and every
-    // request for it polls forever.
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     assertThat(session.getVariantHandle("1080p").orElseThrow().status())
         .isEqualTo(TranscodeStatus.ACTIVE);
-    assertThat(session.getVariantHandle("720p").orElseThrow().attemptId())
-        .isEqualTo(siblingAttempt);
+    assertThat(session.getVariantHandle("720p")).contains(sibling);
   }
 
   @Test
-  @DisplayName(
-      "Should replace a failed handle with a matching attempt for the new-target reset when managing a producer")
-  void shouldReplaceFailedHandleWithMatchingAttemptForTheNewTargetResetWhenManagingProducer() {
-    var session = startedSession();
-    var exhausted =
-        lifecycle.tryMarkExhausted(
-            session.getSessionId(),
-            StreamSession.defaultVariant(),
-            session.getHandle().orElseThrow().attemptId());
-    assertThat(exhausted).isTrue();
-
-    var result = lifecycle.replaceProducer(replaceCommand(session).build());
-
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
-    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
-  }
-
-  @Test
-  @DisplayName("Should report refused when the execution target cannot start the producer")
-  void shouldReportRefusedWhenTheExecutionTargetCannotStartTheProducer() {
+  @DisplayName("Should revive an exhausted variant when a new target becomes eligible")
+  void shouldReviveExhaustedVariantWhenNewTargetBecomesEligible() {
     var session = startedSession();
     transcodeExecutor.markDead(session.getSessionId());
     transcodeExecutor.refuseTarget(ExecutionTargetId.LOCAL);
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+    var newTarget = new ExecutionTargetId("new-worker");
+    transcodeExecutor.setExecutionTargets(List.of(newTarget));
 
-    var result = lifecycle.replaceProducer(replaceCommand(session).build());
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
 
-    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Refused.class);
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(transcodeExecutor.getStartedTargets()).containsExactly(newTarget);
   }
 
   @Test
-  @DisplayName("Should mark the variant failed and stop its live producer when exhausting")
-  void shouldMarkTheVariantFailedAndStopItsLiveProducerWhenExhausting() {
+  @DisplayName("Should stop the final stalled producer when every target has been tried")
+  void shouldStopFinalStalledProducerWhenEveryTargetHasBeenTried() {
     var session = startedSession();
+    recover(session);
+    clock.advance(Duration.ofSeconds(16));
+    recover(session);
+    clock.advance(Duration.ofSeconds(16));
 
-    var result =
-        lifecycle.tryMarkExhausted(
-            session.getSessionId(),
-            StreamSession.defaultVariant(),
-            session.getHandle().orElseThrow().attemptId());
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
 
-    assertThat(result).isTrue();
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
-    // FAILED promises "no producer": the final stalled-but-alive attempt must not keep running.
-    assertThat(transcodeExecutor.getStoppedVariants())
-        .contains(session.getSessionId() + "/" + StreamSession.defaultVariant());
     assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
         .isFalse();
-  }
-
-  @Test
-  @DisplayName("Should not exhaust when a planned restart superseded the attempt")
-  void shouldNotExhaustWhenPlannedRestartSupersededTheAttempt() {
-    var session = startedSession();
-    var staleAttempt = session.getHandle().orElseThrow().attemptId();
-    lifecycle.suspend(session.getSessionId());
-    lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
-
-    var result =
-        lifecycle.tryMarkExhausted(
-            session.getSessionId(), StreamSession.defaultVariant(), staleAttempt);
-
-    // The resumed producer must never inherit a stale 503.
-    assertThat(result).isFalse();
-    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(transcodeExecutor.getStartedTargets()).containsExactly(ExecutionTargetId.LOCAL);
   }
 
   @Test

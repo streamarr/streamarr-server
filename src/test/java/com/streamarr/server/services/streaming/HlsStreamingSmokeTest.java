@@ -30,7 +30,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -141,12 +140,8 @@ class HlsStreamingSmokeTest {
             .producerLifecycle(producerLifecycle)
             .deliveryCoordinator(
                 SegmentDeliveryCoordinator.builder()
-                    .runtimeRegistry(sessionRegistry)
                     .segmentStore(segmentStore)
-                    .transcodeExecutor(transcodeExecutor)
                     .producerLifecycle(producerLifecycle)
-                    .properties(properties)
-                    .clock(Clock.systemUTC())
                     .build())
             .build();
 

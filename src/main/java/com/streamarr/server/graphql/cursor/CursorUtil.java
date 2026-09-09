@@ -18,10 +18,22 @@ public class CursorUtil {
   private final ObjectMapper objectMapper;
 
   public DefaultConnectionCursor encodeKeysetCursor(UUID cursorId) {
+    return encodeOpaqueCursor(cursorId.toString());
+  }
+
+  public DefaultConnectionCursor encodeOpaqueCursor(String value) {
     return new DefaultConnectionCursor(
         Base64.getUrlEncoder()
             .withoutPadding()
-            .encodeToString(cursorId.toString().getBytes(StandardCharsets.UTF_8)));
+            .encodeToString(value.getBytes(StandardCharsets.UTF_8)));
+  }
+
+  public String decodeOpaqueCursor(String cursor) {
+    try {
+      return new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+    } catch (IllegalArgumentException _) {
+      throw new InvalidCursorException("Cursor is not valid.");
+    }
   }
 
   public KeysetPaginationOptions decodeKeysetCursor(PaginationOptions options) {
@@ -31,9 +43,7 @@ public class CursorUtil {
             .map(
                 cursor -> {
                   try {
-                    var decoded =
-                        new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
-                    return UUID.fromString(decoded);
+                    return UUID.fromString(decodeOpaqueCursor(cursor));
                   } catch (IllegalArgumentException _) {
                     throw new InvalidCursorException("Cursor is not valid.");
                   }

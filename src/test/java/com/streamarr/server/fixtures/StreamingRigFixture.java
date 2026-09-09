@@ -30,15 +30,12 @@ public final class StreamingRigFixture {
             .properties(properties)
             .runtimeRegistry(runtimeRegistry)
             .sessionMutex(new MutexFactory<>())
+            .clock(clock == null ? Clock.systemUTC() : clock)
             .build();
     var coordinatorBuilder =
         SegmentDeliveryCoordinator.builder()
-            .runtimeRegistry(runtimeRegistry)
             .segmentStore(segmentStore)
-            .transcodeExecutor(transcodeExecutor)
-            .producerLifecycle(lifecycle)
-            .properties(properties)
-            .clock(clock == null ? Clock.systemUTC() : clock);
+            .producerLifecycle(lifecycle);
     if (pollInterval != null) {
       coordinatorBuilder.pollInterval(pollInterval);
     }

@@ -125,6 +125,11 @@ public class FakeAccountInvitationRepository extends FakeJpaRepository<AccountIn
   }
 
   @Override
+  public int invalidatePendingByHouseholdId(UUID householdId, String reason, Instant now) {
+    return invalidate(invitation -> householdId.equals(invitation.getHouseholdId()), reason, now);
+  }
+
+  @Override
   public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
     return invalidate(
         invitation ->

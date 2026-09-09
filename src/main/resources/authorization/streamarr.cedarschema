@@ -381,6 +381,16 @@ namespace Streamarr {
     resource: Profile,
     context: { freshReauthentication: Bool },
   };
+  action deleteHousehold in householdAdministration appliesTo {
+    principal: Account,
+    resource: Household,
+    context: { freshReauthentication: Bool },
+  };
+  action viewSecurityAudit in serverAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
   action viewProfileAdministration in profileAdministration appliesTo {
     principal: Account,
     resource: Profile,

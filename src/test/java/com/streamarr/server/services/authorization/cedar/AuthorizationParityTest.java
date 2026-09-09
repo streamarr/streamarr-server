@@ -8,7 +8,6 @@ import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
-import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Intent;
 import java.util.ArrayList;
 import java.util.List;
@@ -114,19 +113,6 @@ class AuthorizationParityTest {
     return List.copyOf(planned);
   }
 
-  @Test
-  @DisplayName("Should return the unit value when any unit intent is planned")
-  void shouldReturnUnitValueWhenAnyUnitIntentIsPlanned() {
-    var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
-    var planner = new IntentPlanner(new ProfilePolicyPlanner(new FakeProfileRepository()));
-
-    assertThat(allIntents())
-        .allSatisfy(
-            intent ->
-                assertThat(planner.plan(identity, intent).value())
-                    .isSameAs(AuthorizationUnit.INSTANCE));
-  }
-
   /**
    * Every transition classification, planned through the real classifier over one fake so the
    * classification-to-action map stays covered here.
@@ -217,6 +203,7 @@ class AuthorizationParityTest {
       case ADD_LIBRARY, REMOVE_LIBRARY, SCAN_LIBRARY, REFRESH_LIBRARY -> "libraryAdministration";
       case BLOCK_ESN_SERVER_WIDE, UNBLOCK_ESN_SERVER_WIDE, VIEW_SERVER_DEVICE_ADMINISTRATION ->
           "deviceAdministration";
+      case VIEW_SECURITY_AUDIT -> "serverAdministration";
       case VIEW_PROFILE_PICKER,
           SELECT_PROFILE,
           PLAYBACK,
@@ -266,7 +253,8 @@ class AuthorizationParityTest {
           ADMINISTRATIVELY_DELETE_ACCOUNT,
           DELETE_MY_ACCOUNT,
           TRANSFER_PROFILE,
-          ADMINISTRATIVELY_DELETE_PROFILE ->
+          ADMINISTRATIVELY_DELETE_PROFILE,
+          DELETE_HOUSEHOLD ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
@@ -350,6 +338,8 @@ class AuthorizationParityTest {
         new Intent.AdministrativelyDeleteAccount(id),
         new Intent.DeleteMyAccount(),
         new Intent.TransferProfile(id),
-        new Intent.AdministrativelyDeleteProfile(id));
+        new Intent.AdministrativelyDeleteProfile(id),
+        new Intent.DeleteHousehold(id),
+        new Intent.ViewSecurityAudit());
   }
 }

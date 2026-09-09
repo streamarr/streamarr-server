@@ -318,3 +318,17 @@ type ConfirmationRequiredError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
+
+"Every other Account must already have been transferred or deleted."
+type AccountsRemainError implements MutationError {
+    message: String!
+}
+
+type LastAccountNotFoundError implements MutationError {
+    message: String!
+}
+
+type DestinationNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
