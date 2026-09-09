@@ -139,4 +139,4 @@ This keeps the single-server path disposable and avoids a durable job ledger, le
 Segment bytes travel on separate bounded HTTP/2 streams over the worker's mTLS channel, so bulk uploads do not share the control-message stream.
 Clients continue to fetch playlists and segments from the Streamarr HTTP endpoint; workers are never exposed to players.
 
-See link:adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] for the decision and deferred multi-server boundary.
+See https://github.com/streamarr/streamarr-adr/blob/main/adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] for the decision and deferred multi-server boundary.
