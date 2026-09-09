@@ -43,11 +43,9 @@ script:post-response {
     const me = res.body.data.me;
     bru.setVar("HOUSEHOLD_ID", me.contextHousehold.id);
     const edges = me.selectableProfiles?.edges ?? [];
-    const profile =
-      edges.find((edge) => edge.node.selected) ?? edges.find((edge) => !edge.node.locked);
-    if (profile) {
-      bru.setVar("PROFILE_ID", profile.node.id);
-    }
+    const usable = edges.filter((edge) => !edge.node.locked && !edge.node.pinConfigured);
+    const profile = usable.find((edge) => edge.node.selected) ?? usable[0];
+    bru.setVar("PROFILE_ID", profile?.node.id ?? "");
   }
 }
 
@@ -65,17 +63,19 @@ tests {
     expect(bru.getVar("HOUSEHOLD_ID")).to.equal(me.contextHousehold.id);
   });
 
-  test("Should chain the selected or first unlocked Profile when one is usable", function() {
+  test("Should chain only a Profile usable without a PIN", function() {
     const edges = res.body.data.me.selectableProfiles?.edges ?? [];
-    const expectedEdge =
-      edges.find((edge) => edge.node.selected) ?? edges.find((edge) => !edge.node.locked);
-    if (!expectedEdge) {
-      expect(edges).to.satisfy((profiles) => profiles.every((edge) => edge.node.locked));
+    const profileId = bru.getVar("PROFILE_ID");
+    if (!profileId) {
+      expect(edges).to.satisfy((profiles) =>
+        profiles.every((edge) => edge.node.locked || edge.node.pinConfigured)
+      );
       return;
     }
 
-    const chainedEdge = edges.find((edge) => edge.node.id === bru.getVar("PROFILE_ID"));
+    const chainedEdge = edges.find((edge) => edge.node.id === profileId);
     expect(chainedEdge).to.not.equal(undefined);
-    expect(chainedEdge.node.id).to.equal(expectedEdge.node.id);
+    expect(chainedEdge.node.locked).to.equal(false);
+    expect(chainedEdge.node.pinConfigured).to.equal(false);
   });
 }
